@@ -55,6 +55,21 @@ type BackendIdentityPolicySpec struct {
 	//
 	// +kubebuilder:validation:Required
 	ForwardIdentityJWT bool `json:"forwardIdentityJWT"`
+
+	// ConsentBroker is the issuer URL of the backend's own OAuth broker. When
+	// set with consentAudience, a human OAuth login to this MCP route may be
+	// chained through that broker when the backend reports auth_required.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^https?://`
+	ConsentBroker string `json:"consentBroker,omitempty"`
+
+	// ConsentAudience is the audience placed in the signed login_hint sent to
+	// ConsentBroker. Set it together with consentBroker.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	ConsentAudience string `json:"consentAudience,omitempty"`
 }
 
 // BackendIdentityPolicyStatus defines the observed state of
@@ -90,6 +105,8 @@ type BackendIdentityPolicyStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=bip
 // +kubebuilder:validation:XValidation:rule="has(self.spec.forwardIdentityJWT)",message="BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with no default (CRD-08)"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.consentBroker) == has(self.spec.consentAudience)",message="consentBroker and consentAudience are set together"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.consentBroker) || self.spec.target.kind == 'MCPServer'",message="consentBroker is only valid for MCPServer targets"
 // +kubebuilder:printcolumn:name="Target-Kind",type=string,JSONPath=".spec.target.kind"
 // +kubebuilder:printcolumn:name="Target-Name",type=string,JSONPath=".spec.target.name"
 // +kubebuilder:printcolumn:name="ForwardJWT",type=boolean,JSONPath=".spec.forwardIdentityJWT"

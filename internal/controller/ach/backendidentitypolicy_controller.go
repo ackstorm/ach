@@ -137,6 +137,8 @@ func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctr
 			TargetKind:         cr.Spec.Target.Kind,
 			TargetName:         cr.Spec.Target.Name,
 			ForwardIdentityJWT: cr.Spec.ForwardIdentityJWT,
+			ConsentBroker:      cr.Spec.ConsentBroker,
+			ConsentAudience:    cr.Spec.ConsentAudience,
 			ObservedGeneration: cr.Generation,
 			ResourceVersion:    cr.ResourceVersion,
 		}

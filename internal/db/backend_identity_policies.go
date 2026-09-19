@@ -27,7 +27,7 @@ import (
 )
 
 // BIPRow mirrors the backend_identity_policies row schema after migration
-// 000007. (Namespace, Name) form the PRIMARY KEY; (TargetKind, TargetName)
+// 000021. (Namespace, Name) form the PRIMARY KEY; (TargetKind, TargetName)
 // is the bipcache lookup key.
 type BIPRow struct {
 	Namespace          string
@@ -35,6 +35,8 @@ type BIPRow struct {
 	TargetKind         string // "MCPServer" | "A2AAgent"
 	TargetName         string
 	ForwardIdentityJWT bool
+	ConsentBroker      string
+	ConsentAudience    string
 	ObservedGeneration int64
 	DeletionTimestamp  *time.Time
 	ResourceVersion    string
@@ -47,14 +49,17 @@ const upsertBIPSQL = `
 	INSERT INTO backend_identity_policies
 	    (namespace, name, target_kind, target_name,
 	     forward_identity_jwt, observed_generation,
-	     resource_version, updated_at, origin, locked)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE)
+	     resource_version, updated_at, origin, locked,
+	     consent_broker, consent_audience)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE, $8, $9)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    target_kind          = EXCLUDED.target_kind,
 	    target_name          = EXCLUDED.target_name,
 	    forward_identity_jwt = EXCLUDED.forward_identity_jwt,
 	    observed_generation  = EXCLUDED.observed_generation,
 	    resource_version     = EXCLUDED.resource_version,
+	    consent_broker       = EXCLUDED.consent_broker,
+	    consent_audience     = EXCLUDED.consent_audience,
 	    updated_at           = now(),
 	    -- Resurrection: a re-applied CR is LIVE. Unlike environments.go (which
 	    -- preserves deletion_timestamp for the CS-09 content-drain window), a
@@ -98,6 +103,7 @@ func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 	err := tx.QueryRow(ctx, upsertBIPSQL,
 		row.Namespace, row.Name, row.TargetKind, row.TargetName,
 		row.ForwardIdentityJWT, row.ObservedGeneration, row.ResourceVersion,
+		row.ConsentBroker, row.ConsentAudience,
 	).Scan(&ns)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -111,14 +117,15 @@ func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 	return nil
 }
 
-// scanBIPRow scans one BIP row in the canonical 11-field order. The single-
+// scanBIPRow scans one BIP row in the canonical 13-field order. The single-
 // row error contract (ErrNoRows / transient / wrap) stays with each caller —
 // this helper shares ONLY the Scan column order, which must match every
 // SELECT below.
 func scanBIPRow(row pgx.Row, r *BIPRow) error {
 	return row.Scan(
 		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
-		&r.ForwardIdentityJWT, &r.ObservedGeneration,
+		&r.ForwardIdentityJWT, &r.ConsentBroker, &r.ConsentAudience,
+		&r.ObservedGeneration,
 		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
 	)
 }
@@ -150,7 +157,8 @@ func scanBIPRows(rows pgx.Rows) ([]BIPRow, error) {
 func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, error) {
 	const sql = `
 		SELECT namespace, name, target_kind, target_name,
-		       forward_identity_jwt, observed_generation,
+		       forward_identity_jwt, consent_broker, consent_audience,
+		       observed_generation,
 		       deletion_timestamp, resource_version, updated_at, origin, locked
 		  FROM backend_identity_policies
 		 WHERE namespace = $1 AND deletion_timestamp IS NULL
@@ -164,6 +172,34 @@ func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, 
 		return nil, fmt.Errorf("db: ListAllBIPs(%s): %w", ns, err)
 	}
 	return scanBIPRows(rows)
+}
+
+// ConsentBIP returns the alpha-first live MCPServer policy for targetName
+// when it opts into JWT forwarding and declares a consent broker.
+func ConsentBIP(ctx context.Context, pool *pgxpool.Pool, ns, targetName string) (*BIPRow, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT namespace, name, target_kind, target_name,
+		       forward_identity_jwt, consent_broker, consent_audience, observed_generation,
+		       deletion_timestamp, resource_version, updated_at, origin, locked
+		  FROM backend_identity_policies
+		 WHERE namespace = $1 AND target_kind = 'MCPServer' AND target_name = $2
+		   AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+		 LIMIT 1`, ns, targetName)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ConsentBIP(%s/%s): %w", ns, targetName, err)
+	}
+	out, err := scanBIPRows(rows)
+	if err != nil || len(out) == 0 {
+		return nil, err
+	}
+	if !out[0].ForwardIdentityJWT || out[0].ConsentBroker == "" {
+		return nil, nil
+	}
+	return &out[0], nil
 }
 
 const softDeleteBIPSQL = `

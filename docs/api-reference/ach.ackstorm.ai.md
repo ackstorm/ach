@@ -519,6 +519,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `target` _[BackendTargetRef](#backendtargetref)_ | Target identifies the backend route this policy controls. |  | Required: \{\} <br /> |
 | `forwardIdentityJWT` _boolean_ | ForwardIdentityJWT, when true, instructs the Forwarder to sign and<br />attach the §9.1 ACH JWT to forwarded requests for this target. When<br />false, the Forwarder forwards without an Authorization header (an<br />explicit no-JWT declaration; operationally indistinguishable from no<br />CR at all).<br />REQUIRED per CRD-08. There is no default. Admission rejects a CR<br />that omits the field. |  | Required: \{\} <br /> |
+| `consentBroker` _string_ | ConsentBroker is the issuer URL of the backend's own OAuth broker. When<br />set with consentAudience, a human OAuth login to this MCP route may be<br />chained through that broker when the backend reports auth_required. |  | Pattern: `^https?://` <br /> |
+| `consentAudience` _string_ | ConsentAudience is the audience placed in the signed login_hint sent to<br />ConsentBroker. Set it together with consentBroker. |  | MinLength: 1 <br /> |
 
 
 #### BackendIdentityPolicyStatus

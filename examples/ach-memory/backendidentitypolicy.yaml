@@ -12,3 +12,5 @@ spec:
     kind: MCPServer
     name: ach-memory
   forwardIdentityJWT: true
+  # consentBroker: https://backend.example.com/oauth
+  # consentAudience: ach-memory

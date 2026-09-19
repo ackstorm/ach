@@ -67,6 +67,19 @@ spec:
               admission rejects a CR omitting the field via the resource-root CEL rule
               on the type below.
             properties:
+              consentAudience:
+                description: |-
+                  ConsentAudience is the audience placed in the signed login_hint sent to
+                  ConsentBroker. Set it together with consentBroker.
+                minLength: 1
+                type: string
+              consentBroker:
+                description: |-
+                  ConsentBroker is the issuer URL of the backend's own OAuth broker. When
+                  set with consentAudience, a human OAuth login to this MCP route may be
+                  chained through that broker when the backend reports auth_required.
+                pattern: ^https?://
+                type: string
               forwardIdentityJWT:
                 description: |-
                   ForwardIdentityJWT, when true, instructs the Forwarder to sign and
@@ -192,6 +205,10 @@ spec:
         - message: BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with
             no default (CRD-08)
           rule: has(self.spec.forwardIdentityJWT)
+        - message: consentBroker and consentAudience are set together
+          rule: has(self.spec.consentBroker) == has(self.spec.consentAudience)
+        - message: consentBroker is only valid for MCPServer targets
+          rule: '!has(self.spec.consentBroker) || self.spec.target.kind == ''MCPServer'''
     served: true
     storage: true
     subresources:
