@@ -63,6 +63,11 @@ involvement. `/v2` behaves exactly as `/v1`: it receives the caller's bare
                                           └──────────────┘
 ```
 
+Agent keys (`ek_`) never receive the BIP JWT: the Forwarder strips any client
+`Authorization` header and the backend identifies the agent through
+`x-litellm-api-key` → `/v2/user/info`. `forwardIdentityJWT` governs human
+`pk_`/OAuth callers only.
+
 The Forwarder is the only ACH service that mints JWTs. It signs with
 the `current` slot of the `ach-jwt-signing-keys` Secret (Ed25519 / 32-byte
 raw seed). The JWKS endpoint exposes the public half so any backend can

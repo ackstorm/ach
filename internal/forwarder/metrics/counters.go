@@ -76,7 +76,7 @@ func IncJWTSigned(kind string) {
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}
-//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}
+//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure, agent_key}
 //
 // list_failure is emitted by bip.ResolveWinner when the controller-runtime
 // cache List call returns a transient error (cache desync, mid-rotation

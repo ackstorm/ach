@@ -152,6 +152,16 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 
+		// 1b. Agent keys identify themselves to the backend through LiteLLM,
+		// never through the human identity JWT.
+		if kc.KeyType == keys.PrefixEk {
+			r.Header.Del("Authorization")
+			metrics.IncJWTSuppressed(kind, "agent_key")
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			rp.ServeHTTP(w, r)
+			return
+		}
+
 		// 2. BIP resolve. BIPResolver.Resolve returns nil for no-policy
 		//    AND for explicit opt-out (winner.ForwardIdentityJWT == false);
 		//    both collapse to "no_policy" at the metrics layer per

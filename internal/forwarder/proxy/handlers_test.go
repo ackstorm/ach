@@ -278,8 +278,8 @@ func TestHandlerV1_EkTagInjection(t *testing.T) {
 	}
 }
 
-// H3: HandlerMCP with ek_ authorized + BIP winner opt-in → JWT attached on upstream.
-func TestHandlerMCP_EkWithJWT(t *testing.T) {
+// H3: Agent keys never receive a BIP JWT, even when the policy opts in.
+func TestHandlerMCP_EkNoJWT(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
@@ -303,17 +303,46 @@ func TestHandlerMCP_EkWithJWT(t *testing.T) {
 	if rec.Calls() != 1 {
 		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
 	}
-	if rec.LastAuth() != "Bearer ACH-TOKEN" {
-		t.Errorf("Authorization = %q; want Bearer ACH-TOKEN", rec.LastAuth())
+	if rec.LastAuth() != "" {
+		t.Errorf("Authorization = %q; want empty", rec.LastAuth())
 	}
-	if signer.lastClaims.Aud != "mcp:server-x" {
-		t.Errorf("aud = %s; want mcp:server-x", signer.lastClaims.Aud)
+	if signer.signCalls != 0 {
+		t.Errorf("signer called %d times; want 0", signer.signCalls)
 	}
-	if signer.lastClaims.Sub != "u@e" {
-		t.Errorf("sub = %s; want u@e", signer.lastClaims.Sub)
-	}
-	if signer.lastClaims.Iss != "https://ach.example.com" {
-		t.Errorf("iss = %s; want https://ach.example.com", signer.lastClaims.Iss)
+}
+
+func TestHandlerMCPAndA2A_AgentKeyStripsAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    func(HandlerDeps) http.HandlerFunc
+		kind string
+		path string
+	}{
+		{name: "mcp", h: HandlerMCP, kind: "MCPServer", path: "/mcp/server-x"},
+		{name: "a2a", h: HandlerA2A, kind: "A2AAgent", path: "/a2a/agent-x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream, rec := upstreamSpy()
+			defer upstream.Close()
+			env := makeEnvRow("demo", []string{"server-x"}, []string{"agent-x"}, nil)
+			bip := makeBIPRow("pol-a", tc.kind, strings.TrimPrefix(strings.TrimPrefix(tc.path, "/mcp/"), "/a2a/"), true)
+			signer := &mockSigner{returnToken: "ACH-TOKEN"}
+			deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver(bip))
+			kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+			r := requestWithKC(t, http.MethodPost, tc.path, kc, "{}")
+			r.Header.Set("Authorization", "Bearer client-token")
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("name", strings.TrimPrefix(strings.TrimPrefix(tc.path, "/mcp/"), "/a2a/"))
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			tc.h(deps)(httptest.NewRecorder(), r)
+			if rec.LastAuth() != "" {
+				t.Fatalf("upstream Authorization = %q; want empty", rec.LastAuth())
+			}
+			if signer.signCalls != 0 {
+				t.Fatalf("signer calls = %d; want 0", signer.signCalls)
+			}
+		})
 	}
 }
 
@@ -387,12 +416,12 @@ func TestHandlerA2A_ClaimsShape(t *testing.T) {
 	upstream, _ := upstreamSpy()
 	defer upstream.Close()
 
-	env := makeEnvRow("demo", nil, []string{"agent-y"}, nil)
+	env := makeEnvRow("demo", nil, []string{"agent-y"}, []string{"team"})
 	bipRow := makeBIPRow("pol-a", "A2AAgent", "agent-y", true)
 	signer := &mockSigner{}
-	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env)}, newBIPResolver(bipRow))
+	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team"}}}, newBIPResolver(bipRow))
 
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	r := requestWithKC(t, http.MethodGet, "/a2a/agent-y", kc, "")
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("name", "agent-y")
@@ -411,12 +440,12 @@ func TestHandlerMCP_SigningFailure(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
-	env := makeEnvRow("demo", []string{"server-x"}, nil, nil)
+	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team"})
 	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
 	signer := &mockSigner{returnErr: errors.New("signer down")}
-	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env)}, newBIPResolver(bipRow))
+	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team"}}}, newBIPResolver(bipRow))
 
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("name", "server-x")
@@ -453,13 +482,13 @@ func TestHandlerMCP_LogsBFIOnMint(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	env := makeEnvRow("demo", []string{"server-x"}, nil, nil)
+	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team"})
 	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
 	deps := mkDeps(t, upstream, &mockSigner{returnToken: "JWT"},
-		precheck.Deps{EnvProvider: newEnvProvider(env)}, newBIPResolver(bipRow))
+		precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team"}}}, newBIPResolver(bipRow))
 	deps.Deps.Logger = logger // capture the BFI line
 
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("name", "server-x")
@@ -517,9 +546,9 @@ func TestClassifyPrecheckErr(t *testing.T) {
 	}
 }
 
-// H-groups: the minted JWT carries the Environment's authorizedTeams as
-// "groups", with ACH's internal shell teams filtered out.
-func TestHandlerMCP_EkGroupsClaim(t *testing.T) {
+// Agent keys do not mint a JWT, so Environment team aliases never become
+// backend identity claims on this path.
+func TestHandlerMCP_EkNoGroupsClaim(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
@@ -544,9 +573,11 @@ func TestHandlerMCP_EkGroupsClaim(t *testing.T) {
 	if rec.Calls() != 1 {
 		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
 	}
-	got := signer.lastClaims.Groups
-	if len(got) != 2 || got[0] != "team-a" || got[1] != "team-b" {
-		t.Errorf("groups = %v; want [team-a team-b] (sorted, shell filtered)", got)
+	if signer.signCalls != 0 {
+		t.Errorf("signer calls = %d; want 0", signer.signCalls)
+	}
+	if rec.LastAuth() != "" {
+		t.Errorf("Authorization = %q; want empty", rec.LastAuth())
 	}
 }
 
