@@ -58,7 +58,9 @@ func (g grantGate) missing(ctx context.Context, c echojwt.Verified) bool {
 	return err != nil || n == 0
 }
 
-func jwtMiddleware(verifier *echojwt.Verifier, sink *capture, require bool, gates ...grantGate) func(http.Handler) http.Handler {
+func jwtMiddleware(
+	verifier *echojwt.Verifier, sink *capture, require bool, gates ...grantGate,
+) func(http.Handler) http.Handler {
 	var gate grantGate
 	if len(gates) > 0 {
 		gate = gates[0]
