@@ -977,10 +977,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#16-oauth-scope-gate-insufficient_scope-on-brokered-mcpname" class="md-nav__link">
+  <a href="#16-oauth-consent-is-declared-by-the-backend-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1.6 OAuth scope gate — insufficient_scope on brokered /mcp/&lt;name&gt;
+        1.6 OAuth consent is declared by the backend policy
       
     </span>
   </a>
@@ -1575,10 +1575,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#16-oauth-scope-gate-insufficient_scope-on-brokered-mcpname" class="md-nav__link">
+  <a href="#16-oauth-consent-is-declared-by-the-backend-policy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1.6 OAuth scope gate — insufficient_scope on brokered /mcp/&lt;name&gt;
+        1.6 OAuth consent is declared by the backend policy
       
     </span>
   </a>
@@ -1773,6 +1773,10 @@ involvement. <code>/v2</code> behaves exactly as <code>/v1</code>: it receives t
 <a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                                          │ check        │
 <a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                                          └──────────────┘
 </code></pre></div>
+<p>Agent keys (<code>ek_</code>) never receive the BIP JWT: the Forwarder strips any client
+<code>Authorization</code> header and the backend identifies the agent through
+<code>x-litellm-api-key</code> → <code>/v2/user/info</code>. <code>forwardIdentityJWT</code> governs human
+<code>pk_</code>/OAuth callers only.</p>
 <p>The Forwarder is the only ACH service that mints JWTs. It signs with
 the <code>current</code> slot of the <code>ach-jwt-signing-keys</code> Secret (Ed25519 / 32-byte
 raw seed). The JWKS endpoint exposes the public half so any backend can
@@ -2257,27 +2261,23 @@ so SSE and streamable-http pass-through are unaffected. The proxy suite's
 streaming test runs with the hook installed precisely to keep that honest.</p>
 </blockquote>
 <hr />
-<h2 id="16-oauth-scope-gate-insufficient_scope-on-brokered-mcpname">1.6 OAuth scope gate — <code>insufficient_scope</code> on brokered <code>/mcp/&lt;name&gt;</code><a class="headerlink" href="#16-oauth-scope-gate-insufficient_scope-on-brokered-mcpname" title="Permanent link">&para;</a></h2>
-<p><code>ACH_OAUTH_SERVICES</code> (a JSON map, shared with platform-api's broker chain)
-names the <code>/mcp/&lt;name&gt;</code> services that require a scope. The gate applies
-<strong>only to OAuth bearers</strong> — a <code>pk_</code>, <code>ek_</code>, or raw <code>sk-</code> is never checked, and
-an unmapped service is never checked either.</p>
-<p>On <code>/mcp/&lt;name&gt;</code>, before precheck: if the caller's token is OAuth AND <code>name</code>
-is in the map AND the token's <code>scope</code> claim does not contain <code>name</code>, the
-forwarder answers:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>403 {"error":"insufficient_scope", ...}
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata="&lt;base&gt;/.well-known/oauth-protected-resource/mcp/&lt;name&gt;"
+<h2 id="16-oauth-consent-is-declared-by-the-backend-policy">1.6 OAuth consent is declared by the backend policy<a class="headerlink" href="#16-oauth-consent-is-declared-by-the-backend-policy" title="Permanent link">&para;</a></h2>
+<p>OAuth access tokens carry identity only; they do not carry service scopes and
+the forwarder has no static scope gate. A target that needs a separate consent
+ceremony declares it on its winning MCP <code>BackendIdentityPolicy</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="nv">MCPServer</span><span class="p p-Indicator">,</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">demo-mcp-jwt</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">consentBroker</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://broker.example</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">consentAudience</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backend-store</span>
 </code></pre></div>
-<p>The client's remedy is the normal RFC 9728 dance: fetch the PRM pointer,
-read its <code>scopes_supported</code> (the audience plus <code>&lt;name&gt;</code> — the forwarder
-composes this from the same map, see §1.2's <code>jwt.ASMetadata</code>/PRM handling),
-and re-run <code>/authorize</code> asking for that scope. platform-api's broker chain
-then runs one hop per requested-but-ungranted service before minting a token
-whose <code>scope</code> claim actually carries it — see
-<code>docs/superpowers/specs/2026-09-18-oauth-broker-chain-design.md</code>.</p>
-<p><code>/a2a/&lt;name&gt;</code> and any <code>/mcp/&lt;name&gt;</code> not in the map are never gated —
-<code>ACH_OAUTH_SERVICES</code> empty/unset makes the whole gate dormant, matching
-today's behavior.</p>
+<p>During <code>/authorize</code>, ACH probes <code>/mcp/&lt;name&gt;</code> through the public forwarder as
+the user. Only the LiteLLM <code>auth_required</code> outcome starts one broker hop. ACH
+discovers the broker with RFC 8414, registers a public PKCE client, sends a
+short-lived EdDSA <code>login_hint</code> whose <code>aud</code> is <code>consentAudience</code>, and never
+redeems the broker code. The callback re-probes the same backend; only an
+<code>ok</code> outcome issues the ACH authorization code. The broker policy is resolved
+from Postgres, so there is no <code>ACH_OAUTH_SERVICES</code> or grants-Redis map.</p>
 <hr />
 <h2 id="2-backendidentitypolicy-bip-turning-jwt-mint-on">2. BackendIdentityPolicy (BIP) — turning JWT mint on<a class="headerlink" href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" title="Permanent link">&para;</a></h2>
 <p>JWT mint is <strong>opt-in per target</strong>. A <code>BackendIdentityPolicy</code> CR selects

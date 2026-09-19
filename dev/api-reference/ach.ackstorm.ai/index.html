@@ -4537,6 +4537,18 @@ on the type below.</p>
 <td></td>
 <td>Required: {} <br /></td>
 </tr>
+<tr>
+<td><code>consentBroker</code> <em>string</em></td>
+<td>ConsentBroker is the issuer URL of the backend's own OAuth broker. When<br />set with consentAudience, a human OAuth login to this MCP route may be<br />chained through that broker when the backend reports auth_required.</td>
+<td></td>
+<td>Pattern: <code>^https?://</code> <br /></td>
+</tr>
+<tr>
+<td><code>consentAudience</code> <em>string</em></td>
+<td>ConsentAudience is the audience placed in the signed login_hint sent to<br />ConsentBroker. Set it together with consentBroker.</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
 </tbody>
 </table>
 <h4 id="backendidentitypolicystatus">BackendIdentityPolicyStatus<a class="headerlink" href="#backendidentitypolicystatus" title="Permanent link">&para;</a></h4>
