@@ -1,0 +1,22 @@
+# Dev secrets for the identity release (namespace ach-identity): its own
+# database on the shared e2e Postgres, the same dev pepper/DEK/master key as
+# the full release. Applied by scripts/cluster.sh reconcile_identity.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ach-identity
+
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: ach-db-url
+    literals:
+      - url=postgres://ach:ach@ach-postgres.ach-system.svc.cluster.local:5432/ach_identity?sslmode=disable
+  - name: ach-credential-hash-pepper
+    literals:
+      - pepper=dev-pepper-32-bytes-minimum-for-hmac-do-not-reuse
+  - name: ach-key-encryption-key
+    literals:
+      - dek=YWNoLWRldi1kZWstZG8tbm90LXVzZS1pbi1wcm9kISE=
+  - name: litellm-master-key
+    literals:
+      - masterKey=sk-test-master-key

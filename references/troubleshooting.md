@@ -1003,3 +1003,11 @@ box does not. Restore it from inside devtools:
 `./scripts/dev.sh bash -c 'kind get kubeconfig --name ach-e2e > /workspace/.gocache/kube/config'`.
 The cluster itself is untouched (`./scripts/dev.sh kind get clusters`).
 
+### ❌ identity forwarder never Ready, log `ensure jwt signing keys: … forbidden`
+✅ `profile: identity` renders `create` on `secrets` in the forwarder Role
+(`ach-jwt-signing-keys` is minted by the forwarder there — no operator). A
+release upgraded from `full` without re-rendering the Role, or a hand-edited
+RBAC, lacks it: `kubectl -n <ns> get role <release>-forwarder -o yaml`.
+platform-api in the same release sits in `ContainerCreating` until that Secret
+exists (it mounts it) — that is the symptom, not the cause.
+

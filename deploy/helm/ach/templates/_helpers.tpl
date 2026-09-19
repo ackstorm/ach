@@ -103,8 +103,17 @@ ach.contentServiceJWTVolume — the ach-jwt-signing-keys Secret volume the
 content-service container mounts when the OAuth AS is enabled. Included by
 BOTH Pods that can host the container (operator sidecar, standalone).
 */}}
+{{/*
+ach.full — "true" for profile full, "" for identity. The single switch every
+governance-only template gates on (CRDs, operator, content-service).
+*/}}
+{{- define "ach.full" -}}
+{{- if not (has .Values.profile (list "full" "identity")) }}{{ fail (printf "profile must be full or identity (got %q)" .Values.profile) }}{{ end -}}
+{{- if ne .Values.profile "identity" }}true{{ end -}}
+{{- end }}
+
 {{- define "ach.contentServiceJWTVolume" -}}
-{{- if and .Values.contentService.enabled .Values.platformApi.oauth.enabled }}
+{{- if and .Values.contentService.enabled .Values.platformApi.oauth.enabled (include "ach.full" .) }}
 - name: jwt-signing-keys
   secret:
     secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}

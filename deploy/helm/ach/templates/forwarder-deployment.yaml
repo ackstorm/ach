@@ -82,6 +82,13 @@ spec:
               value: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
             - name: ACH_CREDENTIAL_HEADERS
               value: {{ .Values.forwarder.headers | toJson | quote }}
+            - name: ACH_PROFILE
+              value: {{ .Values.profile | quote }}
+            {{- if not (include "ach.full" .) }}
+            # identity: no operator, no LiteLLMConnection projection — the
+            # forwarder takes LiteLLM from the same block platform-api reads.
+            {{- include "ach.litellmConnectionEnv" . | nindent 12 }}
+            {{- end }}
             # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
             # rest (the forwarder opens sealed LiteLLM material with the DEK and
             # resolves pk_ via the pepper). Sourced from the security.* Secret

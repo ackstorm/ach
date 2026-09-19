@@ -31,3 +31,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: prod
+---
+# ach-identity — the second ACH release (profile: identity) on api.e2e.local.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ach-identity

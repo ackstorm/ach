@@ -20,6 +20,7 @@ data:
         }
         ready
         rewrite name ach.e2e.local ach-local-gateway.ach-system.svc.cluster.local
+        rewrite name api.e2e.local ach-local-gateway.ach-system.svc.cluster.local
         kubernetes cluster.local in-addr.arpa ip6.arpa {
            pods insecure
            fallthrough in-addr.arpa ip6.arpa

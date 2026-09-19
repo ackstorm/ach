@@ -59,7 +59,7 @@ ach/
 ├── scripts/                 ← dev.sh, cluster.sh, pre-push-check.sh, ...
 ├── test/                    ← e2e + utils
 │   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
-│       ├── 00-namespaces 01-base 02-ach(+secrets/) 03-test-backends
+│       ├── 00-namespaces 01-base 02-ach(+secrets/, identity.values.yaml, secrets-identity/) 03-test-backends
 │       │     (03's ach-local-gateway.yaml nginx is now a DEV SHIM —
 │       │      adds /dex + /metrics/<svc>, falls through to the prod
 │       │      ach-gateway pod; it is NOT the primary router anymore)

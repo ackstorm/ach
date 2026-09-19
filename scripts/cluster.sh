@@ -542,12 +542,35 @@ wait_ach() {
   for d in "${deps[@]}"; do
     kubectl -n ach-system rollout status deploy/"${d}" --timeout=5m || rc=$?
   done
+  for d in ach-platform-api ach-forwarder ach-gateway; do
+    kubectl -n ach-identity rollout status deploy/"${d}" --timeout=5m || rc=$?
+  done
   if [ "${rc}" -ne 0 ]; then
     echo "[cluster.sh] one or more ach Deployments failed to become Ready — dumping pods for forensics:" >&2
-    kubectl -n ach-system get pods >&2 || true
+    kubectl -n ach-system get pods >&2 || true; kubectl -n ach-identity get pods >&2 || true
     kubectl -n ach-system describe pods >&2 || true
     return "${rc}"
   fi
+}
+
+reconcile_identity() {
+  # The second ACH release: profile identity in its own namespace, its own
+  # database on the shared Postgres, its own Dex client (dex-config.yaml),
+  # the same image. api.e2e.local → ach-gateway.ach-identity via the nginx
+  # shim (stage 03). No CRDs: the full release owns them.
+  echo "[cluster.sh] installing the identity release (ach-identity, profile=identity)..."
+  kubectl -n ach-system exec sts/ach-postgres -- sh -c \
+    "PGPASSWORD=achdev psql -U postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='ach_identity'\" | grep -q 1 \
+     || PGPASSWORD=achdev psql -U postgres -c 'CREATE DATABASE ach_identity OWNER ach'"
+  kubectl apply -k "${CLUSTER_DIR}/02-ach/secrets-identity"
+  helm upgrade --install ach-identity deploy/helm/ach \
+    --namespace ach-identity \
+    --values "${CLUSTER_DIR}/02-ach/identity.values.yaml" \
+    --set "image.repo=${ACH_IMAGE_REPO}" \
+    --set "image.tag=${ACH_IMAGE_TAG}" \
+    --set "image.pullPolicy=IfNotPresent" \
+    --set "installCRDs=false" \
+    --set-string "image.rebuildId=$(date +%s)"
 }
 
 reconcile_fixtures() {
@@ -871,6 +894,7 @@ reconcile_all() {
   reconcile_dex
   reconcile_litellm
   reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a/broker (Task 2)
+  reconcile_identity     # second release: profile identity on api.e2e.local (namespace ach-identity)
   reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a + mock-broker, stage 03)
   reconcile_objects      # stage 04
   reconcile_environments # stage 05

@@ -21,7 +21,7 @@ CRDs out-of-band (Flux/ArgoCD with a separate Kustomization, kubectl
 apply in CD, etc.) set it to false to skip this block. Default true
 matches the "batteries included" install posture.
 */}}
-{{- if .Values.installCRDs }}
+{{- if and .Values.installCRDs (include "ach.full" .) }}
 {{- range $path, $_ := .Files.Glob "crd-sources/*.yaml" }}
 ---
 {{ $.Files.Get $path }}

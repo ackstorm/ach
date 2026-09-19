@@ -47,6 +47,15 @@ The seeded routes are `demo-mcp-jwt` (JWT), `demo-mcp-nojwt` (no JWT), and
 `demo-mcp-consent` (JWT plus `consentBroker`; mcp-echo gates its audience on
 `oauth:echo:state:<sub>`).
 
+Two ACH releases share the kind hostPort 8080 (both names map to 127.0.0.1 in
+devtools; CoreDNS rewrites both to the nginx shim for pods): `ach.e2e.local`
+is the full release (namespace `ach-system`); `api.e2e.local` is the
+**identity** release (`cluster/02-ach/identity.values.yaml`, Helm release
+`ach-identity`, namespace `ach-identity`, database `ach_identity` on the shared
+Postgres, valkey db 1, Dex client `ach-identity`, `installCRDs=false`) — ACH in
+front of the same LiteLLM with no operator/CRDs/BIP. The shim picks the backend
+by `server_name`. `TestIdentityProfile` covers it.
+
 ## Fixtures
 
 | Path                                              | Used by                                                |

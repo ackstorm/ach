@@ -43,6 +43,16 @@ local package manager `repo`/`plugin`/`skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
+**Two install profiles from the one chart + image** (`profile:` in values →
+`ACH_PROFILE` on the forwarder): `full` (everything above — governance) and
+`identity` (platform-api + forwarder + gateway + migrate only: OAuth-for-humans
+and the declared credential headers in front of ONE LiteLLM host, no CRDs, no
+operator, no Environments/BIP — `/mcp`/`/a2a` forward the resolved identity
+as-is, LiteLLM comes from `ACH_LITELLM_BASE_URL`, the forwarder mints
+`ach-jwt-signing-keys` itself). Releases coexist one per namespace; CRDs come
+from the full one. The e2e cluster runs both: `ach.e2e.local` (full) and
+`api.e2e.local` (identity, release `ach-identity`).
+
 Release plumbing + CI scaffolding grafted from
 [ackstorm/alitellm-operator](https://github.com/ackstorm/alitellm-operator)
 (Apache-2.0; see `NOTICE` + `references/upstream-sync.md`) — non-code surfaces

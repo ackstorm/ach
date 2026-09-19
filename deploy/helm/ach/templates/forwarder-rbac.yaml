@@ -42,7 +42,8 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
-  verbs: ["get", "list", "watch"]
+  # identity: the forwarder mints ach-jwt-signing-keys itself (no operator).
+  verbs: ["get", "list", "watch"{{- if not (include "ach.full" .) }}, "create"{{- end }}]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

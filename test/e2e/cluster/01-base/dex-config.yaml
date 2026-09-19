@@ -37,6 +37,14 @@ staticClients:
       # OAuth front door: platform-api's AS is a second OIDC client leg.
       - http://ach.e2e.local:8080/platform/oauth/as-callback
       - https://ach.e2e.local:8080/platform/oauth/as-callback
+  # The identity release (profile: identity, namespace ach-identity) is its
+  # own OIDC client on its own host.
+  - id: ach-identity
+    secret: dev-secret-not-for-prod
+    name: 'ACH identity (dev)'
+    redirectURIs:
+      - http://api.e2e.local:8080/platform/auth/sso/callback
+      - http://api.e2e.local:8080/platform/oauth/as-callback
 
 connectors:
   - type: mockCallback

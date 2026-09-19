@@ -17,6 +17,18 @@
 # (Flux/ArgoCD Kustomization, kubectl apply in CD).
 installCRDs: true
 
+# profile: what this release is.
+#   full     — operator + CRDs + platform-api + forwarder + content-service +
+#              gateway: the governance hub (Environments, teams, BIP JWTs, ek_).
+#   identity — platform-api + forwarder + gateway + migrate ONLY: OAuth-for-
+#              humans and the declared credential headers in front of ONE
+#              LiteLLM host (litellmConnection.endpoint). No CRDs, no operator,
+#              no Environments, no BIP; /mcp and /a2a forward the resolved
+#              identity as-is; the forwarder mints ach-jwt-signing-keys itself.
+#              Several releases coexist in one cluster, one per namespace —
+#              install CRDs from the full one only (installCRDs is ignored here).
+profile: full
+
 # image: the single ach binary, with per-mode args on each Deployment.
 # pullPolicy default is IfNotPresent so the kind workflow (cluster.sh /
 # `kind load docker-image`) uses the locally-loaded image — kind nodes

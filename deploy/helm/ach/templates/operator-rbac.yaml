@@ -1,4 +1,4 @@
-{{- if .Values.operator.enabled }}
+{{- if and .Values.operator.enabled (include "ach.full" .) }}
 ---
 # ClusterRole — operator informer cache watches CRD instances and Secrets
 # across the cluster (or watch-namespace subset). The Secrets rule is the
