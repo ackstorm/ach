@@ -38,7 +38,7 @@ profile: full
 # overlay or `--set image.pullPolicy=Always`.
 image:
   repo: ghcr.io/ackstorm/ach
-  tag: v0.9.3
+  tag: v0.9.4
   pullPolicy: IfNotPresent
   # rebuildId: a unique value per build (e.g. a timestamp) rendered as the
   # `ach.ackstorm.ai/rebuild-id` pod annotation on every ach Deployment.
