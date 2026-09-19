@@ -11,16 +11,23 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 )
 
-// serviceRe extracts the service root a client holds: "/mcp/<name>" or
-// "/a2a/<name>" for those route families; everything else is the API as a
-// whole. Never the dialled path: streamable HTTP appends /messages and
-// session segments, and RFC 9728 §3.2 has the client compare the document's
-// `resource` against the server it configured — the root.
-var serviceRe = regexp.MustCompile(`^/(mcp|a2a)/([A-Za-z0-9._-]+)`)
+// serviceRe / familyRe extract the resource a client holds: "/mcp/<name>"
+// or "/a2a/<name>" for those route families, "/v1", "/v2" or "/gemini" for
+// the model API families; everything else is the API as a whole. Never the
+// dialled path: streamable HTTP appends /messages and session segments, and
+// RFC 9728 §3.2 has the client compare the document's `resource` against
+// the server it configured — the root.
+var (
+	serviceRe = regexp.MustCompile(`^/(mcp|a2a)/([A-Za-z0-9._-]+)`)
+	familyRe  = regexp.MustCompile(`^/(v1|v2|gemini)(/|$)`)
+)
 
 func resourceRoot(path string) string {
 	if m := serviceRe.FindStringSubmatch(path); m != nil {
 		return "/" + m[1] + "/" + m[2]
+	}
+	if m := familyRe.FindStringSubmatch(path); m != nil {
+		return "/" + m[1]
 	}
 	return ""
 }
@@ -38,21 +45,12 @@ func ChallengeFor(base string) func(*http.Request) string {
 // WellKnownHandler serves the two anonymous discovery documents: RFC 8414
 // (jwt.ASMetadata) and RFC 9728 for the API root and for every
 // /mcp/<name> and /a2a/<name>. Anything else under the PRM segment is 404.
-// issuer is the authorization server clients are sent to; when it is not
-// this base (a front on a second host), the RFC 8414 document is NOT served
-// here — it lives at the issuer, and a document whose `issuer` differs from
-// the URL it was fetched from is rejected by compliant clients.
-func WellKnownHandler(base, issuer string) http.Handler {
+func WellKnownHandler(base string) http.Handler {
 	base = strings.TrimRight(base, "/")
-	issuer = strings.TrimRight(issuer, "/")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var doc map[string]any
 		switch {
 		case r.URL.Path == "/.well-known/oauth-authorization-server":
-			if issuer != base {
-				http.NotFound(w, r)
-				return
-			}
 			doc = jwt.ASMetadata(base)
 		case strings.HasPrefix(r.URL.Path, wellKnownPRMSegment):
 			rest := strings.TrimPrefix(r.URL.Path, wellKnownPRMSegment)
@@ -62,7 +60,7 @@ func WellKnownHandler(base, issuer string) http.Handler {
 			}
 			doc = map[string]any{
 				"resource":                 base + rest,
-				"authorization_servers":    []string{issuer},
+				"authorization_servers":    []string{base},
 				"bearer_methods_supported": []string{"header"},
 			}
 		default:

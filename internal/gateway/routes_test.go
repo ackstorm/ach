@@ -2,7 +2,13 @@
 
 package gateway
 
-import "testing"
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestServiceRoutes(t *testing.T) {
 	routes := ServiceRoutes("ach-system")
@@ -16,6 +22,7 @@ func TestServiceRoutes(t *testing.T) {
 		"/mcp/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
 		"/a2a/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
 		"/.well-known/": "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/":             "http://ach-forwarder.ach-system.svc.cluster.local:80",
 	}
 
 	if len(routes) != len(want) {
@@ -44,4 +51,23 @@ func TestServiceRoutesHonorsNamespace(t *testing.T) {
 		}
 	}
 	t.Fatal("/platform/ route missing")
+}
+
+// TestCatchAllIsLastMatch pins that the "/" route never shadows a service
+// prefix or the gateway's own /healthz: net/http's ServeMux picks the
+// longest registered pattern.
+func TestCatchAllIsLastMatch(t *testing.T) {
+	h, err := Handler(ServiceRoutes("ns"), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := h.(*http.ServeMux)
+	for path, want := range map[string]string{
+		"/ui": "/", "/key/info": "/", "/health/liveliness": "/",
+		"/platform/keys": "/platform/", "/content/x": "/content/", "/v1/models": "/v1/", "/healthz": "/healthz",
+	} {
+		if _, pattern := mux.Handler(httptest.NewRequest(http.MethodGet, path, nil)); pattern != want {
+			t.Errorf("%s matched %q, want %q", path, pattern, want)
+		}
+	}
 }

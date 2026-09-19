@@ -281,7 +281,7 @@ func TestAuthnHappyPathPk(t *testing.T) {
 		observed, ok = KeyContextFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, nil, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, nil, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -310,7 +310,7 @@ func TestAuthnHappyPathEk(t *testing.T) {
 		observed, _ = KeyContextFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, nil, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, nil, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "ek_bbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -326,7 +326,7 @@ func TestAuthnMissingHeader(t *testing.T) {
 		t.Fatalf("resolver must NOT be called when header is missing")
 		return nil, nil
 	})
-	chain := RequestID(Authn(resolver, nil, nil, AuthnOptions{})(helloHandler(t)))
+	chain := RequestID(Authn(resolver, nil, nil, achOnly())(helloHandler(t)))
 	rec := httptest.NewRecorder()
 	chain.ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
 	if rec.Code != http.StatusUnauthorized {
@@ -341,7 +341,7 @@ func TestAuthnMissingHeader(t *testing.T) {
 // 401 expired_or_revoked.
 func TestAuthnInvalidBearer(t *testing.T) {
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) { return nil, nil })
-	chain := RequestID(Authn(resolver, nil, nil, AuthnOptions{})(helloHandler(t)))
+	chain := RequestID(Authn(resolver, nil, nil, achOnly())(helloHandler(t)))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_TOO_SHORT")
@@ -361,7 +361,7 @@ func TestAuthnResolverErr(t *testing.T) {
 	resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
 		return nil, errors.New("db down")
 	})
-	chain := RequestID(Authn(resolver, nil, auLog, AuthnOptions{})(helloHandler(t)))
+	chain := RequestID(Authn(resolver, nil, auLog, achOnly())(helloHandler(t)))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_zzzzzzzzzzzzzzzzzzzzzzzzzz")
@@ -390,7 +390,7 @@ func TestAuthnDiscardsPlaintext(t *testing.T) {
 		seenHeader = r.Header.Get("X-Ach-Key")
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, nil, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, nil, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -424,7 +424,7 @@ func TestAuthnAdminAllowlistPositive(t *testing.T) {
 		observed, _ = KeyContextFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, allow, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, allow, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -446,7 +446,7 @@ func TestAuthnAdminAllowlistNegative(t *testing.T) {
 		observed, _ = KeyContextFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, allow, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, allow, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "pk_aaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -469,7 +469,7 @@ func TestAuthnEkNeverAdmin(t *testing.T) {
 		observed, _ = KeyContextFromCtx(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	chain := RequestID(Authn(resolver, allow, nil, AuthnOptions{})(inner))
+	chain := RequestID(Authn(resolver, allow, nil, achOnly())(inner))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("X-Ach-Key", "ek_bbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -512,14 +512,20 @@ func (s *slotResolver) Resolve(_ context.Context, p string) (*keystore.KeyInfo, 
 	return s.info, nil
 }
 
-func oauthOpts(allowRaw bool) AuthnOptions {
-	return AuthnOptions{
-		AllowRawLiteLLMKey: allowRaw,
-		Challenge: func(*http.Request) string {
-			return `Bearer resource_metadata="https://ach.test/.well-known/oauth-protected-resource"`
-		},
-	}
+// achOnly is the classic platform-api slot: x-ach-key, resolved.
+func achOnly() AuthnOptions { return AuthnOptions{Headers: []CredentialHeader{achKey}} }
+
+func opts(hdrs ...CredentialHeader) AuthnOptions {
+	return AuthnOptions{Headers: hdrs, Challenge: func(*http.Request) string {
+		return `Bearer resource_metadata="https://ach.test/.well-known/oauth-protected-resource"`
+	}}
 }
+
+var (
+	achKey   = CredentialHeader{Name: "x-ach-key", Mode: ModeResolve}
+	apiKey   = CredentialHeader{Name: "x-api-key", Mode: ModeResolve}
+	genaiKey = CredentialHeader{Name: "x-genai-api-key", Mode: ModePassthrough}
+)
 
 func pkInfo() *keystore.KeyInfo {
 	return &keystore.KeyInfo{KeyID: "pkid_1", KeyType: keys.PrefixPk, OwnerEmail: "u@x.com"}
@@ -535,90 +541,34 @@ func serveAuthn(res keystore.Resolver, opts AuthnOptions, req *http.Request, inn
 }
 
 func TestAuthn_MissingCredentialCarriesTheChallenge(t *testing.T) {
-	rec := serveAuthn(&slotResolver{}, oauthOpts(true), httptest.NewRequest("GET", "/v1/models", nil), nil)
+	rec := serveAuthn(&slotResolver{}, opts(achKey), httptest.NewRequest("GET", "/v1/models", nil), nil)
 	if rec.Code != 401 || !strings.Contains(rec.Header().Get("WWW-Authenticate"), `resource_metadata="https://ach.test/.well-known/oauth-protected-resource"`) {
 		t.Fatalf("%d %q", rec.Code, rec.Header().Get("WWW-Authenticate"))
 	}
 }
 
-func TestAuthn_BearerJWSIsResolvedAndAuthorizationRemoved(t *testing.T) {
+func TestAuthn_DeclaredResolveHeaders(t *testing.T) {
 	res := &slotResolver{info: pkInfo()}
-	var seen http.Header
-	hasKC := false
-	req := httptest.NewRequest("GET", "/v1/models", nil)
-	req.Header.Set("Authorization", "Bearer aaa.bbb.ccc")
-	serveAuthn(res, oauthOpts(true), req, func(_ http.ResponseWriter, r *http.Request) {
-		seen = r.Header.Clone()
-		_, hasKC = KeyContextFromCtx(r.Context())
-	})
-	if res.last != "aaa.bbb.ccc" || seen.Get("Authorization") != "" || !hasKC {
-		t.Fatalf("resolved=%q auth-after=%q kc=%v", res.last, seen.Get("Authorization"), hasKC)
-	}
-}
-
-func TestAuthn_XAchKeyLeavesAuthorizationAlone(t *testing.T) {
-	// Claude Code + Anthropic subscription: ours in x-ach-key, Anthropic's in Authorization.
-	res := &slotResolver{info: pkInfo()}
-	var seen http.Header
-	req := httptest.NewRequest("GET", "/v1/messages", nil)
-	req.Header.Set("x-ach-key", "pk-x")
-	req.Header.Set("Authorization", "Bearer sk-ant-oat01-xyz")
-	serveAuthn(res, oauthOpts(true), req, func(_ http.ResponseWriter, r *http.Request) { seen = r.Header.Clone() })
-	if seen.Get("Authorization") != "Bearer sk-ant-oat01-xyz" || seen.Get("x-ach-key") != "" || res.last != "pk-x" {
-		t.Fatalf("headers after: %v resolved=%q", seen, res.last)
-	}
-}
-
-func TestAuthn_XApiKeyIsACredentialSlot(t *testing.T) {
-	res := &slotResolver{info: pkInfo()}
-	req := httptest.NewRequest("GET", "/v1/messages", nil)
-	req.Header.Set("x-api-key", "pk-from-apikeyhelper")
-	if rec := serveAuthn(res, oauthOpts(true), req, nil); rec.Code != 200 || res.last != "pk-from-apikeyhelper" {
-		t.Fatalf("%d resolved=%q", rec.Code, res.last)
-	}
-}
-
-func TestAuthn_RawLiteLLMKey(t *testing.T) {
-	res := &slotResolver{}
-	for _, hdr := range []string{"Authorization", "x-ach-key", "x-api-key"} {
-		var raw string
-		var hasKC bool
+	for _, h := range []string{"x-ach-key", "x-api-key"} {
 		var seen http.Header
 		req := httptest.NewRequest("GET", "/v1/models", nil)
-		v := "sk-raw-123"
-		if hdr == "Authorization" {
-			v = "Bearer " + v
-		}
-		req.Header.Set(hdr, v)
-		rec := serveAuthn(res, oauthOpts(true), req, func(_ http.ResponseWriter, r *http.Request) {
-			raw, _ = RawLiteLLMKeyFromCtx(r.Context())
-			_, hasKC = KeyContextFromCtx(r.Context())
-			seen = r.Header.Clone()
-		})
-		if rec.Code != 200 || raw != "sk-raw-123" || hasKC || res.last != "" || seen.Get(hdr) != "" {
-			t.Fatalf("%s: %d raw=%q kc=%v resolved=%q hdr-after=%q", hdr, rec.Code, raw, hasKC, res.last, seen.Get(hdr))
+		req.Header.Set(h, "pk-x")
+		req.Header.Set("Authorization", "Bearer sk-ant-oat01-xyz") // the provider's own credential
+		rec := serveAuthn(res, opts(achKey, apiKey), req, func(_ http.ResponseWriter, r *http.Request) { seen = r.Header.Clone() })
+		if rec.Code != 200 || res.last != "pk-x" || seen.Get(h) != "" || seen.Get("Authorization") != "Bearer sk-ant-oat01-xyz" {
+			t.Fatalf("%s: %d resolved=%q hdr-after=%q auth=%q", h, rec.Code, res.last, seen.Get(h), seen.Get("Authorization"))
 		}
 	}
-	// not allowed on platform-api
-	req := httptest.NewRequest("GET", "/platform/keys", nil)
-	req.Header.Set("Authorization", "Bearer sk-raw-123")
-	if rec := serveAuthn(res, oauthOpts(false), req, nil); rec.Code != 401 {
-		t.Fatalf("raw key where not allowed: %d", rec.Code)
-	}
-}
-
-func TestAuthn_NonBearerAuthorizationIsIgnored(t *testing.T) {
+	// A header not in the list is not a slot.
 	req := httptest.NewRequest("GET", "/v1/models", nil)
-	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
-	if rec := serveAuthn(&slotResolver{}, oauthOpts(true), req, nil); rec.Code != 401 {
-		t.Fatalf("%d", rec.Code)
+	req.Header.Set("x-api-key", "pk-x")
+	if rec := serveAuthn(res, opts(achKey), req, nil); rec.Code != 401 {
+		t.Fatalf("undeclared header: %d", rec.Code)
 	}
 }
 
-func TestAuthn_RawKeyHeaderIsRawByDefinitionAndKept(t *testing.T) {
+func TestAuthn_PassthroughHeaderKeptNoIdentity(t *testing.T) {
 	res := &slotResolver{info: pkInfo()}
-	opts := oauthOpts(true)
-	opts.RawKeyHeaders = []string{"x-genai-api-key"}
 	var raw string
 	var hasKC bool
 	var seen http.Header
@@ -627,46 +577,86 @@ func TestAuthn_RawKeyHeaderIsRawByDefinitionAndKept(t *testing.T) {
 		_, hasKC = KeyContextFromCtx(r.Context())
 		seen = r.Header.Clone()
 	}
-	// Any value — no sk- grammar — and the header survives for LiteLLM.
 	req := httptest.NewRequest("GET", "/v1/models", nil)
-	req.Header.Set("x-genai-api-key", "customer-key-777")
-	if rec := serveAuthn(res, opts, req, capture); rec.Code != 200 || raw != "customer-key-777" || hasKC ||
-		res.last != "" || seen.Get("x-genai-api-key") != "customer-key-777" {
+	req.Header.Set("x-genai-api-key", "anything-goes")
+	rec := serveAuthn(res, opts(achKey, genaiKey), req, capture)
+	if rec.Code != 200 || raw != "anything-goes" || hasKC || res.last != "" || seen.Get("x-genai-api-key") != "anything-goes" {
 		t.Fatalf("%d raw=%q kc=%v resolved=%q hdr=%q", rec.Code, raw, hasKC, res.last, seen.Get("x-genai-api-key"))
 	}
-	// ACH slots rank first; the raw header is then left alone.
+	// List order decides: x-ach-key first wins over the passthrough header, which is left alone.
 	req = httptest.NewRequest("GET", "/v1/models", nil)
 	req.Header.Set("x-ach-key", "pk-x")
-	req.Header.Set("x-genai-api-key", "customer-key-777")
+	req.Header.Set("x-genai-api-key", "anything-goes")
 	raw, hasKC = "", false
-	if rec := serveAuthn(res, opts, req, capture); rec.Code != 200 || raw != "" || !hasKC || res.last != "pk-x" ||
-		seen.Get("x-genai-api-key") != "customer-key-777" {
+	rec = serveAuthn(res, opts(achKey, genaiKey), req, capture)
+	if rec.Code != 200 || raw != "" || !hasKC || res.last != "pk-x" || seen.Get("x-genai-api-key") != "anything-goes" {
 		t.Fatalf("precedence: %d raw=%q kc=%v resolved=%q", rec.Code, raw, hasKC, res.last)
-	}
-	// Not honoured where raw keys are refused (platform-api).
-	req = httptest.NewRequest("GET", "/platform/keys", nil)
-	req.Header.Set("x-genai-api-key", "customer-key-777")
-	opts.AllowRawLiteLLMKey = false
-	if rec := serveAuthn(res, opts, req, nil); rec.Code != 401 {
-		t.Fatalf("raw refused: %d", rec.Code)
 	}
 }
 
-func TestAuthn_OptionalLetsAnonymousThroughButNotInvalid(t *testing.T) {
+func TestAuthn_AuthorizationIsOnlyOurOAuthToken(t *testing.T) {
+	res := &slotResolver{info: pkInfo()} // stands in for the OAuth resolver: any JWS "verifies"
+	var seen http.Header
+	req := httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer aaa.bbb.ccc")
+	rec := serveAuthn(res, opts(achKey), req, func(_ http.ResponseWriter, r *http.Request) { seen = r.Header.Clone() })
+	if rec.Code != 200 || res.last != "aaa.bbb.ccc" || seen.Get("Authorization") != "" {
+		t.Fatalf("our token: %d resolved=%q auth-after=%q", rec.Code, res.last, seen.Get("Authorization"))
+	}
+	for _, v := range []string{"Bearer pk-x", "Bearer sk-raw-123", "Basic dXNlcjpwYXNz"} {
+		res.last = ""
+		req := httptest.NewRequest("GET", "/v1/models", nil)
+		req.Header.Set("Authorization", v)
+		if rec := serveAuthn(res, opts(achKey), req, nil); rec.Code != 401 || res.last != "" {
+			t.Fatalf("%q: %d resolved=%q, want 401 and no lookup", v, rec.Code, res.last)
+		}
+	}
+	unknown := &slotResolver{}
+	req = httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer aaa.bbb.ccc")
+	if rec := serveAuthn(unknown, opts(achKey), req, nil); rec.Code != 401 {
+		t.Fatalf("foreign JWS: %d", rec.Code)
+	}
+}
+
+func TestAuthn_OptionalLetsAnonymousThroughButNotInvalidOrForeign(t *testing.T) {
 	res := &slotResolver{} // every credential resolves to "unknown"
-	opts := oauthOpts(true)
-	opts.Optional = true
+	o := opts(achKey)
+	o.Optional = true
 	var hasKC, hasRaw bool
 	capture := func(_ http.ResponseWriter, r *http.Request) {
 		_, hasKC = KeyContextFromCtx(r.Context())
 		_, hasRaw = RawLiteLLMKeyFromCtx(r.Context())
 	}
-	if rec := serveAuthn(res, opts, httptest.NewRequest("GET", "/health", nil), capture); rec.Code != 200 || hasKC || hasRaw {
+	if rec := serveAuthn(res, o, httptest.NewRequest("GET", "/health", nil), capture); rec.Code != 200 || hasKC || hasRaw {
 		t.Fatalf("anonymous: %d kc=%v raw=%v", rec.Code, hasKC, hasRaw)
 	}
-	req := httptest.NewRequest("GET", "/health", nil)
-	req.Header.Set("x-ach-key", "pk-revoked")
-	if rec := serveAuthn(res, opts, req, nil); rec.Code != 401 {
-		t.Fatalf("invalid credential must not pass: %d", rec.Code)
+	for h, v := range map[string]string{"x-ach-key": "pk-revoked", "Authorization": "Bearer sk-foreign"} {
+		req := httptest.NewRequest("GET", "/health", nil)
+		req.Header.Set(h, v)
+		if rec := serveAuthn(res, o, req, nil); rec.Code != 401 {
+			t.Fatalf("%s=%s must not pass: %d", h, v, rec.Code)
+		}
+	}
+}
+
+func TestParseCredentialHeaders(t *testing.T) {
+	got, err := ParseCredentialHeaders(`[{"name":"X-Ach-Key","mode":"resolve"},{"name":"x-genai-api-key","mode":"passthrough"}]`)
+	if err != nil || len(got) != 2 || got[0].Name != "x-ach-key" || got[1].Mode != ModePassthrough {
+		t.Fatalf("%v %v", got, err)
+	}
+	for _, bad := range []string{
+		`[{"name":"authorization","mode":"resolve"}]`,
+		`[{"name":"x","mode":"forward"}]`,
+		`[{"name":"","mode":"resolve"}]`,
+		`[{"name":"x","mode":"resolve"},{"name":"X","mode":"resolve"}]`,
+		`nope`,
+	} {
+		if _, err := ParseCredentialHeaders(bad); err == nil {
+			t.Fatalf("%s must fail", bad)
+		}
+	}
+	if got, err := ParseCredentialHeaders(""); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
 	}
 }

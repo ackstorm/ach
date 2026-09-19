@@ -70,24 +70,25 @@ ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 // platformAPIConfig holds the validated env-var surface; never mutated
 // after validatePlatformAPIConfig returns.
 type platformAPIConfig struct {
-	BaseURL          string
-	DBURL            string
-	Pepper           []byte
-	KeyEncryptionKey []byte
-	LiteLLMBaseURL   string
-	LiteLLMMasterKey string
-	DexIssuerURL     string
-	DexClientID      string
-	DexClientSecret  string
-	DexRedirectURL   string
-	RedisAddr        string
-	RedisPassword    string
-	RedisTLS         bool
-	RedisDB          int
-	AllowlistPath    string
-	BindAddr         string
-	Namespace        string
-	InsecureCookie   bool
+	BaseURL           string
+	CredentialHeaders []pamw.CredentialHeader // ACH_CREDENTIAL_HEADERS (resolve only)
+	DBURL             string
+	Pepper            []byte
+	KeyEncryptionKey  []byte
+	LiteLLMBaseURL    string
+	LiteLLMMasterKey  string
+	DexIssuerURL      string
+	DexClientID       string
+	DexClientSecret   string
+	DexRedirectURL    string
+	RedisAddr         string
+	RedisPassword     string
+	RedisTLS          bool
+	RedisDB           int
+	AllowlistPath     string
+	BindAddr          string
+	Namespace         string
+	InsecureCookie    bool
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → AS disabled
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
@@ -104,6 +105,14 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
+	if cfg.CredentialHeaders, err = pamw.ParseCredentialHeaders(os.Getenv("ACH_CREDENTIAL_HEADERS")); err != nil {
+		return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %w", err)
+	}
+	for _, h := range cfg.CredentialHeaders {
+		if h.Mode != pamw.ModeResolve {
+			return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %s: platform-api only resolves (passthrough is a forwarder mode)", h.Name)
+		}
+	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
 		return nil, err
@@ -315,7 +324,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 			Challenge: func(*http.Request) string {
 				return `Bearer resource_metadata="` + strings.TrimRight(cfg.BaseURL, "/") + `/.well-known/oauth-protected-resource"`
 			},
-			AllowRawLiteLLMKey: false,
+			Headers: cfg.CredentialHeaders,
 		},
 		Pool:             pool,
 		Redis:            out.redis,

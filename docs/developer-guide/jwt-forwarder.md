@@ -260,7 +260,7 @@ alongside JWKS, and **serves it itself** (`proxy.WellKnownHandler`):
 wk := proxy.WellKnownHandler(deps.BaseURL)
 r.Handle("/.well-known/oauth-authorization-server", wk)   // RFC 8414 — jwt.ASMetadata
 r.Handle("/.well-known/oauth-protected-resource", wk)     // RFC 9728 — the API root
-r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /mcp/<name>, /a2a/<name>
+r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /v1, /v2, /gemini, /mcp/<name>, /a2a/<name>
 ```
 
 | Document | `resource` / `issuer` | Points at |
@@ -269,8 +269,9 @@ r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /mcp/<
 | `/.well-known/oauth-protected-resource` | `ACH_BASE_URL` | `authorization_servers: [ACH_BASE_URL]` |
 | `…/oauth-protected-resource/mcp/<name>` | `ACH_BASE_URL/mcp/<name>` | same |
 | `…/oauth-protected-resource/a2a/<name>` | `ACH_BASE_URL/a2a/<name>` | same |
+| `…/oauth-protected-resource/v1` (also `/v2`, `/gemini`) | `ACH_BASE_URL/v1` | same — the model API family is a resource of its own (the opencode-auth plugin builds this URL itself) |
 
-Any other path under the PRM segment (`/v1`, `/mcp/`, `/mcp/a/b`) is 404.
+Any other path under the PRM segment (`/v1/chat`, `/mcp/`, `/mcp/a/b`) is 404.
 **LiteLLM's PRM document is no longer relayed** — the client must be sent
 to ACH's authorization server, not LiteLLM's, so the `X-Forwarded-Host`
 opt-in below is no longer load-bearing for discovery (it stays documented
@@ -291,7 +292,7 @@ the ceremony unstartable.
 answers an anonymous request with `401` and
 
 ```
-WWW-Authenticate: Bearer resource_metadata="<ACH_BASE_URL>/.well-known/oauth-protected-resource[/mcp/<name>|/a2a/<name>]"
+WWW-Authenticate: Bearer resource_metadata="<ACH_BASE_URL>/.well-known/oauth-protected-resource[/v1|/v2|/gemini|/mcp/<name>|/a2a/<name>]"
 ```
 
 The pointer names the **service root**, never the dialled path: streamable
@@ -300,53 +301,31 @@ client compare the document's `resource` against the server it configured.
 This is what starts the OAuth ceremony for Claude Code, Codex and opencode
 (`docs/developer-guide/oauth-client-conformance.md`).
 
-### Credential slots
+### Credential slots — declared, not discovered
 
-Authn reads, in order, `x-ach-key`, `x-api-key`, `Authorization: Bearer`.
-A `pk_`/`ek_` or an ACH OAuth JWS is resolved and its header removed; a raw
-`sk-…` (any slot) passes through on the forwarder as the LiteLLM key with
-**no ACH identity** (no precheck, no per-target JWT, no audit actor —
-`middleware.RawLiteLLMKeyFromCtx`); `Authorization` is otherwise **left
-alone** — `headers.StripAndRewrite` no longer deletes it — because it may
-carry the upstream provider's own credential (Claude Code on an Anthropic
-subscription: Anthropic's OAuth in `Authorization`, ours in `x-ach-key`).
-On `/mcp` + `/a2a` the per-target ACH JWT overwrites it.
+The forwarder reads a credential only from headers the operator declares
+(`forwarder.headers` in the chart → `ACH_CREDENTIAL_HEADERS`, a JSON list
+consulted in order; the first one present decides):
 
-**Raw-key headers.** `ACH_RAW_KEY_HEADERS` (chart `forwarder.rawKeyHeaders`,
-e.g. `x-genai-api-key`) names extra headers whose value *is* a raw LiteLLM key
-by definition — no `sk-` grammar. They rank after the three ACH slots, take
-the same no-identity raw path, and — unlike an `sk-` in an ACH slot — the
-header is **kept** on the upstream request (mirrored to `x-litellm-api-key`
-as well), so a LiteLLM `litellm_key_header_name` keeps working. Both families
-coexist on one request: `x-ach-key: pk_…` + `x-genai-api-key: …` resolves the
-`pk_` and leaves the other header alone. Naming an ACH slot in the list is a
-start-up error.
+| `mode` | The value is | The forwarder |
+|---|---|---|
+| `resolve` | an ACH credential (`pk_`/`ek_`) | resolves it against ACH, removes the header, sends the caller's own LiteLLM key as `x-litellm-api-key`; unknown/revoked → `401 expired_or_revoked` |
+| `passthrough` | the backend's own key (a LiteLLM `sk-…` under a customer-facing name such as `x-genai-api-key`) | leaves the header as it came **and** mirrors it to `x-litellm-api-key`; no ACH identity (`middleware.RawLiteLLMKeyFromCtx`), no precheck, no per-target JWT |
 
-### Fronts — ACH in front of the whole API host
+Every other header passes as it came — including `Authorization` when a
+declared slot carried the credential (Claude Code on an Anthropic
+subscription: ours in `x-ach-key`, Anthropic's in `Authorization`; Claude
+Code's `apiKeyHelper` sends the same value in `x-api-key` and
+`Authorization` — the first resolves, the second is ignored upstream).
 
-The forwarder also serves a catch-all `/*` (registered after the owned
-families) so ACH can be the public front of the LiteLLM host itself
-(`api.<domain>`): every path LiteLLM serves (`/ui`, `/sso`, `/key/*`,
-`/model/*`, `/anthropic/*`, `/health`, …) is proxied with the **credential
-optional** — an ACH credential is resolved and rewritten, a raw key passes,
-none is forwarded anonymously and LiteLLM decides; a present-but-invalid
-credential is still `401`. No tag injection, no precheck, no JWT there. The
-owned families keep the `401` + RFC 9728 challenge that starts the OAuth
-ceremony.
-
-A second host needs two values the single-host deployment conflates:
-`ACH_BASE_URL` is *what this front is dialled as* (PRM `resource`, the
-challenge URL); `ACH_OAUTH_ISSUER` (default = base) is *the authorization
-server it trusts and points clients at* — OAuth verify `iss`, PRM
-`authorization_servers`, and the `iss` of the BIP JWT (backends keep trusting
-one issuer; same key, same JWKS). A front whose issuer is not its base does
-**not** serve `/.well-known/oauth-authorization-server` (RFC 8414: the
-document lives at the issuer; a mismatched `issuer` field is rejected by
-compliant clients). Humans log in once on the issuer host; the token
-(`aud=ach`) is accepted on every front. Chart: `forwarder.fronts[]` renders
-`ach-forwarder-<name>` Deployments/Services in the same release (same
-namespace, ServiceAccount, Secrets, projections); the Ingress/HTTPRoute for
-the front's host is the operator's.
+With **no declared slot present**, `Authorization: Bearer` is accepted only
+as ACH's own OAuth access token (a JWS that verifies against the signing
+key — the only way an MCP client can present one). Anything else in
+`Authorization` — a `pk_`, a raw `sk-`, Basic, a foreign JWT — is `401`. There
+is no prefix sniffing and `authorization` cannot be listed as a slot.
+platform-api shares the middleware with its own `platformApi.headers`
+(resolve only). On `/mcp` + `/a2a` the per-target ACH JWT overwrites
+`Authorization` when a BIP mints one.
 
 ### Required LiteLLM configuration (direct backends only)
 

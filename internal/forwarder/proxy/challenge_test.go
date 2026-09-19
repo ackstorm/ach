@@ -169,7 +169,7 @@ func TestParsePublicBaseRejects(t *testing.T) {
 
 // TestResourcePathFor pins the reduction of a forwarded path to the RFC 9728
 // resource identifier the insert branch advertises.
-func TestResourcePathFor(t *testing.T) {
+func TestResourceRoot(t *testing.T) {
 	tests := map[string]string{
 		"/mcp/my-server":          "/mcp/my-server",
 		"/mcp/my-server/tools":    "/mcp/my-server",
@@ -178,13 +178,18 @@ func TestResourcePathFor(t *testing.T) {
 		"/a2a/agent-x/tasks/send": "/a2a/agent-x",
 		"/mcp/":                   "",
 		"/mcp":                    "",
-		"/v1/chat/completions":    "",
+		"/v1/chat/completions":    "/v1",
+		"/v1":                     "/v1",
+		"/v2/key/info":            "/v2",
+		"/gemini/v1beta/models":   "/gemini",
+		"/v10/x":                  "",
 		"/.well-known/jwks.json":  "",
+		"/ui":                     "",
 		"":                        "",
 	}
 	for in, want := range tests {
-		if got := resourcePathFor(in); got != want {
-			t.Errorf("resourcePathFor(%q) = %q, want %q", in, got, want)
+		if got := resourceRoot(in); got != want {
+			t.Errorf("resourceRoot(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -256,8 +261,17 @@ func TestInsertResourceMetadata(t *testing.T) {
 		}
 	})
 
-	t.Run("non-resource route is left alone", func(t *testing.T) {
+	t.Run("model API family names its own document", func(t *testing.T) {
 		r := newResp(http.StatusUnauthorized, "/v1/chat/completions", `Bearer error="invalid_token"`)
+		rewriteChallengeHost(r, base)
+		want := `Bearer error="invalid_token", resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/v1"`
+		if got := r.Header.Get("Www-Authenticate"); got != want {
+			t.Errorf("got %s", got)
+		}
+	})
+
+	t.Run("non-resource route is left alone", func(t *testing.T) {
+		r := newResp(http.StatusUnauthorized, "/ui", `Bearer error="invalid_token"`)
 		rewriteChallengeHost(r, base)
 		if got := r.Header.Get("Www-Authenticate"); got != `Bearer error="invalid_token"` {
 			t.Errorf("rewrote a non-resource route: %s", got)

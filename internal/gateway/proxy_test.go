@@ -15,6 +15,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
+	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 func TestNewReverseProxyPreservesPathAndClearsHost(t *testing.T) {
@@ -213,6 +214,7 @@ func TestXForwardedHostSurvivesBothHops(t *testing.T) {
 		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 		LiteLLMUpstream: upstreamURL,
 		Resolver:        stubResolver{},
+		AuthnOptions:    pamw.AuthnOptions{Headers: []pamw.CredentialHeader{{Name: "x-ach-key", Mode: pamw.ModeResolve}}},
 	}))
 	defer fwd.Close()
 

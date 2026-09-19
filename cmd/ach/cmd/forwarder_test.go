@@ -17,28 +17,41 @@ func setRequiredForwarderEnv(t *testing.T) {
 	t.Setenv("POD_NAMESPACE", "ach")
 }
 
-func TestForwarderConfig_IssuerAndRawKeyHeaders(t *testing.T) {
+func TestForwarderConfig_CredentialHeaders(t *testing.T) {
 	setRequiredForwarderEnv(t)
 	cfg, err := validateForwarderConfig()
-	if err != nil || cfg.Issuer != "https://api.example.com" || len(cfg.RawKeyHeaders) != 0 {
+	if err != nil || len(cfg.CredentialHeaders) != 0 {
 		t.Fatalf("defaults: %+v %v", cfg, err)
 	}
-
-	t.Setenv("ACH_OAUTH_ISSUER", "https://ach.example.com")
-	t.Setenv("ACH_RAW_KEY_HEADERS", " X-GenAI-API-Key , x-other ,,")
+	t.Setenv("ACH_CREDENTIAL_HEADERS",
+		`[{"name":"X-Ach-Key","mode":"resolve"},{"name":"x-genai-api-key","mode":"passthrough"}]`)
 	cfg, err = validateForwarderConfig()
-	if err != nil || cfg.Issuer != "https://ach.example.com" ||
-		strings.Join(cfg.RawKeyHeaders, ",") != "x-genai-api-key,x-other" {
+	if err != nil || len(cfg.CredentialHeaders) != 2 || cfg.CredentialHeaders[0].Name != "x-ach-key" ||
+		cfg.CredentialHeaders[1].Mode != "passthrough" {
 		t.Fatalf("set: %+v %v", cfg, err)
 	}
-
-	t.Setenv("ACH_RAW_KEY_HEADERS", "x-genai-api-key,Authorization")
+	t.Setenv("ACH_CREDENTIAL_HEADERS", `[{"name":"authorization","mode":"resolve"}]`)
 	if _, err = validateForwarderConfig(); err == nil || !strings.Contains(err.Error(), "authorization") {
-		t.Fatalf("ACH slot in raw list must be refused: %v", err)
+		t.Fatalf("authorization in the list must be refused: %v", err)
 	}
-	t.Setenv("ACH_RAW_KEY_HEADERS", "")
-	t.Setenv("ACH_OAUTH_ISSUER", "ach.example.com")
-	if _, err = validateForwarderConfig(); err == nil {
-		t.Fatal("relative issuer must be refused")
+}
+
+func TestForwarderConfig_Profile(t *testing.T) {
+	setRequiredForwarderEnv(t)
+	if cfg, err := validateForwarderConfig(); err != nil || cfg.Profile != "full" {
+		t.Fatalf("default: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_PROFILE", "identity")
+	if _, err := validateForwarderConfig(); err == nil {
+		t.Fatal("identity without ACH_LITELLM_BASE_URL must fail")
+	}
+	t.Setenv("ACH_LITELLM_BASE_URL", "http://litellm:4000")
+	if cfg, err := validateForwarderConfig(); err != nil || cfg.Profile != "identity" ||
+		cfg.LiteLLMBaseURL != "http://litellm:4000" {
+		t.Fatalf("identity: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_PROFILE", "lite")
+	if _, err := validateForwarderConfig(); err == nil {
+		t.Fatal("unknown profile must fail")
 	}
 }

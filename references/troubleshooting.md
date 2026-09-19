@@ -988,17 +988,18 @@ the callback it probes again and issues a code only when the backend reports
 `ok`. A missing policy, an already-authorized backend, a broker failure, or a
 failed post-consent probe does not create a wider OAuth token.
 
-### ❌ `401 missing_key` on the API front with `x-genai-api-key` set
-✅ That front's `ACH_RAW_KEY_HEADERS` does not list the header (chart
-`forwarder.fronts[].rawKeyHeaders` / `forwarder.rawKeyHeaders`; names are
-lower-cased, comma-separated). Check `kubectl -n ach-system get deploy
-ach-forwarder-<front> -o jsonpath='{.spec.template.spec.containers[0].env}'`.
-A value in a listed header is never resolved as an ACH key — `pk_` there is
-forwarded raw and LiteLLM rejects it; humans use `x-ach-key`/`Authorization`.
+### ❌ `401 missing_key` although the client sends its key
+✅ The header is not one of the release's declared credential slots
+(`forwarder.headers` / `platformApi.headers` → `ACH_CREDENTIAL_HEADERS`;
+names are lower-cased): `kubectl -n ach-system get deploy ach-forwarder -o
+jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
+`Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
+own OAuth token; declare a `mode: passthrough` header for raw keys.
 
-### ❌ MCP client on `api.*` fetches `/.well-known/oauth-authorization-server` and gets 404
-✅ Expected on a front whose `ACH_OAUTH_ISSUER` ≠ `ACH_BASE_URL`: the PRM's
-`authorization_servers` names the issuer host (`ach.*`) and the client must
-fetch the AS document there (RFC 8414). A client that ignores the PRM and
-guesses the AS from the resource origin is non-compliant.
+### ❌ After `make clean-cache`: `kubectl` → "the server could not find the requested resource" / `current-context is not set`
+✅ `.gocache/kube/config` (the kind kubeconfig devtools mounts) was wiped with
+the cache. `scripts/dev.sh` only regenerates it when the HOST has `kind`; this
+box does not. Restore it from inside devtools:
+`./scripts/dev.sh bash -c 'kind get kubeconfig --name ach-e2e > /workspace/.gocache/kube/config'`.
+The cluster itself is untouched (`./scripts/dev.sh kind get clusters`).
 

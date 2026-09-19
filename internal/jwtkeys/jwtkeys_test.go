@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
-	"github.com/ackstorm/ach/internal/operator/jwtkeys"
+	"github.com/ackstorm/ach/internal/jwtkeys"
 )
 
 const (

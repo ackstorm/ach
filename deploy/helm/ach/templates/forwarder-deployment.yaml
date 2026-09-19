@@ -1,34 +1,28 @@
-{{- /*
-ach.forwarderWorkload renders one forwarder Deployment + Service. The
-default forwarder and every entry of forwarder.fronts (a second public host
-such as api.<domain>, fronting the whole LiteLLM API) share this template,
-the ServiceAccount/RBAC, the release namespace and every Secret — only the
-name, replicas and the identity env (ACH_BASE_URL, ACH_OAUTH_ISSUER,
-ACH_RAW_KEY_HEADERS) differ.
-*/}}
-{{- define "ach.forwarderWorkload" -}}
-{{- $root := .root }}
-{{- $name := .name }}
-{{- $component := .component }}
-{{- $replicas := .replicas }}
-{{- $frontEnv := .frontEnv }}
-{{- $override := list }}
-{{- range $frontEnv }}{{ $override = append $override .name }}{{ end }}
+{{- if .Values.forwarder.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ $name }}
-  namespace: {{ $root.Release.Namespace }}
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "ach.commonLabels" $root | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
 spec:
-  replicas: {{ $replicas }}
+  replicas: {{ .Values.forwarder.replicas | default 1 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: ach
-      app.kubernetes.io/component: {{ $component }}
+      app.kubernetes.io/component: forwarder
   template:
     metadata:
       annotations:
@@ -38,15 +32,15 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
-        {{- with $root.Values.image.rebuildId }}
+        {{- with .Values.image.rebuildId }}
         ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
         {{- end }}
       labels:
-        {{- include "ach.commonLabels" $root | nindent 8 }}
-        app.kubernetes.io/component: {{ $component }}
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: forwarder
     spec:
       serviceAccountName: ach-forwarder
-      {{- with (include "ach.initContainers" (dict "global" $root.Values.initContainers "component" $root.Values.forwarder.initContainers)) }}
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.forwarder.initContainers)) }}
       {{- . | nindent 6 }}
       {{- end }}
       terminationGracePeriodSeconds: 10
@@ -66,9 +60,9 @@ spec:
       # contract intact without the file mount.
       containers:
         - name: forwarder
-          image: {{ include "ach.image" $root }}
-          imagePullPolicy: {{ include "ach.imagePullPolicy" $root }}
-          args: {{ toYaml $root.Values.forwarder.args | nindent 12 }}
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.forwarder.args | nindent 12 }}
           ports:
             # D-03 dual-port topology.
             - name: traffic
@@ -85,33 +79,19 @@ spec:
             - name: FORWARDER_HEALTH_BIND_ADDRESS
               value: ":8081"
             - name: ACH_JWT_SECRET_NAME
-              value: {{ $root.Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
+              value: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
+            - name: ACH_CREDENTIAL_HEADERS
+              value: {{ .Values.forwarder.headers | toJson | quote }}
             # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
             # rest (the forwarder opens sealed LiteLLM material with the DEK and
             # resolves pk_ via the pepper). Sourced from the security.* Secret
             # refs; do NOT also set them in extraEnv (duplicate env entries).
-            {{- include "ach.securityEnv" $root | nindent 12 }}
-            {{- if not (has "ACH_RAW_KEY_HEADERS" $override) }}
-            {{- with $root.Values.forwarder.rawKeyHeaders }}
-            - name: ACH_RAW_KEY_HEADERS
-              value: {{ join "," . | quote }}
+            {{- include "ach.securityEnv" . | nindent 12 }}
+            {{- with .Values.forwarder.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- end }}
-            {{- /* A front overrides the identity inputs; the same names are
-                   dropped from extraEnv below so no env entry is duplicated. */}}
-            {{- range $frontEnv }}
-            - name: {{ .name }}
-              value: {{ .value | quote }}
-            {{- end }}
-            {{- range $root.Values.forwarder.extraEnv }}
-            {{- if not (has .name $override) }}
-            - {{ toYaml . | nindent 14 | trim }}
-            {{- end }}
-            {{- end }}
-            {{- range $root.Values.extraEnv }}
-            {{- if not (has .name $override) }}
-            - {{ toYaml . | nindent 14 | trim }}
-            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           livenessProbe:
             httpGet:
@@ -128,7 +108,7 @@ spec:
               port: healthz
             initialDelaySeconds: 5
             periodSeconds: 10
-          resources: {{ toYaml $root.Values.forwarder.resources | nindent 12 }}
+          resources: {{ toYaml .Values.forwarder.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -140,15 +120,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $name }}
-  namespace: {{ $root.Release.Namespace }}
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "ach.commonLabels" $root | nindent 4 }}
-    app.kubernetes.io/component: {{ $component }}
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
 spec:
   selector:
     app.kubernetes.io/name: ach
-    app.kubernetes.io/component: {{ $component }}
+    app.kubernetes.io/component: forwarder
   ports:
     - name: traffic
       port: 80
@@ -156,22 +136,4 @@ spec:
     - name: healthz
       port: 8081
       targetPort: 8081
-{{- end }}
-
-{{- if .Values.forwarder.enabled }}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: ach-forwarder
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "ach.commonLabels" . | nindent 4 }}
-    app.kubernetes.io/component: forwarder
-{{- include "ach.forwarderWorkload" (dict "root" . "name" "ach-forwarder" "component" "forwarder" "replicas" (.Values.forwarder.replicas | default 1) "frontEnv" (list)) }}
-{{- range .Values.forwarder.fronts }}
-{{- $env := list (dict "name" "ACH_BASE_URL" "value" .baseURL) (dict "name" "ACH_OAUTH_ISSUER" "value" .oauthIssuer) }}
-{{- with .rawKeyHeaders }}{{ $env = append $env (dict "name" "ACH_RAW_KEY_HEADERS" "value" (join "," .)) }}{{ end }}
-{{- include "ach.forwarderWorkload" (dict "root" $ "name" (printf "ach-forwarder-%s" .name) "component" (printf "forwarder-%s" .name) "replicas" (.replicas | default ($.Values.forwarder.replicas | default 1)) "frontEnv" $env) }}
-{{- end }}
 {{- end }}

@@ -3,6 +3,9 @@
 package middleware
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -25,51 +28,83 @@ import (
 // once, resolves it, and DISCARDS it from r.Header before the inner handler
 // runs (D-19 / T-03-05-02).
 const (
-	xAchKeyHeader = "x-ach-key"
-	xAPIKeyHeader = "x-api-key" //nolint:gosec // header name, not a credential
-	authzHeader   = "Authorization"
+	ModeResolve     = "resolve"
+	ModePassthrough = "passthrough"
+
+	authzHeader = "Authorization"
 )
+
+// CredentialHeader is one declared credential slot (chart forwarder.headers /
+// platformApi.headers → ACH_CREDENTIAL_HEADERS): the header ACH reads and
+// what it does with the value.
+type CredentialHeader struct {
+	Name string `json:"name"`
+	Mode string `json:"mode"`
+}
+
+// ParseCredentialHeaders decodes the JSON list. Names are lower-cased.
+// "authorization" is never a slot: it is ACH's own OAuth bearer, handled by
+// protocol, not by config.
+func ParseCredentialHeaders(raw string) ([]CredentialHeader, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var out []CredentialHeader
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("credential headers: %w", err)
+	}
+	seen := map[string]bool{}
+	for i := range out {
+		out[i].Name = strings.ToLower(strings.TrimSpace(out[i].Name))
+		switch {
+		case out[i].Name == "":
+			return nil, errors.New("credential headers: empty name")
+		case out[i].Name == "authorization":
+			return nil, errors.New("credential headers: authorization is not configurable")
+		case out[i].Mode != ModeResolve && out[i].Mode != ModePassthrough:
+			return nil, fmt.Errorf("credential headers: %s: mode must be resolve or passthrough", out[i].Name)
+		case seen[out[i].Name]:
+			return nil, fmt.Errorf("credential headers: %s listed twice", out[i].Name)
+		}
+		seen[out[i].Name] = true
+	}
+	return out, nil
+}
 
 // AuthnOptions is per-service policy.
 type AuthnOptions struct {
 	// Challenge composes the WWW-Authenticate value for a 401 (the RFC 9728
 	// resource_metadata pointer). nil → no header.
 	Challenge func(r *http.Request) string
-	// AllowRawLiteLLMKey lets a raw sk-… through with no ACH identity. The
-	// forwarder sets it; platform-api does not (nothing there proxies).
-	AllowRawLiteLLMKey bool
-	// RawKeyHeaders are extra header names whose value IS a raw LiteLLM key
-	// by definition (ACH_RAW_KEY_HEADERS, e.g. x-genai-api-key) — no prefix
-	// sniffing. They rank after the ACH slots, and the header is left on the
-	// request so LiteLLM's own litellm_key_header_name keeps working. Only
-	// meaningful with AllowRawLiteLLMKey.
-	RawKeyHeaders []string
+	// Headers are the declared credential slots, consulted in order; the
+	// first one present decides.
+	Headers []CredentialHeader
 	// Optional lets a request with NO credential through with no identity
 	// (the forwarder's catch-all: LiteLLM decides). A present-but-invalid
 	// credential is still a 401.
 	Optional bool
 }
 
-// credential picks the first slot that is set, returning the bare value,
-// the header it came from and whether that header is a raw-key slot (its
-// value is a LiteLLM key by definition). "Bearer " is stripped from any slot.
-func credential(r *http.Request, rawHeaders []string) (value, from string, raw bool) {
-	for _, h := range []string{xAchKeyHeader, xAPIKeyHeader, authzHeader} {
-		v := strings.TrimSpace(r.Header.Get(h))
-		if v == "" {
-			continue
-		}
-		if h == authzHeader && !strings.HasPrefix(v, "Bearer ") {
-			continue // Basic, Digest, … : not ours, leave it
-		}
-		return strings.TrimSpace(strings.TrimPrefix(v, "Bearer ")), h, false
-	}
-	for _, h := range rawHeaders {
-		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {
-			return strings.TrimSpace(strings.TrimPrefix(v, "Bearer ")), h, true
+// credential returns the first declared header present (value, header,
+// mode). With none present, Authorization: Bearer is a resolve candidate
+// ONLY when it is JWS-shaped — ACH's own OAuth token; the resolver's
+// signature check decides. Anything else in Authorization is not ours:
+// no candidate, and foreign=true so it is never forwarded as anonymous.
+func credential(r *http.Request, headers []CredentialHeader) (value, from, mode string, foreign bool) {
+	for _, h := range headers {
+		if v := strings.TrimSpace(r.Header.Get(h.Name)); v != "" {
+			return v, h.Name, h.Mode, false
 		}
 	}
-	return "", "", false
+	raw := strings.TrimSpace(r.Header.Get(authzHeader))
+	if raw == "" {
+		return "", "", "", false
+	}
+	tok := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer "))
+	if strings.HasPrefix(raw, "Bearer ") && keys.LooksLikeJWS(tok) {
+		return tok, authzHeader, ModeResolve, false
+	}
+	return "", "", "", true
 }
 
 // requestIDPrefix is the namespace for server-generated request IDs.
@@ -257,16 +292,16 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 }
 
 // Authn is the load-bearing middleware. It reads the credential from the
-// first populated slot (x-ach-key, x-api-key, Authorization: Bearer),
-// resolves it via the Resolver (pk_/ek_ or an OAuth JWS), and either:
+// first declared slot present (opts.Headers, in order) and either:
 //
-//   - rejects the request with 401 (missing/invalid/expired bearer) plus
-//     a render.Error envelope and, when opts.Challenge is set, the
-//     WWW-Authenticate pointer that starts the OAuth ceremony; or
-//   - injects a populated KeyContext into ctx and discards the plaintext
-//     from r.Header before invoking next.ServeHTTP (D-19); or
-//   - with opts.AllowRawLiteLLMKey, passes a raw sk-… through with NO ACH
-//     identity (RawLiteLLMKeyFromCtx) — LiteLLM authenticates it.
+//   - mode resolve: resolves it via the Resolver (pk_/ek_ or an OAuth JWS),
+//     injects a populated KeyContext into ctx and discards that header
+//     before invoking next.ServeHTTP (D-19); 401 when missing/invalid/expired,
+//     plus the opts.Challenge WWW-Authenticate pointer when set; or
+//   - mode passthrough: the backend's own key — no ACH identity
+//     (RawLiteLLMKeyFromCtx), header kept; or
+//   - no declared slot present: Authorization: Bearer is accepted only as
+//     ACH's own OAuth token (JWS that verifies); anything else there is 401.
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
 // OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
@@ -287,9 +322,9 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			ctx := r.Context()
 			reqID := RequestIDFromCtx(ctx)
 
-			plaintext, from, rawSlot := credential(r, opts.RawKeyHeaders)
+			plaintext, from, mode, foreign := credential(r, opts.Headers)
 			if plaintext == "" {
-				if opts.Optional {
+				if opts.Optional && !foreign {
 					next.ServeHTTP(w, r) // no identity: the upstream decides
 					return
 				}
@@ -297,17 +332,10 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 				return
 			}
 
-			// A raw LiteLLM key: no ACH identity. LiteLLM decides. A raw-key
-			// slot keeps its header (LiteLLM may read it by that name); an
-			// sk- in an ACH slot is consumed like any ACH credential.
-			if rawSlot || strings.HasPrefix(plaintext, "sk-") {
-				if !opts.AllowRawLiteLLMKey {
-					unauthorized(w, r, "missing_key", "an ACH credential is required here", reqID)
-					return
-				}
-				if !rawSlot {
-					r.Header.Del(from)
-				}
+			// passthrough: the backend's own key, no ACH identity. The header
+			// stays (the backend may read it by that name); the proxy mirrors
+			// it to x-litellm-api-key.
+			if mode == ModePassthrough {
 				next.ServeHTTP(w, r.WithContext(WithRawLiteLLMKey(ctx, plaintext)))
 				return
 			}
@@ -333,14 +361,10 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			}
 
 			// D-19: discard the presented credential BEFORE invoking inner.
-			// Literal header names kept inline (not via the constants) so
-			// the static-analysis grep that proves the plaintext-discard
-			// discipline catches these sites verbatim.
-			r.Header.Del("x-ach-key")
-			r.Header.Del("x-api-key")
-			if from == authzHeader {
-				r.Header.Del(authzHeader) // ours: consumed. Any other Authorization passes through.
-			}
+			// Only the slot that carried it: any other header — including an
+			// Authorization that is the upstream provider's own credential —
+			// passes as it came.
+			r.Header.Del(from)
 
 			// BLK-02: admin status is the allowlist lookup on pk_ only.
 			isAdmin := false

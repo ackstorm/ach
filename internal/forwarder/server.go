@@ -23,6 +23,10 @@ import (
 // + C2) that replaced the controller-runtime informers — the traffic
 // path no longer reads from the cached k8s client.
 type Deps struct {
+	// Identity is the identity profile: no Environments, no policies —
+	// /mcp and /a2a forward the resolved identity like the catch-all does
+	// (no precheck, no BIP JWT). BIPResolver/EnvProvider/TeamsResolver are nil.
+	Identity      bool
 	BIPResolver   proxy.BIPResolver
 	EnvProvider   precheck.EnvProvider
 	Resolver      keystore.Resolver
@@ -30,16 +34,12 @@ type Deps struct {
 	Signer        jwt.Signer
 	Logger        *slog.Logger
 	BaseURL       string
-	// Issuer is the authorization server this front trusts and points
-	// clients at (ACH_OAUTH_ISSUER; default BaseURL). A front on a second
-	// host (api.*) names the one AS on ach.* and signs BIP JWTs as it.
-	Issuer string
 	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
 	// G3); the proxy Director decrypts the sealed LiteLLM key material per
 	// request before forwarding. Required (validated at process start).
 	KeyEncryptionKey []byte
 	LiteLLMUpstream  *url.URL
-	// AuthnOptions: the RFC 9728 challenge on 401 + raw sk- passthrough.
+	// AuthnOptions: the RFC 9728 challenge on 401 + the declared credential headers.
 	AuthnOptions pamw.AuthnOptions
 }
 
@@ -73,8 +73,8 @@ func New(deps Deps) http.Handler {
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 		},
-		BaseURL: deps.BaseURL,
-		Issuer:  issuerOr(deps.Issuer, deps.BaseURL),
+		BaseURL:  deps.BaseURL,
+		Identity: deps.Identity,
 	}
 
 	// OAuth discovery, ANONYMOUS by design (a client fetches these precisely
@@ -84,7 +84,7 @@ func New(deps Deps) http.Handler {
 	// every /mcp/<name> + /a2a/<name>. ACH composes both — LiteLLM's PRM
 	// document is no longer relayed, so the client is sent to ACH's
 	// authorization server, never LiteLLM's.
-	wk := proxy.WellKnownHandler(deps.BaseURL, hdeps.Issuer)
+	wk := proxy.WellKnownHandler(deps.BaseURL)
 	r.Handle("/.well-known/oauth-authorization-server", wk)
 	r.Handle("/.well-known/oauth-protected-resource", wk)
 	r.Handle("/.well-known/oauth-protected-resource/*", wk)
@@ -121,13 +121,6 @@ func New(deps Deps) http.Handler {
 	})
 
 	return r
-}
-
-func issuerOr(issuer, base string) string {
-	if issuer == "" {
-		return base
-	}
-	return issuer
 }
 
 // NewHealthHandler returns the health handler with /healthz, /livez, /readyz.

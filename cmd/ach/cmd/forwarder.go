@@ -65,6 +65,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 	forwardermetrics "github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/forwarder/proxy"
+	"github.com/ackstorm/ach/internal/jwtkeys"
 	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -101,20 +102,21 @@ when ACH_BASE_URL is not http(s)://, ACH_KEY_ENCRYPTION_KEY is unset/invalid
 // resolved values out of forwarderConfig makes the config "env only"
 // and the CR-derived values flow through local vars instead.
 type forwarderConfig struct {
-	BaseURL          string
-	Issuer           string   // ACH_OAUTH_ISSUER, default BaseURL
-	RawKeyHeaders    []string // ACH_RAW_KEY_HEADERS
-	DBURL            string
-	Pepper           []byte
-	KeyEncryptionKey []byte
-	RedisAddr        string
-	RedisPassword    string
-	RedisTLS         bool
-	RedisDB          int
-	TrafficBindAddr  string
-	HealthBindAddr   string
-	Namespace        string
-	JWTSecretName    string
+	BaseURL           string
+	CredentialHeaders []pamw.CredentialHeader // ACH_CREDENTIAL_HEADERS
+	Profile           string                  // ACH_PROFILE: full | identity
+	LiteLLMBaseURL    string                  // ACH_LITELLM_BASE_URL — identity only (full reads LiteLLMConnection)
+	DBURL             string
+	Pepper            []byte
+	KeyEncryptionKey  []byte
+	RedisAddr         string
+	RedisPassword     string
+	RedisTLS          bool
+	RedisDB           int
+	TrafficBindAddr   string
+	HealthBindAddr    string
+	Namespace         string
+	JWTSecretName     string
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -127,19 +129,16 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, errors.New("ACH_BASE_URL must be http(s)://")
 	}
 	cfg.BaseURL = baseURL
-	cfg.Issuer = config.EnvOr("ACH_OAUTH_ISSUER", baseURL)
-	if !strings.HasPrefix(cfg.Issuer, "http://") && !strings.HasPrefix(cfg.Issuer, "https://") {
-		return nil, errors.New("ACH_OAUTH_ISSUER must be http(s)://")
+	if cfg.CredentialHeaders, err = pamw.ParseCredentialHeaders(os.Getenv("ACH_CREDENTIAL_HEADERS")); err != nil {
+		return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %w", err)
 	}
-	for _, h := range strings.Split(os.Getenv("ACH_RAW_KEY_HEADERS"), ",") {
-		h = strings.ToLower(strings.TrimSpace(h))
-		if h == "" {
-			continue
+	if cfg.Profile, err = profileFromEnv(); err != nil {
+		return nil, err
+	}
+	if cfg.Profile == profileIdentity {
+		if cfg.LiteLLMBaseURL, err = config.MustEnvNonEmpty("ACH_LITELLM_BASE_URL"); err != nil {
+			return nil, fmt.Errorf("ACH_PROFILE=identity: %w", err)
 		}
-		if h == "x-ach-key" || h == "x-api-key" || h == "authorization" {
-			return nil, fmt.Errorf("ACH_RAW_KEY_HEADERS: %s is an ACH credential slot", h)
-		}
-		cfg.RawKeyHeaders = append(cfg.RawKeyHeaders, h)
 	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
@@ -289,30 +288,55 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// liveness restart). Other resolver errors (malformed endpoint,
 	// missing secret key) still refuse-to-start so misconfiguration
 	// surfaces at boot instead of as 401 storms under load.
-	llmRes, err := resolveLiteLLMWithRetry(ctx, pool, mgr.GetAPIReader(), cfg.Namespace, logger)
-	if err != nil {
-		return out, fmt.Errorf("litellmconn.Resolve: %w", err)
-	}
-	llmUpstream, err := url.Parse(llmRes.Endpoint)
-	if err != nil {
-		return out, fmt.Errorf("parse LiteLLMConnection.spec.endpoint %q: %w", llmRes.Endpoint, err)
+	// Governance (profile full): LiteLLM coordinates from the operator's
+	// LiteLLMConnection projection, the BIP + Environment caches and the
+	// LiteLLM admin client behind precheck. Identity has none of it: LiteLLM
+	// is an env var and the resolved identity is the whole contract.
+	identity := cfg.Profile == profileIdentity
+	var (
+		llmUpstream   *url.URL
+		bipCache      *bipcache.Cache
+		envStore      *envstore.Store
+		extendHook    keystore.PkExtendHook
+		teamsResolver keystore.TeamsResolver
+	)
+	if identity {
+		if llmUpstream, err = url.Parse(cfg.LiteLLMBaseURL); err != nil {
+			return out, fmt.Errorf("parse ACH_LITELLM_BASE_URL %q: %w", cfg.LiteLLMBaseURL, err)
+		}
+	} else {
+		llmRes, err := resolveLiteLLMWithRetry(ctx, pool, mgr.GetAPIReader(), cfg.Namespace, logger)
+		if err != nil {
+			return out, fmt.Errorf("litellmconn.Resolve: %w", err)
+		}
+		if llmUpstream, err = url.Parse(llmRes.Endpoint); err != nil {
+			return out, fmt.Errorf("parse LiteLLMConnection.spec.endpoint %q: %w", llmRes.Endpoint, err)
+		}
+		ll := litellm.NewRESTClient(llmRes.Endpoint, llmRes.MasterKey, ctrl.Log.WithName("litellm"))
+		extendHook = keystore.NewLiteLLMPkExtendHook(ll, db.PkSlidingWindow, ctrl.Log.WithName("pk-extend"))
+
+		// Issue #34 C6: BIP + Environment now flow from Postgres-backed
+		// caches; controller-runtime informers for those kinds are dropped.
+		// The Secret informer for ach-jwt-signing-keys is retained below for
+		// JWT seed hot-reload.
+		bipCache = bipcache.New(pool, cfg.Namespace, ctrl.Log.WithName("bipcache"))
+		envStore = envstore.New(pool, cfg.Namespace, ctrl.Log.WithName("envstore"))
+		if err := mgr.Add(runnableFn(bipCache.Run)); err != nil {
+			return out, fmt.Errorf("manager.Add(bipcache): %w", err)
+		}
+		if err := mgr.Add(runnableFn(envStore.Run)); err != nil {
+			return out, fmt.Errorf("manager.Add(envstore): %w", err)
+		}
+		baseTeamsResolver, err := keystore.NewLiteLLMTeamsResolver(ll)
+		if err != nil {
+			return out, fmt.Errorf("keystore.NewLiteLLMTeamsResolver: %w", err)
+		}
+		if teamsResolver, err = keystore.NewCachedTeamsResolver(baseTeamsResolver, out.redis); err != nil {
+			return out, fmt.Errorf("keystore.NewCachedTeamsResolver: %w", err)
+		}
 	}
 	if llmUpstream.Scheme != "http" && llmUpstream.Scheme != "https" {
-		return out, fmt.Errorf("LiteLLMConnection.spec.endpoint must use http:// or https:// (got %q)", llmUpstream.Scheme)
-	}
-	ll := litellm.NewRESTClient(llmRes.Endpoint, llmRes.MasterKey, ctrl.Log.WithName("litellm"))
-
-	// Issue #34 C6: BIP + Environment now flow from Postgres-backed
-	// caches; controller-runtime informers for those kinds are dropped.
-	// The Secret informer for ach-jwt-signing-keys is retained below for
-	// JWT seed hot-reload.
-	bipCache := bipcache.New(pool, cfg.Namespace, ctrl.Log.WithName("bipcache"))
-	envStore := envstore.New(pool, cfg.Namespace, ctrl.Log.WithName("envstore"))
-	if err := mgr.Add(runnableFn(bipCache.Run)); err != nil {
-		return out, fmt.Errorf("manager.Add(bipcache): %w", err)
-	}
-	if err := mgr.Add(runnableFn(envStore.Run)); err != nil {
-		return out, fmt.Errorf("manager.Add(envstore): %w", err)
+		return out, fmt.Errorf("LiteLLM endpoint must use http:// or https:// (got %q)", llmUpstream.Scheme)
 	}
 
 	if _, err := mgr.GetCache().GetInformer(ctx, &corev1.Secret{}); err != nil {
@@ -323,8 +347,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// onto the backing LiteLLM key so it does not die at mint+window while ACH
 	// still honours the pk_ (see db.PkCheckAndExtend). Best-effort, off the
 	// request path.
-	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper,
-		keystore.NewLiteLLMPkExtendHook(ll, db.PkSlidingWindow, ctrl.Log.WithName("pk-extend")))
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper, extendHook)
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
@@ -334,20 +357,11 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// reads "unknown kid" → (nil, nil) → 401, which is correct.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
-	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.Issuer, "ach", pool)
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
-	}
-
-	baseTeamsResolver, err := keystore.NewLiteLLMTeamsResolver(ll)
-	if err != nil {
-		return out, fmt.Errorf("keystore.NewLiteLLMTeamsResolver: %w", err)
-	}
-	teamsResolver, err := keystore.NewCachedTeamsResolver(baseTeamsResolver, out.redis)
-	if err != nil {
-		return out, fmt.Errorf("keystore.NewCachedTeamsResolver: %w", err)
 	}
 
 	// W9 (REVIEW): the cached client requires mgr.Start() to populate,
@@ -356,6 +370,17 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// uncached reader sharing the manager's rest.Config. Previously this
 	// path called ctrl.GetConfigOrDie() a second time + client.New,
 	// duplicating the in-cluster config lookup.
+	// identity: nobody else mints the signing Secret (no operator).
+	if identity {
+		bootClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: forwarderScheme})
+		if err != nil {
+			return out, fmt.Errorf("bootstrap client for jwt signing keys: %w", err)
+		}
+		err = jwtkeys.EnsureSigningKeys(ctx, bootClient, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwtkeys"))
+		if err != nil {
+			return out, fmt.Errorf("ensure jwt signing keys: %w", err)
+		}
+	}
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{Namespace: cfg.Namespace, Name: cfg.JWTSecretName}
 	if err := mgr.GetAPIReader().Get(ctx, key, secret); err != nil {
@@ -393,21 +418,22 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 
 	out.server = forwarder.Deps{
-		BIPResolver:      bipCache, // C1/C4: Postgres-backed BIP cache
-		EnvProvider:      envStore, // C2/C5: Postgres-backed Env cache
+		Identity:         identity,
 		Resolver:         cachedResolver,
-		TeamsResolver:    teamsResolver,
 		Signer:           out.signer,
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
-		Issuer:           cfg.Issuer,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
 		AuthnOptions: pamw.AuthnOptions{
-			Challenge:          proxy.ChallengeFor(cfg.BaseURL),
-			AllowRawLiteLLMKey: true,
-			RawKeyHeaders:      cfg.RawKeyHeaders,
+			Challenge: proxy.ChallengeFor(cfg.BaseURL),
+			Headers:   cfg.CredentialHeaders,
 		},
+	}
+	if !identity {
+		out.server.BIPResolver = bipCache // C1/C4: Postgres-backed BIP cache
+		out.server.EnvProvider = envStore // C2/C5: Postgres-backed Env cache
+		out.server.TeamsResolver = teamsResolver
 	}
 	return out, nil
 }
@@ -510,8 +536,8 @@ func runForwarder(_ *cobra.Command, _ []string) error {
 		"health", cfg.HealthBindAddr,
 		"namespace", cfg.Namespace,
 		"baseURL", cfg.BaseURL,
-		"issuer", cfg.Issuer,
-		"rawKeyHeaders", cfg.RawKeyHeaders,
+		"profile", cfg.Profile,
+		"credentialHeaders", cfg.CredentialHeaders,
 		"jwtSecret", cfg.JWTSecretName,
 	)
 

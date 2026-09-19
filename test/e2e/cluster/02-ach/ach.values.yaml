@@ -83,6 +83,15 @@ platformApi:
   admins:
     - kilgore@kilgore.trout
 
+# Declared credential slots (chart defaults, spelled out so the e2e values
+# document what the suite exercises): x-ach-key (ach-cli, hydrate, ach-agent)
+# and x-api-key (Claude Code apiKeyHelper), both resolved. The identity
+# release (identity.values.yaml) adds a passthrough header.
+forwarder:
+  headers:
+    - {name: x-ach-key, mode: resolve}
+    - {name: x-api-key, mode: resolve}
+
 # NOTE: the e2e test backends are NO LONGER chart toggles. They moved out of
 # the Helm chart into test/e2e/cluster/03-test-backends/ (applied by cluster.sh
 # post-ach):

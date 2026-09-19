@@ -35,5 +35,10 @@ func ServiceRoutes(namespace string) []Route {
 		{Prefix: "/mcp/", Upstream: forwarder},
 		{Prefix: "/a2a/", Upstream: forwarder},
 		{Prefix: "/.well-known/", Upstream: forwarder},
+		// Catch-all: every other path LiteLLM serves (/ui, /key/*, /model/*,
+		// /health, …) goes to the forwarder, which proxies it with the
+		// credential optional. net/http's mux keeps the longer prefixes
+		// above (and /agents/, /healthz) ahead of it.
+		{Prefix: "/", Upstream: forwarder},
 	}
 }

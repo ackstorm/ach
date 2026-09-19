@@ -68,27 +68,6 @@ func rewriteChallengeValue(value string, publicBase *url.URL) string {
 	})
 }
 
-// resourcePathFor reduces a forwarded path to the RFC 9728 resource identifier
-// it belongs to — "/mcp/{name}" or "/a2a/{name}" — or "" when the path names no
-// such resource. The tail beyond {name} is dropped: the resource is the server,
-// not the sub-path a particular call used.
-func resourcePathFor(path string) string {
-	for _, prefix := range []string{"/mcp/", "/a2a/"} {
-		if !strings.HasPrefix(path, prefix) {
-			continue
-		}
-		name := strings.TrimPrefix(path, prefix)
-		if i := strings.IndexByte(name, '/'); i >= 0 {
-			name = name[:i]
-		}
-		if name == "" {
-			return ""
-		}
-		return prefix + name
-	}
-	return ""
-}
-
 // hasResourceMetadata reports whether any challenge value already carries the
 // resource_metadata auth-param.
 func hasResourceMetadata(values []string) bool {
@@ -203,7 +182,7 @@ func rewriteChallengeHost(resp *http.Response, publicBase *url.URL) {
 		if resp.Request == nil || resp.Request.URL == nil {
 			return
 		}
-		resourcePath := resourcePathFor(resp.Request.URL.Path)
+		resourcePath := resourceRoot(resp.Request.URL.Path)
 		if resourcePath == "" {
 			return
 		}

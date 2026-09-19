@@ -137,6 +137,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     "${DOCKER_GROUP_ADD[@]}" \
     --add-host=host.docker.internal:host-gateway \
     --add-host=ach.e2e.local:127.0.0.1 \
+    --add-host=api.e2e.local:127.0.0.1 \
     --network=host \
     -v "${WORKSPACE}:/workspace" \
     "${WORKTREE_GIT_MOUNT[@]}" \

@@ -156,7 +156,8 @@ func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
 		LiteLLMUpstream:  upstream,
 		Resolver:         nilResolver{},
 		KeyEncryptionKey: make([]byte, 32),
-		AuthnOptions:     pamw.AuthnOptions{AllowRawLiteLLMKey: true, RawKeyHeaders: []string{"x-genai-api-key"}},
+		AuthnOptions: pamw.AuthnOptions{Headers: []pamw.CredentialHeader{
+			{Name: "x-genai-api-key", Mode: pamw.ModePassthrough}, {Name: "x-ach-key", Mode: pamw.ModeResolve}}},
 	})
 	do := func(path string, hdr map[string]string) int {
 		rec := httptest.NewRecorder()

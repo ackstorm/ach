@@ -2,7 +2,10 @@
 
 package cmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // setRequiredPlatformAPIEnv seeds all env vars required by
 // validatePlatformAPIConfig so tests can override individual vars
@@ -76,4 +79,17 @@ func TestPlatformAPIProcessDeps_CloseSafeOnPartialBuild(t *testing.T) {
 	deps := &platformAPIProcessDeps{} // pool + redis nil, as in an early failure
 	deps.close()
 	deps.close() // idempotent
+}
+
+func TestPlatformAPIConfig_CredentialHeadersResolveOnly(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	t.Setenv("ACH_CREDENTIAL_HEADERS", `[{"name":"x-ach-key","mode":"resolve"},{"name":"x-api-key","mode":"resolve"}]`)
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil || len(cfg.CredentialHeaders) != 2 {
+		t.Fatalf("%+v %v", cfg, err)
+	}
+	t.Setenv("ACH_CREDENTIAL_HEADERS", `[{"name":"x-genai-api-key","mode":"passthrough"}]`)
+	if _, err := validatePlatformAPIConfig(); err == nil || !strings.Contains(err.Error(), "passthrough") {
+		t.Fatalf("passthrough on platform-api must be refused: %v", err)
+	}
 }

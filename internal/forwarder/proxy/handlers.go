@@ -41,9 +41,9 @@ type HandlerDeps struct {
 	BIPResolver BIPResolver
 	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.
 	PrecheckDeps precheck.Deps
-	// Issuer is the `iss` of the BIP JWT (the identity issuer the backends
-	// trust — ACH_OAUTH_ISSUER, default BaseURL).
-	Issuer string
+	// Identity: the identity profile — /mcp and /a2a skip precheck and the
+	// BIP JWT; the resolved identity is the whole contract.
+	Identity bool
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
 }
@@ -137,6 +137,15 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		}
 		kc, _ := middleware.KeyContextFromCtx(r.Context())
 
+		// 0b. Identity profile: no Environments, no policies — the resolved
+		//     identity is the whole contract (no precheck, no BIP JWT).
+		if deps.Identity {
+			r.Header.Del("Authorization")
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			rp.ServeHTTP(w, r)
+			return
+		}
+
 		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
 		//    JWT "groups" claim (filtered at the mint below).
 		granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
@@ -182,7 +191,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 
 		// 3. Sign + stash for Director.
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
-			Iss:    deps.Issuer,
+			Iss:    deps.BaseURL,
 			Sub:    kc.OwnerEmail,
 			Aud:    audPrefix + name,
 			Email:  kc.OwnerEmail,
