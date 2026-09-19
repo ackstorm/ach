@@ -928,10 +928,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#credential-slots" class="md-nav__link">
+  <a href="#credential-slots-declared-not-discovered" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Credential slots
+        Credential slots — declared, not discovered
       
     </span>
   </a>
@@ -981,6 +981,17 @@
     <span class="md-ellipsis">
       
         1.6 OAuth consent is declared by the backend policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-profiles-full-and-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.7 Profiles — full and identity
       
     </span>
   </a>
@@ -1526,10 +1537,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#credential-slots" class="md-nav__link">
+  <a href="#credential-slots-declared-not-discovered" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Credential slots
+        Credential slots — declared, not discovered
       
     </span>
   </a>
@@ -1579,6 +1590,17 @@
     <span class="md-ellipsis">
       
         1.6 OAuth consent is declared by the backend policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#17-profiles-full-and-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.7 Profiles — full and identity
       
     </span>
   </a>
@@ -2034,7 +2056,7 @@ alongside JWKS, and <strong>serves it itself</strong> (<code>proxy.WellKnownHand
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">wk</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">proxy</span><span class="p">.</span><span class="nx">WellKnownHandler</span><span class="p">(</span><span class="nx">deps</span><span class="p">.</span><span class="nx">BaseURL</span><span class="p">)</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-authorization-server"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 8414 — jwt.ASMetadata</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">     </span><span class="c1">// RFC 9728 — the API root</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource/*"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 9728 — /mcp/&lt;name&gt;, /a2a/&lt;name&gt;</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource/*"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 9728 — /v1, /v2, /gemini, /mcp/&lt;name&gt;, /a2a/&lt;name&gt;</span>
 </code></pre></div>
 <table>
 <thead>
@@ -2065,9 +2087,14 @@ alongside JWKS, and <strong>serves it itself</strong> (<code>proxy.WellKnownHand
 <td><code>ACH_BASE_URL/a2a/&lt;name&gt;</code></td>
 <td>same</td>
 </tr>
+<tr>
+<td><code>…/oauth-protected-resource/v1</code> (also <code>/v2</code>, <code>/gemini</code>)</td>
+<td><code>ACH_BASE_URL/v1</code></td>
+<td>same — the model API family is a resource of its own (the opencode-auth plugin builds this URL itself)</td>
+</tr>
 </tbody>
 </table>
-<p>Any other path under the PRM segment (<code>/v1</code>, <code>/mcp/</code>, <code>/mcp/a/b</code>) is 404.
+<p>Any other path under the PRM segment (<code>/v1/chat</code>, <code>/mcp/</code>, <code>/mcp/a/b</code>) is 404.
 <strong>LiteLLM's PRM document is no longer relayed</strong> — the client must be sent
 to ACH's authorization server, not LiteLLM's, so the <code>X-Forwarded-Host</code>
 opt-in below is no longer load-bearing for discovery (it stays documented
@@ -2084,23 +2111,51 @@ ACH's Ed25519 signing keys, never LiteLLM's.</p>
 <h3 id="the-challenge-on-a-missing-credential">The challenge on a missing credential<a class="headerlink" href="#the-challenge-on-a-missing-credential" title="Permanent link">&para;</a></h3>
 <p><code>middleware.Authn</code> (with <code>AuthnOptions.Challenge = proxy.ChallengeFor(base)</code>)
 answers an anonymous request with <code>401</code> and</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>WWW-Authenticate: Bearer resource_metadata="&lt;ACH_BASE_URL&gt;/.well-known/oauth-protected-resource[/mcp/&lt;name&gt;|/a2a/&lt;name&gt;]"
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>WWW-Authenticate: Bearer resource_metadata="&lt;ACH_BASE_URL&gt;/.well-known/oauth-protected-resource[/v1|/v2|/gemini|/mcp/&lt;name&gt;|/a2a/&lt;name&gt;]"
 </code></pre></div>
 <p>The pointer names the <strong>service root</strong>, never the dialled path: streamable
 HTTP appends <code>/messages</code> and session segments, and RFC 9728 §3.2 has the
 client compare the document's <code>resource</code> against the server it configured.
 This is what starts the OAuth ceremony for Claude Code, Codex and opencode
 (<code>docs/developer-guide/oauth-client-conformance.md</code>).</p>
-<h3 id="credential-slots">Credential slots<a class="headerlink" href="#credential-slots" title="Permanent link">&para;</a></h3>
-<p>Authn reads, in order, <code>x-ach-key</code>, <code>x-api-key</code>, <code>Authorization: Bearer</code>.
-A <code>pk_</code>/<code>ek_</code> or an ACH OAuth JWS is resolved and its header removed; a raw
-<code>sk-…</code> (any slot) passes through on the forwarder as the LiteLLM key with
-<strong>no ACH identity</strong> (no precheck, no per-target JWT, no audit actor —
-<code>middleware.RawLiteLLMKeyFromCtx</code>); <code>Authorization</code> is otherwise <strong>left
-alone</strong> — <code>headers.StripAndRewrite</code> no longer deletes it — because it may
-carry the upstream provider's own credential (Claude Code on an Anthropic
-subscription: Anthropic's OAuth in <code>Authorization</code>, ours in <code>x-ach-key</code>).
-On <code>/mcp</code> + <code>/a2a</code> the per-target ACH JWT overwrites it.</p>
+<h3 id="credential-slots-declared-not-discovered">Credential slots — declared, not discovered<a class="headerlink" href="#credential-slots-declared-not-discovered" title="Permanent link">&para;</a></h3>
+<p>The forwarder reads a credential only from headers the operator declares
+(<code>forwarder.headers</code> in the chart → <code>ACH_CREDENTIAL_HEADERS</code>, a JSON list
+consulted in order; the first one present decides):</p>
+<table>
+<thead>
+<tr>
+<th><code>mode</code></th>
+<th>The value is</th>
+<th>The forwarder</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resolve</code></td>
+<td>an ACH credential (<code>pk_</code>/<code>ek_</code>)</td>
+<td>resolves it against ACH, removes the header, sends the caller's own LiteLLM key as <code>x-litellm-api-key</code>; unknown/revoked → <code>401 expired_or_revoked</code></td>
+</tr>
+<tr>
+<td><code>passthrough</code></td>
+<td>the backend's own key (a LiteLLM <code>sk-…</code> under a customer-facing name such as <code>x-genai-api-key</code>)</td>
+<td>leaves the header as it came <strong>and</strong> mirrors it to <code>x-litellm-api-key</code>; no ACH identity (<code>middleware.RawLiteLLMKeyFromCtx</code>), no precheck, no per-target JWT</td>
+</tr>
+</tbody>
+</table>
+<p>Every other header passes as it came — including <code>Authorization</code> when a
+declared slot carried the credential (Claude Code on an Anthropic
+subscription: ours in <code>x-ach-key</code>, Anthropic's in <code>Authorization</code>; Claude
+Code's <code>apiKeyHelper</code> sends the same value in <code>x-api-key</code> and
+<code>Authorization</code> — the first resolves, the second is ignored upstream).</p>
+<p>With <strong>no declared slot present</strong>, <code>Authorization: Bearer</code> is accepted only
+as ACH's own OAuth access token (a JWS that verifies against the signing
+key — the only way an MCP client can present one). Anything else in
+<code>Authorization</code> — a <code>pk_</code>, a raw <code>sk-</code>, Basic, a foreign JWT — is <code>401</code>. There
+is no prefix sniffing and <code>authorization</code> cannot be listed as a slot.
+platform-api shares the middleware with its own <code>platformApi.headers</code>
+(resolve only). On <code>/mcp</code> + <code>/a2a</code> the per-target ACH JWT overwrites
+<code>Authorization</code> when a BIP mints one.</p>
 <h3 id="required-litellm-configuration-direct-backends-only">Required LiteLLM configuration (direct backends only)<a class="headerlink" href="#required-litellm-configuration-direct-backends-only" title="Permanent link">&para;</a></h3>
 <p><code>/mcp/*</code> traffic traverses LiteLLM (§3), and LiteLLM builds its own
 document's <code>resource</code> / <code>authorization_servers</code> from the request base URL
@@ -2279,6 +2334,48 @@ redeems the broker code. The callback re-probes the same backend; only an
 <code>ok</code> outcome issues the ACH authorization code. The broker policy is resolved
 from Postgres, so there is no <code>ACH_OAUTH_SERVICES</code> or grants-Redis map.</p>
 <hr />
+<h2 id="17-profiles-full-and-identity">1.7 Profiles — <code>full</code> and <code>identity</code><a class="headerlink" href="#17-profiles-full-and-identity" title="Permanent link">&para;</a></h2>
+<p><code>ACH_PROFILE</code> (chart <code>profile:</code>) selects what the forwarder is:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>full</code> (default)</th>
+<th><code>identity</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LiteLLM upstream</td>
+<td><code>LiteLLMConnection/default</code> projection (operator)</td>
+<td><code>ACH_LITELLM_BASE_URL</code> (chart <code>litellmConnection.endpoint</code>)</td>
+</tr>
+<tr>
+<td><code>/mcp/&lt;n&gt;</code>, <code>/a2a/&lt;n&gt;</code></td>
+<td>precheck (Environment) → BIP → per-target JWT</td>
+<td>forward the resolved identity, no precheck, no JWT — like the catch-all</td>
+</tr>
+<tr>
+<td><code>bipcache</code> / <code>envstore</code> / <code>TeamsResolver</code></td>
+<td>built</td>
+<td>not built</td>
+</tr>
+<tr>
+<td><code>ach-jwt-signing-keys</code></td>
+<td>minted by the operator</td>
+<td>minted by the forwarder at boot (<code>internal/jwtkeys.EnsureSigningKeys</code>; the chart adds <code>create</code> to its Role)</td>
+</tr>
+<tr>
+<td>Chart renders</td>
+<td>everything</td>
+<td>platform-api, forwarder, gateway, migrate — no CRDs, no operator, no content-service</td>
+</tr>
+</tbody>
+</table>
+<p>An identity release is self-contained: own domain (<code>ACH_BASE_URL</code>), own Dex
+client, own OAuth AS, own <code>pk_</code> rows, own signing key. Several releases
+coexist in one cluster, one per namespace (chart resource names are fixed).
+Reference values: <code>test/e2e/cluster/02-ach/identity.values.yaml</code>.</p>
 <h2 id="2-backendidentitypolicy-bip-turning-jwt-mint-on">2. BackendIdentityPolicy (BIP) — turning JWT mint on<a class="headerlink" href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" title="Permanent link">&para;</a></h2>
 <p>JWT mint is <strong>opt-in per target</strong>. A <code>BackendIdentityPolicy</code> CR selects
 a route and sets <code>forwardIdentityJWT: true</code>:</p>
