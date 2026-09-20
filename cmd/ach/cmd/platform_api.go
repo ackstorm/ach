@@ -62,7 +62,7 @@ var platformAPICmd = &cobra.Command{
 EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
 without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
 pepper, ACH_KEY_ENCRYPTION_KEY (the AES-256 DEK for at-rest key material),
-the four Dex OAuth2 vars, ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY,
+the three Dex OAuth2 vars, ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY,
 ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 	RunE: runPlatformAPI,
 }
@@ -80,7 +80,6 @@ type platformAPIConfig struct {
 	DexIssuerURL      string
 	DexClientID       string
 	DexClientSecret   string
-	DexRedirectURL    string
 	RedisAddr         string
 	RedisPassword     string
 	RedisTLS          bool
@@ -140,9 +139,6 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	if cfg.DexClientSecret, err = config.MustEnvNonEmpty("ACH_DEX_CLIENT_SECRET"); err != nil {
-		return nil, err
-	}
-	if cfg.DexRedirectURL, err = config.MustEnvNonEmpty("ACH_DEX_REDIRECT_URL"); err != nil {
 		return nil, err
 	}
 	if cfg.RedisAddr, err = config.MustEnvNonEmpty("ACH_REDIS_ADDR"); err != nil {
@@ -276,7 +272,6 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	oauth2Cfg := &oauth2.Config{
 		ClientID:     cfg.DexClientID,
 		ClientSecret: cfg.DexClientSecret,
-		RedirectURL:  cfg.DexRedirectURL,
 		Endpoint:     oidcProvider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}

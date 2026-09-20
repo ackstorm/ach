@@ -19,7 +19,6 @@ import (
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
-	authcli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
 	"github.com/ackstorm/ach/internal/platformapi/environments"
 	"github.com/ackstorm/ach/internal/platformapi/envkeys"
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
@@ -122,37 +121,19 @@ func New(deps Deps) http.Handler {
 	r.Get("/livez", healthHandler)
 	r.Get("/readyz", readyHandler(deps.Pool, deps.Redis))
 
-	// SSO endpoints (unauthenticated; D-02 carve-out).
+	// Dex + LiteLLM provisioning deps shared by the OAuth AS.
 	authDeps := auth.Deps{
 		IDTokenVerifier:  deps.IDTokenVerifier,
 		OAuth2Cfg:        deps.OAuth2Cfg,
 		LiteLLM:          deps.LiteLLM,
 		Pool:             deps.Pool,
-		Redis:            deps.Redis, // Phase 6 D-20: callback writeback target.
 		Pepper:           deps.Pepper,
 		KeyEncryptionKey: deps.KeyEncryptionKey,
 		Audit:            deps.Audit,
 		Logger:           deps.Logger,
 		Namespace:        deps.Namespace,
 		InsecureCookie:   deps.InsecureCookie,
-		Metrics:          deps.Metrics,
 	}
-	r.Get("/platform/auth/login", auth.LoginHandler(authDeps))
-	r.Get("/platform/auth/sso/callback", auth.CallbackHandler(authDeps))
-
-	// Phase 6 device-code endpoints (unauthenticated; D-02 + D-19).
-	// /init mints session_id anonymously; /token gates by session_id
-	// alone (one-shot Redis GETDEL). Mount OUTSIDE the Authn-gated
-	// chi.Group — both endpoints sit alongside the SSO routes above.
-	r.Route("/platform/auth/cli", authcli.Mount(authcli.Deps{
-		Redis:     deps.Redis,
-		Audit:     deps.Audit,
-		Logger:    deps.Logger,
-		Namespace: deps.Namespace,
-		BaseURL:   deps.BaseURL,
-		Metrics:   deps.Metrics,
-	}))
-
 	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
 	// a client that does not yet hold a credential).
 	if deps.OAuth != nil {

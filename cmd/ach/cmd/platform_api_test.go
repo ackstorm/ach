@@ -22,7 +22,6 @@ func setRequiredPlatformAPIEnv(t *testing.T) {
 	t.Setenv("ACH_DEX_ISSUER_URL", "http://dex:5556/dex")
 	t.Setenv("ACH_DEX_CLIENT_ID", "ach")
 	t.Setenv("ACH_DEX_CLIENT_SECRET", "secret")
-	t.Setenv("ACH_DEX_REDIRECT_URL", "http://localhost:8080/auth/callback")
 	t.Setenv("ACH_REDIS_ADDR", "localhost:6379")
 	t.Setenv("POD_NAMESPACE", "ach")
 }

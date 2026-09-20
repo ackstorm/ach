@@ -100,8 +100,8 @@ type PkInsertRow struct {
 	LiteLLMUserID      *string
 	LiteLLMToken       *string
 	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
-	// Purpose is 'cli' (console / device-code mint, the default) or 'oauth'
-	// (the single row a user's OAuth JWT resolves to; migration 000020).
+	// Purpose is 'oauth' (the single row a user's OAuth JWT resolves to;
+	// migration 000020) — 'cli' rows predate the AS-only login and expire.
 	Purpose string
 }
 

@@ -42,7 +42,7 @@ func TestEmitAuditBasic(t *testing.T) {
 	logger := audit.NewLogger(buf)
 
 	audit.EmitAudit(context.Background(), logger, audit.Event{
-		Action:    audit.ActionSSOLogin,
+		Action:    audit.ActionEkCreate,
 		Outcome:   audit.OutcomeCreated,
 		Actor:     "ns-a/user@x",
 		RequestID: "req_abc",
@@ -54,8 +54,8 @@ func TestEmitAuditBasic(t *testing.T) {
 		t.Fatalf("audit=true missing or wrong type: %#v", m["audit"])
 	}
 	for k, want := range map[string]string{
-		"msg":        "platform.sso.login",
-		"action":     "platform.sso.login",
+		"msg":        "platform.ek.create",
+		"action":     "platform.ek.create",
 		"outcome":    "created",
 		"actor":      "ns-a/user@x",
 		"request_id": "req_abc",
@@ -100,8 +100,8 @@ func TestEmitAuditTargetOmitted(t *testing.T) {
 	logger := audit.NewLogger(buf)
 
 	audit.EmitAudit(context.Background(), logger, audit.Event{
-		Action:    audit.ActionSSOLogin,
-		Outcome:   audit.OutcomeStateInvalid,
+		Action:    audit.ActionEkCreate,
+		Outcome:   audit.OutcomeInternalError,
 		Actor:     "ns-a/-",
 		RequestID: "req_2",
 		KeyID:     "",
@@ -146,8 +146,8 @@ func TestEmitAuditEmptyKeyIDOmitted(t *testing.T) {
 	logger := audit.NewLogger(buf)
 
 	audit.EmitAudit(context.Background(), logger, audit.Event{
-		Action:    audit.ActionSSOLogin,
-		Outcome:   audit.OutcomeStateInvalid,
+		Action:    audit.ActionEkCreate,
+		Outcome:   audit.OutcomeInternalError,
 		Actor:     "ns-a/-",
 		RequestID: "req_4",
 		KeyID:     "",
@@ -207,7 +207,7 @@ func TestEmitAuditPlaintextDisciplineDocumented(t *testing.T) {
 	// This is a CONTRACT VIOLATION (Extra MUST NOT carry plaintext)
 	// but the helper does not enforce it — discipline over scrubbing.
 	audit.EmitAudit(context.Background(), logger, audit.Event{
-		Action:    audit.ActionSSOLogin,
+		Action:    audit.ActionEkCreate,
 		Outcome:   audit.OutcomeCreated,
 		Actor:     "ns-a/user@x",
 		RequestID: "req_5",

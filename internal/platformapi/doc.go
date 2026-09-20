@@ -7,7 +7,7 @@
 //     chi.Mux per D-01 with the middleware chain from Plan 03-05
 //     (RequestID → RecoverPanic → AccessLog → ContentTypeJSON) wrapped
 //     around the unauthenticated routes (/healthz, /livez, /readyz,
-//     /platform/auth/login, /platform/auth/sso/callback) and an
+//     /platform/oauth/*) and an
 //     Authn-gated subtree for the management endpoints
 //     (/platform/hydrate, /platform/keys,
 //     /platform/environments, /platform/admin). All routes live under /platform/ per API-01;

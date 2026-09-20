@@ -1,37 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth implements the stateless OIDC + PKCE Authorization Code
-// flow against Dex (Phase 3 D-04 / D-05 / D-06). Both endpoints
-// (LoginHandler, CallbackHandler) are UNAUTHENTICATED (D-02 carve-out) —
-// they mount OUTSIDE the Authn-gated chi.Group in cmd/platform-api/main.go.
+// Package auth is ACH's OAuth 2.1 authorization server (/platform/oauth/*)
+// and the Dex + LiteLLM plumbing behind it. Every endpoint is
+// UNAUTHENTICATED by nature — a client reaches it before holding a
+// credential — and mounts OUTSIDE the Authn-gated chi.Group.
 //
-// Stateless: NO server-side session. The __Host-ach_sso cookie carries
-// state + PKCE verifier between LoginHandler and CallbackHandler; the
-// callback response (the JSON {key_id, plaintext, owner_email}) is the
-// SOLE output (the one-time emission per KEY-03 + Hub §16.1 Specifics
-// block) and the cookie is cleared. Subsequent requests authenticate via
-// the pk- bearer through the Authn middleware (Plan 03-05).
+// Two ways in, one Dex leg (/platform/oauth/as-callback), one token shape
+// (1h Ed25519 JWT + rotating refresh token, one purpose='oauth' pk_ row per
+// user behind it):
 //
-// JSON-only endpoints: GET /platform/auth/login redirects 302 straight to
-// Dex; GET /platform/auth/sso/callback returns the JSON response and
-// exits. v1alpha1 supports the loopback-callback CLI pattern only — no
-// hosted login page (D-05).
+//   - authorization code + PKCE (oauth_authorize.go, oauth_token.go): MCP
+//     clients and ach-cli with a local browser; DCR in oauth_register.go;
+//     an optional consent hop to a BIP-declared broker in oauth_chain.go.
+//   - RFC 8628 device grant (oauth_device.go): a host with no browser
+//     shows a code, the user confirms it on /platform/oauth/device from
+//     any browser, the client polls /token.
 //
-// Default-team-missing fallback (Hub §17 / API-02): if TeamMemberAdd
-// returns any error on the default Team, the handler emits audit
-// outcome=default_team_missing and renders 500. ACH does NOT lazily
-// create the default Team — that is a fail-loud signal to the deployer.
+// Transient state lives in Valkey (oauth_store.go). provisionUser (sso.go)
+// creates/enrols the LiteLLM user on every login; MintPK (mint.go) mints
+// the pk_ row. Default-team-missing (Hub §17 / API-02) is fail-loud: ACH
+// never creates the default Team.
 //
-// Plaintext discipline (Hub §16.1, internal/credhash, internal/keys
-// docstrings): the bearer plaintext (pk-<64-base64url>) appears in
-// exactly one place — the response body of the callback. It is NEVER
-// logged, NEVER recorded in audit Extra, NEVER persisted in the DB or
-// in any cache. The credential_hash (HMAC-SHA-256 with pepper) is the
-// only persisted form, and the key.id (pkid_<ulid>) is the only field
-// emitted into audit events.
+// Plaintext discipline (Hub §16.1): the pk_ plaintext minted for an OAuth
+// row is discarded — the forwarder resolves the row by owner_email; the
+// JWT is the credential. Nothing here logs a token.
 //
-// Dex configuration (D-06): the four ACH_DEX_* env vars are REQUIRED at
-// process start (validated in cmd/platform-api/main.go per Plan 03-11).
-// This package consumes the pre-constructed *oidc.Provider and
-// *oauth2.Config via Deps; it does NOT itself read environment.
+// Dex configuration: ACH_DEX_ISSUER_URL / CLIENT_ID / CLIENT_SECRET are
+// REQUIRED at process start (cmd/ach/cmd/platform_api.go). This package
+// consumes the pre-constructed *oidc.Provider and *oauth2.Config via Deps.
 package auth

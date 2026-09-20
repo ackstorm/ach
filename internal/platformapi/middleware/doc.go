@@ -36,9 +36,8 @@
 //     KeyContext, never the raw bearer.
 //
 // Unauthenticated endpoints (D-02 carve-out: /healthz, /livez, /readyz,
-// /platform/auth/login, /platform/auth/sso/callback) MUST be mounted
-// OUTSIDE the Authn-gated chi.Group — Authn rejects requests with no
-// x-ach-key header as 401 missing_key.
+// /platform/oauth/*) MUST be mounted OUTSIDE the Authn-gated chi.Group —
+// Authn rejects requests with no credential as 401 missing_key.
 //
 // # KeyContext propagation (D-19 / BLK-02)
 //

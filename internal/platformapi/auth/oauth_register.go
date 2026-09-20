@@ -42,7 +42,7 @@ func (d OAuthDeps) register(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 400, "invalid_client_metadata", "only public clients are registered here")
 		return
 	}
-	id, err := NewSessionID() // 192-bit opaque id, same generator as the device-code sessions
+	id, err := NewSessionID()
 	if err != nil {
 		oauthError(w, 500, "server_error", "")
 		return

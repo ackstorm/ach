@@ -44,20 +44,12 @@ extraEnv:
     # staticClient for the ach-platform-api OAuth client. Plaintext
     # dev value — production reads from a Secret.
     value: "dev-secret-not-for-prod"
-  - name: ACH_DEX_REDIRECT_URL
-    # Must match a redirectURI registered in scripts/dex-config.yaml's
-    # staticClient. The SSO flow (ach-cli login / the phase4 e2e helpers)
-    # reaches platform-api on ach.e2e.local:8080 via the gateway, so we use the
-    # same URL Dex has on file. In a real deployment this would be the public
-    # platform-api callback URL behind ingress.
-    value: "http://ach.e2e.local:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
-  # No ACH_SSO_INSECURE_COOKIE here: the SSO cookie hardening is derived
-  # from the ACH_BASE_URL scheme. ACH_BASE_URL=http://ach.e2e.local:8080
-  # (above) makes the platform-api emit the non-Secure `ach_sso` cookie
-  # automatically, so the kind gateway's plain-http SSO round-trip works
-  # without a flag. An https base would auto-harden to __Host-/Secure.
+  # The OAuth binding cookie hardening is derived from the ACH_BASE_URL
+  # scheme: http://ach.e2e.local:8080 (above) makes the platform-api emit
+  # the plain-named, non-Secure cookie so the kind gateway's plain-http
+  # round-trip works. An https base auto-hardens to __Host-/Secure.
 
 # Single-source LiteLLM config (the path real deployments use). The chart
 # renders LiteLLMConnection/default (operator reconciles it; forwarder +

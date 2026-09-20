@@ -30,12 +30,10 @@
 // Extension policy (Hub §18.5):
 //
 //   - Future phases MAY extend the Outcome enum ADDITIVELY (new
-//     constants here, never renaming or removing). OutcomeStateInvalid
-//     is one such extension — it is Phase-3-internal (added per BLK-05
-//     for SSO callback state-mismatch / missing URL state), not in the
-//     original Hub §18.2 enum, and documented in
-//     .planning/phases/03-hub-identity-platform-api/03-02-SUMMARY.md so
-//     a future Hub-spec revision can adopt it back into §18.2.
+//     constants here, never renaming or removing). A constant whose only
+//     emitter is deleted goes with it (platform.sso.login,
+//     platform.cli.login and state_invalid left with the device-code
+//     login flow, 2026-09-20).
 
 package audit
 
@@ -45,17 +43,9 @@ package audit
 // intentional (msg + action attribute) so both message-based and
 // attribute-based log filters work.
 //
-// 9 constants — Hub §18.2 action enum verbatim.
+// Hub §18.2 action enum, minus the login actions (no emitter since the
+// OAuth AS became the only login).
 const (
-	ActionSSOLogin = "platform.sso.login"
-	// ActionCliLogin is the Phase 6 device-code action emitted by
-	// /platform/auth/cli/token on a successful pk_ exchange (D-19).
-	// Additive per the §18.5 extension policy; mirrors the
-	// platform.<area>.<verb> convention so `action=platform.*` log
-	// filters continue to capture it alongside platform.sso.login.
-	// The emission carries key.id (pkid_…) and owner_email via Actor;
-	// NEVER the pk_ plaintext (Pattern S5 / Hub §16.1).
-	ActionCliLogin             = "platform.cli.login"
 	ActionEkCreate             = "platform.ek.create"
 	ActionEkRevoke             = "platform.ek.revoke"
 	ActionPkRevoke             = "platform.pk.revoke"
@@ -74,10 +64,8 @@ const (
 
 // Outcome* — the closed set of `outcome` values a Platform API or
 // Operator audit emission may carry. The first 16 constants are Hub
-// §18.2 verbatim. OutcomeStateInvalid is a Phase-3-internal additive
-// extension per BLK-05 (see file-level docstring).
-//
-// 17 constants — 16 from Hub §18.2 + OutcomeStateInvalid.
+// §18.2 verbatim; the rest are additive extensions (see file-level
+// docstring).
 const (
 	OutcomeCreated             = "created"
 	OutcomeRevoked             = "revoked" // matches orphan.OutcomeRevoked
@@ -95,12 +83,6 @@ const (
 	OutcomeLitellmUnreachable  = "litellm_unreachable" // matches orphan.OutcomeLiteLLMUnreachable
 	OutcomeDbInsertFailed      = "db_insert_failed"
 	OutcomeInternalError       = "internal_error"
-
-	// OutcomeStateInvalid is emitted by the SSO callback (Plan 03-07)
-	// on cookie-state vs URL-state mismatch or missing URL state (per
-	// BLK-05). Phase-3-internal additive extension to Hub §18.2 — not
-	// in the original enum.
-	OutcomeStateInvalid = "state_invalid"
 
 	// OutcomeLitellmRejected distinguishes an upstream LiteLLM 4xx
 	// rejection (e.g. 403 from a misconfigured master key, 422 validation)

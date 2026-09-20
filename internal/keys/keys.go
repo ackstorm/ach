@@ -16,9 +16,9 @@ import (
 // string literals so any future namespace shift surfaces as a compile
 // break, not silent drift.
 //
-// pk- / ek-  : plaintext bearer prefixes (returned exactly once on
+// pk- / ek-  : plaintext bearer prefixes (an ek- is returned exactly once
 //
-//	POST /platform/auth/sso/callback and POST /platform/keys).
+//	on POST /platform/keys; a pk- backs an OAuth row and is discarded).
 //
 // pkid_ / ekid_ : opaque key_id prefixes stored in the
 //

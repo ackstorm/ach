@@ -201,7 +201,9 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	userID, err := d.provision(r.Context(), email)
 	if err != nil {
-		htmlError(w, 503, "user provisioning failed")
+		_, status, msg := classifyProvisionError(err)
+		d.Auth.Logger.Warn("oauth: user provisioning failed", "err", err)
+		htmlError(w, status, msg)
 		return
 	}
 	if p.DeviceCode != "" {

@@ -333,12 +333,10 @@ func TestPlatformAPICollectors(t *testing.T) {
 		t.Fatal("NewPlatformAPICollectors returned nil")
 	}
 	c.HydrateDuration.Observe(0.01)
-	c.Login.WithLabelValues("created").Inc()
 
 	names := familyNames(t, reg)
 	want := map[string]bool{
 		"ach_platform_api_hydrate_duration_seconds": false,
-		"ach_platform_api_login_total":              false,
 	}
 	for _, n := range names {
 		if _, ok := want[n]; ok {
@@ -349,12 +347,6 @@ func TestPlatformAPICollectors(t *testing.T) {
 		if !seen {
 			t.Errorf("family %s not registered; got %v", n, names)
 		}
-	}
-	if got, w := metricLabelKeys(t, reg, "ach_platform_api_login_total"), []string{"outcome"}; !equalStringSlices(got, w) {
-		t.Errorf("ach_platform_api_login_total label keys: got %v, want %v", got, w)
-	}
-	if v := counterValue(t, reg, "ach_platform_api_login_total", map[string]string{"outcome": "created"}); v != 1 {
-		t.Errorf("ach_platform_api_login_total{created} = %v, want 1", v)
 	}
 }
 

@@ -4,12 +4,8 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -17,54 +13,35 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
-	achmetrics "github.com/ackstorm/ach/internal/metrics"
-	cli "github.com/ackstorm/ach/internal/platformapi/auth/cli"
-	"github.com/ackstorm/ach/internal/platformapi/middleware"
-	"github.com/ackstorm/ach/internal/platformapi/render"
 )
 
-// Deps is the auth-package-scoped dependency bag for LoginHandler and
-// CallbackHandler. It is DISTINCT from the top-level platformapi server's
-// Deps — auth carves out exactly the deps it needs (ID-token verifier,
-// OAuth2 config, LiteLLM client, DB pool, pepper, audit logger, namespace)
-// so the SSO handlers stay narrowly coupled.
-//
-// cmd/platform-api/main.go (Plan 03-11) constructs this Deps and passes it
-// to LoginHandler(deps) and CallbackHandler(deps) — both mounted OUTSIDE
-// the Authn-gated chi.Group per D-02.
+// Deps is the auth-package-scoped dependency bag behind the OAuth AS: the
+// Dex leg (ID-token verifier + OAuth2 config), LiteLLM provisioning, the
+// pk_ mint (pool, pepper, DEK). DISTINCT from the top-level platformapi
+// server's Deps.
 type Deps struct {
 	// IDTokenVerifier wraps oidc.Provider.Verifier(&oidc.Config{ClientID})
 	// so unit tests can substitute a fake. Production code (Plan 03-11)
 	// assigns deps.IDTokenVerifier = oidcProvider.Verifier(...).
 	IDTokenVerifier IDTokenVerifier
 
-	// OAuth2Cfg is the OAuth2 client config — ClientID, ClientSecret,
-	// RedirectURL, Scopes, and the Endpoint (auth + token URLs derived from
-	// oidcProvider.Endpoint() in the cmd wiring at process start).
+	// OAuth2Cfg is the Dex client config — ClientID, ClientSecret, Scopes,
+	// Endpoint. No RedirectURL: the AS derives its own callback from the
+	// issuer (oauth_authorize.go dexConfig).
 	OAuth2Cfg *oauth2.Config
 
-	// LiteLLM is the (cached) LiteLLM REST client. CallbackHandler uses
-	// UserInfoByEmail / UserNew / TeamMemberAdd / KeyGenerate / RevokeKey.
+	// LiteLLM is the (cached) LiteLLM REST client: UserInfoByEmail / UserNew
+	// / TeamMemberAdd (provisionUser), CreateTeam / KeyGenerate / RevokeKey
+	// (MintPK).
 	LiteLLM litellm.Client
 
-	// Pool is the Postgres connection pool. CallbackHandler uses
-	// db.InsertPersonalKey to write the new pk_ row.
+	// Pool is the Postgres connection pool (pk_ rows, consent BIP lookup).
 	Pool *pgxpool.Pool
-
-	// Redis is the device-code session store used by Phase 6 D-20:
-	// when LoginHandler is invoked with ?session_id=<id>, the value
-	// is packed into the OAuth2 state and the matching CallbackHandler
-	// invocation writes the freshly minted pk_ payload to
-	// "ach:cli-session:<id>" via cli.Put. Absence-of-Redis (or
-	// absence-of-session_id) preserves the pre-Phase-6 JSON browser
-	// flow verbatim — phase3 e2e assertions continue to pass.
-	Redis *redis.Client
 
 	// Pepper is the server-side HMAC pepper sourced from
 	// ACH_CREDENTIAL_HASH_PEPPER (Phase 1 D-09) — used to derive
@@ -102,115 +79,20 @@ type Deps struct {
 	NowFn func() time.Time
 
 	// InsecureCookie, when true, drops the __Host- prefix and Secure flag
-	// from the SSO state cookie so a plain-http deployment (internal/dev,
-	// e.g. ACH_BASE_URL=http://localhost:8080) can complete the SSO
-	// round-trip. DERIVED from the ACH_BASE_URL scheme in
-	// cmd/ach/cmd/platform_api.go (https base ⇒ false ⇒ hardened cookie).
+	// from the AS binding cookie so a plain-http deployment (dev/e2e,
+	// ACH_BASE_URL=http://…) can complete the round-trip. DERIVED from the
+	// ACH_BASE_URL scheme in cmd/ach/cmd/platform_api.go.
 	InsecureCookie bool
-
-	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
-	// increment ach_platform_api_login_total{outcome} on the SSO login path.
-	Metrics *achmetrics.PlatformAPICollectors
 }
 
 // IDTokenVerifier abstracts oidc.IDTokenVerifier so unit tests can
-// substitute fakes. The interface mirrors the single method
-// CallbackHandler calls; the production *oidc.IDTokenVerifier from
-// go-oidc satisfies it by structural typing.
+// substitute fakes; the production *oidc.IDTokenVerifier satisfies it.
 type IDTokenVerifier interface {
 	Verify(ctx context.Context, rawIDToken string) (*oidc.IDToken, error)
 }
 
-// stateSessionSeparator joins the (random_state, session_id) parts
-// inside the OAuth2 state parameter when Phase 6 D-20 device-code
-// threading is active. Both parts are base64url-encoded and never
-// contain "|", so the separator is unambiguous. CallbackHandler splits
-// the URL-state on this separator to extract the optional session_id;
-// the cookie-state is ALWAYS the random_state alone, so the existing
-// CSRF check compares the random prefix verbatim.
-const stateSessionSeparator = "|"
-
-// LoginHandler returns the GET /platform/auth/login HTTP handler. It
-// implements D-04 step 1:
-//
-//  1. Generate a 16-byte random `state` and a 32-byte random PKCE
-//     `code_verifier` via crypto/rand.
-//  2. Compute the S256 `code_challenge` = SHA-256(verifier).
-//  3. Set the __Host-ach_sso cookie carrying base64url(state + "|" + verifier).
-//  4. Redirect 302 to the Dex authorize URL with code_challenge=S256.
-//
-// Phase 6 D-20 extension: if the request carries ?session_id=<id>, the
-// id is packed into the OAuth2 state as "<random_state>|<session_id>"
-// — Dex echoes the entire opaque state back unchanged on the callback,
-// where CallbackHandler unpacks the suffix to know which CLI session
-// to write the pk_ into. The cookie still stores ONLY the random
-// state so the existing CSRF equality check remains intact (the URL
-// state's random_state prefix is compared against the cookie state).
-//
-// The handler does NOT touch LiteLLM, the DB, the audit logger, or any
-// other side-effecting collaborator — it is pure redirect logic.
-func LoginHandler(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		reqID := middleware.RequestIDFromCtx(r.Context())
-
-		// Step 1: state = 16 random bytes -> base64url-no-pad.
-		var stateBytes [16]byte
-		if _, err := rand.Read(stateBytes[:]); err != nil {
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to generate state", reqID)
-			return
-		}
-		state := base64.RawURLEncoding.EncodeToString(stateBytes[:])
-
-		// Phase 6 D-20: pack optional ?session_id into the OAuth2
-		// state we send to Dex. Cookie still stores ONLY the random
-		// state — CallbackHandler compares the URL state's prefix
-		// (before the separator) against the cookie, so CSRF coverage
-		// is preserved verbatim.
-		sessionID := r.URL.Query().Get("session_id")
-		urlState := state
-		if sessionID != "" {
-			urlState = state + stateSessionSeparator + sessionID
-		}
-
-		// Step 1b: PKCE verifier = 32 random bytes -> base64url-no-pad.
-		// 32 bytes gives 256 bits of entropy (well above the 43..128 char
-		// range RFC 7636 §4.1 mandates for code_verifier).
-		var verifierBytes [32]byte
-		if _, err := rand.Read(verifierBytes[:]); err != nil {
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to generate verifier", reqID)
-			return
-		}
-		verifier := base64.RawURLEncoding.EncodeToString(verifierBytes[:])
-
-		// Step 2: challenge = base64url(SHA-256(verifier)). Per RFC 7636
-		// §4.2, code_challenge_method=S256 implies the verifier is hashed
-		// with SHA-256 and the digest is base64url-no-pad-encoded.
-		challengeSum := sha256.Sum256([]byte(verifier))
-		challenge := base64.RawURLEncoding.EncodeToString(challengeSum[:])
-
-		// Step 3: persist (state, verifier) in the SSO state cookie.
-		// https base ⇒ __Host-ach_sso with Secure=true; plain-http base
-		// (deps.InsecureCookie, derived from ACH_BASE_URL) ⇒ ach_sso with
-		// Secure=false so an internal/dev HTTP round-trip works.
-		setSSOCookie(w, state, verifier, deps.InsecureCookie)
-
-		// Step 4: build Dex authorize URL with PKCE params and redirect.
-		// urlState includes the optional session_id suffix (D-20);
-		// state (without suffix) is what landed in the cookie above.
-		authURL := deps.OAuth2Cfg.AuthCodeURL(urlState,
-			oauth2.SetAuthURLParam("code_challenge", challenge),
-			oauth2.SetAuthURLParam("code_challenge_method", pkceS256),
-		)
-
-		http.Redirect(w, r, authURL, http.StatusFound)
-	}
-}
-
 // callbackInsertPK resolves the DB-insert seam in Deps. If InsertPKFn is
 // nil, it falls back to db.InsertPersonalKey on the configured Pool.
-// Centralizing the seam keeps CallbackHandler readable.
 func (deps Deps) callbackInsertPK(ctx context.Context, row db.PkInsertRow) error {
 	if deps.InsertPKFn != nil {
 		return deps.InsertPKFn(ctx, row)
@@ -226,39 +108,11 @@ func (deps Deps) callbackNow() time.Time {
 	return time.Now()
 }
 
-// fail emits the SSO-login audit event AND the render.Error response with
-// a single outcome string, eliminating the hand-sync footgun in
-// CallbackHandler's ~14 failure branches. keyID is "" for branches before
-// the pk_ is minted (audit.Event.KeyID is omitempty, so "" is absent).
-func (deps Deps) fail(ctx context.Context, w http.ResponseWriter, actor, outcome string, status int, msg, reqID, keyID string) {
-	audit.EmitAudit(ctx, deps.Audit, audit.Event{
-		Action:    audit.ActionSSOLogin,
-		Outcome:   outcome,
-		Actor:     actor,
-		RequestID: reqID,
-		KeyID:     keyID,
-	})
-	// G7: single SSO-failure convergence point → ach_platform_api_login_total.
-	if deps.Metrics != nil {
-		deps.Metrics.Login.WithLabelValues(outcome).Inc()
-	}
-	render.Error(w, status, outcome, msg, reqID)
-}
-
 // idTokenClaims is the minimal subset of the Dex ID-token payload ACH
 // reads. The email claim is the SSO-resolved user identity per Hub §16
 // DB-05 (verbatim, never normalized).
 type idTokenClaims struct {
 	Email string `json:"email"`
-}
-
-// callbackResponse is the §15.5 SSO callback success body. plaintext is
-// the pk-<…> bearer; key_id is the pkid_<…> opaque id. The body is the
-// SOLE place plaintext appears (per Hub §16.1 Specifics block).
-type callbackResponse struct {
-	KeyID      string `json:"key_id"`
-	Plaintext  string `json:"plaintext"`
-	OwnerEmail string `json:"owner_email"`
 }
 
 // pkExpiryWindow is the sliding-window TTL for newly minted pk_ rows.
@@ -271,273 +125,6 @@ const pkExpiryWindow = db.PkSlidingWindow
 // durationString renders a Go duration as a LiteLLM key duration ("168h").
 // LiteLLM accepts an <int><unit> string; hours dodge day-unit differences.
 func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Hours())) }
-
-// CallbackHandler returns the GET /platform/auth/sso/callback handler.
-// It implements D-04 step 2 (the load-bearing SSO sequence):
-//
-//  1. Read state cookie + URL ?state= + ?code= — clear cookie immediately
-//     after reading (single-use semantics; BLK-05).
-//  2. Validate state cookie matches URL state; missing/mismatch →
-//     400 invalid_argument + audit outcome=state_invalid.
-//  3. Exchange code for token using the PKCE verifier.
-//  4. Extract + verify ID token via the OIDC verifier; pull email claim.
-//  5. Idempotent LiteLLM user provision (first-time: UserNew + TeamMemberAdd;
-//     existing: TeamMemberAdd ALWAYS, per BLK-05 sub-point 3 + D-25).
-//  6. Generate pk_ plaintext + pkid_ key_id server-side; HMAC-hash with
-//     pepper; KeyGenerate against LiteLLM with caller-supplied Key + MaxBudget=nil.
-//  7. INSERT row in personal_keys. On INSERT failure, compensate with
-//     LiteLLM RevokeKey (best-effort) and render 500 db_insert_failed.
-//  8. Emit audit ActionSSOLogin / OutcomeCreated and return JSON body —
-//     the plaintext appears exactly once.
-//
-// All failure branches emit an audit event with a §18.2 outcome and clear
-// the SSO cookie before rendering the error envelope.
-func CallbackHandler(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		reqID := middleware.RequestIDFromCtx(ctx)
-		// Initial actor — no email resolved yet, namespace from deps.
-		baseActor := deps.Namespace + "/-"
-
-		// Step 1: read state cookie and clear it BEFORE further processing
-		// so single-use semantics hold even on the failure branches (BLK-05).
-		state, verifier, cookieErr := readSSOCookie(r, deps.InsecureCookie)
-		clearSSOCookie(w, deps.InsecureCookie)
-		if cookieErr != nil {
-			deps.fail(ctx, w, baseActor, audit.OutcomeStateInvalid, http.StatusBadRequest,
-				"sso state cookie missing or malformed", reqID, "")
-			return
-		}
-
-		// Step 2: state-mismatch detection — covers
-		//   (a) URL ?state= missing entirely,
-		//   (b) URL ?state= empty,
-		//   (c) URL ?state= != cookie state.
-		// All three branches emit OutcomeStateInvalid (BLK-05).
-		//
-		// Phase 6 D-20: the URL state MAY carry a session_id suffix
-		// packed by LoginHandler as "<random_state>|<session_id>".
-		// Split on the separator; the random_state prefix is the
-		// part compared against the cookie (CSRF check intact); the
-		// suffix is the optional CLI session id.
-		urlState := r.URL.Query().Get("state")
-		var sessionID string
-		if i := strings.Index(urlState, stateSessionSeparator); i >= 0 {
-			sessionID = urlState[i+len(stateSessionSeparator):]
-			urlState = urlState[:i]
-		}
-		if urlState == "" || urlState != state {
-			deps.fail(ctx, w, baseActor, audit.OutcomeStateInvalid, http.StatusBadRequest,
-				"sso state mismatch or missing", reqID, "")
-			return
-		}
-
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadRequest,
-				"missing authorization code", reqID, "")
-			return
-		}
-
-		// Step 3: exchange the code for the token, passing the PKCE
-		// code_verifier so Dex validates the original challenge.
-		token, err := deps.OAuth2Cfg.Exchange(ctx, code,
-			oauth2.SetAuthURLParam("code_verifier", verifier))
-		if err != nil {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadGateway,
-				"sso code exchange failed", reqID, "")
-			return
-		}
-
-		// Step 4a: extract id_token from the token response (OIDC overlay
-		// on top of plain OAuth2). Per RFC 6749 §4.1.4 + OIDC §3.1.3.3
-		// id_token is returned in the JSON token body, accessible via
-		// token.Extra("id_token").
-		rawIDToken, ok := token.Extra("id_token").(string)
-		if !ok || rawIDToken == "" {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadGateway,
-				"sso id_token missing from token response", reqID, "")
-			return
-		}
-
-		// Step 4b: validate ID token signature + standard claims (iss,
-		// aud, exp, iat, nonce). go-oidc's Verifier refreshes Dex JWKS on
-		// signature-validation failure per default config.
-		idToken, err := deps.IDTokenVerifier.Verify(ctx, rawIDToken)
-		if err != nil {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusUnauthorized,
-				"sso id_token verification failed", reqID, "")
-			return
-		}
-
-		// Step 4c: extract email claim verbatim (Hub §16 DB-05 — no
-		// normalization, case-sensitive storage).
-		var claims idTokenClaims
-		if err := idToken.Claims(&claims); err != nil {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusInternalServerError,
-				"sso id_token claims decode failed", reqID, "")
-			return
-		}
-		if claims.Email == "" {
-			deps.fail(ctx, w, baseActor, audit.OutcomeInternalError, http.StatusBadRequest,
-				"sso id_token missing email claim", reqID, "")
-			return
-		}
-
-		// From here on the resolved actor carries the user's email.
-		actor := deps.Namespace + "/" + claims.Email
-
-		// Step 5: idempotent LiteLLM user provision.
-		userID, err := provisionUser(ctx, deps, claims.Email)
-		if err != nil {
-			outcome, status, msg := classifyProvisionError(err)
-			deps.fail(ctx, w, actor, outcome, status, msg, reqID, "")
-			return
-		}
-
-		// Steps 6-8: mint pk_/pkid_, hash, KeyGenerate, INSERT (with
-		// LiteLLM compensation on failure), success audit, and the
-		// session-writeback (HTML) or legacy JSON response. The method
-		// writes the full response itself; this handler returns after it.
-		deps.mintAndPersistPK(ctx, w, claims.Email, userID, actor, reqID, sessionID)
-	}
-}
-
-// mintAndPersistPK runs steps 6-8: mint pk_ + pkid_, hash with pepper,
-// LiteLLM KeyGenerate, INSERT personal_keys with LiteLLM compensation on
-// failure, success audit, and the session writeback (HTML) or legacy JSON.
-// Writes the full response itself; the caller returns immediately.
-func (deps Deps) mintAndPersistPK(ctx context.Context, w http.ResponseWriter, email, userID, actor, reqID, sessionID string) {
-	// Steps 6-7 live in MintPK (shared with the OAuth token endpoint).
-	plaintext, row, err := deps.MintPK(ctx, email, userID, "cli")
-	if err != nil {
-		var me *MintError
-		if !errors.As(err, &me) {
-			me = &MintError{Outcome: audit.OutcomeInternalError, Status: http.StatusInternalServerError, Msg: "failed to mint personal key"}
-		}
-		deps.fail(ctx, w, actor, me.Outcome, me.Status, me.Msg, reqID, me.KeyID)
-		return
-	}
-	keyID := row.KeyID
-
-	// Step 8: emit success audit + render the one-time plaintext.
-	audit.EmitAudit(ctx, deps.Audit, audit.Event{
-		Action:    audit.ActionSSOLogin,
-		Outcome:   audit.OutcomeCreated,
-		Actor:     actor,
-		RequestID: reqID,
-		KeyID:     keyID,
-	})
-	// G7: ach_platform_api_login_total{outcome="created"} on successful mint.
-	if deps.Metrics != nil {
-		deps.Metrics.Login.WithLabelValues(audit.OutcomeCreated).Inc()
-	}
-
-	// Phase 6 D-20: when the OAuth2 state carried a session_id
-	// suffix AND Redis is wired, write the pk_ payload to
-	// "ach:cli-session:<id>" so the polling /platform/auth/cli/
-	// token endpoint can hand it to the CLI. Render a friendly
-	// browser-side HTML page instead of the legacy JSON — the
-	// user is on a browser they're about to close, not a script
-	// that needs to parse the body.
-	//
-	// Absence-of-session_id preserves the pre-Phase-6 JSON
-	// branch verbatim so test/e2e/phase3_invariants browser-
-	// driven assertions remain valid (D-20 backward compat).
-	if sessionID != "" && deps.Redis != nil {
-		sess := cli.Session{
-			KeyID:      keyID,
-			Plaintext:  plaintext,
-			OwnerEmail: email,
-			CreatedAt:  deps.callbackNow().UTC().Format(time.RFC3339),
-		}
-		if putErr := cli.Put(ctx, deps.Redis, sessionID, sess, cli.DefaultSessionTTL); putErr != nil {
-			// Log the write failure but still render the HTML —
-			// the CLI's /token poll will eventually return 404
-			// session_not_found, surfacing the failure to the
-			// user without leaking the pk_ through the browser
-			// response.
-			deps.Logger.Error("sso.callback: cli session writeback failed",
-				"err", putErr, "request_id", reqID)
-		}
-		renderCallbackHTML(w)
-		return
-	}
-
-	render.JSON(w, http.StatusOK, callbackResponse{
-		KeyID:      keyID,
-		Plaintext:  plaintext,
-		OwnerEmail: email,
-	})
-}
-
-// callbackHTMLPage is the browser-friendly success page rendered when
-// the OAuth2 state carried a session_id (D-20). It contains NO pk_
-// plaintext — the CLI receives the pk_ via the /platform/auth/cli/
-// token poll, not via the browser.
-const callbackHTMLPage = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Signed in to ACH</title>
-<style>
-  :root { --bg:#ffffff; --fg:#1a1a1a; --muted:#8a8a8a; --brand:#FA1E28; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0d0d0d; --fg:#f5f5f5; --muted:#7a7a7a; }
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { height:100%; }
-  body {
-    display:flex; align-items:center; justify-content:center;
-    background:var(--bg); color:var(--fg);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
-  }
-  .card { display:flex; flex-direction:column; align-items:center; text-align:center; padding:24px; }
-  .logo { width:76px; height:76px; margin-bottom:26px; }
-  h1 { font-size:30px; font-weight:600; letter-spacing:-0.02em; margin-bottom:12px; }
-  p { font-size:16px; color:var(--muted); font-weight:400; }
-</style>
-</head>
-<body>
-  <main class="card">
-    <svg class="logo" viewBox="0 0 100 100" fill="none" aria-label="ACH" role="img">
-      <g stroke="var(--brand)" stroke-width="3.2" stroke-linecap="round">
-        <polygon points="50,18 77.7,34 77.7,66 50,82 22.3,66 22.3,34" fill="none"/>
-        <line x1="50" y1="50" x2="50"   y2="18"/>
-        <line x1="50" y1="50" x2="77.7" y2="34"/>
-        <line x1="50" y1="50" x2="77.7" y2="66"/>
-        <line x1="50" y1="50" x2="50"   y2="82"/>
-        <line x1="50" y1="50" x2="22.3" y2="66"/>
-        <line x1="50" y1="50" x2="22.3" y2="34"/>
-      </g>
-      <g fill="var(--brand)">
-        <circle cx="50"   cy="18" r="5.2"/>
-        <circle cx="77.7" cy="34" r="5.2"/>
-        <circle cx="77.7" cy="66" r="5.2"/>
-        <circle cx="50"   cy="82" r="5.2"/>
-        <circle cx="22.3" cy="66" r="5.2"/>
-        <circle cx="22.3" cy="34" r="5.2"/>
-        <circle cx="50" cy="50" r="8.4"/>
-      </g>
-    </svg>
-    <h1>Signed in to ACH</h1>
-    <p>You may now close this page</p>
-  </main>
-</body>
-</html>
-`
-
-// renderCallbackHTML writes the browser-friendly success page with
-// Content-Type: text/html. Errors on the writer are swallowed (mirrors
-// render.JSON discipline — by the time the encoder fails the status
-// is already flushed and there is no clean recovery path).
-func renderCallbackHTML(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, callbackHTMLPage)
-}
 
 // provisionUser implements D-04 step 5 + BLK-05 sub-point 3 + D-25
 // idempotent LiteLLM user provisioning:
@@ -688,8 +275,9 @@ func (e *provisionErr) Error() string {
 func (e *provisionErr) Unwrap() error { return e.err }
 
 // classifyProvisionError maps a provisionUser error into the audit outcome,
-// HTTP status, and user-visible message. The mapping is intentionally
-// narrow: only the kinds provisionUser produces are recognized.
+// HTTP status, and the message the browser page shows — default-team-missing
+// stays fail-loud for the deployer. Only the kinds provisionUser produces
+// are recognized.
 func classifyProvisionError(err error) (outcome string, status int, msg string) {
 	var pe *provisionErr
 	if errors.As(err, &pe) {

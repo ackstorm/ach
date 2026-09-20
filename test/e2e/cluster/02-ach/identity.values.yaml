@@ -22,8 +22,6 @@ extraEnv:
     value: "ach-identity"
   - name: ACH_DEX_CLIENT_SECRET
     value: "dev-secret-not-for-prod"
-  - name: ACH_DEX_REDIRECT_URL
-    value: "http://api.e2e.local:8080/platform/auth/sso/callback"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
   - name: ACH_REDIS_DB

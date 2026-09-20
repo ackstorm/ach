@@ -15,17 +15,14 @@ import (
 // any value drift is a wire-format break — this test is the canary.
 //
 // Source of truth: Hub §18.2 outcome enum (16 values) + Hub §18.2
-// action enum (9 values) + OutcomeStateInvalid (Phase-3-internal
-// additive extension per BLK-05 for SSO state-mismatch — total 17
-// outcomes).
+// action enum minus the login actions + the additive extensions.
 func TestEventConstantsAreStable(t *testing.T) {
 	tests := []struct {
 		name string
 		got  string
 		want string
 	}{
-		// Actions — Hub §18.2 (9 total)
-		{"ActionSSOLogin", audit.ActionSSOLogin, "platform.sso.login"},
+		// Actions — Hub §18.2
 		{"ActionEkCreate", audit.ActionEkCreate, "platform.ek.create"},
 		{"ActionEkRevoke", audit.ActionEkRevoke, "platform.ek.revoke"},
 		{"ActionPkRevoke", audit.ActionPkRevoke, "platform.pk.revoke"},
@@ -56,7 +53,6 @@ func TestEventConstantsAreStable(t *testing.T) {
 		// Emitted by the SSO callback on cookie-state vs URL-state mismatch
 		// or missing URL state. Documented in 03-02-SUMMARY.md so future
 		// Hub-spec revisions can adopt it back into §18.2 if desired.
-		{"OutcomeStateInvalid", audit.OutcomeStateInvalid, "state_invalid"},
 		{"OutcomeLitellmRejected", audit.OutcomeLitellmRejected, "litellm_rejected"},
 	}
 	for _, tc := range tests {

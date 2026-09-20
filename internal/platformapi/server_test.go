@@ -72,30 +72,21 @@ func newTestDeps(t *testing.T, resolver keystore.Resolver) Deps {
 	}
 }
 
-// TestServer_S1_UnauthenticatedRoutesNotRejectedByAuthn asserts that
-// GET /healthz, /livez, /readyz, /platform/auth/login, and
-// /platform/auth/sso/callback do NOT receive a 401 from the Authn
-// middleware — they are mounted OUTSIDE the authenticated chi.Group.
-//
-// (The auth handlers themselves may reject for other reasons — missing
-// cookie, missing query params — but NOT with the 401 "missing_key"
-// envelope the Authn middleware emits.)
+// TestServer_S1_UnauthenticatedRoutesNotRejectedByAuthn asserts that the
+// health probes do NOT receive a 401 from the Authn middleware — they are
+// mounted OUTSIDE the authenticated chi.Group (the OAuth AS too, covered
+// by its own tests when mounted).
 func TestServer_S1_UnauthenticatedRoutesNotRejectedByAuthn(t *testing.T) {
 	deps := newTestDeps(t, &fakeResolver{}) // resolver never reached
 	h := New(deps)
 
-	for _, path := range []string{"/healthz", "/livez", "/readyz",
-		"/platform/auth/login", "/platform/auth/sso/callback"} {
+	for _, path := range []string{"/healthz", "/livez", "/readyz"} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rr := httptest.NewRecorder()
 			h.ServeHTTP(rr, req)
 
 			body := rr.Body.String()
-			// We do not require a specific status code — health probes
-			// return 200, the auth handlers may return 400/302 — but
-			// the response body MUST NOT contain the Authn middleware's
-			// "missing_key" envelope code.
 			if strings.Contains(body, `"code":"missing_key"`) {
 				t.Errorf("%s incorrectly rejected by Authn middleware: %s", path, body)
 			}
