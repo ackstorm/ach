@@ -28,12 +28,11 @@ func newReverseProxy(target *url.URL, logger *slog.Logger) *httputil.ReverseProx
 	rp.Director = func(req *http.Request) {
 		host := req.Host
 		orig(req)
-		// Publish the public hostname the client dialled in a header the
-		// upstream can opt into (issue #177): req.Host is cleared below, so
-		// without this a backend behind ACH cannot learn which front door it
-		// was reached at, and serves RFC 9728 metadata naming the wrong
-		// resource. Set (never append) — an inbound client-supplied value is
-		// overwritten, so it cannot be spoofed past this hop.
+		// Publish the public hostname the client dialled in a header a
+		// backend behind LiteLLM can read (issue #177: RFC 9728 metadata
+		// naming the right front door). Set (never append) — an inbound
+		// client-supplied value is overwritten, so it cannot be spoofed past
+		// this hop. Host itself is preserved end to end.
 		if host != "" {
 			req.Header.Set("X-Forwarded-Host", host)
 		}
@@ -48,7 +47,6 @@ func newReverseProxy(target *url.URL, logger *slog.Logger) *httputil.ReverseProx
 			}
 			req.Header.Set("X-Forwarded-Proto", proto)
 		}
-		req.Host = ""
 	}
 
 	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

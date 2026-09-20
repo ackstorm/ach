@@ -18,7 +18,7 @@ import (
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
-func TestNewReverseProxyPreservesPathAndClearsHost(t *testing.T) {
+func TestNewReverseProxyPreservesPathAndHost(t *testing.T) {
 	var gotPath, gotHost string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -41,10 +41,9 @@ func TestNewReverseProxyPreservesPathAndClearsHost(t *testing.T) {
 	if gotPath != "/v1/chat/completions" {
 		t.Errorf("path: got %q want /v1/chat/completions", gotPath)
 	}
-	// req.Host cleared => upstream Host is the backend's own host, never
-	// the client-supplied "gateway.example".
-	if gotHost == "gateway.example" {
-		t.Errorf("client Host leaked to upstream: %q", gotHost)
+	// Host is preserved end to end: LiteLLM composes its /ui redirects from it.
+	if gotHost != "gateway.example" {
+		t.Errorf("Host: got %q want gateway.example", gotHost)
 	}
 }
 

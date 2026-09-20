@@ -27,9 +27,9 @@ const (
 	// for "the Environment tag was injected" (ek_ → present, pk_ → absent).
 	//
 	// The name deliberately does NOT use the "x-ach-" prefix: the forwarder's
-	// own headers.StripAndRewrite (the D-06 strip) drops every "x-ach-*" and
-	// "x-litellm-*" header from the upstream request, so an "x-ach-tags"
-	// header would be removed by the Director before it ever reached LiteLLM.
+	// own headers.StripAndRewrite drops every "x-ach-*" header from the
+	// upstream request, so an "x-ach-tags" header would be removed by the
+	// Director before it ever reached LiteLLM.
 	// "x-achtest-" sits outside that prefix yet stays "x-*", which is what
 	// LiteLLM's forward_client_headers_to_llm_api forwards to the backend.
 	// In production LiteLLM does not enable that setting, so the header is

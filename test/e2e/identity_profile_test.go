@@ -23,7 +23,8 @@ import (
 // signing key (minted by the forwarder), the declared credential headers.
 func TestIdentityProfile(t *testing.T) {
 	const base = "http://api.e2e.local:8080"
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	do := func(t *testing.T, method, path string, hdr map[string]string, body string) (int, http.Header, []byte) {
 		t.Helper()
 		req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
@@ -53,6 +54,12 @@ func TestIdentityProfile(t *testing.T) {
 	t.Run("catch_all_anonymous", func(t *testing.T) {
 		if code, _, raw := do(t, http.MethodGet, "/health/liveliness", nil, ""); code != 200 {
 			t.Fatalf("anonymous /health/liveliness through gateway + forwarder: %d %s", code, raw)
+		}
+		// LiteLLM composes this redirect from Host: preserved on both hops,
+		// so it names the front door, not the Service.
+		code, hdr, _ := do(t, http.MethodGet, "/ui", nil, "")
+		if code != 307 || hdr.Get("Location") != base+"/ui/" {
+			t.Fatalf("/ui redirect: %d Location=%q (want 307 → %s/ui/)", code, hdr.Get("Location"), base)
 		}
 	})
 

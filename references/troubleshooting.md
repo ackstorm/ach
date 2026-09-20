@@ -756,12 +756,10 @@ Walk it in this order:
    `ACH_BASE_URL` on the forwarder Deployment — an empty or unparseable
    value disables the rewrite silently.
 
-WHY IT FAILS: both proxy hops clear `req.Host` so the upstream `Host` is
-the internal Service name (`internal/gateway/proxy.go`,
-`internal/forwarder/proxy/proxy.go`) — deliberate, and unchanged. The
-public hostname travels in `X-Forwarded-Host` instead, which the gateway
-hop SETS (overwriting any client-supplied value, so it cannot be spoofed)
-and `headers.StripAndRewrite` passes through untouched.
+WHY IT FAILS: the backend sits behind LiteLLM's own hop and cannot see the
+`Host` ACH preserved. The public hostname travels in `X-Forwarded-Host`,
+which the gateway hop SETS (overwriting any client-supplied value, so it
+cannot be spoofed) and `headers.StripAndRewrite` passes through untouched.
 `TestXForwardedHostSurvivesBothHops` guards the composed path.
 
 ### ❌ Cost stuck at 0 under `litellm_usage`

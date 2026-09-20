@@ -274,8 +274,8 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
   `/mcp/<n>` (LiteLLM admin-only route guard). The old master-key
   impersonation doc (`docs/developer-guide/litellm-custom-auth.md`) describes
   the superseded path.
-- **Header rewrite** (every route): strip ALL `Authorization`,
-  `x-litellm-*`, `x-ach-*`, hop-by-hop → write auth headers fresh. `ek_`
+- **Header rewrite** (every route): drop `x-ach-*`, set `x-litellm-api-key`
+  to the caller's own key; everything else (incl. `Host`) passes as it came. `ek_`
   runtime traffic gets the `<environment>` tag injected; `pk_` untagged.
 - **Precheck** (mcp/a2a only, before JWT): ek → name ∈ bound Environment's
   runtime list (O(1) cache, terminating fail-closed); pk → LiteLLM team

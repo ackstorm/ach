@@ -193,12 +193,12 @@ correct by design. During a rotation, both slots are published for
 
 ## 1.4 Public hostname forwarding + RFC 9728 discovery
 
-Both proxy hops clear `req.Host` so the upstream `Host` header is the
-internal Service name and a client-supplied `Host` never leaks
-(`internal/gateway/proxy.go`, `internal/forwarder/proxy/proxy.go`). That
-stays true — but on its own it left a backend behind ACH with **no way to
-learn which public hostname it was reached at**, which breaks OAuth
-discovery for any MCP backend fronted by more than one door (issue #177).
+Both proxy hops preserve `Host`: LiteLLM composes its own redirects
+(`/` → `/ui/`) from it and ignores `X-Forwarded-Host`, so a cleared `Host`
+sent browsers to the Service name. A backend *behind* LiteLLM, however,
+sees LiteLLM's hop and still needs to learn which public hostname it was
+reached at — that is what breaks OAuth discovery for any MCP backend
+fronted by more than one door (issue #177).
 
 The gateway hop therefore publishes the public hostname in a header the
 upstream can opt into:
@@ -213,8 +213,9 @@ end-to-end, so the gateway's `req.Host` is authoritative — but TLS
 terminates at the Ingress, so the gateway only ever sees plaintext and
 must trust the Ingress's `X-Forwarded-Proto` when it is present.
 
-Neither header is stripped by `headers.StripAndRewrite`, so both survive
-the forwarder hop unchanged and reach LiteLLM and the backend.
+The forwarder's `headers.StripAndRewrite` drops only `x-ach-*` and sets
+`x-litellm-api-key`; every other header — these two, `Authorization`, the
+other `x-litellm-*` — passes as it came.
 
 ### Why a backend needs this — and when it cannot have it
 

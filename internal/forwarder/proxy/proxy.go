@@ -75,8 +75,7 @@ type Deps struct {
 //
 // ModifyResponse is HEADER-ONLY (issue #177): it rewrites the
 // resource_metadata pointer in a 401/403 WWW-Authenticate challenge so it names
-// ACH rather than LiteLLM's own front door, and a 3xx Location that names the
-// upstream (location.go). It runs BEFORE the body is copied
+// ACH rather than LiteLLM's own front door. It runs BEFORE the body is copied
 // and buffers nothing, so streaming pass-through (D-05) is unaffected — the
 // constraint that comment always encoded is that the BODY is never touched, and
 // it still is not. Director likewise does NOT touch req.Body, preserving SSE
@@ -87,7 +86,6 @@ func New(deps Deps) *httputil.ReverseProxy {
 	if publicBase != nil {
 		modifyResponse = func(resp *http.Response) error {
 			rewriteChallengeHost(resp, publicBase)
-			rewriteLocation(resp, deps.LiteLLMUpstream, publicBase)
 			return nil
 		}
 	}
@@ -95,9 +93,8 @@ func New(deps Deps) *httputil.ReverseProxy {
 		Director: func(req *http.Request) {
 			req.URL.Scheme = deps.LiteLLMUpstream.Scheme
 			req.URL.Host = deps.LiteLLMUpstream.Host
-			// Clear req.Host so Go fills the upstream Host header from
-			// URL.Host — never leak client-supplied Host to LiteLLM.
-			req.Host = ""
+			// req.Host stays what the client dialled: LiteLLM composes its
+			// redirects (/ → /ui/) from Host and ignores X-Forwarded-Host.
 
 			// TESTING-PHASE (reverts FIX01 §A.6 / D-13): forward the CALLER's
 			// own LiteLLM virtual key as x-litellm-api-key (1:1 identity). The
