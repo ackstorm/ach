@@ -17,15 +17,17 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase3_invariants_test.go`           | Phase 03 SCs #1–#6 (Platform API SSO + hydrate + revocation + audit)                                                   |
 | `phase3_helpers_test.go`              | Port-forward + HTTP-client + audit-line parser helpers                                                                 |
 | `phase4_invariants_test.go`           | Phase 04 SCs #1–#5 (Forwarder header rewrite + precheck + JWT mint + JWKS + audit), plan 04-09 helpers                 |
-| `phase4_helpers_test.go`              | Phase 04 Forwarder helpers (SSO key acquisition, JWKS probe, BIP fixture seed)                                         |
+| `phase4_helpers_test.go`              | Phase 04 Forwarder helpers (OAuth login, JWKS probe, BIP fixture seed)                                                 |
 | `phase4_bip_loop_test.go`             | Phase 04 BIP closed loop — single-shot JWT-present and JWT-absent MCP calls through both seeded routes                 |
 | `phase4_environment_available_test.go`| TODO §9 acceptance — Environment Available composite condition (runs by default; opt out via `ACH_SKIP_PHASE4=1`)      |
 | `phase4_promotion_test.go`            | §11 UAT promotion: force-refresh, BIP, marketplace, restart, hydrate-golden, finalizer matrix                          |
 | `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, fixture-server bring-up, DB-count helpers     |
 | `phase5_invariants_test.go`           | Phase 05 SCs (content-service sendfile path, env-cache observability, hydrate URL surface)                            |
 | `phase5_helpers_test.go`              | Phase 05 helpers (port-forward, kubectl exec into pods, strace seam)                                                  |
-| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — login (env-var-injected pk_) + whoami --verify + env list + keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
+| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — OAuth profile staged on disk + whoami --verify + env list + keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
 | `phase6_helpers_test.go`              | Phase 06 helpers (`phase6SuiteGuard`, `phase6WriteTempConfig`, `phase6NormalizeHydrate`, `phase6RunAch`)                |
+| `oauth_login_helpers_test.go`         | `oauthLogin` (loopback ceremony → token pair, the user's credential everywhere) + `writeCLIConfig` (stages an OAuth profile) |
+| `device_grant_test.go`                | RFC 8628 device grant end to end: AS endpoints, the verification page, the real `ach-cli login --no-browser`            |
 
 ## Focused dev loop
 

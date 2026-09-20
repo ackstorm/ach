@@ -270,7 +270,13 @@ func formatIdentityBlock(name string, dep *config.Profile, bearer string) string
 	var sb strings.Builder
 	_, _ = fmt.Fprintf(&sb, "Profile: %s\n", name)
 	_, _ = fmt.Fprintf(&sb, "URL: %s\n", dep.URL)
-	_, _ = fmt.Fprintf(&sb, "Key: %s\n", config.Mask(bearer))
+	if dep.OAuth != nil {
+		// A JWT has no pk-/ek- prefix to mask around; naming the session
+		// type says everything the user needs and echoes nothing.
+		_, _ = fmt.Fprintln(&sb, "Key: OAuth session")
+	} else {
+		_, _ = fmt.Fprintf(&sb, "Key: %s\n", config.Mask(bearer))
+	}
 	return sb.String()
 }
 

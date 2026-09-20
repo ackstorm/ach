@@ -58,7 +58,6 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,63 +203,16 @@ func phase7BaseURL() string {
 	return phase7DefaultBaseURL
 }
 
-// phase7AcquirePk returns the pk_ the test should use to authenticate
-// CLI invocations. Sources, in order:
-//   - ACH_E2E_PHASE7_PK env var (explicit override).
-//   - else SELF-MINT via the Dex mockCallback SSO flow against the kept
-//     cluster (ssoMintPK), so the Phase 7 engine suite runs unattended
-//     inside the e2e container instead of skipping on a missing pk_.
-//
-// The mint is the same Go port of references/local-testing-gateway.md §3
-// used by TestPhase7AllPlatformsProjection. Standard kind+Helm fixture only
-// (the mock connector returns the static kilgore@kilgore.trout user).
-func phase7AcquirePk(t *testing.T) string {
+// phase7AcquirePk logs the mock Dex user in through the OAuth AS and
+// returns the credentials the CLI tests stage on a profile.
+func phase7AcquirePk(t *testing.T) userCreds {
 	t.Helper()
-	if v := os.Getenv("ACH_E2E_PHASE7_PK"); v != "" {
-		return v
-	}
-	return ssoMintPK(t, phase7BaseURL())
+	return oauthLogin(t, phase7BaseURL(), "")
 }
 
-// phase7SeedXdgConfig writes a synthetic ~/.config/ach/config.yaml under
-// a temp XDG_CONFIG_HOME directory with `default: demo` +
-// `deployments.demo.{url,pk}` populated from baseURL + pk. Returns the
-// temp XDG_CONFIG_HOME path so the caller can pass it to
-// phase7RunAchCli / phase7RunAchCliEnv.
-//
-// The yaml shape mirrors `internal/cli/config.File` (Hub §15.4 verbatim).
-// Mode 0600 on the config file + 0700 on the directory match the
-// production discipline enforced by `internal/cli/config.Save`.
-//
-// This is the D-18 Option A bypass — the test stages a pre-minted pk_
-// rather than running through the device-code flow. The pk_ plaintext
-// is never logged via t.Logf (CLI-04 no-leak / OBS-02).
-func phase7SeedXdgConfig(t *testing.T, baseURL, pk string) string {
-	t.Helper()
-	if baseURL == "" {
-		t.Fatalf("phase7SeedXdgConfig: baseURL must be non-empty")
-	}
-	if pk == "" {
-		t.Fatalf("phase7SeedXdgConfig: pk must be non-empty")
-	}
-	tmp := t.TempDir()
-	achDir := filepath.Join(tmp, "ach")
-	if err := os.MkdirAll(achDir, 0o700); err != nil {
-		t.Fatalf("phase7SeedXdgConfig: mkdir %s: %v", achDir, err)
-	}
-	cfgPath := filepath.Join(achDir, "config.yaml")
-	contents := fmt.Sprintf(""+
-		"default: demo\n"+
-		"profiles:\n"+
-		"    demo:\n"+
-		"        url: %s\n"+
-		"        pk: %s\n",
-		baseURL, pk,
-	)
-	if err := os.WriteFile(cfgPath, []byte(contents), 0o600); err != nil {
-		t.Fatalf("phase7SeedXdgConfig: write %s: %v", cfgPath, err)
-	}
-	return tmp
+// phase7SeedXdgConfig stages the CLI config for creds (writeCLIConfig).
+func phase7SeedXdgConfig(t *testing.T, baseURL string, creds userCreds) string {
+	return writeCLIConfig(t, baseURL, creds)
 }
 
 // phase7CreateEkKey runs `ach-cli keys create --environment demo

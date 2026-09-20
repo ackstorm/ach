@@ -12,8 +12,12 @@ ach-cli token                 # prints ONE line: a fresh access token
 ach-cli env hydrate <env>     # writes the tools' configs (no credential inside — see below)
 ```
 
-`ach-cli login --device` keeps the old device-code flow for an SSH host
-without a browser (it mints a `pk_`, as before).
+On a terminal `login` asks how to finish: **1)** the browser on this
+machine, or **2)** another device — it prints a URL and a code like
+`BCDF-GHJK`; open the URL in any browser, confirm the code matches, sign
+in, and the CLI picks it up (RFC 8628 device grant). Option 2 is the way in
+from an SSH host; `--no-browser` selects it without the menu. Both leave
+the same token pair on the profile.
 
 ## MCP servers: the tool signs in itself
 

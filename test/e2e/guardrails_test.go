@@ -43,7 +43,7 @@ const (
 func TestGuardrailUnresolvedBlocksEkMint(t *testing.T) {
 	phase6SuiteGuard(t)
 
-	pk := phase6AcquirePk(t)
+	pk := phase6AcquirePk(t).Access
 	baseURL := phase6PlatformAPIURL(t)
 
 	// ── Precondition ────────────────────────────────────────────────────

@@ -31,7 +31,7 @@ import (
 func TestRuntimeCatalogAdminOnly(t *testing.T) {
 	phase6SuiteGuard(t)
 
-	pk := phase6AcquirePk(t)
+	pk := phase6AcquirePk(t).Access
 	baseURL := phase6PlatformAPIURL(t)
 	modelsURL := baseURL + "/platform/admin/runtime/models"
 

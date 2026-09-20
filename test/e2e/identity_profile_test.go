@@ -5,12 +5,9 @@
 package e2e
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -92,9 +89,19 @@ func TestIdentityProfile(t *testing.T) {
 		}
 	})
 
+	t.Run("device_grant", func(t *testing.T) {
+		access := deviceGrant(t, base)
+		bearer := map[string]string{"Authorization": "Bearer " + access}
+		if code, _, raw := do(t, http.MethodGet, "/v1/models", bearer, ""); code != 200 {
+			t.Fatalf("/v1/models with the device-grant token: %d %s", code, raw)
+		}
+	})
+
 	t.Run("oauth_ceremony_then_mcp_without_bip", func(t *testing.T) {
-		access := identityAccessToken(t, base)
-		if code, _, raw := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer " + access}, ""); code != 200 {
+		// Identity has no BIP → the ceremony never chains to a broker.
+		access := oauthLogin(t, base, base+"/v1").Access
+		bearer := map[string]string{"Authorization": "Bearer " + access}
+		if code, _, raw := do(t, http.MethodGet, "/v1/models", bearer, ""); code != 200 {
 			t.Fatalf("/v1/models with the identity token: %d %s", code, raw)
 		}
 		// No Environments, no precheck, no BIP JWT: the pod (requireJwt=false)
@@ -103,55 +110,4 @@ func TestIdentityProfile(t *testing.T) {
 			t.Fatalf("identity /mcp/demo-mcp-jwt: outcome %q", st)
 		}
 	})
-}
-
-// identityAccessToken runs the OAuth ceremony against the identity release's
-// own AS (DCR → /authorize → Dex mock → code → /token) and returns the access
-// token. The redirect chain is followed with every hop rewritten to base, as
-// followToLoopback does for the full release.
-func identityAccessToken(t *testing.T, base string) string {
-	t.Helper()
-	noRedirect := &http.Client{Timeout: 30 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	regBody, _ := json.Marshal(map[string]any{"client_name": "e2e-identity", "redirect_uris": []string{"http://127.0.0.1:1/cb"}})
-	resp, err := noRedirect.Post(base+"/platform/oauth/register", "application/json", strings.NewReader(string(regBody)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var reg struct {
-		ClientID string `json:"client_id"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&reg)
-	_ = resp.Body.Close()
-	if resp.StatusCode != 201 || reg.ClientID == "" {
-		t.Fatalf("identity register: %d %+v", resp.StatusCode, reg)
-	}
-	verifier := "e2e-identity-verifier-" + strings.Repeat("y", 40)
-	sum := sha256.Sum256([]byte(verifier))
-	q := url.Values{
-		"response_type": {"code"}, "client_id": {reg.ClientID}, "redirect_uri": {"http://127.0.0.1:1/cb"},
-		"state": {"s1"}, "code_challenge_method": {"S256"},
-		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])},
-		"resource":       {base + "/v1"},
-	}
-	authCode, hops := followToLoopbackWithCount(t, noRedirect, base, base+"/platform/oauth/authorize?"+q.Encode())
-	if authCode == "" || hops != 0 {
-		t.Fatalf("identity authorize: code=%q broker hops=%d (identity has no BIP → never chains)", authCode, hops)
-	}
-	form := url.Values{
-		"grant_type": {"authorization_code"}, "code": {authCode}, "client_id": {reg.ClientID},
-		"redirect_uri": {"http://127.0.0.1:1/cb"}, "code_verifier": {verifier},
-	}
-	resp, err = noRedirect.Post(base+"/platform/oauth/token", "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var tok map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&tok)
-	access, _ := tok["access_token"].(string)
-	if resp.StatusCode != 200 || access == "" {
-		t.Fatalf("identity token: %d %v", resp.StatusCode, tok)
-	}
-	return access
 }

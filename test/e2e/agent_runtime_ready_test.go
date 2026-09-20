@@ -24,7 +24,7 @@ import (
 // reachable ACH origin. Nothing here bypasses hydration or relaxes readiness.
 func TestAgentRuntimeReady(t *testing.T) {
 	baseURL := phase6PlatformAPIURL(t)
-	pk := phase6AcquirePk(t)
+	pk := phase6AcquirePk(t).Access
 	status, body := guardrailPostKey(t, baseURL, pk, "demo")
 	if status != http.StatusOK && status != http.StatusCreated {
 		t.Fatalf("mint ek for demo: status=%d body=%s", status, body)

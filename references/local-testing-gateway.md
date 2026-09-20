@@ -95,58 +95,28 @@ kubectl -n ach-system port-forward svc/ach-local-gateway 8080:8080
 
 ---
 
-## 3. End-to-End SSO Login & Key Generation
+## 3. End-to-End login
 
-Because ACH uses secure `__Host-` prefix cookies (`__Host-ach_sso`) for OIDC State / PKCE verification, browser clients and python scripts will normally reject these cookies when running over plain `http://localhost`.
+Login is the OAuth AS (`/platform/oauth/*`); the Dex mock connector signs in
+without a prompt. Two ways, both in the e2e suite:
 
-To test the SSO and generate a personal key (`pk_...`) locally over HTTP:
+1. **Loopback ceremony** (what `ach-cli login` option 1 and every MCP client
+   do) — `oauthLogin` in `test/e2e/oauth_login_helpers_test.go`: DCR,
+   `/authorize` with PKCE, follow the redirect chain (rewriting every hop to
+   `ach.e2e.local:8080`), redeem the code at `/token`. Returns the token
+   pair; the access token goes wherever a `pk_` used to (`x-ach-key`,
+   `Authorization: Bearer`).
+2. **Device grant** (`ach-cli login --no-browser`, an SSH host) —
+   `deviceGrant` in `test/e2e/device_grant_test.go`: `device_authorization`,
+   confirm the code on `/platform/oauth/device`, poll `/token`.
 
-1. **The Python Script:**
-   Below is a Python script that overrides the cookie's `secure` flag, allowing it to negotiate the PKCE Dex redirect over plain HTTP successfully:
+By hand, with the real binary against the kept cluster:
 
-   ```python
-   # sso-login.py
-   import requests
-   import json
+```bash
+ACH_INSECURE=1 ./bin/ach-cli login --profile demo --base-url http://ach.e2e.local:8080 --no-browser
+# open the printed URL, press Confirm (the Dex mock signs in), the CLI finishes
+ACH_INSECURE=1 ./bin/ach-cli token | xargs -I{} curl -H "Authorization: Bearer {}" http://ach.e2e.local:8080/v1/models
+```
 
-   session = requests.Session()
-
-   # Step 1: Initiate OAuth Login
-   login_resp = session.get("http://ach.e2e.local:8080/platform/auth/login", allow_redirects=False)
-   dex_url = login_resp.headers.get("Location")
-
-   # Step 2: Override the 'Secure' cookie flag to allow HTTP localhost transmission
-   for cookie in session.cookies:
-       cookie.secure = False
-
-   # Step 3: Rewrite internal cluster DNS to localhost
-   dex_url_local = dex_url.replace("dex.dex-system.svc.cluster.local:5556", "ach.e2e.local:8080")
-
-   # Step 4: Perform login (Dex mock automatically authenticates)
-   # We follow redirects manually because of internal k8s domain names
-   current_url = dex_url_local
-   while True:
-       current_url = current_url.replace("dex.dex-system.svc.cluster.local:5556", "ach.e2e.local:8080")
-       for cookie in session.cookies:
-           cookie.secure = False
-       resp = session.get(current_url, allow_redirects=False)
-       if resp.status_code in (301, 302, 303, 307, 308):
-           current_url = requests.compat.urljoin(current_url, resp.headers.get("Location"))
-       else:
-           break
-
-   # Step 5: Read the minted personal key!
-   data = resp.json()
-   print("SSO Login Succeeded! Personal Key details:")
-   print(json.dumps(data, indent=2))
-   ```
-
-2. **Verify on the LLM Forwarder:**
-   Once you obtain the personal key plaintext (e.g. `pk_xxxx...`), you can execute any OpenAI-compatible API request on the same unified port:
-
-   ```bash
-   curl -H "x-ach-key: pk_xxxx..." \
-        -H "Content-Type: application/json" \
-        http://ach.e2e.local:8080/v1/models
-   ```
-   This is proxied by Nginx to the Forwarder, which resolves the key to its LiteLLM virtual key, and impersonates it securely inside LiteLLM!
+The forwarder resolves the token to the user's `purpose='oauth'` row and
+forwards the user's own LiteLLM virtual key.

@@ -41,14 +41,10 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -148,7 +144,8 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	phase7DemoEnvironmentReady(t)
 
 	baseURL := phase7BaseURL()
-	pk := phase7AcquirePk(t) // env override else self-mint via SSO mock
+	creds := phase7AcquirePk(t)
+	pk := creds.Access // what hydrate injects into the runtime configs
 
 	for _, pe := range allPlatformExpects {
 		pe := pe
@@ -156,7 +153,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			phase7SuiteGuard(t)
 
 			output := t.TempDir()
-			xdg := phase7SeedXdgConfig(t, baseURL, pk)
+			xdg := phase7SeedXdgConfig(t, baseURL, creds)
 
 			stdout, stderr, err := phase7RunAchCli(t, xdg,
 				"env", "hydrate", phase7DemoEnvironment,
@@ -190,7 +187,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	// platform is enough to exercise the credential branch.
 	t.Run("ek_path_claude_code", func(t *testing.T) {
 		phase7SuiteGuard(t)
-		xdg := phase7SeedXdgConfig(t, baseURL, pk)
+		xdg := phase7SeedXdgConfig(t, baseURL, creds)
 		ek := phase7CreateEkKey(t, xdg, "allplatforms-ek")
 		if !strings.HasPrefix(ek, "ek-") {
 			t.Fatalf("ek_path: keys create returned %q (want ek_ prefix)", ek)
@@ -231,7 +228,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	t.Run("include_runtime_no_crash", func(t *testing.T) {
 		phase7SuiteGuard(t)
 		output := t.TempDir()
-		xdg := phase7SeedXdgConfig(t, baseURL, pk)
+		xdg := phase7SeedXdgConfig(t, baseURL, creds)
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"env", "hydrate", phase7DemoEnvironment,
 			"--target", "claude-code",
@@ -458,98 +455,6 @@ func assertRuntimeMirror(t *testing.T, output, platform, cred string) {
 }
 
 // ---- helpers -------------------------------------------------------------
-
-// ssoMintPK drives the browser JSON SSO login flow end-to-end against the
-// gateway and returns the minted pk_ plaintext. It follows redirects
-// manually so it can (a) carry the __Host- prefix cookie back over plain
-// http (sending it ourselves bypasses the jar's Secure-over-http refusal)
-// and (b) rewrite each redirect's authority to the single gateway origin
-// (the dev shim serves both /dex and /platform on one host; Dex's issuer
-// emits an in-cluster DNS authority unreachable from the test process).
-//
-// Mirrors references/local-testing-gateway.md §3 (the documented python
-// sso-login.py) in Go. mockCallback + skipApprovalScreen make the round
-// trip non-interactive (static user kilgore@kilgore.trout).
-func ssoMintPK(t *testing.T, baseURL string) string {
-	t.Helper()
-	base, err := url.Parse(baseURL)
-	if err != nil || base.Host == "" {
-		t.Fatalf("ssoMintPK: parse baseURL %q: %v", baseURL, err)
-	}
-
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		// Drive redirects by hand so we control cookie + authority rewrite.
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	cookies := map[string]string{}
-	next := strings.TrimRight(baseURL, "/") + "/platform/auth/login"
-
-	var lastBody []byte
-	var lastStatus int
-	const maxHops = 12
-	for hop := 0; hop < maxHops; hop++ {
-		req, rErr := http.NewRequest(http.MethodGet, next, nil)
-		if rErr != nil {
-			t.Fatalf("ssoMintPK: new request %q: %v", next, rErr)
-		}
-		if len(cookies) > 0 {
-			req.Header.Set("Cookie", encodeCookieMap(cookies))
-		}
-		resp, dErr := client.Do(req)
-		if dErr != nil {
-			t.Fatalf("ssoMintPK: GET %q (hop %d): %v", next, hop, dErr)
-		}
-		for _, c := range resp.Cookies() {
-			cookies[c.Name] = c.Value
-		}
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		lastBody = body
-		lastStatus = resp.StatusCode
-
-		loc := resp.Header.Get("Location")
-		if resp.StatusCode >= 300 && resp.StatusCode < 400 && loc != "" {
-			cur, _ := url.Parse(next)
-			ref, pErr := url.Parse(loc)
-			if pErr != nil {
-				t.Fatalf("ssoMintPK: parse redirect Location %q: %v", loc, pErr)
-			}
-			abs := cur.ResolveReference(ref)
-			// Force the authority back to the single gateway origin. The shim
-			// routes /dex/* to Dex and /platform/* to platform-api on the same
-			// host, so a host rewrite is safe for every hop.
-			abs.Scheme = base.Scheme
-			abs.Host = base.Host
-			next = abs.String()
-			continue
-		}
-		break
-	}
-
-	if lastStatus != http.StatusOK {
-		t.Fatalf("ssoMintPK: SSO flow did not terminate at 200 (last status %d). "+
-			"Is the Dex mockCallback connector configured (test/e2e/cluster/01-base/dex-config.yaml)?\nbody=%s",
-			lastStatus, truncate(lastBody, 600))
-	}
-
-	var out struct {
-		Plaintext  string `json:"plaintext"`
-		OwnerEmail string `json:"owner_email"`
-	}
-	if err := json.Unmarshal(lastBody, &out); err != nil {
-		t.Fatalf("ssoMintPK: parse pk_ JSON from final response: %v\nbody=%s", err, truncate(lastBody, 600))
-	}
-	if !strings.HasPrefix(out.Plaintext, "pk-") {
-		t.Fatalf("ssoMintPK: final response carried no pk_ plaintext\nbody=%s", truncate(lastBody, 600))
-	}
-	// CLI-04 / OBS-02 no-leak: never log the raw pk_; the owner email is safe.
-	t.Logf("ssoMintPK: minted pk_ for %s", out.OwnerEmail)
-	return out.Plaintext
-}
 
 // encodeCookieMap renders the accumulated cookies into a Cookie header
 // value, sending every cookie regardless of its origin Secure flag (the

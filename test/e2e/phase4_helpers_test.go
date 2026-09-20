@@ -18,7 +18,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"os/exec"
@@ -87,7 +86,7 @@ func phase4GatewayAuthority(t *testing.T) string {
 	return u.Host + ":80"
 }
 
-// pk_/ek_ acquisition is expensive (a full device-code SSO round-trip),
+// pk_/ek_ acquisition is expensive (a full OAuth round-trip),
 // so cache across the package's sequentially-run tests. Keyed plainly
 // (top-level go tests run serially unless t.Parallel, which this suite
 // does not use).
@@ -96,8 +95,8 @@ var (
 	cachedEk = map[string]string{}
 )
 
-// mustAcquirePk acquires a pk_ via the Phase 3 SSO flow (through the
-// gateway), or returns the ACH_E2E_PK_FIXTURE override if set.
+// mustAcquirePk acquires the user's credential via the OAuth AS (through
+// the gateway), or returns the ACH_E2E_PK_FIXTURE override if set.
 func mustAcquirePk(t *testing.T) string {
 	t.Helper()
 	if pk := os.Getenv("ACH_E2E_PK_FIXTURE"); pk != "" {
@@ -202,87 +201,12 @@ func phase4StartGatewayPortForward(t *testing.T, localPort string) func() {
 	return func() {}
 }
 
+// phase4AcquirePkAutomatically logs the mock Dex user in through the
+// gateway's OAuth AS and returns the access token — the user's credential
+// everywhere a pk_ used to go (it resolves to the same personal_keys row).
 func phase4AcquirePkAutomatically(t *testing.T, gateway string) string {
 	t.Helper()
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{
-		Jar:     jar,
-		Timeout: 10 * time.Second,
-		Transport: &noSecureCookieTransport{
-			underlying: http.DefaultTransport,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	loginURL := fmt.Sprintf("http://%s/platform/auth/login", gateway)
-	loginResp, err := client.Get(loginURL)
-	if err != nil {
-		t.Fatalf("GET /login failed: %v", err)
-	}
-	defer loginResp.Body.Close()
-
-	dexURL := loginResp.Header.Get("Location")
-	if dexURL == "" {
-		t.Fatalf("empty redirect location from login")
-	}
-
-	currentURL := dexURL
-	var finalResp *http.Response
-	const maxRedirects = 20
-	for hop := 0; ; hop++ {
-		if hop >= maxRedirects {
-			t.Fatalf("SSO redirect loop exceeded %d hops at %s", maxRedirects, currentURL)
-		}
-		currentURL = strings.ReplaceAll(currentURL, "dex.dex-system.svc.cluster.local:5556", gateway)
-		currentURL = strings.ReplaceAll(currentURL, "localhost:8080", gateway)
-
-		resp, err := client.Get(currentURL)
-		if err != nil {
-			t.Fatalf("request to %s failed: %v", currentURL, err)
-		}
-
-		if resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther || resp.StatusCode == http.StatusMovedPermanently {
-			resp.Body.Close()
-			loc := resp.Header.Get("Location")
-			if loc == "" {
-				t.Fatalf("SSO %d response missing Location header at %s", resp.StatusCode, currentURL)
-			}
-			base, err := url.Parse(currentURL)
-			if err != nil {
-				t.Fatalf("parse currentURL %q: %v", currentURL, err)
-			}
-			rel, err := url.Parse(loc)
-			if err != nil {
-				t.Fatalf("parse Location %q: %v", loc, err)
-			}
-			currentURL = base.ResolveReference(rel).String()
-		} else {
-			finalResp = resp
-			break
-		}
-	}
-	defer finalResp.Body.Close()
-
-	if finalResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(finalResp.Body)
-		t.Fatalf("SSO callback returned status %d: %s", finalResp.StatusCode, string(body))
-	}
-
-	var data struct {
-		Plaintext string `json:"plaintext"`
-	}
-	body, _ := io.ReadAll(finalResp.Body)
-	if err := json.Unmarshal(body, &data); err != nil {
-		t.Fatalf("failed to decode JSON response: %v, body: %s", err, string(body))
-	}
-
-	if data.Plaintext == "" {
-		t.Fatalf("empty pk plaintext in response: %s", string(body))
-	}
-
-	return data.Plaintext
+	return oauthLogin(t, "http://"+gateway, "").Access
 }
 
 func phase4AcquireEkBoundToEnvAutomatically(t *testing.T, gateway, pk, env string) (string, error) {

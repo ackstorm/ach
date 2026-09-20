@@ -87,7 +87,7 @@ through `exit.DispatchAndRender` (sole `os.Exit` callers).
 | Mode | Role | Key wiring |
 |---|---|---|
 | operator | Sole K8s watcher. Reconciles the 9 live CRD kinds → projects Postgres rows via `WithTxNotify` (row write + NOTIFY in one tx). Sole LiteLLM access-group/tag writer. Mints `ach-jwt-signing-keys` (mint-once, survives uninstall), bootstraps `LiteLLMConnection/default` pre-`mgr.Start` (Helm can't — REST-mapper limitation). Runnables: LiteLLM snapshot (5m), orphan cleanup, 5-min resync, `ach_refresh` LISTEN. | `ACH_DB_URL`, pepper, `ACH_NAMESPACE` (ach-system), `ACH_CACHE_ROOT` (/var/cache/ach), size caps, orphan knobs |
-| platform-api | NO k8s client. Chi REST: Dex SSO + device-code CLI login, `pk_`/`ek_` lifecycle, `/platform/hydrate`, admin (inventory/refresh/keys/runtime-catalog), UI Objects API (Environment-only v1, GitOps-wins). | `ACH_BASE_URL`, DB, pepper, DEK, LiteLLM base+master, Dex 4-var set, Redis, `POD_NAMESPACE` |
+| platform-api | NO k8s client. Chi REST: OAuth 2.1 AS (code+PKCE, RFC 8628 device grant, Dex behind it), `pk_`/`ek_` lifecycle, `/platform/hydrate`, admin (inventory/refresh/keys/runtime-catalog), UI Objects API (Environment-only v1, GitOps-wins). | `ACH_BASE_URL`, DB, pepper, DEK, LiteLLM base+master, Dex 3-var set, Redis, `POD_NAMESPACE` |
 | forwarder | Runtime data path `/v1 /v2 /gemini /mcp /a2a`. Key resolve (Redis 60s → Postgres), MCP/A2A precheck, header strip+rewrite, per-target JWT mint, JWKS. Only k8s touchpoint: the JWT Secret informer (field-selector-scoped). LiteLLM endpoint+key resolved from the `LiteLLMConnection/default` projection at boot (60s retry). | dual port: traffic :8080, health :8081 |
 | content-service | Default: **sidecar in operator Pod** (RWO PVC forces co-location; `contentService.standalone=true` + RWX for HA, G16). 8-gate authz pipeline → `sendfile(2)` streaming, inode-pinned via early `os.Open`. Range/conditional headers ignored — always full 200, `Cache-Control: no-store`. | :8082, Redis envcache (`ach_environments_changed`) |
 | migrate | golang-migrate one-shot init Job. 18 migrations in `db/migrations/`. | `ACH_MIGRATIONS_PATH` (/db/migrations) |
@@ -314,11 +314,13 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
 Middleware order: RequestID (always server-minted) → RecoverPanic →
 AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
 
-- SSO: `/platform/auth/login|callback` (OIDC+PKCE, `__Host-ach_sso` cookie;
-  hardened iff `ACH_BASE_URL` is https) + device-code CLI flow
-  `/platform/auth/cli/{init,token}` (Redis session, GETDEL one-shot).
-  First login: `provisionUser` → LiteLLM UserNew + `default` Team add, NO
-  max_budget. Missing default team → `500 default_team_missing`, fail-loud,
+- Login = the OAuth AS `/platform/oauth/{register,authorize,as-callback,
+  device_authorization,device,token}` (code+PKCE for browsers and MCP
+  clients, RFC 8628 device grant for headless hosts; one Dex leg,
+  `as-callback`, per-pending `__Host-ach_oauth_*` binding cookie hardened
+  iff `ACH_BASE_URL` is https; Valkey holds the transient state).
+  Every login: `provisionUser` → LiteLLM UserNew + `default` Team add, NO
+  max_budget; the token endpoint keeps one `purpose='oauth'` pk_ row per user. Missing default team → `500 default_team_missing`, fail-loud,
   self-heals via operator team bootstrap.
 - Keys: `POST /platform/keys` (ek create, §8.2 8-step: env exists + not
   terminating → team intersect → verify-or-create LiteLLM user → gate on
@@ -398,7 +400,7 @@ marker-block (covers credential-bearing files) → cleanup.
 
 ## 9. CLI command tree (ach-cli)
 
-`login` (device-code SSO) · `logout` · `whoami [--verify]` (pk→env list,
+`login` (OAuth: loopback or device grant) · `logout` · `whoami [--verify]` (pk→env list,
 ek→hydrate probe) · `config add/list/show/use/remove/rename/rm-ek`
 (multi-profile `~/.config/ach/config.yaml`, 0600/0700, https-only unless
 `--insecure`/`ACH_INSECURE` — G19) · `env list/describe/hydrate/status/save/uninstall`

@@ -48,7 +48,7 @@ make cluster-up
 #    the insecure opt-in (it refuses http:// by default — localhost included).
 make build-all
 export ACH_INSECURE=1                                      # or pass --insecure per command
-./bin/ach-cli login                                        # device-code SSO (browser opens)
+./bin/ach-cli login                                        # OAuth: browser here, or a code from any browser
 ./bin/ach-cli env hydrate demo > hydrate.json              # POST /platform/hydrate
 ```
 

@@ -38,10 +38,8 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -165,55 +163,16 @@ func phase6NormalizeHydrate(golden []byte, liveBaseURL string) []byte {
 		[]byte(phase6DefaultBaseURL), []byte(liveBaseURL))
 }
 
-// phase6WriteTempConfig writes a synthetic ~/.config/ach/config.yaml
-// under a temp XDG_CONFIG_HOME directory with `default: demo` +
-// `deployments.demo.{url,pk}` populated from the supplied URL + pk.
-// Returns the temp directory path (which the caller exports as
-// XDG_CONFIG_HOME via t.Setenv).
-//
-// The yaml shape mirrors `internal/cli/config.File` (Hub §15.4 verbatim).
-// Mode 0600 on the config file + 0700 on the directory match the
-// production discipline enforced by `internal/cli/config.Save`.
-//
-// This is the D-18 Option A bypass — the test stages a pre-minted pk_
-// rather than running through the device-code flow.
-func phase6WriteTempConfig(t *testing.T, baseURL, pk string) string {
-	t.Helper()
-	if baseURL == "" {
-		t.Fatalf("phase6WriteTempConfig: baseURL must be non-empty")
-	}
-	if pk == "" {
-		t.Fatalf("phase6WriteTempConfig: pk must be non-empty")
-	}
-	tmp := t.TempDir()
-	achDir := filepath.Join(tmp, "ach")
-	if err := os.MkdirAll(achDir, 0o700); err != nil {
-		t.Fatalf("phase6WriteTempConfig: mkdir %s: %v", achDir, err)
-	}
-	cfgPath := filepath.Join(achDir, "config.yaml")
-	contents := fmt.Sprintf(""+
-		"default: demo\n"+
-		"profiles:\n"+
-		"    demo:\n"+
-		"        url: %s\n"+
-		"        pk: %s\n",
-		baseURL, pk,
-	)
-	if err := os.WriteFile(cfgPath, []byte(contents), 0o600); err != nil {
-		t.Fatalf("phase6WriteTempConfig: write %s: %v", cfgPath, err)
-	}
-	return tmp
+// phase6WriteTempConfig stages the CLI config for creds (writeCLIConfig).
+func phase6WriteTempConfig(t *testing.T, baseURL string, creds userCreds) string {
+	return writeCLIConfig(t, baseURL, creds)
 }
 
-// phase6AcquirePk returns the pk_ the test should use to authenticate
-// CLI invocations. ACH_E2E_PHASE6_PK is an explicit override; when unset,
-// the suite self-mints via the mock SSO flow against the kept cluster.
-func phase6AcquirePk(t *testing.T) string {
+// phase6AcquirePk logs the mock Dex user in through the OAuth AS and
+// returns the credentials the CLI tests stage on a profile.
+func phase6AcquirePk(t *testing.T) userCreds {
 	t.Helper()
-	if v := os.Getenv("ACH_E2E_PHASE6_PK"); v != "" {
-		return v
-	}
-	return ssoMintPK(t, phase6PlatformAPIURL(t))
+	return oauthLogin(t, phase6PlatformAPIURL(t), "")
 }
 
 // phase6RunAch exec's the ./bin/ach-cli binary with the supplied args.

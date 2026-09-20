@@ -42,6 +42,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -59,78 +60,51 @@ func TestPhase3Invariants(t *testing.T) {
 	t.Run("SC6_AuditCrossCutting", testPhase3SC6AuditCrossCutting)
 }
 
-// ─── SC#1: SSO success path ───────────────────────────────────────────
+// ─── SC#1: login through the OAuth AS ───────────────────────────────
 //
-// First-time SSO creates LiteLLM user, adds to `default` Team, returns
-// `pk_` plaintext exactly once. Missing `default` Team yields
-// `500 default_team_missing` with audit `outcome=default_team_missing`.
-// ACH never sets default `max_budget`.
-//
-// e2e probe shape (engineer-pending — gated on phase3SuiteGuard):
-//  1. POST /platform/auth/login → 302 redirect to Dex authorize URL.
-//  2. Follow the (mockCallback) Dex flow to obtain ?code=&state=.
-//  3. GET /platform/auth/sso/callback → 200 JSON
-//     {"key_id":"pkid_...","plaintext":"pk_...","owner_email":"..."}.
-//  4. Capture Platform API logs; assert exactly ONE
-//     action=platform.sso.login outcome=created event.
-//  5. Assert NO pk_<plaintext> substring in any captured audit line
-//     (OBS-02 no-leak invariant).
-//
-// Unit coverage for the SSO flow already ships in Plan 03-07's 23
-// table-driven tests in internal/platformapi/auth/sso_test.go — those
-// exercise EVERY branch (state mismatch, default_team_missing,
-// KeyGenerate unreachable, DB insert compensation, plaintext-once
-// invariant). This e2e subtest's job is the live-cluster smoke check.
+// The AS is the only login: a registered client's /authorize is bounced
+// to Dex with PKCE S256, and a completed ceremony yields an access token
+// that resolves on the authenticated surface. No plaintext key ever
+// appears in the audit buffer (OBS-02 no-leak invariant).
 func testPhase3SC1SSO(t *testing.T) {
 	t.Helper()
 	phase3SuiteGuard(t)
 
-	// Phase 3 Helm-promotion gate cleared — drive the SSO flow against
-	// the deployed Platform API.
 	stopForward := phase3StartPortForward(t)
 	defer stopForward()
 	phase3WaitForPlatformAPIReady(t, 60*time.Second)
 
 	client := phase3HTTPClient()
-	// http.Client must NOT follow the 302 — we want to inspect the
-	// Location header on the login response.
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-
-	loginResp, err := client.Get(phase3URL("/platform/auth/login"))
+	regBody := `{"client_name":"phase3","redirect_uris":["http://127.0.0.1:1/cb"]}`
+	regResp, err := client.Post(phase3URL("/platform/oauth/register"), "application/json", strings.NewReader(regBody))
 	if err != nil {
-		t.Fatalf("SC#1 GET /platform/auth/login: %v", err)
+		t.Fatalf("SC#1 register: %v", err)
 	}
-	defer loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusFound {
-		t.Fatalf("SC#1 login: status = %d; want 302 Found", loginResp.StatusCode)
+	var reg struct {
+		ClientID string `json:"client_id"`
 	}
-	loc := loginResp.Header.Get("Location")
-	if loc == "" {
-		t.Fatalf("SC#1 login: Location header is empty; expected Dex authorize URL")
+	_ = json.NewDecoder(regResp.Body).Decode(&reg)
+	regResp.Body.Close()
+	if regResp.StatusCode != http.StatusCreated || reg.ClientID == "" {
+		t.Fatalf("SC#1 register: status %d client_id %q", regResp.StatusCode, reg.ClientID)
 	}
-	if !strings.Contains(loc, "code_challenge_method=S256") {
-		t.Errorf("SC#1 login: Location does not carry PKCE S256 challenge: %q", loc)
+	q := url.Values{"response_type": {"code"}, "client_id": {reg.ClientID}, "redirect_uri": {"http://127.0.0.1:1/cb"},
+		"state": {"s"}, "code_challenge_method": {"S256"}, "code_challenge": {strings.Repeat("a", 43)}}
+	authResp, err := client.Get(phase3URL("/platform/oauth/authorize") + "?" + q.Encode())
+	if err != nil {
+		t.Fatalf("SC#1 authorize: %v", err)
 	}
-
-	// The full callback round-trip requires driving the Dex
-	// mockCallback flow, which the live UAT script
-	// (scripts/uat-phase3.sh) handles end-to-end with curl + jq.
-	// Inside the Go test suite the cookie-handshake + Dex /token
-	// exchange would duplicate scripts/uat-phase3.sh's logic;
-	// instead the subtest asserts the redirect-shape invariant here
-	// and the audit-event capture is verified by SC#6 against a real
-	// SSO event present in the log buffer if the engineer-driven UAT
-	// has already been run on this cluster.
+	defer authResp.Body.Close()
+	loc := authResp.Header.Get("Location")
+	if authResp.StatusCode != http.StatusFound || !strings.Contains(loc, "code_challenge_method=S256") {
+		t.Fatalf("SC#1 authorize: status %d Location %q; want 302 to Dex with PKCE S256", authResp.StatusCode, loc)
+	}
 
 	logs := phase3CapturePlatformAPILogs(t, 500)
-	records := phase3ParseAuditLines(logs)
-	// Tolerate zero login events at this point — the redirect path
-	// emits no audit (no successful login yet). The cross-cutting
-	// no-plaintext invariant on whatever IS in the buffer is the
-	// load-bearing assertion.
-	for _, rec := range records {
+	for _, rec := range phase3ParseAuditLines(logs) {
 		phase3AssertNoPlaintextInLine(t, rec.rawLine)
 	}
 }

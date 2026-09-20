@@ -94,15 +94,16 @@ func testPhase6Login(t *testing.T) {
 // against the live cluster's platform-api when handed a pk_. Per D-13
 // + spec §5.3: pk_ → `GET /platform/environments?limit=1`.
 //
-// Captured stdout MUST include the deployment name AND a masked pk_
-// tail (`pk_****<last-4>`) per CLI-04 / Pattern S5. The raw pk_
-// MUST NOT appear in stdout or stderr (CLI-04 / OBS-02 no-leak).
+// Captured stdout MUST include the deployment name AND name the OAuth
+// session; the access token MUST NOT appear in stdout or stderr (CLI-04 /
+// OBS-02 no-leak).
 func testPhase6WhoamiVerifyPk(t *testing.T) {
 	t.Helper()
 	phase6SuiteGuard(t)
-	pk := phase6AcquirePk(t)
+	creds := phase6AcquirePk(t)
+	pk := creds.Access
 	baseURL := phase6PlatformAPIURL(t)
-	xdg := phase6WriteTempConfig(t, baseURL, pk)
+	xdg := phase6WriteTempConfig(t, baseURL, creds)
 
 	stdout, stderr, err := phase6RunAch(t, xdg, "whoami", "--verify")
 	code, runErr := phase6StripExitErr(err)
@@ -114,15 +115,14 @@ func testPhase6WhoamiVerifyPk(t *testing.T) {
 		t.Fatalf("ach whoami --verify: exit %d (want 0)\nstdout=%s\nstderr=%s",
 			code, stdout, stderr)
 	}
-	// Identity block must surface the deployment name + a masked pk_ tail.
+	// Identity block must surface the deployment name + the session type.
 	if !phase6Contains(stdout, "demo") {
 		t.Errorf("ach whoami --verify: stdout missing deployment 'demo'; got=%s", stdout)
 	}
-	if !phase6Contains(stdout, "pk-****") {
-		t.Errorf("ach whoami --verify: stdout missing masked pk_ tail (CLI-04); got=%s", stdout)
+	if !phase6Contains(stdout, "Key: OAuth session") {
+		t.Errorf("ach whoami --verify: stdout missing the OAuth session line; got=%s", stdout)
 	}
-	// No raw pk_ leak per OBS-02 / Pattern S5. The masked form (pk_****)
-	// is OK; the raw bearer (full ACH_E2E_PHASE6_PK value) is not.
+	// No token leak per OBS-02 / Pattern S5.
 	if bytes.Contains(stdout, []byte(pk)) {
 		t.Errorf("ach whoami --verify: raw pk_ leaked to stdout (CLI-04 no-leak)")
 	}
