@@ -14,7 +14,6 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
-	"github.com/ackstorm/ach/internal/platformapi/auth/cli"
 )
 
 // oauthPKMinRemaining: an OAuth row this close to expiry is replaced at the
@@ -68,6 +67,8 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.issue(w, r, rf.Sub, rf.UserID, clientID)
+	case deviceGrantType:
+		d.deviceToken(w, r, clientID)
 	default:
 		oauthError(w, 400, "unsupported_grant_type", "")
 	}
@@ -89,7 +90,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 		oauthError(w, 500, "server_error", "signer not loaded")
 		return
 	}
-	refresh, err := cli.NewSessionID()
+	refresh, err := NewSessionID()
 	if err != nil {
 		oauthError(w, 500, "server_error", "")
 		return

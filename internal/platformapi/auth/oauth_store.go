@@ -54,3 +54,8 @@ func (s *OAuthStore) Take(ctx context.Context, kind, id string, out any) (bool, 
 	}
 	return true, json.Unmarshal(b, out)
 }
+
+// Del removes one record; absent is not an error.
+func (s *OAuthStore) Del(ctx context.Context, kind, id string) error {
+	return s.RDB.Del(ctx, oauthKey(kind, id)).Err()
+}

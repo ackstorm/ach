@@ -13,13 +13,16 @@ import "strings"
 func ASMetadata(issuer string) map[string]any {
 	issuer = strings.TrimRight(issuer, "/")
 	return map[string]any{
-		"issuer":                                issuer,
-		"authorization_endpoint":                issuer + "/platform/oauth/authorize",
-		"token_endpoint":                        issuer + "/platform/oauth/token",
-		"registration_endpoint":                 issuer + "/platform/oauth/register",
-		"jwks_uri":                              issuer + "/.well-known/jwks.json",
-		"response_types_supported":              []string{"code"},
-		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+		"issuer":                        issuer,
+		"authorization_endpoint":        issuer + "/platform/oauth/authorize",
+		"token_endpoint":                issuer + "/platform/oauth/token",
+		"registration_endpoint":         issuer + "/platform/oauth/register",
+		"device_authorization_endpoint": issuer + "/platform/oauth/device_authorization",
+		"jwks_uri":                      issuer + "/.well-known/jwks.json",
+		"response_types_supported":      []string{"code"},
+		"grant_types_supported": []string{
+			"authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code",
+		},
 		"code_challenge_methods_supported":      []string{"S256"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"scopes_supported":                      []string{"offline_access"},

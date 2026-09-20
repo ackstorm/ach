@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/ackstorm/ach/internal/platformapi/auth/cli"
 )
 
 // oauthClient is a DCR registration. Public clients only (RFC 7591).
@@ -44,7 +42,7 @@ func (d OAuthDeps) register(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 400, "invalid_client_metadata", "only public clients are registered here")
 		return
 	}
-	id, err := cli.NewSessionID() // 192-bit opaque id, same generator as the device-code sessions
+	id, err := NewSessionID() // 192-bit opaque id, same generator as the device-code sessions
 	if err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
@@ -60,6 +58,6 @@ func (d OAuthDeps) register(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"client_id": c.ClientID, "client_name": c.ClientName, "redirect_uris": c.RedirectURIs,
 		"client_id_issued_at": c.IssuedAt, "token_endpoint_auth_method": "none",
-		"grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"},
+		"grant_types": []string{"authorization_code", "refresh_token", deviceGrantType}, "response_types": []string{"code"},
 	})
 }

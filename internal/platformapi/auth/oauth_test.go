@@ -118,6 +118,8 @@ func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
 		"token_endpoint":         "https://ach.test/platform/oauth/token",
 		"registration_endpoint":  "https://ach.test/platform/oauth/register",
 		"jwks_uri":               "https://ach.test/.well-known/jwks.json",
+
+		"device_authorization_endpoint": "https://ach.test/platform/oauth/device_authorization",
 	}
 	for k, v := range want {
 		if m[k] != v {
@@ -129,6 +131,9 @@ func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
 	}
 	if ss, _ := m["scopes_supported"].([]string); len(ss) != 1 || ss[0] != "offline_access" {
 		t.Errorf("only offline_access must be advertised: %v", m["scopes_supported"])
+	}
+	if gt, _ := m["grant_types_supported"].([]string); len(gt) != 3 || gt[2] != deviceGrantType {
+		t.Errorf("device grant must be advertised: %v", m["grant_types_supported"])
 	}
 }
 

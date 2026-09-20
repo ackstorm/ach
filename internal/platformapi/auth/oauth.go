@@ -72,6 +72,9 @@ func MountOAuth(d OAuthDeps) func(chi.Router) {
 		r.Get("/as-callback", d.asCallback)
 		r.Get("/broker-callback", d.brokerCallback)
 		r.Post("/token", d.token)
+		r.Post("/device_authorization", d.deviceAuthorization)
+		r.Get("/device", d.devicePage)
+		r.Post("/device", d.devicePage)
 	}
 }
 

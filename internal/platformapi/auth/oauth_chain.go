@@ -17,7 +17,6 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
-	"github.com/ackstorm/ach/internal/platformapi/auth/cli"
 )
 
 const (
@@ -123,7 +122,7 @@ func (d OAuthDeps) chainStart(w http.ResponseWriter, r *http.Request, c oauthCha
 		var clientID string
 		clientID, err = d.brokerClientID(r.Context(), c.Broker, meta.Registration)
 		if err == nil {
-			chainID, sidErr := cli.NewSessionID()
+			chainID, sidErr := NewSessionID()
 			if sidErr != nil {
 				err = sidErr
 			} else if err = d.Store.Put(r.Context(), "chain", chainID, c, oauthChainTTL); err == nil {
@@ -183,7 +182,7 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 
 func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID, email, userID string) {
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
-	code, err := cli.NewSessionID()
+	code, err := NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
 		return

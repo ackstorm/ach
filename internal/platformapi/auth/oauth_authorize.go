@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
-
-	"github.com/ackstorm/ach/internal/platformapi/auth/cli"
 )
 
 const (
@@ -44,6 +42,10 @@ type oauthPending struct {
 	DexVerifier   string `json:"dex_verifier"`
 	Binding       string `json:"binding"` // hex(sha256(browser cookie value))
 	MCPKey        string `json:"mcp_key,omitempty"`
+	// DeviceCode is set on a pending parked by the device verification page
+	// (RFC 8628); it has no RedirectURI and no client PKCE — the outcome is
+	// written to the device record for /token to pick up.
+	DeviceCode string `json:"device_code,omitempty"`
 }
 
 // bindingCookieName is the per-pending browser-binding cookie. __Host- on an
@@ -135,13 +137,13 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mcpKey := mcpKeyFromResource(q["resource"], d.Issuer)
-	pendingID, err := cli.NewSessionID()
+	pendingID, err := NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
-	binding, err := cli.NewSessionID()
+	binding, err := NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
 		return
@@ -179,6 +181,10 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e := q.Get("error"); e != "" {
+		if p.DeviceCode != "" {
+			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, "", "")
+			return
+		}
 		pv := url.Values{"error": {"access_denied"}}
 		if p.State != "" {
 			pv.Set("state", p.State)
@@ -196,6 +202,10 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	userID, err := d.provision(r.Context(), email)
 	if err != nil {
 		htmlError(w, 503, "user provisioning failed")
+		return
+	}
+	if p.DeviceCode != "" {
+		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, email, userID)
 		return
 	}
 	if p.MCPKey != "" {
