@@ -75,7 +75,7 @@ func oauthASForTest(t *testing.T) *httptest.Server {
 func TestLogin_OAuthDefault_WritesOAuthBlockAndNoPK(t *testing.T) {
 	dir := loginTestEnv(t)
 	as := oauthASForTest(t)
-	_, stderr, code, err := executeLogin(t, "--profile", "prod", "--base-url", as.URL)
+	_, stderr, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", as.URL)
 	if err != nil {
 		t.Fatalf("code=%v err=%v stderr=%s", code, err, stderr)
 	}

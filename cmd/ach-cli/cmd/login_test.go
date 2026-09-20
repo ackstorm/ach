@@ -16,70 +16,57 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/config"
-	"github.com/ackstorm/ach/internal/cli/devicecode"
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/oauthlogin"
 )
 
-// loginTestServer spins up an httptest server implementing the
-// /platform/auth/cli/{init,token} contract with a configurable
-// pending-poll count + pk_ payload. Init always 200s; /token returns
-// 202 for the first `pending` calls, then 200 with `payload`.
+// loginTestServer is a minimal AS: metadata, DCR, the device grant
+// (approved on the first poll) and the authorization-code grant (the
+// "browser" follows /authorize straight back to the loopback redirect).
 type loginTestServer struct {
 	*httptest.Server
-	pending      int32
-	calls        int32
-	pkPlaintext  string
-	ownerEmail   string
-	pollInterval int
-	expiresIn    int
-	keyID        string
+	registrations int32
+	accessToken   string
 }
 
-func newLoginTestServer(t *testing.T, pending int, pkPlaintext, ownerEmail string) *loginTestServer {
+func newLoginTestServer(t *testing.T, accessToken string) *loginTestServer {
 	t.Helper()
-	ts := &loginTestServer{
-		pending:      int32(pending),
-		pkPlaintext:  pkPlaintext,
-		ownerEmail:   ownerEmail,
-		pollInterval: 0, // Honor immediate polling for fast tests via 0; client treats as default.
-		expiresIn:    300,
-		keyID:        "pkid_abc",
-	}
+	ts := &loginTestServer{accessToken: accessToken}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/auth/cli/init", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session_id":       "sess-test",
-			"verification_url": "https://hub.test/platform/auth/login?session_id=sess-test",
-			"poll_interval":    ts.pollInterval,
-			"expires_in":       ts.expiresIn,
+			"issuer": ts.URL, "authorization_endpoint": ts.URL + "/authorize", "token_endpoint": ts.URL + "/token",
+			"registration_endpoint": ts.URL + "/register", "device_authorization_endpoint": ts.URL + "/device_authorization",
 		})
 	})
-	mux.HandleFunc("/platform/auth/cli/token", func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&ts.calls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		if n <= atomic.LoadInt32(&ts.pending) {
-			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
-			return
-		}
+	mux.HandleFunc("/register", func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&ts.registrations, 1)
+		w.WriteHeader(201)
+		_ = json.NewEncoder(w).Encode(map[string]any{"client_id": "oc_test"})
+	})
+	mux.HandleFunc("/device_authorization", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"key_id":      ts.keyID,
-			"plaintext":   ts.pkPlaintext,
-			"owner_email": ts.ownerEmail,
+			"device_code": "dev1", "user_code": "BCDF-GHJK", "verification_uri": ts.URL + "/platform/oauth/device",
+			"expires_in": 600, "interval": 1,
 		})
 	})
-	ts.Server = httptest.NewTLSServer(mux)
-	// Wire the test server's TLS-trusting Client into the devicecode
-	// package seam so the login flow can reach the ephemeral cert.
-	previous := devicecode.HTTPClient
-	devicecode.HTTPClient = ts.Client()
-	t.Cleanup(func() { devicecode.HTTPClient = previous })
+	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		http.Redirect(w, r, q.Get("redirect_uri")+"?code=thecode&state="+q.Get("state"), 302)
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": ts.accessToken, "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1",
+		})
+	})
+	ts.Server = httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
 	return ts
 }
 
-// loginTestEnv sets up XDG_CONFIG_HOME → t.TempDir() and clears
-// synthetic-mode env vars so tests run hermetically.
+// loginTestEnv sets up XDG_CONFIG_HOME → t.TempDir(), clears synthetic-mode
+// env vars, allows the plain-http test server and makes the "browser"
+// follow the authorize URL (so option 1 completes without a real browser).
 func loginTestEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -88,23 +75,30 @@ func loginTestEnv(t *testing.T) string {
 	t.Setenv("ACH_API_KEY", "")
 	t.Setenv("ACH_ENV_KEY", "")
 	t.Setenv("ACH_PROFILE", "")
-	// Defensive: silence the browser opener for the whole test.
-	t.Setenv("ACH_TEST_NO_BROWSER", "1")
-	originalOpener := devicecode.Opener
-	devicecode.Opener = func(string) error { return nil }
-	t.Cleanup(func() { devicecode.Opener = originalOpener })
+	t.Setenv("ACH_INSECURE", "1")
+	originalOpener := oauthlogin.Opener
+	oauthlogin.Opener = func(u string) error {
+		go func() {
+			resp, err := http.Get(u) //nolint:gosec // test-only
+			if err == nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		return nil
+	}
+	t.Cleanup(func() { oauthlogin.Opener = originalOpener })
 	return dir
 }
 
-// executeLogin executes a fresh login command with the given args and
-// returns stdout, stderr, exit code (or 0 on success / 1 on error),
-// and the raw error.
-func executeLogin(t *testing.T, args ...string) (string, string, exit.Code, error) {
+// executeLogin runs a fresh login command with the given args and stdin,
+// returning stdout, stderr, the exit code and the raw error.
+func executeLogin(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
 	t.Helper()
 	cmd := newLoginCmd()
 	var outBuf, errBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
 	cmd.SetErr(&errBuf)
+	cmd.SetIn(strings.NewReader(stdin))
 	cmd.SetArgs(args)
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
@@ -117,312 +111,127 @@ func executeLogin(t *testing.T, args ...string) (string, string, exit.Code, erro
 	return outBuf.String(), errBuf.String(), exit.General, err
 }
 
-// TestLogin_HappyPath_WritesConfig is Test 1: --profile + --base-url
-// + --no-browser against a healthy server writes the pk into config.yaml.
-func TestLogin_HappyPath_WritesConfig(t *testing.T) {
-	loginTestEnv(t)
-	// pending=0: login should complete on the first poll. The
-	// devicecode package's own test exercises the multi-pending
-	// cadence; here we only assert the integration writes config.
-	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "u@example")
-	defer ts.Close()
-
-	stdout, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts.URL,
-		"--no-browser",
-	)
-	if err != nil {
-		t.Fatalf("login err = %v", err)
-	}
-	if code != exit.OK {
-		t.Fatalf("exit code = %d; want 0", code)
-	}
-
-	// Assert config.yaml exists with the expected profile.
+func loadConfig(t *testing.T) *config.File {
+	t.Helper()
 	path, err := config.Path()
 	if err != nil {
-		t.Fatalf("config.Path: %v", err)
+		t.Fatal(err)
 	}
 	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
+	if err != nil || f == nil {
+		t.Fatalf("config.Load: f=%v err=%v", f, err)
 	}
-	if f == nil {
-		t.Fatal("config file not written")
+	return f
+}
+
+// TestLogin_DeviceGrant_WritesOAuthProfile: --no-browser shows the code
+// and the URL, polls the device grant, stores the token pair — never a key.
+func TestLogin_DeviceGrant_WritesOAuthProfile(t *testing.T) {
+	loginTestEnv(t)
+	ts := newLoginTestServer(t, "a.b.c")
+
+	stdout, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser")
+	if err != nil || code != exit.OK {
+		t.Fatalf("login: err=%v code=%d", err, code)
 	}
-	dep, ok := f.Profiles["prod"]
-	if !ok {
-		t.Fatalf("profiles.prod missing; got %+v", f.Profiles)
+	if !strings.Contains(stdout, "BCDF-GHJK") || !strings.Contains(stdout, ts.URL+"/platform/oauth/device") {
+		t.Fatalf("code + verification URL must be shown; stdout=%s", stdout)
 	}
-	if dep.URL != ts.URL {
-		t.Errorf("profiles.prod.url = %q; want %q", dep.URL, ts.URL)
+	if strings.Contains(stdout, "a.b.c") || strings.Contains(stdout, "pk") {
+		t.Fatalf("no credential on stdout; got %s", stdout)
 	}
-	if dep.PK != "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ" {
-		t.Errorf("profiles.prod.pk = %q; want pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", dep.PK)
+	f := loadConfig(t)
+	dep := f.Profiles["prod"]
+	if dep == nil || dep.URL != ts.URL || dep.OAuth == nil || dep.OAuth.AccessToken != "a.b.c" ||
+		dep.OAuth.ClientID != "oc_test" || dep.PK != "" {
+		t.Fatalf("profile: %+v", dep)
 	}
-	// First login → default: should auto-set.
 	if f.Default != "prod" {
-		t.Errorf("default = %q; want prod", f.Default)
+		t.Fatalf("default = %q; want prod (auto-set on first login)", f.Default)
 	}
-	// File mode 0600.
-	st, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat config: %v", err)
-	}
-	if st.Mode().Perm() != 0o600 {
-		t.Errorf("file mode = %#o; want 0600", st.Mode().Perm())
-	}
-	// stdout contains owner email + masked pk tail (last-4 WXYZ).
-	if !strings.Contains(stdout, "u@example") {
-		t.Errorf("stdout missing owner email; got: %s", stdout)
-	}
-	if !strings.Contains(stdout, "pk-****WXYZ") {
-		t.Errorf("stdout missing masked pk tail pk-****WXYZ; got: %s", stdout)
-	}
-	// CLI-04: full pk plaintext (anything longer than the masked form)
-	// MUST NOT appear in stdout. Check the long body explicitly.
-	if strings.Contains(stdout, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ") {
-		t.Errorf("CLI-04 leak: full pk_ plaintext present in stdout: %s", stdout)
+	path, _ := config.Path()
+	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+		t.Fatalf("file mode = %#o; want 0600", st.Mode().Perm())
 	}
 }
 
-// TestLogin_RejectInvalidScheme refuses a URL that is neither http:// nor
-// https:// (here ftp://) with exit 1 — see resolveBaseURL + runLogin.
+// TestLogin_SecondLogin_ReusesClientAndKeepsEK: the cached DCR client id is
+// reused on the same Hub and the profile's EK map survives a re-login.
+func TestLogin_SecondLogin_ReusesClientAndKeepsEK(t *testing.T) {
+	loginTestEnv(t)
+	ts := newLoginTestServer(t, "one")
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := config.Path()
+	f := loadConfig(t)
+	f.Profiles["prod"].EK = map[string]string{"demo": "ek_keep"}
+	if err := config.Save(path, f); err != nil {
+		t.Fatal(err)
+	}
+	ts.accessToken = "two"
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+		t.Fatal(err)
+	}
+	dep := loadConfig(t).Profiles["prod"]
+	if dep.OAuth.AccessToken != "two" || dep.EK["demo"] != "ek_keep" {
+		t.Fatalf("profile after re-login: %+v", dep)
+	}
+	if atomic.LoadInt32(&ts.registrations) != 1 {
+		t.Fatalf("registrations = %d, want 1", ts.registrations)
+	}
+}
+
 func TestLogin_RejectInvalidScheme(t *testing.T) {
 	loginTestEnv(t)
-
-	_, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", "ftp://insecure",
-		"--no-browser",
-	)
-	if err == nil {
-		t.Fatal("login should have errored on ftp:// URL")
-	}
-	if code != exit.General {
-		t.Errorf("exit code = %d; want 1", code)
-	}
-	if !strings.Contains(err.Error(), "http:// or https://") {
-		t.Errorf("err message missing scheme hint; got %q", err.Error())
+	_, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", "ftp://insecure", "--no-browser")
+	if err == nil || code != exit.General || !strings.Contains(err.Error(), "http:// or https://") {
+		t.Fatalf("code=%d err=%v", code, err)
 	}
 }
 
-// TestLogin_RefusesHTTP_ByDefault asserts G19 decision B: a plaintext http://
-// Hub URL (localhost included) is refused with exit 1 and the error cites the
-// ACH_INSECURE opt-in. No device-code call is made.
 func TestLogin_RefusesHTTP_ByDefault(t *testing.T) {
 	loginTestEnv(t)
-	_, _, code, err := executeLogin(t,
-		"--profile", "dev",
-		"--device",
-		"--base-url", "http://localhost:8080",
-		"--no-browser",
-	)
-	if code != exit.General {
-		t.Fatalf("exit = %d, want 1", code)
+	t.Setenv("ACH_INSECURE", "")
+	_, _, code, err := executeLogin(t, "", "--profile", "dev", "--base-url", "http://localhost:8080", "--no-browser")
+	if code != exit.General || err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("code=%d err=%v", code, err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
-		t.Fatalf("error should cite the ACH_INSECURE opt-in, got %v", err)
-	}
-}
-
-// TestLogin_AllowsHTTP_WithInsecureFlag asserts --insecure passes the URL gate
-// (login then fails later on the unreachable endpoint — NOT on the gate).
-func TestLogin_AllowsHTTP_WithInsecureFlag(t *testing.T) {
-	loginTestEnv(t)
-	_, _, _, err := executeLogin(t,
-		"--profile", "dev",
-		"--device",
-		"--base-url", "http://127.0.0.1:1",
-		"--no-browser",
-		"--insecure",
-	)
+	// --insecure passes the gate (the URL is then simply unreachable).
+	_, _, _, err = executeLogin(t, "", "--profile", "dev", "--base-url", "http://127.0.0.1:1",
+		"--no-browser", "--insecure")
 	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
-		t.Fatalf("--insecure should pass the URL gate, got refusal: %v", err)
+		t.Fatalf("--insecure should pass the URL gate, got %v", err)
 	}
 }
 
-// TestLogin_AllowsHTTP_WithInsecureEnv asserts ACH_INSECURE=1 passes the gate.
-func TestLogin_AllowsHTTP_WithInsecureEnv(t *testing.T) {
-	loginTestEnv(t)
-	t.Setenv("ACH_INSECURE", "1")
-	_, _, _, err := executeLogin(t,
-		"--profile", "dev",
-		"--device",
-		"--base-url", "http://127.0.0.1:1",
-		"--no-browser",
-	)
-	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
-		t.Fatalf("ACH_INSECURE=1 should pass the URL gate, got refusal: %v", err)
-	}
-}
-
-// TestLogin_AutoSetsDefault is Test 3: ach login on a config with NO
-// default: sets default to the new profile name.
-func TestLogin_AutoSetsDefault(t *testing.T) {
-	dir := loginTestEnv(t)
-	// Seed an existing config with no default and an unrelated
-	// profile, to assert login adds + sets default (NOT touching
-	// the existing one).
-	path := filepath.Join(dir, "ach", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := config.Save(path, &config.File{
-		Profiles: map[string]*config.Profile{
-			"other": {URL: "https://other.example"},
-		},
-	}); err != nil {
-		t.Fatalf("seed config.Save: %v", err)
-	}
-
-	ts := newLoginTestServer(t, 0, "pk_aaaaaaaaaaaaaaaaaaaaaaaa1234", "u@x")
-	defer ts.Close()
-
-	_, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts.URL,
-		"--no-browser",
-	)
-	if err != nil || code != exit.OK {
-		t.Fatalf("login err = %v, code = %d", err, code)
-	}
-
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if f.Default != "prod" {
-		t.Errorf("default = %q; want prod (auto-set when previously absent)", f.Default)
-	}
-	if _, ok := f.Profiles["other"]; !ok {
-		t.Errorf("seed profile 'other' was clobbered: %+v", f.Profiles)
-	}
-}
-
-// TestLogin_OverwritesPriorPK is Test 4: a second login on the same
-// profile overwrites the prior pk.
-func TestLogin_OverwritesPriorPK(t *testing.T) {
-	loginTestEnv(t)
-	ts1 := newLoginTestServer(t, 0, "pk_111111111111111111111111oldP", "u@x")
-	defer ts1.Close()
-
-	_, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts1.URL,
-		"--no-browser",
-	)
-	if err != nil || code != exit.OK {
-		t.Fatalf("first login: err=%v code=%d", err, code)
-	}
-
-	// Second login → different pk.
-	ts2 := newLoginTestServer(t, 0, "pk_222222222222222222222222newP", "u@x")
-	defer ts2.Close()
-	_, _, code, err = executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts2.URL,
-		"--no-browser",
-	)
-	if err != nil || code != exit.OK {
-		t.Fatalf("second login: err=%v code=%d", err, code)
-	}
-
-	path, _ := config.Path()
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	dep := f.Profiles["prod"]
-	if dep.PK != "pk_222222222222222222222222newP" {
-		t.Errorf("pk = %q; want pk_222222222222222222222222newP (overwrite)", dep.PK)
-	}
-	if dep.URL != ts2.URL {
-		t.Errorf("url = %q; want %q (latest login wins)", dep.URL, ts2.URL)
-	}
-}
-
-// TestLogin_SyntheticModeRejected is Test 5: ACH_BASE_URL +
-// ACH_API_KEY both set → synthetic mode active → exit 1.
 func TestLogin_SyntheticModeRejected(t *testing.T) {
 	loginTestEnv(t)
 	t.Setenv("ACH_BASE_URL", "https://synth.example")
 	t.Setenv("ACH_API_KEY", "pk_synthetic_test_key_aaaaaaaaaa")
-
-	_, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", "https://hub.test",
-		"--no-browser",
-	)
-	if err == nil {
-		t.Fatal("synthetic mode should reject ach login")
-	}
-	if code != exit.General {
-		t.Errorf("exit code = %d; want 1", code)
-	}
-	if !strings.Contains(err.Error(), "synthetic") {
-		t.Errorf("err missing 'synthetic' hint: %q", err.Error())
+	_, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", "https://hub.test", "--no-browser")
+	if err == nil || code != exit.General || !strings.Contains(err.Error(), "synthetic") {
+		t.Fatalf("code=%d err=%v", code, err)
 	}
 }
 
-// TestLogin_NoBrowserPrintsURL is Test 6: --no-browser prints the
-// verification_url for the user to copy/paste.
-func TestLogin_NoBrowserPrintsURL(t *testing.T) {
-	loginTestEnv(t)
-	ts := newLoginTestServer(t, 0, "pk_aaaaaaaaaaaaaaaaaaaaaaaa9999", "u@x")
-	defer ts.Close()
-
-	stdout, stderr, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts.URL,
-		"--no-browser",
-	)
-	if err != nil || code != exit.OK {
-		t.Fatalf("login: err=%v code=%d", err, code)
+func TestLogin_AutoSetsDefault_KeepsOtherProfiles(t *testing.T) {
+	dir := loginTestEnv(t)
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	combined := stdout + stderr
-	// verification_url is `<ts.URL>/platform/auth/login?session_id=sess-test`
-	// per the InitResponse stub. (Stub returns it verbatim — the URL
-	// can be a localhost httptest URL.)
-	wantSubstr := "?session_id=sess-test"
-	if !strings.Contains(combined, wantSubstr) {
-		t.Errorf("missing verification_url substr %q; combined: %s", wantSubstr, combined)
+	seed := &config.File{Profiles: map[string]*config.Profile{"other": {URL: "https://other.example"}}}
+	if err := config.Save(path, seed); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// TestLogin_PrintsOwnerEmailAndMaskedTail is Test 7: stdout contains
-// owner email + masked pk_ tail exactly once. Already partially
-// covered by TestLogin_HappyPath_WritesConfig but kept as a focused
-// assertion on the masked-tail format.
-func TestLogin_PrintsOwnerEmailAndMaskedTail(t *testing.T) {
-	loginTestEnv(t)
-	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "user@org.com")
-	defer ts.Close()
-
-	stdout, _, code, err := executeLogin(t,
-		"--profile", "prod",
-		"--device",
-		"--base-url", ts.URL,
-		"--no-browser",
-	)
-	if err != nil || code != exit.OK {
-		t.Fatalf("login: err=%v code=%d", err, code)
+	ts := newLoginTestServer(t, "x")
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+		t.Fatal(err)
 	}
-
-	if !strings.Contains(stdout, "user@org.com") {
-		t.Errorf("stdout missing owner email; got: %s", stdout)
-	}
-	masked := "pk-****WXYZ"
-	if c := strings.Count(stdout, masked); c != 1 {
-		t.Errorf("masked tail %q count = %d; want exactly 1; stdout: %s", masked, c, stdout)
+	f := loadConfig(t)
+	if f.Default != "prod" || f.Profiles["other"] == nil {
+		t.Fatalf("default=%q profiles=%+v", f.Default, f.Profiles)
 	}
 }
 
@@ -500,131 +309,51 @@ func TestResolveBaseURL_EnvPrefill(t *testing.T) {
 	})
 }
 
-// executeLoginStdin is executeLogin with an injected stdin so the
-// interactive profile-name prompt can be driven from tests. readLine
-// falls back to scanLine for a non-*os.File reader (strings.Reader is
-// not a TTY), so the prompt read is deterministic line-buffered input.
-func executeLoginStdin(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
-	t.Helper()
-	cmd := newLoginCmd()
-	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetIn(strings.NewReader(stdin))
-	cmd.SetArgs(args)
-	err := cmd.ExecuteContext(context.Background())
-	if err == nil {
-		return outBuf.String(), errBuf.String(), exit.OK, nil
-	}
-	var cErr *exit.CodedError
-	if errors.As(err, &cErr) {
-		return outBuf.String(), errBuf.String(), cErr.Code, err
-	}
-	return outBuf.String(), errBuf.String(), exit.General, err
-}
-
-// TestLogin_InteractivePrompt_EmptyDefaultsToDefault: on a first login
-// (no "default" profile on disk) the profile prompt suggests "default";
-// pressing Enter (empty input) accepts it. --base-url skips the URL
-// prompt and --no-browser skips the pre-open menu, so stdin is consumed
-// by the profile prompt alone.
-func TestLogin_InteractivePrompt_EmptyDefaultsToDefault(t *testing.T) {
-	dir := loginTestEnv(t)
-	ts := newLoginTestServer(t, 0, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWXYZ", "u@example")
-	defer ts.Close()
-
-	stdout, _, code, err := executeLoginStdin(t, "\n", "--device", "--base-url", ts.URL, "--no-browser")
-	if err != nil || code != exit.OK {
-		t.Fatalf("login err = %v, code = %d", err, code)
-	}
-	if !strings.Contains(stdout, "Profile name [default]: ") {
-		t.Errorf("expected bracketed default prompt; stdout = %q", stdout)
-	}
-
-	path := filepath.Join(dir, "ach", "config.yaml")
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-	if f == nil || f.Profiles["default"] == nil {
-		t.Fatalf("expected profile \"default\" written; got %+v", f)
-	}
-	if f.Default != "default" {
-		t.Errorf("default = %q; want \"default\"", f.Default)
-	}
-}
-
-// TestLogin_InteractivePrompt_NoSuggestionWhenDefaultExists: when a
-// profile literally named "default" already exists, the prompt is the
-// bare "Profile name: " with NO bracket, and a bare Enter is rejected as
-// an invalid (empty) name — no accidental re-login that clobbers the
-// existing "default" profile's pk-.
-func TestLogin_InteractivePrompt_NoSuggestionWhenDefaultExists(t *testing.T) {
-	dir := loginTestEnv(t)
-	path := filepath.Join(dir, "ach", "config.yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := config.Save(path, &config.File{
-		Default: "default",
-		Profiles: map[string]*config.Profile{
-			"default": {URL: "https://existing.example", PK: "pk-keepkeepkeepkeepkeepkeepkeepKEEP"},
-		},
-	}); err != nil {
-		t.Fatalf("seed config.Save: %v", err)
-	}
-
-	ts := newLoginTestServer(t, 0, "pk-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBWXYZ", "u@example")
-	defer ts.Close()
-
-	stdout, _, code, err := executeLoginStdin(t, "\n", "--device", "--base-url", ts.URL, "--no-browser")
-	if err == nil {
-		t.Fatal("expected empty profile name to be rejected when no suggestion is offered")
-	}
-	if code != exit.General {
-		t.Errorf("exit code = %d; want 1", code)
-	}
-	if strings.Contains(stdout, "[default]") {
-		t.Errorf("prompt must NOT suggest a default when one exists; stdout = %q", stdout)
-	}
-	if !strings.Contains(stdout, "Profile name: ") {
-		t.Errorf("expected bare profile prompt; stdout = %q", stdout)
-	}
-	// The pre-existing "default" profile is untouched.
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-	if f.Profiles["default"].PK != "pk-keepkeepkeepkeepkeepkeepkeepKEEP" {
-		t.Errorf("existing default pk was clobbered: %q", f.Profiles["default"].PK)
-	}
-}
-
-// TestLogin_InteractivePrompt_TypedNameOverridesSuggestion: a typed name
-// wins over the "default" suggestion, and first-login still auto-sets
-// Default to the typed name (not "default").
-func TestLogin_InteractivePrompt_TypedNameOverridesSuggestion(t *testing.T) {
-	dir := loginTestEnv(t)
-	ts := newLoginTestServer(t, 0, "pk-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCWXYZ", "u@example")
-	defer ts.Close()
-
-	_, _, code, err := executeLoginStdin(t, "prod\n", "--device", "--base-url", ts.URL, "--no-browser")
-	if err != nil || code != exit.OK {
-		t.Fatalf("login err = %v, code = %d", err, code)
-	}
-
-	path := filepath.Join(dir, "ach", "config.yaml")
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
-	}
-	if f.Profiles["prod"] == nil {
-		t.Fatalf("expected profile \"prod\"; got %+v", f.Profiles)
-	}
-	if f.Profiles["default"] != nil {
-		t.Errorf("typed name should not create a \"default\" profile; got %+v", f.Profiles)
-	}
-	if f.Default != "prod" {
-		t.Errorf("default = %q; want \"prod\"", f.Default)
-	}
+// TestLogin_InteractivePrompt covers the profile-name prompt: a first login
+// suggests "default" (Enter accepts it); with a "default" on disk there is
+// no suggestion and an empty name is rejected; a typed name wins. --base-url
+// skips the URL prompt and --no-browser skips the menu, so stdin feeds the
+// profile prompt alone.
+func TestLogin_InteractivePrompt(t *testing.T) {
+	t.Run("empty accepts the suggested default", func(t *testing.T) {
+		loginTestEnv(t)
+		ts := newLoginTestServer(t, "x")
+		stdout, _, code, err := executeLogin(t, "\n", "--base-url", ts.URL, "--no-browser")
+		if err != nil || code != exit.OK || !strings.Contains(stdout, "Profile name [default]: ") {
+			t.Fatalf("err=%v code=%d stdout=%q", err, code, stdout)
+		}
+		if f := loadConfig(t); f.Profiles["default"] == nil || f.Default != "default" {
+			t.Fatalf("config: %+v", f)
+		}
+	})
+	t.Run("no suggestion when default exists", func(t *testing.T) {
+		dir := loginTestEnv(t)
+		path := filepath.Join(dir, "ach", "config.yaml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.Save(path, &config.File{Default: "default",
+			Profiles: map[string]*config.Profile{"default": {URL: "https://existing.example", PK: "pk-keep"}}}); err != nil {
+			t.Fatal(err)
+		}
+		ts := newLoginTestServer(t, "x")
+		stdout, _, code, err := executeLogin(t, "\n", "--base-url", ts.URL, "--no-browser")
+		if err == nil || code != exit.General || strings.Contains(stdout, "[default]") ||
+			!strings.Contains(stdout, "Profile name: ") {
+			t.Fatalf("err=%v code=%d stdout=%q", err, code, stdout)
+		}
+		if loadConfig(t).Profiles["default"].PK != "pk-keep" {
+			t.Fatal("existing default profile was clobbered")
+		}
+	})
+	t.Run("typed name overrides the suggestion", func(t *testing.T) {
+		loginTestEnv(t)
+		ts := newLoginTestServer(t, "x")
+		if _, _, code, err := executeLogin(t, "prod\n", "--base-url", ts.URL, "--no-browser"); err != nil || code != exit.OK {
+			t.Fatalf("err=%v code=%d", err, code)
+		}
+		if f := loadConfig(t); f.Profiles["prod"] == nil || f.Profiles["default"] != nil || f.Default != "prod" {
+			t.Fatalf("config: %+v", f)
+		}
+	})
 }

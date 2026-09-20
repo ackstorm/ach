@@ -3,8 +3,9 @@
 // Package oauthlogin is ach-cli's OAuth 2.1 public client: RFC 8414
 // discovery, one-time DCR (the client id is cached on the profile),
 // authorization-code + PKCE S256 with a loopback redirect on a random port
-// (RFC 8252 §7.3 — the AS registered one port and matches any), and refresh.
-// Stdlib only, like devicecode. The browser opener is a seam.
+// (RFC 8252 §7.3 — the AS registered one port and matches any), the RFC
+// 8628 device grant for a host with no browser, and refresh. Stdlib only.
+// The browser opener is a seam.
 package oauthlogin
 
 import (
@@ -18,15 +19,36 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/config"
-	"github.com/ackstorm/ach/internal/cli/devicecode"
 )
 
 // Opener launches the system browser. Tests replace it.
-var Opener = devicecode.Opener
+var Opener = openInBrowser
+
+// openInBrowser dispatches to the platform's URL-open command and does not
+// wait for it.
+func openInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return fmt.Errorf("no browser opener for GOOS %q", runtime.GOOS)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
 
 // HTTPClient is the seam for tests; nil → a 30s stdlib client.
 var HTTPClient *http.Client
@@ -38,9 +60,10 @@ type Client struct {
 }
 
 type metadata struct {
-	AuthorizationEndpoint string `json:"authorization_endpoint"`
-	TokenEndpoint         string `json:"token_endpoint"`
-	RegistrationEndpoint  string `json:"registration_endpoint"`
+	AuthorizationEndpoint       string `json:"authorization_endpoint"`
+	TokenEndpoint               string `json:"token_endpoint"`
+	RegistrationEndpoint        string `json:"registration_endpoint"`
+	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 }
 
 type tokenResponse struct {
@@ -204,6 +227,82 @@ func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds
 	}
 	creds.ClientID = clientID
 	return creds, nil
+}
+
+// deviceGrantType is the RFC 8628 grant_type on /token.
+const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
+// DeviceLogin runs the RFC 8628 device grant for a host with no browser:
+// device_authorization → show(code, uri) → poll /token every interval
+// until a token, a terminal error, or expires_in. The registered redirect
+// is a loopback placeholder — the device grant never uses it, but DCR
+// needs one and the same client id then serves both flows.
+func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(userCode, verificationURI string)) (*config.OAuthCreds, error) {
+	m, err := c.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if m.DeviceAuthorizationEndpoint == "" {
+		return nil, errors.New("the authorization server does not offer the device grant")
+	}
+	if clientID == "" {
+		if clientID, err = c.register(ctx, m, "http://127.0.0.1/callback"); err != nil {
+			return nil, err
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint,
+		strings.NewReader(url.Values{"client_id": {clientID}}.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.http().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	var da struct {
+		DeviceCode      string `json:"device_code"`
+		UserCode        string `json:"user_code"`
+		VerificationURI string `json:"verification_uri"`
+		ExpiresIn       int    `json:"expires_in"`
+		Interval        int    `json:"interval"`
+		Error           string `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&da)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || da.DeviceCode == "" {
+		return nil, fmt.Errorf("device authorization: %s (status %d)", da.Error, resp.StatusCode)
+	}
+	show(da.UserCode, da.VerificationURI)
+
+	if da.Interval <= 0 {
+		da.Interval = 5 // RFC 8628 §3.2: absent → 5 seconds
+	}
+	interval := time.Duration(da.Interval) * time.Second
+	deadline := time.Now().Add(time.Duration(da.ExpiresIn) * time.Second)
+	form := url.Values{"grant_type": {deviceGrantType}, "device_code": {da.DeviceCode}, "client_id": {clientID}}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+		creds, err := c.exchange(ctx, m.TokenEndpoint, form)
+		if err == nil {
+			creds.ClientID = clientID
+			return creds, nil
+		}
+		switch {
+		case strings.Contains(err.Error(), "authorization_pending"):
+		case strings.Contains(err.Error(), "slow_down"):
+			interval += 5 * time.Second // RFC 8628 §3.5
+		default:
+			return nil, err
+		}
+		if time.Now().After(deadline) {
+			return nil, errors.New("the code expired before you signed in")
+		}
+	}
 }
 
 // Refresh rotates the pair. An invalid_grant means the refresh token is dead:

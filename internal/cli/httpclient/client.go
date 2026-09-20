@@ -217,7 +217,7 @@ func (c *Client) dumpVerbose(req *http.Request) {
 // DecodeServerError reads the response body and tries to decode it
 // as a §15.5 envelope. Returns a populated *ServerError on success
 // and an envelope-decode-wrapping *ServerError on failure. Exported so
-// sibling CLI packages (e.g. devicecode) share a single envelope-decode
+// sibling CLI packages share a single envelope-decode
 // implementation rather than copying it.
 func DecodeServerError(resp *http.Response) *ServerError {
 	sErr := &ServerError{Status: resp.StatusCode}

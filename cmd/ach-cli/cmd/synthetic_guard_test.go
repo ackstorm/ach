@@ -184,7 +184,7 @@ func TestSyntheticGuard_HalfSetRejected(t *testing.T) {
 		{
 			name: "login",
 			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeLogin(t, "--profile", "prod",
+				return executeLogin(t, "", "--profile", "prod",
 					"--base-url", "https://hub.test", "--no-browser")
 			},
 		},
