@@ -1282,8 +1282,12 @@ is for a person at a keyboard.</p>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ach-cli<span class="w"> </span>token<span class="w">                 </span><span class="c1"># prints ONE line: a fresh access token</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ach-cli<span class="w"> </span>env<span class="w"> </span>hydrate<span class="w"> </span>&lt;env&gt;<span class="w">     </span><span class="c1"># writes the tools' configs (no credential inside — see below)</span>
 </code></pre></div>
-<p><code>ach-cli login --device</code> keeps the old device-code flow for an SSH host
-without a browser (it mints a <code>pk_</code>, as before).</p>
+<p>On a terminal <code>login</code> asks how to finish: <strong>1)</strong> the browser on this
+machine, or <strong>2)</strong> another device — it prints a URL and a code like
+<code>BCDF-GHJK</code>; open the URL in any browser, confirm the code matches, sign
+in, and the CLI picks it up (RFC 8628 device grant). Option 2 is the way in
+from an SSH host; <code>--no-browser</code> selects it without the menu. Both leave
+the same token pair on the profile.</p>
 <h2 id="mcp-servers-the-tool-signs-in-itself">MCP servers: the tool signs in itself<a class="headerlink" href="#mcp-servers-the-tool-signs-in-itself" title="Permanent link">&para;</a></h2>
 <p>Hydrate writes MCP entries with <strong>no credential</strong>. The tool's first request
 gets a <code>401</code> with an RFC 9728 pointer and the tool runs the OAuth ceremony
