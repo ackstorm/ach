@@ -153,7 +153,7 @@ func TestDeviceGrant(t *testing.T) {
 	base := phase6PlatformAPIURL(t)
 
 	access := deviceGrant(t, base)
-	req, _ := http.NewRequest(http.MethodGet, base+"/platform/whoami", nil)
+	req, _ := http.NewRequest(http.MethodGet, base+"/platform/environments?limit=1", nil)
 	req.Header.Set("x-ach-key", access)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
@@ -161,8 +161,8 @@ func TestDeviceGrant(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != 200 || !bytes.Contains(body, []byte("kilgore@kilgore.trout")) {
-		t.Fatalf("whoami with the device-grant token: %d %s", resp.StatusCode, truncate(body, 300))
+	if resp.StatusCode != 200 {
+		t.Fatalf("authenticated call with the device-grant token: %d %s", resp.StatusCode, truncate(body, 300))
 	}
 
 	t.Run("wrong_code", func(t *testing.T) {

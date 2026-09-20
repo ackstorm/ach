@@ -438,10 +438,11 @@ func testPhase7Sc1OpencodeEk(t *testing.T) {
 // the project-root .mcp.json (claude's MCP load path) with a user MCP server
 // and an unrelated key block,
 // hydrate, then assert the user keys survive verbatim, ACH added >=1 server,
-// and an ACH-contributed server carries a populated x-ach-key bearer.
+// and no ACH-contributed server carries a credential: a person's hydrate
+// (OAuth) leaves the tool to run its own ceremony on the 401.
 //
 // (Assertion shapes track the demo environment's MCP fixtures; if the demo
-// MCP set changes, the >=1-ACH-server / x-ach-key checks may need tuning.)
+// MCP set changes, the >=1-ACH-server check may need tuning.)
 func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -500,7 +501,6 @@ func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
 		t.Errorf("expected ACH server(s) merged alongside the user's; got %d total\nmerged=%s",
 			len(doc.McpServers), raw)
 	}
-	foundKey := false
 	for name, rawSrv := range doc.McpServers {
 		if name == "user-personal" {
 			continue
@@ -509,12 +509,9 @@ func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
 			Headers map[string]string `json:"headers"`
 		}
 		_ = json.Unmarshal(rawSrv, &srv)
-		if srv.Headers["x-ach-key"] != "" {
-			foundKey = true
+		if _, ok := srv.Headers["x-ach-key"]; ok {
+			t.Errorf("ACH-contributed MCP server %q carries a credential; an OAuth hydrate renders none\nmerged=%s", name, raw)
 		}
-	}
-	if !foundKey {
-		t.Errorf("no ACH-contributed MCP server carries a populated x-ach-key\nmerged=%s", raw)
 	}
 }
 

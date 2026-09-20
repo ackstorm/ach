@@ -145,7 +145,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 
 	baseURL := phase7BaseURL()
 	creds := phase7AcquirePk(t)
-	pk := creds.Access // what hydrate injects into the runtime configs
+	pk := creds.Access // must never appear in a rendered config
 
 	for _, pe := range allPlatformExpects {
 		pe := pe
@@ -208,7 +208,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("ek_path hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
 		}
-		// The ek_ is injected as x-ach-key exactly like the pk_ path.
+		// An ek_ (agents / CI, no interactive login) keeps the key-in-file contract.
 		assertProjectedSkills(t, output, allPlatformExpects[0]) // claude-code
 		runtime := filepath.Join(output, allPlatformExpects[0].runtimePath)
 		b, rErr := os.ReadFile(runtime)
@@ -282,8 +282,10 @@ func assertRuntimeConfig(t *testing.T, output string, pe allPlatformExpect, cred
 			t.Errorf("%s: runtime config %s missing MCP server %q", pe.id, pe.runtimePath, id)
 		}
 	}
-	if !bytes.Contains(b, []byte(cred)) {
-		t.Errorf("%s: runtime config %s missing injected credential (x-ach-key)", pe.id, pe.runtimePath)
+	// A person's hydrate (OAuth) renders no credential: the tool runs its own
+	// ceremony on the 401 + RFC 9728 pointer.
+	if bytes.Contains(b, []byte(cred)) || bytes.Contains(b, []byte("x-ach-key")) {
+		t.Errorf("%s: runtime config %s carries a credential (OAuth hydrate must render none)", pe.id, pe.runtimePath)
 	}
 	if !bytes.Contains(b, []byte("/mcp/")) {
 		t.Errorf("%s: runtime config %s missing forwarder /mcp/ URL", pe.id, pe.runtimePath)
