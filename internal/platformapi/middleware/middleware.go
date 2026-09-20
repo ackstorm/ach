@@ -328,7 +328,7 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 					next.ServeHTTP(w, r) // no identity: the upstream decides
 					return
 				}
-				unauthorized(w, r, "missing_key", "present an API key or a bearer token", reqID)
+				unauthorized(w, r, "missing_key", "Not authorized: present an API key or a bearer token", reqID)
 				return
 			}
 
