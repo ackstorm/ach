@@ -27,6 +27,12 @@ jobs:
           go-version: ${{ matrix.go.go-version }}
           go-version-file: ${{ matrix.go.go-version-file }}
 
+      # test-unit also runs the OpenCode auth plugin's `node --test`; the
+      # sandbox rootfs has no node of its own.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - uses: geomys/sandboxed-step@v1.2.1
         with:
           run: |
