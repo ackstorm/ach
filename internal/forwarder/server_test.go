@@ -156,6 +156,11 @@ func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
 	if c := do("/key/info", map[string]string{"x-ach-key": "pk-revoked"}); c != http.StatusUnauthorized {
 		t.Fatalf("invalid credential on catch-all: %d, want 401", c)
 	}
+	// LiteLLM UI's own bearer is not ours to judge: forwarded untouched.
+	if c := do("/health/license", map[string]string{"Authorization": "Bearer ui-token"}); c != http.StatusTeapot ||
+		seen.Get("Authorization") != "Bearer ui-token" {
+		t.Fatalf("foreign Authorization on catch-all: %d hdrs=%v, want forwarded untouched", c, seen)
+	}
 	if c := do("/v1/models", nil); c != http.StatusUnauthorized {
 		t.Fatalf("anonymous /v1: %d, want 401", c)
 	}

@@ -79,32 +79,33 @@ type AuthnOptions struct {
 	// Headers are the declared credential slots, consulted in order; the
 	// first one present decides.
 	Headers []CredentialHeader
-	// Optional lets a request with NO credential through with no identity
-	// (the forwarder's catch-all: LiteLLM decides). A present-but-invalid
-	// credential is still a 401.
+	// Optional is the forwarder's catch-all: ACH acts only on the declared
+	// slots. One present → resolved/passed as always (invalid is still a
+	// 401); none → the request is forwarded untouched, Authorization
+	// included — it is not inspected there.
 	Optional bool
 }
 
 // credential returns the first declared header present (value, header,
-// mode). With none present, Authorization: Bearer is a resolve candidate
-// ONLY when it is JWS-shaped — ACH's own OAuth token; the resolver's
-// signature check decides. Anything else in Authorization is not ours:
-// no candidate, and foreign=true so it is never forwarded as anonymous.
-func credential(r *http.Request, headers []CredentialHeader) (value, from, mode string, foreign bool) {
+// mode). With none present and bearer set, Authorization: Bearer is a
+// resolve candidate ONLY when it is JWS-shaped — ACH's own OAuth token;
+// the resolver's signature check decides. Anything else in Authorization
+// is not ours: no candidate.
+func credential(r *http.Request, headers []CredentialHeader, bearer bool) (value, from, mode string) {
 	for _, h := range headers {
 		if v := strings.TrimSpace(r.Header.Get(h.Name)); v != "" {
-			return v, h.Name, h.Mode, false
+			return v, h.Name, h.Mode
 		}
 	}
-	raw := strings.TrimSpace(r.Header.Get(authzHeader))
-	if raw == "" {
-		return "", "", "", false
+	if !bearer {
+		return "", "", ""
 	}
+	raw := strings.TrimSpace(r.Header.Get(authzHeader))
 	tok := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer "))
 	if strings.HasPrefix(raw, "Bearer ") && keys.LooksLikeJWS(tok) {
-		return tok, authzHeader, ModeResolve, false
+		return tok, authzHeader, ModeResolve
 	}
-	return "", "", "", true
+	return "", "", ""
 }
 
 // requestIDPrefix is the namespace for server-generated request IDs.
@@ -301,7 +302,9 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //   - mode passthrough: the backend's own key — no ACH identity
 //     (RawLiteLLMKeyFromCtx), header kept; or
 //   - no declared slot present: Authorization: Bearer is accepted only as
-//     ACH's own OAuth token (JWS that verifies); anything else there is 401.
+//     ACH's own OAuth token (JWS that verifies); anything else there is 401
+//     — unless opts.Optional, where Authorization is not inspected and the
+//     request is forwarded untouched.
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
 // OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
@@ -322,9 +325,9 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			ctx := r.Context()
 			reqID := RequestIDFromCtx(ctx)
 
-			plaintext, from, mode, foreign := credential(r, opts.Headers)
+			plaintext, from, mode := credential(r, opts.Headers, !opts.Optional)
 			if plaintext == "" {
-				if opts.Optional && !foreign {
+				if opts.Optional {
 					next.ServeHTTP(w, r) // no identity: the upstream decides
 					return
 				}

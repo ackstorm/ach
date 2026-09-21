@@ -58,6 +58,11 @@ func TestIdentityProfile(t *testing.T) {
 		if code != 307 || hdr.Get("Location") != base+"/ui/" {
 			t.Fatalf("/ui redirect: %d Location=%q (want 307 → %s/ui/)", code, hdr.Get("Location"), base)
 		}
+		// LiteLLM's UI carries its own bearer on every call: not ours to
+		// judge outside the owned families — LiteLLM authenticates it.
+		if code, _, raw := do(t, http.MethodGet, "/health/license", map[string]string{"Authorization": "Bearer " + sc5MasterKey}, ""); code != 200 {
+			t.Fatalf("foreign Authorization on the catch-all must reach LiteLLM untouched: %d %s", code, raw)
+		}
 	})
 
 	t.Run("v1_challenge_and_document", func(t *testing.T) {

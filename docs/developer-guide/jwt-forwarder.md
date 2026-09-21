@@ -16,8 +16,9 @@ the rotation procedure, see
 `/v1` and `/gemini` are pass-through route families with **no** JWT
 involvement: the caller's bare `x-litellm-api-key`, no precheck; LiteLLM is
 the authorization boundary. `/mcp` and `/a2a` remain the only JWT routes.
-Every other LiteLLM path (`/v2/*`, `/ui`, `/key/*`, …) is the catch-all: a
-presented credential is resolved and forwarded, nothing is required.
+Every other LiteLLM path (`/v2/*`, `/ui`, `/key/*`, …) is the catch-all: ACH
+acts only on the declared slots — one present is resolved and forwarded,
+none means the request goes through untouched (`Authorization` included).
 
 ---
 
@@ -320,11 +321,14 @@ subscription: ours in `x-ach-key`, Anthropic's in `Authorization`; Claude
 Code's `apiKeyHelper` sends the same value in `x-api-key` and
 `Authorization` — the first resolves, the second is ignored upstream).
 
-With **no declared slot present**, `Authorization: Bearer` is accepted only
-as ACH's own OAuth access token (a JWS that verifies against the signing
-key — the only way an MCP client can present one). Anything else in
-`Authorization` — a `pk_`, a raw `sk-`, Basic, a foreign JWT — is `401`. There
-is no prefix sniffing and `authorization` cannot be listed as a slot.
+On the owned families, with **no declared slot present**, `Authorization:
+Bearer` is accepted only as ACH's own OAuth access token (a JWS that verifies
+against the signing key — the only way an MCP client can present one).
+Anything else in `Authorization` — a `pk_`, a raw `sk-`, Basic, a foreign JWT
+— is `401`. On the catch-all `Authorization` is never inspected: LiteLLM's
+UI carries its own bearer to `/health/license`, `/key/info`, … and it must
+reach LiteLLM as it came. There is no prefix sniffing and `authorization`
+cannot be listed as a slot.
 platform-api shares the middleware with its own `platformApi.headers`
 (resolve only). On `/mcp` + `/a2a` the per-target ACH JWT overwrites
 `Authorization` when a BIP mints one.
