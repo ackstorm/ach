@@ -186,6 +186,7 @@ func ekLookupFor(pool *pgxpool.Pool) dbLookupFn {
 			KeyID:         row.KeyID,
 			KeyType:       keys.PrefixEk,
 			OwnerEmail:    row.OwnerEmail,
+			ExpiresAt:     row.ExpiresAt,
 			Environment:   row.Environment,
 			LiteLLMUserID: row.LiteLLMUserID,
 			LiteLLMToken:  row.LiteLLMToken,

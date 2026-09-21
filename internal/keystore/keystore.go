@@ -24,7 +24,9 @@ const cacheLayerRedis = "redis"
 // defaultTTL is the hard 60-second ceiling on every cache entry per Hub
 // §5.1 / FWD-02 / KEY-04. NOT a knob — anything longer breaks the
 // revocation-propagation guarantee, anything shorter pointlessly raises
-// DB pressure.
+// DB pressure. The ceiling is measured from the DB read (anchored before
+// the lookup), not from the SET that follows it — a slow fill must not
+// get a fresh 60s (AC-08).
 const defaultTTL = 60 * time.Second
 
 // sfLeaderTimeout bounds the detached singleflight leader lookup so a
@@ -100,6 +102,7 @@ type redisCachedResolver struct {
 	sf      singleflight.Group
 	ttl     time.Duration
 	metrics *achmetrics.KeystoreCollectors // G7; nil-tolerant
+	now     func() time.Time
 }
 
 // Option configures a redisCachedResolver at construction time.
@@ -109,6 +112,11 @@ type Option func(*redisCachedResolver)
 // Optional — omit it (or pass nil) to disable the counters.
 func WithCacheMetrics(m *achmetrics.KeystoreCollectors) Option {
 	return func(r *redisCachedResolver) { r.metrics = m }
+}
+
+// WithClock replaces the wall clock (tests: the AC-08 fake-clock race).
+func WithClock(now func() time.Time) Option {
+	return func(r *redisCachedResolver) { r.now = now }
 }
 
 // NewCachedResolver constructs the production redisCachedResolver
@@ -130,6 +138,7 @@ func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte,
 		redis:  redisClient,
 		pepper: append([]byte(nil), pepper...), // defensive copy
 		ttl:    defaultTTL,
+		now:    time.Now,
 	}
 	for _, o := range opts {
 		o(r)
@@ -140,13 +149,19 @@ func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte,
 // Resolve implements the cache → single-flighted-DB lookup flow per D-07.
 //
 //  1. Hash the plaintext with the configured pepper → cache key.
-//  2. GET from Redis; on success deserialize the JSON and return.
-//  3. On miss, single-flight the inner.Resolve call (concurrent callers
-//     on the same hash join the in-flight result).
-//  4. If inner returned a populated *KeyInfo, SET it in Redis with the
-//     60-second TTL ceiling (best-effort — log nothing; the next call
-//     will simply miss again).
-//  5. Return the KeyInfo (or nil on revoked/expired/unknown).
+//  2. GET from Redis; on success deserialize the JSON and return — unless
+//     ExpiresAt has passed while the entry sat in the cache (AC-10), in
+//     which case treat it as a miss-that-returns-nil (never re-check the
+//     DB just to confirm what the timestamp already proved).
+//  3. On miss, anchor `now()` BEFORE single-flighting the inner.Resolve
+//     call (concurrent callers on the same hash join the in-flight
+//     result) — the anchor, not the time the DB read finishes, is what
+//     the stored TTL is measured from (AC-08).
+//  4. If inner returned a populated *KeyInfo, SET it in Redis with
+//     `ttl − elapsed-since-anchor`, further capped at
+//     `ExpiresAt − now` (AC-10); a non-positive remainder is not cached
+//     (best-effort — log nothing; the next call will simply miss again).
+//  5. Return the KeyInfo (or nil on revoked/expired/unknown/expired-window).
 //
 // A nil result from inner is NOT cached: caching a "no such key" would
 // preserve revoked credentials in the cache window past the immediate
@@ -170,6 +185,9 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 	if raw, getErr := r.redis.Get(ctx, cacheKey).Bytes(); getErr == nil {
 		var info KeyInfo
 		if jsonErr := json.Unmarshal(raw, &info); jsonErr == nil {
+			if info.ExpiresAt != nil && !r.now().Before(*info.ExpiresAt) {
+				return nil, nil // expired while cached (AC-10): never serve it
+			}
 			if r.metrics != nil {
 				r.metrics.Hits.WithLabelValues(keyType, cacheLayerRedis).Inc()
 			}
@@ -183,6 +201,9 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 	if r.metrics != nil {
 		r.metrics.Misses.WithLabelValues(keyType, cacheLayerRedis).Inc()
 	}
+
+	// Anchor before the DB read — see the comment on `remaining` below (§8.2).
+	anchor := r.now()
 
 	// Single-flight DB lookup on a detached-but-bounded leader context so
 	// one caller's cancellation cannot cascade to live followers (C1).
@@ -200,9 +221,23 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 		return nil, nil
 	}
 
-	// Populate cache (best-effort; ignore errors).
-	if b, marshalErr := json.Marshal(info); marshalErr == nil {
-		_ = r.redis.Set(ctx, cacheKey, b, r.ttl).Err()
+	// Anchor the entry's validity at the moment BEFORE the DB read (§8.2):
+	// a fill that raced a suspend commit carries the pre-commit row, so it
+	// may live only for what is left of the 60 s ceiling measured from that
+	// read — never a fresh 60 s. expires_at caps it further (AC-10).
+	remaining := r.ttl - r.now().Sub(anchor)
+	if info.ExpiresAt != nil {
+		if until := info.ExpiresAt.Sub(r.now()); until < remaining {
+			remaining = until
+		}
+		if !r.now().Before(*info.ExpiresAt) {
+			return nil, nil
+		}
+	}
+	if remaining > 0 {
+		if b, marshalErr := json.Marshal(info); marshalErr == nil {
+			_ = r.redis.Set(ctx, cacheKey, b, remaining).Err()
+		}
 	}
 	return info, nil
 }

@@ -55,15 +55,80 @@ func validBearer(t *testing.T) string {
 
 func setupCached(t *testing.T, inner Resolver) (Resolver, *miniredis.Miniredis, []byte) {
 	t.Helper()
+	return setupCachedWith(t, inner)
+}
+
+// setupCachedWith is setupCached with extra Options (tests: WithClock).
+func setupCachedWith(t *testing.T, inner Resolver, opts ...Option) (Resolver, *miniredis.Miniredis, []byte) {
+	t.Helper()
 	mr := miniredis.RunT(t)
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rc.Close() })
 	pepper := []byte("test-pepper-32-bytes-aaaaaaaaaaaa")
-	r, err := NewCachedResolver(inner, rc, pepper)
+	r, err := NewCachedResolver(inner, rc, pepper, opts...)
 	if err != nil {
 		t.Fatalf("NewCachedResolver: %v", err)
 	}
 	return r, mr, pepper
+}
+
+// mustHash hashes plaintext with the given pepper the same way the
+// resolver derives its cache key.
+func mustHash(t *testing.T, pepper []byte, plaintext string) string {
+	t.Helper()
+	hash, err := credhash.Hash(pepper, []byte(plaintext))
+	if err != nil {
+		t.Fatalf("credhash.Hash: %v", err)
+	}
+	return hash
+}
+
+// blockingResolver is a single-key inner Resolver that signals inFlight
+// once entered, then blocks on hold until released — used to pin a fill
+// mid-flight so the test can advance the fake clock underneath it. The
+// inFlight channel is lazily created behind a sync.Once so it is safe to
+// construct the struct directly (as the AC-08 tests do) without a
+// dedicated constructor, and to read/close it from different goroutines.
+type blockingResolver struct {
+	info      *KeyInfo
+	hold      chan struct{}
+	inFlight  chan struct{}
+	chOnce    sync.Once
+	closeOnce sync.Once
+}
+
+func (b *blockingResolver) inFlightCh() chan struct{} {
+	b.chOnce.Do(func() {
+		if b.inFlight == nil {
+			b.inFlight = make(chan struct{})
+		}
+	})
+	return b.inFlight
+}
+
+func (b *blockingResolver) Resolve(context.Context, string) (*KeyInfo, error) {
+	b.closeOnce.Do(func() { close(b.inFlightCh()) })
+	<-b.hold
+	return b.info, nil
+}
+
+// waitInFlight blocks until the resolver has been entered (or times out).
+func (b *blockingResolver) waitInFlight(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.inFlightCh():
+	case <-time.After(2 * time.Second):
+		t.Fatal("blockingResolver: timed out waiting for in-flight signal")
+	}
+}
+
+// staticResolver always returns the same *KeyInfo.
+type staticResolver struct {
+	info *KeyInfo
+}
+
+func (s *staticResolver) Resolve(context.Context, string) (*KeyInfo, error) {
+	return s.info, nil
 }
 
 // TestCachedResolverMiss — empty cache; inner returns *KeyInfo. After
@@ -211,14 +276,17 @@ func TestCachedResolverSingleFlight(t *testing.T) {
 }
 
 // TestCachedResolverTTLExact — the Redis SET TTL is exactly 60s, no
-// longer / no shorter.
+// longer / no shorter. Uses a fake clock frozen at a single instant: with
+// zero elapsed time between the anchor and the fill, ttl − elapsed == ttl.
 func TestCachedResolverTTLExact(t *testing.T) {
 	plaintext := "pk_dddddddddddddddddddddddddd"
-	expires := time.Now().Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
+	now := time.Now()
+	clock := func() time.Time { return now }
+	expires := now.Add(7 * 24 * time.Hour).UTC().Truncate(time.Second)
 	inner := &fakeResolver{respond: func(string) (*KeyInfo, error) {
 		return &KeyInfo{KeyID: "pkid_y", KeyType: keys.PrefixPk, OwnerEmail: "a@b", ExpiresAt: &expires}, nil
 	}}
-	r, mr, pepper := setupCached(t, inner)
+	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
 	if _, err := r.Resolve(context.Background(), plaintext); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -385,5 +453,78 @@ func TestDBResolverPkErrorWrapped(t *testing.T) {
 	_, err := r.Resolve(context.Background(), plaintext)
 	if err == nil || !strings.Contains(err.Error(), "keystore: dbResolver") {
 		t.Fatalf("expected wrapped err containing 'keystore: dbResolver', got %v", err)
+	}
+}
+
+// AC-08 stale-fill race: a fill that was in flight when a suspend committed
+// re-inserts the PRE-commit row — but only for the time the fill's DB read
+// has already "used up". No entry may outlive 60 s from its DB read.
+func TestCachedResolverAnchorsTTLBeforeTheLookup(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	clock := func() time.Time { return now }
+	release := make(chan struct{})
+	inner := &blockingResolver{info: &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk}, hold: release}
+	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
+	cacheKey := cacheKeyPrefix + mustHash(t, pepper, "ek_1")
+
+	done := make(chan struct{})
+	go func() { _, _ = r.Resolve(context.Background(), "ek_1"); close(done) }()
+	inner.waitInFlight(t)
+	now = now.Add(45 * time.Second) // the DB read is slow; a suspend commits meanwhile
+	close(release)
+	<-done
+	if ttl := mr.TTL(cacheKey); ttl <= 0 || ttl > 15*time.Second {
+		t.Fatalf("cache TTL %v, want ≤ 15s (60s − 45s elapsed)", ttl)
+	}
+}
+
+func TestCachedResolverSkipsCachingWhenTheWindowIsSpent(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	clock := func() time.Time { return now }
+	release := make(chan struct{})
+	inner := &blockingResolver{info: &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk}, hold: release}
+	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
+	go func() { _, _ = r.Resolve(context.Background(), "ek_1") }()
+	inner.waitInFlight(t)
+	now = now.Add(61 * time.Second)
+	close(release)
+	time.Sleep(50 * time.Millisecond)
+	if mr.Exists(cacheKeyPrefix + mustHash(t, pepper, "ek_1")) {
+		t.Fatal("an entry older than the ceiling was cached")
+	}
+}
+
+// AC-10: expiry is enforced on warm hits and caps the fill's TTL.
+func TestCachedResolverHonoursExpiresAt(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	clock := func() time.Time { return now }
+	exp := now.Add(20 * time.Second)
+	inner := &staticResolver{info: &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk, ExpiresAt: &exp}}
+	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
+	if info, err := r.Resolve(context.Background(), "ek_1"); err != nil || info == nil {
+		t.Fatalf("live: %v %v", info, err)
+	}
+	cacheKey := cacheKeyPrefix + mustHash(t, pepper, "ek_1")
+	if ttl := mr.TTL(cacheKey); ttl > 20*time.Second {
+		t.Fatalf("TTL %v not capped at expires_at", ttl)
+	}
+	now = now.Add(21 * time.Second) // warm entry still in Redis (miniredis clock is separate)
+	if info, err := r.Resolve(context.Background(), "ek_1"); err != nil || info != nil {
+		t.Fatalf("expired warm hit must be nil: %v %v", info, err)
+	}
+}
+
+func TestDBResolverEkCarriesExpiresAt(t *testing.T) {
+	plaintext, err := keys.NewBearer(keys.PrefixEk)
+	if err != nil {
+		t.Fatalf("NewBearer(Ek): %v", err)
+	}
+	exp := time.Now().Add(time.Hour)
+	r := newDBResolverWith([]byte("pepper"), nil, func(context.Context, string) (*KeyInfo, error) {
+		return &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk, ExpiresAt: &exp}, nil
+	})
+	info, _ := r.Resolve(context.Background(), plaintext)
+	if info == nil || info.ExpiresAt == nil {
+		t.Fatalf("%+v", info)
 	}
 }
