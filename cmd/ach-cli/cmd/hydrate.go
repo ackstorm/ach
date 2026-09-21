@@ -89,7 +89,7 @@ var hydrateHTTPClient *http.Client
 // leave the default (= hydrate.Run); unit tests targeting the
 // engine path can swap it for a fake that records the Opts struct
 // without spinning up a full lock + state.json + manifest fetch
-// pipeline. Mirrors the swapHydrateHTTPClientForTest pattern.
+// pipeline. Mirrors the swapHTTPClientForTest seam.
 var hydrateRunFn = hydrate.Run
 
 // newHydrateCmd returns a fresh `ach-cli env hydrate` cobra.Command. Factory

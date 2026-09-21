@@ -790,7 +790,7 @@ Walk it in this order:
 WHY IT FAILS: the backend sits behind LiteLLM's own hop and cannot see the
 `Host` ACH preserved. The public hostname travels in `X-Forwarded-Host`,
 which the gateway hop SETS (overwriting any client-supplied value, so it
-cannot be spoofed) and `headers.StripAndRewrite` passes through untouched.
+cannot be spoofed) and the proxy's `stripAndRewrite` passes through untouched.
 `TestXForwardedHostSurvivesBothHops` guards the composed path.
 
 ### ❌ Cost stuck at 0 under `litellm_usage`

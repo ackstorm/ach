@@ -88,9 +88,6 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			su, err := source.Parse(args[0], flagAuth)
 			if err != nil {
@@ -267,9 +264,6 @@ func newRepoUpdateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 			name := args[0]
 
 			repos, err := store.LoadRepos()
