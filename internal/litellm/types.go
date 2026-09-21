@@ -217,6 +217,10 @@ type MCPServerEntry struct {
 	AuthType       string `json:"auth_type,omitempty"`
 	Status         string `json:"status,omitempty"`
 	ApprovalStatus string `json:"approval_status,omitempty"`
+	// AllowedTools + MCPAccessGroups feed the console's public projection
+	// (tool names + access-group names only; never credentials/headers).
+	AllowedTools    []string `json:"allowed_tools,omitempty"`
+	MCPAccessGroups []string `json:"mcp_access_groups,omitempty"`
 }
 
 // AgentEntry is one row of GET /v1/agents (bare-array response).

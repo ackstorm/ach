@@ -3,12 +3,14 @@
 package environments
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
@@ -169,31 +171,42 @@ func GetHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Admin override BEFORE team lookup — admins see every Environment
-		// without the LiteLLM round trip.
-		if !keyCtx.IsAdmin {
-			teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
-			if err != nil {
-				if deps.Audit != nil {
-					audit.EmitAudit(ctx, deps.Audit, audit.Event{
-						Action:    "platform.environments.get",
-						Outcome:   audit.OutcomeLitellmUnreachable,
-						Actor:     middleware.ActorFromCtx(ctx),
-						RequestID: reqID,
-						Target:    &audit.Target{Kind: "environment", Name: name},
-					})
-				}
-				render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable,
-					"upstream LiteLLM unreachable", reqID)
-				return
+		ok, err = CallerMayRead(ctx, deps, keyCtx, env)
+		if err != nil {
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    "platform.environments.get",
+					Outcome:   audit.OutcomeLitellmUnreachable,
+					Actor:     middleware.ActorFromCtx(ctx),
+					RequestID: reqID,
+					Target:    &audit.Target{Kind: "environment", Name: name},
+				})
 			}
-			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
-				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
-					"caller is not a member of any authorized team", reqID)
-				return
-			}
+			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable,
+				"upstream LiteLLM unreachable", reqID)
+			return
+		}
+		if !ok {
+			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
+				"caller is not a member of any authorized team", reqID)
+			return
 		}
 
 		render.JSON(w, http.StatusOK, store.RowToView(*env))
 	}
+}
+
+// CallerMayRead is the Environment read rule shared by GetHandler and the
+// console: admins read everything (no LiteLLM round trip); anyone else
+// needs authorizedTeams ∩ caller teams ≠ ∅. err is LiteLLM unreachable —
+// the caller answers 503, never a verdict.
+func CallerMayRead(ctx context.Context, deps Deps, kc middleware.KeyContext, env *db.EnvironmentRow) (bool, error) {
+	if kc.IsAdmin {
+		return true, nil
+	}
+	teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, kc.OwnerEmail)
+	if err != nil {
+		return false, err
+	}
+	return achteams.HasIntersect(env.AuthorizedTeams, teams), nil
 }

@@ -84,14 +84,14 @@ func NewRESTClient(endpoint, masterKey string, log logr.Logger) *RESTClient {
 	return c
 }
 
-// setAuth attaches the master key to the request according to the
-// configured authHeader kind. Never logs the key (§9.1).
-func (c *RESTClient) setAuth(req *http.Request) {
+// setAuth attaches key to the request according to the configured
+// authHeader kind. Never logs the key (§9.1).
+func (c *RESTClient) setAuth(req *http.Request, key string) {
 	switch c.authHeader {
 	case AuthXLiteLLMAPIKey:
-		req.Header.Set("x-litellm-api-key", c.masterKey)
+		req.Header.Set("x-litellm-api-key", key)
 	default:
-		req.Header.Set("Authorization", "Bearer "+c.masterKey)
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
 }
 
@@ -108,6 +108,13 @@ func (c *RESTClient) setAuth(req *http.Request) {
 //
 // On 5xx / network: returns nil with a transient fmt.Errorf.
 func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
+	return c.makeRequestAs(ctx, c.masterKey, method, path, body)
+}
+
+// makeRequestAs is makeRequest with an explicit bearer: the console's
+// user-scoped reads (UserView, spec §10.1) pass the user's own virtual key;
+// nothing ever mutates masterKey on the shared client.
+func (c *RESTClient) makeRequestAs(ctx context.Context, key, method, path string, body any) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
@@ -121,7 +128,7 @@ func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body 
 	if err != nil {
 		return nil, fmt.Errorf("litellm: build %s %s: %w", method, path, err)
 	}
-	c.setAuth(req)
+	c.setAuth(req, key)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

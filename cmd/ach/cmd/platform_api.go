@@ -314,6 +314,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Pool:             pool,
 		Redis:            out.redis,
 		LiteLLM:          liteLLM,
+		LiteLLMREST:      liteLLM,
 		Pepper:           cfg.Pepper,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		Allowlist:        allowlist,

@@ -44,6 +44,11 @@ type Deps struct {
 	// LiteLLM is the REST client (Phase 2 lift, Phase 3 D-25 extensions).
 	LiteLLM litellm.Client
 
+	// LiteLLMREST is the concrete transport behind LiteLLM, for the
+	// console's user-scoped reads (AsUser: the user's own key on the shared
+	// transport, spec §10.1). nil in tests that never reach those routes.
+	LiteLLMREST *litellm.RESTClient
+
 	// Pepper is the server-side HMAC pepper (Phase 1 D-09).
 	Pepper []byte
 
@@ -200,6 +205,14 @@ func New(deps Deps) http.Handler {
 			Audit:   deps.Audit,
 		}
 		r.Route("/platform/environments", environments.Mount(envDeps))
+
+		// Console bootstrap + capability views (spec §11).
+		console.Mount(r, console.Deps{
+			Store: deps.Store, LiteLLM: deps.LiteLLM,
+			AsUser:           func(key string) console.UserCatalog { return deps.LiteLLMREST.AsUser(key) },
+			KeyEncryptionKey: deps.KeyEncryptionKey,
+			Audit:            deps.Audit, Logger: deps.Logger,
+		})
 
 		adminDeps := admin.Deps{
 			Pool:      deps.Pool,
