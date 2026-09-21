@@ -12,7 +12,6 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/ackstorm/ach/internal/db"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -67,7 +66,7 @@ func consoleLogin(t *testing.T, f *asFixture, next string) *http.Cookie {
 
 func TestConsole_LoginSetsSessionAndRevalidatesLater(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
-	installFakePKs(f)
+	pks := installFakePKs(f)
 	f.mountConsole()
 	c := consoleLogin(t, f, "/keys")
 
@@ -81,6 +80,16 @@ func TestConsole_LoginSetsSessionAndRevalidatesLater(t *testing.T) {
 	}
 	if len(f.dexSeen) != 0 {
 		t.Fatal("no IdP round trip before AccessTTL")
+	}
+	// Entering the console provisions the user's oauth pk_ — the row the
+	// cookie resolves to — exactly like a /token issue; a second login
+	// reuses it (no console key, AC-02).
+	if pks.minted != 1 || pks.rows["u@x.com"] == nil {
+		t.Fatalf("oauth pk_ after console login: minted=%d row=%v", pks.minted, pks.rows["u@x.com"])
+	}
+	_ = consoleLogin(t, f, "/")
+	if pks.minted != 1 {
+		t.Fatalf("second login re-minted: %d", pks.minted)
 	}
 
 	// Past AccessTTL the IdP is asked; the rotated token is stored.
@@ -101,10 +110,9 @@ func TestConsole_LoginSetsSessionAndRevalidatesLater(t *testing.T) {
 func TestConsole_IdPRefusalEndsTheSessionAndRevokesTheOAuthPK(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
 	pks := installFakePKs(f)
-	tok := "lt-u"
-	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_u", OwnerEmail: "u@x.com", LiteLLMToken: &tok}
 	f.mountConsole()
 	c := consoleLogin(t, f, "/")
+	minted := pks.rows["u@x.com"].KeyID
 	f.now = f.now.Add(f.deps.AccessTTL + time.Second)
 	f.dexRefresh = func(string) (string, error) {
 		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
@@ -112,7 +120,7 @@ func TestConsole_IdPRefusalEndsTheSessionAndRevokesTheOAuthPK(t *testing.T) {
 	if _, ok, err := f.deps.ConsoleSession(context.Background(), c.Value); err != nil || ok {
 		t.Fatalf("refused: ok=%v err=%v", ok, err)
 	}
-	if len(pks.revoked) != 1 || pks.revoked[0] != "pkid_u" {
+	if len(pks.revoked) != 1 || pks.revoked[0] != minted {
 		t.Fatalf("oauth pk_ must be revoked: %v", pks.revoked)
 	}
 	if ok, _ := f.store.Get(context.Background(), consoleSessionKind, c.Value, new(consoleSession)); ok {

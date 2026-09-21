@@ -87,9 +87,20 @@ func (d OAuthDeps) consoleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, d.dexLogin(pendingID, dexVerifier), http.StatusFound)
 }
 
-// consoleFinish is the as-callback tail for a Console pending: mint the
+// consoleFinish is the as-callback tail for a Console pending: make sure
+// the user's purpose='oauth' pk_ exists (the row the cookie resolves to —
+// the same provisioning a /token issue runs, no console key), mint the
 // session, set the cookie, drop the binding cookie, go back to the app.
 func (d OAuthDeps) consoleFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, u oauthUser) {
+	if err := d.ensureOAuthPK(r.Context(), u.Sub, u.UserID); err != nil {
+		if errors.Is(err, ErrMintLiteLLM) {
+			htmlError(w, 503, "LiteLLM is unreachable; try again shortly")
+			return
+		}
+		d.Auth.Logger.Error("console: ensure pk_ failed", "err", err)
+		htmlError(w, 500, "could not provision the personal credential")
+		return
+	}
 	sid, err := NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
