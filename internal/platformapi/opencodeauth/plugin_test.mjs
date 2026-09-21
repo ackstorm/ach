@@ -14,6 +14,7 @@ const ISSUER = "https://as.test"
 const calls = []
 let discoveryFails = false
 let tokenCalls = 0
+let devicePolls = 0
 globalThis.fetch = async (input, init) => {
   const url = typeof input === "string" ? input : input.url
   calls.push(url)
@@ -23,11 +24,21 @@ globalThis.fetch = async (input, init) => {
     return ok({ authorization_servers: [ISSUER], scopes_supported: ["alitellm"] })
   }
   if (url === `${ISSUER}/.well-known/oauth-authorization-server`) {
-    return ok({ issuer: ISSUER, token_endpoint: `${ISSUER}/token`, registration_endpoint: `${ISSUER}/register`, authorization_endpoint: `${ISSUER}/authorize` })
+    return ok({ issuer: ISSUER, token_endpoint: `${ISSUER}/token`, registration_endpoint: `${ISSUER}/register`, authorization_endpoint: `${ISSUER}/authorize`, device_authorization_endpoint: `${ISSUER}/device_authorization` })
   }
   if (url === `${ISSUER}/register`) return ok({ client_id: "c1" })
+  if (url === `${ISSUER}/device_authorization`) {
+    return ok({ device_code: "d1", user_code: "ABCD-EFGH", verification_uri: `${ISSUER}/device`, verification_uri_complete: `${ISSUER}/device?user_code=ABCD-EFGH`, expires_in: 60, interval: 0 })
+  }
   if (url === `${ISSUER}/token`) {
     const form = new URLSearchParams(init.body)
+    if (form.get("grant_type") === "urn:ietf:params:oauth:grant-type:device_code") {
+      // Pending on the first poll, then the user has signed in elsewhere.
+      if (form.get("device_code") !== "d1" || form.get("client_id") !== "c1") return new Response("{}", { status: 400 })
+      devicePolls += 1
+      if (devicePolls === 1) return new Response(JSON.stringify({ error: "authorization_pending" }), { status: 400 })
+      return ok({ access_token: "a-device", refresh_token: "r-current", expires_in: 3600 })
+    }
     if (form.get("refresh_token") !== "r-current") return new Response("{}", { status: 400 })
     tokenCalls += 1
     return ok({ access_token: `a${tokenCalls}`, refresh_token: "r-current", expires_in: 3600 })
@@ -81,6 +92,21 @@ test("a login registers once and a refresh reuses that identity", async () => {
   const racyLoader = await plugin.auth.loader(async () => reads.shift() ?? fresh)
   assert.equal(await (await racyLoader.fetch("https://model.test/x")).text(), "authed:Bearer a-fresh")
   assert.equal(tokenCalls, before, "no token call was made with the rotated refresh token")
+})
+
+test("the device grant needs no loopback: the URL is for any browser, the plugin polls", async () => {
+  const f = fakeClient()
+  const plugin = await SsoAuth({ client: f.client })
+  assert.match(plugin.auth.methods[0].label, /browser/, "the loopback method stays first: OpenWork picks methods[0] by default")
+  const device = plugin.auth.methods.find((m) => /device/.test(m.label))
+  const { url, instructions, callback } = await device.authorize()
+  assert.equal(url, `${ISSUER}/device?user_code=ABCD-EFGH`)
+  assert.match(instructions, /ABCD-EFGH/)
+  const r = await callback()
+  assert.equal(r.type, "success")
+  assert.equal(r.access, "a-device")
+  assert.equal(devicePolls, 2, "one pending poll, then the token")
+  assert.equal(calls.filter((c) => c.endsWith("/register")).length, 1, "reuses the saved DCR identity")
 })
 
 test("a failed discovery is retried on the next call", async () => {

@@ -3,6 +3,11 @@
 //   opencode plugin https://<ach>/platform/opencode-auth -g
 //   opencode auth login -p ackstorm
 //
+// Two ways in: a browser on this machine (loopback redirect), or the RFC 8628
+// device grant for a remote/headless host — the URL is opened on ANY browser,
+// the plugin polls the AS until the user has signed in there; nothing comes
+// back to this machine but the token.
+//
 // PROVIDER is the provider id in the served api.json, not branding; the user
 // sees only "SSO (browser)".
 //
@@ -86,6 +91,29 @@ async function token({ as }, form) {
     body: new URLSearchParams(form),
   })
   return { access: j.access_token, refresh: j.refresh_token, expires: Date.now() + j.expires_in * 1000 }
+}
+
+// RFC 8628 §3.4–3.5: poll /token every `interval` until the user has signed
+// in on the other browser; authorization_pending keeps going, slow_down adds
+// 5 s, anything else (expired_token, access_denied) ends it.
+async function pollDevice(d, form, interval, expiresIn) {
+  const deadline = Date.now() + expiresIn * 1000
+  let wait = (interval || 5) * 1000
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  for (;;) {
+    await sleep(wait)
+    const r = await fetch(d.as.token_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(form),
+      signal: AbortSignal.timeout(15_000),
+    })
+    const j = await r.json()
+    if (r.ok) return { access: j.access_token, refresh: j.refresh_token, expires: Date.now() + j.expires_in * 1000 }
+    if (j.error === "slow_down") wait += 5000
+    else if (j.error !== "authorization_pending") throw new Error(j.error ?? `${r.status}`)
+    if (Date.now() > deadline) throw new Error("the code expired before you signed in")
+  }
 }
 
 // Loopback listener on a random port; resolves the code once, then closes.
@@ -172,6 +200,33 @@ export async function SsoAuth({ client }) {
               async callback() {
                 try {
                   const t = await token(d, { grant_type: "authorization_code", code: await code, redirect_uri, client_id, code_verifier: verifier })
+                  return { type: "success", ...t }
+                } catch {
+                  return { type: "failed" }
+                }
+              },
+            }
+          },
+        },
+        {
+          type: "oauth",
+          label: "SSO (device code — sign in from another browser)",
+          async authorize() {
+            const d = await discover(client)
+            if (!d.as.device_authorization_endpoint) throw new Error("the authorization server does not offer the device grant")
+            const client_id = await clientId(d)
+            const da = await json(d.as.device_authorization_endpoint, {
+              method: "POST",
+              headers: { "content-type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ client_id }),
+            })
+            return {
+              url: da.verification_uri_complete ?? da.verification_uri,
+              method: "auto",
+              instructions: `Open the URL in any browser (this or another machine), confirm the code ${da.user_code} and sign in. This session completes on its own.`,
+              async callback() {
+                try {
+                  const t = await pollDevice(d, { grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: da.device_code, client_id }, da.interval, da.expires_in)
                   return { type: "success", ...t }
                 } catch {
                   return { type: "failed" }

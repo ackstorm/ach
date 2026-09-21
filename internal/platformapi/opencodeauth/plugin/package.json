@@ -1,6 +1,6 @@
 {
   "name": "alitellm-opencode-auth",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenCode plugin: SSO login for the platform model provider via the ACH authorization server",
   "license": "Apache-2.0",
   "type": "module",
