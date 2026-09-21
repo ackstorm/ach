@@ -763,7 +763,7 @@ _e2e-run: _build-e2e
 	# `ach` layout. cluster-up handles the actual image load. The synced
 	# cluster is reached entirely through the gateway — zero port-forwards.
 	#
-	# Both go-test groups run unconditionally (set +e captures each exit
+	# All three go-test groups run unconditionally (set +e captures each exit
 	# instead of -ec aborting after the first), then a single ">>> E2E RESULT:"
 	# marker is printed as the LAST line and the real failure is propagated as
 	# a non-zero exit. The marker survives lossy capture (`| tail`, truncation)
@@ -773,12 +773,12 @@ _e2e-run: _build-e2e
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
 		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e; suite=$$?; \
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
-		(cd test/e2e/mcp-echo && go test -tags=e2e -v -count=1 ./...) && \
 		go test -tags=e2e -v -count=1 ./test/e2e/mock; backends=$$?; \
-	if [ $$suite -eq 0 ] && [ $$backends -eq 0 ]; then \
+	(cd test/e2e/mcp-echo && $(E2E_RUN_ENV) go test -tags=e2e -v -count=1 ./...); mcpecho=$$?; \
+	if [ $$suite -eq 0 ] && [ $$backends -eq 0 ] && [ $$mcpecho -eq 0 ]; then \
 		echo ">>> E2E RESULT: PASS"; exit 0; \
 	else \
-		echo ">>> E2E RESULT: FAIL (suite=$$suite backends=$$backends)" >&2; exit 1; \
+		echo ">>> E2E RESULT: FAIL (suite=$$suite backends=$$backends mcp-echo=$$mcpecho)" >&2; exit 1; \
 	fi
 
 e2e-focus: ## Focused subtest. RUN='TestPhase4Promotion/SC11a' (go test -run pattern).
