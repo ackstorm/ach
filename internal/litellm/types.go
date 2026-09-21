@@ -251,7 +251,7 @@ type AgentEntry struct {
 // them, or stamped by another ACH release (its ACH_BASE_URL), is not this
 // release's and is NEVER revoked. The ach_key_id value is in the
 // key_id namespace (pkid_* / ekid_*), so it joins against
-// db.ListActiveACHKeyIDs; the opaque Token remains the revoke handle only.
+// db.ListManagedACHKeyIDs; the opaque Token remains the revoke handle only.
 type UserKeyInfo struct {
 	Token     string    `json:"token"`
 	UserID    string    `json:"user_id"`

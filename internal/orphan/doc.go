@@ -21,8 +21,11 @@
 //
 // # Per-tick procedure (two-pass)
 //
-//  1. List ACH-managed litellm_user_id set (db.ListACHManagedLitellmUsers).
-//  2. List active ACH key_id set (db.ListActiveACHKeyIDs) → achKeySet.
+//  1. List ACH-managed litellm_user_id set (db.ListACHManagedLitellmUsers,
+//     any status).
+//  2. List the managed ACH key_id set — every non-revoked row (D-23);
+//     suspended/expired/invalid keys are managed and never reaped, only a
+//     revoked row releases its key (db.ListManagedACHKeyIDs) → achKeySet.
 //  3. Pass 1 — per managed user, ListUserKeys via litellm.Client (a
 //     LiteLLM-unreachable error aborts the tick cleanly with ONE audit event,
 //     D-18 outcome="litellm_unreachable"). For each returned key, collect it
@@ -53,7 +56,7 @@
 // # Test seams
 //
 // Runnable's ListUsers and ListKeyIDs fields are function-typed (default
-// db.ListACHManagedLitellmUsers / db.ListActiveACHKeyIDs). Unit tests override
+// db.ListACHManagedLitellmUsers / db.ListManagedACHKeyIDs). Unit tests override
 // them with in-memory stubs to exercise TickOnce without a real Postgres;
 // production code never touches them after NewRunnable wires the defaults.
 //

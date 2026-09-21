@@ -15,14 +15,14 @@ import (
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
-// listActiveEKsForRevokeFn is the function-typed test seam standing in for
-// achdb.ListActiveEnvironmentKeysForRevoke (mirrors internal/orphan/runnable.go's
+// listEKsForRevokeFn is the function-typed test seam standing in for
+// achdb.ListEnvironmentKeysForRevoke (mirrors internal/orphan/runnable.go's
 // listUsersFn / listKeyIDsFn pattern). EnvironmentReconciler.DB is a concrete
 // *pgxpool.Pool with no interface seam, so a test that needs
 // revokeEnvironmentKeys to do real work injects this field directly on the
 // reconciler instead of spinning a real Postgres. Production leaves the field
 // nil; revokeEnvironmentKeys falls back to the real db helper against r.DB.
-type listActiveEKsForRevokeFn func(ctx context.Context, pool *pgxpool.Pool, environment string) ([]achdb.EkRevokeRow, error)
+type listEKsForRevokeFn func(ctx context.Context, pool *pgxpool.Pool, environment string) ([]achdb.EkRevokeRow, error)
 
 // ensureShellTeam guarantees the Environment's deny-all shell team exists and
 // still carries its sentinels, returning the LiteLLM team id.
@@ -230,7 +230,7 @@ func (r *EnvironmentReconciler) revokeEnvironmentKeys(
 	// (drainEkRows, softDeleteEnvironmentProjection) that have no seam of
 	// their own. Only when the seam is unset does r.DB==nil fall back to
 	// today's no-op contract exactly.
-	list := r.ListActiveEKsForRevoke
+	list := r.ListEKsForRevoke
 	if list == nil {
 		if r.DB == nil {
 			return nil

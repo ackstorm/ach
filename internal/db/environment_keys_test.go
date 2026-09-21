@@ -284,6 +284,48 @@ func TestEnvironmentKey_ResumeRefusesExpired(t *testing.T) {
 	}
 }
 
+// TestDrainEkRows_FlipsEveryNonRevokedRow runs the exact SQL the Environment
+// finalizer's drainEkRows loop executes (db.DrainEnvironmentKeysSQL /
+// db.CountUndrainedEnvironmentKeysSQL) against active + suspended + expired
+// rows: all three must end 'revoked', and the leftover-count query with the
+// same predicate must then return 0 (D-23, AC-12).
+func TestDrainEkRows_FlipsEveryNonRevokedRow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	past := time.Now().Add(-time.Minute)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_drain_a", CredentialHash: "h-drain-a", Environment: "drain-env", OwnerEmail: "u@x.com", Name: "a"})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_drain_b", CredentialHash: "h-drain-b", Environment: "drain-env", OwnerEmail: "u@x.com", Name: "b"})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_drain_c", CredentialHash: "h-drain-c", Environment: "drain-env", OwnerEmail: "u@x.com", Name: "c", ExpiresAt: &past})
+	if _, err := db.SuspendEnvironmentKey(ctx, pool, "ekid_drain_b"); err != nil {
+		t.Fatalf("SuspendEnvironmentKey: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, db.DrainEnvironmentKeysSQL, "drain-env"); err != nil {
+		t.Fatalf("DrainEnvironmentKeysSQL: %v", err)
+	}
+
+	var remaining int64
+	if err := pool.QueryRow(ctx, db.CountUndrainedEnvironmentKeysSQL, "drain-env").Scan(&remaining); err != nil {
+		t.Fatalf("CountUndrainedEnvironmentKeysSQL: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("remaining undrained rows = %d; want 0", remaining)
+	}
+
+	for _, keyID := range []string{"ekid_drain_a", "ekid_drain_b", "ekid_drain_c"} {
+		got, err := db.GetEnvironmentKey(ctx, pool, keyID)
+		if err != nil {
+			t.Fatalf("GetEnvironmentKey(%s): %v", keyID, err)
+		}
+		if got == nil || got.Status != "revoked" {
+			t.Errorf("%s status = %+v; want revoked", keyID, got)
+		}
+	}
+}
+
 // TestListEnvironmentKeysForRevoke_EveryNonRevokedRow: active, suspended,
 // and expired rows are all revoke candidates; only a revoked row is excluded.
 func TestListEnvironmentKeysForRevoke_EveryNonRevokedRow(t *testing.T) {

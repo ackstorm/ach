@@ -86,10 +86,10 @@ type EnvironmentReconciler struct {
 	Namespace string
 	Log       logr.Logger
 	DB        *pgxpool.Pool
-	// ListActiveEKsForRevoke is revokeEnvironmentKeys's test seam (see
-	// listActiveEKsForRevokeFn's doc comment in environment_shellteam.go);
+	// ListEKsForRevoke is revokeEnvironmentKeys's test seam (see
+	// listEKsForRevokeFn's doc comment in environment_shellteam.go);
 	// nil in production, where the real achdb helper is used against DB.
-	ListActiveEKsForRevoke listActiveEKsForRevokeFn
+	ListEKsForRevoke listEKsForRevokeFn
 	// Phase 2 (Plan 02-09 wires from cmd/operator/main.go):
 	Snapshotter *snapshot.Snapshotter
 	// Issue #34 (A10/A11): external source.Channel feed used by the
@@ -1278,13 +1278,16 @@ func computeAvailable(conds []metav1.Condition) metav1.Condition {
 // drainEkRows implements §6.5 step 4 with the W3-concrete revision:
 // bounded loop (cap 10), 100ms inter-iteration sleep, transient-DB-error
 // awareness via pgconn error class inspection, cap-exhausted slog.Warn
-// continuation. The loop body executes two SQL statements per iteration:
+// continuation. The loop body executes two SQL statements per iteration
+// (db.DrainEnvironmentKeysSQL / db.CountUndrainedEnvironmentKeysSQL):
 //
 //  1. UPDATE environment_keys SET status='revoked', revoked_at=now()
-//     WHERE environment=$1 AND status='active'
-//     — idempotent revocation of any active ek_ bound to this Environment.
+//     WHERE environment=$1 AND status<>'revoked'
+//     — idempotent revocation of every non-revoked ek_ bound to this
+//     Environment (D-23, AC-12): active, suspended, expired and
+//     access-invalid rows alike, not just 'active' ones.
 //  2. SELECT count(*) FROM environment_keys
-//     WHERE environment=$1 AND status='active'
+//     WHERE environment=$1 AND status<>'revoked'
 //     — fresh check so a concurrent INSERT after the UPDATE is detected.
 //
 // Phase 1 invariant: drainEkRows is called with r.DB possibly nil
@@ -1311,20 +1314,14 @@ func (r *EnvironmentReconciler) drainEkRows(ctx context.Context, env *achv1alpha
 
 	var lastCount int64
 	for i := 0; i < ekDrainMaxIterations; i++ {
-		// Step (a): revoke any active rows.
-		if _, err := r.DB.Exec(ctx,
-			`UPDATE environment_keys SET status='revoked', revoked_at=now() WHERE environment=$1 AND status='active'`,
-			env.Name,
-		); err != nil {
+		// Step (a): revoke any non-revoked rows.
+		if _, err := r.DB.Exec(ctx, achdb.DrainEnvironmentKeysSQL, env.Name); err != nil {
 			return classifyDrainErr("ek_ drain UPDATE", err)
 		}
 
 		// Step (b): fresh count of any rows that may have committed
 		// between the UPDATE and now.
-		row := r.DB.QueryRow(ctx,
-			`SELECT count(*) FROM environment_keys WHERE environment=$1 AND status='active'`,
-			env.Name,
-		)
+		row := r.DB.QueryRow(ctx, achdb.CountUndrainedEnvironmentKeysSQL, env.Name)
 		var n int64
 		if err := row.Scan(&n); err != nil {
 			return classifyDrainErr("ek_ drain SELECT", err)

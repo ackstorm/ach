@@ -295,13 +295,15 @@ func TestShellTeamFailedCondition(t *testing.T) {
 // would still pass if the statements inside reconcileDeletion were reordered,
 // which is the exact regression this test exists to catch.
 //
-// r.DB is left nil — the injected ListActiveEKsForRevoke seam is consulted
+// r.DB is left nil — the injected ListEKsForRevoke seam is consulted
 // BEFORE revokeEnvironmentKeys's `if r.DB == nil` guard, so it runs
 // regardless, without also unlocking the OTHER real-Postgres codepaths later
 // in reconcileDeletion (drainEkRows, softDeleteEnvironmentProjection) that
 // have no seam of their own and would panic against a non-functional pool.
-// The seam returns two fake key rows so RevokeKey does real work and the
-// "keys revoked BEFORE the access group / shell team" leg is actually
+// The seam returns three fake key rows — including one standing in for a
+// suspended row — so RevokeKey does real work and proves the finalizer
+// revokes every non-revoked row (D-23, AC-12), not just active-looking ones;
+// the "keys revoked BEFORE the access group / shell team" leg is actually
 // exercised, not vacuous.
 func TestReconcileDeletionOrder(t *testing.T) {
 	fake := newAccessGroupFake()
@@ -344,10 +346,14 @@ func TestReconcileDeletionOrder(t *testing.T) {
 		LiteLLM: fake,
 		// DB stays nil (see the doc comment above); the seam is consulted
 		// first and never touches it.
-		ListActiveEKsForRevoke: func(_ context.Context, _ *pgxpool.Pool, environment string) ([]achdb.EkRevokeRow, error) {
+		ListEKsForRevoke: func(_ context.Context, _ *pgxpool.Pool, environment string) ([]achdb.EkRevokeRow, error) {
 			return []achdb.EkRevokeRow{
 				{KeyID: "ekid_demo_1", LiteLLMToken: "tok-demo-1"},
 				{KeyID: "ekid_demo_2", LiteLLMToken: "tok-demo-2"},
+				// Stands in for a suspended row: ListEnvironmentKeysForRevoke
+				// returns every non-revoked row (D-23, AC-12), and the
+				// finalizer must revoke it just like an active one.
+				{KeyID: "ekid_demo_3_suspended", LiteLLMToken: "tok-demo-3"},
 			}, nil
 		},
 	}
@@ -356,12 +362,13 @@ func TestReconcileDeletionOrder(t *testing.T) {
 		t.Fatalf("reconcileDeletion: %v", err)
 	}
 
-	// Exact order: both RevokeKey calls (one per seeded key row), then THREE
-	// DeleteAccessGroup calls (canonical ach-env-<env>, the v0.6.19 ach-<env>,
-	// and the pre-v0.6.19 bare <env> name — all idempotent), then DeleteTeam.
-	// deleteShellTeam's ListTeamsByAlias lookup and DeleteTag are not
-	// recorded into fake.order, so this is the full recording for the run.
-	wantOrder := []string{"RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteTeam"}
+	// Exact order: all three RevokeKey calls (one per seeded key row,
+	// including the suspended stand-in), then THREE DeleteAccessGroup calls
+	// (canonical ach-env-<env>, the v0.6.19 ach-<env>, and the pre-v0.6.19
+	// bare <env> name — all idempotent), then DeleteTeam. deleteShellTeam's
+	// ListTeamsByAlias lookup and DeleteTag are not recorded into
+	// fake.order, so this is the full recording for the run.
+	wantOrder := []string{"RevokeKey", "RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteTeam"}
 	if !slices.Equal(fake.order, wantOrder) {
 		t.Fatalf("call order = %v, want %v", fake.order, wantOrder)
 	}

@@ -53,7 +53,7 @@ type orphanCandidate struct {
 }
 
 // listUsersFn / listKeyIDsFn are the function-typed test seams that
-// stand in for db.ListACHManagedLitellmUsers / db.ListActiveACHKeyIDs.
+// stand in for db.ListACHManagedLitellmUsers / db.ListManagedACHKeyIDs.
 // Production NewRunnable wires the real helpers; unit tests override
 // the fields directly on the constructed Runnable to avoid spinning a
 // real Postgres container.
@@ -195,10 +195,11 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		return
 	}
 
-	// Step 2: enumerate active ACH key_id set (for the "absent" membership test).
+	// Step 2: enumerate the managed ACH key_id set — every non-revoked row
+	// (D-23) — for the "absent" membership test.
 	achKeyIDs, err := r.ListKeyIDs(ctx, r.DB)
 	if err != nil {
-		r.Log.Error(err, "orphan-cleanup: ListActiveACHKeyIDs failed; skipping tick")
+		r.Log.Error(err, "orphan-cleanup: ListManagedACHKeyIDs failed; skipping tick")
 		return
 	}
 	achKeySet := make(map[string]struct{}, len(achKeyIDs))
@@ -256,8 +257,12 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			if issuer, _ := k.Metadata["ach_issuer"].(string); issuer != r.Issuer {
 				continue
 			}
-			// Skip if ACH still tracks it as active. The membership join is
-			// ach_key_id ↔ key_id (both pkid_*/ekid_*, ListActiveACHKeyIDs);
+			// Skip if ACH still manages it (D-23: managed = every
+			// non-revoked row — suspended/expired/invalid keys are managed
+			// and never reaped; only a revoked row releases its key, which
+			// IS the finalizer's revoke retry for a crash between the
+			// LiteLLM delete and the DB flip). The membership join is
+			// ach_key_id ↔ key_id (both pkid_*/ekid_*, ListManagedACHKeyIDs);
 			// the opaque Token is the revoke handle only, never the
 			// membership key — that namespace mismatch was the bug that
 			// revoked ACH's own pk_/ek_ keys.
@@ -273,23 +278,24 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 		return // steady state — nothing to revoke
 	}
 
-	// B1 fail-safe: an empty active set with ≥1 ACH-owned candidate is the
-	// mis-wire signature (the active-key lookup returned nothing while ACH
+	// B1 fail-safe: an empty managed set with ≥1 ACH-owned candidate is the
+	// mis-wire signature (the managed-key lookup returned nothing while ACH
 	// keys still exist upstream — the shape of the original incident). Skip
 	// ALL revocation this tick rather than risk revoking ACH's own keys on a
-	// bad active-set read.
+	// bad managed-set read.
 	//
-	// KNOWN LIMITATION (Codex review, PR #119): the orphan loop only
-	// enumerates users with ACTIVE ACH rows (db.ListACHManagedLitellmUsers
-	// filters status='active'). A genuinely-orphaned key whose owner's LAST
-	// active row was revoked — e.g. a DB-side revoke whose LiteLLM-side delete
-	// failed — drops out of future ticks and is NOT backstopped here. Closing
-	// that needs a widened enumeration (active OR recently-revoked users) with
-	// a per-tick cost bound — a design change tracked as a follow-up, not part
-	// of this fix. The empty-set branch itself is near-unreachable in
-	// practice: achKeySet and the user set read the same active rows, so an
-	// empty achKeySet implies an empty user set (early return above) except
-	// across a sub-tick read race.
+	// RESOLVED (D-23): the KNOWN LIMITATION noted here previously (Codex
+	// review, PR #119) — that the orphan loop only enumerated users with
+	// ACTIVE ACH rows, dropping a genuinely-orphaned key's owner from future
+	// ticks once their LAST row was revoked — no longer applies.
+	// db.ListACHManagedLitellmUsers now enumerates ANY status, a strict
+	// superset of the ListManagedACHKeyIDs managed set (every non-revoked
+	// row), so a user with only revoked rows still gets enumerated and any
+	// LiteLLM key ACH no longer tracks for them is still caught. The
+	// empty-set branch itself is near-unreachable in practice: achKeySet and
+	// the user set both derive from the same tables, so an empty achKeySet
+	// implies an empty user set (early return above) except across a
+	// sub-tick read race.
 	if len(achKeySet) == 0 {
 		if r.DryRun {
 			r.previewDryRun(candidates) // still surface the batch this guard would abort

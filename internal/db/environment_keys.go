@@ -27,6 +27,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// DrainEnvironmentKeysSQL and CountUndrainedEnvironmentKeysSQL are the two
+// statements behind the Environment finalizer's §6.5 drain loop
+// (internal/controller/ach/environment_controller.go's drainEkRows): every
+// non-revoked row — active, suspended, expired, access-invalid alike (D-23,
+// AC-12) — is revoked, not just 'active' ones. Exported so the drain test in
+// internal/db pins the exact statement the controller runs.
+const (
+	DrainEnvironmentKeysSQL = `UPDATE environment_keys SET status='revoked', revoked_at=now() ` +
+		`WHERE environment=$1 AND status<>'revoked'`
+	CountUndrainedEnvironmentKeysSQL = `SELECT count(*) FROM environment_keys ` +
+		`WHERE environment=$1 AND status<>'revoked'`
+)
+
 // InsertEnvironmentKey writes a single environment_keys row. status defaults
 // to 'active' and created_at defaults to now().
 //

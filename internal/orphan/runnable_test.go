@@ -844,6 +844,42 @@ func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 }
 func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
 
+// TestTickOnce_ManagedSetIsEveryNonRevokedRow (AC-13): a suspended/expired/
+// invalid row is managed — its key survives a tick; a revoked row's
+// lingering key is reaped (the D-23 revoke retry); a foreign key is never
+// touched.
+func TestTickOnce_ManagedSetIsEveryNonRevokedRow(t *testing.T) {
+	old := time.Now().Add(-11 * time.Minute)
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u@x.com": {
+				{Token: "t-susp", UserID: "u@x.com", CreatedAt: old,
+					Metadata: map[string]any{"ach_key_id": "ekid_susp", "ach_issuer": "https://ach.test"}},
+				{Token: "t-revd", UserID: "u@x.com", CreatedAt: old,
+					Metadata: map[string]any{"ach_key_id": "ekid_revd", "ach_issuer": "https://ach.test"}},
+				{Token: "t-foreign", UserID: "u@x.com", CreatedAt: old,
+					Metadata: map[string]any{}},
+			},
+		},
+	}
+	r, _ := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"u@x.com"}, nil
+	}
+	// The managed set (D-23) is every non-revoked row: ekid_susp is present
+	// (suspended, still managed), ekid_revd is absent (revoked, released to
+	// the reaper).
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
+		return []string{"ekid_susp"}, nil
+	}
+
+	r.TickOnce(context.Background())
+
+	if got := fake.revokedKeys; len(got) != 1 || got[0] != "t-revd" {
+		t.Fatalf("revokedKeys = %v; want only [t-revd] (the revoked row's lingering key)", got)
+	}
+}
+
 // TestRunnable_TickOnce_OtherIssuerIsNotOurs: a key another ACH release
 // minted on the same LiteLLM (its own ach_issuer), or one minted before the
 // stamp existed, is never a candidate — only this release's own keys are.
