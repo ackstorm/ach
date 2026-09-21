@@ -16,9 +16,11 @@ the rotation procedure, see
 `/v1` and `/gemini` are pass-through route families with **no** JWT
 involvement: the caller's bare `x-litellm-api-key`, no precheck; LiteLLM is
 the authorization boundary. `/mcp` and `/a2a` remain the only JWT routes.
-Every other LiteLLM path (`/v2/*`, `/ui`, `/key/*`, …) is the catch-all: same
-credential rules, except nothing is required — no credential at all is
-forwarded anonymously.
+Nothing else is proxied (spec D-18): there is no catch-all, so `/ui`,
+`/key/*`, `/health`, `/model/*`… are 404 here and live on LiteLLM's own host.
+The one owned exception is `GET /v2/model/info` — ach-agent's `litellm_usage`
+cost source prices its responses there with its `ek_` — which follows the
+`/v1` rules (credential required, caller's own key forwarded, no JWT).
 
 ---
 

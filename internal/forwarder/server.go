@@ -42,7 +42,9 @@ type Deps struct {
 // New returns the traffic handler — middleware chain + anonymous JWKS +
 // authenticated /v1, /gemini, /mcp/{name}[/*], /a2a/{name}[/*] routes (the
 // bare and subpath forms are both registered so a slash-less MCP endpoint
-// resolves — see the route block below).
+// resolves — see the route block below). Nothing else is proxied (D-18):
+// there is no catch-all, so LiteLLM's own surface (/ui, /key/*, /health,
+// /model/*, …) is reached on LiteLLM's own host, never through ACH.
 // D-02 middleware chain: RequestID → RecoverPanic → AccessLog → Authn
 // (per-route bypass for JWKS).
 func New(deps Deps) http.Handler {
@@ -88,6 +90,12 @@ func New(deps Deps) http.Handler {
 		r.Use(pamw.Authn(deps.Resolver, nil, nil, deps.AuthnOptions)) // no allowlist, no audit
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))
+		// The one D-18 exception: ach-agent prices its usage against
+		// LiteLLM's table at GET /v2/model/info?model=… with its ek_
+		// (litellm_usage cost source, ach-agent engine/cost.py). An OWNED
+		// route like /v1 — credential required, forwarded with the caller's
+		// own key — never an anonymous catch-all. Nothing else under /v2.
+		r.Handle("/v2/model/info", proxy.HandlerModelInfo(hdeps))
 		// Both the bare "/mcp/{name}" and the subpath "/mcp/{name}/*" forms
 		// are registered: chi (no RedirectSlashes here) does NOT match a
 		// trailing-slash-less path against "/{name}/*", and the canonical MCP
@@ -99,19 +107,6 @@ func New(deps Deps) http.Handler {
 		r.Handle("/mcp/{name}/*", proxy.HandlerMCP(hdeps))
 		r.Handle("/a2a/{name}", proxy.HandlerA2A(hdeps))
 		r.Handle("/a2a/{name}/*", proxy.HandlerA2A(hdeps))
-	})
-
-	// Catch-all: everything else LiteLLM serves (/ui, /sso, /key/*, /model/*,
-	// /anthropic/*, /health, …) when ACH fronts the whole API host. The
-	// Same Authn rules as the owned families, except nothing is required:
-	// a request with no credential at all is forwarded anonymously and
-	// LiteLLM decides.
-	r.Group(func(r chi.Router) {
-		opts := deps.AuthnOptions
-		opts.Optional = true
-		opts.Challenge = nil
-		r.Use(pamw.Authn(deps.Resolver, nil, nil, opts))
-		r.Handle("/*", proxy.HandlerPassthrough(hdeps))
 	})
 
 	return r

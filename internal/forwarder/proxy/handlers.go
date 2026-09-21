@@ -58,16 +58,12 @@ func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	return observeDuration(routeLabel, inner)
 }
 
-// HandlerPassthrough returns the catch-all proxy handler: no tag injection,
-// no precheck, no JWT — whatever identity Authn resolved (or none) reaches
-// LiteLLM as x-litellm-api-key (or nothing) and LiteLLM decides.
-func HandlerPassthrough(deps HandlerDeps) http.HandlerFunc {
-	rp := New(deps.Deps)
-	inner := func(w http.ResponseWriter, r *http.Request) {
-		metrics.IncRequests("/*", keyTypeFor(r.Context()), "forwarded")
-		rp.ServeHTTP(w, r)
-	}
-	return observeDuration("/*", inner)
+// HandlerModelInfo returns the GET /v2/model/info proxy handler — the one
+// route outside the four families (D-18 exception): ach-agent's
+// litellm_usage cost source reads model prices there with its ek_. Same
+// shape as /v1: credential required upstream of here, no precheck, no JWT.
+func HandlerModelInfo(deps HandlerDeps) http.HandlerFunc {
+	return taggedPassthrough(deps, "/v2/model/info")
 }
 
 // HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM

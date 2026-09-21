@@ -79,10 +79,6 @@ type AuthnOptions struct {
 	// Headers are the declared credential slots, consulted in order; the
 	// first one present decides.
 	Headers []CredentialHeader
-	// Optional is the forwarder's catch-all: nothing is required there.
-	// With no credential at all the request is forwarded anonymously;
-	// the owned families answer 401 + Challenge instead.
-	Optional bool
 }
 
 // credential returns the first declared header present (value, header,
@@ -305,7 +301,8 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //   - no declared slot present: Authorization: Bearer is resolved only as
 //     ACH's own OAuth token (JWS that verifies); anything else there is not
 //     ours — forwarded untouched with no ACH identity, the upstream decides;
-//   - nothing at all: 401 (+ Challenge), or through when opts.Optional.
+//   - nothing at all: 401 (+ Challenge). There is no anonymous pass-through
+//     (the forwarder's catch-all is gone, D-18).
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
 // OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
@@ -328,7 +325,7 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 
 			plaintext, from, mode, foreign := credential(r, opts.Headers)
 			if plaintext == "" {
-				if opts.Optional || foreign {
+				if foreign {
 					next.ServeHTTP(w, r) // no identity: the upstream decides
 					return
 				}

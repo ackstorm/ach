@@ -795,10 +795,11 @@ cannot be spoofed) and the proxy's `stripAndRewrite` passes through untouched.
 
 ### ❌ Cost stuck at 0 under `litellm_usage`
 
-Check `/v2/model/info` reachability through the gateway with the agent's
-`ek_` presented: `/v2` is the catch-all (since 0.9.6 — no challenge, no
-Environment tag), so a request WITH the key is forwarded and LiteLLM answers;
-a request without one reaches LiteLLM anonymous and gets its 401.
+Check `GET /v2/model/info?model=<name>` reachability through the gateway
+with the agent's `ek_` presented: it is the one owned route outside the four
+families (the catch-all is gone — spec D-18), credential required like `/v1`,
+forwarded with the agent's own key; without a credential it is ACH's 401 +
+challenge, and any OTHER `/v2/*` path is a 404.
 
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
 After migration `000011` the forwarder authenticates to LiteLLM with the

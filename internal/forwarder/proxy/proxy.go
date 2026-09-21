@@ -64,7 +64,7 @@ type Deps struct {
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
-// process; all routes (/v1, /gemini, /mcp, /a2a, the catch-all) share it.
+// process; all routes (/v1, /gemini, /mcp, /a2a) share it.
 //
 // Director ordering per D-05:
 //  1. Rewrite scheme + host from deps.LiteLLMUpstream.

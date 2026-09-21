@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/forwarder"
+	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 )
@@ -117,14 +118,15 @@ func TestProtectedResourceMetadataIsAnonymous(t *testing.T) {
 	}
 }
 
-// TestCatchAllForwardsAnonymousButNotInvalid pins the api-front contract:
-// a path ACH does not own reaches LiteLLM with no credential (LiteLLM
-// decides), while a present-but-invalid ACH credential is still refused and
-// the owned families keep their 401.
-func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
-	var seen http.Header
-	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = r.Header.Clone()
+// TestNoCatchAll pins D-18: the forwarder proxies ONLY its four families
+// (+ the anonymous /.well-known documents). Every other path LiteLLM serves
+// (/ui, /key/*, /health, /model/*, /v2/*, …) is a 404 here — with or
+// without a credential — and never reaches the upstream. LiteLLM's own
+// surface is reached on LiteLLM's own host, not through ACH.
+func TestNoCatchAll(t *testing.T) {
+	upstreamHits := 0
+	litellm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamHits++
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	defer litellm.Close()
@@ -132,7 +134,7 @@ func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
 	h := forwarder.New(forwarder.Deps{
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		LiteLLMUpstream:  upstream,
-		Resolver:         nilResolver{},
+		Resolver:         ekOnlyResolver{},
 		KeyEncryptionKey: make([]byte, 32),
 		AuthnOptions: pamw.AuthnOptions{Headers: []pamw.CredentialHeader{
 			{Name: "x-genai-api-key", Mode: pamw.ModePassthrough}, {Name: "x-ach-key", Mode: pamw.ModeResolve}}},
@@ -146,27 +148,52 @@ func TestCatchAllForwardsAnonymousButNotInvalid(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec.Code
 	}
-	if c := do("/health/liveliness", nil); c != http.StatusTeapot {
-		t.Fatalf("anonymous catch-all: %d, want upstream 418", c)
+	for _, path := range []string{"/", "/ui", "/ui/", "/key/info", "/health/liveliness", "/model/info", "/v2/anything", "/sso/key/generate"} {
+		for name, hdr := range map[string]map[string]string{
+			"anonymous":       nil,
+			"raw backend key": {"x-genai-api-key": "cust-1"},
+			"ach credential":  {"x-ach-key": "pk-whatever"},
+			"foreign bearer":  {"Authorization": "Bearer ui-token"},
+		} {
+			if c := do(path, hdr); c != http.StatusNotFound {
+				t.Fatalf("%s (%s): %d, want 404 — no catch-all (D-18)", path, name, c)
+			}
+		}
 	}
-	if c := do("/key/info", map[string]string{"x-genai-api-key": "cust-1"}); c != http.StatusTeapot ||
-		seen.Get("x-genai-api-key") != "cust-1" || seen.Get("X-Litellm-Api-Key") != "cust-1" {
-		t.Fatalf("raw header on catch-all: %d hdrs=%v", c, seen)
+	if upstreamHits != 0 {
+		t.Fatalf("an unowned path reached the upstream %d times", upstreamHits)
 	}
-	if c := do("/key/info", map[string]string{"x-ach-key": "pk-revoked"}); c != http.StatusUnauthorized {
-		t.Fatalf("invalid credential on catch-all: %d, want 401", c)
+	// The owned families keep their contract: a credential is required.
+	// /v2/model/info is the one D-18 exception — ach-agent prices its usage
+	// there with its ek_ (litellm_usage cost source); it is an OWNED route
+	// (credential required, never anonymous), not a catch-all.
+	for _, p := range []string{"/v1/models", "/v2/model/info"} {
+		if c := do(p, nil); c != http.StatusUnauthorized {
+			t.Fatalf("anonymous %s: %d, want 401", p, c)
+		}
 	}
-	// LiteLLM UI's own bearer is not ours to judge: forwarded untouched.
-	if c := do("/health/license", map[string]string{"Authorization": "Bearer ui-token"}); c != http.StatusTeapot ||
-		seen.Get("Authorization") != "Bearer ui-token" {
-		t.Fatalf("foreign Authorization on catch-all: %d hdrs=%v, want forwarded untouched", c, seen)
+	if c := do("/v2/model/info?model=x", map[string]string{"x-ach-key": "ek_live"}); c != http.StatusTeapot {
+		t.Fatalf("ek_ on /v2/model/info: %d, want the upstream's 418", c)
 	}
-	if c := do("/v1/models", nil); c != http.StatusUnauthorized {
-		t.Fatalf("anonymous /v1: %d, want 401", c)
+	// A foreign Authorization on an owned family is not ours to judge: it is
+	// forwarded untouched with no ACH identity, and LiteLLM decides.
+	if c := do("/v1/models", map[string]string{"Authorization": "Bearer ui-token"}); c != http.StatusTeapot {
+		t.Fatalf("foreign Authorization on /v1: %d, want the upstream's 418", c)
 	}
 }
 
 // nilResolver answers "unknown credential" for everything.
 type nilResolver struct{}
+
+// ekOnlyResolver knows exactly one live ek_ ("ek_live"); everything else is
+// unknown.
+type ekOnlyResolver struct{}
+
+func (ekOnlyResolver) Resolve(_ context.Context, plaintext string) (*keystore.KeyInfo, error) {
+	if plaintext == "ek_live" {
+		return &keystore.KeyInfo{KeyID: "ekid_live", KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "demo"}, nil
+	}
+	return nil, nil
+}
 
 func (nilResolver) Resolve(context.Context, string) (*keystore.KeyInfo, error) { return nil, nil }
