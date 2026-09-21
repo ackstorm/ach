@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ackstorm/ach/internal/db"
 )
@@ -215,5 +216,95 @@ func TestListEnvironmentKeysByOwner_InvalidCursor(t *testing.T) {
 	_, _, err := db.ListEnvironmentKeysByOwner(ctx, pool, "a@b.example", 100, "!!!!")
 	if err == nil {
 		t.Fatal("expected cursor error; got nil")
+	}
+}
+
+// mustInsertEk inserts an environment_keys row via InsertEnvironmentKey and
+// fatals on error.
+func mustInsertEk(t *testing.T, pool *pgxpool.Pool, row db.EkInsertRow) {
+	t.Helper()
+	if err := db.InsertEnvironmentKey(context.Background(), pool, row); err != nil {
+		t.Fatalf("InsertEnvironmentKey(%s): %v", row.KeyID, err)
+	}
+}
+
+// TestEnvironmentKey_SuspendResumeRevokeTransitions walks the ek_ state
+// machine (§7-§8): active → suspended → active → revoked, with each
+// transition's no-op case (second suspend, revoke-twice, resume-after-revoke).
+func TestEnvironmentKey_SuspendResumeRevokeTransitions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	future := time.Now().Add(time.Hour)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_s1", CredentialHash: "h-s1", Environment: "demo", OwnerEmail: "u@x.com", Name: "s1", ExpiresAt: &future})
+
+	got, err := db.GetEnvironmentKey(ctx, pool, "ekid_s1")
+	if err != nil || got.ExpiresAt == nil || !got.ExpiresAt.Equal(future.Truncate(time.Microsecond)) {
+		t.Fatalf("expires_at round-trip: %+v %v", got, err)
+	}
+	// active → suspended; suspend again is a no-op (nil, nil).
+	if r, err := db.SuspendEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r == nil || r.Status != "suspended" {
+		t.Fatalf("suspend: %+v %v", r, err)
+	}
+	if r, err := db.SuspendEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r != nil {
+		t.Fatalf("second suspend: %+v %v", r, err)
+	}
+	// suspended → active.
+	if r, err := db.ResumeEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r == nil || r.Status != "active" {
+		t.Fatalf("resume: %+v %v", r, err)
+	}
+	// revoke from suspended; repeat is (nil, nil); resume after revoke is (nil, nil).
+	_, _ = db.SuspendEnvironmentKey(ctx, pool, "ekid_s1")
+	if r, err := db.RevokeEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r == nil || r.Status != "revoked" || r.RevokedAt == nil {
+		t.Fatalf("revoke from suspended: %+v %v", r, err)
+	}
+	if r, err := db.RevokeEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r != nil {
+		t.Fatalf("revoke twice: %+v %v", r, err)
+	}
+	if r, err := db.ResumeEnvironmentKey(ctx, pool, "ekid_s1"); err != nil || r != nil {
+		t.Fatalf("resume after revoke must not resurrect: %+v %v", r, err)
+	}
+}
+
+// TestEnvironmentKey_ResumeRefusesExpired: Expired outranks Suspended (§7.1)
+// — a suspended row past its expires_at must not resume to active.
+func TestEnvironmentKey_ResumeRefusesExpired(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	past := time.Now().Add(-time.Minute)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_x1", CredentialHash: "h-x1", Environment: "demo", OwnerEmail: "u@x.com", Name: "x1", ExpiresAt: &past})
+	_, _ = db.SuspendEnvironmentKey(ctx, pool, "ekid_x1")
+	if r, err := db.ResumeEnvironmentKey(ctx, pool, "ekid_x1"); err != nil || r != nil {
+		t.Fatalf("resume of an expired key: %+v %v", r, err)
+	}
+}
+
+// TestListEnvironmentKeysForRevoke_EveryNonRevokedRow: active, suspended,
+// and expired rows are all revoke candidates; only a revoked row is excluded.
+func TestListEnvironmentKeysForRevoke_EveryNonRevokedRow(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	// Distinct tokens: environment_keys_litellm_token_uniq (migration 000003)
+	// is a partial UNIQUE index on litellm_token WHERE NOT NULL — four rows
+	// cannot share one token.
+	tokA, tokB, tokC, tokD := "tok-a", "tok-b", "tok-c", "tok-d"
+	past := time.Now().Add(-time.Minute)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_a", CredentialHash: "h-a", Environment: "fin", OwnerEmail: "u@x.com", Name: "a", LiteLLMToken: &tokA})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_b", CredentialHash: "h-b", Environment: "fin", OwnerEmail: "u@x.com", Name: "b", LiteLLMToken: &tokB})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_c", CredentialHash: "h-c", Environment: "fin", OwnerEmail: "u@x.com", Name: "c", LiteLLMToken: &tokC, ExpiresAt: &past})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_d", CredentialHash: "h-d", Environment: "fin", OwnerEmail: "u@x.com", Name: "d", LiteLLMToken: &tokD})
+	_, _ = db.SuspendEnvironmentKey(ctx, pool, "ekid_b")
+	_, _ = db.RevokeEnvironmentKey(ctx, pool, "ekid_d")
+	rows, err := db.ListEnvironmentKeysForRevoke(ctx, pool, "fin")
+	if err != nil || len(rows) != 3 { // active, suspended, expired — not revoked
+		t.Fatalf("%v %v", rows, err)
 	}
 }

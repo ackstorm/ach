@@ -203,6 +203,33 @@ func TestEkResolve_NullLitellmToken(t *testing.T) {
 	}
 }
 
+// TestEkResolve_SuspendedAndExpiredNeverAuthenticate: EkResolve keeps
+// status='active' — a suspended row never resolves, and an active row past
+// its expires_at never resolves either. A live expiring row (future
+// expires_at) still resolves and carries ExpiresAt.
+func TestEkResolve_SuspendedAndExpiredNeverAuthenticate(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	past := time.Now().Add(-time.Second)
+	future := time.Now().Add(time.Hour)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_r1", CredentialHash: "h-r1", Environment: "demo", OwnerEmail: "u@x.com", Name: "r1"})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_r2", CredentialHash: "h-r2", Environment: "demo", OwnerEmail: "u@x.com", Name: "r2", ExpiresAt: &past})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_r3", CredentialHash: "h-r3", Environment: "demo", OwnerEmail: "u@x.com", Name: "r3", ExpiresAt: &future})
+	_, _ = db.SuspendEnvironmentKey(ctx, pool, "ekid_r1")
+	if r, _ := db.EkResolve(ctx, pool, "h-r1"); r != nil {
+		t.Fatal("suspended key resolved")
+	}
+	if r, _ := db.EkResolve(ctx, pool, "h-r2"); r != nil {
+		t.Fatal("expired key resolved")
+	}
+	if r, _ := db.EkResolve(ctx, pool, "h-r3"); r == nil || r.ExpiresAt == nil {
+		t.Fatalf("live expiring key: %+v", r)
+	}
+}
+
 // TestEkResolve_UnknownHash: an unknown credential_hash returns (nil, nil).
 func TestEkResolve_UnknownHash(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)

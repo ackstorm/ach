@@ -5,9 +5,10 @@
 // EkResolve is the SOLE ek_ resolution helper for every Hub component (Phase 3
 // Platform API, Phase 4 Forwarder, Phase 5 Content Service). Per KEY-06 the
 // last_used_at UPDATE does NOT participate in the auth decision: `status =
-// 'active'` is the authoritative predicate. environment_keys has no
-// expiration column (revocation-only per migration 000001 lines 47-49) so the
-// sliding window logic from check_extend.go does not apply.
+// 'active'` is the authoritative predicate. expires_at is optional
+// (migration 000022) and enforced here only, never resurrected by ACH — a
+// NULL expires_at is perpetual (D-24), so the sliding window logic from
+// check_extend.go does not apply.
 //
 // Zero rows returned ⇒ revoked / unknown ⇒ helper returns (nil, nil) so the
 // caller renders 401 expired_or_revoked. The two causes are indistinguishable
@@ -49,13 +50,14 @@ func EkResolve(ctx context.Context, pool *pgxpool.Pool, credentialHashHex string
 		    END
 		 WHERE credential_hash = $1
 		   AND status = 'active'
+		   AND (expires_at IS NULL OR expires_at > now())
 		RETURNING key_id, environment, owner_email, name,
-		          litellm_user_id, litellm_token, litellm_key_material_enc
+		          litellm_user_id, litellm_token, litellm_key_material_enc, expires_at
 	`
 	r := &EkKeyInfo{}
 	err := pool.QueryRow(ctx, sql, credentialHashHex).Scan(
 		&r.KeyID, &r.Environment, &r.OwnerEmail, &r.Name,
-		&r.LiteLLMUserID, &r.LiteLLMToken, &r.LiteLLMKeyMaterial,
+		&r.LiteLLMUserID, &r.LiteLLMToken, &r.LiteLLMKeyMaterial, &r.ExpiresAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

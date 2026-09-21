@@ -20,6 +20,7 @@ type KeyListItem struct {
 	CreatedAt   time.Time
 	LastUsedAt  *time.Time
 	RevokedAt   *time.Time
+	ExpiresAt   *time.Time // ek only; nil = perpetual. pk expiry is deliberately not projected (see below).
 }
 
 // KeyListFilter narrows ListKeys. Zero-value fields mean "no filter".
@@ -56,10 +57,12 @@ func ListKeys(ctx context.Context, pool *pgxpool.Pool, f KeyListFilter, limit in
 	// (expires_at AND the created_at + 90d hard cap) so the listing never reports
 	// a dead key as active and so ?status=expired is not a dead filter.
 	//
-	// The expiry DATE is deliberately not projected: the window slides on every
-	// use, so any date shown to a user is stale the moment they read it. Liveness
-	// is the only honest thing to report. environment_keys have no expires_at
-	// column at all — an ek_ is perpetual, hence never 'expired'.
+	// The pk_ expiry DATE is deliberately not projected: the window slides on
+	// every use, so any date shown to a user is stale the moment they read it.
+	// Liveness is the only honest thing to report. environment_keys carry an
+	// optional expires_at (migration 000022, D-24) that IS projected: a NULL
+	// ek_ expires_at is perpetual, and an active/suspended row past its
+	// expires_at derives 'expired' the same way an expired pk_ does.
 	const q = `
 WITH combined AS (
     SELECT key_id, 'pk'::text AS key_type, owner_email,
@@ -67,16 +70,19 @@ WITH combined AS (
            CASE WHEN status = 'active'
                  AND LEAST(expires_at, created_at + interval '90 days') <= now()
                 THEN 'expired' ELSE status END AS status,
-           created_at, last_used_at, revoked_at
+           created_at, last_used_at, revoked_at, NULL::timestamptz AS expires_at
     FROM personal_keys
     UNION ALL
     SELECT key_id, 'ek'::text AS key_type, owner_email,
            environment, name,
-           status, created_at, last_used_at, revoked_at
+           CASE WHEN status IN ('active','suspended')
+                 AND expires_at IS NOT NULL AND expires_at <= now()
+                THEN 'expired' ELSE status END AS status,
+           created_at, last_used_at, revoked_at, expires_at
     FROM environment_keys
 )
 SELECT key_id, key_type, owner_email, environment, name,
-       status, created_at, last_used_at, revoked_at
+       status, created_at, last_used_at, revoked_at, expires_at
 FROM combined
 WHERE ($1::text IS NULL OR owner_email = $1)
   AND ($2::text = ''   OR key_type   = $2)
@@ -100,7 +106,7 @@ LIMIT $7`
 		var it KeyListItem
 		if err := rows.Scan(
 			&it.KeyID, &it.Type, &it.OwnerEmail, &it.Environment, &it.Name,
-			&it.Status, &it.CreatedAt, &it.LastUsedAt, &it.RevokedAt,
+			&it.Status, &it.CreatedAt, &it.LastUsedAt, &it.RevokedAt, &it.ExpiresAt,
 		); err != nil {
 			return nil, "", err
 		}

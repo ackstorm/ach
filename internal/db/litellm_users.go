@@ -3,10 +3,10 @@
 // Package db helper for the OP-15 orphan-cleanup loop (Hub §18.4).
 //
 // ListACHManagedLitellmUsers returns the DISTINCT union of the
-// litellm_user_id values across active personal_keys + environment_keys
-// rows. The Plan 02-08 orphan-cleanup Runnable iterates this set and calls
-// litellm.Client.ListUserKeys per entry to enumerate LiteLLM-side keys for
-// each ACH-managed user.
+// litellm_user_id values across personal_keys + environment_keys rows of
+// any status. The Plan 02-08 orphan-cleanup Runnable iterates this set and
+// calls litellm.Client.ListUserKeys per entry to enumerate LiteLLM-side keys
+// for each ACH-managed user.
 
 package db
 
@@ -18,15 +18,15 @@ import (
 )
 
 // ListACHManagedLitellmUsers returns the DISTINCT union of the
-// litellm_user_id values across active personal_keys and
-// environment_keys rows.
+// litellm_user_id values across personal_keys and environment_keys rows,
+// of any status.
 //
 // Hub §18.4 D-16 — the orphan-cleanup loop (Plan 02-08 Runnable)
 // iterates this set and calls litellm.Client.ListUserKeys per
 // entry to enumerate LiteLLM-side keys for each ACH-managed user.
 // A LiteLLM key is "orphan" iff its key_id is absent from the
-// active ACH rows AND it is ≥10min old AND its owning user is
-// in the set returned by this function.
+// ACH managed-key-ID set (ListManagedACHKeyIDs) AND it is ≥10min
+// old AND its owning user is in the set returned by this function.
 //
 // Phase 02.2 invariant: BOTH the litellm_user_id column (added in
 // migration 000002) AND the litellm_token column (added in migration
@@ -36,9 +36,12 @@ import (
 // Phase 3 ships — that is the expected steady-state.
 //
 // Filters:
-//   - status = 'active' on both tables (Hub §18.4 — revoked/expired
-//     rows MUST NOT contribute, otherwise the orphan loop would
-//     attempt to revoke keys for users we no longer manage).
+//   - Any status on both tables — the ownership gate (ach_key_id +
+//     ach_issuer) on the caller's side is what protects foreign keys, not
+//     this enumeration. Narrowing to active-only here would let a
+//     revoked-but-not-yet-reaped row's user drop out of the set the reaper
+//     walks (D-23) — user enumeration must stay a superset of the keyID
+//     managed set.
 //   - litellm_user_id IS NOT NULL guards against the Phase 2 schema
 //     where the column is freshly-added nullable.
 //   - litellm_user_id <> ” defends against an empty string until
@@ -53,10 +56,10 @@ func ListACHManagedLitellmUsers(ctx context.Context, pool *pgxpool.Pool) ([]stri
 	const sql = `
 		SELECT DISTINCT litellm_user_id FROM (
 		    SELECT litellm_user_id FROM personal_keys
-		        WHERE status = 'active' AND litellm_user_id IS NOT NULL
+		        WHERE litellm_user_id IS NOT NULL
 		    UNION
 		    SELECT litellm_user_id FROM environment_keys
-		        WHERE status = 'active' AND litellm_user_id IS NOT NULL
+		        WHERE litellm_user_id IS NOT NULL
 		) AS u
 		WHERE litellm_user_id <> ''
 	`

@@ -132,7 +132,7 @@ func NewRunnable(client litellm.Client, dbPool *pgxpool.Pool, audit *slog.Logger
 		MaxRevoke:  maxRevoke,
 		Log:        log,
 		ListUsers:  db.ListACHManagedLitellmUsers,
-		ListKeyIDs: db.ListActiveACHKeyIDs,
+		ListKeyIDs: db.ListManagedACHKeyIDs,
 	}
 }
 

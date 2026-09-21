@@ -36,12 +36,12 @@ func InsertEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, row EkInsertR
 	const sql = `
 		INSERT INTO environment_keys
 		    (key_id, credential_hash, environment, owner_email, name,
-		     status, litellm_user_id, litellm_token, litellm_key_material_enc)
-		VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8)
+		     status, litellm_user_id, litellm_token, litellm_key_material_enc, expires_at)
+		VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9)
 	`
 	if _, err := pool.Exec(ctx, sql,
 		row.KeyID, row.CredentialHash, row.Environment, row.OwnerEmail, row.Name,
-		row.LiteLLMUserID, row.LiteLLMToken, row.LiteLLMKeyMaterial,
+		row.LiteLLMUserID, row.LiteLLMToken, row.LiteLLMKeyMaterial, row.ExpiresAt,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
@@ -62,7 +62,7 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	const sql = `
 		SELECT key_id, credential_hash, environment, owner_email, name,
 		       litellm_user_id, litellm_token,
-		       status, created_at, last_used_at, revoked_at
+		       status, created_at, last_used_at, revoked_at, expires_at
 		  FROM environment_keys
 		 WHERE key_id = $1
 	`
@@ -70,7 +70,7 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	err := pool.QueryRow(ctx, sql, keyID).Scan(
 		&r.KeyID, &r.CredentialHash, &r.Environment, &r.OwnerEmail, &r.Name,
 		&r.LiteLLMUserID, &r.LiteLLMToken,
-		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt,
+		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt, &r.ExpiresAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -84,9 +84,9 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	return r, nil
 }
 
-// RevokeEnvironmentKey atomically flips status='active' → 'revoked' and
-// stamps revoked_at = now(). Returns (nil, nil) when the row is already
-// revoked or absent.
+// RevokeEnvironmentKey flips any non-revoked status → 'revoked' (§8.4) and
+// stamps revoked_at = now(). Returns (nil, nil) when already revoked or
+// absent.
 //
 // Per Hub §8.5 (KEY-08), this is the DB step in the LiteLLM-first
 // revocation order — the handler in Plan 03-09 MUST run litellm.RevokeKey
@@ -94,21 +94,46 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 // flip is the load-bearing barrier; the DB flip + Redis TTL bound the
 // Content Service window.
 func RevokeEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*EkKeyInfo, error) {
-	const sql = `
-		UPDATE environment_keys SET
-		    status     = 'revoked',
-		    revoked_at = now()
-		 WHERE key_id = $1
-		   AND status = 'active'
-		RETURNING key_id, credential_hash, environment, owner_email, name,
+	return flipEnvironmentKey(ctx, pool, "RevokeEnvironmentKey", keyID,
+		`UPDATE environment_keys SET status = 'revoked', revoked_at = now()
+		  WHERE key_id = $1 AND status <> 'revoked'`)
+}
+
+// SuspendEnvironmentKey flips active → suspended (§8.2). (nil, nil) when
+// the row is not active (already suspended, revoked, absent) — the handler
+// re-reads to tell those apart. A suspended row never authenticates:
+// EkResolve keeps status='active'.
+func SuspendEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*EkKeyInfo, error) {
+	return flipEnvironmentKey(ctx, pool, "SuspendEnvironmentKey", keyID,
+		`UPDATE environment_keys SET status = 'suspended'
+		  WHERE key_id = $1 AND status = 'active'`)
+}
+
+// ResumeEnvironmentKey flips suspended → active, unless the key has
+// expired (Expired outranks Suspended, §7.1). The single-statement
+// predicate is what makes a resume unable to overwrite a concurrent
+// revocation (§7.2).
+func ResumeEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*EkKeyInfo, error) {
+	return flipEnvironmentKey(ctx, pool, "ResumeEnvironmentKey", keyID,
+		`UPDATE environment_keys SET status = 'active'
+		  WHERE key_id = $1 AND status = 'suspended'
+		    AND (expires_at IS NULL OR expires_at > now())`)
+}
+
+const ekReturning = ` RETURNING key_id, credential_hash, environment, owner_email, name,
 		          litellm_user_id, litellm_token,
-		          status, created_at, last_used_at, revoked_at
-	`
+		          status, created_at, last_used_at, revoked_at, expires_at`
+
+// flipEnvironmentKey runs a single-statement UPDATE...RETURNING status
+// transition and normalizes the "no matching row" outcome to (nil, nil) —
+// the shared implementation behind RevokeEnvironmentKey,
+// SuspendEnvironmentKey, and ResumeEnvironmentKey.
+func flipEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, op, keyID, update string) (*EkKeyInfo, error) {
 	r := &EkKeyInfo{}
-	err := pool.QueryRow(ctx, sql, keyID).Scan(
+	err := pool.QueryRow(ctx, update+ekReturning, keyID).Scan(
 		&r.KeyID, &r.CredentialHash, &r.Environment, &r.OwnerEmail, &r.Name,
 		&r.LiteLLMUserID, &r.LiteLLMToken,
-		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt,
+		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt, &r.ExpiresAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -117,12 +142,12 @@ func RevokeEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string)
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: RevokeEnvironmentKey(%s): %w", keyID, err)
+		return nil, fmt.Errorf("db: %s(%s): %w", op, keyID, err)
 	}
 	return r, nil
 }
 
-// EkRevokeRow is one row from ListActiveEnvironmentKeysForRevoke — just the
+// EkRevokeRow is one row from ListEnvironmentKeysForRevoke — just the
 // two fields the Environment finalizer's key-revoke leg needs before it may
 // delete the environment's access group and shell team
 // (references/litellm-permission-model.md §8: revoking every ek_ in LiteLLM
@@ -134,21 +159,22 @@ type EkRevokeRow struct {
 	LiteLLMToken string
 }
 
-// ListActiveEnvironmentKeysForRevoke returns every active, LiteLLM-linked
-// environment_keys row for environment — the query the Environment
-// finalizer's revokeEnvironmentKeys leg runs before deleting the access
-// group and shell team (internal/controller/ach/environment_shellteam.go).
-func ListActiveEnvironmentKeysForRevoke(ctx context.Context, pool *pgxpool.Pool, environment string) ([]EkRevokeRow, error) {
+// ListEnvironmentKeysForRevoke returns every non-revoked, LiteLLM-linked
+// row — active, suspended, expired and access-invalid alike (§8.4, AC-12) —
+// for environment: the query the Environment finalizer's
+// revokeEnvironmentKeys leg runs before deleting the access group and shell
+// team (internal/controller/ach/environment_shellteam.go).
+func ListEnvironmentKeysForRevoke(ctx context.Context, pool *pgxpool.Pool, environment string) ([]EkRevokeRow, error) {
 	const sql = `
 		SELECT key_id, litellm_token FROM environment_keys
-		 WHERE environment=$1 AND status='active' AND litellm_token IS NOT NULL
+		 WHERE environment=$1 AND status<>'revoked' AND litellm_token IS NOT NULL
 	`
 	rows, err := pool.Query(ctx, sql, environment)
 	if err != nil {
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s): %w", environment, err)
+		return nil, fmt.Errorf("db: ListEnvironmentKeysForRevoke(%s): %w", environment, err)
 	}
 	defer rows.Close()
 
@@ -159,7 +185,7 @@ func ListActiveEnvironmentKeysForRevoke(ctx context.Context, pool *pgxpool.Pool,
 			if isTransientPgErr(scanErr) {
 				return nil, scanErr
 			}
-			return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s) scan: %w", environment, scanErr)
+			return nil, fmt.Errorf("db: ListEnvironmentKeysForRevoke(%s) scan: %w", environment, scanErr)
 		}
 		out = append(out, r)
 	}
@@ -167,7 +193,7 @@ func ListActiveEnvironmentKeysForRevoke(ctx context.Context, pool *pgxpool.Pool,
 		if isTransientPgErr(rerr) {
 			return nil, rerr
 		}
-		return nil, fmt.Errorf("db: ListActiveEnvironmentKeysForRevoke(%s): %w", environment, rerr)
+		return nil, fmt.Errorf("db: ListEnvironmentKeysForRevoke(%s): %w", environment, rerr)
 	}
 	return out, nil
 }
@@ -193,7 +219,7 @@ func listEnvironmentKeys(ctx context.Context, pool *pgxpool.Pool, ownerEmailFilt
 	const baseCols = `
 		SELECT key_id, environment, owner_email, name,
 		       litellm_user_id, litellm_token,
-		       status, created_at, last_used_at, revoked_at
+		       status, created_at, last_used_at, revoked_at, expires_at
 		  FROM environment_keys
 	`
 	const orderLimit = ` ORDER BY created_at DESC, key_id DESC LIMIT `
@@ -229,7 +255,7 @@ func listEnvironmentKeys(ctx context.Context, pool *pgxpool.Pool, ownerEmailFilt
 			err := r.Scan(
 				&k.KeyID, &k.Environment, &k.OwnerEmail, &k.Name,
 				&k.LiteLLMUserID, &k.LiteLLMToken,
-				&k.Status, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt,
+				&k.Status, &k.CreatedAt, &k.LastUsedAt, &k.RevokedAt, &k.ExpiresAt,
 			)
 			return k, err
 		},

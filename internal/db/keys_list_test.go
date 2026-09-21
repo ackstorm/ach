@@ -248,3 +248,52 @@ func TestListKeys_DerivesExpiredStatus(t *testing.T) {
 		t.Errorf("status=active len=%d; want 2 (pkid_live + ekid_perp), got %+v", len(active), active)
 	}
 }
+
+// TestListKeys_DerivesExpiredStatusForEk: an ek_ with a past expires_at
+// lists as 'expired' whether its on-disk status is 'active' or 'suspended';
+// ?status=expired matches it; a NULL-expiry (perpetual) ek_ is never
+// 'expired'.
+func TestListKeys_DerivesExpiredStatusForEk(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_ee_perp", CredentialHash: "h_ee_perp", Environment: "envE", OwnerEmail: "ee@x.example", Name: "perp"})
+	past := time.Now().Add(-time.Hour)
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_ee_active_exp", CredentialHash: "h_ee_active_exp", Environment: "envE", OwnerEmail: "ee@x.example", Name: "active-exp", ExpiresAt: &past})
+	mustInsertEk(t, pool, db.EkInsertRow{KeyID: "ekid_ee_susp_exp", CredentialHash: "h_ee_susp_exp", Environment: "envE", OwnerEmail: "ee@x.example", Name: "susp-exp", ExpiresAt: &past})
+	if _, err := db.SuspendEnvironmentKey(ctx, pool, "ekid_ee_susp_exp"); err != nil {
+		t.Fatalf("SuspendEnvironmentKey: %v", err)
+	}
+
+	owner := "ee@x.example"
+	all, _, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	byID := map[string]db.KeyListItem{}
+	for _, k := range all {
+		byID[k.KeyID] = k
+	}
+	for id, want := range map[string]string{
+		"ekid_ee_perp":       "active",
+		"ekid_ee_active_exp": "expired",
+		"ekid_ee_susp_exp":   "expired",
+	} {
+		if got := byID[id].Status; got != want {
+			t.Errorf("%s status=%q; want %q", id, got, want)
+		}
+	}
+	if byID["ekid_ee_perp"].ExpiresAt != nil {
+		t.Errorf("ekid_ee_perp ExpiresAt=%v; want nil (perpetual)", byID["ekid_ee_perp"].ExpiresAt)
+	}
+
+	expired, _, err := db.ListKeys(ctx, pool, db.KeyListFilter{OwnerEmail: &owner, Status: "expired"}, 100, "")
+	if err != nil {
+		t.Fatalf("ListKeys status=expired: %v", err)
+	}
+	if len(expired) != 2 {
+		t.Errorf("status=expired len=%d; want 2, got %+v", len(expired), expired)
+	}
+}

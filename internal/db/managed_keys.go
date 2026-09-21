@@ -2,7 +2,7 @@
 
 // Package db helpers for the OP-15 orphan-cleanup loop (Hub §18.4).
 //
-// ListActiveACHKeyIDs — DISTINCT union of every active
+// ListManagedACHKeyIDs — DISTINCT union of every non-revoked
 // personal_keys.key_id and environment_keys.key_id. This is the LIVE
 // join helper the orphan loop uses: ACH-minted LiteLLM keys carry
 // metadata.ach_key_id in this same key_id namespace (pkid_*/ekid_*),
@@ -22,27 +22,25 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ListActiveACHKeyIDs returns the DISTINCT union of every active
+// ListManagedACHKeyIDs returns the DISTINCT union of every non-revoked
 // personal_keys.key_id and environment_keys.key_id (both prefixed
 // 'pkid_' / 'ekid_' per Hub §16 DB-02).
 //
-// Used by the orphan-cleanup Runnable to compute the "ACH-active
-// key_id set" — the membership half of the ownership-gated orphan test
-// (Hub §18.4). The join key is metadata.ach_key_id, surfaced from
-// LiteLLM GET /key/list (return_full_object=true): ACH-minted keys carry
-// ach_key_id in this same key_id namespace (set at mint in sso.go /
-// envkeys/handler.go), so a LiteLLM key is a true orphan iff it carries
-// an ach_key_id that is NOT in this set. Keys WITHOUT ach_key_id are
-// foreign and are never revoked. This makes ListActiveACHKeyIDs the live
-// join helper — key_id is the PRIMARY KEY (never NULL), which is why the
-// loop joins on it rather than litellm_token (whose NULL-during-migration
-// rows would fail open).
+// Used by the orphan-cleanup Runnable to compute the managed set (D-23) —
+// the membership half of the ownership-gated orphan test (Hub §18.4). The
+// join key is metadata.ach_key_id, surfaced from LiteLLM GET /key/list
+// (return_full_object=true): ACH-minted keys carry ach_key_id in this same
+// key_id namespace (set at mint in sso.go / envkeys/handler.go), so a
+// LiteLLM key is a true orphan iff it carries an ach_key_id that is NOT in
+// this set. Keys WITHOUT ach_key_id are foreign and are never revoked. This
+// makes ListManagedACHKeyIDs the live join helper — key_id is the PRIMARY
+// KEY (never NULL), which is why the loop joins on it rather than
+// litellm_token (whose NULL-during-migration rows would fail open).
 //
 // Filters:
-//   - status = 'active' on both tables (Hub §18.4 — revoked / expired
-//     rows MUST NOT contribute; their key_ids are no longer "owned"
-//     by ACH and should not block orphan detection for re-issued keys
-//     in a Phase 3+ world where litellm_key_id is tracked).
+//   - status <> 'revoked' on both tables (D-23) — suspended, expired and
+//     access-invalid rows are managed and never reaped; only a revoked row
+//     releases its key to the reaper (which is the revoke retry).
 //   - No NULL or empty-string filter is needed: key_id is the PRIMARY
 //     KEY on both tables and CHECK-constrained to LIKE 'pkid_%' /
 //     LIKE 'ekid_%' (migration 000001), so NULL and ” are not
@@ -51,12 +49,12 @@ import (
 // Returns ([]string{}, nil) on zero matches — never (nil, error).
 // Pgconn 08/57 errors propagate raw so the caller's retry backoff
 // works correctly; other errors wrap via fmt.Errorf.
-func ListActiveACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+func ListManagedACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	const sql = `
 		SELECT DISTINCT key_id FROM (
-		    SELECT key_id FROM personal_keys    WHERE status = 'active'
+		    SELECT key_id FROM personal_keys    WHERE status <> 'revoked'
 		    UNION
-		    SELECT key_id FROM environment_keys WHERE status = 'active'
+		    SELECT key_id FROM environment_keys WHERE status <> 'revoked'
 		) AS u
 	`
 	rows, err := pool.Query(ctx, sql)
@@ -64,7 +62,7 @@ func ListActiveACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, err
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ListActiveACHKeyIDs: %w", err)
+		return nil, fmt.Errorf("db: ListManagedACHKeyIDs: %w", err)
 	}
 	defer rows.Close()
 
@@ -72,7 +70,7 @@ func ListActiveACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, err
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("db: ListActiveACHKeyIDs scan: %w", err)
+			return nil, fmt.Errorf("db: ListManagedACHKeyIDs scan: %w", err)
 		}
 		out = append(out, id)
 	}
@@ -80,7 +78,7 @@ func ListActiveACHKeyIDs(ctx context.Context, pool *pgxpool.Pool) ([]string, err
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: ListActiveACHKeyIDs iterate: %w", err)
+		return nil, fmt.Errorf("db: ListManagedACHKeyIDs iterate: %w", err)
 	}
 	return out, nil
 }

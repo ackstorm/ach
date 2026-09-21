@@ -235,7 +235,7 @@ func (r *EnvironmentReconciler) revokeEnvironmentKeys(
 		if r.DB == nil {
 			return nil
 		}
-		list = achdb.ListActiveEnvironmentKeysForRevoke
+		list = achdb.ListEnvironmentKeysForRevoke
 	}
 	// ponytail: ONE pass over active rows, unlike the sibling drainEkRows
 	// loop below in the deletion sequence (a key can be INSERTed while

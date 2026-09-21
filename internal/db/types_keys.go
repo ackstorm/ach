@@ -64,9 +64,9 @@ type PkKeyInfo struct {
 
 // EkKeyInfo is the typed row shape returned by EkResolve, GetEnvironmentKey,
 // RevokeEnvironmentKey, and the elements of ListEnvironmentKeysByOwner. Per
-// Hub §8.1, environment_keys has no expires_at column (revocation-only); the
-// debounced last_used_at UPDATE in EkResolve does not participate in the auth
-// decision (KEY-06 — status='active' is the authoritative predicate).
+// Hub §8.1, expires_at is nullable; EkResolve enforces it (migration 000022);
+// the debounced last_used_at UPDATE in EkResolve does not participate in the
+// auth decision (KEY-06 — status='active' is the authoritative predicate).
 //
 // CredentialHash is populated by GetEnvironmentKey and RevokeEnvironmentKey
 // (Plan 03-08 Rule 3 deviation — the §8.5 revoke flow needs it to derive
@@ -83,10 +83,12 @@ type EkKeyInfo struct {
 	LiteLLMToken   *string // NULL until Phase 3 /key/generate response
 	// LiteLLM virtual-key material, encrypted at rest (keycrypt blob; G3).
 	LiteLLMKeyMaterial *string
-	Status             string     // 'active' | 'revoked'
+	Status             string     // 'active' | 'suspended' | 'revoked'
 	CreatedAt          time.Time  // row-creation wall-clock
 	LastUsedAt         *time.Time // NULL on freshly minted rows
 	RevokedAt          *time.Time // NULL while status='active'
+	// ExpiresAt is NULL = perpetual (§7.3); enforced in ACH only (D-24).
+	ExpiresAt *time.Time
 }
 
 // PkInsertRow is the value-struct argument to InsertPersonalKey. Fields match
@@ -117,4 +119,6 @@ type EkInsertRow struct {
 	LiteLLMUserID      *string
 	LiteLLMToken       *string
 	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
+	// ExpiresAt is NULL = perpetual (§7.3); enforced in ACH only (D-24).
+	ExpiresAt *time.Time
 }

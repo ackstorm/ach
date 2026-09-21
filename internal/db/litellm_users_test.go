@@ -102,9 +102,13 @@ func TestListACHManagedLitellmUsers_Dedup(t *testing.T) {
 	}
 }
 
-// TestListACHManagedLitellmUsers_ExcludesInactive: a personal_keys row with
-// status='revoked' must NOT be in the result; ditto environment_keys revoked.
-func TestListACHManagedLitellmUsers_ExcludesInactive(t *testing.T) {
+// TestListACHManagedLitellmUsers_IncludesAnyStatus: the enumeration drops the
+// status filter entirely (D-23) — a personal_keys/environment_keys row with
+// status='revoked' (or the literal 'expired' on personal_keys) still
+// contributes its litellm_user_id. The ownership gate (ach_key_id +
+// ach_issuer) on the caller's side is what protects foreign keys, not this
+// enumeration.
+func TestListACHManagedLitellmUsers_IncludesAnyStatus(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
@@ -129,19 +133,13 @@ func TestListACHManagedLitellmUsers_ExcludesInactive(t *testing.T) {
 		t.Fatalf("ListACHManagedLitellmUsers: %v", err)
 	}
 	sort.Strings(got)
-	want := []string{"active-ek-user", "active-pk-user"}
+	want := []string{"active-ek-user", "active-pk-user", "expired-pk-user", "revoked-ek-user", "revoked-pk-user"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries; want %d (%v)", len(got), len(want), got)
 	}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("idx %d: got %q, want %q", i, got[i], want[i])
-		}
-	}
-	// Confirm none of the inactive-user IDs leaked in.
-	for _, g := range got {
-		if g == "revoked-pk-user" || g == "expired-pk-user" || g == "revoked-ek-user" {
-			t.Errorf("inactive user id leaked: %q", g)
 		}
 	}
 }
