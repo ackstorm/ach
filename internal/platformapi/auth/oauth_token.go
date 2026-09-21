@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -110,19 +111,32 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 	})
 }
 
-// ensureOAuthPK guarantees one live purpose='oauth' row for sub: reuse it,
-// or revoke the old and mint a fresh one — in THAT order, because the
-// partial unique index (migration 000020) allows one active oauth row per
-// owner. If the mint then fails the user has no row until the next grant,
-// which is the same state as a first login. The pk_ plaintext is discarded —
-// the forwarder resolves the row by owner_email, never by presenting it.
+// ensureOAuthPK guarantees one live purpose='oauth' row for sub: reuse it
+// when LiteLLM still has its key, or revoke the old and mint a fresh one —
+// in THAT order, because the partial unique index (migration 000020)
+// allows one active oauth row per owner. If the mint then fails the user
+// has no row until the next grant, which is the same state as a first
+// login. The pk_ plaintext is discarded — the forwarder resolves the row by
+// owner_email, never by presenting it.
+//
+// The LiteLLM check is one GET /key/list per token issue (login and each
+// refresh): a row whose key vanished from LiteLLM (deleted in its UI, a
+// second release on another LiteLLM sharing this DB, a reset) would
+// otherwise be replayed forever as "Invalid proxy server token".
 func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error {
 	cur, err := d.lookupOAuthPK(ctx, sub)
 	if err != nil {
 		return err
 	}
 	if cur != nil && cur.ExpiresAt.After(d.Now().Add(oauthPKMinRemaining)) {
-		return nil
+		live, err := d.liteLLMHasKey(ctx, cur)
+		if err != nil {
+			return err
+		}
+		if live {
+			return nil
+		}
+		d.Auth.Logger.Warn("oauth: litellm no longer has the oauth pk_ key; re-minting", "key_id", cur.KeyID)
 	}
 	if cur != nil {
 		if err := d.revokeOAuthPK(ctx, cur.KeyID); err != nil {
@@ -131,6 +145,25 @@ func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error 
 	}
 	_, _, err = d.mint(ctx, sub, userID, "oauth")
 	return err
+}
+
+// liteLLMHasKey reports whether LiteLLM still lists the row's key under
+// its user. A LiteLLM failure is ErrMintLiteLLM: the grant answers 503
+// like a failed mint.
+func (d OAuthDeps) liteLLMHasKey(ctx context.Context, row *db.PkKeyInfo) (bool, error) {
+	if row.LiteLLMUserID == nil || row.LiteLLMToken == nil {
+		return false, nil
+	}
+	keys, err := d.Auth.LiteLLM.ListUserKeys(ctx, *row.LiteLLMUserID)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrMintLiteLLM, err)
+	}
+	for _, k := range keys {
+		if k.Token == *row.LiteLLMToken {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (d OAuthDeps) lookupOAuthPK(ctx context.Context, email string) (*db.PkKeyInfo, error) {

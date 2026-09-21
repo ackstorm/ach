@@ -64,6 +64,7 @@ type fakeLiteLLM struct {
 	keyGenerateBehaviour func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error)
 	revokeKeyError       func(keyID string) error
 	listTeamsBehaviour   func(alias string) ([]litellm.TeamListEntry, error)
+	listUserKeys         func(userID string) ([]litellm.UserKeyInfo, error)
 	createTeamBehaviour  func(req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error)
 }
 
@@ -144,7 +145,10 @@ func (f *fakeLiteLLM) ListA2AAgents(context.Context) ([]litellm.AgentEntry, erro
 func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
 	return nil, nil
 }
-func (f *fakeLiteLLM) ListUserKeys(context.Context, string) ([]litellm.UserKeyInfo, error) {
+func (f *fakeLiteLLM) ListUserKeys(_ context.Context, userID string) ([]litellm.UserKeyInfo, error) {
+	if f.listUserKeys != nil {
+		return f.listUserKeys(userID)
+	}
 	return nil, nil
 }
 

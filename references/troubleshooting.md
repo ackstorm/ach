@@ -690,6 +690,20 @@ another machine races the first), or Redis was flushed (the AS keeps its
 transient state there; a flush logs every OAuth client out). Fix:
 `ach-cli login` again; for a tool, its `… mcp login` again.
 
+### ❌ OAuth session works at login, model call answers LiteLLM `Invalid proxy server token passed … Unable to find token in cache or LiteLLM_VerificationTokenTable`
+
+The user's `purpose='oauth'` `personal_keys` row points at a LiteLLM key
+LiteLLM no longer has: deleted in its UI, LiteLLM DB reset, or **two ACH
+releases sharing one ACH Postgres but pointing at different LiteLLMs** (the
+row minted on one is replayed against the other). Since 0.9.8 `/token`
+checks the key with `GET /key/list` on every issue (login and each 1h
+refresh) and re-mints a missing one, so the session heals itself at the
+next refresh — a log line `oauth: litellm no longer has the oauth pk_ key;
+re-minting` confirms it. If it re-mints on every refresh, the topology is
+the cause: two releases must not share `ACH_DB_URL` with different
+`ACH_LITELLM_BASE_URL`. Manual unblock on an older release: revoke the row
+(`DELETE /platform/keys/{id}?force=true`, pk self-revoke) and log in again.
+
 ### ❌ OAuth login works, `/mcp/<name>` is 403
 
 Not OAuth — `precheck`, exactly as for a `pk_`. The token stands for the

@@ -23,6 +23,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/litellm"
 )
 
 func newOAuthStore(t *testing.T) *OAuthStore {
@@ -350,10 +351,27 @@ type fakeOAuthPKs struct {
 	rows    map[string]*db.PkKeyInfo
 	revoked []string
 	minted  int
+	// litellmLost: tokens LiteLLM no longer lists (deleted out-of-band).
+	litellmLost map[string]bool
+	litellmErr  error
 }
 
+// installFakePKs wires the pk_ seams and a LiteLLM whose key list mirrors
+// the rows (minus litellmLost).
 func installFakePKs(f *asFixture) *fakeOAuthPKs {
-	p := &fakeOAuthPKs{rows: map[string]*db.PkKeyInfo{}}
+	p := &fakeOAuthPKs{rows: map[string]*db.PkKeyInfo{}, litellmLost: map[string]bool{}}
+	f.deps.Auth.LiteLLM = &fakeLiteLLM{listUserKeys: func(userID string) ([]litellm.UserKeyInfo, error) {
+		if p.litellmErr != nil {
+			return nil, p.litellmErr
+		}
+		var out []litellm.UserKeyInfo
+		for _, r := range p.rows {
+			if r.LiteLLMToken != nil && !p.litellmLost[*r.LiteLLMToken] {
+				out = append(out, litellm.UserKeyInfo{Token: *r.LiteLLMToken, UserID: userID})
+			}
+		}
+		return out, nil
+	}}
 	f.deps.OAuthPKLookup = func(_ context.Context, email string) (*db.PkKeyInfo, error) { return p.rows[email], nil }
 	f.deps.OAuthPKRevoke = func(_ context.Context, id string) error {
 		p.revoked = append(p.revoked, id)
@@ -372,7 +390,7 @@ func installFakePKs(f *asFixture) *fakeOAuthPKs {
 		tok, mat := "lt-"+email, "sealed"
 		row := db.PkInsertRow{KeyID: fmt.Sprintf("pkid_%d", p.minted), OwnerEmail: email, ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
 			LiteLLMUserID: &userID, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Purpose: purpose}
-		p.rows[email] = &db.PkKeyInfo{KeyID: row.KeyID, OwnerEmail: email, ExpiresAt: row.ExpiresAt, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Status: "active"}
+		p.rows[email] = &db.PkKeyInfo{KeyID: row.KeyID, OwnerEmail: email, ExpiresAt: row.ExpiresAt, LiteLLMUserID: &userID, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Status: "active"}
 		return "pk-discarded", row, nil
 	}
 	f.mount()
@@ -443,11 +461,40 @@ func TestToken_CodeExchangeMintsTheOAuthPKAndAJWT(t *testing.T) {
 	}
 }
 
+// A row LiteLLM no longer knows (key deleted in its UI, another release on
+// a different LiteLLM sharing the DB) is replaced, not replayed.
+func TestToken_RemintsWhenLiteLLMLostTheKey(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	pks.litellmLost["lt-u@x.com"] = true
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 2 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_1" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+	// LiteLLM down at the check: 503, nothing revoked.
+	pks.litellmErr = errors.New("dial tcp: refused")
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("litellm down: %d %s", w.Code, w.Body)
+	}
+	if pks.minted != 2 || len(pks.revoked) != 1 {
+		t.Fatalf("no churn while LiteLLM is down: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
 func TestToken_RotatesAnOAuthPKThatIsAboutToExpire(t *testing.T) {
 	f := newAS(t)
 	pks := installFakePKs(f)
-	tok := "lt-old"
-	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(30 * time.Minute), LiteLLMToken: &tok, Status: "active"}
+	tok, uid := "lt-old", "u@x.com"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(30 * time.Minute), LiteLLMUserID: &uid, LiteLLMToken: &tok, Status: "active"}
 	cid := registerClient(t, f)
 	seedCode(t, f, cid)
 	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
