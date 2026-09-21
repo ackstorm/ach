@@ -62,5 +62,5 @@ func (r *oauthResolver) Resolve(ctx context.Context, plaintext string) (*KeyInfo
 	if err != nil || row == nil {
 		return nil, err
 	}
-	return pkInfoToKeyInfo(row), nil
+	return KeyInfoFromPK(row), nil
 }

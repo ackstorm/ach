@@ -3,6 +3,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,6 +72,19 @@ func ParseCredentialHeaders(raw string) ([]CredentialHeader, error) {
 	return out, nil
 }
 
+// CookieAuth is the console's session adapter: an opaque cookie becomes the
+// same KeyContext an OAuth bearer produces (the user's purpose='oauth'
+// pk_ row), so no handler learns about cookies. platform-api only — the
+// forwarder and content-service leave it nil.
+type CookieAuth struct {
+	Name   string
+	Issuer string // ACH_BASE_URL — the Origin fallback of SameSite
+	// Session maps the cookie value to the signed-in email; ok=false is an
+	// unknown/expired session; err may wrap ErrTemporarilyUnavailable.
+	Session func(ctx context.Context, sid string) (email string, ok bool, err error)
+	PK      keystore.OAuthPKLookup
+}
+
 // AuthnOptions is per-service policy.
 type AuthnOptions struct {
 	// Challenge composes the WWW-Authenticate value for a 401 (the RFC 9728
@@ -79,6 +93,11 @@ type AuthnOptions struct {
 	// Headers are the declared credential slots, consulted in order; the
 	// first one present decides.
 	Headers []CredentialHeader
+	// Cookie, when set, also accepts the console session cookie (§5.3):
+	// a request carrying BOTH the cookie and any API credential is
+	// rejected, and cookie-authenticated mutations pass the D-28 SameSite
+	// check.
+	Cookie *CookieAuth
 }
 
 // credential returns the first declared header present (value, header,
@@ -302,7 +321,11 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //     ACH's own OAuth token (JWS that verifies); anything else there is not
 //     ours — forwarded untouched with no ACH identity, the upstream decides;
 //   - nothing at all: 401 (+ Challenge). There is no anonymous pass-through
-//     (the forwarder's catch-all is gone, D-18).
+//     (the forwarder's catch-all is gone, D-18);
+//   - opts.Cookie set and the console cookie present: the session resolves
+//     to the user's oauth pk_ row (same KeyContext as a bearer); a cookie
+//     plus any API credential is 400 ambiguous_credentials; a non-safe
+//     method must pass SameSite (403 csrf_rejected otherwise).
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
 // OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
@@ -323,7 +346,65 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			ctx := r.Context()
 			reqID := RequestIDFromCtx(ctx)
 
+			// finish is the shared tail: admin flag, KeyContext, audit meta.
+			finish := func(w http.ResponseWriter, r *http.Request, info *keystore.KeyInfo) {
+				// BLK-02: admin status is the allowlist lookup on pk_ only.
+				isAdmin := false
+				if info.KeyType == keys.PrefixPk && allowlist != nil {
+					_, isAdmin = allowlist[info.OwnerEmail]
+				}
+				ctx := WithKeyContext(r.Context(), info, isAdmin)
+				// G20: the key-bound Environment is the governance dimension for
+				// audit; handlers that operate on a different env (hydrate's
+				// requested env) override the typed Event field explicitly.
+				if info.Environment != "" {
+					ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: info.Environment})
+				}
+				next.ServeHTTP(w, r.WithContext(ctx))
+			}
+
 			plaintext, from, mode, foreign := credential(r, opts.Headers)
+			var sid string
+			if opts.Cookie != nil {
+				if c, err := r.Cookie(opts.Cookie.Name); err == nil && c.Value != "" {
+					sid = c.Value
+				}
+			}
+			if sid != "" {
+				// A session AND an API credential: nobody meant that (§5.3).
+				if plaintext != "" || foreign || r.Header.Get("Authorization") != "" {
+					render.Error(w, http.StatusBadRequest, "ambiguous_credentials", "present the console session or an API credential, not both", reqID)
+					return
+				}
+				if !safeMethod(r.Method) && !SameSite(r, opts.Cookie.Issuer) {
+					render.Error(w, http.StatusForbidden, "csrf_rejected", "cross-site request refused", reqID)
+					return
+				}
+				email, ok, err := opts.Cookie.Session(ctx, sid)
+				if errors.Is(err, ErrTemporarilyUnavailable) {
+					render.Error(w, http.StatusServiceUnavailable, "temporarily_unavailable", "identity provider unreachable", reqID)
+					return
+				}
+				if err != nil {
+					render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+					return
+				}
+				if !ok {
+					unauthorized(w, r, "session_expired", "sign in again", reqID)
+					return
+				}
+				row, err := opts.Cookie.PK(ctx, email)
+				if err != nil {
+					render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+					return
+				}
+				if row == nil {
+					unauthorized(w, r, audit.OutcomeExpiredOrRevoked, "key expired or revoked", reqID)
+					return
+				}
+				finish(w, r, keystore.KeyInfoFromPK(row))
+				return
+			}
 			if plaintext == "" {
 				if foreign {
 					next.ServeHTTP(w, r) // no identity: the upstream decides
@@ -366,21 +447,7 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			// Authorization that is the upstream provider's own credential —
 			// passes as it came.
 			r.Header.Del(from)
-
-			// BLK-02: admin status is the allowlist lookup on pk_ only.
-			isAdmin := false
-			if info.KeyType == keys.PrefixPk && allowlist != nil {
-				_, isAdmin = allowlist[info.OwnerEmail]
-			}
-
-			ctx = WithKeyContext(ctx, info, isAdmin)
-			// G20: the key-bound Environment is the governance dimension for
-			// audit; handlers that operate on a different env (hydrate's
-			// requested env) override the typed Event field explicitly.
-			if info.Environment != "" {
-				ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: info.Environment})
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
+			finish(w, r, info)
 		})
 	}
 }

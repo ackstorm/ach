@@ -148,13 +148,18 @@ func pkLookupFor(pool *pgxpool.Pool, extendHook PkExtendHook) dbLookupFn {
 		if row.Extended && extendHook != nil && row.LiteLLMToken != nil {
 			extendHook(context.WithoutCancel(ctx), *row.LiteLLMToken)
 		}
-		return pkInfoToKeyInfo(row), nil
+		return KeyInfoFromPK(row), nil
 	}
 }
 
-// pkInfoToKeyInfo maps a resolved personal_keys row to the auth-layer
+// KeyInfoFromPK maps a resolved personal_keys row to the auth-layer
+// view. Exported for the console cookie adapter (platformapi/middleware),
+// which builds the same KeyContext an OAuth bearer produces from the
+// user's purpose='oauth' row — no handler learns about cookies.
+//
+// It maps a resolved personal_keys row to the auth-layer
 // KeyInfo. Shared by the pk_ path and the OAuth resolver (same row shape).
-func pkInfoToKeyInfo(row *db.PkKeyInfo) *KeyInfo {
+func KeyInfoFromPK(row *db.PkKeyInfo) *KeyInfo {
 	expires := row.ExpiresAt
 	return &KeyInfo{
 		KeyID:         row.KeyID,

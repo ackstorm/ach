@@ -14,6 +14,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/config"
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
@@ -139,6 +140,7 @@ func New(deps Deps) http.Handler {
 	}
 	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
 	// a client that does not yet hold a credential).
+	authnOpts := deps.AuthnOptions
 	if deps.OAuth != nil {
 		od := *deps.OAuth
 		od.Auth = authDeps
@@ -147,6 +149,15 @@ func New(deps Deps) http.Handler {
 		r.Get("/platform/opencode-auth", opencodeauth.Handler())
 		// Web console login/logout (D-27): the same AS, one more pending kind.
 		r.Route("/platform/console/session", auth.MountConsole(od))
+		// …and the cookie it sets resolves, through Authn, to the same
+		// KeyContext a bearer produces (§5.3): the user's oauth pk_ row.
+		authnOpts.Cookie = &pamw.CookieAuth{
+			Name: auth.ConsoleCookieName(deps.InsecureCookie), Issuer: deps.BaseURL,
+			Session: od.ConsoleSession,
+			PK: func(ctx context.Context, email string) (*db.PkKeyInfo, error) {
+				return db.ActiveOAuthPK(ctx, deps.Pool, email)
+			},
+		}
 	}
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
@@ -154,7 +165,7 @@ func New(deps Deps) http.Handler {
 	// KeyContext.IsAdmin is populated uniformly for downstream
 	// handlers.
 	r.Group(func(r chi.Router) {
-		r.Use(pamw.Authn(deps.Resolver, deps.Allowlist, deps.Audit, deps.AuthnOptions))
+		r.Use(pamw.Authn(deps.Resolver, deps.Allowlist, deps.Audit, authnOpts))
 
 		// BLK-03: hydrate.Deps now exposes LiteLLM litellm.Client as a
 		// first-class field (Plan 03-09 ships the contract).
