@@ -38,7 +38,8 @@ type OAuthDeps struct {
 	// Seams. nil → the real thing: the oauth2+oidc Dex leg, provisionUser,
 	// Auth.MintPK, db.ActiveOAuthPK, db.RevokePersonalKey + LiteLLM revoke.
 	DexLogin      func(state, pkceVerifier string) string
-	DexExchange   func(ctx context.Context, code, pkceVerifier string) (email string, err error)
+	DexExchange   func(ctx context.Context, code, pkceVerifier string) (email, dexRefresh string, err error)
+	DexRefresh    func(ctx context.Context, dexRefresh string) (rotated string, err error)
 	Provision     func(ctx context.Context, email string) (userID string, err error)
 	Mint          func(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error)
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)

@@ -275,7 +275,10 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		ClientID:     cfg.DexClientID,
 		ClientSecret: cfg.DexClientSecret,
 		Endpoint:     oidcProvider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+		// offline_access: Dex hands ACH a refresh token, and every ACH
+		// refresh asks Dex (and through it the IdP) again — a user disabled
+		// at the IdP is out at the next refresh, not 30 days later.
+		Scopes: []string{oidc.ScopeOpenID, "email", "profile", oidc.ScopeOfflineAccess},
 	}
 	idTokenVerifier := oidcProvider.Verifier(&oidc.Config{ClientID: cfg.DexClientID})
 

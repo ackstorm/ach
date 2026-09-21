@@ -684,11 +684,22 @@ configured.
 
 ### ❌ `ach-cli token` / a tool refresh fails `invalid_grant`
 
-The 30-day refresh token is dead: it expired, was rotated by another
-process (refresh tokens are single-use — a second copy of the profile on
-another machine races the first), or Redis was flushed (the AS keeps its
-transient state there; a flush logs every OAuth client out). Fix:
-`ach-cli login` again; for a tool, its `… mcp login` again.
+The refresh is dead. Since 0.9.8 every ACH refresh replays Dex's refresh
+token (`offline_access`), so the first suspect is the **IdP**: the user was
+disabled at Google/Azure, or Dex's own refresh token expired
+(`expiry.refreshTokens` in the Dex config — `validIfNotUsedFor`,
+`absoluteLifetime`). platform-api logs `oauth: identity provider refused
+the refresh; session ended` and revokes the user's oauth `pk_` (their other
+sessions die at their own 1h). Otherwise: the ACH refresh token expired
+(`ACH_OAUTH_REFRESH_TTL`), was rotated by another process (single-use — a
+second copy of the profile on another machine races the first), or Redis
+was flushed. Fix: `ach-cli login` again; for a tool, its `… mcp login`
+again — the IdP decides there. A login that fails `the identity provider
+did not complete the login` with `no refresh_token in the Dex response`
+means Dex did not grant `offline_access`: the connector must support
+refresh (Google needs `promptType: consent`).
+`temporarily_unavailable` / 503 on refresh is Dex unreachable — the token
+stays valid, retry.
 
 ### ❌ OAuth session works at login, model call answers LiteLLM `Invalid proxy server token passed … Unable to find token in cache or LiteLLM_VerificationTokenTable`
 

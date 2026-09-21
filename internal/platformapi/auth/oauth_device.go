@@ -39,8 +39,7 @@ type oauthDevice struct {
 	ClientID string `json:"client_id"`
 	UserCode string `json:"user_code"`
 	Status   string `json:"status"`
-	Sub      string `json:"sub,omitempty"`
-	UserID   string `json:"user_id,omitempty"`
+	oauthUser
 }
 
 func newUserCode() (string, error) {
@@ -167,7 +166,7 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 // deviceFinish is the as-callback tail for a device pending: the device
 // record flips to approved (or denied), the user_code index dies, and the
 // browser is told to go back to the terminal — no client redirect exists.
-func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, status, email, userID string) {
+func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, status string, u oauthUser) {
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	var rec oauthDevice
 	ok, err := d.Store.Get(r.Context(), "device", p.DeviceCode, &rec)
@@ -179,7 +178,7 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 		htmlError(w, 400, "this device code has expired — start again from your terminal")
 		return
 	}
-	rec.Status, rec.Sub, rec.UserID = status, email, userID
+	rec.Status, rec.oauthUser = status, u
 	// Remaining TTL: the CLI stops polling at expires_in whatever happens here.
 	if err := d.Store.Put(r.Context(), "device", p.DeviceCode, rec, deviceTTL); err != nil {
 		htmlError(w, 500, "store unavailable")
@@ -226,7 +225,7 @@ func (d OAuthDeps) deviceToken(w http.ResponseWriter, r *http.Request, clientID 
 		oauthError(w, 400, "expired_token", "")
 		return
 	}
-	d.issue(w, r, rec.Sub, rec.UserID, clientID)
+	d.issue(w, r, rec.oauthUser, clientID)
 }
 
 func renderDevicePage(w http.ResponseWriter, code, problem string) {

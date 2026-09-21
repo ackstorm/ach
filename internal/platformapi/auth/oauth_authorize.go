@@ -80,12 +80,21 @@ func bindingHash(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// oauthUser is who Dex logged in — the lower-cased email, the LiteLLM user
+// id from provisionUser — plus Dex's refresh token, which is how ACH asks
+// the identity provider again at every ACH refresh (offline_access): a
+// user disabled at the IdP is out at the next refresh, not in 30 days.
+type oauthUser struct {
+	Sub        string `json:"sub"`
+	UserID     string `json:"user_id"`
+	DexRefresh string `json:"dex_refresh"`
+}
+
 // oauthCode is a single-use authorization code, bound to everything the
 // token endpoint must re-check.
 type oauthCode struct {
 	oauthPending
-	Sub    string `json:"sub"`     // lower-cased email
-	UserID string `json:"user_id"` // LiteLLM user id from provisionUser
+	oauthUser
 }
 
 func clientRedirect(w http.ResponseWriter, r *http.Request, redirectURI string, params url.Values) {
@@ -182,7 +191,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if e := q.Get("error"); e != "" {
 		if p.DeviceCode != "" {
-			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, "", "")
+			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{})
 			return
 		}
 		pv := url.Values{"error": {"access_denied"}}
@@ -192,7 +201,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		clientRedirect(w, r, p.RedirectURI, pv)
 		return
 	}
-	email, err := d.dexExchange(r.Context(), q.Get("code"), p.DexVerifier)
+	email, dexRefresh, err := d.dexExchange(r.Context(), q.Get("code"), p.DexVerifier)
 	if err != nil || email == "" {
 		d.Auth.Logger.Warn("oauth: dex callback failed", "err", err)
 		htmlError(w, 400, "the identity provider did not complete the login")
@@ -206,8 +215,9 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, status, msg)
 		return
 	}
+	u := oauthUser{Sub: email, UserID: userID, DexRefresh: dexRefresh}
 	if p.DeviceCode != "" {
-		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, email, userID)
+		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
 		return
 	}
 	if p.MCPKey != "" {
@@ -215,11 +225,11 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		if berr != nil {
 			d.Auth.Logger.Warn("oauth: consent policy lookup failed; issuing without chain", "err", berr)
 		} else if bip != nil && d.probe(r.Context(), email, userID, p.MCPKey) == probeAuthRequired {
-			d.chainStart(w, r, oauthChain{oauthPending: p, PendingID: pendingID, Sub: email, UserID: userID, Broker: bip.ConsentBroker, Audience: bip.ConsentAudience})
+			d.chainStart(w, r, oauthChain{oauthPending: p, PendingID: pendingID, oauthUser: u, Broker: bip.ConsentBroker, Audience: bip.ConsentAudience})
 			return
 		}
 	}
-	d.finish(w, r, p, pendingID, email, userID)
+	d.finish(w, r, p, pendingID, u)
 }
 
 var mcpKeyRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -253,27 +263,58 @@ func (d OAuthDeps) dexLogin(state, verifier string) string {
 	return d.dexConfig().AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
 }
 
-func (d OAuthDeps) dexExchange(ctx context.Context, code, verifier string) (string, error) {
+// dexExchange redeems the Dex code: the id_token names the user, and the
+// refresh token (offline_access) is what every later ACH refresh hands back
+// to Dex. A Dex that issues none (scope not granted, connector without
+// refresh) fails the login here, loudly, instead of an hourly re-login.
+func (d OAuthDeps) dexExchange(ctx context.Context, code, verifier string) (email, dexRefresh string, err error) {
 	if d.DexExchange != nil {
 		return d.DexExchange(ctx, code, verifier)
 	}
 	tok, err := d.dexConfig().Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	rawID, _ := tok.Extra("id_token").(string)
 	if rawID == "" {
-		return "", errors.New("no id_token in the Dex response")
+		return "", "", errors.New("no id_token in the Dex response")
+	}
+	if tok.RefreshToken == "" {
+		return "", "", errors.New("no refresh_token in the Dex response (offline_access not granted)")
 	}
 	idt, err := d.Auth.IDTokenVerifier.Verify(ctx, rawID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var claims idTokenClaims
 	if err := idt.Claims(&claims); err != nil {
+		return "", "", err
+	}
+	return claims.Email, tok.RefreshToken, nil
+}
+
+// dexRefresh asks Dex — and through it the identity provider — whether
+// the session still stands. Returns Dex's rotated refresh token.
+func (d OAuthDeps) dexRefresh(ctx context.Context, refresh string) (string, error) {
+	if d.DexRefresh != nil {
+		return d.DexRefresh(ctx, refresh)
+	}
+	tok, err := d.dexConfig().TokenSource(ctx, &oauth2.Token{RefreshToken: refresh}).Token()
+	if err != nil {
 		return "", err
 	}
-	return claims.Email, nil
+	if tok.RefreshToken == "" {
+		return refresh, nil
+	}
+	return tok.RefreshToken, nil
+}
+
+// dexDenied: Dex answered the refresh with an OAuth error (invalid_grant —
+// the IdP revoked the user, the token expired or was rotated away) as
+// opposed to being unreachable.
+func dexDenied(err error) bool {
+	var re *oauth2.RetrieveError
+	return errors.As(err, &re) && re.Response != nil && re.Response.StatusCode < 500
 }
 
 func (d OAuthDeps) provision(ctx context.Context, email string) (string, error) {

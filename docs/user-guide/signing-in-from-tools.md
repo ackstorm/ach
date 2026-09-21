@@ -1,9 +1,11 @@
 # Signing in from Claude Code, Codex and opencode
 
 ACH is an OAuth 2.1 authorization server for humans. You sign in once through
-your organisation's SSO (Dex) and hold a short-lived access token (1 h,
-refreshed for 30 days) that works for **model calls** and **MCP servers**
-through ACH. Agents and CI keep the persistent `pk_` / `ek_` keys; this page
+your organisation's SSO (Dex) and hold a short-lived access token (1 h)
+that works for **model calls** and **MCP servers** through ACH. Every
+refresh goes back to your SSO: an account disabled there stops working at
+the next refresh (within the hour), exactly like any other SSO-backed
+tool. Agents and CI keep the persistent `pk_` / `ek_` keys; this page
 is for a person at a keyboard.
 
 ```bash
@@ -111,8 +113,9 @@ minute; the next `ach-cli token` after that mints a fresh one.
 
 - **401 with `WWW-Authenticate` on every request** — the tool never ran
   login: `claude mcp login` / `codex mcp login` / `opencode mcp auth`.
-- **`invalid_grant` on refresh** — the 30-day refresh expired or Redis was
-  flushed: `ach-cli login` again.
+- **`invalid_grant` on refresh** — your SSO no longer honours the session
+  (account disabled, SSO session expired), the refresh token expired or
+  Redis was flushed: `ach-cli login` again.
 - **OAuth works, `/mcp/<name>` is 403** — precheck, same as a `pk_`: the
   Environment's `authorizedTeams` do not include one of yours.
 - **Connected, zero tools** — the backend has no provider grant for you; run

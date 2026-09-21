@@ -20,6 +20,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
@@ -61,6 +62,10 @@ type asFixture struct {
 	r     chi.Router
 	deps  OAuthDeps
 	store *OAuthStore
+	// dexRefresh plays Dex's refresh: rotates by default; tests swap it to
+	// refuse (the IdP disabled the user) or to be unreachable.
+	dexRefresh func(rt string) (string, error)
+	dexSeen    []string
 }
 
 func newAS(t *testing.T) *asFixture {
@@ -81,6 +86,11 @@ func newAS(t *testing.T) *asFixture {
 		AccessTTL: time.Hour, RefreshTTL: 30 * 24 * time.Hour,
 		ConsentBIP: func(context.Context, string) (*db.BIPRow, error) { return nil, nil },
 	}}
+	f.dexRefresh = func(rt string) (string, error) { return rt + "+", nil }
+	f.deps.DexRefresh = func(_ context.Context, rt string) (string, error) {
+		f.dexSeen = append(f.dexSeen, rt)
+		return f.dexRefresh(rt)
+	}
 	f.mount()
 	return f
 }
@@ -196,11 +206,11 @@ func authorizeURL(clientID string, over map[string]string) string {
 
 func withFakeDex(f *asFixture, email string) *asFixture {
 	f.deps.DexLogin = func(state, _ string) string { return "http://dex.test/auth?state=" + state }
-	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, error) {
+	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, error) {
 		if code != "dexcode" {
-			return "", errors.New("bad code")
+			return "", "", errors.New("bad code")
 		}
-		return email, nil
+		return email, "dex-rt-0", nil
 	}
 	f.deps.Provision = func(_ context.Context, _ string) (string, error) { return "litellm-user-1", nil }
 	f.mount()
@@ -401,7 +411,7 @@ func seedCode(t *testing.T, f *asFixture, cid string) {
 	t.Helper()
 	err := f.store.Put(context.Background(), "code", "thecode", oauthCode{
 		oauthPending: oauthPending{ClientID: cid, RedirectURI: "http://127.0.0.1:5000/cb", State: "s", CodeChallenge: testChallenge},
-		Sub:          "u@x.com", UserID: "litellm-user-1",
+		oauthUser:    oauthUser{Sub: "u@x.com", UserID: "litellm-user-1", DexRefresh: "dex-rt-0"},
 	}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
@@ -550,5 +560,51 @@ func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
 	}
 	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
 		t.Fatalf("old refresh must be dead: %d", w.Code)
+	}
+	// Dex was asked with the token from login, and its rotated token is
+	// what the next refresh hands back.
+	third := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {second.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", third, formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if len(f.dexSeen) != 2 || f.dexSeen[0] != "dex-rt-0" || f.dexSeen[1] != "dex-rt-0+" {
+		t.Fatalf("dex refresh chain: %v", f.dexSeen)
+	}
+}
+
+// The IdP refuses (user disabled at Google, Dex session gone): the refresh
+// is invalid_grant, the oauth pk_ is revoked, and the presented token is
+// dead — the client has to log in again, where the IdP says no.
+func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	// Dex down: 503, nothing revoked, the token still works afterwards.
+	f.dexRefresh = func(string) (string, error) { return "", errors.New("dial tcp: connection refused") }
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("dex down: %d %s", w.Code, w.Body)
+	}
+	if len(pks.revoked) != 0 {
+		t.Fatalf("dex down must not revoke: %v", pks.revoked)
+	}
+
+	f.dexRefresh = func(string) (string, error) {
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
+	}
+	w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("idp refusal: %d %s", w.Code, w.Body)
+	}
+	if len(pks.revoked) != 1 || pks.revoked[0] != "pkid_1" || pks.rows["u@x.com"] != nil {
+		t.Fatalf("oauth pk_ must be revoked: revoked=%v rows=%v", pks.revoked, pks.rows)
+	}
+	f.dexRefresh = func(rt string) (string, error) { return rt, nil }
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("the refused refresh token must be gone: %d %s", w.Code, w.Body)
 	}
 }

@@ -22,8 +22,7 @@ import (
 const oauthPKMinRemaining = 2 * time.Hour
 
 type oauthRefresh struct {
-	Sub      string `json:"sub"`
-	UserID   string `json:"user_id"`
+	oauthUser
 	ClientID string `json:"client_id"`
 }
 
@@ -55,19 +54,9 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, 400, "invalid_grant", "")
 			return
 		}
-		d.issue(w, r, c.Sub, c.UserID, clientID)
+		d.issue(w, r, c.oauthUser, clientID)
 	case "refresh_token":
-		var rf oauthRefresh
-		ok, err := d.Store.Take(r.Context(), "refresh", r.PostForm.Get("refresh_token"), &rf) // rotation: the old one is gone
-		if err != nil {
-			oauthError(w, 500, "server_error", "")
-			return
-		}
-		if !ok || rf.ClientID != clientID {
-			oauthError(w, 400, "invalid_grant", "")
-			return
-		}
-		d.issue(w, r, rf.Sub, rf.UserID, clientID)
+		d.refreshToken(w, r, clientID)
 	case deviceGrantType:
 		d.deviceToken(w, r, clientID)
 	default:
@@ -75,7 +64,52 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, clientID string) {
+// refreshToken is the refresh_token grant. The identity provider is asked
+// first (Dex refresh): only a session the IdP still honours gets a new
+// pair. A refusal ends the user's ACH session — the oauth pk_ goes too, so
+// every JWT of theirs dies at its own expiry — and the client is told
+// invalid_grant, which sends it back to login (where the IdP says no).
+// Dex unreachable is a 503 and the presented token stays valid.
+func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID string) {
+	presented := r.PostForm.Get("refresh_token")
+	var rf oauthRefresh
+	ok, err := d.Store.Get(r.Context(), "refresh", presented, &rf)
+	if err != nil {
+		oauthError(w, 500, "server_error", "")
+		return
+	}
+	if !ok || rf.ClientID != clientID {
+		oauthError(w, 400, "invalid_grant", "")
+		return
+	}
+	dexRefresh, err := d.dexRefresh(r.Context(), rf.DexRefresh)
+	if err != nil {
+		if !dexDenied(err) {
+			d.Auth.Logger.Warn("oauth: dex refresh unreachable", "err", err)
+			oauthError(w, 503, "temporarily_unavailable", "identity provider unreachable")
+			return
+		}
+		d.Auth.Logger.Info("oauth: identity provider refused the refresh; session ended", "sub", rf.Sub, "client_id", clientID, "err", err)
+		_ = d.Store.Del(r.Context(), "refresh", presented)
+		if cur, lerr := d.lookupOAuthPK(r.Context(), rf.Sub); lerr == nil && cur != nil {
+			if rerr := d.revokeOAuthPK(r.Context(), cur.KeyID); rerr != nil {
+				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)
+			}
+		}
+		oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
+		return
+	}
+	// rotation: the old one is gone; a concurrent refresh already took it
+	if ok, err := d.Store.Take(r.Context(), "refresh", presented, &rf); err != nil || !ok {
+		oauthError(w, 400, "invalid_grant", "")
+		return
+	}
+	rf.DexRefresh = dexRefresh
+	d.issue(w, r, rf.oauthUser, clientID)
+}
+
+func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) {
+	sub, userID := u.Sub, u.UserID
 	var err error
 	if err := d.ensureOAuthPK(r.Context(), sub, userID); err != nil {
 		if errors.Is(err, ErrMintLiteLLM) {
@@ -96,7 +130,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, sub, userID, cl
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{Sub: sub, UserID: userID, ClientID: clientID}, d.RefreshTTL); err != nil {
+	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{oauthUser: u, ClientID: clientID}, d.RefreshTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
 	}

@@ -28,10 +28,9 @@ const (
 type oauthChain struct {
 	oauthPending
 	PendingID string `json:"pending_id"`
-	Sub       string `json:"sub"`
-	UserID    string `json:"user_id"`
-	Broker    string `json:"broker"`
-	Audience  string `json:"audience"`
+	oauthUser
+	Broker   string `json:"broker"`
+	Audience string `json:"audience"`
 }
 
 type brokerEndpoints struct {
@@ -147,7 +146,7 @@ func (d OAuthDeps) chainStart(w http.ResponseWriter, r *http.Request, c oauthCha
 		}
 	}
 	d.Auth.Logger.Warn("oauth: consent broker unavailable; issuing without chain", "broker", c.Broker, "err", err)
-	d.finish(w, r, c.oauthPending, c.PendingID, c.Sub, c.UserID)
+	d.finish(w, r, c.oauthPending, c.PendingID, c.oauthUser)
 }
 
 func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
@@ -177,17 +176,17 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, http.StatusBadGateway, "the consent broker did not grant access to this backend")
 		return
 	}
-	d.finish(w, r, c.oauthPending, c.PendingID, c.Sub, c.UserID)
+	d.finish(w, r, c.oauthPending, c.PendingID, c.oauthUser)
 }
 
-func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID, email, userID string) {
+func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, u oauthUser) {
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	code, err := NewSessionID()
 	if err != nil {
 		htmlError(w, 500, "")
 		return
 	}
-	if err := d.Store.Put(r.Context(), "code", code, oauthCode{oauthPending: p, Sub: email, UserID: userID}, oauthCodeTTL); err != nil {
+	if err := d.Store.Put(r.Context(), "code", code, oauthCode{oauthPending: p, oauthUser: u}, oauthCodeTTL); err != nil {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
