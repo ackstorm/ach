@@ -2018,7 +2018,7 @@ upstream can opt into:</p>
 end-to-end, so the gateway's <code>req.Host</code> is authoritative — but TLS
 terminates at the Ingress, so the gateway only ever sees plaintext and
 must trust the Ingress's <code>X-Forwarded-Proto</code> when it is present.</p>
-<p>The forwarder's <code>headers.StripAndRewrite</code> drops only <code>x-ach-*</code> and sets
+<p>The forwarder's <code>proxy.stripAndRewrite</code> drops only <code>x-ach-*</code> and sets
 <code>x-litellm-api-key</code>; every other header — these two, <code>Authorization</code>, the
 other <code>x-litellm-*</code> — passes as it came.</p>
 <h3 id="why-a-backend-needs-this-and-when-it-cannot-have-it">Why a backend needs this — and when it cannot have it<a class="headerlink" href="#why-a-backend-needs-this-and-when-it-cannot-have-it" title="Permanent link">&para;</a></h3>
