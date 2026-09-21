@@ -24,6 +24,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/objects"
+	"github.com/ackstorm/ach/internal/platformapi/opencodeauth"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -141,6 +142,8 @@ func New(deps Deps) http.Handler {
 		od := *deps.OAuth
 		od.Auth = authDeps
 		r.Route("/platform/oauth", auth.MountOAuth(od))
+		// The OpenCode client of that AS, as an npm tarball (anonymous too).
+		r.Get("/platform/opencode-auth", opencodeauth.Handler())
 	}
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,

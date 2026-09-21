@@ -204,6 +204,8 @@ _test-unit: _fmt-check vet
 	go test -v -race -shuffle=on -count=1 \
 		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e") \
 		-coverprofile cover-unit.out
+	# The OpenCode auth plugin (served by platform-api) is JS: its own test.
+	node --test internal/platformapi/opencodeauth/plugin_test.mjs
 
 .PHONY: test-envtest
 test-envtest: ## Controller envtest with -race (CI gate, ~7m).

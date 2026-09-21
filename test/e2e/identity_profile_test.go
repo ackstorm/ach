@@ -84,6 +84,12 @@ func TestIdentityProfile(t *testing.T) {
 		if code != 200 || asDoc["issuer"] != base {
 			t.Fatalf("AS document on the identity host: %d %s", code, raw)
 		}
+		// The OpenCode client of that AS ships from the same origin, through
+		// the gateway's /platform/ route, as an npm tarball.
+		code, hdr, raw = do(t, http.MethodGet, "/platform/opencode-auth", nil, "")
+		if code != 200 || hdr.Get("Content-Type") != "application/gzip" || len(raw) < 2 || raw[0] != 0x1f || raw[1] != 0x8b {
+			t.Fatalf("opencode plugin tarball: %d %q %d bytes", code, hdr.Get("Content-Type"), len(raw))
+		}
 	})
 
 	// Authorization that is not our token is not ours to judge: it reaches

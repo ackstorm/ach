@@ -40,13 +40,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GOFLAGS=-mod=readonly \
     GOBIN=/usr/local/bin
 
-# OS deps: docker CLI + compose v1 (matches host's docker-compose), build essentials
+# OS deps: docker CLI + compose v1 (matches host's docker-compose), build essentials.
+# nodejs runs the OpenCode auth plugin's test (internal/platformapi/opencodeauth).
 # Note: docker.io brings only the client; the host socket is mounted at runtime so
 # containers created from inside are siblings on the host daemon, not nested.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl make git jq gnupg lsb-release \
         bash-completion \
-        docker.io docker-compose \
+        docker.io docker-compose nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # kubebuilder v4 — pinned binary

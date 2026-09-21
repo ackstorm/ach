@@ -191,7 +191,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `test-full` | A | All non-cluster tests (unit + envtest, race-enabled). |
-| `test-unit` | A | Pure-logic unit tests (~10s warm). |
+| `test-unit` | A | Pure-logic unit tests (~10s warm); also runs the OpenCode auth plugin's `node --test` (`internal/platformapi/opencodeauth/plugin_test.mjs` — the devtools image ships nodejs for it). |
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |
 | `test-integration` | A | Integration tests (build tag: integration; testcontainers). |
