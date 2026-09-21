@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { deriveSubdomainUrl } from './urls';
+import { deriveSubdomainUrl, loginUrl } from './urls';
 
 describe('deriveSubdomainUrl', () => {
   it('swaps the leading api. label for the given subdomain', () => {
@@ -20,5 +20,12 @@ describe('deriveSubdomainUrl', () => {
   it('falls back to a neutral placeholder on absent/unparseable input', () => {
     expect(deriveSubdomainUrl(undefined, 'chat')).toBe('https://chat.your-domain.example');
     expect(deriveSubdomainUrl('not-a-url', 'chat')).toBe('https://chat.your-domain.example');
+  });
+});
+
+describe('loginUrl', () => {
+  it('points at the console session login with the return path URL-encoded in next', () => {
+    expect(loginUrl('/')).toBe('/platform/console/session/login?next=%2F');
+    expect(loginUrl('/#/stats')).toBe('/platform/console/session/login?next=%2F%23%2Fstats');
   });
 });

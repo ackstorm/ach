@@ -92,6 +92,8 @@ export interface ProviderChipsProps {
 }
 
 export function ProviderChips({ providers }: ProviderChipsProps) {
+  // No providers configured -> no caption either (a bare "BACKED BY" is noise).
+  if (providers.length === 0) return null;
   return (
     <div>
       {/* 11px mono caption label — letter-spaced + uppercase (login.js .backed-by). */}

@@ -15,7 +15,7 @@
 //
 // SECURITY INVARIANTS (parity with login.js / threat register 09-06 / 14):
 //   • T-09-17 (open-redirect): the `Continue with SSO` CTA is the ONLY redirect
-//     trigger and points at the FIXED literal /api/oauth/login?action=ui — it is
+//     trigger and points at the FIXED console login URL (loginUrl("/")) — it is
 //     NEVER built from a prop/query/next/hash. Docs/Status/Support + footer links
 //     come ONLY from the server-sourced config.links allow-list (a missing target
 //     DROPS the link, never interpolates).
@@ -32,13 +32,14 @@ import { BrandLockup } from '@/components/layout/BrandLockup';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { ProviderChips } from '@/components/auth/ProviderChips';
+import { loginUrl } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/stores/theme';
 
-// The SOLE redirect trigger (T-09-17). FIXED literal — the ?action=ui param makes
-// the callback eager-create the LiteLLM user WITHOUT minting a key (D-13). Never
-// construct this from any prop/query/next/hash.
-const SSO_LOGIN_URL = '/api/oauth/login?action=ui';
+// The SOLE redirect trigger (T-09-17). FIXED value — computed once from the
+// literal '/' (the console root), never from any prop/query/next/hash. Login
+// mints no key (AC-06); the pk_ is provisioned by the session callback.
+const SSO_LOGIN_URL = loginUrl('/');
 
 // Theme-aware decorative background: three radial glow blobs reading the per-theme
 // --glow-* vars. Shared shape with the authed shell so login and inner pages match.

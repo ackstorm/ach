@@ -3,7 +3,7 @@
 // Holds the three pieces of state the App component feeds through the pure
 // resolveState(status, hasLoaded) state machine:
 //
-//   status     — HTTP status of the last GET /api/session/me, or null while a
+//   status     — HTTP status of the last GET /platform/console/bootstrap, or null while a
 //                (re)load is in flight (drives the loading card; no white flash).
 //   me         — the SessionMe payload, set ONLY on a 200 response.
 //   hasLoaded  — sticky/monotonic flag: flipped true after the first 200 and
@@ -14,10 +14,10 @@
 //
 // loadSession() reproduces app.js's loadSession callback verbatim:
 //   1. set status = null FIRST (show loading immediately on every (re)load);
-//   2. await getJson<SessionMe>('/api/session/me') (never-throws; status 0 on
+//   2. await getJson('/platform/console/bootstrap') (never-throws; status 0 on
 //      network failure);
-//   3. on 200: store `me` AND flip hasLoaded true (a LATER 401 now resolves to
-//      expired, not signin);
+//   3. on 200: store `me` (bootstrap + name = email + endpoint = this origin)
+//      AND flip hasLoaded true (a LATER 401 now resolves to expired, not signin);
 //   4. ALWAYS set status to the response status.
 //
 // Faithful to app.js, `me` is touched ONLY on a 200 — a non-200 response does
@@ -50,12 +50,17 @@ export const useSessionStore = create<SessionState>((set) => ({
     // (UI-SPEC §Loading Sequence step 1).
     set({ status: null });
 
-    const { status, data } = await getJson<SessionMe>('/api/session/me');
+    const { status, data } = await getJson<Omit<SessionMe, 'name' | 'endpoint'>>(
+      '/platform/console/bootstrap',
+    );
 
-    if (status === 200) {
+    if (status === 200 && data) {
       // `me` is set ONLY on 200; hasLoaded flips true so a later 401 routes to
       // "expired". hasLoaded is monotonic — never set back to false here.
-      set({ me: data, hasLoaded: true });
+      set({
+        me: { ...data, name: data.email, endpoint: window.location.origin },
+        hasLoaded: true,
+      });
     }
 
     // Always record the response status (200 authed / 401 signin|expired /

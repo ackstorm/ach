@@ -60,19 +60,19 @@ describe('apiFetch mid-session 401 notification', () => {
       json: () => Promise.reject(new SyntaxError('no body')),
     }) as unknown as Response;
 
-  test('a 401 on a /api/session/* URL notifies the unauthorized handler', async () => {
+  test('a 401 on a /platform/* URL notifies the unauthorized handler', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resp401()));
-    await apiFetch('/api/session/models');
+    await apiFetch('/platform/keys');
     expect(notifyUnauthorized).toHaveBeenCalledTimes(1);
   });
 
-  test('a 401 on a non-session URL does NOT notify', async () => {
+  test('a 401 on a non-/platform URL does NOT notify', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resp401()));
-    await apiFetch('/api/config');
+    await apiFetch('/openwork/x');
     expect(notifyUnauthorized).not.toHaveBeenCalled();
   });
 
-  test('a 200 on a /api/session/* URL does NOT notify', async () => {
+  test('a 200 on a /platform/* URL does NOT notify', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -80,7 +80,7 @@ describe('apiFetch mid-session 401 notification', () => {
         json: () => Promise.resolve({ ok: true }),
       } as unknown as Response),
     );
-    await apiFetch('/api/session/models');
+    await apiFetch('/platform/keys');
     expect(notifyUnauthorized).not.toHaveBeenCalled();
   });
 });

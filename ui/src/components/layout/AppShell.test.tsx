@@ -38,10 +38,10 @@ const useKeysMock = vi.mocked(useKeys);
 const ME: SessionMe = {
   email: 'alice@example.com',
   name: 'Alice Example',
-  team_id: 'team-platform',
+  is_admin: false,
+  openwork_enabled: false,
+  suspend_propagation_seconds: 60,
   endpoint: 'https://api.acme.ai',
-  limits: null,
-  spend: { current: 0, source: 'user' },
 };
 
 const CONFIG = { links: {} } as unknown as AppConfig;
@@ -164,6 +164,26 @@ describe('AppShell — header menus do not scroll-lock the page', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'User menu' }), { key: 'Enter' });
     expect(await screen.findByRole('menuitem', { name: 'Log out' })).toBeInTheDocument();
     expect(document.body.hasAttribute('data-scroll-locked')).toBe(false);
+  });
+
+  it('Log out POSTs /platform/console/session/logout as JSON (same-origin fetch, D-28)', async () => {
+    setKeys([]);
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 204,
+      json: () => Promise.reject(new SyntaxError('no body')),
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderShell();
+      fireEvent.keyDown(screen.getByRole('button', { name: 'User menu' }), { key: 'Enter' });
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Log out' }));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('/platform/console/session/logout');
+      expect(init.method).toBe('POST');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('opening the mobile hamburger menu does not lock <body>', async () => {

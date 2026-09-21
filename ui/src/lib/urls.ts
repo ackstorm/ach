@@ -13,3 +13,9 @@ export function deriveSubdomainUrl(endpoint: string | undefined, sub: string): s
     return `https://${sub}.your-domain.example`;
   }
 }
+
+// Console login (platform-api OAuth AS in-process, D-27). `next` is the
+// in-app path to return to after the IdP round-trip; always URL-encoded.
+export function loginUrl(next: string): string {
+  return `/platform/console/session/login?next=${encodeURIComponent(next)}`;
+}

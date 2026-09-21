@@ -15,7 +15,7 @@
 //
 // getJson/postJson/del all REUSE apiFetch (they never bypass the single path).
 // Writes ALWAYS carry `content-type: application/json` because the backend
-// write-guard (session.py::assert_same_origin) returns 415 otherwise.
+// write-guard expects JSON (D-28: same-origin fetch, Sec-Fetch-Site/Origin checked).
 
 import { notifyUnauthorized } from './on-unauthorized';
 
@@ -37,12 +37,12 @@ export async function apiFetch<T>(
     } catch {
       data = null;
     }
-    // A mid-session 401 on a session endpoint means the cookie expired. Notify
+    // A mid-session 401 on a platform endpoint means the cookie expired. Notify
     // the shell (via the decoupled handler) so it can mark the session expired
-    // and redirect to login. Guarded to /api/session/* so a 401 on any other
+    // and redirect to login. Guarded to /platform/* so a 401 on any other
     // endpoint never triggers a redirect. The cold-load-vs-mid-session
     // distinction is enforced downstream: markExpired no-ops until hasLoaded.
-    if (resp.status === 401 && url.startsWith('/api/session/')) {
+    if (resp.status === 401 && url.startsWith('/platform/')) {
       notifyUnauthorized();
     }
     return { status: resp.status, data };

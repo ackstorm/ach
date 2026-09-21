@@ -1,7 +1,7 @@
 // Login.test.tsx — the single, centered sign-in landing (Task 2.5).
 //
 // Asserts the load-bearing contract ported from src/ui/login.js:
-//   • the SSO CTA is a real link to the FIXED /api/oauth/login?action=ui literal
+//   • the SSO CTA is a real link to the FIXED /platform/console/session/login?next=%2F literal
 //     (the ONLY redirect trigger, T-09-17) with its locked "Continue with SSO"
 //     label as the accessible name;
 //   • the two-tone brand lockup renders (base + green accent span);
@@ -17,18 +17,27 @@ import type { AppConfig } from '@/lib/api-types';
 
 afterEach(() => cleanup());
 
+const PROVIDERS = [{ label: 'Google' }, { label: 'Dex' }, { label: 'OIDC' }];
+
 describe('Login', () => {
-  it('CTA links to the FIXED /api/oauth/login?action=ui literal', () => {
+  it('CTA links to the FIXED /platform/console/session/login?next=%2F literal', () => {
     render(<Login config={DEFAULT_CONFIG} />);
     const cta = screen.getByRole('link', { name: 'Continue with SSO' });
-    expect(cta).toHaveAttribute('href', '/api/oauth/login?action=ui');
+    expect(cta).toHaveAttribute('href', '/platform/console/session/login?next=%2F');
   });
 
   it('renders the two-tone brand lockup (base + accent)', () => {
-    render(<Login config={DEFAULT_CONFIG} />);
+    render(
+      <Login config={{ ...DEFAULT_CONFIG, brand: 'alitellm-auth', accent_segment: '-auth' }} />,
+    );
     // BrandLockup appears twice (topbar + card); both halves must be present.
     expect(screen.getAllByText('alitellm').length).toBeGreaterThan(0);
     expect(screen.getAllByText('-auth').length).toBeGreaterThan(0);
+  });
+
+  it('renders the whole brand with no accent span when accent_segment is empty (DEFAULT_CONFIG)', () => {
+    render(<Login config={DEFAULT_CONFIG} />);
+    expect(screen.getAllByText('ACH').length).toBeGreaterThan(0);
   });
 
   it('renders the "Sign in" h1 heading', () => {
@@ -39,16 +48,20 @@ describe('Login', () => {
   });
 
   it('renders a BACKED BY provider chip per config.providers entry', () => {
-    render(<Login config={DEFAULT_CONFIG} />);
-    // DEFAULT_CONFIG.providers = [Google, Dex, OIDC].
+    render(<Login config={{ ...DEFAULT_CONFIG, providers: PROVIDERS }} />);
     expect(screen.getByText('Google')).toBeInTheDocument();
     expect(screen.getByText('Dex')).toBeInTheDocument();
     expect(screen.getByText('OIDC')).toBeInTheDocument();
     expect(screen.getByText('BACKED BY')).toBeInTheDocument();
   });
 
-  it('provider chips are NOT aria-hidden (WR-04 — in the a11y tree)', () => {
+  it('renders no BACKED BY block for DEFAULT_CONFIG (no providers)', () => {
     render(<Login config={DEFAULT_CONFIG} />);
+    expect(screen.queryByText('BACKED BY')).toBeNull();
+  });
+
+  it('provider chips are NOT aria-hidden (WR-04 — in the a11y tree)', () => {
+    render(<Login config={{ ...DEFAULT_CONFIG, providers: PROVIDERS }} />);
     // Each chip label and its nearest chip wrapper must not be aria-hidden, and
     // must not sit inside an aria-hidden ancestor (which would hide it from AT).
     for (const label of ['Google', 'Dex', 'OIDC']) {
@@ -109,6 +122,6 @@ describe('Login', () => {
     const card = screen.getByRole('main');
     expect(
       within(card).getByText(/manage your/),
-    ).toHaveTextContent('LiteLLM virtual keys');
+    ).toHaveTextContent('ACH virtual keys');
   });
 });

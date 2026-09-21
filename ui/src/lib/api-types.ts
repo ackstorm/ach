@@ -7,38 +7,24 @@
 // here in the same PR that ships it.
 
 // ---------------------------------------------------------------------------
-// GET /api/session/me  — src/api/app/session.py::session_me
+// GET /platform/console/bootstrap — internal/platformapi/console/handlers.go
+// bootstrap. The first call the SPA makes; cookie-authenticated.
 // ---------------------------------------------------------------------------
 
-/**
- * Per-user limit block. Built by session.py::_build_limits from the LiteLLM
- * user object; every field is independently nullable, and the WHOLE block is
- * `null` when the LiteLLM enrichment is unavailable OR all fields are null.
- */
-export interface SessionLimits {
-  max_budget: number | null;
-  budget_duration: string | null;
-  tpm_limit: number | null;
-  rpm_limit: number | null;
-}
-
-/** Source of the spend figure. session.py::_budget_block. */
-export type SpendSource = 'team_member' | 'user' | 'unknown';
-
-/** Spend block on /me. session.py::_budget_block. `current` is always a number. */
-export interface SessionSpend {
-  current: number;
-  source: SpendSource;
-}
-
-/** GET /api/session/me response. session.py::session_me JSONResponse. */
 export interface SessionMe {
   email: string;
+  /** No display name in ACH's identity — mirrors email (set by the store). */
   name: string;
-  team_id: string;
+  is_admin: boolean;
+  openwork_enabled: boolean;
+  /** UI notice bound for suspend propagation (spec §8.2). */
+  suspend_propagation_seconds: number;
+  /**
+   * Gateway base URL for curl snippets / the A2A card. Not in the payload:
+   * ACH serves the console and /v1 from ONE origin, so the store fills it
+   * with window.location.origin.
+   */
   endpoint: string;
-  limits: SessionLimits | null;
-  spend: SessionSpend;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +240,9 @@ export interface StatsKeyRow {
   spend_pct: number | null;
 }
 
+/** Source of the spend figure. stats.py::_budget_block. */
+export type SpendSource = 'team_member' | 'user' | 'unknown';
+
 /**
  * Budget block. stats.py::build_stats_contract. max_budget null when none is
  * configured; pct null when max_budget is null/0 (D-08); has_budget mirrors that.
@@ -354,7 +343,7 @@ export interface LatencyResponse {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/config  — src/api/app/public.py::public_config
+// AppConfig — presentation config (compile-time DEFAULT_CONFIG in stores/config.ts; ACH has no /api/config)
 // (defaults mirrored in src/ui/app.js DEFAULT_CONFIG)
 // ---------------------------------------------------------------------------
 
@@ -458,7 +447,7 @@ export interface ConfigProvider {
 }
 
 /**
- * GET /api/config response (public, non-secret presentation config).
+ * Public, non-secret presentation config.
  * public.py::public_config. `links` only carries keys whose target is set
  * (real-links-only rule, D-02/D-03), so every link key is optional.
  */

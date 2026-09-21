@@ -71,10 +71,10 @@ function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
   return {
     email: 'alice@example.com',
     name: 'Alice Example',
-    team_id: 'team-platform',
+    is_admin: false,
+    openwork_enabled: false,
+    suspend_propagation_seconds: 60,
     endpoint: 'https://litellm.example.com',
-    limits: null,
-    spend: { current: 12.5, source: 'user' },
     ...overrides,
   };
 }
@@ -158,8 +158,7 @@ beforeEach(() => {
     isPending: true,
     isError: false,
   } as unknown as ReturnType<typeof useStats>);
-  // Default teams to empty so the Team tile falls back to me.team_id; the
-  // multi-team test overrides this per-test.
+  // Default teams to empty; the multi-team test overrides this per-test.
   useTeamsMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useTeams>);
 });
 
@@ -175,12 +174,6 @@ describe('Dashboard — top row + tiles', () => {
     render(<Dashboard me={makeMe({ name: 'Alice Example' })} />);
     expect(screen.getByText(/Welcome back,/)).toBeInTheDocument();
     expect(screen.getByText('Alice Example')).toBeInTheDocument();
-  });
-
-  it('Team tile shows me.team_id', () => {
-    setKeysSuccess([]);
-    render(<Dashboard me={makeMe({ team_id: 'team-platform' })} />);
-    expect(screen.getByText('team-platform')).toBeInTheDocument();
   });
 
   it('KEYS & TEAMS tile shows a pill per distinct team the keys belong to', () => {
@@ -199,9 +192,7 @@ describe('Dashboard — top row + tiles', () => {
       makeRow({ id: 'key-2', team_id: 'a' }),
       makeRow({ id: 'key-3', team_id: 'b' }),
     ]);
-    const { container } = render(
-      <Dashboard me={makeMe({ team_id: 'team-platform' })} />,
-    );
+    const { container } = render(<Dashboard me={makeMe()} />);
     // Scope to the KPI row's pills — the KeysTable below also renders each key's
     // team alias, so an unscoped getByText('Alpha') would match multiple nodes.
     const row = container.querySelector('[data-slot="kpi-row"]') as HTMLElement;
@@ -219,17 +210,15 @@ describe('Dashboard — top row + tiles', () => {
       isPending: false,
       isError: false,
     } as unknown as ReturnType<typeof useStats>);
-    // me.spend.current is a different (enforced-cap) counter and must NOT drive the tile.
-    render(<Dashboard me={makeMe({ spend: { current: 1249.5, source: 'user' } })} />);
+    render(<Dashboard me={makeMe()} />);
     expect(screen.getByText(formatCurrency(15.94))).toBeInTheDocument();
-    expect(screen.queryByText(formatCurrency(1249.5))).not.toBeInTheDocument();
   });
 
   it('Spend (MTD) tile shows the em-dash while stats are unavailable', () => {
     setKeysSuccess([]);
     // useStats defaults (beforeEach) to non-success -> EM_DASH.
-    render(<Dashboard me={makeMe({ spend: { current: 1249.5, source: 'user' } })} />);
-    expect(screen.queryByText(formatCurrency(1249.5))).not.toBeInTheDocument();
+    render(<Dashboard me={makeMe()} />);
+    expect(screen.queryByText(formatCurrency(15.94))).not.toBeInTheDocument();
   });
 
   it('TOTAL REQUESTS / TOTAL TOKENS cards show abbreviated figures when stats load', () => {
@@ -274,62 +263,6 @@ describe('Dashboard — Active keys tile', () => {
     // The Active keys tile reads "—" while pending (never a misleading 0). The
     // em-dash appears in the tile; assert at least one is in the document.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-  });
-});
-
-describe('Dashboard — budget bar', () => {
-  it('shows "no budget set" when limits is null', () => {
-    setKeysSuccess([]);
-    render(<Dashboard me={makeMe({ limits: null })} />);
-    expect(screen.getByText(/no budget set/)).toBeInTheDocument();
-  });
-
-  it('shows "no budget set" when max_budget <= 0', () => {
-    setKeysSuccess([]);
-    render(
-      <Dashboard
-        me={makeMe({
-          limits: {
-            max_budget: 0,
-            budget_duration: null,
-            tpm_limit: null,
-            rpm_limit: null,
-          },
-        })}
-      />,
-    );
-    expect(screen.getByText(/no budget set/)).toBeInTheDocument();
-  });
-
-  it('shows "{spend} of {max}" when a positive budget is set', () => {
-    setKeysSuccess([]);
-    render(
-      <Dashboard
-        me={makeMe({
-          spend: { current: 20, source: 'user' },
-          limits: {
-            max_budget: 50,
-            budget_duration: '24h',
-            tpm_limit: null,
-            rpm_limit: null,
-          },
-        })}
-      />,
-    );
-    // The amount carries the budget PERIOD so "$X of $Y" is unambiguous, plus a
-    // "% used" suffix. Both are child spans, so match on the amount span's
-    // leading textContent.
-    expect(
-      screen.getByText(
-        (_content, el) =>
-          el?.textContent?.startsWith(
-            `${formatCurrency(20)} of ${formatCurrency(50)} / 24h`,
-          ) ?? false,
-      ),
-    ).toBeInTheDocument();
-    // 20/50 -> 40% used; 24h is sub-monthly so no projection.
-    expect(screen.getByText(/40% used/)).toBeInTheDocument();
-    expect(screen.queryByText(/projected/)).not.toBeInTheDocument();
   });
 });
 

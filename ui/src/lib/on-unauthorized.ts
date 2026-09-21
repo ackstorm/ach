@@ -3,10 +3,10 @@
 //
 // api.ts must stay a leaf: it is imported BY the session store, so it cannot
 // import the store back without an api <-> session cycle. Instead api.ts calls
-// notifyUnauthorized() when a same-origin /api/session/* request returns 401,
+// notifyUnauthorized() when a same-origin /platform/* request returns 401,
 // and the App shell registers a handler (setUnauthorizedHandler) that marks the
 // session store expired. resolveState(401, hasLoaded=true) then resolves to
-// 'expired' and App's existing effect redirects to /api/oauth/login.
+// 'expired' and App's existing effect redirects to the console login.
 //
 // One module-level handler is enough — the app registers exactly one.
 

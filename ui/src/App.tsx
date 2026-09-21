@@ -1,7 +1,7 @@
 // App.tsx — the shell DRIVER, ported from src/ui/app.js App().
 //
-// On mount it kicks off ONE loadSession() and ONE loadConfig() (the boot
-// fetches). It then feeds {status, hasLoaded} through the pure resolveState()
+// On mount it kicks off ONE loadSession() (the boot fetch). It then feeds
+// {status, hasLoaded} through the pure resolveState()
 // to pick which of the five shell states to render:
 //
 //   loading | signin | authed | error | expired
@@ -20,6 +20,7 @@
 import { useEffect, useMemo } from 'react';
 import { createHashRouter, Navigate, RouterProvider } from 'react-router';
 import { resolveState } from '@/lib/resolve-state';
+import { loginUrl } from '@/lib/urls';
 import { setUnauthorizedHandler } from '@/lib/on-unauthorized';
 import { useSessionStore } from '@/stores/session';
 import { useConfigStore } from '@/stores/config';
@@ -35,9 +36,9 @@ import { Mcp } from '@/routes/Mcp';
 import { A2a } from '@/routes/A2a';
 import { HowTo } from '@/routes/HowTo';
 
-// Mid-session expiry redirects to the BARE login (no landing card) — FIXED
-// literal, never built from a prop/query/hash. Parity with app.js.
-const EXPIRED_REDIRECT_URL = '/api/oauth/login';
+// Mid-session expiry redirects straight to the console login (no landing
+// card), returning to the current in-app location afterwards. `next` is
+// built ONLY from window.location (path + hash), never from a prop/query.
 
 // The authenticated hash router. Built ONCE per mount of the authed view so
 // route state survives re-renders; `me`/`config` are threaded into AppShell as
@@ -81,18 +82,16 @@ export function App() {
   const loadSession = useSessionStore((s) => s.loadSession);
   const markExpired = useSessionStore((s) => s.markExpired);
   const config = useConfigStore((s) => s.config);
-  const loadConfig = useConfigStore((s) => s.loadConfig);
 
-  // Boot: register the mid-session 401 handler, then ONE loadSession + ONE
-  // loadConfig on mount. Any /api/session/* 401 after load (e.g. a Models/Stats
-  // fetch once the cookie expired) marks the session expired -> resolveState maps
-  // that to 'expired' -> the redirect effect below navigates to login.
+  // Boot: register the mid-session 401 handler, then ONE loadSession on mount.
+  // Any /platform/* 401 after load (e.g. a Models/Stats fetch once the cookie
+  // expired) marks the session expired -> resolveState maps that to 'expired'
+  // -> the redirect effect below navigates to login.
   useEffect(() => {
     setUnauthorizedHandler(() => markExpired());
     loadSession();
-    loadConfig();
     return () => setUnauthorizedHandler(null);
-  }, [loadSession, loadConfig, markExpired]);
+  }, [loadSession, markExpired]);
 
   const view = resolveState(status, hasLoaded);
 
@@ -101,7 +100,7 @@ export function App() {
   // as a brief placeholder while the browser navigates.
   useEffect(() => {
     if (view === 'expired') {
-      window.location.href = EXPIRED_REDIRECT_URL;
+      window.location.href = loginUrl(window.location.pathname + window.location.hash);
     }
   }, [view]);
 

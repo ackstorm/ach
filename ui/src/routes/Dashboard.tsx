@@ -4,7 +4,7 @@
 //
 // Composes the Phase-3 pieces into the live dashboard:
 //   • the top row (greeting + endpoint chip, DASH-01),
-//   • the four-tile metric header + the account budget bar (DASH-06),
+//   • the four-tile metric header (DASH-06),
 //   • the API KEYS section with the `+ New Key` CTA (which opens the SAME
 //     store-driven create modal as the sidebar shortcut), and the KeysTable,
 //   • the prop-driven DeleteKeyModal (the dashboard owns `keyToDelete`).
@@ -13,7 +13,7 @@
 // open the create modal); the dashboard only triggers openModal().
 //
 // SECURITY INVARIANTS (threat register 10-05):
-//   • T-10-14 (XSS): me.name / me.endpoint / me.team_id render as React text
+//   • T-10-14 (XSS): me.name / me.endpoint render as React text
 //     children (auto-escaped). No dangerouslySetInnerHTML anywhere.
 //   • T-10-16 (info disclosure, endpoint Copy): the Copy button writes only
 //     me.endpoint (a public base URL), on an explicit user click.
@@ -28,16 +28,8 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useKeys } from '@/hooks/use-keys';
 import { useStats } from '@/hooks/use-stats';
 import { useTeams } from '@/hooks/use-teams';
-import type {
-  KeyRow,
-  SessionLimits,
-  SessionMe,
-  SessionSpend,
-  Team,
-} from '@/lib/api-types';
-import { BudgetMeter } from '@/components/ui/budget-meter';
-import { formatCurrency, formatInt } from '@/lib/format';
-import { budgetPctLabel, isMonthlyDuration, projectMonthEnd } from '@/lib/spend-projection';
+import type { KeyRow, SessionMe, Team } from '@/lib/api-types';
+import { formatInt } from '@/lib/format';
 import { isRevoked, selectKeyRows } from '@/lib/keys';
 import { presetToRange } from '@/lib/stats-presets';
 import { teamColorVar } from '@/lib/team-color';
@@ -92,8 +84,8 @@ function EndpointChip({ endpoint }: { endpoint: string }) {
 // tinted Key accent-chip + 11px caption, the active-key COUNT as the 24px value,
 // and — below — the distinct teams those keys belong to as colored pills
 // (merging the old separate Active-keys + Teams tiles into one). Count is
-// EM_DASH until the keys query resolves; pills fall back to me.team_id, then
-// EM_DASH, when no key carries a team.
+// EM_DASH until the keys query resolves; pills fall back to EM_DASH when no
+// key carries a team.
 function KeysTeamsTile({
   keyRows,
   teams,
@@ -156,74 +148,6 @@ function KeysTeamsTile({
   );
 }
 
-// ── BudgetBar ────────────────────────────────────────────────────────────────
-// The account budget bar (DASH-06 / UI-SPEC §C6 / D-11 / FID-03). When
-// max_budget is null OR <= 0 it renders a NEUTRAL EMPTY 0%-fill track (a muted
-// border-toned fill, NOT primary, NOT full) with the "no budget set" figure —
-// never a divide-by-zero and never a full-green bar. Otherwise it renders a
-// single fill clamped to [0, 100]% of the spend ratio, color-switching to
-// destructive once spend exceeds the budget (the over-budget magnitude is
-// carried by the figure text).
-function BudgetBar({
-  limits,
-  spend,
-}: {
-  limits: SessionLimits | null;
-  spend: SessionSpend;
-}) {
-  const current = typeof spend?.current === 'number' ? spend.current : 0;
-  const maxBudget =
-    limits && typeof limits.max_budget === 'number' ? limits.max_budget : null;
-
-  if (maxBudget === null || maxBudget <= 0) {
-    return (
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-            Account budget
-          </span>
-          <span className="font-mono text-xs text-text-secondary">
-            {formatCurrency(current)} · no budget set
-          </span>
-        </div>
-        <div className="flex h-3 overflow-hidden rounded-full border border-border bg-background">
-          <div className="h-full bg-border" style={{ width: '0%' }} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-          Account budget
-        </span>
-        <span className="font-mono text-xs text-text-secondary">
-          {formatCurrency(current)} of {formatCurrency(maxBudget)}
-          {limits?.budget_duration ? (
-            // The budget is per-period; show it so "$X of $Y" isn't ambiguous.
-            <span className="text-text-tertiary"> / {limits.budget_duration}</span>
-          ) : null}
-          {budgetPctLabel(current, maxBudget) ? (
-            <span className="text-text-tertiary"> · {budgetPctLabel(current, maxBudget)}</span>
-          ) : null}
-          {isMonthlyDuration(limits?.budget_duration) ? (
-            <span className="text-text-tertiary">
-              {' '}· projected {formatCurrency(projectMonthEnd(current))}
-            </span>
-          ) : null}
-        </span>
-      </div>
-      <BudgetMeter
-        current={current}
-        maxBudget={maxBudget}
-        duration={limits?.budget_duration}
-      />
-    </div>
-  );
-}
-
 export function Dashboard({ me }: DashboardProps) {
   const query = useKeys();
   const { data: teams } = useTeams();
@@ -264,13 +188,10 @@ export function Dashboard({ me }: DashboardProps) {
               query.isSuccess && query.data ? selectKeyRows(query.data) : null
             }
             teams={teams ?? []}
-            fallback={me.team_id || EM_DASH}
+            fallback={EM_DASH}
           />
         }
       />
-
-      {/* DASH-06: account budget bar */}
-      <BudgetBar limits={me.limits} spend={me.spend} />
 
       {/* DASH-02: API KEYS section — full width (the dashboard has no sidebar) */}
       <div className="flex min-w-0 flex-col gap-5">

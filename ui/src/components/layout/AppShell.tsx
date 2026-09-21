@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Toaster } from '@/components/ui/toast';
 import { useKeys } from '@/hooks/use-keys';
+import { postJson } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { deriveSubdomainUrl } from '@/lib/urls';
 import { BrandLockup } from './BrandLockup';
@@ -261,10 +262,19 @@ export function AppShell({ me, config }: AppShellProps) {
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <a href="/api/oauth/logout">
+                {/* Logout is a POST (D-28 CSRF: same-origin fetch, never a GET
+                    link); the web session is deleted, then a full reload lands
+                    on the sign-in card. */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await postJson('/platform/console/session/logout', {});
+                    window.location.href = '/';
+                  }}
+                >
                   <LogOut aria-hidden="true" />
                   Log out
-                </a>
+                </button>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

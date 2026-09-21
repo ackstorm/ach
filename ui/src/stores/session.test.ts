@@ -19,14 +19,16 @@ import { initialSessionState, useSessionStore } from './session';
 
 const getJsonMock = vi.mocked(getJson);
 
-// A representative SessionMe payload (mirrors the api-types contract).
+// A representative SessionMe as the store maps it from the bootstrap payload
+// (name mirrors email, endpoint is this origin) — so feeding it back through
+// getJson round-trips to itself.
 const ME: SessionMe = {
   email: 'alice@example.com',
-  name: 'Alice Example',
-  team_id: 'team-platform',
-  endpoint: 'https://litellm.example.com',
-  limits: null,
-  spend: { current: 0, source: 'user' },
+  name: 'alice@example.com',
+  is_admin: false,
+  openwork_enabled: false,
+  suspend_propagation_seconds: 60,
+  endpoint: window.location.origin,
 };
 
 beforeEach(() => {
@@ -64,14 +66,28 @@ describe('session store', () => {
     expect(useSessionStore.getState().status).toBe(200);
   });
 
-  it('200 + SessionMe -> { status:200, me:<that>, hasLoaded:true }', async () => {
-    getJsonMock.mockResolvedValue({ status: 200, data: ME });
+  it('200 on /platform/console/bootstrap -> me = bootstrap + name (email) + endpoint (origin); hasLoaded:true', async () => {
+    // The bootstrap payload carries no display name and no gateway base:
+    // `name` mirrors the email and `endpoint` is this origin (ACH serves the
+    // console and /v1 from one host).
+    const bootstrap = {
+      email: 'alice@example.com',
+      is_admin: false,
+      openwork_enabled: false,
+      suspend_propagation_seconds: 60,
+    };
+    getJsonMock.mockResolvedValue({ status: 200, data: bootstrap });
 
     await useSessionStore.getState().loadSession();
 
+    expect(getJsonMock).toHaveBeenCalledWith('/platform/console/bootstrap');
     const { status, me, hasLoaded } = useSessionStore.getState();
     expect(status).toBe(200);
-    expect(me).toEqual(ME);
+    expect(me).toEqual({
+      ...bootstrap,
+      name: 'alice@example.com',
+      endpoint: window.location.origin,
+    });
     expect(hasLoaded).toBe(true);
   });
 
