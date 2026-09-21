@@ -14,11 +14,11 @@ import (
 // so the gateway reports Ready as soon as it is serving).
 //
 // ServeMux subtree semantics: a pattern ending in "/" matches that prefix
-// and everything under it, longest-match wins. The route table ends in a
-// "/" catch-all to the forwarder (LiteLLM's /ui, /key/*, …), so /metrics
-// (the forwarder's own Prometheus handler) and /metrics/ (LiteLLM's, with
-// per-key/team spend labels) are pinned to 404 here — they must never
-// leave the cluster through the public Ingress.
+// and everything under it, longest-match wins. The route table ends in
+// "/" -> platform-api (the console, D-26), and platform-api serves its
+// own Prometheus handler on that same port, so /metrics and /metrics/
+// are pinned to 404 here — they must never leave the cluster through the
+// public Ingress.
 //
 // When resolver is non-nil, the gateway also serves the /agents/ subtree
 // (delivery to per-agent Services). In production the resolver is always

@@ -5,8 +5,8 @@ package gateway
 import "fmt"
 
 // Route maps an incoming path prefix to an upstream base URL (no path).
-// The prefix MUST end in "/" so net/http.ServeMux treats it as a subtree
-// match (longest-prefix wins).
+// A prefix ending in "/" is a net/http.ServeMux subtree match
+// (longest-prefix wins); one without is an exact path (/v2/model/info).
 type Route struct {
 	Prefix   string
 	Upstream string
@@ -15,8 +15,9 @@ type Route struct {
 // ServiceRoutes returns the production route table for the given
 // namespace. Upstreams are in-cluster Service DNS names. The forwarder
 // owns four route families (/v1, /gemini, /mcp, /a2a) plus /.well-known
-// (JWKS + the RFC 9728 protected-resource document, both anonymous);
-// platform-api owns /platform; content-service owns /content.
+// (JWKS + the RFC 9728 protected-resource document, both anonymous) and
+// the single owned /v2/model/info (ach-agent pricing); platform-api owns
+// /platform and "/" (the console, D-26); content-service owns /content.
 //
 // Deliberately absent: /metrics (unauthenticated per service — never
 // front it) and /dex (browser reaches Dex via ACH_DEX_ISSUER_URL in
@@ -34,10 +35,14 @@ func ServiceRoutes(namespace string) []Route {
 		{Prefix: "/mcp/", Upstream: forwarder},
 		{Prefix: "/a2a/", Upstream: forwarder},
 		{Prefix: "/.well-known/", Upstream: forwarder},
-		// Catch-all: every other path LiteLLM serves (/ui, /key/*, /model/*,
-		// /health, …) goes to the forwarder, which proxies it with the
-		// credential optional. net/http's mux keeps the longer prefixes
-		// above (and /agents/, /healthz) ahead of it.
-		{Prefix: "/", Upstream: forwarder},
+		// The one owned route outside the families: ach-agent prices its
+		// usage at GET /v2/model/info with its ek_ (exact path, no subtree).
+		{Prefix: "/v2/model/info", Upstream: forwarder},
+		// The console (D-26): platform-api serves the embedded SPA at "/"
+		// with an SPA fallback (and /openwork + /api/den when the Den is on).
+		// Nothing LiteLLM serves is reachable here — /ui, /key/*, /health…
+		// live on LiteLLM's own host (D-18). net/http's mux keeps the longer
+		// prefixes above (and /agents/, /healthz, /metrics) ahead of it.
+		{Prefix: "/", Upstream: svc("ach-platform-api", 80)},
 	}
 }

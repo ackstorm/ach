@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -14,14 +15,15 @@ func TestServiceRoutes(t *testing.T) {
 	routes := ServiceRoutes("ach-system")
 
 	want := map[string]string{
-		"/platform/":    "http://ach-platform-api.ach-system.svc.cluster.local:80",
-		"/content/":     "http://ach-content-service.ach-system.svc.cluster.local:8082",
-		"/v1/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/gemini/":      "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/mcp/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/a2a/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/.well-known/": "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/":             "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/platform/":     "http://ach-platform-api.ach-system.svc.cluster.local:80",
+		"/content/":      "http://ach-content-service.ach-system.svc.cluster.local:8082",
+		"/v1/":           "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/gemini/":       "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/mcp/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/a2a/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/.well-known/":  "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/v2/model/info": "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/":              "http://ach-platform-api.ach-system.svc.cluster.local:80",
 	}
 
 	if len(routes) != len(want) {
@@ -52,17 +54,18 @@ func TestServiceRoutesHonorsNamespace(t *testing.T) {
 	t.Fatal("/platform/ route missing")
 }
 
-// TestCatchAllIsLastMatch pins that the "/" route never shadows a service
-// prefix or the gateway's own /healthz: net/http's ServeMux picks the
-// longest registered pattern.
-func TestCatchAllIsLastMatch(t *testing.T) {
+// TestRootRouteIsLastMatch pins that the "/" route (the console, D-26)
+// never shadows a service prefix or the gateway's own /healthz: net/http's
+// ServeMux picks the longest registered pattern.
+func TestRootRouteIsLastMatch(t *testing.T) {
 	h, err := Handler(ServiceRoutes("ns"), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := h.(*http.ServeMux)
 	for path, want := range map[string]string{
-		"/ui": "/", "/key/info": "/", "/health/liveliness": "/",
+		"/": "/", "/index.html": "/", "/assets/app.js": "/", "/openwork": "/", "/api/den/v1/me": "/", "/ui": "/",
+		"/v2/model/info": "/v2/model/info", "/v2/other": "/",
 		"/platform/keys": "/platform/", "/content/x": "/content/", "/v1/models": "/v1/", "/healthz": "/healthz",
 		"/metrics": "/metrics", "/metrics/": "/metrics/", "/metrics/x": "/metrics/",
 	} {
@@ -72,9 +75,27 @@ func TestCatchAllIsLastMatch(t *testing.T) {
 	}
 }
 
-// TestMetricsNeverProxied: the "/" catch-all must not carry /metrics (the
-// forwarder's own Prometheus handler) or /metrics/ (LiteLLM's, with
-// per-key/team spend labels) out through the public Ingress.
+// TestRootGoesToPlatformAPI: "/" is the console served by platform-api
+// (D-26), never the forwarder — LiteLLM's surface is not reachable through
+// ACH (D-18).
+func TestRootGoesToPlatformAPI(t *testing.T) {
+	routes := ServiceRoutes("ns")
+	last := routes[len(routes)-1]
+	if last.Prefix != "/" || !strings.Contains(last.Upstream, "ach-platform-api") {
+		t.Fatalf("last route = %+v, want / -> ach-platform-api (D-26)", last)
+	}
+	for _, r := range routes[:len(routes)-1] {
+		if r.Prefix == "/" {
+			t.Fatalf("duplicate / route: %+v", r)
+		}
+	}
+}
+
+// TestMetricsNeverProxied: the "/" route must not carry /metrics out
+// through the public Ingress — platform-api serves its own Prometheus
+// handler on the same port (cmd/ach/cmd/platform_api.go composes
+// /metrics next to the API), so without the pin the console route would
+// export it.
 func TestMetricsNeverProxied(t *testing.T) {
 	h, err := Handler(ServiceRoutes("ns"), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
