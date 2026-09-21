@@ -28,9 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/cachefs"
@@ -527,13 +525,5 @@ func (r *SkillMarketplaceReconciler) markSyncedFalse(ctx context.Context, cr *ac
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *SkillMarketplaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.SkillMarketplace{}).
-		Named("ach-skillmarketplace")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.SkillMarketplace{}, "ach-skillmarketplace", r.ResyncSource)
 }

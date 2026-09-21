@@ -19,8 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -138,9 +136,6 @@ func (r *PromptReconciler) writePromptProjection(
 	lastRefresh time.Time,
 	maxStaleness time.Duration,
 ) error {
-	if r.DB == nil {
-		return nil
-	}
 	var contentType *string
 	if cr.Spec.ContentType != "" {
 		ct := cr.Spec.ContentType
@@ -155,27 +150,12 @@ func (r *PromptReconciler) writePromptProjection(
 		MaxStalenessSeconds:   int64(maxStaleness.Seconds()),
 		ResourceVersion:       cr.ResourceVersion,
 	}
-	payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
-	if err := achdb.WithTxNotify(ctx, r.DB, promptsChannel, payload, func(tx pgx.Tx) error {
+	return projectRow(ctx, r.DB, promptsChannel, cr.Namespace, cr.Name, "prompt", func(tx pgx.Tx) error {
 		return achdb.UpsertPromptTx(ctx, tx, row)
-	}); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return err
-		}
-		return fmt.Errorf("db upsert prompt projection: %w", err)
-	}
-	return nil
+	})
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PromptReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Prompt{}).
-		Named("ach-prompt")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.Prompt{}, "ach-prompt", r.ResyncSource)
 }

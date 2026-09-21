@@ -24,9 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -406,14 +404,40 @@ const staleRequeueAfter = 15 * time.Second
 // is how the Environment converges to Available once content lands.
 const pluginUnresolvedRequeueAfter = 30 * time.Second
 
+// contextRefsUnresolved returns the refs in refs that are not content-present:
+// a ref must resolve by name AND have last_successful_refresh set (resolve
+// returns that timestamp; nil for an unknown or never-fetched row). A
+// malformed ref (e.g. "name@") is reported unresolved rather than silently
+// degrading to a bare lookup.
+func contextRefsUnresolved(
+	ctx context.Context, ns, kind string, refs []string,
+	resolve func(ctx context.Context, ns, name, mkt string) (*time.Time, error),
+) ([]string, error) {
+	var unresolved []string
+	for _, ref := range refs {
+		if !refparse.Valid(ref) {
+			unresolved = append(unresolved, ref)
+			continue
+		}
+		name, mkt, _ := refparse.Parse(ref)
+		last, err := resolve(ctx, ns, name, mkt)
+		if err != nil {
+			return nil, fmt.Errorf("resolve context %s %q: %w", kind, ref, err)
+		}
+		if last == nil {
+			unresolved = append(unresolved, ref)
+		}
+	}
+	return unresolved, nil
+}
+
 // contextPluginsUnresolved returns the spec.context.plugins refs that are
 // not yet content-present (handoff item 4 / Task B9): a listed plugin must
 // resolve AND have its content synced (last_successful_refresh non-null),
 // not merely exist by name — this prevents an ExecutionResourcesResolved
 // false-green when a plugin is referenced but its artifact was never
 // fetched. A bare ref resolves a Plugin CRD row; name@marketplace resolves
-// the marketplace_plugins row. A malformed ref (e.g. "name@") is reported
-// unresolved rather than silently degrading to a bare lookup.
+// the marketplace_plugins row.
 //
 // Guarded on r.DB != nil so nil-DB unit/envtest paths are unaffected;
 // production reconciles always have DB wired.
@@ -421,22 +445,14 @@ func (r *EnvironmentReconciler) contextPluginsUnresolved(ctx context.Context, en
 	if r.DB == nil {
 		return nil, nil
 	}
-	var unresolved []string
-	for _, ref := range env.Spec.Context.Plugins {
-		if !refparse.Valid(ref) {
-			unresolved = append(unresolved, ref)
-			continue
-		}
-		pname, mkt, _ := refparse.Parse(ref)
-		res, err := achdb.ResolvePluginByName(ctx, r.DB, r.Namespace, pname, mkt)
-		if err != nil {
-			return nil, fmt.Errorf("resolve context plugin %q: %w", ref, err)
-		}
-		if res == nil || res.LastSuccessfulRefresh == nil {
-			unresolved = append(unresolved, ref)
-		}
-	}
-	return unresolved, nil
+	return contextRefsUnresolved(ctx, r.Namespace, "plugin", env.Spec.Context.Plugins,
+		func(ctx context.Context, ns, name, mkt string) (*time.Time, error) {
+			res, err := achdb.ResolvePluginByName(ctx, r.DB, ns, name, mkt)
+			if err != nil || res == nil {
+				return nil, err
+			}
+			return res.LastSuccessfulRefresh, nil
+		})
 }
 
 // contextSkillsUnresolved returns the spec.context.skills refs that are not
@@ -448,22 +464,14 @@ func (r *EnvironmentReconciler) contextSkillsUnresolved(ctx context.Context, env
 	if r.DB == nil {
 		return nil, nil
 	}
-	var unresolved []string
-	for _, sref := range env.Spec.Context.Skills {
-		if !refparse.Valid(sref) {
-			unresolved = append(unresolved, sref) // malformed ref → unresolved
-			continue
-		}
-		sname, mkt, _ := refparse.Parse(sref)
-		res, err := achdb.ResolveSkillByName(ctx, r.DB, r.Namespace, sname, mkt)
-		if err != nil {
-			return nil, fmt.Errorf("resolve context skill %q: %w", sref, err)
-		}
-		if res == nil || res.LastSuccessfulRefresh == nil {
-			unresolved = append(unresolved, sref)
-		}
-	}
-	return unresolved, nil
+	return contextRefsUnresolved(ctx, r.Namespace, "skill", env.Spec.Context.Skills,
+		func(ctx context.Context, ns, name, mkt string) (*time.Time, error) {
+			res, err := achdb.ResolveSkillByName(ctx, r.DB, ns, name, mkt)
+			if err != nil || res == nil {
+				return nil, err
+			}
+			return res.LastSuccessfulRefresh, nil
+		})
 }
 
 // contextContentUnresolved bundles the plugin + skill content-present checks so
@@ -1373,13 +1381,5 @@ func classifyDrainErr(label string, err error) error {
 // Single watch on Environment — Phase 2 will add Secret + LiteLLM
 // fast-path watches when they exist.
 func (r *EnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Environment{}).
-		Named("ach-environment")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.Environment{}, "ach-environment", r.ResyncSource)
 }

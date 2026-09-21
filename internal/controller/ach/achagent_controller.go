@@ -202,7 +202,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.apply(ctx, &agent, buildService(&agent, &profile)); err != nil {
 			return r.applyFail(ctx, &agent, conds, "Service", err)
 		}
-	} else if err := r.pruneService(ctx, &agent); err != nil {
+	} else if err := r.prune(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(agent.Name), Namespace: agent.Namespace}}); err != nil {
 		// Converge expose.service true→false (and pre-feat orphans): owner-ref GC
 		// only fires on ACHAgent delete, not when the owner stops desiring the child.
 		return r.applyFail(ctx, &agent, conds, "Service", err)
@@ -211,8 +211,8 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.apply(ctx, &agent, buildNetworkPolicy(&agent, &profile)); err != nil {
 			return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
 		}
-	} else if err := r.pruneNetworkPolicy(ctx, &agent); err != nil {
-		// Converge profile networkPolicy present→absent, same as pruneService: owner-ref
+	} else if err := r.prune(ctx, &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(agent.Name), Namespace: agent.Namespace}}); err != nil {
+		// Converge profile networkPolicy present→absent, same as the Service: owner-ref
 		// GC only fires on ACHAgent delete, not when the owner stops desiring the child.
 		return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
 	}
@@ -255,21 +255,11 @@ func (r *ACHAgentReconciler) apply(ctx context.Context, owner *achv1alpha1.ACHAg
 	return err
 }
 
-// pruneService deletes the ClusterIP Service when the agent no longer opts in
-// (expose.service absent/false). Idempotent — NotFound is a no-op.
-func (r *ACHAgentReconciler) pruneService(ctx context.Context, a *achv1alpha1.ACHAgent) error {
-	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace}}
-	if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
-		return err
-	}
-	return nil
-}
-
-// pruneNetworkPolicy deletes the egress policy when the profile no longer declares a
-// networkPolicy block. Idempotent — NotFound is a no-op.
-func (r *ACHAgentReconciler) pruneNetworkPolicy(ctx context.Context, a *achv1alpha1.ACHAgent) error {
-	np := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace}}
-	if err := r.Delete(ctx, np); err != nil && !apierrors.IsNotFound(err) {
+// prune deletes a child the agent no longer desires (expose.service false,
+// profile networkPolicy removed). Owner-ref GC only fires on ACHAgent delete,
+// so convergence needs an explicit delete. Idempotent — NotFound is a no-op.
+func (r *ACHAgentReconciler) prune(ctx context.Context, obj client.Object) error {
+	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil

@@ -19,8 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -143,9 +141,6 @@ func (r *SkillReconciler) writeSkillProjection(
 	lastRefresh time.Time,
 	maxStaleness time.Duration,
 ) error {
-	if r.DB == nil {
-		return nil
-	}
 	row := achdb.SkillRow{
 		Namespace:             cr.Namespace,
 		Name:                  cr.Name,
@@ -154,27 +149,12 @@ func (r *SkillReconciler) writeSkillProjection(
 		MaxStalenessSeconds:   int64(maxStaleness.Seconds()),
 		ResourceVersion:       cr.ResourceVersion,
 	}
-	payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
-	if err := achdb.WithTxNotify(ctx, r.DB, skillsChannel, payload, func(tx pgx.Tx) error {
+	return projectRow(ctx, r.DB, skillsChannel, cr.Namespace, cr.Name, "skill", func(tx pgx.Tx) error {
 		return achdb.UpsertSkillTx(ctx, tx, row)
-	}); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return err
-		}
-		return fmt.Errorf("db upsert skill projection: %w", err)
-	}
-	return nil
+	})
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *SkillReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Skill{}).
-		Named("ach-skill")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.Skill{}, "ach-skill", r.ResyncSource)
 }

@@ -19,8 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -164,9 +162,6 @@ func (r *ArtifactReconciler) writeArtifactProjection(
 	lastRefresh time.Time,
 	maxStaleness time.Duration,
 ) error {
-	if r.DB == nil {
-		return nil
-	}
 	row := achdb.ArtifactRow{
 		Namespace:             cr.Namespace,
 		Name:                  cr.Name,
@@ -179,16 +174,9 @@ func (r *ArtifactReconciler) writeArtifactProjection(
 	// Issue #34: project + NOTIFY atomically on ach_artifacts_changed.
 	// ErrOriginConflict surfaces raw so the caller flips to
 	// Synced=False/ConflictWithUIRow.
-	payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
-	if err := achdb.WithTxNotify(ctx, r.DB, artifactsChannel, payload, func(tx pgx.Tx) error {
+	return projectRow(ctx, r.DB, artifactsChannel, cr.Namespace, cr.Name, "artifact", func(tx pgx.Tx) error {
 		return achdb.UpsertArtifactTx(ctx, tx, row)
-	}); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return err
-		}
-		return fmt.Errorf("db upsert artifact projection: %w", err)
-	}
-	return nil
+	})
 }
 
 // softDeleteArtifactProjection wraps the nil-DB gate + the
@@ -212,13 +200,5 @@ func (r *ArtifactReconciler) softDeleteArtifactProjection(
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *ArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Artifact{}).
-		Named("ach-artifact")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.Artifact{}, "ach-artifact", r.ResyncSource)
 }

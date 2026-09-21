@@ -19,8 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -157,9 +155,6 @@ func (r *PluginReconciler) writePluginProjection(
 	lastRefresh time.Time,
 	maxStaleness time.Duration,
 ) error {
-	if r.DB == nil {
-		return nil
-	}
 	row := achdb.PluginRow{
 		Namespace:             cr.Namespace,
 		Name:                  cr.Name,
@@ -168,27 +163,12 @@ func (r *PluginReconciler) writePluginProjection(
 		MaxStalenessSeconds:   int64(maxStaleness.Seconds()),
 		ResourceVersion:       cr.ResourceVersion,
 	}
-	payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
-	if err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
+	return projectRow(ctx, r.DB, pluginsChannel, cr.Namespace, cr.Name, "plugin", func(tx pgx.Tx) error {
 		return achdb.UpsertPluginTx(ctx, tx, row)
-	}); err != nil {
-		if errors.Is(err, achdb.ErrOriginConflict) {
-			return err
-		}
-		return fmt.Errorf("db upsert plugin projection: %w", err)
-	}
-	return nil
+	})
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *PluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&achv1alpha1.Plugin{}).
-		Named("ach-plugin")
-	if r.ResyncSource != nil {
-		b = b.WatchesRawSource(
-			source.Channel(r.ResyncSource, &handler.EnqueueRequestForObject{}),
-		)
-	}
-	return b.Complete(r)
+	return setupWithResync(mgr, r, &achv1alpha1.Plugin{}, "ach-plugin", r.ResyncSource)
 }
