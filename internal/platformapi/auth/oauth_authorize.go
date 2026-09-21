@@ -211,18 +211,20 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
+	// One Dex refresh token per user, newest login wins — Dex itself keeps
+	// one per (user, client) and replaces it on a new login, so a second
+	// tool signing in must not strand the first tool's session. Stored
+	// BEFORE provisioning: the exchange already killed the previous token
+	// at Dex, so a LiteLLM failure here must not leave the dead one behind.
+	if err := d.Store.Put(r.Context(), dexRefreshKind, email, dexRefresh, d.RefreshTTL); err != nil {
+		htmlError(w, 500, "store unavailable")
+		return
+	}
 	userID, err := d.provision(r.Context(), email)
 	if err != nil {
 		_, status, msg := classifyProvisionError(err)
 		d.Auth.Logger.Warn("oauth: user provisioning failed", "err", err)
 		htmlError(w, status, msg)
-		return
-	}
-	// One Dex refresh token per user, newest login wins — Dex itself keeps
-	// one per (user, client) and replaces it on a new login, so a second
-	// tool signing in must not strand the first tool's session.
-	if err := d.Store.Put(r.Context(), dexRefreshKind, email, dexRefresh, d.RefreshTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
 		return
 	}
 	u := oauthUser{Sub: email, UserID: userID}
@@ -322,9 +324,12 @@ func (d OAuthDeps) dexRefresh(ctx context.Context, refresh string) (string, erro
 // dexDenied: Dex answered the refresh with an OAuth error (invalid_grant —
 // the IdP revoked the user, the token expired or was rotated away) as
 // opposed to being unreachable.
+// dexDenied is true only when Dex refused the USER (invalid_grant is a
+// 400). A 401 (rotated client secret), 403/429 (WAF), 404 (wrong endpoint)
+// or 5xx is our problem: retryable, never a reason to end sessions.
 func dexDenied(err error) bool {
 	var re *oauth2.RetrieveError
-	return errors.As(err, &re) && re.Response != nil && re.Response.StatusCode < 500
+	return errors.As(err, &re) && re.Response != nil && re.Response.StatusCode == http.StatusBadRequest
 }
 
 func (d OAuthDeps) provision(ctx context.Context, email string) (string, error) {

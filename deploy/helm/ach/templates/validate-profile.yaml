@@ -1,0 +1,2 @@
+{{- /* Renders nothing; fails the render on an obsolete `profile:` value. */ -}}
+{{- include "ach.rejectIdentityProfile" . -}}

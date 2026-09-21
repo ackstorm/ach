@@ -38,7 +38,7 @@ func deviceTokenForm(cid, deviceCode string) string {
 // redirect, return the pending state + binding cookie like startAuthorize.
 func confirmCode(t *testing.T, f *asFixture, userCode string) (state string, cookie map[string]string) {
 	t.Helper()
-	w := f.do(t, "POST", "/platform/oauth/device", "user_code="+url.QueryEscape(userCode), formHdr)
+	w := f.do(t, "POST", "/platform/oauth/device", "user_code="+url.QueryEscape(userCode), sameOriginForm)
 	if w.Code != 302 {
 		t.Fatalf("confirm %q: %d %s", userCode, w.Code, w.Body)
 	}
@@ -83,7 +83,7 @@ func TestDeviceGrant_EndToEnd(t *testing.T) {
 		t.Fatalf("binding cookie not cleared: %+v", cs)
 	}
 	// user_code index is gone: a second confirm of the same code fails.
-	if w := f.do(t, "POST", "/platform/oauth/device", "user_code="+b.UserCode, formHdr); w.Code != 200 || !strings.Contains(w.Body.String(), "not found") {
+	if w := f.do(t, "POST", "/platform/oauth/device", "user_code="+b.UserCode, sameOriginForm); w.Code != 200 || !strings.Contains(w.Body.String(), "not found") {
 		t.Fatalf("code reuse: %d %s", w.Code, w.Body)
 	}
 
@@ -105,6 +105,38 @@ func TestDeviceGrant_EndToEnd(t *testing.T) {
 	}
 }
 
+// sameOriginForm is what a browser sends when the verification page's own
+// form is submitted: a form POST always carries Origin.
+var sameOriginForm = map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "https://ach.test"}
+
+// TestDevicePage_RefusesACrossSiteConfirmation is the RFC 8628 §5.4 remote
+// phishing regression: an attacker's page auto-submits the user_code of
+// THEIR device to /oauth/device; the victim's browser must not be walked
+// into Dex — no cookie, no redirect, the code stays pending.
+func TestDevicePage_RefusesACrossSiteConfirmation(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	d := startDevice(t, f, registerClient(t, f))
+	body := "user_code=" + url.QueryEscape(d.UserCode)
+	for name, hdr := range map[string]map[string]string{
+		"no origin":       formHdr,
+		"foreign origin":  {"Content-Type": "application/x-www-form-urlencoded", "Origin": "https://evil.test"},
+		"foreign referer": {"Content-Type": "application/x-www-form-urlencoded", "Referer": "https://evil.test/x"},
+	} {
+		w := f.do(t, "POST", "/platform/oauth/device", body, hdr)
+		if w.Code != 403 || w.Header().Get("Location") != "" || len(w.Result().Cookies()) != 0 {
+			t.Fatalf("%s: %d loc=%q cookies=%d", name, w.Code, w.Header().Get("Location"), len(w.Result().Cookies()))
+		}
+	}
+	var deviceCode string
+	if ok, _ := f.store.Get(context.Background(), "device_user", d.UserCode, &deviceCode); !ok {
+		t.Fatal("user_code index must survive a refused confirmation")
+	}
+	// Referer alone (no Origin) from our own page is accepted.
+	if w := f.do(t, "POST", "/platform/oauth/device", body, map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Referer": "https://ach.test/platform/oauth/device"}); w.Code != 302 {
+		t.Fatalf("same-origin referer: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestDeviceGrant_Rejects(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
 	installFakePKs(f)
@@ -113,7 +145,7 @@ func TestDeviceGrant_Rejects(t *testing.T) {
 	if w := f.do(t, "POST", "/platform/oauth/device_authorization", "client_id=nope", formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_client") {
 		t.Fatalf("unknown client: %d %s", w.Code, w.Body)
 	}
-	if w := f.do(t, "POST", "/platform/oauth/device", "user_code=ZZZZ-ZZZZ", formHdr); w.Code != 200 || !strings.Contains(w.Body.String(), "not found") {
+	if w := f.do(t, "POST", "/platform/oauth/device", "user_code=ZZZZ-ZZZZ", sameOriginForm); w.Code != 200 || !strings.Contains(w.Body.String(), "not found") {
 		t.Fatalf("unknown code: %d %s", w.Code, w.Body)
 	}
 	if w := f.do(t, "POST", "/platform/oauth/token", deviceTokenForm(a, "never-issued"), formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "expired_token") {

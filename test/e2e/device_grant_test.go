@@ -46,8 +46,7 @@ func approveDeviceCode(t *testing.T, base, userCode string) {
 	if page.StatusCode != 200 || !strings.Contains(string(body), `value="`+userCode+`"`) {
 		t.Fatalf("verification page: %d %s", page.StatusCode, truncate(body, 400))
 	}
-	resp, err := client.Post(base+"/platform/oauth/device", "application/x-www-form-urlencoded",
-		strings.NewReader(url.Values{"user_code": {userCode}}.Encode()))
+	resp, err := client.Do(confirmForm(t, base, userCode))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +144,21 @@ func deviceGrant(t *testing.T, base string) string {
 	return access
 }
 
+// confirmForm is the verification page's own form submission: a browser
+// sends Origin on every form POST and the page refuses a cross-site one
+// (RFC 8628 §5.4), so the request carries the issuer as Origin.
+func confirmForm(t *testing.T, base, userCode string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, base+"/platform/oauth/device",
+		strings.NewReader(url.Values{"user_code": {userCode}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", base)
+	return req
+}
+
 // TestDeviceGrant: the headless login on the full release, then the token
 // used like any other on the authenticated surface; a wrong code is
 // refused by the page.
@@ -166,8 +180,7 @@ func TestDeviceGrant(t *testing.T) {
 	}
 
 	t.Run("wrong_code", func(t *testing.T) {
-		resp, err := http.Post(base+"/platform/oauth/device", "application/x-www-form-urlencoded",
-			strings.NewReader("user_code=ZZZZ-ZZZZ"))
+		resp, err := http.DefaultClient.Do(confirmForm(t, base, "ZZZZ-ZZZZ"))
 		if err != nil {
 			t.Fatal(err)
 		}

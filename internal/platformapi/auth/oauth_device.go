@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -125,6 +126,14 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 		renderDevicePage(w, r.URL.Query().Get("user_code"), "")
 		return
 	}
+	// RFC 8628 §5.4: a cross-site form POST (attacker's page auto-submits
+	// THEIR user_code) would otherwise walk a logged-in browser into Dex and
+	// approve the attacker's device as the victim. Browsers send Origin on
+	// every form POST; a missing header is refused too.
+	if !sameOrigin(d.Issuer, r) {
+		htmlError(w, 403, "this page only accepts its own form")
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		renderDevicePage(w, "", "form body required")
 		return
@@ -161,6 +170,27 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, bindingCookie(pendingID, binding, d.Auth.InsecureCookie, int(oauthPendingTTL.Seconds())))
 	http.Redirect(w, r, d.dexLogin(pendingID, dexVerifier), http.StatusFound)
+}
+
+// sameOrigin reports whether the request's Origin (or, absent that,
+// Referer) names the issuer's scheme://host[:port].
+func sameOrigin(issuer string, r *http.Request) bool {
+	src := r.Header.Get("Origin")
+	if src == "" {
+		src = r.Header.Get("Referer")
+	}
+	if src == "" {
+		return false
+	}
+	iu, err := url.Parse(issuer)
+	if err != nil {
+		return false
+	}
+	su, err := url.Parse(src)
+	if err != nil {
+		return false
+	}
+	return su.Scheme == iu.Scheme && su.Host == iu.Host
 }
 
 // deviceFinish is the as-callback tail for a device pending: the device

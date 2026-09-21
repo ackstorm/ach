@@ -41,9 +41,6 @@ type HandlerDeps struct {
 	BIPResolver BIPResolver
 	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.
 	PrecheckDeps precheck.Deps
-	// Identity: the identity profile — /mcp and /a2a skip precheck and the
-	// BIP JWT; the resolved identity is the whole contract.
-	Identity bool
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
 }
@@ -120,15 +117,6 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		//    backend's business.
 		kc, ok := middleware.KeyContextFromCtx(r.Context())
 		if !ok {
-			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
-			rp.ServeHTTP(w, r)
-			return
-		}
-
-		// 0b. Identity profile: no Environments, no policies — the resolved
-		//     identity is the whole contract (no precheck, no BIP JWT).
-		if deps.Identity {
-			r.Header.Del("Authorization")
 			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
 			rp.ServeHTTP(w, r)
 			return

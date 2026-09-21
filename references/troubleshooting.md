@@ -163,11 +163,10 @@ kubectl -n ach-system logs deploy/ach-forwarder -c forwarder
 ✅ The forwarder refuses to start without `ach-jwt-signing-keys`
 (FWD-09 — no in-cluster fallback, no implicit zero-key). The Secret
 must carry two keys: `current.kid` (short ASCII id) and `current.seed`
-(32 random bytes). `scripts/cluster.sh hydrate_fixtures` seeds a fresh
-(kid=`dev-<timestamp>`, seed=`openssl rand 32`) pair on every
-`cluster.sh up` if the Secret is absent; production deploys must
-provision it explicitly (e.g. ExternalSecrets / SealedSecrets — never
-the dev seed). Manual seed if you need one:
+(32 random bytes). The operator mints it on boot
+(`internal/jwtkeys.EnsureSigningKeys`, mint-once), so on a fresh install
+the forwarder crashloops only until the operator is up. Manual seed if the
+operator cannot run (or to pin a known seed):
 ```bash
 jwttmp=$(mktemp -d)
 openssl rand 32 > "${jwttmp}/current.seed"
@@ -705,11 +704,12 @@ stays valid, retry.
 ### ❌ OAuth session works at login, model call answers LiteLLM `Invalid proxy server token passed … Unable to find token in cache or LiteLLM_VerificationTokenTable`
 
 The user's `purpose='oauth'` `personal_keys` row points at a LiteLLM key
-LiteLLM no longer has. Seen 2026-09-21: **two ACH releases (full +
-identity, separate DBs) on one LiteLLM** — the full release's orphan
-reaper listed the shared user's keys, found the identity release's key
+LiteLLM no longer has. Seen 2026-09-21 with **two ACH releases (separate
+DBs) on one LiteLLM** (the since-removed `identity` profile; ANY two
+releases sharing a LiteLLM behave the same) — one release's orphan
+reaper listed the shared user's keys, found the other release's key
 (`ach_key_id` present, unknown to its own DB) and revoked it within the
-hour; the identity AS kept reusing the row (one oauth row per user), so a
+hour; the other AS kept reusing the row (one oauth row per user), so a
 login that worked at first died on the next model call. Other causes: key
 deleted in LiteLLM's UI, LiteLLM DB reset. Since 0.9.8: keys carry
 `metadata.ach_issuer` (= `ACH_BASE_URL`) and the reaper revokes only its
@@ -1026,18 +1026,20 @@ jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
 `Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
 own OAuth token; declare a `mode: passthrough` header for raw keys.
 
+### ❌ Fresh install: `ach-operator` + `ach-platform-api` stuck `ContainerCreating`, `FailedMount … secret "ach-jwt-signing-keys" not found`
+✅ Chart older than the fix below: the content-service SIDECAR in the operator
+Pod mounted `ach-jwt-signing-keys` as a required volume, and the operator is
+what mints that Secret → the Pod could never start. Fixed 2026-09-21 by making
+the sidecar's volume `optional: true` (`ach.contentServiceJWTVolume`); the
+sidecar restarts until the Secret exists. On an old chart, seed the Secret by
+hand (recipe above) and the Pods start. Hidden for days on the kept kind
+cluster because the Secret survived from earlier runs — only a clean
+`cluster-down && cluster-up` shows it.
+
 ### ❌ After `make clean-cache`: `kubectl` → "the server could not find the requested resource" / `current-context is not set`
 ✅ `.gocache/kube/config` (the kind kubeconfig devtools mounts) was wiped with
 the cache. `scripts/dev.sh` only regenerates it when the HOST has `kind`; this
 box does not. Restore it from inside devtools:
 `./scripts/dev.sh bash -c 'kind get kubeconfig --name ach-e2e > /workspace/.gocache/kube/config'`.
 The cluster itself is untouched (`./scripts/dev.sh kind get clusters`).
-
-### ❌ identity forwarder never Ready, log `ensure jwt signing keys: … forbidden`
-✅ `profile: identity` renders `create` on `secrets` in the forwarder Role
-(`ach-jwt-signing-keys` is minted by the forwarder there — no operator). A
-release upgraded from `full` without re-rendering the Role, or a hand-edited
-RBAC, lacks it: `kubectl -n <ns> get role <release>-forwarder -o yaml`.
-platform-api in the same release sits in `ContainerCreating` until that Secret
-exists (it mounts it) — that is the symptom, not the cause.
 

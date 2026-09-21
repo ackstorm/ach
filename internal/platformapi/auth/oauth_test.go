@@ -627,6 +627,20 @@ func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
 		t.Fatalf("dex down must not revoke: %v", pks.revoked)
 	}
 
+	// Our fault, not the user's: a rotated Dex client secret (401), a WAF
+	// (403) — retryable 503, nothing revoked, the token still works.
+	for _, code := range []int{401, 403} {
+		f.dexRefresh = func(string) (string, error) {
+			return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: code}, ErrorCode: "invalid_client"}
+		}
+		if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+			t.Fatalf("dex %d: %d %s", code, w.Code, w.Body)
+		}
+		if len(pks.revoked) != 0 {
+			t.Fatalf("dex %d must not revoke: %v", code, pks.revoked)
+		}
+	}
+
 	f.dexRefresh = func(string) (string, error) {
 		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
 	}
@@ -651,5 +665,26 @@ func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
 	otherRefresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {other.RefreshToken}, "client_id": {cid}}.Encode()
 	if w := f.do(t, "POST", "/platform/oauth/token", otherRefresh, formHdr); w.Code != 400 || len(f.dexSeen) != dexCalls {
 		t.Fatalf("sibling session: %d %s dex calls %d→%d", w.Code, w.Body, dexCalls, len(f.dexSeen))
+	}
+}
+
+// TestASCallback_KeepsTheDexTokenWhenProvisioningFails: Dex rotated the
+// user's refresh token at the code exchange, so the previous one is dead
+// even if LiteLLM provisioning then fails. The fresh token must be stored
+// regardless — otherwise every other tool of the user replays the dead
+// one at its next refresh and gets logged out.
+func TestASCallback_KeepsTheDexTokenWhenProvisioningFails(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	f.deps.Provision = func(context.Context, string) (string, error) { return "", errors.New("litellm down") }
+	f.mount()
+	_ = f.store.Put(context.Background(), dexRefreshKind, "u@x.com", "dex-rt-dead", time.Minute)
+	cid := registerClient(t, f)
+	state, cookie := startAuthorize(t, f, cid)
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie); w.Code < 500 {
+		t.Fatalf("provisioning failure: %d %s", w.Code, w.Body)
+	}
+	var rt string
+	if ok, _ := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &rt); !ok || rt != "dex-rt-0" {
+		t.Fatalf("dex refresh token must be the fresh one: ok=%v %q", ok, rt)
 	}
 }

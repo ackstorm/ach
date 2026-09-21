@@ -508,23 +508,6 @@ from Postgres, so there is no `ACH_OAUTH_SERVICES` or grants-Redis map.
 
 ---
 
-## 1.7 Profiles — `full` and `identity`
-
-`ACH_PROFILE` (chart `profile:`) selects what the forwarder is:
-
-| | `full` (default) | `identity` |
-|---|---|---|
-| LiteLLM upstream | `LiteLLMConnection/default` projection (operator) | `ACH_LITELLM_BASE_URL` (chart `litellmConnection.endpoint`) |
-| `/mcp/<n>`, `/a2a/<n>` | precheck (Environment) → BIP → per-target JWT | forward the resolved identity, no precheck, no JWT — like the catch-all |
-| `bipcache` / `envstore` / `TeamsResolver` | built | not built |
-| `ach-jwt-signing-keys` | minted by the operator | minted by the forwarder at boot (`internal/jwtkeys.EnsureSigningKeys`; the chart adds `create` to its Role) |
-| Chart renders | everything | platform-api, forwarder, gateway, migrate — no CRDs, no operator, no content-service |
-
-An identity release is self-contained: own domain (`ACH_BASE_URL`), own Dex
-client, own OAuth AS, own `pk_` rows, own signing key. Several releases
-coexist in one cluster, one per namespace (chart resource names are fixed).
-Reference values: `test/e2e/cluster/02-ach/identity.values.yaml`.
-
 ## 2. BackendIdentityPolicy (BIP) — turning JWT mint on
 
 JWT mint is **opt-in per target**. A `BackendIdentityPolicy` CR selects
