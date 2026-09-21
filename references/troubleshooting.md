@@ -1027,6 +1027,30 @@ jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
 `Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
 own OAuth token; declare a `mode: passthrough` header for raw keys.
 
+### ❌ `GET /` answers `404 console not built: run make ui-build`
+✅ Expected on a binary built without the React bundle: `internal/platformapi/
+console/dist` only tracks `.gitkeep`, and `go build` embeds whatever is there.
+`make ui-build` (needs `ui/`) fills it before `make build-server`; the release
+image runs the Node stage itself. The API is unaffected — only "/" and the
+client routes fall back to this notice; `/platform/*` stays a JSON 404.
+
+### ❌ Console: `400 ambiguous_credentials` on every request
+✅ The browser sent the console cookie AND an API credential — usually a
+browser extension injecting `Authorization`, or a client reusing a browser
+cookie jar next to `x-ach-key`. The adapter refuses both on purpose (spec
+§5.3): drop one of them. `403 csrf_rejected` on a cookie-authenticated
+mutation means the request carried no `Sec-Fetch-Site: same-origin` and no
+`Origin` equal to `ACH_BASE_URL` (D-28) — a cross-site form, a `curl` without
+those headers, or a proxy that strips fetch metadata. `503
+temporarily_unavailable` on a cookie request is Dex not answering the periodic
+revalidation; the session is kept, retry.
+
+### ❌ `/ui`, `/key/list`, `/health`, `/v2/...` are 404 through the ACH host
+✅ By design since D-18: nothing LiteLLM serves outside `/v1`, `/gemini`,
+`/mcp/<n>`, `/a2a/<n>` (+ `GET /v2/model/info` for ach-agent pricing) is
+proxied any more. Use LiteLLM's own host / cluster-internal Service for its
+UI and admin surface.
+
 ### ❌ Fresh install: `ach-operator` + `ach-platform-api` stuck `ContainerCreating`, `FailedMount … secret "ach-jwt-signing-keys" not found`
 ✅ Chart older than the fix below: the content-service SIDECAR in the operator
 Pod mounted `ach-jwt-signing-keys` as a required volume, and the operator is

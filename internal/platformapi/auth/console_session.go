@@ -50,13 +50,21 @@ func safeNext(next string) string {
 	return next
 }
 
+// now is the clock: Deps.Now when a test pinned it, the wall clock
+// otherwise. ConsoleSession is called as a method value bound OUTSIDE
+// MountOAuth/MountConsole (the Authn cookie adapter), so it cannot rely on
+// those having defaulted Now on their own copy.
+func (d OAuthDeps) now() time.Time {
+	if d.Now == nil {
+		return time.Now()
+	}
+	return d.Now()
+}
+
 // MountConsole registers the console's session endpoints under
 // /platform/console/session. Outside the Authn group: login is anonymous
 // and logout must see the raw cookie to delete the record.
 func MountConsole(d OAuthDeps) func(chi.Router) {
-	if d.Now == nil {
-		d.Now = time.Now
-	}
 	return func(r chi.Router) {
 		r.Get("/login", d.consoleLogin)
 		r.Post("/logout", d.consoleLogout)
@@ -106,7 +114,7 @@ func (d OAuthDeps) consoleFinish(w http.ResponseWriter, r *http.Request, p oauth
 		htmlError(w, 500, "")
 		return
 	}
-	now := d.Now()
+	now := d.now()
 	s := consoleSession{oauthUser: u, RevalidateAt: now.Add(d.AccessTTL), ExpiresAt: now.Add(d.RefreshTTL)}
 	if err := d.Store.Put(r.Context(), consoleSessionKind, sid, s, d.RefreshTTL); err != nil {
 		htmlError(w, 500, "store unavailable")
@@ -142,7 +150,7 @@ func (d OAuthDeps) ConsoleSession(ctx context.Context, sid string) (string, bool
 	if err != nil || !ok {
 		return "", false, err
 	}
-	now := d.Now()
+	now := d.now()
 	if !now.Before(s.ExpiresAt) {
 		_ = d.Store.Del(ctx, consoleSessionKind, sid)
 		return "", false, nil

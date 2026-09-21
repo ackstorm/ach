@@ -253,3 +253,18 @@ func TestConsole_SharesTheDexChainWithTokenRefresh(t *testing.T) {
 		t.Fatalf("console replayed %q, want the rotated token", last)
 	}
 }
+
+// The production wiring binds ConsoleSession as a method value on a deps
+// copy that never went through MountOAuth/MountConsole (the Authn cookie
+// adapter), so a nil Now must mean the wall clock — not a panic.
+func TestConsole_SessionLookupWithoutAPinnedClock(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	installFakePKs(f)
+	f.mountConsole()
+	c := consoleLogin(t, f, "/")
+	unpinned := f.deps
+	unpinned.Now = nil
+	if _, ok, err := unpinned.ConsoleSession(context.Background(), c.Value); err != nil || !ok {
+		t.Fatalf("nil Now: ok=%v err=%v", ok, err)
+	}
+}
