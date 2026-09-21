@@ -66,6 +66,8 @@ type asFixture struct {
 	// refuse (the IdP disabled the user) or to be unreachable.
 	dexRefresh func(rt string) (string, error)
 	dexSeen    []string
+	// now is the fixture clock once mountConsole pinned deps.Now.
+	now time.Time
 }
 
 func newAS(t *testing.T) *asFixture {

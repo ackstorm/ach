@@ -46,6 +46,10 @@ type oauthPending struct {
 	// (RFC 8628); it has no RedirectURI and no client PKCE — the outcome is
 	// written to the device record for /token to pick up.
 	DeviceCode string `json:"device_code,omitempty"`
+	// Console marks a pending parked by the web console's login (D-27):
+	// no client, no PKCE — the outcome is a cookie session, and
+	// RedirectURI holds the local path to return to.
+	Console bool `json:"console,omitempty"`
 }
 
 // bindingCookieName is the per-pending browser-binding cookie. __Host- on an
@@ -197,6 +201,10 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{})
 			return
 		}
+		if p.Console {
+			htmlError(w, 401, "the identity provider refused the login")
+			return
+		}
 		pv := url.Values{"error": {"access_denied"}}
 		if p.State != "" {
 			pv.Set("state", p.State)
@@ -228,6 +236,10 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := oauthUser{Sub: email, UserID: userID}
+	if p.Console {
+		d.consoleFinish(w, r, p, pendingID, u)
+		return
+	}
 	if p.DeviceCode != "" {
 		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
 		return

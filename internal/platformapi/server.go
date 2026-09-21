@@ -145,6 +145,8 @@ func New(deps Deps) http.Handler {
 		r.Route("/platform/oauth", auth.MountOAuth(od))
 		// The OpenCode client of that AS, as an npm tarball (anonymous too).
 		r.Get("/platform/opencode-auth", opencodeauth.Handler())
+		// Web console login/logout (D-27): the same AS, one more pending kind.
+		r.Route("/platform/console/session", auth.MountConsole(od))
 	}
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,

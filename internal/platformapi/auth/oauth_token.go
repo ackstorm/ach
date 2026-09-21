@@ -84,34 +84,16 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
-	var dexRefresh string
-	if ok, err := d.Store.Get(r.Context(), dexRefreshKind, rf.Sub, &dexRefresh); err != nil {
-		oauthError(w, 500, "server_error", "")
-		return
-	} else if !ok {
-		_ = d.Store.Del(r.Context(), "refresh", presented)
-		oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
-		return
-	}
-	rotated, err := d.dexRefresh(r.Context(), dexRefresh)
-	if err != nil {
-		if !dexDenied(err) {
-			d.Auth.Logger.Warn("oauth: dex refresh unreachable", "err", err)
+	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
+		if errors.Is(err, errIdPRefused) {
+			_ = d.Store.Del(r.Context(), "refresh", presented)
+			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
+			return
+		}
+		if errors.Is(err, ErrIdPUnreachable) {
 			oauthError(w, 503, "temporarily_unavailable", "identity provider unreachable")
 			return
 		}
-		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", rf.Sub, "client_id", clientID, "err", err)
-		_ = d.Store.Del(r.Context(), dexRefreshKind, rf.Sub)
-		_ = d.Store.Del(r.Context(), "refresh", presented)
-		if cur, lerr := d.lookupOAuthPK(r.Context(), rf.Sub); lerr == nil && cur != nil {
-			if rerr := d.revokeOAuthPK(r.Context(), cur.KeyID); rerr != nil {
-				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)
-			}
-		}
-		oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
-		return
-	}
-	if err := d.Store.Put(r.Context(), dexRefreshKind, rf.Sub, rotated, d.RefreshTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
 	}
@@ -121,6 +103,43 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		return
 	}
 	d.issue(w, r, rf.oauthUser, clientID)
+}
+
+// errIdPRefused: the identity provider no longer honours the user — every
+// session of that user is over (the Dex token and the oauth pk_ are gone).
+var errIdPRefused = errors.New("oauth: identity provider refused the user")
+
+// ErrIdPUnreachable: Dex did not answer; the presented credential stays valid.
+var ErrIdPUnreachable = errors.New("identity provider unreachable")
+
+// revalidateAtIdP replays the user's shared Dex refresh token (D-22) — the
+// one check both the /token refresh grant and the console session run.
+// nil: the IdP still honours the user and the rotated token is stored.
+// errIdPRefused: sessions ended (Dex token deleted, oauth pk_ revoked).
+// ErrIdPUnreachable: Dex did not answer — nothing changed, retry later.
+func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
+	var dexRefresh string
+	if ok, err := d.Store.Get(ctx, dexRefreshKind, sub, &dexRefresh); err != nil {
+		return err
+	} else if !ok {
+		return errIdPRefused
+	}
+	rotated, err := d.dexRefresh(ctx, dexRefresh)
+	if err != nil {
+		if !dexDenied(err) {
+			d.Auth.Logger.Warn("oauth: dex refresh unreachable", "err", err)
+			return fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
+		}
+		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", sub, "err", err)
+		_ = d.Store.Del(ctx, dexRefreshKind, sub)
+		if cur, lerr := d.lookupOAuthPK(ctx, sub); lerr == nil && cur != nil {
+			if rerr := d.revokeOAuthPK(ctx, cur.KeyID); rerr != nil {
+				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)
+			}
+		}
+		return errIdPRefused
+	}
+	return d.Store.Put(ctx, dexRefreshKind, sub, rotated, d.RefreshTTL)
 }
 
 func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) {
