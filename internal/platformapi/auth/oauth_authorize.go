@@ -80,15 +80,18 @@ func bindingHash(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// oauthUser is who Dex logged in — the lower-cased email, the LiteLLM user
-// id from provisionUser — plus Dex's refresh token, which is how ACH asks
-// the identity provider again at every ACH refresh (offline_access): a
-// user disabled at the IdP is out at the next refresh, not in 30 days.
+// oauthUser is who Dex logged in: the lower-cased email and the LiteLLM
+// user id from provisionUser.
 type oauthUser struct {
-	Sub        string `json:"sub"`
-	UserID     string `json:"user_id"`
-	DexRefresh string `json:"dex_refresh"`
+	Sub    string `json:"sub"`
+	UserID string `json:"user_id"`
 }
+
+// dexRefreshKind stores the user's Dex refresh token (offline_access) —
+// ONE per user, keyed by email, shared by all their sessions, because Dex
+// keeps one per (user, client) and a new login replaces it. It lives as
+// long as ACH's own refresh window; idle that long, the user logs in again.
+const dexRefreshKind = "dexrt"
 
 // oauthCode is a single-use authorization code, bound to everything the
 // token endpoint must re-check.
@@ -215,7 +218,14 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, status, msg)
 		return
 	}
-	u := oauthUser{Sub: email, UserID: userID, DexRefresh: dexRefresh}
+	// One Dex refresh token per user, newest login wins — Dex itself keeps
+	// one per (user, client) and replaces it on a new login, so a second
+	// tool signing in must not strand the first tool's session.
+	if err := d.Store.Put(r.Context(), dexRefreshKind, email, dexRefresh, d.RefreshTTL); err != nil {
+		htmlError(w, 500, "store unavailable")
+		return
+	}
+	u := oauthUser{Sub: email, UserID: userID}
 	if p.DeviceCode != "" {
 		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
 		return

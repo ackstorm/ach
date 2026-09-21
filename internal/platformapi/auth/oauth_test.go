@@ -411,9 +411,12 @@ func seedCode(t *testing.T, f *asFixture, cid string) {
 	t.Helper()
 	err := f.store.Put(context.Background(), "code", "thecode", oauthCode{
 		oauthPending: oauthPending{ClientID: cid, RedirectURI: "http://127.0.0.1:5000/cb", State: "s", CodeChallenge: testChallenge},
-		oauthUser:    oauthUser{Sub: "u@x.com", UserID: "litellm-user-1", DexRefresh: "dex-rt-0"},
+		oauthUser:    oauthUser{Sub: "u@x.com", UserID: "litellm-user-1"},
 	}, time.Minute)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Put(context.Background(), dexRefreshKind, "u@x.com", "dex-rt-0", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -572,6 +575,37 @@ func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
 	}
 }
 
+// Two tools, one user: Dex keeps one refresh token per (user, client) and
+// replaces it on a new login, so ACH keeps one per user too — the second
+// login must not strand the first tool, and both rotate the same token.
+func TestToken_SecondLoginDoesNotStrandTheFirstTool(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	installFakePKs(f)
+	a, b := registerClient(t, f), registerClient(t, f)
+	login := func(cid string) tokenBody {
+		state, cookie := startAuthorize(t, f, cid)
+		w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+		code := mustQuery(t, w.Header().Get("Location"), "code")
+		var tb tokenBody
+		_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, map[string]string{"code": code}), formHdr).Body.Bytes(), &tb)
+		return tb
+	}
+	first := login(a)
+	second := login(b)
+	refresh := func(cid, rt string) int {
+		return f.do(t, "POST", "/platform/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}.Encode(), formHdr).Code
+	}
+	if c := refresh(a, first.RefreshToken); c != 200 {
+		t.Fatalf("first tool after the second login: %d", c)
+	}
+	if c := refresh(b, second.RefreshToken); c != 200 {
+		t.Fatalf("second tool: %d", c)
+	}
+	if len(f.dexSeen) != 2 || f.dexSeen[0] != "dex-rt-0" || f.dexSeen[1] != "dex-rt-0+" {
+		t.Fatalf("one shared Dex token, rotated in turn: %v", f.dexSeen)
+	}
+}
+
 // The IdP refuses (user disabled at Google, Dex session gone): the refresh
 // is invalid_grant, the oauth pk_ is revoked, and the presented token is
 // dead — the client has to log in again, where the IdP says no.
@@ -606,5 +640,16 @@ func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
 	f.dexRefresh = func(rt string) (string, error) { return rt, nil }
 	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
 		t.Fatalf("the refused refresh token must be gone: %d %s", w.Code, w.Body)
+	}
+	// Another session of the same user: no Dex token left → out without
+	// asking Dex.
+	seedCode(t, f, cid)
+	_ = f.store.Del(context.Background(), dexRefreshKind, "u@x.com")
+	var other tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &other)
+	dexCalls := len(f.dexSeen)
+	otherRefresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {other.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", otherRefresh, formHdr); w.Code != 400 || len(f.dexSeen) != dexCalls {
+		t.Fatalf("sibling session: %d %s dex calls %d→%d", w.Code, w.Body, dexCalls, len(f.dexSeen))
 	}
 }

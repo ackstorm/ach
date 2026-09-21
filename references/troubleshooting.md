@@ -689,8 +689,9 @@ token (`offline_access`), so the first suspect is the **IdP**: the user was
 disabled at Google/Azure, or Dex's own refresh token expired
 (`expiry.refreshTokens` in the Dex config — `validIfNotUsedFor`,
 `absoluteLifetime`). platform-api logs `oauth: identity provider refused
-the refresh; session ended` and revokes the user's oauth `pk_` (their other
-sessions die at their own 1h). Otherwise: the ACH refresh token expired
+the refresh; sessions ended` and revokes the user's oauth `pk_` (Dex keeps
+ONE refresh token per user+client, so ACH keeps one per user shared by all
+their tools; the other tools fail their next refresh without asking Dex). Otherwise: the ACH refresh token expired
 (`ACH_OAUTH_REFRESH_TTL`), was rotated by another process (single-use — a
 second copy of the profile on another machine races the first), or Redis
 was flushed. Fix: `ach-cli login` again; for a tool, its `… mcp login`
