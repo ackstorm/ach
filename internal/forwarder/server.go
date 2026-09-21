@@ -23,10 +23,6 @@ import (
 // + C2) that replaced the controller-runtime informers — the traffic
 // path no longer reads from the cached k8s client.
 type Deps struct {
-	// Identity is the identity profile: no Environments, no policies —
-	// /mcp and /a2a forward the resolved identity like the catch-all does
-	// (no precheck, no BIP JWT). BIPResolver/EnvProvider/TeamsResolver are nil.
-	Identity      bool
 	BIPResolver   proxy.BIPResolver
 	EnvProvider   precheck.EnvProvider
 	Resolver      keystore.Resolver
@@ -73,8 +69,7 @@ func New(deps Deps) http.Handler {
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 		},
-		BaseURL:  deps.BaseURL,
-		Identity: deps.Identity,
+		BaseURL: deps.BaseURL,
 	}
 
 	// OAuth discovery, ANONYMOUS by design (a client fetches these precisely

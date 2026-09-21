@@ -35,23 +35,3 @@ func TestForwarderConfig_CredentialHeaders(t *testing.T) {
 		t.Fatalf("authorization in the list must be refused: %v", err)
 	}
 }
-
-func TestForwarderConfig_Profile(t *testing.T) {
-	setRequiredForwarderEnv(t)
-	if cfg, err := validateForwarderConfig(); err != nil || cfg.Profile != "full" {
-		t.Fatalf("default: %+v %v", cfg, err)
-	}
-	t.Setenv("ACH_PROFILE", "identity")
-	if _, err := validateForwarderConfig(); err == nil {
-		t.Fatal("identity without ACH_LITELLM_BASE_URL must fail")
-	}
-	t.Setenv("ACH_LITELLM_BASE_URL", "http://litellm:4000")
-	if cfg, err := validateForwarderConfig(); err != nil || cfg.Profile != "identity" ||
-		cfg.LiteLLMBaseURL != "http://litellm:4000" {
-		t.Fatalf("identity: %+v %v", cfg, err)
-	}
-	t.Setenv("ACH_PROFILE", "lite")
-	if _, err := validateForwarderConfig(); err == nil {
-		t.Fatal("unknown profile must fail")
-	}
-}

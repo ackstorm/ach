@@ -99,16 +99,21 @@ hydrate sends). Included by BOTH Pods that can host the container (operator
 sidecar, standalone).
 */}}
 {{/*
-ach.full — "true" for profile full, "" for identity. The single switch every
-governance-only template gates on (CRDs, operator, content-service).
+ach.rejectIdentityProfile — the `identity` deployment profile was removed
+(one supported topology). A leftover `profile: identity` in a values file
+must not silently render the full topology; `profile: full` is tolerated
+for upgrades.
 */}}
-{{- define "ach.full" -}}
-{{- if not (has .Values.profile (list "full" "identity")) }}{{ fail (printf "profile must be full or identity (got %q)" .Values.profile) }}{{ end -}}
-{{- if ne .Values.profile "identity" }}true{{ end -}}
+{{- define "ach.rejectIdentityProfile" -}}
+{{- if hasKey .Values "profile" }}
+{{- if ne .Values.profile "full" }}
+{{- fail (printf "profile=%q is no longer supported: the identity profile was removed. Delete `profile` from your values and install the complete chart (operator + CRDs); publish LiteLLM's own UI/API on its own host." .Values.profile) }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{- define "ach.contentServiceJWTVolume" -}}
-{{- if and .Values.contentService.enabled (include "ach.full" .) }}
+{{- if .Values.contentService.enabled }}
 - name: jwt-signing-keys
   secret:
     secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}

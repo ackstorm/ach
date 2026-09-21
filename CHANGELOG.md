@@ -11,6 +11,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ### Changed
 - Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
 
+### Removed
+- The `identity` deployment profile (`ACH_PROFILE`, chart `profile:`). One
+  supported topology remains (operator + CRDs + platform-api + forwarder +
+  content-service + gateway). A values file still carrying `profile: identity`
+  fails the Helm render with migration guidance; `profile: full` is tolerated.
+
 ### Added
 - Add singular `channels[].cleanup` hooks with independent environment forwarding and secret aliases.
 - `ACHAgent.spec.channels[].prepare`: a per-invocation workspace hook rendered to the

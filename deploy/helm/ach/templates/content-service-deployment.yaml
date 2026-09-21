@@ -1,4 +1,4 @@
-{{- if and .Values.contentService.enabled (include "ach.full" .) }}
+{{- if .Values.contentService.enabled }}
 ---
 # Content-service topology is toggled by contentService.standalone:
 #   - false (default): co-located with the operator in the same Pod

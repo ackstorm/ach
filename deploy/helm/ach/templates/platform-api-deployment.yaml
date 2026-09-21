@@ -73,8 +73,7 @@ spec:
             name: ach-platform-api-admins
         # The OAuth AS — the only login — signs access tokens with the same
         # Ed25519 seed the forwarder verifies with; platform-api reads it as
-        # files (no k8s client). The operator (or, in the identity profile,
-        # the forwarder) mints the Secret on boot.
+        # files (no k8s client). The operator mints the Secret on boot.
         - name: jwt-signing-keys
           secret:
             secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
