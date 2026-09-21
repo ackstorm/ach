@@ -40,6 +40,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -441,25 +442,52 @@ func assertReaperReapsRevokedAndKeepsForeign(t *testing.T, base, litellmURL, llD
 
 	runOrphanTickInProcess(t, litellmURL, base)
 
-	ll := litellm.NewRESTClient(litellmURL, sc5MasterKey, logr.Discard())
-	keys, err := ll.ListUserKeys(ctx, ekStateUserEmail)
-	if err != nil {
-		t.Fatalf("assertReaperReapsRevokedAndKeepsForeign: ListUserKeys: %v", err)
-	}
-	var sawOrphan, sawForeign bool
-	for _, k := range keys {
-		if achID, _ := k.Metadata["ach_key_id"].(string); achID == revokedKeyID {
-			sawOrphan = true
-		}
-		if marker, _ := k.Metadata["test_marker"].(string); marker == foreignMarker {
-			sawForeign = true
-		}
-	}
-	if sawOrphan {
+	// Probe each seeded key directly by its own plaintext (GET /key/info?key=)
+	// rather than listing the user's keys: GET /key/list has no page/size
+	// param wired through internal/litellm.RESTClient.ListUserKeys, so it
+	// only ever returns LiteLLM's default first page — on this shared,
+	// repeatedly-reused kept cluster ekStateUserEmail accumulates keys
+	// across runs (>50 seen in practice), which silently truncated the
+	// list-based check before this fix and made the foreign key look
+	// "gone" when it had simply fallen off page 1. /key/info is a
+	// single-key lookup and immune to that.
+	if litellmKeyExists(t, litellmURL, orphanPlain) {
 		t.Fatalf("AC-13: LiteLLM key stamped ach_key_id=%s (revoked ACH row) survived the reaper tick", revokedKeyID)
 	}
-	if !sawForeign {
+	if !litellmKeyExists(t, litellmURL, foreignPlain) {
 		t.Fatalf("AC-13: foreign LiteLLM key (marker=%s, no ach_key_id) did not survive the reaper tick", foreignMarker)
+	}
+}
+
+// litellmKeyExists probes ONE specific LiteLLM key by its own plaintext via
+// GET /key/info?key=<plaintext> (master-key admin call) — 200 if it still
+// exists, 404 if it is gone. Unlike GET /key/list (ListUserKeys), this is a
+// single-key lookup and is immune to LiteLLM's default first-page-only
+// pagination on a user with many keys.
+func litellmKeyExists(t *testing.T, litellmURL, plaintext string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		litellmURL+"/key/info?key="+url.QueryEscape(plaintext), nil)
+	if err != nil {
+		t.Fatalf("litellmKeyExists: build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sc5MasterKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("litellmKeyExists: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true
+	case http.StatusNotFound:
+		return false
+	default:
+		t.Fatalf("litellmKeyExists: GET /key/info unexpected status=%d", resp.StatusCode)
+		return false
 	}
 }
 
@@ -472,13 +500,13 @@ func TestEkStateModel(t *testing.T) {
 	phase4SuiteGuard(t)
 	base := "http://" + phase4GatewayAuthority(t)
 	jwt := oauthLogin(t, base, "").Access
-	k := keysAPI{t: t, base: base, jwt: jwt}
 
 	llPort := startPortForward(t, sc5LiteLLMNS, sc5LiteLLMSvc, 4000)
 	llURL := fmt.Sprintf("http://127.0.0.1:%d", llPort)
 	team := teamIDByAlias(t, litellm.NewRESTClient(llURL, sc5MasterKey, logr.Discard()), demoAuthorizedTeamAlias)
 
 	t.Run("AC-10_expiry", func(t *testing.T) {
+		k := keysAPI{t: t, base: base, jwt: jwt} // keysAPI.do calls t.Fatalf on the goroutine it's given (Go testing: FailNow must run on the goroutine of the *testing.T that owns it) — rebind per subtest, never close over the outer t.
 		if code, resp := k.do("POST", "/platform/keys",
 			map[string]any{"environment": "demo", "name": "past", "expires_at": "2020-01-01T00:00:00Z"}); code != http.StatusBadRequest {
 			t.Fatalf("create with past expires_at: status=%d body=%v", code, resp)
@@ -507,6 +535,7 @@ func TestEkStateModel(t *testing.T) {
 	})
 
 	t.Run("AC-08_suspend_bound_AC-14_reaper_survival_resume", func(t *testing.T) {
+		k := keysAPI{t: t, base: base, jwt: jwt} // see AC-10_expiry: rebind per subtest.
 		id, key := k.create("demo", "susp", nil)
 		if got := forwarderStatus(t, base, key); got != http.StatusOK {
 			t.Fatalf("warm the resolver cache: forwarder status=%d", got)
@@ -541,6 +570,7 @@ func TestEkStateModel(t *testing.T) {
 	})
 
 	t.Run("AC-09_access_loss_invalid_recovery_AC-07_suspended_no_access", func(t *testing.T) {
+		k := keysAPI{t: t, base: base, jwt: jwt} // see AC-10_expiry: rebind per subtest.
 		id, key := k.create("demo", "inv", nil)
 		idS, _ := k.create("demo", "inv-susp", nil)
 		if code := k.suspend(idS); code != http.StatusNoContent {
@@ -591,6 +621,7 @@ func TestEkStateModel(t *testing.T) {
 	})
 
 	t.Run("AC-11_revoke_idempotent_AC-13_reaper_reaps_revoked", func(t *testing.T) {
+		k := keysAPI{t: t, base: base, jwt: jwt} // see AC-10_expiry: rebind per subtest.
 		id, key := k.create("demo", "rev", nil)
 		if code := k.suspend(id); code != http.StatusNoContent {
 			t.Fatalf("pre-suspend: status=%d want=204", code)

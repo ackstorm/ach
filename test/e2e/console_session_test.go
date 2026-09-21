@@ -137,7 +137,13 @@ func TestConsoleSession(t *testing.T) {
 		t.Fatalf("CLI refresh after console logout: %d", resp.StatusCode)
 	}
 	// D-18 / AC-24 through the public origin: nothing of LiteLLM's own
-	// surface, and "/" is the console (or its not-built notice), never LiteLLM.
+	// surface is reachable through ACH. chi's NotFound is the console SPA
+	// fallback (internal/platformapi/console/spa.go), so an unknown
+	// non-API path — like these LiteLLM-shaped ones — now answers 200 with
+	// ACH's own index.html (standard client-side-routing behavior), not a
+	// 404; that's fine, D-18's intent is "never LiteLLM", not "always 404".
+	// Accept either a 404 or a 200 whose body IS the ACH console (ui/index.html:
+	// <title>ACH Console</title>), and fail on any body that mentions LiteLLM.
 	for _, p := range []string{"/ui", "/ui/", "/key/list", "/health", "/model/info", "/v2/anything"} {
 		resp, err := http.Get(base + p)
 		if err != nil {
@@ -145,8 +151,11 @@ func TestConsoleSession(t *testing.T) {
 		}
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != 404 {
-			t.Fatalf("%s reachable through ACH: %d %s", p, resp.StatusCode, truncate(b, 200))
+		if resp.StatusCode != 404 && !strings.Contains(string(b), "<title>ACH Console</title>") {
+			t.Fatalf("%s reachable through ACH: %d %s (neither 404 nor the ACH console)", p, resp.StatusCode, truncate(b, 200))
+		}
+		if bodyMentionsLiteLLM(b) {
+			t.Fatalf("%s is LiteLLM: %s", p, truncate(b, 200))
 		}
 	}
 	resp, err = http.Get(base + "/")
@@ -155,7 +164,18 @@ func TestConsoleSession(t *testing.T) {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if strings.Contains(strings.ToLower(string(b)), "litellm") {
+	if bodyMentionsLiteLLM(b) {
 		t.Fatalf("/ is LiteLLM: %s", truncate(b, 200))
 	}
+}
+
+// bodyMentionsLiteLLM reports whether b mentions LiteLLM's own surface.
+// Ignores the literal substring "alitellm": the ACH console's own theme
+// localStorage key (ui/index.html: localStorage.getItem('alitellm-theme'))
+// and this repo's alitellm-operator upstream-sync naming both legitimately
+// contain it, and neither is LiteLLM's surface leaking through ACH — a
+// bare case-insensitive "litellm" match false-positives on the console's
+// OWN body.
+func bodyMentionsLiteLLM(b []byte) bool {
+	return strings.Contains(strings.ReplaceAll(strings.ToLower(string(b)), "alitellm", ""), "litellm")
 }
