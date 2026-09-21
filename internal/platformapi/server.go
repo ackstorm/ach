@@ -132,6 +132,7 @@ func New(deps Deps) http.Handler {
 		Audit:            deps.Audit,
 		Logger:           deps.Logger,
 		Namespace:        deps.Namespace,
+		Issuer:           deps.BaseURL,
 		InsecureCookie:   deps.InsecureCookie,
 	}
 	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
@@ -170,6 +171,7 @@ func New(deps Deps) http.Handler {
 			Audit:            deps.Audit,
 			Logger:           deps.Logger,
 			Namespace:        deps.Namespace,
+			Issuer:           deps.BaseURL,
 		}
 		envkeys.MountKeys(r, envkeysDeps)
 

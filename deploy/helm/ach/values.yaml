@@ -95,10 +95,12 @@ operator:
     accessMode: ReadWriteOnce
     storageClassName: ""
   # ─── orphan-cleanup loop (OP-15 / Hub §18.4) ───
-  # The loop revokes ONLY ACH-minted LiteLLM keys (metadata.ach_key_id
-  # present) that ACH no longer tracks as active; foreign keys (manual /
-  # tf-* / token-factory) are never touched. Tune via the top-level
-  # `extraEnv` (these are operator-only; other modes ignore them):
+  # The loop revokes ONLY LiteLLM keys THIS release minted (metadata
+  # ach_key_id present AND ach_issuer == this ACH_BASE_URL) that it no
+  # longer tracks as active; foreign keys (manual / tf-* / token-factory)
+  # and keys of another ACH release on the same LiteLLM are never touched.
+  # ACH_BASE_URL is therefore required on the operator. Tune via the
+  # top-level `extraEnv` (these are operator-only; other modes ignore them):
   #   ACH_ORPHAN_CLEANUP_INTERVAL   (default 1h; floor 5m) — tick cadence.
   #       Emergency stop: set very high (e.g. 8760h) to neuter the loop for
   #       the pod's lifetime without a rebuild (first tick fires at

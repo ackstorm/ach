@@ -88,6 +88,7 @@ func (deps Deps) MintPK(ctx context.Context, email, userID, purpose string) (str
 			"ach_key_type":    "pk",
 			"ach_owner_email": email,
 			"ach_purpose":     purpose,
+			"ach_issuer":      deps.Issuer,
 		},
 	})
 	if err != nil {

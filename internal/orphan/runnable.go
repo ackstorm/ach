@@ -94,6 +94,12 @@ type Runnable struct {
 	// but NEVER call RevokeKey. A reversible, image-level neutralize
 	// cleaner than the year-long-interval emergency knob.
 	DryRun bool
+	// Issuer is this release's ACH_BASE_URL. Every key ACH mints carries it
+	// as metadata.ach_issuer; the loop revokes ONLY keys stamped with the
+	// SAME issuer — two releases sharing one LiteLLM (separate ACH DBs)
+	// otherwise reap each other's live keys as orphans. A key without the
+	// stamp (minted before it existed) is left alone like a foreign one.
+	Issuer string
 	// MaxRevoke (ACH_ORPHAN_CLEANUP_MAX_REVOKE) is the B2 circuit-breaker
 	// cap; ≤0 means DefaultMaxRevoke. A single tick with more candidates
 	// than this aborts revocation entirely (the batch is the alarm).
@@ -115,13 +121,14 @@ type Runnable struct {
 // is harmless to the loop itself — the OrphanAgeFloor=10m check inside
 // TickOnce defers revocation regardless — but produces wasted ticks.
 func NewRunnable(client litellm.Client, dbPool *pgxpool.Pool, audit *slog.Logger,
-	interval time.Duration, dryRun bool, maxRevoke int, log logr.Logger) *Runnable {
+	interval time.Duration, dryRun bool, maxRevoke int, issuer string, log logr.Logger) *Runnable {
 	return &Runnable{
 		Client:     client,
 		DB:         dbPool,
 		Audit:      audit,
 		Interval:   interval,
 		DryRun:     dryRun,
+		Issuer:     issuer,
 		MaxRevoke:  maxRevoke,
 		Log:        log,
 		ListUsers:  db.ListACHManagedLitellmUsers,
@@ -243,6 +250,11 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			achID, _ := k.Metadata["ach_key_id"].(string)
 			if achID == "" {
 				continue // FOREIGN key — ACH did not mint it; leave it
+			}
+			// Ownership is per release: another ACH on this LiteLLM stamps
+			// its own issuer and tracks its keys in its own DB.
+			if issuer, _ := k.Metadata["ach_issuer"].(string); issuer != r.Issuer {
+				continue
 			}
 			// Skip if ACH still tracks it as active. The membership join is
 			// ach_key_id ↔ key_id (both pkid_*/ekid_*, ListActiveACHKeyIDs);

@@ -96,6 +96,8 @@ type Deps struct {
 	Audit            *slog.Logger
 	Logger           *slog.Logger
 	Namespace        string
+	// Issuer is ACH_BASE_URL, stamped as metadata.ach_issuer (see auth.Deps).
+	Issuer string
 }
 
 // CreateRequest is the POST /platform/keys request body shape (D-16
@@ -463,6 +465,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 			"ach_key_type":    "ek",
 			"ach_owner_email": cr.keyCtx.OwnerEmail,
 			"ach_environment": env.Name,
+			"ach_issuer":      deps.Issuer,
 		},
 	}
 	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, keyReq)

@@ -693,16 +693,21 @@ transient state there; a flush logs every OAuth client out). Fix:
 ### ❌ OAuth session works at login, model call answers LiteLLM `Invalid proxy server token passed … Unable to find token in cache or LiteLLM_VerificationTokenTable`
 
 The user's `purpose='oauth'` `personal_keys` row points at a LiteLLM key
-LiteLLM no longer has: deleted in its UI, LiteLLM DB reset, or **two ACH
-releases sharing one ACH Postgres but pointing at different LiteLLMs** (the
-row minted on one is replayed against the other). Since 0.9.8 `/token`
-checks the key with `GET /key/list` on every issue (login and each 1h
-refresh) and re-mints a missing one, so the session heals itself at the
-next refresh — a log line `oauth: litellm no longer has the oauth pk_ key;
-re-minting` confirms it. If it re-mints on every refresh, the topology is
-the cause: two releases must not share `ACH_DB_URL` with different
-`ACH_LITELLM_BASE_URL`. Manual unblock on an older release: revoke the row
-(`DELETE /platform/keys/{id}?force=true`, pk self-revoke) and log in again.
+LiteLLM no longer has. Seen 2026-09-21: **two ACH releases (full +
+identity, separate DBs) on one LiteLLM** — the full release's orphan
+reaper listed the shared user's keys, found the identity release's key
+(`ach_key_id` present, unknown to its own DB) and revoked it within the
+hour; the identity AS kept reusing the row (one oauth row per user), so a
+login that worked at first died on the next model call. Other causes: key
+deleted in LiteLLM's UI, LiteLLM DB reset. Since 0.9.8: keys carry
+`metadata.ach_issuer` (= `ACH_BASE_URL`) and the reaper revokes only its
+own release's (pre-0.9.8 keys have no stamp → never touched); `/token`
+also checks the key with `GET /key/list` on every issue (login and each 1h
+refresh) and re-mints a missing one — log line `oauth: litellm no longer
+has the oauth pk_ key; re-minting`. Manual unblock on an older release:
+revoke the row (`DELETE /platform/keys/{id}?force=true`, pk self-revoke)
+and log in again — and set `ACH_ORPHAN_CLEANUP_DRY_RUN=true` on the other
+release until it runs 0.9.8.
 
 ### ❌ OAuth login works, `/mcp/<name>` is 403
 

@@ -65,6 +65,9 @@ type Deps struct {
 	// Namespace composes the audit `actor` field per Hub §18.3:
 	// "<namespace>/<sso-email>". Sourced from POD_NAMESPACE (downward API).
 	Namespace string
+	// Issuer is ACH_BASE_URL, stamped on every minted LiteLLM key as
+	// metadata.ach_issuer: the orphan reaper revokes only its own release's.
+	Issuer string
 
 	// InsertPKFn is the DB-insert seam. Production wiring sets it to a
 	// closure around db.InsertPersonalKey(ctx, deps.Pool, row); unit tests

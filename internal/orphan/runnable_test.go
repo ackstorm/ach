@@ -118,6 +118,7 @@ func newTestRunnable(t *testing.T, fake *fakeLiteLLM) (*Runnable, *bytes.Buffer)
 		// Fresh registry per test: counters start at 0 and there is no
 		// global double-register panic across the suite.
 		Metrics:    NewMetrics(prometheus.NewRegistry()),
+		Issuer:     "https://ach.test",
 		ListUsers:  func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
 		ListKeyIDs: func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return nil, nil },
 	}
@@ -186,7 +187,7 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
 				KeyAlias:  "should-not-leak-into-audit",
-				Metadata:  map[string]any{"ach_key_id": "pkid-orphan"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-orphan", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -241,7 +242,7 @@ func TestRunnable_TickOnce_SkipTooNew(t *testing.T) {
 				Token:     "sk-too-new",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-5 * time.Minute),
-				Metadata:  map[string]any{"ach_key_id": "pkid-too-new"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-too-new", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -271,7 +272,7 @@ func TestRunnable_TickOnce_SkipNonOrphan(t *testing.T) {
 				Token:     "sk-active",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
-				Metadata:  map[string]any{"ach_key_id": "pkid-active"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-active", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -342,9 +343,9 @@ func TestRunnable_TickOnce_MixedUser(t *testing.T) {
 				{Token: "sk-foreign", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
 					Metadata: map[string]any{"source": "token-factory"}},
 				{Token: "sk-ach-orphan", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
-					Metadata: map[string]any{"ach_key_id": "pkid-gone"}},
+					Metadata: map[string]any{"ach_key_id": "pkid-gone", "ach_issuer": "https://ach.test"}},
 				{Token: "sk-ach-tracked", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
-					Metadata: map[string]any{"ach_key_id": "ekid-live"}},
+					Metadata: map[string]any{"ach_key_id": "ekid-live", "ach_issuer": "https://ach.test"}},
 			},
 		},
 	}
@@ -385,7 +386,7 @@ func TestRunnable_TickOnce_DryRun(t *testing.T) {
 				Token:     "sk-would-revoke",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
-				Metadata:  map[string]any{"ach_key_id": "pkid-would"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-would", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -428,7 +429,7 @@ func TestRunnable_TickOnce_EmptyActiveSetGuard(t *testing.T) {
 				Token:     "sk-ach-owned",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
-				Metadata:  map[string]any{"ach_key_id": "pkid-owned"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-owned", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -469,9 +470,9 @@ func TestRunnable_TickOnce_CircuitBreaker(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
 			"u1": {
-				{Token: "sk-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-1"}},
-				{Token: "sk-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-2"}},
-				{Token: "sk-3", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-3"}},
+				{Token: "sk-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-1", "ach_issuer": "https://ach.test"}},
+				{Token: "sk-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-2", "ach_issuer": "https://ach.test"}},
+				{Token: "sk-3", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-3", "ach_issuer": "https://ach.test"}},
 			},
 		},
 	}
@@ -516,7 +517,7 @@ func TestRunnable_TickOnce_DryRun_EmptyActiveSet(t *testing.T) {
 				Token:     "sk-guarded",
 				UserID:    "u1",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
-				Metadata:  map[string]any{"ach_key_id": "pkid-guarded"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-guarded", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -553,8 +554,8 @@ func TestRunnable_TickOnce_DryRun_CircuitBreaker(t *testing.T) {
 	fake := &fakeLiteLLM{
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
 			"u1": {
-				{Token: "sk-a", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-a"}},
-				{Token: "sk-b", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-b"}},
+				{Token: "sk-a", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-a", "ach_issuer": "https://ach.test"}},
+				{Token: "sk-b", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute), Metadata: map[string]any{"ach_key_id": "pkid-b", "ach_issuer": "https://ach.test"}},
 			},
 		},
 	}
@@ -629,9 +630,9 @@ func TestRunnable_TickOnce_RevokeFailureContinues(t *testing.T) {
 		userKeysByUser: map[string][]litellm.UserKeyInfo{
 			"u1": {
 				{Token: "sk-rf-1", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
-					Metadata: map[string]any{"ach_key_id": "pkid-rf-1"}},
+					Metadata: map[string]any{"ach_key_id": "pkid-rf-1", "ach_issuer": "https://ach.test"}},
 				{Token: "sk-rf-2", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
-					Metadata: map[string]any{"ach_key_id": "pkid-rf-2"}},
+					Metadata: map[string]any{"ach_key_id": "pkid-rf-2", "ach_issuer": "https://ach.test"}},
 			},
 		},
 		revokeErr: errors.New("litellm: revoke 503"),
@@ -713,7 +714,7 @@ func TestRunnable_AuditEventShape(t *testing.T) {
 				UserID:    "user-abc",
 				CreatedAt: time.Now().Add(-20 * time.Minute),
 				KeyAlias:  "alias-must-not-be-in-audit",
-				Metadata:  map[string]any{"ach_key_id": "pkid-shape"},
+				Metadata:  map[string]any{"ach_key_id": "pkid-shape", "ach_issuer": "https://ach.test"},
 			}},
 		},
 	}
@@ -842,3 +843,26 @@ func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.A
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
+
+// TestRunnable_TickOnce_OtherIssuerIsNotOurs: a key another ACH release
+// minted on the same LiteLLM (its own ach_issuer), or one minted before the
+// stamp existed, is never a candidate — only this release's own keys are.
+func TestRunnable_TickOnce_OtherIssuerIsNotOurs(t *testing.T) {
+	fake := &fakeLiteLLM{
+		userKeysByUser: map[string][]litellm.UserKeyInfo{
+			"u1": {
+				{Token: "sk-other", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "pkid-other-release", "ach_issuer": "https://api.other"}},
+				{Token: "sk-unstamped", UserID: "u1", CreatedAt: time.Now().Add(-20 * time.Minute),
+					Metadata: map[string]any{"ach_key_id": "pkid-pre-stamp"}},
+			},
+		},
+	}
+	r, _ := newTestRunnable(t, fake)
+	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return []string{"u1"}, nil }
+	r.ListKeyIDs = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) { return []string{"pkid-live"}, nil }
+	r.TickOnce(context.Background())
+	if len(fake.revokedKeys) != 0 {
+		t.Fatalf("revoked keys of another issuer: %v, want none", fake.revokedKeys)
+	}
+}

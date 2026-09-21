@@ -452,8 +452,13 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to add LiteLLM snapshot Runnable: %w", err)
 	}
 
+	// The reaper owns only keys stamped with this release's ACH_BASE_URL.
+	orphanIssuer, err := config.MustEnvNonEmpty("ACH_BASE_URL")
+	if err != nil {
+		return fmt.Errorf("ACH_BASE_URL required (orphan-cleanup key ownership): %w", err)
+	}
 	orphanRunnable := orphan.NewRunnable(realLiteLLM, dbPool, auditLog, orphanInterval,
-		orphanDryRun, orphanMaxRevoke, ctrl.Log.WithName("orphan-cleanup"))
+		orphanDryRun, orphanMaxRevoke, orphanIssuer, ctrl.Log.WithName("orphan-cleanup"))
 	// Register the orphan-cleanup collectors on controller-runtime's
 	// global metrics Registry so the operator /metrics surfaces them.
 	orphanRunnable.Metrics = orphan.NewMetrics(crmetrics.Registry)

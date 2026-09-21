@@ -244,6 +244,7 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		Issuer:           "https://ach.test",
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -271,6 +272,9 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 	if got.KeyAlias == "" || got.KeyAlias != got.Metadata["ach_key_id"] {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want it to equal metadata ach_key_id %q",
 			got.KeyAlias, got.Metadata["ach_key_id"])
+	}
+	if got.Metadata["ach_issuer"] != "https://ach.test" {
+		t.Fatalf("KeyGenerate metadata lacks this release's ach_issuer: %v", got.Metadata)
 	}
 	if !strings.HasPrefix(got.KeyAlias, keys.EkidKeyIDPrefix) {
 		t.Fatalf("KeyGenerate KeyAlias = %q, want %s prefix", got.KeyAlias, keys.EkidKeyIDPrefix)
