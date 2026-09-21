@@ -594,7 +594,9 @@ func TestAuthn_PassthroughHeaderKeptNoIdentity(t *testing.T) {
 	}
 }
 
-func TestAuthn_AuthorizationIsOnlyOurOAuthToken(t *testing.T) {
+// Authorization: our JWS is resolved (and removed); anything else is not
+// ours and passes untouched; a JWS that does not verify is 401.
+func TestAuthn_AuthorizationResolvesOnlyOurOAuthToken(t *testing.T) {
 	res := &slotResolver{info: pkInfo()} // stands in for the OAuth resolver: any JWS "verifies"
 	var seen http.Header
 	req := httptest.NewRequest("GET", "/v1/models", nil)
@@ -603,12 +605,19 @@ func TestAuthn_AuthorizationIsOnlyOurOAuthToken(t *testing.T) {
 	if rec.Code != 200 || res.last != "aaa.bbb.ccc" || seen.Get("Authorization") != "" {
 		t.Fatalf("our token: %d resolved=%q auth-after=%q", rec.Code, res.last, seen.Get("Authorization"))
 	}
+	// Not ours (LiteLLM UI's own bearer, a raw key, Basic): no lookup, no
+	// identity, forwarded untouched — the upstream authenticates it.
 	for _, v := range []string{"Bearer pk-x", "Bearer sk-raw-123", "Basic dXNlcjpwYXNz"} {
 		res.last = ""
+		var hasKC bool
 		req := httptest.NewRequest("GET", "/v1/models", nil)
 		req.Header.Set("Authorization", v)
-		if rec := serveAuthn(res, opts(achKey), req, nil); rec.Code != 401 || res.last != "" {
-			t.Fatalf("%q: %d resolved=%q, want 401 and no lookup", v, rec.Code, res.last)
+		rec := serveAuthn(res, opts(achKey), req, func(_ http.ResponseWriter, r *http.Request) {
+			_, hasKC = KeyContextFromCtx(r.Context())
+			seen = r.Header.Clone()
+		})
+		if rec.Code != 200 || res.last != "" || hasKC || seen.Get("Authorization") != v {
+			t.Fatalf("%q: %d resolved=%q kc=%v after=%q, want forwarded untouched", v, rec.Code, res.last, hasKC, seen.Get("Authorization"))
 		}
 	}
 	unknown := &slotResolver{}
@@ -619,10 +628,10 @@ func TestAuthn_AuthorizationIsOnlyOurOAuthToken(t *testing.T) {
 	}
 }
 
-// Optional (the catch-all): only declared slots are ACH's business. A
-// foreign Authorization — LiteLLM UI's own bearer on /health/license — is
-// forwarded untouched; an invalid declared credential is still a 401.
-func TestAuthn_OptionalActsOnlyOnDeclaredSlots(t *testing.T) {
+// Optional (the catch-all): nothing required — anonymous goes through; a
+// foreign Authorization goes through like everywhere; an invalid declared
+// credential is still a 401.
+func TestAuthn_OptionalLetsAnonymousThrough(t *testing.T) {
 	res := &slotResolver{} // every credential resolves to "unknown"
 	o := opts(achKey)
 	o.Optional = true
@@ -634,7 +643,7 @@ func TestAuthn_OptionalActsOnlyOnDeclaredSlots(t *testing.T) {
 	if rec := serveAuthn(res, o, httptest.NewRequest("GET", "/health", nil), capture); rec.Code != 200 || hasKC || hasRaw {
 		t.Fatalf("anonymous: %d kc=%v raw=%v", rec.Code, hasKC, hasRaw)
 	}
-	for _, v := range []string{"Bearer sk-foreign", "Bearer aaa.bbb.ccc", "Basic dXNlcjpwYXNz"} {
+	for _, v := range []string{"Bearer sk-foreign", "Basic dXNlcjpwYXNz"} {
 		var seen http.Header
 		req := httptest.NewRequest("GET", "/health/license", nil)
 		req.Header.Set("Authorization", v)
@@ -643,10 +652,14 @@ func TestAuthn_OptionalActsOnlyOnDeclaredSlots(t *testing.T) {
 			t.Fatalf("Authorization %q on the catch-all: %d resolved=%q after=%q, want untouched", v, rec.Code, res.last, seen.Get("Authorization"))
 		}
 	}
-	req := httptest.NewRequest("GET", "/health", nil)
-	req.Header.Set("x-ach-key", "pk-revoked")
-	if rec := serveAuthn(res, o, req, nil); rec.Code != 401 {
-		t.Fatalf("invalid declared credential must not pass: %d", rec.Code)
+	// Shaped like ours but not verifying (an expired ACH token): ours to
+	// judge, 401 — never LiteLLM's bare 401.
+	for h, v := range map[string]string{"x-ach-key": "pk-revoked", "Authorization": "Bearer aaa.bbb.ccc"} {
+		req := httptest.NewRequest("GET", "/health", nil)
+		req.Header.Set(h, v)
+		if rec := serveAuthn(res, o, req, nil); rec.Code != 401 {
+			t.Fatalf("%s=%s must not pass: %d", h, v, rec.Code)
+		}
 	}
 }
 

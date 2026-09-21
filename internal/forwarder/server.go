@@ -108,10 +108,9 @@ func New(deps Deps) http.Handler {
 
 	// Catch-all: everything else LiteLLM serves (/ui, /sso, /key/*, /model/*,
 	// /anthropic/*, /health, …) when ACH fronts the whole API host. The
-	// ACH acts only on the declared slots here — one present is resolved
-	// and rewritten (or passed raw); invalid is still a 401. With none, the
-	// request is forwarded untouched, Authorization included (LiteLLM's UI
-	// carries its own bearer): LiteLLM decides.
+	// Same Authn rules as the owned families, except nothing is required:
+	// a request with no credential at all is forwarded anonymously and
+	// LiteLLM decides.
 	r.Group(func(r chi.Router) {
 		opts := deps.AuthnOptions
 		opts.Optional = true

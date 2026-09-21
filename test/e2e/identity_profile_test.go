@@ -86,11 +86,16 @@ func TestIdentityProfile(t *testing.T) {
 		}
 	})
 
-	t.Run("authorization_is_only_our_token", func(t *testing.T) {
-		for _, v := range []string{"Bearer " + sc5MasterKey, "Bearer pk-not-a-slot"} {
-			if code, _, _ := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": v}, ""); code != 401 {
-				t.Fatalf("Authorization %q: %d, want 401", v, code)
-			}
+	// Authorization that is not our token is not ours to judge: it reaches
+	// LiteLLM untouched (its UI does exactly this on /v1/*) and LiteLLM
+	// decides — its master key works, a made-up value is its 401.
+	t.Run("authorization_not_ours_reaches_litellm", func(t *testing.T) {
+		if code, _, raw := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer " + sc5MasterKey}, ""); code != 200 {
+			t.Fatalf("LiteLLM master key in Authorization: %d %s", code, raw)
+		}
+		code, hdr, _ := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer pk-not-a-slot"}, "")
+		if code != 401 || hdr.Get("WWW-Authenticate") != "" {
+			t.Fatalf("made-up bearer must be LiteLLM's 401, not ACH's challenge: %d %q", code, hdr.Get("WWW-Authenticate"))
 		}
 	})
 
