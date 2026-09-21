@@ -33,4 +33,7 @@ jobs:
             if [ "${{ matrix.deps }}" = "latest" ]; then
               go get -u -t ./...
             fi
-            make test-full
+            # The sandbox has no docker: run the targets natively (the same
+            # short-circuit scripts/dev.sh sets inside the devtools container).
+            # controller-gen / setup-envtest self-install into ./bin.
+            ACH_IN_DEVTOOLS=1 make test-full
