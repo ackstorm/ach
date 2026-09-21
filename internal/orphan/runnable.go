@@ -291,11 +291,18 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 	// db.ListACHManagedLitellmUsers now enumerates ANY status, a strict
 	// superset of the ListManagedACHKeyIDs managed set (every non-revoked
 	// row), so a user with only revoked rows still gets enumerated and any
-	// LiteLLM key ACH no longer tracks for them is still caught. The
-	// empty-set branch itself is near-unreachable in practice: achKeySet and
-	// the user set both derive from the same tables, so an empty achKeySet
-	// implies an empty user set (early return above) except across a
-	// sub-tick read race.
+	// LiteLLM key ACH no longer tracks for them is still caught.
+	//
+	// True invariant: an empty achKeySet does NOT imply an empty user set —
+	// the two are no longer the same predicate (achKeySet = non-revoked
+	// rows only; the user set = ANY status). A DB whose every row is
+	// revoked, with one lingering LiteLLM key, is exactly the reap-as-
+	// revoke-retry shape: non-empty user set, empty achKeySet. Accepted
+	// corner: this guard fires in that case too and skips the tick, so the
+	// revoke retry does not run until a later tick observes a non-empty
+	// achKeySet (e.g. once another row is active/suspended/expired). It
+	// never revokes anything it shouldn't; it can only delay a legitimate
+	// reap.
 	if len(achKeySet) == 0 {
 		if r.DryRun {
 			r.previewDryRun(candidates) // still surface the batch this guard would abort

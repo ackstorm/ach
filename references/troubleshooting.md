@@ -897,7 +897,12 @@ make logs-operator | grep -E "orphan-cleanup: (revoked|WOULD revoke|WARNING)|ski
   emits `outcome=skipped_circuit_breaker`.
 - **Empty-active-set fail-safe (B1):** if the active key set is empty while
   ACH-owned candidates exist (the mis-wire shape), the tick skips with
-  `outcome=skipped_empty_active_set` rather than revoking the fleet.
+  `outcome=skipped_empty_active_set` rather than revoking the fleet. Accepted
+  corner (D-23): an empty managed set does NOT imply an empty user set (the
+  managed set is every non-revoked row; the user set enumerates ANY status),
+  so a DB whose every row is revoked plus one still-lingering LiteLLM key
+  also trips this guard — the reap-as-revoke-retry for that key is delayed
+  to a later tick, never lost, and nothing is ever wrongly revoked.
 WHY IT MATTERED: the original loop joined the opaque LiteLLM `token` against the
 `key_id` set — two non-intersecting namespaces — so every key older than the
 10-min floor under a managed user was mis-classified orphan and revoked. The

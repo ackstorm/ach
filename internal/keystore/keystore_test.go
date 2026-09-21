@@ -484,11 +484,12 @@ func TestCachedResolverSkipsCachingWhenTheWindowIsSpent(t *testing.T) {
 	release := make(chan struct{})
 	inner := &blockingResolver{info: &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk}, hold: release}
 	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
-	go func() { _, _ = r.Resolve(context.Background(), "ek_1") }()
+	done := make(chan struct{})
+	go func() { _, _ = r.Resolve(context.Background(), "ek_1"); close(done) }()
 	inner.waitInFlight(t)
 	now = now.Add(61 * time.Second)
 	close(release)
-	time.Sleep(50 * time.Millisecond)
+	<-done
 	if mr.Exists(cacheKeyPrefix + mustHash(t, pepper, "ek_1")) {
 		t.Fatal("an entry older than the ceiling was cached")
 	}

@@ -40,6 +40,11 @@ const sfLeaderTimeout = 10 * time.Second
 // plaintext NEVER appears in the key (T-03-05-03).
 const cacheKeyPrefix = "ach:key:"
 
+// CacheKeyPrefix exports cacheKeyPrefix for other packages that DEL the
+// same cache entry directly (e.g. platformapi/envkeys on suspend/resume)
+// so the namespace is declared once, not re-hardcoded per caller.
+const CacheKeyPrefix = cacheKeyPrefix
+
 // ErrEmptyPepper is returned by NewCachedResolver when the supplied
 // pepper is nil or zero-length. Mirrors credhash.ErrEmptyPepper — refuse
 // to construct rather than fail at first Resolve.
