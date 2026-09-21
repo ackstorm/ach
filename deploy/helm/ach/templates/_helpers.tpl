@@ -117,6 +117,13 @@ for upgrades.
 - name: jwt-signing-keys
   secret:
     secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
+    # optional: the operator MINTS this Secret on boot, and as a sidecar the
+    # content-service shares the operator's Pod — a required volume would
+    # keep that Pod in ContainerCreating forever on a fresh install (nothing
+    # can mint what the Pod waits for). The container still refuses to start
+    # without the files (jwt.LoadFromDir fails closed) and restarts until
+    # kubelet fills the volume once the Secret exists.
+    optional: true
 {{- end }}
 {{- end }}
 

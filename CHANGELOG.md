@@ -11,6 +11,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ### Changed
 - Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
 
+### Fixed
+- Fresh installs no longer deadlock on `ach-jwt-signing-keys`: the content-service
+  sidecar's Secret volume is `optional: true` (the operator mints that Secret on
+  boot from the same Pod).
+
 ### Removed
 - The `identity` deployment profile (`ACH_PROFILE`, chart `profile:`). One
   supported topology remains (operator + CRDs + platform-api + forwarder +

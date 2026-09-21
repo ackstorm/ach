@@ -163,11 +163,10 @@ kubectl -n ach-system logs deploy/ach-forwarder -c forwarder
 ✅ The forwarder refuses to start without `ach-jwt-signing-keys`
 (FWD-09 — no in-cluster fallback, no implicit zero-key). The Secret
 must carry two keys: `current.kid` (short ASCII id) and `current.seed`
-(32 random bytes). `scripts/cluster.sh hydrate_fixtures` seeds a fresh
-(kid=`dev-<timestamp>`, seed=`openssl rand 32`) pair on every
-`cluster.sh up` if the Secret is absent; production deploys must
-provision it explicitly (e.g. ExternalSecrets / SealedSecrets — never
-the dev seed). Manual seed if you need one:
+(32 random bytes). The operator mints it on boot
+(`internal/jwtkeys.EnsureSigningKeys`, mint-once), so on a fresh install
+the forwarder crashloops only until the operator is up. Manual seed if the
+operator cannot run (or to pin a known seed):
 ```bash
 jwttmp=$(mktemp -d)
 openssl rand 32 > "${jwttmp}/current.seed"
@@ -1026,6 +1025,16 @@ names are lower-cased): `kubectl -n ach-system get deploy ach-forwarder -o
 jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
 `Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
 own OAuth token; declare a `mode: passthrough` header for raw keys.
+
+### ❌ Fresh install: `ach-operator` + `ach-platform-api` stuck `ContainerCreating`, `FailedMount … secret "ach-jwt-signing-keys" not found`
+✅ Chart older than the fix below: the content-service SIDECAR in the operator
+Pod mounted `ach-jwt-signing-keys` as a required volume, and the operator is
+what mints that Secret → the Pod could never start. Fixed 2026-09-21 by making
+the sidecar's volume `optional: true` (`ach.contentServiceJWTVolume`); the
+sidecar restarts until the Secret exists. On an old chart, seed the Secret by
+hand (recipe above) and the Pods start. Hidden for days on the kept kind
+cluster because the Secret survived from earlier runs — only a clean
+`cluster-down && cluster-up` shows it.
 
 ### ❌ After `make clean-cache`: `kubectl` → "the server could not find the requested resource" / `current-context is not set`
 ✅ `.gocache/kube/config` (the kind kubeconfig devtools mounts) was wiped with
