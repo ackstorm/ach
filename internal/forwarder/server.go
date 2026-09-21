@@ -88,6 +88,7 @@ func New(deps Deps) http.Handler {
 
 	r.Group(func(r chi.Router) {
 		r.Use(pamw.Authn(deps.Resolver, nil, nil, deps.AuthnOptions)) // no allowlist, no audit
+		r.Use(proxy.EkOwnerGate(hdeps.PrecheckDeps))                  // D-30: ek_ owner must still hold access
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))
 		// The one D-18 exception: ach-agent prices its usage against

@@ -242,14 +242,39 @@ func TestEnforceTeams_PK(t *testing.T) {
 			t.Fatalf("unexpected err: %+v", errR)
 		}
 	})
-	t.Run("ek_ skips entirely", func(t *testing.T) {
+	// D-30 / AC-09: ek_ is no longer a short-circuit — an ek_ identifies its
+	// owner within one Environment, so it is gated by the same
+	// authorizedTeams ∩ Teams(owner_email) rule pk_ traffic passes, keyed on
+	// the row's owner_email instead of the caller's own.
+	t.Run("ek_ owner in authorized team -> nil", func(t *testing.T) {
 		d, _ := authzTestDeps(t)
-		ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk}
-		// teams resolver returning err MUST NOT be consulted for ek_:
-		d.Teams = &mockTeams{err: errors.New("should not be called")}
+		ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk, OwnerEmail: "owner@x.com"}
+		d.Teams = &mockTeams{teams: []string{"team-a"}}
 		errR := enforceTeams(context.Background(), d, ekInfo, envRow)
 		if errR != nil {
-			t.Fatalf("ek_ skip should return nil, got %+v", errR)
+			t.Fatalf("owner in team should return nil, got %+v", errR)
+		}
+	})
+	t.Run("ek_ owner lost access -> 403", func(t *testing.T) {
+		d, _ := authzTestDeps(t)
+		ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk, OwnerEmail: "owner@x.com"}
+		d.Teams = &mockTeams{teams: []string{"team-z"}}
+		errR := enforceTeams(context.Background(), d, ekInfo, envRow)
+		if errR == nil || errR.Code != "unauthorized_team" {
+			t.Fatalf("got errR=%+v, want unauthorized_team", errR)
+		}
+	})
+	t.Run("ek_ litellm down -> 503, not a verdict", func(t *testing.T) {
+		d, reg := authzTestDeps(t)
+		ekInfo := &keystore.KeyInfo{KeyID: "ekid_a", KeyType: keys.PrefixEk, OwnerEmail: "owner@x.com"}
+		d.Teams = &mockTeams{err: errors.New("net dial timeout")}
+		errR := enforceTeams(context.Background(), d, ekInfo, envRow)
+		if errR == nil || errR.Code != "litellm_unreachable" {
+			t.Fatalf("got errR=%+v, want litellm_unreachable", errR)
+		}
+		got := gatherCounter(t, reg, "ach_litellm_unreachable_total", map[string]string{"caller": "content_service"})
+		if got != 1 {
+			t.Fatalf("ach_litellm_unreachable_total counter=%v, want 1", got)
 		}
 	})
 	t.Run("litellm ErrNotFound → empty teams → 403", func(t *testing.T) {

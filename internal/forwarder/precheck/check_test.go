@@ -316,6 +316,46 @@ func TestCheckMCP_PC18_PkExcludesTerminatingFromGroups(t *testing.T) {
 	}
 }
 
+// D-30 / AC-09: CheckEkOwner — an ek_ is usable only while its owner still
+// holds the bound Environment's access, derived at use via the same
+// authorizedTeams ∩ TeamsResolver(owner_email) rule pk_ traffic passes.
+func TestCheckEkOwner(t *testing.T) {
+	env := envRow("demo", []string{"m"}, nil, []string{"team-a"}, false)
+	ek := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "demo"}
+	cases := []struct {
+		name  string
+		teams []string
+		err   error
+		want  error
+	}{
+		{"owner still in team", []string{"team-a"}, nil, nil},
+		{"owner lost access", []string{"team-z"}, nil, ErrUnauthorizedTeam},
+		{"owner has no teams", nil, nil, ErrUnauthorizedTeam},
+		{"litellm down is not access loss", nil, errors.New("boom"), ErrLiteLLMUnreachable},
+	}
+	for _, c := range cases {
+		deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: c.teams, err: c.err}}
+		if got := CheckEkOwner(context.Background(), ek, deps); !errors.Is(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+	// pk_ is not gated by CheckEkOwner — that rule already runs inside
+	// CheckMCP/CheckA2A and (via EkOwnerGate) is only ever invoked for ek_.
+	if err := CheckEkOwner(context.Background(), middleware.KeyContext{KeyType: keys.PrefixPk}, Deps{}); err != nil {
+		t.Fatal("pk_ is not gated here")
+	}
+	// Absent env → ErrUnauthorizedResource (D-15 narrow), never a 404.
+	if err := CheckEkOwner(context.Background(), ek, Deps{EnvProvider: newEnvProvider(), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}); !errors.Is(err, ErrUnauthorizedResource) {
+		t.Fatalf("absent env: %v", err)
+	}
+	// Terminating env cannot grant access either.
+	dying := envRow("dying", []string{"m"}, nil, []string{"team-a"}, true)
+	ekDying := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "dying"}
+	if err := CheckEkOwner(context.Background(), ekDying, Deps{EnvProvider: newEnvProvider(dying), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}); !errors.Is(err, ErrUnauthorizedResource) {
+		t.Fatalf("terminating env: %v", err)
+	}
+}
+
 // PC19: every error path returns a nil group set.
 func TestCheckMCP_PC19_ErrorPathsReturnNilGroups(t *testing.T) {
 	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)

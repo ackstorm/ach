@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
@@ -132,9 +133,15 @@ func TestNoCatchAll(t *testing.T) {
 	defer litellm.Close()
 	upstream, _ := url.Parse(litellm.URL)
 	h := forwarder.New(forwarder.Deps{
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		LiteLLMUpstream:  upstream,
-		Resolver:         ekOnlyResolver{},
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream: upstream,
+		Resolver:        ekOnlyResolver{},
+		// D-30: EkOwnerGate now runs on every authenticated family, so
+		// "ek_live"'s owner needs a real (env, teams) pair that grants
+		// access — otherwise the gate would 403/503 the ek_ probes below
+		// before this test's own route/catch-all assertions ever run.
+		EnvProvider:      staticEnvProvider{row: db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}},
+		TeamsResolver:    staticTeamsResolver{teams: []string{"team-a"}},
 		KeyEncryptionKey: make([]byte, 32),
 		AuthnOptions: pamw.AuthnOptions{Headers: []pamw.CredentialHeader{
 			{Name: "x-genai-api-key", Mode: pamw.ModePassthrough}, {Name: "x-ach-key", Mode: pamw.ModeResolve}}},
@@ -197,3 +204,24 @@ func (ekOnlyResolver) Resolve(_ context.Context, plaintext string) (*keystore.Ke
 }
 
 func (nilResolver) Resolve(context.Context, string) (*keystore.KeyInfo, error) { return nil, nil }
+
+// staticEnvProvider satisfies precheck.EnvProvider with a single fixed row —
+// enough for TestNoCatchAll's D-30 ek_ owner-access gate to pass.
+type staticEnvProvider struct{ row db.EnvironmentRow }
+
+func (s staticEnvProvider) Get(name string) (*db.EnvironmentRow, bool) {
+	if name != s.row.Name {
+		return nil, false
+	}
+	return &s.row, true
+}
+
+func (s staticEnvProvider) List() []db.EnvironmentRow { return []db.EnvironmentRow{s.row} }
+
+// staticTeamsResolver always returns the same fixed team set — enough to
+// intersect staticEnvProvider's AuthorizedTeams for the ek_ owner check.
+type staticTeamsResolver struct{ teams []string }
+
+func (s staticTeamsResolver) Resolve(context.Context, string) ([]string, error) {
+	return s.teams, nil
+}

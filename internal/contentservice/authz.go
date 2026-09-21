@@ -14,8 +14,8 @@
 //	resolveAuthn      — bearer header → keystore.KeyInfo. 400/401/500.
 //	resolveEnv        — x-ach-environment + bound-env policy + envcache.Get.
 //	                    400/403/404/500.
-//	enforceTeams      — pk_ only: TeamsResolver + intersection. 403/503.
-//	                    ek_ short-circuits to pass.
+//	enforceTeams      — pk_ AND ek_ (D-30): TeamsResolver + intersection
+//	                    against the owner's teams. 403/503.
 //	enforceAllowlist  — pure: name ∈ envRow.context.<kind>. 403.
 //	resolveContent    — kind-dispatched projection lookup (§12.3 CTE
 //	                    for plugin). 404/500.
@@ -147,7 +147,10 @@ func resolveEnv(d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.Env
 	return row, nil
 }
 
-// enforceTeams (gate 4 per D-04). pk_ only; ek_ short-circuits to nil.
+// enforceTeams (gate 4 per D-04). pk_ AND ek_ (D-30): the ek_ owner's
+// teams must intersect the bound Environment's authorizedTeams — an ek_
+// identifies its owner within one Environment, so it is gated the same
+// way pk_ is, keyed on the row's owner_email instead of the caller's own.
 //
 // Calls Deps.Teams.Resolve(ctx, info.OwnerEmail) and intersects the
 // returned []string with envRow.AuthorizedTeams. Empty intersection →
@@ -166,9 +169,6 @@ func resolveEnv(d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.Env
 // scan because env.AuthorizedTeams is typically small (≤ 50 elements
 // per CONTEXT canonical-refs).
 func enforceTeams(ctx context.Context, d Deps, info *keystore.KeyInfo, envRow *envcache.EnvRow) *errResp {
-	if info.KeyType != keys.PrefixPk {
-		return nil
-	}
 	userTeams, err := d.Teams.Resolve(ctx, info.OwnerEmail)
 	if err != nil {
 		if errors.Is(err, litellm.ErrNotFound) {

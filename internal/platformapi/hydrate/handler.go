@@ -241,10 +241,11 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// pk_ team-intersection check (Hub §15.1 step 4). ek_ skips — the
-		// binding already restricted the env (no live re-auth per §8.1).
-		// Admin pk_ callers ALSO skip — admins see every Environment.
-		if keyCtx.KeyType == keys.PrefixPk && !keyCtx.IsAdmin {
+		// Team-intersection check for pk_ (requested env) and ek_ (bound env,
+		// owner_email) — D-30. Admins skip: admin pk_ callers see every
+		// Environment; an ek_ never carries IsAdmin=true (Authn always sets
+		// it false for ek_ — admin endpoints reject ek_ upstream regardless).
+		if !keyCtx.IsAdmin {
 			teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
 			if err != nil {
 				if deps.Audit != nil {

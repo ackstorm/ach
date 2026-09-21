@@ -9,6 +9,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
+	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
 )
 
 // EnvProvider is the narrow contract precheck consumes from the
@@ -76,6 +77,38 @@ func runtimeList(row *db.EnvironmentRow, kind resourceKind) []string {
 		return row.RuntimeMCPServers
 	case a2aResourceKind:
 		return row.RuntimeA2AAgents
+	}
+	return nil
+}
+
+// CheckEkOwner is D-30 / AC-09: an ek_ identifies its owner within one
+// Environment, so it is usable only while that owner still holds the
+// Environment's access — the same authorizedTeams ∩ TeamsResolver(email)
+// rule pk_ traffic passes, keyed on the row's owner_email instead of the
+// caller's own. Nothing is persisted: when access returns, the same key
+// authorizes again on the next cache refresh (60s / 5s negative per the
+// keystore TTLs). A TeamsResolver failure is ErrLiteLLMUnreachable —
+// never a verdict (§7.2).
+//
+// Returns nil for non-ek callers. Consumed by proxy.EkOwnerGate, which runs
+// on every forwarder-authenticated family (/v1, /gemini, /mcp, /a2a); the
+// content-service and hydrate consumers widen their own existing team-check
+// gates to ek_ the same way rather than calling this function (D-30 is one
+// rule, three call sites). pk_ keeps its existing per-route rule unchanged.
+func CheckEkOwner(ctx context.Context, kc middleware.KeyContext, deps Deps) error {
+	if kc.KeyType != keys.PrefixEk {
+		return nil
+	}
+	row, ok := deps.EnvProvider.Get(kc.Environment)
+	if !ok || row.DeletionTimestamp != nil {
+		return ErrUnauthorizedResource
+	}
+	teams, err := deps.TeamsResolver.Resolve(ctx, kc.OwnerEmail)
+	if err != nil {
+		return ErrLiteLLMUnreachable
+	}
+	if !achteams.HasIntersect(row.AuthorizedTeams, teams) {
+		return ErrUnauthorizedTeam
 	}
 	return nil
 }
