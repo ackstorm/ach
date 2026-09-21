@@ -64,9 +64,27 @@ func TestCatchAllIsLastMatch(t *testing.T) {
 	for path, want := range map[string]string{
 		"/ui": "/", "/key/info": "/", "/health/liveliness": "/",
 		"/platform/keys": "/platform/", "/content/x": "/content/", "/v1/models": "/v1/", "/healthz": "/healthz",
+		"/metrics": "/metrics", "/metrics/": "/metrics/", "/metrics/x": "/metrics/",
 	} {
 		if _, pattern := mux.Handler(httptest.NewRequest(http.MethodGet, path, nil)); pattern != want {
 			t.Errorf("%s matched %q, want %q", path, pattern, want)
+		}
+	}
+}
+
+// TestMetricsNeverProxied: the "/" catch-all must not carry /metrics (the
+// forwarder's own Prometheus handler) or /metrics/ (LiteLLM's, with
+// per-key/team spend labels) out through the public Ingress.
+func TestMetricsNeverProxied(t *testing.T) {
+	h, err := Handler(ServiceRoutes("ns"), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/metrics", "/metrics/", "/metrics/anything"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, w.Code)
 		}
 	}
 }

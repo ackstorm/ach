@@ -14,9 +14,11 @@ import (
 // so the gateway reports Ready as soon as it is serving).
 //
 // ServeMux subtree semantics: a pattern ending in "/" matches that prefix
-// and everything under it, longest-match wins. Unmatched paths (e.g.
-// /metrics, /) fall through to the built-in 404 — the gateway never
-// fabricates a "/" catch-all, so it cannot accidentally proxy /metrics.
+// and everything under it, longest-match wins. The route table ends in a
+// "/" catch-all to the forwarder (LiteLLM's /ui, /key/*, …), so /metrics
+// (the forwarder's own Prometheus handler) and /metrics/ (LiteLLM's, with
+// per-key/team spend labels) are pinned to 404 here — they must never
+// leave the cluster through the public Ingress.
 //
 // When resolver is non-nil, the gateway also serves the /agents/ subtree
 // (delivery to per-agent Services). In production the resolver is always
@@ -30,6 +32,8 @@ func Handler(routes []Route, resolver UpstreamResolver, logger *slog.Logger) (ht
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	mux.HandleFunc("/metrics", http.NotFound)
+	mux.HandleFunc("/metrics/", http.NotFound)
 	if resolver != nil {
 		mux.Handle("/agents/", newAgentsHandler(resolver, logger))
 	}

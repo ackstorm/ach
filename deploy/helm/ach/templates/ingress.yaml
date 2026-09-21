@@ -4,11 +4,11 @@
 # The gateway owns path routing (/platform, /content, /v1, /gemini, /mcp,
 # /a2a, /.well-known).
 #
-# SECURITY: the gateway has NO /metrics route and NO "/" catch-all that
-# could reach a service's unauthenticated /metrics — so a single "/" rule
-# here is safe (unmatched paths 404 at the gateway). /metrics stays an
-# in-cluster scrape concern; do NOT add a per-service backend that bypasses
-# the gateway.
+# SECURITY: the gateway pins /metrics and /metrics/ to 404 ahead of its
+# "/" catch-all (which reaches the forwarder and, through it, LiteLLM), so
+# a single "/" rule here cannot leak a service's unauthenticated /metrics.
+# /metrics stays an in-cluster scrape concern; do NOT add a per-service
+# backend that bypasses the gateway.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
