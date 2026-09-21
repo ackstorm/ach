@@ -36,6 +36,14 @@ func (a *envkeysDBAdapter) RevokeEnvironmentKey(ctx context.Context, keyID strin
 	return db.RevokeEnvironmentKey(ctx, a.pool, keyID)
 }
 
+func (a *envkeysDBAdapter) SuspendEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.SuspendEnvironmentKey(ctx, a.pool, keyID)
+}
+
+func (a *envkeysDBAdapter) ResumeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.ResumeEnvironmentKey(ctx, a.pool, keyID)
+}
+
 func (a *envkeysDBAdapter) ListKeys(
 	ctx context.Context, f db.KeyListFilter, limit int, cursor string,
 ) ([]db.KeyListItem, string, error) {

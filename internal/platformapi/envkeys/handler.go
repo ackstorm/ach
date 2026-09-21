@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ackstorm/ach/internal/audit"
@@ -52,6 +51,8 @@ type dbOps interface {
 	InsertEnvironmentKey(ctx context.Context, row db.EkInsertRow) error
 	GetEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
 	RevokeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
+	SuspendEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
+	ResumeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
 	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
 	RevokePersonalKeyByOwner(ctx context.Context, keyID, owner string) (litellmToken *string, err error)
 }
@@ -104,19 +105,21 @@ type Deps struct {
 // idiom — DisallowUnknownFields rejects any extra field with 400
 // invalid_argument before the §8.2 flow runs).
 type CreateRequest struct {
-	Environment string `json:"environment"`
-	Name        string `json:"name"`
+	Environment string  `json:"environment"`
+	Name        string  `json:"name"`
+	ExpiresAt   *string `json:"expires_at,omitempty"`
 }
 
 // CreateResponse is the §15.5 success-shape body. Plaintext is returned
 // EXACTLY ONCE here and never anywhere else.
 type CreateResponse struct {
-	KeyID       string `json:"key_id"`
-	Plaintext   string `json:"plaintext"`
-	Environment string `json:"environment"`
-	Name        string `json:"name"`
-	OwnerEmail  string `json:"owner_email"`
-	CreatedAt   string `json:"created_at"`
+	KeyID       string  `json:"key_id"`
+	Plaintext   string  `json:"plaintext"`
+	Environment string  `json:"environment"`
+	Name        string  `json:"name"`
+	OwnerEmail  string  `json:"owner_email"`
+	CreatedAt   string  `json:"created_at"`
+	ExpiresAt   *string `json:"expires_at"`
 }
 
 // errInvalidArgument is the §15.5 invalid_argument response code. We
@@ -126,8 +129,18 @@ type CreateResponse struct {
 // envelope code for malformed requests.
 const codeInvalidArgument = "invalid_argument"
 
-// statusActive is the canonical string value for a live, non-revoked key.
-const statusActive = "active"
+// The ek_/pk_ status vocabulary (§7.1). statusActive/statusSuspended/
+// statusRevoked are persisted db column values; statusExpired is what
+// ListKeys derives for the SQL-level status (never written back);
+// statusInvalid is EffectiveState's own derived-only value (never
+// persisted, never returned by ListKeys).
+const (
+	statusActive    = "active"
+	statusSuspended = "suspended"
+	statusRevoked   = "revoked"
+	statusExpired   = "expired"
+	statusInvalid   = "invalid"
+)
 
 // defaultTeam is the LiteLLM Team alias every first-SSO user gets
 // enrolled into per Hub §17 (deployer concern). When LiteLLM rejects
@@ -194,9 +207,26 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		// Optional expires_at (D-24, §7.3): RFC3339, must be strictly in the
+		// future. ACH enforces it — no LiteLLM Duration is ever set.
+		var expiresAt *time.Time
+		if req.ExpiresAt != nil && *req.ExpiresAt != "" {
+			ts, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+			if err != nil {
+				render.Error(w, http.StatusBadRequest, codeInvalidArgument, "expires_at must be RFC3339", reqID)
+				return
+			}
+			if !ts.After(time.Now()) {
+				render.Error(w, http.StatusBadRequest, codeInvalidArgument, "expires_at must be in the future", reqID)
+				return
+			}
+			ts = ts.UTC()
+			expiresAt = &ts
+		}
+
 		cr := &createReq{
 			deps: deps, w: w, ctx: ctx, req: req, keyCtx: keyCtx,
-			actor: actor, reqID: reqID,
+			actor: actor, reqID: reqID, expiresAt: expiresAt,
 			target: &audit.Target{Kind: "environment", Name: req.Environment},
 		}
 
@@ -225,14 +255,15 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 // mintAndInsert; each method reads the fields it needs and writes the terminal
 // HTTP response + audit event on its own rejection/success branch.
 type createReq struct {
-	deps   Deps
-	w      http.ResponseWriter
-	ctx    context.Context
-	req    CreateRequest
-	keyCtx middleware.KeyContext
-	actor  string
-	reqID  string
-	target *audit.Target
+	deps      Deps
+	w         http.ResponseWriter
+	ctx       context.Context
+	req       CreateRequest
+	keyCtx    middleware.KeyContext
+	actor     string
+	reqID     string
+	expiresAt *time.Time
+	target    *audit.Target
 }
 
 // emitInternalError audits + renders the §15.5 500 internal_error envelope
@@ -448,12 +479,16 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	// /key/generate for non-admin callers, and ACH authenticates with the
 	// master key (PROXY_ADMIN). See references/litellm-permission-model.md §9.
 	//
-	// An ek_ is deliberately PERPETUAL: no Duration is set, so the LiteLLM key
-	// has no expiry. Its lifetime is the Environment's — it is revoked only by
+	// An ek_ is PERPETUAL by default: no LiteLLM Duration is ever set, so the
+	// LiteLLM key itself has no expiry. An optional expires_at (D-24, §7.3) is
+	// enforced by ACH alone — at resolve time (keystore) and at list time
+	// (ListKeys derives status='expired') — never surfaced to LiteLLM. Its
+	// lifetime is otherwise the Environment's — it is revoked only by
 	// DELETE /platform/keys/{id} or by deleting the Environment (the shell-team
 	// delete cascades to its keys). Unlike a pk_ (168h sliding window, re-minted
-	// on every SSO login), an ek_ has no renewal path, so a finite window would
-	// silently break long-running agents. See references/litellm-permission-model.md.
+	// on every SSO login), an ek_ has no renewal path, so an unset expires_at
+	// must not silently break long-running agents. See
+	// references/litellm-permission-model.md.
 	keyReq := &litellm.KeyGenerateRequest{
 		UserID:    userID,
 		TeamID:    shellTeamID,
@@ -521,6 +556,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		LiteLLMToken:   &llToken,
 		// G3: LiteLLM virtual-key material, encrypted at rest (keycrypt blob).
 		LiteLLMKeyMaterial: &llMaterial,
+		ExpiresAt:          cr.expiresAt,
 	}
 	insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)
 	if insertErr != nil {
@@ -570,6 +606,11 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		KeyID:     keyID,
 		Target:    cr.target,
 	})
+	var expiresAtResp *string
+	if cr.expiresAt != nil {
+		s := cr.expiresAt.Format(time.RFC3339)
+		expiresAtResp = &s
+	}
 	render.JSON(w, http.StatusOK, CreateResponse{
 		KeyID:       keyID,
 		Plaintext:   plaintext,
@@ -577,6 +618,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		Name:        cr.req.Name,
 		OwnerEmail:  cr.keyCtx.OwnerEmail,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+		ExpiresAt:   expiresAtResp,
 	})
 }
 
@@ -624,14 +666,21 @@ func classifyInsertError(err error) insertErrClass {
 //  1. ekid_ prefix gate BEFORE the DB lookup (400 invalid_argument on
 //     mismatch; prevents prefix-confusion probes from costing a DB
 //     roundtrip — T-03-08-03).
+//
 //  2. db.GetEnvironmentKey to capture credential_hash + litellm_token.
 //     NO DB UPDATE yet.
+//
 //  3. Owner check: non-admin callers may only revoke their own rows
 //     (403 not_key_owner); admin may revoke any (T-03-08-04).
-//  4. Already-revoked rows (status != 'active') treated as 404 — caller
-//     does not need to know whether the key existed-then-revoked or
-//     never existed (idempotency without double-emitting audit
-//     events).
+//
+//     Steps 1-3 are the shared loadOwnedEk head (also used by
+//     SuspendHandler/ResumeHandler).
+//
+//  4. Revoke is valid from ANY non-revoked state (active, suspended, or
+//     an active row past its expires_at — D-11/§8.4): only an already
+//     'revoked' row short-circuits, as an idempotent 204 with no LiteLLM
+//     call and no second state change or audit emission.
+//
 //  5. **LiteLLM FIRST**: deps.LiteLLM.RevokeKey(ctx, litellm_token).
 //     On error → 503 litellm_unreachable + audit; DB row STAYS active
 //     so retry retries cleanly. Redis NOT DEL'd. This ordering is the
@@ -640,6 +689,7 @@ func classifyInsertError(err error) insertErrClass {
 //     goal is already met, so the flow proceeds to step 6. This recovers a
 //     row stranded by an out-of-band LiteLLM key delete. Every other error
 //     still fails closed.
+//
 //  6. **DB flip**: db.RevokeEnvironmentKey post-LiteLLM-ack. On error
 //     → 500 internal_error + audit; the LiteLLM-side key is revoked
 //     but the DB row is in a partial state. Operator's orphan-cleanup
@@ -647,8 +697,10 @@ func classifyInsertError(err error) insertErrClass {
 //     (Phase 02.2 D-02). Redis NOT DEL'd here either — without the
 //     DB flip a Redis DEL would let the next resolver populate the
 //     cache from the stale 'active' row.
+//
 //  7. Redis DEL "ach:key:" + credential_hash (best-effort). On error
 //     log a warning; the 60s TTL ceiling caps the worst case.
+//
 //  8. 204 No Content (no body); audit ActionEkRevoke / OutcomeRevoked.
 //
 // revokeEnvironmentKey is the ekid_ branch of the unified DELETE
@@ -659,64 +711,21 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 		ctx := r.Context()
 		reqID := middleware.RequestIDFromCtx(ctx)
 		actor := middleware.ActorFromCtx(ctx)
-		keyCtx, _ := middleware.KeyContextFromCtx(ctx)
 
-		// Caller-type guard.
-		if keyCtx.KeyType != keys.PrefixPk {
-			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "ek_ may not revoke env-keys", reqID)
+		// Steps 1-3 (caller-type guard, ekid_ prefix gate, read + owner
+		// check) are shared with SuspendHandler/ResumeHandler via loadOwnedEk.
+		row, ok := deps.loadOwnedEk(w, r, audit.ActionEkRevoke)
+		if !ok {
 			return
 		}
+		keyID := row.KeyID
 
-		// Step 1: ekid_ prefix gate BEFORE DB lookup (T-03-08-03).
-		keyID := chi.URLParam(r, "key_id")
-		if !strings.HasPrefix(keyID, keys.EkidKeyIDPrefix) {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
-				"key_id must start with "+keys.EkidKeyIDPrefix, reqID)
-			return
-		}
-
-		// Step 2: read row to capture credential_hash + litellm_token.
-		row, err := deps.DB.GetEnvironmentKey(ctx, keyID)
-		if err != nil {
-			deps.Logger.Error("envkeys.revoke: GetEnvironmentKey failed", "key_id", keyID, "err", err)
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkRevoke, Outcome: audit.OutcomeInternalError,
-				Actor: actor, RequestID: reqID, KeyID: keyID,
-			})
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-			return
-		}
-		if row == nil {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkRevoke, Outcome: audit.OutcomeEnvironmentNotFound,
-				Actor: actor, RequestID: reqID, KeyID: keyID,
-			})
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "key not found", reqID)
-			return
-		}
-
-		// Step 3: owner check.
-		if row.OwnerEmail != keyCtx.OwnerEmail && !keyCtx.IsAdmin {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action:    audit.ActionEkRevoke,
-				Outcome:   audit.OutcomeNotKeyOwner,
-				Actor:     actor,
-				RequestID: reqID,
-				KeyID:     keyID,
-				Target:    &audit.Target{Kind: "environment", Name: row.Environment},
-			})
-			render.Error(w, http.StatusForbidden, audit.OutcomeNotKeyOwner, "caller does not own this key", reqID)
-			return
-		}
-
-		// Step 4: already-revoked → 404 (idempotency without double audit).
-		if row.Status != statusActive {
-			audit.EmitAudit(ctx, deps.Audit, audit.Event{
-				Action: audit.ActionEkRevoke, Outcome: audit.OutcomeEnvironmentNotFound,
-				Actor: actor, RequestID: reqID, KeyID: keyID,
-				Target: &audit.Target{Kind: "environment", Name: row.Environment},
-			})
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "key not found", reqID)
+		// D-11: already revoked is an idempotent success — no LiteLLM call,
+		// no second state change, no double audit. RevokeEnvironmentKey now
+		// flips ANY non-revoked status (active/suspended, expired-or-not),
+		// so this is the only terminal state left to special-case.
+		if row.Status == statusRevoked {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -773,15 +782,9 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Step 7: Redis DEL best-effort. Cache key shape MUST match
-		// keystore.cacheKeyPrefix + credential_hash exactly so the
-		// keystore.Resolver invalidation takes effect on the next
-		// resolve attempt.
-		cacheKey := "ach:key:" + row.CredentialHash
-		if err := deps.Redis.Del(ctx, cacheKey); err != nil {
-			deps.Logger.Warn("envkeys.revoke: Redis DEL failed (60s TTL is the worst case bound)",
-				"key", cacheKey, "err", err)
-		}
+		// Step 7: Redis DEL best-effort (cache key shape must match
+		// keystore.cacheKeyPrefix + credential_hash exactly).
+		deps.invalidate(ctx, row.CredentialHash)
 
 		// Step 8: audit + 204.
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
@@ -865,8 +868,80 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
 			return
 		}
-		render.KeyList(w, items, next)
+
+		// D-30: Invalid is derived, once per owner (this route is always
+		// caller-scoped) and once per distinct Environment.
+		verdicts := deps.accessByEnvironment(r.Context(), keyCtx, items)
+		wantStatus := q.Get("status")
+		out := make([]render.KeyListRow, 0, len(items))
+		for _, it := range items {
+			status, reasons := EffectiveState(it, verdicts[deref(it.Environment)])
+			if wantStatus == statusInvalid && status != statusInvalid {
+				continue
+			}
+			out = append(out, render.KeyRow(it, status, reasons))
+		}
+		render.KeyList(w, out, next)
 	}
+}
+
+// deref returns the empty string for a nil *string, and the pointed-to
+// value otherwise.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// accessByEnvironment resolves the owner's current Environment access
+// (D-30) once per distinct environment among the given items: the owner's
+// teams (one TeamsResolver lookup; admin ⇒ granted everywhere) intersected
+// with each distinct Environment's authorizedTeams. A TeamsResolver
+// failure marks every ek_ environment unverified rather than invalid
+// (§7.2) — it must never write a state, only annotate the list.
+func (deps Deps) accessByEnvironment(ctx context.Context, kc middleware.KeyContext, items []db.KeyListItem) map[string]accessVerdict {
+	out := map[string]accessVerdict{}
+	var teams []string
+	looked := false
+	for _, it := range items {
+		if it.Type != "ek" || it.Environment == nil {
+			continue
+		}
+		env := *it.Environment
+		if _, done := out[env]; done {
+			continue
+		}
+		if kc.IsAdmin {
+			out[env] = accessGranted
+			continue
+		}
+		if !looked {
+			looked = true
+			t, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, kc.OwnerEmail)
+			if err != nil {
+				for _, it2 := range items { // every env unverified
+					if it2.Environment != nil {
+						out[*it2.Environment] = accessUnverified
+					}
+				}
+				return out
+			}
+			teams = t
+		}
+		row, err := deps.Store.GetEnvironment(ctx, env)
+		switch {
+		case err != nil:
+			out[env] = accessUnverified
+		case row == nil || row.DeletionTimestamp != nil:
+			out[env] = accessLost
+		case achteams.HasIntersect(row.AuthorizedTeams, teams):
+			out[env] = accessGranted
+		default:
+			out[env] = accessLost
+		}
+	}
+	return out
 }
 
 // normalizeKeyType maps the ?type query value to a valid filter string.
@@ -882,9 +957,13 @@ func normalizeKeyType(v string) string {
 }
 
 // normalizeKeyStatus maps the ?status query value to a valid filter string.
+// normalizeKeyStatus maps the ?status query value into the SQL-level filter
+// string ListKeys understands. "invalid" is derived client-side post-query
+// (ListAllHandler filters on EffectiveState's output after the fact) so it
+// maps to "" here — passing it to SQL would filter out every row.
 func normalizeKeyStatus(v string) string {
 	switch v {
-	case statusActive, "revoked", "expired":
+	case statusActive, statusRevoked, statusExpired, statusSuspended:
 		return v
 	default:
 		return ""

@@ -4,13 +4,16 @@ package envkeys
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
@@ -195,9 +198,14 @@ func (s *fakeEnvStore) GetEnvironment(_ context.Context, _ string) (*db.Environm
 func (s *fakeEnvStore) AccessGroupSyncedFromRow(_ *db.EnvironmentRow) bool { return true }
 
 // fakeEkDB records the inserted ek_ row and returns no error on insert.
+// items overrides the default two-row ListKeys fixture when non-nil (the
+// zero value keeps every pre-existing test's fixture unchanged).
 type fakeEkDB struct {
-	inserted   *db.EkInsertRow
-	lastFilter db.KeyListFilter
+	inserted     *db.EkInsertRow
+	lastFilter   db.KeyListFilter
+	items        []db.KeyListItem
+	suspendCalls []string
+	resumeCalls  []string
 }
 
 func (d *fakeEkDB) InsertEnvironmentKey(_ context.Context, row db.EkInsertRow) error {
@@ -210,8 +218,19 @@ func (d *fakeEkDB) GetEnvironmentKey(context.Context, string) (*db.EkKeyInfo, er
 func (d *fakeEkDB) RevokeEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
 	return nil, nil
 }
+func (d *fakeEkDB) SuspendEnvironmentKey(_ context.Context, keyID string) (*db.EkKeyInfo, error) {
+	d.suspendCalls = append(d.suspendCalls, keyID)
+	return nil, nil
+}
+func (d *fakeEkDB) ResumeEnvironmentKey(_ context.Context, keyID string) (*db.EkKeyInfo, error) {
+	d.resumeCalls = append(d.resumeCalls, keyID)
+	return nil, nil
+}
 func (d *fakeEkDB) ListKeys(_ context.Context, f db.KeyListFilter, _ int, _ string) ([]db.KeyListItem, string, error) {
 	d.lastFilter = f
+	if d.items != nil {
+		return d.items, "", nil
+	}
 	env := "demo"
 	name := "laptop"
 	return []db.KeyListItem{
@@ -554,10 +573,20 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 // forces owner_email to the authenticated caller and honours the ?status filter.
 func TestListAllHandler_CallerScopedAndDefaults(t *testing.T) {
 	fdb := &fakeEkDB{}
+	// The default fixture's ekid_y sits in environment "demo"; grant the
+	// caller access so EffectiveState's derivation leaves it "active"
+	// (this test predates D-30 access derivation and is not itself testing it).
+	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
+	fll := &listTeamsLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		teams:      map[string][]string{"user@example.com": {"team-a"}},
+	}
 	deps := Deps{
-		DB:     fdb,
-		Audit:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:      fdb,
+		Store:   store,
+		LiteLLM: fll,
+		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	req := httptest.NewRequest(http.MethodGet, "/platform/keys?status=active", nil)
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
@@ -585,5 +614,297 @@ func TestListAllHandler_CallerScopedAndDefaults(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "credential_hash") || strings.Contains(rec.Body.String(), "litellm") {
 		t.Errorf("response leaked secret material: %s", rec.Body.String())
+	}
+}
+
+// listTeamsLiteLLM is a controllable fake litellm.Client for
+// ListAllHandler's accessByEnvironment path (LookupCallerTeams). teams maps
+// an owner email to their raw LiteLLM team ids, matched directly against a
+// fakeEnvStore's AuthorizedTeams (no alias-resolution ListAllTeams data
+// needed for these tests). callCount records how many times
+// UserInfoByEmail ran — D-30 requires at most one lookup per list call. err,
+// when set, is returned unconditionally (simulates a LiteLLM outage).
+type listTeamsLiteLLM struct {
+	*litellm.NoopClient
+	teams     map[string][]string
+	callCount int
+	err       error
+}
+
+func (c *listTeamsLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	c.callCount++
+	if c.err != nil {
+		return nil, c.err
+	}
+	return &litellm.UserInfo{UserID: "llu-" + email, UserEmail: email, Teams: c.teams[email]}, nil
+}
+
+func (c *listTeamsLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
+// newCreateDeps builds a Deps wired for a successful CreateHandler call
+// against environment "prod" (matches captureLiteLLM's default ListAllTeams
+// fixture: caller team "default" + shell team "ach-env-prod").
+func newCreateDeps(fdb dbOps) (Deps, *captureLiteLLM) {
+	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{
+		Namespace:       "ach",
+		Name:            "prod",
+		AuthorizedTeams: []string{"default"},
+	}}
+	return Deps{
+		LiteLLM:          flm,
+		DB:               fdb,
+		Store:            store,
+		Pepper:           []byte("test-pepper"),
+		KeyEncryptionKey: keyEncTestDEK(),
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Namespace:        "ach",
+	}, flm
+}
+
+func doCreate(deps Deps, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", strings.NewReader(body))
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "user@example.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	CreateHandler(deps).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestCreate_ExpiresAtValidatedAndStored(t *testing.T) {
+	t.Run("past expires_at -> 400 invalid_argument", func(t *testing.T) {
+		fdb := &fakeEkDB{}
+		deps, _ := newCreateDeps(fdb)
+
+		rec := doCreate(deps, `{"environment":"prod","name":"n","expires_at":"2020-01-01T00:00:00Z"}`)
+
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), codeInvalidArgument) {
+			t.Fatalf("status/body = %d/%s, want 400 invalid_argument", rec.Code, rec.Body.String())
+		}
+		if fdb.inserted != nil {
+			t.Error("InsertEnvironmentKey must not be called on a rejected create")
+		}
+	})
+
+	t.Run("future expires_at -> 200, stored and echoed", func(t *testing.T) {
+		fdb := &fakeEkDB{}
+		deps, flm := newCreateDeps(fdb)
+		future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+
+		rec := doCreate(deps, `{"environment":"prod","name":"n","expires_at":"`+future+`"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		if fdb.inserted == nil || fdb.inserted.ExpiresAt == nil {
+			t.Fatal("InsertEnvironmentKey row missing ExpiresAt")
+		}
+		wantTs, _ := time.Parse(time.RFC3339, future)
+		if !fdb.inserted.ExpiresAt.Equal(wantTs) {
+			t.Errorf("inserted ExpiresAt = %v, want %v", fdb.inserted.ExpiresAt, wantTs)
+		}
+		if flm.lastKeyGenerateReq == nil || flm.lastKeyGenerateReq.Duration != "" {
+			t.Errorf("KeyGenerateRequest.Duration = %q, want unset (D-24: ACH enforces expiry, never LiteLLM)",
+				flm.lastKeyGenerateReq.Duration)
+		}
+		var resp CreateResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.ExpiresAt == nil || *resp.ExpiresAt != future {
+			t.Errorf("response expires_at = %v, want %q", resp.ExpiresAt, future)
+		}
+	})
+
+	t.Run("no expires_at -> perpetual", func(t *testing.T) {
+		fdb := &fakeEkDB{}
+		deps, _ := newCreateDeps(fdb)
+
+		rec := doCreate(deps, `{"environment":"prod","name":"n"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		if fdb.inserted == nil || fdb.inserted.ExpiresAt != nil {
+			t.Errorf("inserted ExpiresAt = %v, want nil (perpetual)", fdb.inserted.ExpiresAt)
+		}
+		var resp CreateResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.ExpiresAt != nil {
+			t.Errorf("response expires_at = %v, want null", *resp.ExpiresAt)
+		}
+	})
+}
+
+func doList(deps Deps, query string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/platform/keys"+query, nil)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID:      "pkid_00000000000000000000000000",
+		KeyType:    keys.PrefixPk,
+		OwnerEmail: "u@x.com",
+	}, false)
+	ctx = middleware.WithRequestID(ctx, "req_test")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	ListAllHandler(deps).ServeHTTP(rec, req)
+	return rec
+}
+
+// TestListAll_DerivesInvalidOncePerOwner: an active ek_ whose owner no
+// longer intersects the Environment's authorizedTeams derives 'invalid';
+// a suspended ek_ in the same environment stays 'suspended' with an added
+// 'no_access' reason; a pk_ is never touched by the derivation. Exactly one
+// UserInfoByEmail call covers every row (D-30 — one lookup per owner).
+func TestListAll_DerivesInvalidOncePerOwner(t *testing.T) {
+	env := "demo"
+	nameEk1, nameEk2 := "laptop", "server"
+	items := []db.KeyListItem{
+		{KeyID: "ekid_1", Type: "ek", OwnerEmail: "u@x.com", Environment: &env, Name: &nameEk1, Status: "active"},
+		{KeyID: "ekid_2", Type: "ek", OwnerEmail: "u@x.com", Environment: &env, Name: &nameEk2, Status: "suspended"},
+		{KeyID: "pkid_3", Type: "pk", OwnerEmail: "u@x.com", Status: "active"},
+	}
+	fdb := &fakeEkDB{items: items}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
+	fll := &listTeamsLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		teams:      map[string][]string{"u@x.com": {"team-b"}}, // no intersection with team-a
+	}
+	deps := Deps{
+		DB: fdb, Store: store, LiteLLM: fll,
+		Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := doList(deps, "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if fll.callCount != 1 {
+		t.Errorf("UserInfoByEmail calls = %d, want 1 (once per owner)", fll.callCount)
+	}
+	var resp struct {
+		Items []struct {
+			KeyID   string   `json:"key_id"`
+			Status  string   `json:"status"`
+			Reasons []string `json:"reasons"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	byID := map[string]struct {
+		Status  string
+		Reasons []string
+	}{}
+	for _, it := range resp.Items {
+		byID[it.KeyID] = struct {
+			Status  string
+			Reasons []string
+		}{it.Status, it.Reasons}
+	}
+	if got := byID["ekid_1"]; got.Status != "invalid" || !reflect.DeepEqual(got.Reasons, []string{"no_access"}) {
+		t.Errorf("ekid_1 = %+v, want status=invalid reasons=[no_access]", got)
+	}
+	if got := byID["ekid_2"]; got.Status != "suspended" || !reflect.DeepEqual(got.Reasons, []string{"suspended", "no_access"}) {
+		t.Errorf("ekid_2 = %+v, want status=suspended reasons=[suspended no_access]", got)
+	}
+	if got := byID["pkid_3"]; got.Status != "active" {
+		t.Errorf("pkid_3 = %+v, want status=active", got)
+	}
+}
+
+// TestListAll_TeamsLookupFailureIsUnverifiedNotInvalid (§7.2): a transient
+// TeamsResolver failure must never write a derived state — the row stays
+// its persisted status with an access_unverified reason, not 'invalid'.
+func TestListAll_TeamsLookupFailureIsUnverifiedNotInvalid(t *testing.T) {
+	env := "demo"
+	name := "laptop"
+	items := []db.KeyListItem{
+		{KeyID: "ekid_1", Type: "ek", OwnerEmail: "u@x.com", Environment: &env, Name: &name, Status: "active"},
+	}
+	fdb := &fakeEkDB{items: items}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
+	fll := &listTeamsLiteLLM{NoopClient: &litellm.NoopClient{}, err: errors.New("dial tcp: connection refused")}
+	deps := Deps{
+		DB: fdb, Store: store, LiteLLM: fll,
+		Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := doList(deps, "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Items []struct {
+			Status  string   `json:"status"`
+			Reasons []string `json:"reasons"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Status != "active" || !reflect.DeepEqual(resp.Items[0].Reasons, []string{"access_unverified"}) {
+		t.Errorf("item = %+v, want status=active reasons=[access_unverified]", resp.Items[0])
+	}
+}
+
+// TestListAll_StatusFilterInvalid: ?status=invalid returns only the
+// derived-invalid rows — filtered client-side after EffectiveState runs,
+// since 'invalid' is not a persisted SQL status.
+func TestListAll_StatusFilterInvalid(t *testing.T) {
+	env := "demo"
+	name1, name2 := "laptop", "phone"
+	items := []db.KeyListItem{
+		{KeyID: "ekid_1", Type: "ek", OwnerEmail: "u@x.com", Environment: &env, Name: &name1, Status: "active"},
+		{KeyID: "ekid_2", Type: "ek", OwnerEmail: "u@x.com", Environment: &env, Name: &name2, Status: "suspended"},
+	}
+	fdb := &fakeEkDB{items: items}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
+	fll := &listTeamsLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		teams:      map[string][]string{"u@x.com": {"team-z"}}, // no access at all
+	}
+	deps := Deps{
+		DB: fdb, Store: store, LiteLLM: fll,
+		Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := doList(deps, "?status=invalid")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	// The SQL-level filter must NOT have narrowed the query (there is no
+	// persisted 'invalid' status) — the derivation runs against everything.
+	if fdb.lastFilter.Status != "" {
+		t.Errorf("SQL status filter = %q, want empty (invalid is derived post-query)", fdb.lastFilter.Status)
+	}
+	var resp struct {
+		Items []struct {
+			KeyID  string `json:"key_id"`
+			Status string `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].KeyID != "ekid_1" || resp.Items[0].Status != "invalid" {
+		t.Errorf("items = %+v, want exactly [ekid_1 invalid]", resp.Items)
 	}
 }

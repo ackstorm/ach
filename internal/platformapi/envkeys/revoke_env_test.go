@@ -35,6 +35,12 @@ func (d *revokeEnvDB) RevokeEnvironmentKey(context.Context, string) (*db.EkKeyIn
 	d.revokeCalled = true
 	return d.getRow, nil
 }
+func (d *revokeEnvDB) SuspendEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
+	return nil, nil
+}
+func (d *revokeEnvDB) ResumeEnvironmentKey(context.Context, string) (*db.EkKeyInfo, error) {
+	return nil, nil
+}
 func (d *revokeEnvDB) ListKeys(context.Context, db.KeyListFilter, int, string) ([]db.KeyListItem, string, error) {
 	return nil, "", nil
 }

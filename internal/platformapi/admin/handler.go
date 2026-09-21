@@ -442,6 +442,12 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 			return litellmUnreachableErr{wrapped: revErr}
 		}
 	}
+	// RevokeEnvironmentKey now flips ANY non-revoked status (active,
+	// suspended, or expired-but-not-yet-flipped) — (nil, nil) only when the
+	// row is already revoked. Both callers of revokeEkInline already gate
+	// row.Status != "active" before reaching here, so a nil result is not
+	// expected on this path today; treat it the same as success (already
+	// revoked ⇒ nothing left to do) rather than as a DB error.
 	if _, err := db.RevokeEnvironmentKey(ctx, deps.Pool, row.KeyID); err != nil {
 		return err
 	}
@@ -616,7 +622,14 @@ func ListKeysHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
 			return
 		}
-		render.KeyList(w, items, next)
+		// D-20: admins get the SQL-level status verbatim — no Invalid
+		// derivation (that needs a per-owner TeamsResolver lookup the bulk
+		// admin inventory does not do).
+		rows := make([]render.KeyListRow, 0, len(items))
+		for _, it := range items {
+			rows = append(rows, render.KeyRow(it, it.Status, nil))
+		}
+		render.KeyList(w, rows, next)
 	}
 }
 

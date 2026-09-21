@@ -48,6 +48,8 @@ package audit
 const (
 	ActionEkCreate             = "platform.ek.create"
 	ActionEkRevoke             = "platform.ek.revoke"
+	ActionEkSuspend            = "platform.ek.suspend"
+	ActionEkResume             = "platform.ek.resume"
 	ActionPkRevoke             = "platform.pk.revoke"
 	ActionHydrate              = "platform.hydrate"
 	ActionAdminRefresh         = "platform.admin.refresh"
@@ -69,6 +71,8 @@ const (
 const (
 	OutcomeCreated             = "created"
 	OutcomeRevoked             = "revoked" // matches orphan.OutcomeRevoked
+	OutcomeSuspended           = "suspended"
+	OutcomeResumed             = "resumed"
 	OutcomeUnauthorizedTeam    = "unauthorized_team"
 	OutcomeWrongEnvironment    = "wrong_environment"
 	OutcomeMissingEnvironment  = "missing_environment"
