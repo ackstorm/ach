@@ -1753,8 +1753,9 @@ the rotation procedure, see
 <p><code>/v1</code> and <code>/gemini</code> are pass-through route families with <strong>no</strong> JWT
 involvement: the caller's bare <code>x-litellm-api-key</code>, no precheck; LiteLLM is
 the authorization boundary. <code>/mcp</code> and <code>/a2a</code> remain the only JWT routes.
-Every other LiteLLM path (<code>/v2/*</code>, <code>/ui</code>, <code>/key/*</code>, …) is the catch-all: a
-presented credential is resolved and forwarded, nothing is required.</p>
+Every other LiteLLM path (<code>/v2/*</code>, <code>/ui</code>, <code>/key/*</code>, …) is the catch-all: ACH
+acts only on the declared slots — one present is resolved and forwarded,
+none means the request goes through untouched (<code>Authorization</code> included).</p>
 <hr />
 <h2 id="1-end-to-end-flow">1. End-to-end flow<a class="headerlink" href="#1-end-to-end-flow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌────────────┐  x-ach-key: pk_…           ┌──────────────┐
@@ -2150,11 +2151,14 @@ declared slot carried the credential (Claude Code on an Anthropic
 subscription: ours in <code>x-ach-key</code>, Anthropic's in <code>Authorization</code>; Claude
 Code's <code>apiKeyHelper</code> sends the same value in <code>x-api-key</code> and
 <code>Authorization</code> — the first resolves, the second is ignored upstream).</p>
-<p>With <strong>no declared slot present</strong>, <code>Authorization: Bearer</code> is accepted only
-as ACH's own OAuth access token (a JWS that verifies against the signing
-key — the only way an MCP client can present one). Anything else in
-<code>Authorization</code> — a <code>pk_</code>, a raw <code>sk-</code>, Basic, a foreign JWT — is <code>401</code>. There
-is no prefix sniffing and <code>authorization</code> cannot be listed as a slot.
+<p>On the owned families, with <strong>no declared slot present</strong>, <code>Authorization:
+Bearer</code> is accepted only as ACH's own OAuth access token (a JWS that verifies
+against the signing key — the only way an MCP client can present one).
+Anything else in <code>Authorization</code> — a <code>pk_</code>, a raw <code>sk-</code>, Basic, a foreign JWT
+— is <code>401</code>. On the catch-all <code>Authorization</code> is never inspected: LiteLLM's
+UI carries its own bearer to <code>/health/license</code>, <code>/key/info</code>, … and it must
+reach LiteLLM as it came. There is no prefix sniffing and <code>authorization</code>
+cannot be listed as a slot.
 platform-api shares the middleware with its own <code>platformApi.headers</code>
 (resolve only). On <code>/mcp</code> + <code>/a2a</code> the per-target ACH JWT overwrites
 <code>Authorization</code> when a BIP mints one.</p>
