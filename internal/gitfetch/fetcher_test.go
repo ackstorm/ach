@@ -39,7 +39,7 @@ func TestFetcher_FetchClonesAndTars(t *testing.T) {
 		SHA:       fixtureHeadSHA(t, bare),
 		CacheRoot: t.TempDir(),
 	})
-	res, err := f.Fetch(context.Background(), Request{})
+	res, err := f.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestFetcher_Fetch_InvalidSHA(t *testing.T) {
 		Ref: "main",
 		SHA: "deadbeef", // not 40 hex
 	})
-	_, err := f.Fetch(context.Background(), Request{})
+	_, err := f.Fetch(context.Background())
 	if err == nil {
 		t.Fatal("expected err on short SHA")
 	}
@@ -84,7 +84,7 @@ func TestFetcher_Fetch_UnreachableRemote(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := f.Fetch(ctx, Request{})
+	_, err := f.Fetch(ctx)
 	if err == nil {
 		t.Fatal("expected err on unreachable remote")
 	}
@@ -110,7 +110,7 @@ func TestFetcher_Fetch_SubtreeTraversalRejected(t *testing.T) {
 		Subtree:   "../../etc",
 		CacheRoot: t.TempDir(),
 	})
-	_, err := f.Fetch(context.Background(), Request{})
+	_, err := f.Fetch(context.Background())
 	if err == nil {
 		t.Fatal("expected err on traversal subtree")
 	}
@@ -132,7 +132,7 @@ func TestFetcher_Fetch_SubtreeNarrowsAndReRoots(t *testing.T) {
 		Subtree:   "skills/pdf",
 		CacheRoot: t.TempDir(),
 	})
-	res, err := f.Fetch(context.Background(), Request{})
+	res, err := f.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestFetcher_Fetch_SubtreeFileReturnsRaw(t *testing.T) {
 		Subtree:   "skills/pdf/SKILL.md",
 		CacheRoot: t.TempDir(),
 	})
-	res, err := f.Fetch(context.Background(), Request{})
+	res, err := f.Fetch(context.Background())
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestFetcher_Fetch_SubtreeSymlinkRejected(t *testing.T) {
 		Subtree:   "evil",
 		CacheRoot: t.TempDir(),
 	})
-	_, err := f.Fetch(context.Background(), Request{})
+	_, err := f.Fetch(context.Background())
 	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want ErrUpstreamInvalid (symlink subtree)", err)
 	}
@@ -214,7 +214,7 @@ func TestFetcher_Fetch_SubtreeIntermediateSymlinkRejected(t *testing.T) {
 		Subtree:   "evildir/passwd",
 		CacheRoot: t.TempDir(),
 	})
-	_, err := f.Fetch(context.Background(), Request{})
+	_, err := f.Fetch(context.Background())
 	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
 		t.Errorf("err = %v; want ErrUpstreamInvalid (intermediate symlink escape)", err)
 	}
@@ -718,7 +718,7 @@ func TestFetcher_TempDirCollisionResistance(t *testing.T) {
 				SHA:       wantSHA,
 				CacheRoot: cacheRoot,
 			})
-			res, err := f.Fetch(context.Background(), Request{})
+			res, err := f.Fetch(context.Background())
 			if err != nil {
 				errs <- err
 				return

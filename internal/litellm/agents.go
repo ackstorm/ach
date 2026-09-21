@@ -10,9 +10,8 @@ import (
 
 // ListA2AAgents issues GET /v1/agents?health_check=false. The name reflects
 // D-13's A2A-agent terminology; the LiteLLM endpoint name (/v1/agents) is
-// unchanged. LiteLLM returns a bare array; we wrap into
-// AgentListResponse{Data: ...} for length-check uniformity per REL-05
-// (ErrNotFound on empty, length-checked before indexing). Used by the Plan 07
+// unchanged. LiteLLM returns a bare array; per REL-05 an empty one is
+// ErrNotFound (length-checked before indexing). Used by the Plan 07
 // LiteLLM-snapshot Runnable so an Environment's `spec.runtime.a2aAgents`
 // intersection against the live registration set drives the
 // ExecutionResourcesResolved condition.
@@ -25,9 +24,8 @@ func (c *RESTClient) ListA2AAgents(ctx context.Context) ([]AgentEntry, error) {
 	if err := json.Unmarshal(raw, &arr); err != nil {
 		return nil, fmt.Errorf("litellm: decode GET /v1/agents: %w", err)
 	}
-	list := AgentListResponse{Data: arr}
-	if len(list.Data) == 0 { // REL-05 length check before indexing
+	if len(arr) == 0 { // REL-05 length check before indexing
 		return nil, ErrNotFound
 	}
-	return list.Data, nil
+	return arr, nil
 }

@@ -93,7 +93,7 @@ func cachedFetch(ctx context.Context, cache *FetchCache, spec gitfetch.Spec) (ta
 	}
 
 	f := gitfetch.New(spec)
-	res, err := f.Fetch(ctx, gitfetch.Request{})
+	res, err := f.Fetch(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("manager: fetch %s: %w", spec.URL, err)
 	}

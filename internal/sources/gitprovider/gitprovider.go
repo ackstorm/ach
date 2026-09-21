@@ -54,7 +54,7 @@ func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, prior
 		Token:      token,
 		AuthScheme: scheme,
 		Subtree:    subtree,
-	}).Fetch(ctx, gitsrc.Request{})
+	}).Fetch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", provider, err)
 	}

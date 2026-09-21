@@ -38,7 +38,6 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/audit"
@@ -81,9 +80,6 @@ var (
 		probeAddr            string
 		enableLeaderElection bool
 		secureMetrics        bool
-		webhookCertPath      string
-		webhookCertName      string
-		webhookCertKey       string
 		metricsCertPath      string
 		metricsCertName      string
 		metricsCertKey       string
@@ -118,9 +114,6 @@ func init() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&operatorFlags.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&operatorFlags.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&operatorFlags.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&operatorFlags.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
 	flag.StringVar(&operatorFlags.metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
 	flag.StringVar(&operatorFlags.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
@@ -136,7 +129,7 @@ func init() {
 		config.EnvOr("ACH_LITELLM_CONNECTION_SECRET_KEY", ""),
 		"Data key inside the master-key Secret referenced by the bootstrapped LiteLLMConnection.")
 	flag.BoolVar(&operatorFlags.enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+		"If set, HTTP/2 will be enabled for the metrics server")
 	operatorZapOpts.BindFlags(flag.CommandLine)
 
 	operatorCmd.Flags().AddGoFlagSet(flag.CommandLine)
@@ -159,9 +152,6 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	probeAddr := operatorFlags.probeAddr
 	enableLeaderElection := operatorFlags.enableLeaderElection
 	secureMetrics := operatorFlags.secureMetrics
-	webhookCertPath := operatorFlags.webhookCertPath
-	webhookCertName := operatorFlags.webhookCertName
-	webhookCertKey := operatorFlags.webhookCertKey
 	metricsCertPath := operatorFlags.metricsCertPath
 	metricsCertName := operatorFlags.metricsCertName
 	metricsCertKey := operatorFlags.metricsCertKey
@@ -275,30 +265,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
-	webhookTLSOpts := tlsOpts
-
-	if len(webhookCertPath) > 0 {
-		operatorSetupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-
-		var err error
-		webhookCertWatcher, err = certwatcher.New(
-			filepath.Join(webhookCertPath, webhookCertName),
-			filepath.Join(webhookCertPath, webhookCertKey),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to initialize webhook certificate watcher: %w", err)
-		}
-
-		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
-			config.GetCertificate = webhookCertWatcher.GetCertificate
-		})
-	}
-
-	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts: webhookTLSOpts,
-	})
+	var metricsCertWatcher *certwatcher.CertWatcher
 
 	metricsServerOptions := metricsserver.Options{
 		BindAddress:   metricsAddr,
@@ -362,7 +329,6 @@ func runOperator(_ *cobra.Command, _ []string) error {
 				watchNS: {},
 			},
 		},
-		WebhookServer:           webhookServer,
 		HealthProbeBindAddress:  probeAddr,
 		LeaderElection:          enableLeaderElection,
 		LeaderElectionID:        "c86cb6c7.ackstorm.ai",
@@ -631,13 +597,6 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		operatorSetupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {
 			return fmt.Errorf("unable to add metrics certificate watcher to manager: %w", err)
-		}
-	}
-
-	if webhookCertWatcher != nil {
-		operatorSetupLog.Info("Adding webhook certificate watcher to manager")
-		if err := mgr.Add(webhookCertWatcher); err != nil {
-			return fmt.Errorf("unable to add webhook certificate watcher to manager: %w", err)
 		}
 	}
 

@@ -47,7 +47,7 @@ var errUnsupportedPluginSource = errors.New("unsupported plugin source")
 // gitFetcher is the package-level seam tests inject to bypass the live
 // git binary. nil → real gitfetch.Fetcher.New is used.
 type gitFetcher interface {
-	Fetch(ctx context.Context, req sourcesgit.Request) (*sourcesgit.Result, error)
+	Fetch(ctx context.Context) (*sourcesgit.Result, error)
 }
 
 // newGitFetcherFn produces a gitFetcher for a Spec. Overridable by tests.
@@ -115,7 +115,7 @@ func dispatchMarketplacePlugin(
 		spec.SHA = sha
 	}
 	f := newGitFetcherFn(spec)
-	res, err := f.Fetch(ctx, sourcesgit.Request{})
+	res, err := f.Fetch(ctx)
 	if err != nil {
 		return nil, "", err
 	}

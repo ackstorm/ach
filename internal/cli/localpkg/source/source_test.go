@@ -33,13 +33,3 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
-
-func TestParseLocal(t *testing.T) {
-	got, err := Parse("./fixtures/x", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Kind != KindLocal || got.LocalPath == "" || got.LocalPath[0] != '/' {
-		t.Fatalf("local parse wrong: %+v", got)
-	}
-}

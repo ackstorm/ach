@@ -14,7 +14,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -366,9 +365,6 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			targets, err := parseTargets(flagTargets)
 			if err != nil {
@@ -685,9 +681,6 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 		Short: fmt.Sprintf("Re-resolve and re-install %ss (all if no args)", kindStr),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			// Root for re-install; uninstall uses same root derived from stored files.
 			// For update we need a root — use $HOME when --global, --dest if set, else cwd.
@@ -902,9 +895,6 @@ func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
 		Short: fmt.Sprintf("Check installed %ss against their source (read-only; all if no args)", kindStr),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 
 			installed, err := store.LoadInstalled()
 			if err != nil {

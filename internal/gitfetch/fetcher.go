@@ -98,11 +98,6 @@ type Spec struct {
 	MaxCloneBytes int64
 }
 
-// Request is currently empty — kept so the signature matches the
-// internal/sources contract pattern and so future fields (e.g.
-// PriorRev for short-circuiting) can land without API churn.
-type Request struct{}
-
 // Result mirrors internal/sources.FetchResult shape.
 type Result struct {
 	Body        io.ReadCloser
@@ -145,7 +140,7 @@ func New(spec Spec) *Fetcher {
 // and returns a gzipped tar of the worktree (or Spec.Subtree). The
 // returned Body MUST be closed by the caller (which also triggers
 // removal of the temporary clone directory).
-func (f *Fetcher) Fetch(ctx context.Context, _ Request) (*Result, error) {
+func (f *Fetcher) Fetch(ctx context.Context) (*Result, error) {
 	spec := f.spec
 	if spec.URL == "" {
 		return nil, fmt.Errorf("git: spec.URL required: %w", sourceserr.ErrUpstreamInvalid)

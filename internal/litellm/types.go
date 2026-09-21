@@ -204,9 +204,8 @@ type TeamListResponse struct {
 	TotalPages int             `json:"total_pages"`
 }
 
-// MCPServerEntry is one row of GET /v1/mcp/server (bare array; the
-// operator wraps it in MCPServerListResponse for length-check uniformity
-// with the model and agent helpers — see REL-05).
+// MCPServerEntry is one row of GET /v1/mcp/server (bare array,
+// length-checked like the model and agent helpers — see REL-05).
 type MCPServerEntry struct {
 	ServerID       string `json:"server_id"`
 	ServerName     string `json:"server_name,omitempty"`
@@ -220,14 +219,7 @@ type MCPServerEntry struct {
 	ApprovalStatus string `json:"approval_status,omitempty"`
 }
 
-// MCPServerListResponse wraps the bare-array GET /v1/mcp/server response
-// in a Data envelope so the per-domain length-check pattern is uniform.
-type MCPServerListResponse struct {
-	Data []MCPServerEntry `json:"data"`
-}
-
-// AgentEntry is one row of GET /v1/agents (bare-array response wrapped
-// in AgentListResponse).
+// AgentEntry is one row of GET /v1/agents (bare-array response).
 type AgentEntry struct {
 	AgentID         string         `json:"agent_id"`
 	AgentName       string         `json:"agent_name"`
@@ -235,12 +227,6 @@ type AgentEntry struct {
 	LiteLLMParams   LiteLLMParams  `json:"litellm_params,omitempty"`
 	CreatedAt       string         `json:"created_at,omitempty"`
 	UpdatedAt       string         `json:"updated_at,omitempty"`
-}
-
-// AgentListResponse wraps the bare-array GET /v1/agents response in a
-// Data envelope (uniform length-check pattern).
-type AgentListResponse struct {
-	Data []AgentEntry `json:"data"`
 }
 
 // UserKeyInfo is one row from

@@ -986,10 +986,6 @@ func resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, s
 	}
 }
 
-// Defensive: keep context import used even on platforms where the
-// linker might trim the unused import.
-var _ = context.Background
-
 // Register `ach keys` on the root command. Mirrors the
 // login/logout/whoami pattern from 06-03 — each subcommand owns its
 // own init() so cobra registration is local to the file.

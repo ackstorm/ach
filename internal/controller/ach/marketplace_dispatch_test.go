@@ -31,7 +31,7 @@ type fakeDispatchGitFetcher struct {
 	err  error
 }
 
-func (f *fakeDispatchGitFetcher) Fetch(_ context.Context, _ sourcesgit.Request) (*sourcesgit.Result, error) {
+func (f *fakeDispatchGitFetcher) Fetch(_ context.Context) (*sourcesgit.Result, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

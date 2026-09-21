@@ -77,10 +77,6 @@ type SkillMarketplaceReconciler struct {
 	// When 0 a hard ingress cap (contentkit.SkillRawIngressCap) applies instead.
 	SkillMaxSizeMiB int
 
-	// SkillMaxSizeMiBFn, when non-nil, overrides SkillMaxSizeMiB at every cap
-	// read (envtest shares a cap across reconcilers via an atomic).
-	SkillMaxSizeMiBFn func() int
-
 	// Fetchers is the FetcherFactory; nil → defaults to registry.For.
 	Fetchers FetcherFactory
 
@@ -88,18 +84,13 @@ type SkillMarketplaceReconciler struct {
 	ResyncSource chan event.GenericEvent
 }
 
-// ingressCapBytes returns the whole-marketplace fetch cap in bytes. Prefers the
-// test-only SkillMaxSizeMiBFn override; falls back to SkillMaxSizeMiB; a zero
+// ingressCapBytes returns the whole-marketplace fetch cap in bytes. A zero
 // cap falls back to the hard contentkit.SkillRawIngressCap operator-memory guard.
 func (r *SkillMarketplaceReconciler) ingressCapBytes() int64 {
-	mib := r.SkillMaxSizeMiB
-	if r.SkillMaxSizeMiBFn != nil {
-		mib = r.SkillMaxSizeMiBFn()
-	}
-	if mib <= 0 {
+	if r.SkillMaxSizeMiB <= 0 {
 		return contentkit.SkillRawIngressCap
 	}
-	return int64(mib) << 20
+	return int64(r.SkillMaxSizeMiB) << 20
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=skillmarketplaces,verbs=get;list;watch;create;update;patch;delete

@@ -96,13 +96,6 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("repo add: %v", err)}
 			}
-			if su.Kind == source.KindLocal {
-				return &exit.CodedError{
-					Code: exit.General,
-					Msg:  "repo add: local sources are not yet supported (use github:/git:)",
-				}
-			}
-
 			// Resolve token: flag > env fallback.
 			token := flagToken
 			if token == "" {
@@ -373,7 +366,7 @@ func resolveAndDetect(
 		Token:      token,
 		AuthScheme: scheme,
 	})
-	res, err := fetcher.Fetch(ctx, gitfetch.Request{})
+	res, err := fetcher.Fetch(ctx)
 	if err != nil {
 		return "", nil, "", cloneExitErr("fetch", err)
 	}
@@ -428,8 +421,6 @@ func kindStr(k source.Kind) string {
 		return "github"
 	case source.KindGit:
 		return "git"
-	case source.KindLocal:
-		return "local"
 	default:
 		return "unknown"
 	}
@@ -443,14 +434,11 @@ func rebuildSourceURI(e *store.RepoEntry) source.SourceURI {
 		kind = source.KindGitHub
 	case "git":
 		kind = source.KindGit
-	case "local":
-		kind = source.KindLocal
 	}
 	return source.SourceURI{
 		Kind:       kind,
 		CloneURL:   e.CloneURL,
 		GitRef:     e.GitRef,
-		LocalPath:  e.LocalPath,
 		AuthScheme: e.AuthScheme,
 	}
 }

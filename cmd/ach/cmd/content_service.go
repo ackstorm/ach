@@ -149,9 +149,6 @@ func parseContentServiceConfig() (*contentServiceConfig, error) {
 func runContentService(cmd *cobra.Command, _ []string) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	cfg, err := parseContentServiceConfig()
 	if err != nil {

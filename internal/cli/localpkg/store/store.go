@@ -24,10 +24,9 @@ type Capability struct {
 type RepoEntry struct {
 	Name           string       `json:"name"`
 	Source         string       `json:"source"`
-	Kind           string       `json:"kind"` // "github"|"git"|"local"
+	Kind           string       `json:"kind"` // "github"|"git"
 	CloneURL       string       `json:"cloneURL,omitempty"`
 	GitRef         string       `json:"gitRef,omitempty"`
-	LocalPath      string       `json:"localPath,omitempty"`
 	AuthScheme     string       `json:"authScheme,omitempty"`
 	HasToken       bool         `json:"hasToken"`
 	Provides       []Capability `json:"provides"`

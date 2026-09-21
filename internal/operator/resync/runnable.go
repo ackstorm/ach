@@ -4,7 +4,6 @@ package resync
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -160,24 +159,4 @@ func (r *Resync) push(ctx context.Context, ch chan<- event.GenericEvent, obj cli
 		r.Log.Info("resync: channel full; dropping signal (recovered on next sweep)",
 			"kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", obj.GetName())
 	}
-}
-
-// Describe returns a human-readable summary of which channels are wired.
-// Currently unused at runtime but handy in tests.
-func (r *Resync) Describe() string {
-	return fmt.Sprintf("resync interval=%s namespace=%s env=%t plugin=%t prompt=%t artifact=%t skill=%t mp=%t smp=%t bip=%t llmconn=%t",
-		r.intervalOrDefault(), r.Namespace,
-		r.Channels.Environment != nil, r.Channels.Plugin != nil,
-		r.Channels.Prompt != nil, r.Channels.Artifact != nil,
-		r.Channels.Skill != nil,
-		r.Channels.Marketplace != nil, r.Channels.SkillMarketplace != nil, r.Channels.BIP != nil,
-		r.Channels.LiteLLMConnection != nil,
-	)
-}
-
-func (r *Resync) intervalOrDefault() time.Duration {
-	if r.Interval <= 0 {
-		return defaultInterval
-	}
-	return r.Interval
 }

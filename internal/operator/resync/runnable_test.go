@@ -112,28 +112,6 @@ func TestResync_ContextCancelExitsCleanly(t *testing.T) {
 	}
 }
 
-// TestResync_DefaultIntervalApplied ensures a zero Interval selects the
-// 5-minute default rather than busy-spinning.
-func TestResync_DefaultIntervalApplied(t *testing.T) {
-	r := &Resync{}
-	got := r.intervalOrDefault()
-	if got != defaultInterval {
-		t.Fatalf("expected defaultInterval (%s), got %s", defaultInterval, got)
-	}
-}
-
-// TestResync_Describe covers the Describe helper for trivial coverage.
-func TestResync_Describe(t *testing.T) {
-	r := &Resync{
-		Namespace: "ach-system",
-		Channels:  Channels{Environment: make(chan event.GenericEvent, 1)},
-	}
-	got := r.Describe()
-	if got == "" {
-		t.Fatal("Describe returned empty")
-	}
-}
-
 // Compile-time guard: corev1.Pod must NOT be in the resync surface — the
 // import is here only to assert the scheme builder is functional and the
 // fake client can compile against it.

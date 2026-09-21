@@ -11,8 +11,7 @@ import (
 )
 
 // TestListMCPServersLengthCheck — REL-05 on the bare-array list shape.
-// LiteLLM returns a bare JSON array; the helper wraps into
-// MCPServerListResponse{Data: ...} for the length check.
+// LiteLLM returns a bare JSON array; the helper length-checks it.
 func TestListMCPServersLengthCheck(t *testing.T) {
 	cases := []struct {
 		name string

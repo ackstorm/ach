@@ -5,8 +5,6 @@ package source
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +14,6 @@ type Kind int
 const (
 	KindGitHub Kind = iota + 1 // github:owner/repo[#ref]
 	KindGit                    // git:https://host/path[.git][#ref]
-	KindLocal                  // /abs, ./rel, ../rel, ~/home
 )
 
 const (
@@ -27,9 +24,8 @@ const (
 // SourceURI is the parsed representation of a source reference.
 type SourceURI struct {
 	Kind       Kind
-	CloneURL   string // https URL for github/git; empty for local
+	CloneURL   string // https URL for github/git
 	GitRef     string // text after '#'; empty → default branch
-	LocalPath  string // absolute path for local
 	AuthScheme string // "bearer" (default) or "basic-oauth2"
 }
 
@@ -45,12 +41,6 @@ func Parse(ref, authOverride string) (SourceURI, error) {
 		return SourceURI{}, fmt.Errorf("source: unknown auth scheme %q (want %q or %q)", authOverride, AuthBearer, AuthBasicOAuth2)
 	}
 
-	// Local paths: start with /, ./, ../, or ~
-	if strings.HasPrefix(ref, "/") || strings.HasPrefix(ref, "./") ||
-		strings.HasPrefix(ref, "../") || strings.HasPrefix(ref, "~") {
-		return parseLocal(ref)
-	}
-
 	// github: scheme
 	if strings.HasPrefix(ref, "github:") {
 		return parseGitHub(ref, authOverride)
@@ -61,7 +51,7 @@ func Parse(ref, authOverride string) (SourceURI, error) {
 		return parseGit(ref, authOverride)
 	}
 
-	return SourceURI{}, fmt.Errorf("source: unrecognized reference %q (expected github:, git:, or a local path)", ref)
+	return SourceURI{}, fmt.Errorf("source: unrecognized reference %q (expected github: or git:)", ref)
 }
 
 // parseGitHub handles "github:owner/repo[.git][#ref]".
@@ -142,27 +132,4 @@ func inferGitAuth(rawURL string) string {
 		return AuthBasicOAuth2
 	}
 	return AuthBearer
-}
-
-// parseLocal handles /abs, ./rel, ../rel, ~/home paths.
-func parseLocal(ref string) (SourceURI, error) {
-	// Expand ~ to home directory.
-	if strings.HasPrefix(ref, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return SourceURI{}, fmt.Errorf("source: cannot expand ~: %w", err)
-		}
-		ref = filepath.Join(home, ref[1:])
-	}
-
-	// Resolve to absolute path (handles ./ and ../ naturally).
-	abs, err := filepath.Abs(ref)
-	if err != nil {
-		return SourceURI{}, fmt.Errorf("source: cannot resolve path %q: %w", ref, err)
-	}
-
-	return SourceURI{
-		Kind:      KindLocal,
-		LocalPath: abs,
-	}, nil
 }
