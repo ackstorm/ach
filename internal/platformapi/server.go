@@ -27,6 +27,7 @@ import (
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/objects"
 	"github.com/ackstorm/ach/internal/platformapi/opencodeauth"
+	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -109,6 +110,10 @@ type Deps struct {
 	// OAuth is the OAuth 2.1 authorization server (/platform/oauth/*);
 	// nil → not mounted (no ACH_JWT_SECRET_DIR). Auth is filled in by New.
 	OAuth *auth.OAuthDeps
+
+	// OpenWork is the Den configuration (ACH_OPENWORK_*); off by default,
+	// and mounted only alongside the OAuth AS (it needs the console session).
+	OpenWork openwork.Config
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -163,6 +168,10 @@ func New(deps Deps) http.Handler {
 				return db.ActiveOAuthPK(ctx, deps.Pool, email)
 			},
 		}
+		// OpenWork Den (spec §12): handoff page under /openwork, API under
+		// /api/den + /openwork/api/den. No-op unless openwork.enabled.
+		openwork.Mount(r, openwork.Deps{Config: deps.OpenWork, Store: od.Store, BaseURL: deps.BaseURL,
+			CookieName: auth.ConsoleCookieName(deps.InsecureCookie), Session: od.ConsoleSession})
 	}
 
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
@@ -210,8 +219,8 @@ func New(deps Deps) http.Handler {
 		console.Mount(r, console.Deps{
 			Store: deps.Store, LiteLLM: deps.LiteLLM,
 			AsUser:           func(key string) console.UserCatalog { return deps.LiteLLMREST.AsUser(key) },
-			KeyEncryptionKey: deps.KeyEncryptionKey,
-			Audit:            deps.Audit, Logger: deps.Logger,
+			KeyEncryptionKey: deps.KeyEncryptionKey, OpenWorkEnabled: deps.OpenWork.Enabled,
+			Audit: deps.Audit, Logger: deps.Logger,
 		})
 
 		adminDeps := admin.Deps{
@@ -242,9 +251,10 @@ func New(deps Deps) http.Handler {
 
 	// The console at "/" (D-26). chi's NotFound is the fallback for every
 	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
-	// 404s so the fallback never shadows the API. The OpenWork handoff
-	// rescue on "/?desktopAuth=1" switches on with the Den (Task 8).
-	r.NotFound(console.SPA(console.Dist(), false).ServeHTTP)
+	// 404s so the fallback never shadows the API. With the Den on, the
+	// origin-only OpenWork sign-in URL "/?desktopAuth=1" is rescued to
+	// /openwork here (D-26: on "/" only).
+	r.NotFound(console.SPA(console.Dist(), deps.OpenWork.Enabled).ServeHTTP)
 
 	return r
 }

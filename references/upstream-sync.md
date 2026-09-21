@@ -189,3 +189,15 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 | `scripts/dev.sh` + `docs/Makefile` | `scripts/dev.sh` + `docs/Makefile` (same paths) | `./scripts/dev.sh make docs-build` silently produced empty `site/` because the inner `docker run -v $(abspath docs/..):/docs` resolved `$(abspath)` to `/workspace` (cwd inside devtools) but used the host docker socket. Export `HOST_PWD=$WORKSPACE` from dev.sh; honor it in `docs/Makefile` via `DOCS_HOST_ROOT ?= $(if $(HOST_PWD),$(HOST_PWD),$(abspath ...))`. **Sync-back PR target** — see `SYNC-FROM-ACH/05-docs-build-nested-mount.md` in alitellm. |
 | `.golangci.yml` | n/a — cosmetic only | Annotated exclude-rules with single-line justifications, dropped redundant `lll` entry from the SA1019 rule. No behavior change. No alitellm sync. |
 
+
+## 2026-09-21 — OpenWork Den ported from alitellm-auth (unified console, spec D-15/§12)
+
+Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c06176204292abb57f` (Apache-2.0, same org).
+Ported to Go, Cloud MCP (`/v1/mcp/token`, `/mcp/agent`) deliberately dropped; `connectEnabled` is `false`.
+
+| ach file | alitellm-auth file | Notes |
+|---|---|---|
+| `internal/platformapi/openwork/den.go`, `handoff.go`, `config.go` | `src/api/app/openwork.py` | Same routes, error envelope, id derivations (`user_<sha256[:24]>`, `organization_<sha256[:16]>`, `orgmember_…`), empty-catalog payloads verbatim; grants `Take`n from the AS's OAuthStore |
+| `internal/platformapi/openwork/handoff.html` | `src/api/app/templates/openwork_handoff.html` | Jinja → `html/template`; `DeepLink` is `template.URL` so the `openwork:` scheme survives |
+| `internal/platformapi/openwork/brand/openwork-{logo,icon}.svg` | `src/api/brand/openwork-{logo,icon}.svg` | Verbatim |
+| `internal/platformapi/openwork/den_test.go` | `src/api/tests/test_openwork.py` | Case-for-case port (minus Cloud MCP cases) |

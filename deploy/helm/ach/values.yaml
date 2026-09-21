@@ -232,6 +232,22 @@ security:
       name: ach-credential-hash-pepper
       key: pepper
 
+# openwork: the OpenWork organization server ("Den") served by platform-api
+# at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den
+# (the desktop API). Off by default. Cloud MCP is not offered. The desktop
+# deep-link target is https://<ach host>/?desktopAuth=1.
+openwork:
+  enabled: false
+  orgName: ACH
+  orgSlug: ach
+  brandAppName: ACH
+  brandLogoUrl: ""
+  brandIconUrl: ""
+  accentColor: ""
+  # A non-empty list disables interactive terminals in the desktop outright.
+  blockedCommands: []
+  blockBrowserUploads: false
+
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one
 # origin so the public Ingress targets a single Service; "/" is the

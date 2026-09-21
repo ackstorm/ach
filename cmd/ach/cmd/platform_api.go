@@ -47,6 +47,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -315,6 +316,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Redis:            out.redis,
 		LiteLLM:          liteLLM,
 		LiteLLMREST:      liteLLM,
+		OpenWork:         openwork.FromEnv(),
 		Pepper:           cfg.Pepper,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		Allowlist:        allowlist,

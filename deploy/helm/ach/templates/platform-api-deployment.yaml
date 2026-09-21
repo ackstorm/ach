@@ -104,6 +104,26 @@ spec:
               value: {{ .Values.platformApi.headers | toJson | quote }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
+            - name: ACH_OPENWORK_ENABLED
+              value: {{ .Values.openwork.enabled | quote }}
+            {{- if .Values.openwork.enabled }}
+            - name: ACH_OPENWORK_ORG_NAME
+              value: {{ .Values.openwork.orgName | quote }}
+            - name: ACH_OPENWORK_ORG_SLUG
+              value: {{ .Values.openwork.orgSlug | quote }}
+            - name: ACH_OPENWORK_BRAND_APP_NAME
+              value: {{ .Values.openwork.brandAppName | quote }}
+            - name: ACH_OPENWORK_BRAND_LOGO_URL
+              value: {{ .Values.openwork.brandLogoUrl | quote }}
+            - name: ACH_OPENWORK_BRAND_ICON_URL
+              value: {{ .Values.openwork.brandIconUrl | quote }}
+            - name: ACH_OPENWORK_ACCENT_COLOR
+              value: {{ .Values.openwork.accentColor | quote }}
+            - name: ACH_OPENWORK_BLOCKED_COMMANDS
+              value: {{ join "," .Values.openwork.blockedCommands | quote }}
+            - name: ACH_OPENWORK_BLOCK_BROWSER_UPLOADS
+              value: {{ .Values.openwork.blockBrowserUploads | quote }}
+            {{- end }}
           resources: {{ toYaml .Values.platformApi.resources | nindent 12 }}
           volumeMounts:
             - name: admins
