@@ -128,13 +128,6 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
-  # oauth.enabled mounts the ach-jwt-signing-keys Secret into platform-api
-  # (and into content-service, which verifies the access tokens hydrate
-  # sends in x-ach-key) and turns on the OAuth 2.1 authorization server
-  # under /platform/oauth (the human login path for Claude Code / Codex /
-  # opencode). Off → the device-code + pk_ flow only.
-  oauth:
-    enabled: true
   # headers: the credential slots platform-api reads, in order (same shape as
   # forwarder.headers). resolve only — platform-api does not proxy, so a
   # passthrough entry is refused at start-up. Authorization: Bearer is

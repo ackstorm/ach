@@ -25,7 +25,7 @@ const prefixXAch = "x-ach-"
 // and the other x-litellm-* headers (LiteLLM enforces its own per-key
 // permissions). Hop-by-hop headers are removed by httputil.ReverseProxy
 // itself. The "Bearer " prefix LiteLLM's MCP key parser needs is applied on
-// the /mcp route by the proxy Director; /v1, /v2, /gemini, /a2a take the
+// the /mcp route by the proxy Director; /v1, /gemini, /a2a take the
 // bare value.
 func StripAndRewrite(h http.Header, litellmAPIKey string) {
 	for k := range h {

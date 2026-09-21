@@ -100,8 +100,9 @@ container is the sole writer. Call with the root context and nindent 8:
 */}}
 {{/*
 ach.contentServiceJWTVolume — the ach-jwt-signing-keys Secret volume the
-content-service container mounts when the OAuth AS is enabled. Included by
-BOTH Pods that can host the container (operator sidecar, standalone).
+content-service container mounts (it verifies the OAuth access tokens
+hydrate sends). Included by BOTH Pods that can host the container (operator
+sidecar, standalone).
 */}}
 {{/*
 ach.full — "true" for profile full, "" for identity. The single switch every
@@ -113,7 +114,7 @@ governance-only template gates on (CRDs, operator, content-service).
 {{- end }}
 
 {{- define "ach.contentServiceJWTVolume" -}}
-{{- if and .Values.contentService.enabled .Values.platformApi.oauth.enabled (include "ach.full" .) }}
+{{- if and .Values.contentService.enabled (include "ach.full" .) }}
 - name: jwt-signing-keys
   secret:
     secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
@@ -147,22 +148,18 @@ governance-only template gates on (CRDs, operator, content-service).
     # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
     # single litellmConnection block — do NOT also set them in extraEnv.
     {{- include "ach.litellmConnectionEnv" . | nindent 4 }}
-    {{- if .Values.platformApi.oauth.enabled }}
     # OAuth access tokens reach /content in x-ach-key (hydrate from an
     # OAuth profile); content-service verifies them against the same
     # Ed25519 seed platform-api signs with, read as files like platform-api.
     - name: ACH_JWT_SECRET_DIR
       value: /etc/ach/jwt
-    {{- end }}
   volumeMounts:
     - name: cache
       mountPath: /var/cache/ach
       readOnly: true
-    {{- if .Values.platformApi.oauth.enabled }}
     - name: jwt-signing-keys
       mountPath: /etc/ach/jwt
       readOnly: true
-    {{- end }}
   livenessProbe:
     httpGet:
       path: /healthz

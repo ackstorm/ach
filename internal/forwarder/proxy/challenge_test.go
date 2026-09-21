@@ -180,7 +180,7 @@ func TestResourceRoot(t *testing.T) {
 		"/mcp":                    "",
 		"/v1/chat/completions":    "/v1",
 		"/v1":                     "/v1",
-		"/v2/key/info":            "/v2",
+		"/v2/key/info":            "", // catch-all, not a resource
 		"/gemini/v1beta/models":   "/gemini",
 		"/v10/x":                  "",
 		"/.well-known/jwks.json":  "",

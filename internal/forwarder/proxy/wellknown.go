@@ -12,14 +12,14 @@ import (
 )
 
 // serviceRe / familyRe extract the resource a client holds: "/mcp/<name>"
-// or "/a2a/<name>" for those route families, "/v1", "/v2" or "/gemini" for
+// or "/a2a/<name>" for those route families, "/v1" or "/gemini" for
 // the model API families; everything else is the API as a whole. Never the
 // dialled path: streamable HTTP appends /messages and session segments, and
 // RFC 9728 §3.2 has the client compare the document's `resource` against
 // the server it configured — the root.
 var (
 	serviceRe = regexp.MustCompile(`^/(mcp|a2a)/([A-Za-z0-9._-]+)`)
-	familyRe  = regexp.MustCompile(`^/(v1|v2|gemini)(/|$)`)
+	familyRe  = regexp.MustCompile(`^/(v1|gemini)(/|$)`)
 )
 
 func resourceRoot(path string) string {

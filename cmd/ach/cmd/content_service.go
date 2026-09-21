@@ -89,7 +89,7 @@ type contentServiceConfig struct {
 	BindAddr         string
 	Pepper           []byte
 	BaseURL          string // ACH_BASE_URL: OAuth issuer (`iss` of the access tokens)
-	JWTSecretDir     string // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → JWTs read as 401
+	JWTSecretDir     string // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (verifies OAuth access tokens)
 }
 
 // parseContentServiceConfig validates and returns the env-var surface.
@@ -136,10 +136,11 @@ func parseContentServiceConfig() (*contentServiceConfig, error) {
 	}
 	cfg.Pepper = pepper
 
-	cfg.BaseURL = os.Getenv("ACH_BASE_URL")
-	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
-	if cfg.JWTSecretDir != "" && cfg.BaseURL == "" {
-		return nil, fmt.Errorf("ACH_BASE_URL required when ACH_JWT_SECRET_DIR is set (OAuth issuer)")
+	if cfg.BaseURL, err = config.MustEnvNonEmpty("ACH_BASE_URL"); err != nil { // the OAuth issuer
+		return nil, err
+	}
+	if cfg.JWTSecretDir, err = config.MustEnvNonEmpty("ACH_JWT_SECRET_DIR"); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
@@ -196,15 +197,10 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	}
 	// OAuth access tokens (hydrate from an OAuth profile sends the JWS in
 	// x-ach-key) verify against the same Ed25519 slots platform-api signs
-	// with, read from the mounted Secret like platform-api does. Without
-	// the mount a JWS reads as (nil, nil) → 401.
-	var verifier keystore.JWTVerifier = keystore.NoJWT{}
-	if cfg.JWTSecretDir != "" {
-		signer := jwt.NewEd25519Signer()
-		if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
-			return fmt.Errorf("oauth verifier: %w", err) // fail closed, like platform-api
-		}
-		verifier = signer
+	// with, read from the mounted Secret like platform-api does.
+	verifier := jwt.NewEd25519Signer()
+	if err := jwt.LoadFromDir(verifier, cfg.JWTSecretDir); err != nil {
+		return fmt.Errorf("oauth verifier: %w", err) // fail closed, like platform-api
 	}
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
 	resolver, err := keystore.NewCachedResolver(oauthResolver, redisClient, cfg.Pepper)

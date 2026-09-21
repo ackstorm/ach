@@ -162,10 +162,10 @@ func TestInjectEnvironmentTag_TG13_NilBody(t *testing.T) {
 	}
 }
 
-// TestV2BodylessGetUntouched pins B.3.5: a bodyless GET short-circuits tag
+// TestBodylessGetUntouched: a bodyless GET short-circuits tag
 // injection (tags.go:69) — no body mutation, no X-Achtest-Tags header.
-func TestV2BodylessGetUntouched(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v2/model/info", nil)
+func TestBodylessGetUntouched(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/model/info", nil)
 	if err := InjectEnvironmentTag(req, "demo"); err != nil {
 		t.Fatalf("InjectEnvironmentTag: %v", err)
 	}

@@ -13,10 +13,11 @@ backend-side verification code, see
 the rotation procedure, see
 [JWT key rotation](../runbooks/jwt-key-rotation.md).
 
-`/v1`, `/v2`, and `/gemini` are pass-through route families with **no** JWT
-involvement. `/v2` behaves exactly as `/v1`: it receives the caller's bare
-`x-litellm-api-key`, with no precheck; LiteLLM is the authorization boundary.
-`/mcp` and `/a2a` remain the only JWT routes.
+`/v1` and `/gemini` are pass-through route families with **no** JWT
+involvement: the caller's bare `x-litellm-api-key`, no precheck; LiteLLM is
+the authorization boundary. `/mcp` and `/a2a` remain the only JWT routes.
+Every other LiteLLM path (`/v2/*`, `/ui`, `/key/*`, …) is the catch-all: a
+presented credential is resolved and forwarded, nothing is required.
 
 ---
 
@@ -261,7 +262,7 @@ alongside JWKS, and **serves it itself** (`proxy.WellKnownHandler`):
 wk := proxy.WellKnownHandler(deps.BaseURL)
 r.Handle("/.well-known/oauth-authorization-server", wk)   // RFC 8414 — jwt.ASMetadata
 r.Handle("/.well-known/oauth-protected-resource", wk)     // RFC 9728 — the API root
-r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /v1, /v2, /gemini, /mcp/<name>, /a2a/<name>
+r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /v1, /gemini, /mcp/<name>, /a2a/<name>
 ```
 
 | Document | `resource` / `issuer` | Points at |
@@ -270,7 +271,7 @@ r.Handle("/.well-known/oauth-protected-resource/*", wk)   // RFC 9728 — /v1, /
 | `/.well-known/oauth-protected-resource` | `ACH_BASE_URL` | `authorization_servers: [ACH_BASE_URL]` |
 | `…/oauth-protected-resource/mcp/<name>` | `ACH_BASE_URL/mcp/<name>` | same |
 | `…/oauth-protected-resource/a2a/<name>` | `ACH_BASE_URL/a2a/<name>` | same |
-| `…/oauth-protected-resource/v1` (also `/v2`, `/gemini`) | `ACH_BASE_URL/v1` | same — the model API family is a resource of its own (the opencode-auth plugin builds this URL itself) |
+| `…/oauth-protected-resource/v1` (also `/gemini`) | `ACH_BASE_URL/v1` | same — the model API family is a resource of its own (the opencode-auth plugin builds this URL itself) |
 
 Any other path under the PRM segment (`/v1/chat`, `/mcp/`, `/mcp/a/b`) is 404.
 **LiteLLM's PRM document is no longer relayed** — the client must be sent
@@ -293,7 +294,7 @@ the ceremony unstartable.
 answers an anonymous request with `401` and
 
 ```
-WWW-Authenticate: Bearer resource_metadata="<ACH_BASE_URL>/.well-known/oauth-protected-resource[/v1|/v2|/gemini|/mcp/<name>|/a2a/<name>]"
+WWW-Authenticate: Bearer resource_metadata="<ACH_BASE_URL>/.well-known/oauth-protected-resource[/v1|/gemini|/mcp/<name>|/a2a/<name>]"
 ```
 
 The pointer names the **service root**, never the dialled path: streamable
@@ -583,7 +584,7 @@ shared master key.
   into the new `litellm_key_material` column (reversing FIX01 §A.6 — plaintext,
   deliberate for this testing phase).
 - The resolver carries it through `KeyInfo` → `KeyContext`; the Director writes
-  it as `x-litellm-api-key` — **bare** on `/v1`/`/v2`/`/a2a`, `Bearer `-prefixed on
+  it as `x-litellm-api-key` — **bare** on `/v1`/`/a2a`, `Bearer `-prefixed on
   `/mcp` (LiteLLM's MCP key parser requires the prefix).
 - **`/gemini` is the exception:** LiteLLM's native Google AI Studio passthrough
   authenticates the virtual key ONLY via `x-goog-api-key` (or `?key=`) — it does

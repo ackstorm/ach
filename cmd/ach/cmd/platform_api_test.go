@@ -24,6 +24,7 @@ func setRequiredPlatformAPIEnv(t *testing.T) {
 	t.Setenv("ACH_DEX_CLIENT_SECRET", "secret")
 	t.Setenv("ACH_REDIS_ADDR", "localhost:6379")
 	t.Setenv("POD_NAMESPACE", "ach")
+	t.Setenv("ACH_JWT_SECRET_DIR", "/etc/ach/jwt")
 }
 
 // TestValidatePlatformAPIConfig_RedisDB exercises the cmd-layer fix:

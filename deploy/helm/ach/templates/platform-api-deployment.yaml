@@ -71,14 +71,13 @@ spec:
         - name: admins
           configMap:
             name: ach-platform-api-admins
-        {{- if .Values.platformApi.oauth.enabled }}
-        # The OAuth AS signs access tokens with the same Ed25519 seed the
-        # forwarder verifies with; platform-api reads it as files (no k8s
-        # client). The operator mints the Secret on boot.
+        # The OAuth AS — the only login — signs access tokens with the same
+        # Ed25519 seed the forwarder verifies with; platform-api reads it as
+        # files (no k8s client). The operator (or, in the identity profile,
+        # the forwarder) mints the Secret on boot.
         - name: jwt-signing-keys
           secret:
             secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
-        {{- end }}
       containers:
         - name: platform-api
           image: {{ include "ach.image" . }}
@@ -104,20 +103,16 @@ spec:
             {{- include "ach.litellmConnectionEnv" . | nindent 12 }}
             - name: ACH_CREDENTIAL_HEADERS
               value: {{ .Values.platformApi.headers | toJson | quote }}
-            {{- if .Values.platformApi.oauth.enabled }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
-            {{- end }}
           resources: {{ toYaml .Values.platformApi.resources | nindent 12 }}
           volumeMounts:
             - name: admins
               mountPath: /etc/ach/admins
               readOnly: true
-            {{- if .Values.platformApi.oauth.enabled }}
             - name: jwt-signing-keys
               mountPath: /etc/ach/jwt
               readOnly: true
-            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true

@@ -69,8 +69,8 @@ kubectl -n ach-system get deploy ach-operator -o jsonpath='{.spec.template.spec.
 WHY IT FAILS: the content-service authn gate accepts a `pk_`/`ek_` prefix
 or a compact JWS, and the JWS is resolved by the keystore OAuth resolver
 against the mounted signing seed — with the mount absent (chart <
-v0.9.0, or `platformApi.oauth.enabled=false`) the token cannot be
-verified. A `pk_`/`ek_` hydrate is unaffected. Found by the pre-v0.9.0
+v0.9.0) the token cannot be verified; since 0.9.6 the chart always mounts
+it and content-service refuses to start without `ACH_JWT_SECRET_DIR`. A `pk_`/`ek_` hydrate is unaffected. Found by the pre-v0.9.0
 binary smoke; the forwarder + platform-api had the resolver, the
 content-service did not.
 
@@ -764,9 +764,10 @@ cannot be spoofed) and `headers.StripAndRewrite` passes through untouched.
 
 ### ❌ Cost stuck at 0 under `litellm_usage`
 
-Check `/v2/model/info` reachability through the gateway. A control plane
-predating `/v2` forwarding returns 404 at the edge, so the cost source cannot
-read the model information it needs.
+Check `/v2/model/info` reachability through the gateway with the agent's
+`ek_` presented: `/v2` is the catch-all (since 0.9.6 — no challenge, no
+Environment tag), so a request WITH the key is forwarded and LiteLLM answers;
+a request without one reaches LiteLLM anonymous and gets its 401.
 
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
 After migration `000011` the forwarder authenticates to LiteLLM with the

@@ -62,8 +62,8 @@ var platformAPICmd = &cobra.Command{
 EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
 without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
 pepper, ACH_KEY_ENCRYPTION_KEY (the AES-256 DEK for at-rest key material),
-the three Dex OAuth2 vars, ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY,
-ACH_REDIS_ADDR, and POD_NAMESPACE.`,
+the three Dex OAuth2 vars, ACH_JWT_SECRET_DIR (the OAuth signing seed),
+ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY, ACH_REDIS_ADDR, and POD_NAMESPACE.`,
 	RunE: runPlatformAPI,
 }
 
@@ -89,7 +89,7 @@ type platformAPIConfig struct {
 	Namespace         string
 	InsecureCookie    bool
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
-	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files; empty → AS disabled
+	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
 	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
 }
@@ -167,7 +167,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	// survives — so it is the single correct source of truth (the
 	// platform-api itself always listens plain http behind the ingress).
 	cfg.InsecureCookie = !strings.HasPrefix(cfg.BaseURL, "https://")
-	cfg.JWTSecretDir = config.EnvOr("ACH_JWT_SECRET_DIR", "")
+	if cfg.JWTSecretDir, err = config.MustEnvNonEmpty("ACH_JWT_SECRET_DIR"); err != nil {
+		return nil, err
+	}
 	if cfg.OAuthAccessTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_ACCESS_TTL", time.Hour, time.Minute); err != nil {
 		return nil, err
 	}
@@ -289,24 +291,18 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
 	}
-	// OAuth AS: the signer is loaded from the mounted Secret; with the AS
-	// disabled (no ACH_JWT_SECRET_DIR) JWTs simply read as (nil, nil) → 401.
-	var oauthDeps *auth.OAuthDeps
-	var verifier keystore.JWTVerifier = keystore.NoJWT{}
-	if cfg.JWTSecretDir != "" {
-		signer := jwt.NewEd25519Signer()
-		if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
-			return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no AS
-		}
-		out.signer = signer
-		verifier = signer
-		oauthDeps = &auth.OAuthDeps{
-			Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
-			Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
-			AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
-		}
+	// OAuth AS — the only login: the signer is loaded from the mounted Secret.
+	signer := jwt.NewEd25519Signer()
+	if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
+		return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no login
 	}
-	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
+	out.signer = signer
+	oauthDeps := &auth.OAuthDeps{
+		Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
+		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
+		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
+	}
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, signer, cfg.BaseURL, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {

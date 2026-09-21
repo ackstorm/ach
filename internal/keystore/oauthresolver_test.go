@@ -65,9 +65,6 @@ func TestOAuthResolver(t *testing.T) {
 	if info, err := r.Resolve(ctx, "aaa.bbb.ccc"); err != nil || info != nil {
 		t.Fatalf("garbage JWS: info=%v err=%v", info, err)
 	}
-	if info, err := NewOAuthResolver(inner, NoJWT{}, "i", "ach", lookup).Resolve(ctx, sign("u@x.com")); err != nil || info != nil {
-		t.Fatalf("NoJWT: info=%v err=%v", info, err)
-	}
 
 	_, _ = r.Resolve(ctx, "pk-not-a-jws")
 	_, _ = r.Resolve(ctx, "sk-a.b.c")

@@ -20,14 +20,6 @@ type JWTVerifier interface {
 	Verify(raw, iss, aud string) (string, error)
 }
 
-// NoJWT is the verifier for a service with the OAuth AS disabled (no
-// signing seed mounted): every JWS reads as (nil, nil) → 401.
-type NoJWT struct{}
-
-func (NoJWT) Verify(string, string, string) (string, error) {
-	return "", errors.New("oauth disabled")
-}
-
 // OAuthPKLookup returns the user's single active purpose='oauth' row.
 type OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
 
