@@ -146,6 +146,16 @@ func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte,
 	return r, nil
 }
 
+// fillResult is the sfdetach.Do payload for a DB-lookup fill: the leader
+// closure captures `anchor` (the moment BEFORE the DB read) alongside the
+// resolved info, so every caller joined on the same singleflight key —
+// leader and followers alike — computes the TTL from the SAME anchor
+// (AC-08). See the comment at the sfdetach.Do call in Resolve.
+type fillResult struct {
+	info   *KeyInfo
+	anchor time.Time
+}
+
 // Resolve implements the cache → single-flighted-DB lookup flow per D-07.
 //
 //  1. Hash the plaintext with the configured pepper → cache key.
@@ -153,10 +163,11 @@ func NewCachedResolver(inner Resolver, redisClient *redis.Client, pepper []byte,
 //     ExpiresAt has passed while the entry sat in the cache (AC-10), in
 //     which case treat it as a miss-that-returns-nil (never re-check the
 //     DB just to confirm what the timestamp already proved).
-//  3. On miss, anchor `now()` BEFORE single-flighting the inner.Resolve
-//     call (concurrent callers on the same hash join the in-flight
-//     result) — the anchor, not the time the DB read finishes, is what
-//     the stored TTL is measured from (AC-08).
+//  3. On miss, single-flight the inner.Resolve call (concurrent callers
+//     on the same hash join the in-flight result); the singleflight
+//     LEADER anchors `now()` immediately BEFORE the DB read and every
+//     joined caller — leader and followers alike — shares that one
+//     anchor, not the time the DB read finishes (AC-08).
 //  4. If inner returned a populated *KeyInfo, SET it in Redis with
 //     `ttl − elapsed-since-anchor`, further capped at
 //     `ExpiresAt − now` (AC-10); a non-positive remainder is not cached
@@ -202,18 +213,26 @@ func (r *redisCachedResolver) Resolve(ctx context.Context, plaintext string) (*K
 		r.metrics.Misses.WithLabelValues(keyType, cacheLayerRedis).Inc()
 	}
 
-	// Anchor before the DB read — see the comment on `remaining` below (§8.2).
-	anchor := r.now()
-
 	// Single-flight DB lookup on a detached-but-bounded leader context so
 	// one caller's cancellation cannot cascade to live followers (C1).
-	info, err := sfdetach.Do(ctx, &r.sf, hash, sfLeaderTimeout,
-		func(c context.Context) (*KeyInfo, error) {
-			return r.inner.Resolve(c, plaintext)
+	// The anchor is captured INSIDE the leader closure, not by each caller:
+	// sfdetach.Do only dedupes execution of fn, every joined follower still
+	// resumes and runs the code below independently, so an anchor taken
+	// outside fn would let a late-joining follower see a later anchor than
+	// the leader and compute (and SET) a larger `remaining` — silently
+	// re-extending the entry past the leader's correctly-computed ceiling
+	// (AC-08). Returning the anchor alongside info makes every joined
+	// caller share the leader's single elapsed-since-DB-read measurement.
+	fill, err := sfdetach.Do(ctx, &r.sf, hash, sfLeaderTimeout,
+		func(c context.Context) (fillResult, error) {
+			anchor := r.now()
+			info, resolveErr := r.inner.Resolve(c, plaintext)
+			return fillResult{info: info, anchor: anchor}, resolveErr
 		})
 	if err != nil {
 		return nil, err
 	}
+	info, anchor := fill.info, fill.anchor
 	if info == nil {
 		// Revoked / expired / unknown — propagate (nil, nil) without
 		// caching. Caching nil would let a revoked credential survive

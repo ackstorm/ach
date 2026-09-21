@@ -27,7 +27,7 @@ type KeyListItem struct {
 type KeyListFilter struct {
 	OwnerEmail  *string // nil = all owners (admin scope)
 	Type        string  // "" | "pk" | "ek"
-	Status      string  // "" | "active" | "revoked" | "expired"
+	Status      string  // "" | "active" | "revoked" | "expired" | "suspended"
 	Environment string  // "" = all (ek rows only)
 }
 

@@ -528,3 +528,38 @@ func TestDBResolverEkCarriesExpiresAt(t *testing.T) {
 		t.Fatalf("%+v", info)
 	}
 }
+
+// AC-08 regression (review round 1, T2): the TTL anchor must be captured
+// once, inside the singleflight LEADER's closure, and shared by every
+// caller joined on the same key — not re-captured independently by each
+// caller before joining. A follower joining after the clock has advanced
+// must not compute (and SET) a larger `remaining` than the leader's,
+// which would silently re-extend the entry past the leader's correctly
+// computed 60s-from-DB-read ceiling (Redis SET is last-write-wins).
+func TestCachedResolverSharesLeaderAnchorAcrossFollowers(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	clock := func() time.Time { return now }
+	release := make(chan struct{})
+	inner := &blockingResolver{info: &KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk}, hold: release}
+	r, mr, pepper := setupCachedWith(t, inner, WithClock(clock))
+	cacheKey := cacheKeyPrefix + mustHash(t, pepper, "ek_1")
+
+	leaderDone := make(chan struct{})
+	go func() { _, _ = r.Resolve(context.Background(), "ek_1"); close(leaderDone) }()
+	inner.waitInFlight(t) // the leader anchored at `now` and is blocked in the DB read
+
+	now = now.Add(30 * time.Second) // the clock moves before a follower joins
+
+	followerDone := make(chan struct{})
+	go func() { _, _ = r.Resolve(context.Background(), "ek_1"); close(followerDone) }()
+	time.Sleep(200 * time.Millisecond) // let the follower join the in-flight singleflight entry
+
+	now = now.Add(15 * time.Second) // the DB read keeps running; 45s elapsed since the leader's anchor
+	close(release)
+	<-leaderDone
+	<-followerDone
+
+	if ttl := mr.TTL(cacheKey); ttl <= 0 || ttl > 15*time.Second {
+		t.Fatalf("cache TTL %v, want ≤15s (60s − 45s elapsed from the LEADER's anchor — a follower-anchored bug would show ≈45s instead)", ttl)
+	}
+}
