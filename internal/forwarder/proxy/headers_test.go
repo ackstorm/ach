@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package headers_test
+package proxy
 
 import (
 	"net/http"
 	"testing"
-
-	"github.com/ackstorm/ach/internal/forwarder/headers"
 )
 
 func TestStripAndRewrite(t *testing.T) {
@@ -21,7 +19,7 @@ func TestStripAndRewrite(t *testing.T) {
 	h.Set("Connection", "keep-alive")
 	h.Set("Content-Type", "application/json")
 
-	headers.StripAndRewrite(h, "sk-user-material")
+	stripAndRewrite(h, "sk-user-material")
 
 	if got := h.Get("X-Litellm-Api-Key"); got != "sk-user-material" {
 		t.Errorf("x-litellm-api-key = %q; want the caller's key", got)
@@ -43,7 +41,7 @@ func TestStripAndRewrite(t *testing.T) {
 
 func TestStripAndRewrite_EmptyMaterial(t *testing.T) {
 	h := http.Header{}
-	headers.StripAndRewrite(h, "")
+	stripAndRewrite(h, "")
 	if got, ok := h["X-Litellm-Api-Key"]; !ok || got[0] != "" {
 		t.Errorf("empty material → empty header (no fallback); got %v", got)
 	}

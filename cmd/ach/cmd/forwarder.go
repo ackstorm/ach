@@ -26,7 +26,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -243,15 +242,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 	out.pool = pool
 
-	redisOpts := &redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	}
-	if cfg.RedisTLS {
-		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
-	}
-	out.redis = redis.NewClient(redisOpts)
+	out.redis = newRedisClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisTLS)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 forwarderScheme,

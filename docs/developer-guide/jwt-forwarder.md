@@ -215,7 +215,7 @@ end-to-end, so the gateway's `req.Host` is authoritative — but TLS
 terminates at the Ingress, so the gateway only ever sees plaintext and
 must trust the Ingress's `X-Forwarded-Proto` when it is present.
 
-The forwarder's `headers.StripAndRewrite` drops only `x-ach-*` and sets
+The forwarder's `proxy.stripAndRewrite` drops only `x-ach-*` and sets
 `x-litellm-api-key`; every other header — these two, `Authorization`, the
 other `x-litellm-*` — passes as it came.
 

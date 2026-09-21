@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ackstorm/ach/internal/forwarder/headers"
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
@@ -26,7 +25,7 @@ type ctxKey int
 const (
 	// jwtCtxKey holds the per-request ACH JWT string when a BIP winner
 	// opts in on /mcp/{name} or /a2a/{name}. Director reads + writes it
-	// to req.Header AFTER headers.StripAndRewrite.
+	// to req.Header AFTER stripAndRewrite.
 	jwtCtxKey ctxKey = iota + 1
 )
 
@@ -120,7 +119,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 					material = string(pt)
 				}
 			}
-			headers.StripAndRewrite(req.Header, material)
+			stripAndRewrite(req.Header, material)
 			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
 			// requires a "Bearer " prefix; /v1, /gemini, /a2a take the bare value.
 			if routeFor(req.URL.Path) == "/mcp" {

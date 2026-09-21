@@ -193,7 +193,7 @@ func TestNewReverseProxySetsXForwardedHost(t *testing.T) {
 // survives both hops, since a regression there is invisible — the backend
 // silently falls back to its canonical URL and the client failure looks
 // identical to this bug being unfixed." Each hop is covered in isolation
-// elsewhere (this file for the gateway, headers.StripAndRewrite's table for
+// elsewhere (this file for the gateway, proxy.stripAndRewrite's table for
 // the forwarder); only a composed test catches a strip introduced BETWEEN them.
 //
 // /v1 with a stub resolver is the vehicle (the /.well-known documents are

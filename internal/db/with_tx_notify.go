@@ -38,28 +38,16 @@ func WithTxNotify(ctx context.Context, pool *pgxpool.Pool, channel, payload stri
 	if !validChannel(channel) {
 		return fmt.Errorf("db.WithTxNotify: invalid channel name %q", channel)
 	}
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
+	return runInTx(ctx, pool, func(tx pgx.Tx) error {
+		if err := fn(tx); err != nil {
 			return err
 		}
-		return fmt.Errorf("db.WithTxNotify: Begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after Commit
-	if err := fn(tx); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, payload); err != nil {
-		if isTransientPgErr(err) {
-			return err
+		if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, payload); err != nil {
+			if isTransientPgErr(err) {
+				return err
+			}
+			return fmt.Errorf("db.WithTxNotify(%s): pg_notify: %w", channel, err)
 		}
-		return fmt.Errorf("db.WithTxNotify(%s): pg_notify: %w", channel, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db.WithTxNotify(%s): Commit: %w", channel, err)
-	}
-	return nil
+		return nil
+	})
 }

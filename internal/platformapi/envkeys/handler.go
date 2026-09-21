@@ -833,22 +833,6 @@ func parseLimit(raw string) (int, error) {
 // ListAllHandler — GET /platform/keys (caller's own pk_ + ek_ keys)
 // --------------------------------------------------------------------------
 
-// keyListItemWire is the secret-free wire projection returned by ListAllHandler.
-// credential_hash and litellm_* columns are excluded by construction.
-type keyListItemWire struct {
-	KeyID       string  `json:"key_id"`
-	Type        string  `json:"type"`
-	Environment string  `json:"environment,omitempty"`
-	Name        string  `json:"name,omitempty"`
-	OwnerEmail  string  `json:"owner_email"`
-	Status      string  `json:"status"`
-	CreatedAt   string  `json:"created_at"`
-	LastUsedAt  *string `json:"last_used_at,omitempty"`
-	RevokedAt   *string `json:"revoked_at,omitempty"`
-	// No expiry field: a pk_'s window slides on every use, so any date here
-	// would be stale on arrival. Status carries the liveness instead.
-}
-
 // ListAllHandler serves GET /platform/keys — the caller's own pk_ + ek_ keys.
 // owner_email is ALWAYS forced to the authenticated caller; ?owner_email is
 // intentionally NOT honored (admins use /platform/admin/keys).
@@ -881,7 +865,7 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
 			return
 		}
-		writeKeyListJSON(w, items, next)
+		render.KeyList(w, items, next)
 	}
 }
 
@@ -905,37 +889,6 @@ func normalizeKeyStatus(v string) string {
 	default:
 		return ""
 	}
-}
-
-// writeKeyListJSON encodes items + next_cursor as the paginated list envelope.
-func writeKeyListJSON(w http.ResponseWriter, items []db.KeyListItem, next string) {
-	out := make([]keyListItemWire, 0, len(items))
-	for _, it := range items {
-		row := keyListItemWire{
-			KeyID:      it.KeyID,
-			Type:       it.Type,
-			OwnerEmail: it.OwnerEmail,
-			Status:     it.Status,
-			CreatedAt:  it.CreatedAt.UTC().Format(time.RFC3339),
-		}
-		if it.Environment != nil {
-			row.Environment = *it.Environment
-		}
-		if it.Name != nil {
-			row.Name = *it.Name
-		}
-		if it.LastUsedAt != nil {
-			s := it.LastUsedAt.UTC().Format(time.RFC3339)
-			row.LastUsedAt = &s
-		}
-		if it.RevokedAt != nil {
-			s := it.RevokedAt.UTC().Format(time.RFC3339)
-			row.RevokedAt = &s
-		}
-		out = append(out, row)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": out, "next_cursor": next})
 }
 
 // classifyLitellmErr maps a LiteLLM client error to the (HTTP status,

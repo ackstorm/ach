@@ -548,23 +548,6 @@ func ForceRefreshHandler(deps Deps) http.HandlerFunc {
 // ListKeysHandler — GET /platform/admin/keys
 // --------------------------------------------------------------------------
 
-// adminKeyListItem is the secret-free wire projection of one key returned by
-// ListKeysHandler. It mirrors keyListItemWire in the envkeys package to avoid
-// a cross-package import between sibling packages; the ~15 lines are duplicated
-// here intentionally (both packages own their own HTTP surface).
-type adminKeyListItem struct {
-	KeyID       string  `json:"key_id"`
-	Type        string  `json:"type"`
-	OwnerEmail  string  `json:"owner_email"`
-	Environment string  `json:"environment,omitempty"`
-	Name        string  `json:"name,omitempty"`
-	Status      string  `json:"status"`
-	CreatedAt   string  `json:"created_at"`
-	LastUsedAt  *string `json:"last_used_at,omitempty"`
-	RevokedAt   *string `json:"revoked_at,omitempty"`
-	// No expiry field — mirrors keyListItemWire; see the note there.
-}
-
 // adminDefaultLimit is the default page size for ListKeysHandler.
 const adminDefaultLimit = 100
 
@@ -609,37 +592,6 @@ func normalizeAdminKeyStatus(v string) string {
 	}
 }
 
-// writeAdminKeyListJSON encodes items + next_cursor as the paginated list envelope.
-func writeAdminKeyListJSON(w http.ResponseWriter, items []db.KeyListItem, next string) {
-	out := make([]adminKeyListItem, 0, len(items))
-	for _, it := range items {
-		row := adminKeyListItem{
-			KeyID:      it.KeyID,
-			Type:       it.Type,
-			OwnerEmail: it.OwnerEmail,
-			Status:     it.Status,
-			CreatedAt:  it.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		}
-		if it.Environment != nil {
-			row.Environment = *it.Environment
-		}
-		if it.Name != nil {
-			row.Name = *it.Name
-		}
-		if it.LastUsedAt != nil {
-			s := it.LastUsedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
-			row.LastUsedAt = &s
-		}
-		if it.RevokedAt != nil {
-			s := it.RevokedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
-			row.RevokedAt = &s
-		}
-		out = append(out, row)
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": out, "next_cursor": next})
-}
-
 // ListKeysHandler serves GET /platform/admin/keys — lists all keys across all
 // owners, optionally narrowed by ?owner_email. Gated by AdminOnly middleware.
 // Supports the same ?type, ?status, ?environment, ?limit, ?cursor filters as
@@ -664,7 +616,7 @@ func ListKeysHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusInternalServerError, "internal", "list keys failed", reqID)
 			return
 		}
-		writeAdminKeyListJSON(w, items, next)
+		render.KeyList(w, items, next)
 	}
 }
 

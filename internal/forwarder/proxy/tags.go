@@ -27,7 +27,7 @@ const (
 	// for "the Environment tag was injected" (ek_ → present, pk_ → absent).
 	//
 	// The name deliberately does NOT use the "x-ach-" prefix: the forwarder's
-	// own headers.StripAndRewrite drops every "x-ach-*" header from the
+	// own stripAndRewrite drops every "x-ach-*" header from the
 	// upstream request, so an "x-ach-tags" header would be removed by the
 	// Director before it ever reached LiteLLM.
 	// "x-achtest-" sits outside that prefix yet stays "x-*", which is what

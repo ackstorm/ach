@@ -14,8 +14,8 @@ import (
 // runInTx runs fn inside a transaction: Begin → fn → Commit, with a deferred
 // Rollback (no-op after Commit). Transient pgconn 08/57 errors from Begin/
 // Commit propagate raw so the caller's workqueue can back off; other errors
-// wrap with a non-secret prefix. Mirrors WithTxNotify's envelope minus the
-// pg_notify step (use WithTxNotify when a NOTIFY must fire in the same tx).
+// wrap with a non-secret prefix. WithTxNotify wraps this with the pg_notify
+// step (use it when a NOTIFY must fire in the same tx).
 func runInTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {

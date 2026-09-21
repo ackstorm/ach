@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package headers
+package proxy
 
 import (
 	"net/http"
@@ -12,7 +12,8 @@ import (
 // internal.
 const prefixXAch = "x-ach-"
 
-// StripAndRewrite prepares the outbound header set for LiteLLM:
+// stripAndRewrite is the outbound header transform the forwarder applies on
+// every route before the request reaches LiteLLM:
 //
 //   - every x-ach-* header is dropped;
 //   - x-litellm-api-key is SET to litellmAPIKey — the caller's own LiteLLM
@@ -27,7 +28,7 @@ const prefixXAch = "x-ach-"
 // itself. The "Bearer " prefix LiteLLM's MCP key parser needs is applied on
 // the /mcp route by the proxy Director; /v1, /gemini, /a2a take the
 // bare value.
-func StripAndRewrite(h http.Header, litellmAPIKey string) {
+func stripAndRewrite(h http.Header, litellmAPIKey string) {
 	for k := range h {
 		if strings.HasPrefix(strings.ToLower(k), prefixXAch) {
 			delete(h, k)

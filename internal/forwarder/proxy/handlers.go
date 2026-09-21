@@ -208,7 +208,7 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		}
 
 		// 4. Hand off — Director reads jwtCtxKey and writes Authorization
-		//    AFTER headers.StripAndRewrite (jwt-LAST ordering, D-05).
+		//    AFTER stripAndRewrite (jwt-LAST ordering, D-05).
 		r = r.WithContext(WithJWT(r.Context(), token))
 		rp.ServeHTTP(w, r)
 	}

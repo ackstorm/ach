@@ -28,7 +28,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,7 +38,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -164,15 +162,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	defer pool.Close()
 
 	// ─── Redis client ───
-	redisOpts := &redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
-	}
-	if cfg.RedisTLS {
-		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
-	}
-	redisClient := redis.NewClient(redisOpts)
+	redisClient := newRedisClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisTLS)
 	defer func() { _ = redisClient.Close() }()
 
 	// ─── LiteLLM REST client (Phase 3 D-25 pattern reused) ───
