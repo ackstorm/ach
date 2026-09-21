@@ -876,7 +876,13 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 		out := make([]render.KeyListRow, 0, len(items))
 		for _, it := range items {
 			status, reasons := EffectiveState(it, verdicts[deref(it.Environment)])
-			if wantStatus == statusInvalid && status != statusInvalid {
+			// The wire contract is "?status= filters on the EFFECTIVE state"
+			// for all five values, not just 'invalid': the SQL-level filter
+			// (normalizeKeyStatus) only narrows what it safely can — it lets
+			// every 'active' row through unfiltered since some of those may
+			// derive 'invalid' here — so the final say is always this
+			// post-derivation check.
+			if wantStatus != "" && status != wantStatus {
 				continue
 			}
 			out = append(out, render.KeyRow(it, status, reasons))
@@ -956,7 +962,6 @@ func normalizeKeyType(v string) string {
 	}
 }
 
-// normalizeKeyStatus maps the ?status query value to a valid filter string.
 // normalizeKeyStatus maps the ?status query value into the SQL-level filter
 // string ListKeys understands. "invalid" is derived client-side post-query
 // (ListAllHandler filters on EffectiveState's output after the fact) so it

@@ -908,3 +908,88 @@ func TestListAll_StatusFilterInvalid(t *testing.T) {
 		t.Errorf("items = %+v, want exactly [ekid_1 invalid]", resp.Items)
 	}
 }
+
+// multiEnvStore resolves a distinct db.EnvironmentRow per name — unlike
+// fakeEnvStore (one fixed env for every lookup), needed to exercise access
+// derivation differing across environments within a single list call.
+type multiEnvStore struct {
+	envs map[string]*db.EnvironmentRow
+}
+
+func (s *multiEnvStore) GetEnvironment(_ context.Context, name string) (*db.EnvironmentRow, error) {
+	return s.envs[name], nil
+}
+
+func (s *multiEnvStore) AccessGroupSyncedFromRow(_ *db.EnvironmentRow) bool { return true }
+
+// TestListAll_StatusFilterIsOnEffectiveState: the wire contract is "?status=
+// filters on the EFFECTIVE state" for all five values, not just 'invalid'.
+// A persisted-active row whose owner lost Environment access derives
+// 'invalid' — ?status=active must exclude it (the SQL-level pre-filter
+// alone lets it through, since it is still persisted 'active'), and
+// ?status=invalid must return only it.
+func TestListAll_StatusFilterIsOnEffectiveState(t *testing.T) {
+	nameOK, nameLost := "laptop", "phone"
+	envOK, envLost := "demo", "lost"
+	items := []db.KeyListItem{
+		{KeyID: "ekid_ok", Type: "ek", OwnerEmail: "u@x.com", Environment: &envOK, Name: &nameOK, Status: "active"},
+		{KeyID: "ekid_invalid", Type: "ek", OwnerEmail: "u@x.com", Environment: &envLost, Name: &nameLost, Status: "active"},
+	}
+	store := &multiEnvStore{envs: map[string]*db.EnvironmentRow{
+		"demo": {Name: "demo", AuthorizedTeams: []string{"team-a"}},
+		"lost": {Name: "lost", AuthorizedTeams: []string{"team-b"}},
+	}}
+	fll := &listTeamsLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		teams:      map[string][]string{"u@x.com": {"team-a"}}, // member of team-a only
+	}
+	newDeps := func() (Deps, *fakeEkDB) {
+		fdb := &fakeEkDB{items: items}
+		return Deps{
+			DB: fdb, Store: store, LiteLLM: fll,
+			Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}, fdb
+	}
+
+	t.Run("?status=active excludes the derived-invalid row", func(t *testing.T) {
+		deps, _ := newDeps()
+		rec := doList(deps, "?status=active")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Items []struct {
+				KeyID  string `json:"key_id"`
+				Status string `json:"status"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Items) != 1 || resp.Items[0].KeyID != "ekid_ok" || resp.Items[0].Status != "active" {
+			t.Errorf("items = %+v, want exactly [ekid_ok active]", resp.Items)
+		}
+	})
+
+	t.Run("?status=invalid returns only it", func(t *testing.T) {
+		deps, _ := newDeps()
+		rec := doList(deps, "?status=invalid")
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+		}
+		var resp struct {
+			Items []struct {
+				KeyID  string `json:"key_id"`
+				Status string `json:"status"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Items) != 1 || resp.Items[0].KeyID != "ekid_invalid" || resp.Items[0].Status != "invalid" {
+			t.Errorf("items = %+v, want exactly [ekid_invalid invalid]", resp.Items)
+		}
+	})
+}

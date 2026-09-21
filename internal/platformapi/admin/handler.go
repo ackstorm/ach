@@ -591,7 +591,7 @@ func normalizeAdminKeyType(v string) string {
 // Unknown values normalize to "" (no filter).
 func normalizeAdminKeyStatus(v string) string {
 	switch v {
-	case "active", "revoked", "expired":
+	case "active", "revoked", "expired", "suspended":
 		return v
 	default:
 		return ""

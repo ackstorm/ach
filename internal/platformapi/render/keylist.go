@@ -68,8 +68,5 @@ func KeyRow(it db.KeyListItem, status string, reasons []string) KeyListRow {
 
 // KeyList writes the paginated {items,next_cursor} key-list envelope.
 func KeyList(w http.ResponseWriter, rows []KeyListRow, next string) {
-	if rows == nil {
-		rows = []KeyListRow{}
-	}
 	JSON(w, http.StatusOK, map[string]any{"items": rows, "next_cursor": next})
 }
