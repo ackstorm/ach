@@ -1274,9 +1274,11 @@
 
 <h1 id="signing-in-from-claude-code-codex-and-opencode">Signing in from Claude Code, Codex and opencode<a class="headerlink" href="#signing-in-from-claude-code-codex-and-opencode" title="Permanent link">&para;</a></h1>
 <p>ACH is an OAuth 2.1 authorization server for humans. You sign in once through
-your organisation's SSO (Dex) and hold a short-lived access token (1 h,
-refreshed for 30 days) that works for <strong>model calls</strong> and <strong>MCP servers</strong>
-through ACH. Agents and CI keep the persistent <code>pk_</code> / <code>ek_</code> keys; this page
+your organisation's SSO (Dex) and hold a short-lived access token (1 h)
+that works for <strong>model calls</strong> and <strong>MCP servers</strong> through ACH. Every
+refresh goes back to your SSO: an account disabled there stops working at
+the next refresh (within the hour), exactly like any other SSO-backed
+tool. Agents and CI keep the persistent <code>pk_</code> / <code>ek_</code> keys; this page
 is for a person at a keyboard.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ach-cli<span class="w"> </span>login<span class="w">                 </span><span class="c1"># browser → SSO → "Signed in to ACH"</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ach-cli<span class="w"> </span>token<span class="w">                 </span><span class="c1"># prints ONE line: a fresh access token</span>
@@ -1378,8 +1380,9 @@ minute; the next <code>ach-cli token</code> after that mints a fresh one.</p>
 <ul>
 <li><strong>401 with <code>WWW-Authenticate</code> on every request</strong> — the tool never ran
   login: <code>claude mcp login</code> / <code>codex mcp login</code> / <code>opencode mcp auth</code>.</li>
-<li><strong><code>invalid_grant</code> on refresh</strong> — the 30-day refresh expired or Redis was
-  flushed: <code>ach-cli login</code> again.</li>
+<li><strong><code>invalid_grant</code> on refresh</strong> — your SSO no longer honours the session
+  (account disabled, SSO session expired), the refresh token expired or
+  Redis was flushed: <code>ach-cli login</code> again.</li>
 <li><strong>OAuth works, <code>/mcp/&lt;name&gt;</code> is 403</strong> — precheck, same as a <code>pk_</code>: the
   Environment's <code>authorizedTeams</code> do not include one of yours.</li>
 <li><strong>Connected, zero tools</strong> — the backend has no provider grant for you; run
