@@ -196,7 +196,7 @@ func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error 
 	if err != nil {
 		return err
 	}
-	if cur != nil && cur.ExpiresAt.After(d.Now().Add(oauthPKMinRemaining)) {
+	if cur != nil && cur.ExpiresAt.After(d.now().Add(oauthPKMinRemaining)) {
 		live, err := d.liteLLMHasKey(ctx, cur)
 		if err != nil {
 			return err

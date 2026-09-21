@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -31,7 +30,6 @@ type Deps struct {
 	BaseURL    string
 	CookieName string
 	Session    func(ctx context.Context, sid string) (email string, ok bool, err error)
-	Now        func() time.Time
 }
 
 type denSession struct {
@@ -117,13 +115,11 @@ func cors(next http.Handler) http.Handler {
 
 // Mount registers the handoff page + brand marks under /openwork and the
 // Den API under both /api/den and /openwork/api/den. Nothing is mounted
-// unless Config.Enabled.
+// unless Config.Enabled — in the composed platform-api server those paths
+// then fall to the console SPA fallback (index.html), not a 404.
 func Mount(r chi.Router, d Deps) {
 	if !d.Enabled {
 		return
-	}
-	if d.Now == nil {
-		d.Now = time.Now
 	}
 	r.Get("/openwork", d.handoff)
 	r.Get("/openwork/", d.handoff)

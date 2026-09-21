@@ -141,9 +141,13 @@ func (d OAuthDeps) consoleLogout(w http.ResponseWriter, r *http.Request) {
 
 // ConsoleSession resolves a cookie value to the signed-in user. Every
 // AccessTTL the IdP is asked through the shared Dex refresh token
-// (revalidateAtIdP); a refusal ends the session (and, as for any other
-// tool, the user's oauth pk_); an unreachable Dex is
-// middleware.ErrTemporarilyUnavailable and the session is kept.
+// (revalidateAtIdP) and the user's oauth pk_ row is kept alive
+// (ensureOAuthPK) — exactly what a /token refresh does for ach-cli, so a
+// browser-only user is not logged out when the row's 7-day sliding
+// window (db.PkSlidingWindow) runs out under a 30-day cookie. A refusal
+// ends the session (and, as for any other tool, the user's oauth pk_); an
+// unreachable Dex or LiteLLM is middleware.ErrTemporarilyUnavailable and
+// the session is kept.
 func (d OAuthDeps) ConsoleSession(ctx context.Context, sid string) (string, bool, error) {
 	var s consoleSession
 	ok, err := d.Store.Get(ctx, consoleSessionKind, sid, &s)
@@ -164,6 +168,12 @@ func (d OAuthDeps) ConsoleSession(ctx context.Context, sid string) (string, bool
 			return "", false, nil
 		}
 		if errors.Is(err, ErrIdPUnreachable) {
+			return "", false, pamw.ErrTemporarilyUnavailable
+		}
+		return "", false, err
+	}
+	if err := d.ensureOAuthPK(ctx, s.Sub, s.UserID); err != nil {
+		if errors.Is(err, ErrMintLiteLLM) {
 			return "", false, pamw.ErrTemporarilyUnavailable
 		}
 		return "", false, err

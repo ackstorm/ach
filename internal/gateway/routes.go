@@ -36,7 +36,8 @@ func ServiceRoutes(namespace string) []Route {
 		{Prefix: "/a2a/", Upstream: forwarder},
 		{Prefix: "/.well-known/", Upstream: forwarder},
 		// The one owned route outside the families: ach-agent prices its
-		// usage at GET /v2/model/info with its ek_ (exact path, no subtree).
+		// usage at GET /v2/model/info with its ek_ (exact path, no subtree —
+		// a trailing slash or any other /v2 path falls to "/" below).
 		{Prefix: "/v2/model/info", Upstream: forwarder},
 		// The console (D-26): platform-api serves the embedded SPA at "/"
 		// with an SPA fallback (and /openwork + /api/den when the Den is on).

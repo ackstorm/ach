@@ -372,7 +372,7 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			}
 			if sid != "" {
 				// A session AND an API credential: nobody meant that (§5.3).
-				if plaintext != "" || foreign || r.Header.Get("Authorization") != "" {
+				if plaintext != "" || foreign {
 					render.Error(w, http.StatusBadRequest, "ambiguous_credentials", "present the console session or an API credential, not both", reqID)
 					return
 				}

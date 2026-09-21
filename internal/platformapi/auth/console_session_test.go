@@ -268,3 +268,37 @@ func TestConsole_SessionLookupWithoutAPinnedClock(t *testing.T) {
 		t.Fatalf("nil Now: ok=%v err=%v", ok, err)
 	}
 }
+
+// A browser-only user must not be logged out when the oauth pk_ row's
+// 7-day sliding window runs out under the 30-day cookie: the console's
+// periodic revalidation keeps the row alive the way a /token refresh does.
+func TestConsole_RevalidationKeepsTheOAuthPKAlive(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	pks := installFakePKs(f)
+	f.mountConsole()
+	c := consoleLogin(t, f, "/")
+	if pks.minted != 1 {
+		t.Fatalf("minted=%d", pks.minted)
+	}
+	// The row is about to expire (inside oauthPKMinRemaining) when the next
+	// revalidation runs → replaced, exactly like /token would.
+	pks.rows["u@x.com"].ExpiresAt = f.now.Add(f.deps.AccessTTL + time.Minute)
+	f.now = f.now.Add(f.deps.AccessTTL + time.Second)
+	if _, ok, err := f.deps.ConsoleSession(context.Background(), c.Value); err != nil || !ok {
+		t.Fatalf("revalidate: %v %v", ok, err)
+	}
+	if pks.minted != 2 || len(pks.revoked) != 1 {
+		t.Fatalf("near-expiry row must be re-minted: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+	// LiteLLM down during that check (the healthy row's "does LiteLLM still
+	// list it" probe fails): temporary, session kept.
+	pks.rows["u@x.com"].ExpiresAt = f.now.Add(48 * time.Hour)
+	pks.litellmErr = errors.New("litellm down")
+	f.now = f.now.Add(f.deps.AccessTTL + time.Second)
+	if _, _, err := f.deps.ConsoleSession(context.Background(), c.Value); !errors.Is(err, pamw.ErrTemporarilyUnavailable) {
+		t.Fatalf("litellm down: %v", err)
+	}
+	if ok, _ := f.store.Get(context.Background(), consoleSessionKind, c.Value, new(consoleSession)); !ok {
+		t.Fatal("session must survive a LiteLLM outage")
+	}
+}
