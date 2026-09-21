@@ -93,9 +93,11 @@ func TestIdentityProfile(t *testing.T) {
 		if code, _, raw := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer " + sc5MasterKey}, ""); code != 200 {
 			t.Fatalf("LiteLLM master key in Authorization: %d %s", code, raw)
 		}
-		code, hdr, _ := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer pk-not-a-slot"}, "")
-		if code != 401 || hdr.Get("WWW-Authenticate") != "" {
-			t.Fatalf("made-up bearer must be LiteLLM's 401, not ACH's challenge: %d %q", code, hdr.Get("WWW-Authenticate"))
+		// LiteLLM's 401 (its body), not ACH's missing_key; the forwarder
+		// still points its challenge at ACH's PRM (§1.4 discovery).
+		code, _, raw := do(t, http.MethodGet, "/v1/models", map[string]string{"Authorization": "Bearer pk-not-a-slot"}, "")
+		if code != 401 || strings.Contains(string(raw), "missing_key") {
+			t.Fatalf("made-up bearer must be LiteLLM's 401, not ACH's: %d %s", code, raw)
 		}
 	})
 
