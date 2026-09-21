@@ -281,6 +281,27 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
   runtime list (O(1) cache, terminating fail-closed); pk → LiteLLM team
   intersect (unreachable → `503 litellm_unreachable`). `/v1`+`/gemini` skip
   (model authz delegated to LiteLLM).
+- **`ek_` effective state** (unified-console §7, D-29/D-30): on top of the
+  above, an `ek_` now carries five effective states — Active, Suspended,
+  Expired, Invalid, Revoked (priority in that order) — folded from persisted
+  `status ∈ {active,suspended,revoked}` + nullable `expires_at` (migration
+  `000022_ek_state`) and two derived-never-written facts: `expired` (clock)
+  and `invalid` (the owner's teams ∩ the Environment's `authorizedTeams`, the
+  same rule pk_ traffic uses). `POST /platform/keys/{id}/suspend`/`/resume`
+  flip `status` and `DEL` the resolver cache entry — the backing LiteLLM key
+  is never touched, and expiry sets no LiteLLM `duration` either; both are
+  ACH-only. A suspended/expired/revoked key is a resolver miss → `401
+  expired_or_revoked` (indistinguishable per KEY-04/KEY-06); an Invalid one
+  (owner lost Environment access) authenticates but is denied `403
+  unauthorized_team` by the `EkOwnerGate` middleware (forwarder), `/platform/
+  hydrate`, and content-service alike — nothing persisted, so access
+  returning makes the same key work again with no re-mint. The Environment
+  finalizer revokes every non-revoked EK (active, suspended, expired,
+  invalid) on deletion; the orphan reaper's managed set is the same
+  non-revoked predicate, so a Suspended/Expired/Invalid key is never reaped
+  by the hourly tick — only a revoked row's lingering LiteLLM key is (that
+  reap IS the revoke retry, D-23). See
+  `references/litellm-permission-model.md` §14 for the full state table.
 - **Supply chain**: git protocol allow-list pinned
   (`protocol.allow=never`, https allow, file top-level-only —
   CVE-2022-39253-class defense); CR-02 validators reject URL/argv

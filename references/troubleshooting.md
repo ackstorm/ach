@@ -1027,6 +1027,44 @@ jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
 `Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
 own OAuth token; declare a `mode: passthrough` header for raw keys.
 
+### ❌ `401 expired_or_revoked` on an `ek_` the key list shows `suspended`/`expired`
+✅ Expected — a suspended, expired, revoked, or unknown key all collapse to
+the same resolver-miss outcome (`audit.OutcomeExpiredOrRevoked`, code
+`expired_or_revoked`, KEY-04/KEY-06 "indistinguishable" by design). Check
+what `GET /platform/keys` reports for that `ekid_`: `suspended` means an
+explicit `POST /platform/keys/{id}/suspend` (resume it, or wait — the
+enforcement bound is ≤60s from the DB commit, not from this 401); `expired`
+means its `expires_at` has passed (not editable — create a new credential).
+This is NOT the same failure as the 403 below.
+
+### ❌ `403 unauthorized_team` on an `ek_`
+✅ The key still authenticates but its owner no longer holds the bound
+Environment's access (D-30 `invalid` state) — the `EkOwnerGate` middleware
+(forwarder `/v1`, `/gemini`, `/mcp`, `/a2a`, `/v2/model/info`), `/platform/
+hydrate`, and content-service all run the same `authorizedTeams ∩
+TeamsResolver(owner_email)` check pk_ traffic already used. Confirm via
+`GET /platform/keys`: the list shows effective state `invalid` with a
+`no_access` reason. Nothing is persisted — when the owner's team membership
+is restored the SAME key authorizes again on the next TeamsResolver
+refresh (≤60s positive / 5s negative cache), no re-mint needed.
+
+### ❌ `503 litellm_unreachable` on an `ek_`
+✅ NOT an access-loss verdict — the `EkOwnerGate`/hydrate/content-service
+team check could not reach LiteLLM/TeamsResolver to decide, so it fails
+safe with a 503 rather than silently treating a transient dependency
+outage as `invalid` (§7.2: "never overwrite manual state"). Retry; if it
+persists, check LiteLLM/TeamsResolver connectivity, not the key's state.
+
+### ❌ `make migrate` DOWN below the console release: `environment_keys has suspended or expiring rows; rollback below the console release is not supported (D-29)`
+✅ By design — the down migration for `000022_ek_state` refuses when any
+`environment_keys` row is `status='suspended'` or carries a non-null
+`expires_at`, because an older build's orphan reaper has no concept of
+`suspended` (it would reap those keys) and dropping the `expires_at` column
+would silently erase expiry. Resume every suspended key and let every
+`expires_at` either clear (revoke + recreate without expiry) or expire
+naturally before rolling back below this release; there is no forced
+override.
+
 ### ❌ `GET /` answers `404 console not built: run make ui-build`
 ✅ Expected on a binary built without the React bundle: `internal/platformapi/
 console/dist` only tracks `.gitkeep`, and `go build` embeds whatever is there.

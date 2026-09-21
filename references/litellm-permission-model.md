@@ -326,3 +326,44 @@ reports `AccessGroupSynced=True`, the group row is correct, and a share of
 requests still 403 for up to ten minutes. It is cache, not the permission
 model — do not go looking for a mirror bug. Deployments should pin the TTL
 down (ackstorm prod runs `DEFAULT_ACCESS_GROUP_CACHE_TTL=60`).
+
+## 14. EK effective states — what LiteLLM sees vs what ACH enforces
+
+The console EK state model (unified-console-spec §7.1) adds two ACH-only
+mechanisms — manual suspension and optional expiry — on top of the existing
+revoke. None of the three new states below are anything LiteLLM knows about:
+the backing LiteLLM virtual key is untouched by a suspend, a resume, or an
+expiry — only ACH's own `environment_keys.status`/`expires_at` and the
+resolver cache move.
+
+| UI state | API value | Meaning | Recovery |
+|---|---|---|---|
+| Active | `active` | Enabled, unexpired, not revoked, and owner has Environment access. | None required. |
+| Suspended | `suspended` | Manually disabled by the owner. | Explicit resume, subject to current access and validity. |
+| Expired | `expired` | Optional expiration time has been reached. | Create a new credential; expiry is not editable in v1. |
+| Invalid | `invalid` | Owner no longer has authorization for the Environment. | Automatically usable when access returns, unless another condition prevents it. |
+| Revoked | `revoked` | Permanently withdrawn. | Cannot be recovered; create a new credential. |
+
+Effective-state priority: **Revoked → Expired → Suspended → Invalid → Active.**
+Persisted: `status ∈ {active, suspended, revoked}` + nullable `expires_at`
+(migration `000022_ek_state`). `expired` and `invalid` are derived, never
+written — `expired` from `expires_at` against the clock, `invalid` from the
+same `authorizedTeams ∩ TeamsResolver(owner_email)` rule pk_ traffic already
+runs (D-30).
+
+**ACH-only, LiteLLM untouched:**
+- Suspend/resume flips `status` and `DEL`s the resolver cache entry; no
+  `POST /key/block` or `/key/update` is ever sent to LiteLLM. The backing key
+  keeps answering LiteLLM's own admin/UI reads throughout — only ACH's
+  resolver refuses it.
+- `expires_at` is enforced by ACH alone: no LiteLLM `Duration`/`duration` is
+  ever set on an `ek_` (this repo's long-standing §10 decision that an `ek_`
+  has no LiteLLM-side expiry — the optional console expiry sits entirely on
+  top of that, in ACH's own cache-hit and resolve-time checks).
+- `invalid` never mutates the row: when access returns, the SAME key
+  authorizes again on the next TeamsResolver cache refresh — no re-mint.
+
+**Admin caveat:** the caller-scoped list (`GET /platform/keys`) treats an
+ADMIN caller as having access to every Environment, so an admin-owned `ek_`
+lists as `active` even while it would be denied `unauthorized_team` at use —
+an `ek_` itself is never admin, only its listing caller can be.

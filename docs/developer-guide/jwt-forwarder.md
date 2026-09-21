@@ -79,6 +79,27 @@ verify offline.
 
 ---
 
+## 1.1 `EkOwnerGate` — ek_ owner access re-check (D-30)
+
+`proxy.EkOwnerGate` sits in the authenticated route group in
+`internal/forwarder/server.go`, immediately after `middleware.Authn` and
+before every family handler (`/v1`, `/gemini`, `/v2/model/info`, `/mcp/<n>`,
+`/a2a/<n>`) — so it runs before the mcp/a2a `CheckMCP`/`CheckA2A` precheck
+above and before JWT mint. It is a no-op for `pk_` and no-identity requests;
+their own rules live in the per-route handlers. For an `ek_` caller it calls
+`precheck.CheckEkOwner`, which re-derives the same `authorizedTeams ∩
+TeamsResolver(owner_email)` verdict the pk_ precheck already used, keyed on
+the resolved row's `owner_email` instead of the caller's own identity — an
+`ek_` names its Environment, but it is only usable while its human owner
+still holds that Environment's access (the console `invalid` state, §7 of
+`docs/plans/unified-console-spec.md`). A lost intersection is `403
+unauthorized_team`; a TeamsResolver/LiteLLM failure is `503
+litellm_unreachable`, never treated as a verdict. Nothing is persisted by
+this check — the same `ek_` authorizes again on the next TeamsResolver
+refresh once access returns, with no re-mint and no JWT-path change.
+
+---
+
 ## 1.2 JWS contract — what the Forwarder mints
 
 | Field         | Value                                            | Reference  |
@@ -786,7 +807,10 @@ Forwarder logs to look for:
 - A `403 unauthorized_team` from the Forwarder means precheck rejected
   the request **before** JWT mint — fix the Environment's
   `authorizedTeams` or the caller's LiteLLM team membership before
-  debugging the JWT path.
+  debugging the JWT path. For an `ek_` caller the same code can also come
+  from `EkOwnerGate` (§1.1) even on `/v1`/`/gemini`, which never reach
+  `CheckMCP`/`CheckA2A` — that means the key's OWNER lost Environment
+  access, not a runtime-list/team mismatch on the resource itself.
 
 Backend logs to look for:
 
