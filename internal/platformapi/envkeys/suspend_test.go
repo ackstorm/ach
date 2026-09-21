@@ -153,6 +153,16 @@ func serveResume(deps Deps, targetKeyID string) *httptest.ResponseRecorder {
 	return serveKeyActionAs(ResumeHandler(deps), targetKeyID, "resume", "alice@example.com", false)
 }
 
+// serveResumeAsAdmin resumes as a platform admin acting on someone else's
+// key (loadOwnedEk's ownership gate has its own, separate admin bypass —
+// unaffected here). The caller identity is "admin@example.com", distinct
+// from the row's owner ("alice@example.com" via suspendableEkRow), so the
+// test proves the access check re-derives the OWNER's membership, not the
+// caller's admin status.
+func serveResumeAsAdmin(deps Deps, targetKeyID string) *httptest.ResponseRecorder {
+	return serveKeyActionAs(ResumeHandler(deps), targetKeyID, "resume", "admin@example.com", true)
+}
+
 func TestSuspend_OwnerFlipsAndDelsCache(t *testing.T) {
 	row := suspendableEkRow()
 	suspended := *row
@@ -311,6 +321,23 @@ func TestResume_RequiresAccessAndLiveness(t *testing.T) {
 		}
 		if len(fdb.resumeIDs) != 0 {
 			t.Error("ResumeEnvironmentKey must not be called without access")
+		}
+	})
+
+	t.Run("admin caller, owner not in teams -> 403 unauthorized_team (no admin bypass)", func(t *testing.T) {
+		row := suspendableEkRow()
+		row.Status = "suspended"
+		fdb := &envKeyStateDB{getRow: row}
+		fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, teams: []string{"team-z"}}
+		deps := captureAuditDeps(fdb, fll, env, &recordRedis{}, &bytes.Buffer{})
+
+		rec := serveResumeAsAdmin(deps, row.KeyID)
+
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "unauthorized_team") {
+			t.Fatalf("status/body = %d/%s, want 403 unauthorized_team", rec.Code, rec.Body.String())
+		}
+		if len(fdb.resumeIDs) != 0 {
+			t.Error("ResumeEnvironmentKey must not be called without owner access, even for an admin caller")
 		}
 	})
 

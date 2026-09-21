@@ -855,11 +855,19 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 		}
 		cursor := q.Get("cursor")
 
+		statusRaw := q.Get("status")
+		switch statusRaw {
+		case "", statusActive, statusSuspended, statusRevoked, statusExpired, statusInvalid:
+		default:
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument, "invalid status filter", reqID)
+			return
+		}
+
 		owner := keyCtx.OwnerEmail // ALWAYS caller-scoped on this route
 		f := db.KeyListFilter{
 			OwnerEmail:  &owner,
 			Type:        normalizeKeyType(q.Get("type")),
-			Status:      normalizeKeyStatus(q.Get("status")),
+			Status:      normalizeKeyStatus(statusRaw),
 			Environment: q.Get("environment"),
 		}
 		items, next, err := deps.DB.ListKeys(r.Context(), f, limit, cursor)
@@ -872,7 +880,7 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 		// D-30: Invalid is derived, once per owner (this route is always
 		// caller-scoped) and once per distinct Environment.
 		verdicts := deps.accessByEnvironment(r.Context(), keyCtx, items)
-		wantStatus := q.Get("status")
+		wantStatus := statusRaw
 		out := make([]render.KeyListRow, 0, len(items))
 		for _, it := range items {
 			status, reasons := EffectiveState(it, verdicts[deref(it.Environment)])
@@ -902,8 +910,11 @@ func deref(s *string) string {
 
 // accessByEnvironment resolves the owner's current Environment access
 // (D-30) once per distinct environment among the given items: the owner's
-// teams (one TeamsResolver lookup; admin ⇒ granted everywhere) intersected
-// with each distinct Environment's authorizedTeams. A TeamsResolver
+// teams (one TeamsResolver lookup) intersected with each distinct
+// Environment's authorizedTeams. The verdict is about the key OWNER's
+// access — this route is always caller-scoped (owner == caller) and there
+// is no admin bypass: an admin's own ek_ derives Invalid exactly like
+// anyone else's once its owner loses Environment access. A TeamsResolver
 // failure marks every ek_ environment unverified rather than invalid
 // (§7.2) — it must never write a state, only annotate the list.
 func (deps Deps) accessByEnvironment(ctx context.Context, kc middleware.KeyContext, items []db.KeyListItem) map[string]accessVerdict {
@@ -916,10 +927,6 @@ func (deps Deps) accessByEnvironment(ctx context.Context, kc middleware.KeyConte
 		}
 		env := *it.Environment
 		if _, done := out[env]; done {
-			continue
-		}
-		if kc.IsAdmin {
-			out[env] = accessGranted
 			continue
 		}
 		if !looked {

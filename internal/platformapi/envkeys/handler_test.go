@@ -748,12 +748,20 @@ func TestCreate_ExpiresAtValidatedAndStored(t *testing.T) {
 }
 
 func doList(deps Deps, query string) *httptest.ResponseRecorder {
+	return doListAs(deps, query, "u@x.com", false)
+}
+
+// doListAs runs ListAllHandler with the given caller identity/admin flag —
+// the route is always caller-scoped (owner == caller), so isAdmin only
+// changes whether the caller is also a platform admin, never whose access
+// the D-30 verdict is computed against.
+func doListAs(deps Deps, query, ownerEmail string, isAdmin bool) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, "/platform/keys"+query, nil)
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
 		KeyID:      "pkid_00000000000000000000000000",
 		KeyType:    keys.PrefixPk,
-		OwnerEmail: "u@x.com",
-	}, false)
+		OwnerEmail: ownerEmail,
+	}, isAdmin)
 	ctx = middleware.WithRequestID(ctx, "req_test")
 	req = req.WithContext(ctx)
 
@@ -822,6 +830,48 @@ func TestListAll_DerivesInvalidOncePerOwner(t *testing.T) {
 	}
 	if got := byID["pkid_3"]; got.Status != "active" {
 		t.Errorf("pkid_3 = %+v, want status=active", got)
+	}
+}
+
+// TestListAll_AdminCallerNoAccessBypass: an admin caller listing their OWN
+// ek_ gets no free pass — accessByEnvironment has no IsAdmin branch, so the
+// verdict is the same owner-membership check a non-admin caller gets. A row
+// whose owner has lost the Environment's authorizedTeams still derives
+// 'invalid'/'no_access' even though the caller is a platform admin.
+func TestListAll_AdminCallerNoAccessBypass(t *testing.T) {
+	env := "demo"
+	name := "laptop"
+	items := []db.KeyListItem{
+		{KeyID: "ekid_1", Type: "ek", OwnerEmail: "admin@x.com", Environment: &env, Name: &name, Status: "active"},
+	}
+	fdb := &fakeEkDB{items: items}
+	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
+	fll := &listTeamsLiteLLM{
+		NoopClient: &litellm.NoopClient{},
+		teams:      map[string][]string{"admin@x.com": {"team-b"}}, // no intersection with team-a
+	}
+	deps := Deps{
+		DB: fdb, Store: store, LiteLLM: fll,
+		Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	rec := doListAs(deps, "", "admin@x.com", true)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Items []struct {
+			KeyID   string   `json:"key_id"`
+			Status  string   `json:"status"`
+			Reasons []string `json:"reasons"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].Status != "invalid" || !reflect.DeepEqual(resp.Items[0].Reasons, []string{"no_access"}) {
+		t.Errorf("items = %+v, want exactly one invalid/[no_access] row even for an admin caller", resp.Items)
 	}
 }
 

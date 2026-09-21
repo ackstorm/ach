@@ -10,20 +10,14 @@
 // revoked row's lingering LiteLLM key is reaped; a foreign key is never
 // touched).
 //
-// Admin-allowlist caveat: the ONLY Dex mock user (kilgore@kilgore.trout,
+// The ONLY Dex mock user (kilgore@kilgore.trout,
 // test/e2e/cluster/02-ach/ach.values.yaml) is on the platform-api admin
-// allowlist. GET /platform/keys never derives status="invalid" or a
-// "no_access" reason for an admin caller (D-20 grants everywhere), and
-// ResumeHandler skips the owner-access check entirely for an admin
-// (internal/platformapi/envkeys/suspend.go: `if !kc.IsAdmin { ... }`). So
-// AC-09's list-derived "invalid"/"no_access" assertions and AC-07/AC-09's
-// "resume without access -> 403" CANNOT be exercised live with this user —
-// they are covered by the envkeys unit tests
-// (internal/platformapi/envkeys/*_test.go). This suite instead asserts what
-// IS observable for an admin owner: the forwarder's EkOwnerGate and the
-// hydrate/content-service D-30 gate have no admin bypass, so a key whose
-// owner lost Environment access is denied AT USE (403 unauthorized_team)
-// and recovers once membership is restored.
+// allowlist, but GET /platform/keys and ResumeHandler have no admin bypass:
+// the D-30 verdict is always about the KEY OWNER's real Environment
+// membership, so kilgore's own ek_ derives "invalid"/"no_access" and gets
+// 403 on resume exactly like a non-admin owner's would. AC-09's
+// list-derived assertions and AC-07/AC-09's "resume without access -> 403"
+// ARE exercised live with this user.
 //
 // AC-12 (Environment-delete finalizer revokes its keys) is NOT exercised
 // live here — a throwaway Environment would need a real reconcile (the
@@ -281,23 +275,39 @@ func teamIDByAlias(t *testing.T, ll *litellm.RESTClient, alias string) string {
 // raw body for the caller to interpret — team membership calls are
 // idempotent-with-caveats at LiteLLM (a duplicate add/remove 4xx's), so the
 // caller decides what is fatal.
+//
+// Retries once on a bare transport error (e.g. EOF): the sc5 port-forward
+// is a single long-lived kubectl process reused across many requests over a
+// multi-minute test — its underlying tunnel can drop one pooled keep-alive
+// connection without the local listener itself going away (confirmed by
+// hand: a fresh connection to the same port-forward succeeds immediately
+// after such a drop). One bounded retry on a fresh connection is standard
+// kubectl-port-forward-client practice and needs no restart of the
+// port-forward process itself.
 func litellmMasterPost(t *testing.T, llURL, path string, body []byte) (int, string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, llURL+path, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("litellmMasterPost %s: build request: %v", path, err)
+	for attempt := 1; ; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, llURL+path, bytes.NewReader(body))
+		if err != nil {
+			cancel()
+			t.Fatalf("litellmMasterPost %s: build request: %v", path, err)
+		}
+		req.Header.Set("Authorization", "Bearer "+sc5MasterKey)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		cancel()
+		if err != nil {
+			if attempt < 2 {
+				t.Logf("litellmMasterPost %s: attempt %d: %v — retrying on a fresh connection", path, attempt, err)
+				continue
+			}
+			t.Fatalf("litellmMasterPost %s: %v", path, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
 	}
-	req.Header.Set("Authorization", "Bearer "+sc5MasterKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("litellmMasterPost %s: %v", path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(raw)
 }
 
 // removeMember POSTs /team/member_delete for the given team + email.
@@ -494,8 +504,7 @@ func litellmKeyExists(t *testing.T, litellmURL, plaintext string) bool {
 // TestEkStateModel exercises AC-07..AC-14 live on the kind cluster: the
 // ek_ state machine (expiry, suspend/resume, revoke), forwarder/hydrate/
 // content-service enforcement of a non-active or access-lost ek_, and the
-// orphan reaper's managed-set discipline. See the package doc comment
-// above for the admin-allowlist caveat this suite works around.
+// orphan reaper's managed-set discipline.
 func TestEkStateModel(t *testing.T) {
 	phase4SuiteGuard(t)
 	base := "http://" + phase4GatewayAuthority(t)
@@ -590,31 +599,35 @@ func TestEkStateModel(t *testing.T) {
 			t.Fatalf("content-service must deny on access loss: status=%d want=403", got)
 		}
 
-		// AC-07/AC-09 list-derived assertions (status="invalid",
-		// reasons contains "no_access", resume->403 without access) are NOT
-		// exercised here — kilgore@kilgore.trout is the platform-api admin
-		// (see the package doc comment): GET /platform/keys never derives
-		// Invalid for an admin caller and ResumeHandler skips the access
-		// check for one. Covered by internal/platformapi/envkeys/state_test.go
-		// and suspend_test.go. Suspend itself is allowed without access
-		// (no access check on that path):
+		// AC-07/AC-09 list-derived assertions: the verdict is about the KEY
+		// OWNER's Environment access (D-30), no admin bypass — kilgore's own
+		// still-active key derives "invalid" (reasons contains "no_access"),
+		// and the pre-suspended one stays "suspended" while ALSO carrying
+		// "no_access".
+		if s, r := k.state(id); s != "invalid" || !contains(r, "no_access") {
+			t.Fatalf("state after access loss: status=%s reasons=%v want=invalid,no_access", s, r)
+		}
+		if s, r := k.state(idS); s != "suspended" || !contains(r, "no_access") {
+			t.Fatalf("state of pre-suspended key after access loss: status=%s reasons=%v want=suspended,no_access", s, r)
+		}
+		// Resume requires the OWNER to currently hold access — no admin
+		// bypass (internal/platformapi/envkeys/suspend.go ResumeHandler).
+		if code := k.resume(idS); code != http.StatusForbidden {
+			t.Fatalf("resume without access: status=%d want=403", code)
+		}
+		// Suspend itself is allowed without access (no access check on
+		// that path):
 		if code := k.suspend(id); code != http.StatusNoContent {
 			t.Fatalf("suspend is allowed without access: status=%d want=204", code)
 		}
-		// Admin bypass (see package doc comment): resume succeeds immediately
-		// even with access still lost — ResumeHandler skips the owner-access
-		// check for kilgore@kilgore.trout. The forwarder's EkOwnerGate is NOT
-		// admin-aware though: it independently re-derives the owner's real
-		// team membership, so the key stays blocked until access is
-		// genuinely restored — the observable half of AC-09's recovery path.
-		if code := k.resume(id); code != http.StatusNoContent {
-			t.Fatalf("resume (admin bypass, access still lost): status=%d want=204", code)
-		}
-		if got := forwarderStatus(t, base, key); got != http.StatusForbidden {
-			t.Fatalf("forwarder must still deny — ACH row active but access genuinely lost: status=%d want=403", got)
-		}
 
 		addMember(t, llURL, team, ekStateUserEmail)
+		if code := k.resume(idS); code != http.StatusNoContent {
+			t.Fatalf("resume after access restored: status=%d want=204", code)
+		}
+		if code := k.resume(id); code != http.StatusNoContent {
+			t.Fatalf("resume after access restored: status=%d want=204", code)
+		}
 		within(t, 70*time.Second, "same key recovers after access is restored", func() bool {
 			return forwarderStatus(t, base, key) == http.StatusOK
 		})

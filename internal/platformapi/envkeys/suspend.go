@@ -13,6 +13,7 @@ import (
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
@@ -88,17 +89,17 @@ func ResumeHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "environment is not available", reqID)
 			return
 		}
-		kc, _ := middleware.KeyContextFromCtx(ctx)
-		if !kc.IsAdmin {
-			teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, row.OwnerEmail)
-			if err != nil {
-				render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "upstream LiteLLM unreachable", reqID)
-				return
-			}
-			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
-				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "owner no longer has access to this environment", reqID)
-				return
-			}
+		// Resume requires the KEY OWNER to currently hold Environment access
+		// (§11) — no admin bypass: whoever calls, the check re-derives
+		// row.OwnerEmail's own membership, same rule as create.
+		teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, row.OwnerEmail)
+		if err != nil {
+			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable, "upstream LiteLLM unreachable", reqID)
+			return
+		}
+		if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
+			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "owner no longer has access to this environment", reqID)
+			return
 		}
 		flipped, err := deps.DB.ResumeEnvironmentKey(ctx, row.KeyID)
 		if err != nil {
@@ -197,7 +198,7 @@ func (deps Deps) conflictFor(w http.ResponseWriter, r *http.Request, keyID strin
 // invalidate DELs the keystore resolver cache entry for a credential hash
 // (§8.4/§8.2). Best-effort: the 60 s cache TTL bounds the worst case.
 func (deps Deps) invalidate(ctx context.Context, credentialHash string) {
-	if err := deps.Redis.Del(ctx, "ach:key:"+credentialHash); err != nil {
+	if err := deps.Redis.Del(ctx, keystore.CacheKeyPrefix+credentialHash); err != nil {
 		deps.Logger.Warn("envkeys: Redis DEL failed (60s TTL is the worst case bound)", "err", err)
 	}
 }

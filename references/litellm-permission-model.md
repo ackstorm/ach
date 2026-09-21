@@ -362,8 +362,7 @@ runs (D-30).
   top of that, in ACH's own cache-hit and resolve-time checks).
 - `invalid` never mutates the row: when access returns, the SAME key
   authorizes again on the next TeamsResolver cache refresh — no re-mint.
-
-**Admin caveat:** the caller-scoped list (`GET /platform/keys`) treats an
-ADMIN caller as having access to every Environment, so an admin-owned `ek_`
-lists as `active` even while it would be denied `unauthorized_team` at use —
-an `ek_` itself is never admin, only its listing caller can be.
+- No admin bypass: the caller-scoped list (`GET /platform/keys`) and resume
+  (`POST .../resume`) both derive the verdict from the key OWNER's actual
+  Environment membership — an admin caller's own `ek_` is never treated as
+  having access it does not have.

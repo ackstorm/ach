@@ -52,6 +52,13 @@ when more than one applies:
 | `invalid` | Owner no longer has access to the Environment. | Automatically usable again once access returns — no action needed. |
 | `active` | Enabled, unexpired, not revoked, owner has access. | None required. |
 
+`?status=` filters on this effective state; an unrecognized value is
+`400 invalid_argument`. Because the filter is applied AFTER the effective
+state is derived (an `invalid` row is still persisted `active`), a filtered
+page can hold fewer than `limit` items even while `next_cursor` is
+non-empty — keep paging until `next_cursor` is empty rather than stopping
+at a short page.
+
 **Release notes:** once any `ek_` has been suspended or given an expiry, the
 database cannot be rolled back below this release (D-29) — see
 `references/troubleshooting.md` for the exact refusal text and recovery.
