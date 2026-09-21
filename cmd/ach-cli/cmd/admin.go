@@ -342,13 +342,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	if err != nil {
 		return err
 	}
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	grouped := map[string][]render.AdminObjectView{}
 	if kind == statusAll {
@@ -517,13 +511,7 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	// Paginate until next_cursor empty. Accumulate items.
 	all, err := fetchAll[render.KeyRowView](ctx, hc, cursor, func(c string) string {
@@ -623,13 +611,7 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	body := struct {
 		KeyID string `json:"key_id"`
@@ -736,13 +718,7 @@ func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	// URL-escape the email so `+` / `@` / `.` survive the wire path
 	// (T-06-08-07 path-injection mitigation). The server-side handler
@@ -835,13 +811,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	body := struct {
 		Kind string `json:"kind"`

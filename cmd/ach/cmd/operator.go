@@ -451,16 +451,18 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create controller Environment: %w", err)
 	}
 	if err = (&achcontroller.PluginReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Namespace:        watchNS,
-		Log:              ctrl.Log.WithName("controller").WithName("Plugin"),
-		CacheRoot:        cacheRoot,
-		DB:               dbPool,
+		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Namespace:    watchNS,
+			Log:          ctrl.Log.WithName("controller").WithName("Plugin"),
+			CacheRoot:    cacheRoot,
+			DB:           dbPool,
+			Fetchers:     nil,
+			ResyncSource: pluginCh,
+			Metrics:      opMetrics,
+		},
 		PluginMaxSizeMiB: pluginMaxSizeMiB,
-		Fetchers:         nil,
-		ResyncSource:     pluginCh,
-		Metrics:          opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Plugin: %w", err)
 	}
@@ -478,42 +480,48 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create controller PluginMarketplace: %w", err)
 	}
 	if err = (&achcontroller.ArtifactReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Namespace:    watchNS,
-		Log:          ctrl.Log.WithName("controller").WithName("Artifact"),
-		CacheRoot:    cacheRoot,
-		DB:           dbPool,
-		Fetchers:     nil,
-		ResyncSource: artifactCh,
-		Metrics:      opMetrics,
+		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Namespace:    watchNS,
+			Log:          ctrl.Log.WithName("controller").WithName("Artifact"),
+			CacheRoot:    cacheRoot,
+			DB:           dbPool,
+			Fetchers:     nil,
+			ResyncSource: artifactCh,
+			Metrics:      opMetrics,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Artifact: %w", err)
 	}
 	if err = (&achcontroller.PromptReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		Namespace:    watchNS,
-		Log:          ctrl.Log.WithName("controller").WithName("Prompt"),
-		CacheRoot:    cacheRoot,
-		DB:           dbPool,
-		Fetchers:     nil,
-		ResyncSource: promptCh,
-		Metrics:      opMetrics,
+		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Namespace:    watchNS,
+			Log:          ctrl.Log.WithName("controller").WithName("Prompt"),
+			CacheRoot:    cacheRoot,
+			DB:           dbPool,
+			Fetchers:     nil,
+			ResyncSource: promptCh,
+			Metrics:      opMetrics,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Prompt: %w", err)
 	}
 	if err = (&achcontroller.SkillReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Namespace:       watchNS,
-		Log:             ctrl.Log.WithName("controller").WithName("Skill"),
-		CacheRoot:       cacheRoot,
-		DB:              dbPool,
+		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Namespace:    watchNS,
+			Log:          ctrl.Log.WithName("controller").WithName("Skill"),
+			CacheRoot:    cacheRoot,
+			DB:           dbPool,
+			Fetchers:     nil,
+			ResyncSource: skillCh,
+			Metrics:      opMetrics,
+		},
 		SkillMaxSizeMiB: skillMaxSizeMiB,
-		Fetchers:        nil,
-		ResyncSource:    skillCh,
-		Metrics:         opMetrics,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Skill: %w", err)
 	}

@@ -13,16 +13,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
-	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
 // pluginsChannel is the NOTIFY channel emitted on every Plugin projection
@@ -42,18 +37,7 @@ const pluginsChannel = "ach_plugins_changed"
 // tolerance preserved for the Phase 1 envtest path (the finalizer test
 // runs without a Postgres pool).
 type PluginReconciler struct {
-	client.Client
-	Scheme    *runtime.Scheme
-	Namespace string
-	Log       logr.Logger
-	CacheRoot string
-
-	// Phase 2 (Plan 02-09 wires these from cmd/operator/main.go):
-
-	// DB is the Postgres pool used for external_refs UPSERT/GET/DELETE.
-	// Nil in envtest (Phase 1 finalizer test); steady-state branch skips
-	// DB reads/writes when nil so the existing test stays green.
-	DB *pgxpool.Pool
+	FetchedObjectReconciler
 
 	// PluginMaxSizeMiB is the per-plugin size cap (D-12). When 0, the
 	// cap is treated as "infinite" — materializeExternalRef receives
@@ -61,20 +45,6 @@ type PluginReconciler struct {
 	// validates ACH_PLUGIN_MAX_SIZE_MIB > 0 at startup; envtest leaves
 	// it at zero and exercises the no-cap branch.
 	PluginMaxSizeMiB int
-
-	// Fetchers is the FetcherFactory; nil → defaults to registry.For.
-	// Tests inject a fake fetcher to exercise the §10.3 staging /
-	// rename(2) / UPSERT branches without live HTTPS traffic.
-	Fetchers FetcherFactory
-
-	// Issue #34 (A10/A11): external source.Channel feed used by the
-	// resync runnable (periodic full re-list) and the refreshsignal
-	// listener (NOTIFY ach_refresh).
-	ResyncSource chan event.GenericEvent
-
-	// Metrics is the operator collector set (G7). Nil-tolerant (envtest
-	// leaves it unset); wired from cmd/ach/cmd/operator.go.
-	Metrics *achmetrics.OperatorCollectors
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=plugins,verbs=get;list;watch;create;update;patch;delete

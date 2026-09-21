@@ -472,13 +472,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		}
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		Verbose:    in.verbose,
-		Stderr:     cmd.ErrOrStderr(),
-		HTTPClient: hydrateHTTPClient,
-	}
+	hc := newAPIClient(baseURL, bearer, hydrateHTTPClient, in.verbose, cmd.ErrOrStderr())
 
 	// CLI-03: pk- content GETs must carry the target Environment in an
 	// x-ach-environment header so the Content Service can resolve scope
@@ -1151,13 +1145,7 @@ func runHydrateRaw(cmd *cobra.Command, baseURL, bearer, effectiveEnv string, ver
 	} else {
 		body = struct{}{}
 	}
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		Verbose:    verbose,
-		Stderr:     cmd.ErrOrStderr(),
-		HTTPClient: hydrateHTTPClient,
-	}
+	hc := newAPIClient(baseURL, bearer, hydrateHTTPClient, verbose, cmd.ErrOrStderr())
 	resp, err := hc.DoRaw(cmd.Context(), http.MethodPost, "/platform/hydrate", body)
 	if err != nil {
 		return mapHydrateError(err)

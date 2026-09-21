@@ -13,16 +13,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
-	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
 // skillsChannel is the NOTIFY channel emitted on every Skill projection
@@ -39,31 +34,12 @@ const skillsChannel = "ach_skills_changed"
 // CacheRoot is the PVC mount root from ACH_CACHE_ROOT (default
 // /var/cache/ach). DB nil-tolerance preserved for the envtest finalizer path.
 type SkillReconciler struct {
-	client.Client
-	Scheme    *runtime.Scheme
-	Namespace string
-	Log       logr.Logger
-	CacheRoot string
-
-	// DB is the Postgres pool used for external_refs UPSERT/GET/DELETE.
-	// Nil in envtest (finalizer test); steady-state branch skips DB
-	// reads/writes when nil so the existing test stays green.
-	DB *pgxpool.Pool
+	FetchedObjectReconciler
 
 	// SkillMaxSizeMiB is the per-skill size cap. When 0, the cap is treated
 	// as "infinite" — materializeExternalRef receives SizeCapBytes = 0 and
 	// skips the LimitReader wrap.
 	SkillMaxSizeMiB int
-
-	// Fetchers is the FetcherFactory; nil → defaults to registry.For.
-	Fetchers FetcherFactory
-
-	// ResyncSource is the external source.Channel feed used by the resync
-	// runnable (periodic full re-list) and the refreshsignal listener.
-	ResyncSource chan event.GenericEvent
-
-	// Metrics is the operator collector set (G7). Nil-tolerant.
-	Metrics *achmetrics.OperatorCollectors
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=skills,verbs=get;list;watch;create;update;patch;delete

@@ -203,13 +203,7 @@ func buildEnvHTTPClient(
 	if err != nil {
 		return nil, err
 	}
-	return &httpclient.Client{
-		BaseURL:    dep.URL,
-		APIKey:     bearer,
-		HTTPClient: envHTTPClient,
-		Verbose:    verbose,
-		Stderr:     stderr,
-	}, nil
+	return newAPIClient(dep.URL, bearer, envHTTPClient, verbose, stderr), nil
 }
 
 // paginateEnvironments calls GET /platform/environments repeatedly,

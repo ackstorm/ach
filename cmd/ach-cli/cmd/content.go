@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
-	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
@@ -114,13 +113,7 @@ func runContentFetch(cmd *cobra.Command, kind, name string, f *contentFetchFlags
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     cmd.ErrOrStderr(),
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 
 	// A pk- bearer must carry the target Environment in x-ach-environment (the
 	// Content Service returns 400 missing_environment otherwise). An ek- binds

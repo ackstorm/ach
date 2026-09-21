@@ -320,11 +320,13 @@ func setupAndRun(m *testing.M) int {
 		return 1
 	}
 	if err := (&PluginReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: testCacheRoot,
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Plugin): %v\n", err)
 		return 1
@@ -350,21 +352,25 @@ func setupAndRun(m *testing.M) int {
 		return 1
 	}
 	if err := (&ArtifactReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: testCacheRoot,
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Artifact): %v\n", err)
 		return 1
 	}
 	if err := (&PromptReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: testCacheRoot,
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Prompt): %v\n", err)
 		return 1

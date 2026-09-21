@@ -248,11 +248,7 @@ func fetchEnvNamesBestEffort(ctx context.Context, flagProfile, flagAPIKey, flagE
 	if err != nil || baseURL == "" || bearer == "" {
 		return nil
 	}
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: keysHTTPClient,
-	}
+	hc := newAPIClient(baseURL, bearer, keysHTTPClient, false, nil)
 	var resp page[render.EnvView]
 	if doErr := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, ""), nil, &resp); doErr != nil {
 		return nil
@@ -303,13 +299,7 @@ func runEnvKeysCreate(cmd *cobra.Command, environment, name string, noSave bool,
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: keysHTTPClient,
-		Verbose:    verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, keysHTTPClient, verbose, stderr)
 
 	body := struct {
 		Environment string `json:"environment"`
@@ -464,13 +454,7 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: keysHTTPClient,
-		Verbose:    verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, keysHTTPClient, verbose, stderr)
 
 	// Paginate until next_cursor empty. Accumulate items.
 	all, err := fetchAll[render.KeyRowView](ctx, hc, cursor, func(c string) string {
@@ -646,13 +630,7 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: keysHTTPClient,
-		Verbose:    verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, keysHTTPClient, verbose, stderr)
 	doErr := hc.Do(ctx, http.MethodDelete, deletePath, nil, nil)
 	if doErr != nil {
 		var sErr *httpclient.ServerError
@@ -759,13 +737,7 @@ func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
 		return err
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: keysHTTPClient,
-		Verbose:    verbose,
-		Stderr:     stderr,
-	}
+	hc := newAPIClient(baseURL, bearer, keysHTTPClient, verbose, stderr)
 
 	// Fetch all active pk_ keys (paginate).
 	pkKeys, err := fetchAll[render.KeyRowView](ctx, hc, "", func(c string) string {

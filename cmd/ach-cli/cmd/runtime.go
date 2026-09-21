@@ -28,7 +28,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
@@ -136,13 +135,7 @@ func runRuntimeList(ctx context.Context, cmd *cobra.Command, path, output string
 	if err != nil {
 		return err
 	}
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     cmd.ErrOrStderr(),
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 	var resp runtimeListResp
 	if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return err
@@ -167,13 +160,7 @@ func runRuntimeCatalog(ctx context.Context, cmd *cobra.Command, output string, f
 	if err != nil {
 		return err
 	}
-	hc := &httpclient.Client{
-		BaseURL:    baseURL,
-		APIKey:     bearer,
-		HTTPClient: adminHTTPClient,
-		Verbose:    f.Verbose,
-		Stderr:     cmd.ErrOrStderr(),
-	}
+	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 	var resp runtimeCatalogResp
 	if err := hc.Do(ctx, http.MethodGet, "/platform/admin/runtime/catalog", nil, &resp); err != nil {
 		return err

@@ -126,13 +126,7 @@ func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey 
 		}
 	}
 
-	hc := &httpclient.Client{
-		BaseURL:    dep.URL,
-		APIKey:     bearer,
-		Verbose:    verbose,
-		Stderr:     stderr,
-		HTTPClient: whoamiHTTPClient,
-	}
+	hc := newAPIClient(dep.URL, bearer, whoamiHTTPClient, verbose, stderr)
 
 	ctx := cmd.Context()
 	switch prefix {

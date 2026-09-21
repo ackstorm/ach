@@ -169,13 +169,15 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 
 	// Plugin reconciler: mirrors cmd/operator/main.go injection.
 	pr := &PluginReconciler{
-		Client:           k8sClient,
-		Namespace:        WatchNamespace,
-		Log:              logr.Discard(),
-		CacheRoot:        testCacheRoot,
-		DB:               nil, // nil-DB path exercised by Phase 1 envtests
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+			DB:        nil, // nil-DB path exercised by Phase 1 envtests
+			Fetchers:  nil, // nil → defaults to registry.For at materialize time
+		},
 		PluginMaxSizeMiB: 50,
-		Fetchers:         nil, // nil → defaults to registry.For at materialize time
 	}
 	if pr.PluginMaxSizeMiB != 50 {
 		t.Errorf("PluginReconciler.PluginMaxSizeMiB = %d; want 50", pr.PluginMaxSizeMiB)
@@ -197,23 +199,27 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 
 	// Artifact + Prompt reconcilers — no size cap.
 	ar := &ArtifactReconciler{
-		Client:    k8sClient,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: testCacheRoot,
-		DB:        nil,
-		Fetchers:  nil,
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+			DB:        nil,
+			Fetchers:  nil,
+		},
 	}
 	if ar.CacheRoot != testCacheRoot {
 		t.Errorf("ArtifactReconciler.CacheRoot wrong")
 	}
 	prm := &PromptReconciler{
-		Client:    k8sClient,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: testCacheRoot,
-		DB:        nil,
-		Fetchers:  nil,
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+			DB:        nil,
+			Fetchers:  nil,
+		},
 	}
 	if prm.CacheRoot != testCacheRoot {
 		t.Errorf("PromptReconciler.CacheRoot wrong")
@@ -399,13 +405,15 @@ func TestMainWiring_PluginReconciler_EndToEndWithFakeFetcher(t *testing.T) {
 		upstreamRev: "sha-wiring-e2e",
 	}
 	pr := &PluginReconciler{
-		Client:           k8sClient,
-		Namespace:        nsName,
-		Log:              logr.Discard(),
-		CacheRoot:        cacheRoot,
-		DB:               nil, // nil DB → PriorRev empty → forces fresh fetch
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: nsName,
+			Log:       logr.Discard(),
+			CacheRoot: cacheRoot,
+			DB:        nil, // nil DB → PriorRev empty → forces fresh fetch
+			Fetchers:  fakeFactory(fake),
+		},
 		PluginMaxSizeMiB: 50,
-		Fetchers:         fakeFactory(fake),
 	}
 	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cr)}
 

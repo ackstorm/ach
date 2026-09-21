@@ -13,16 +13,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
-	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
 // artifactsChannel is the NOTIFY channel emitted on every Artifact
@@ -48,21 +43,7 @@ const artifactsChannel = "ach_artifacts_changed"
 // directory paths" sweep for backwards compatibility with CRs that
 // existed before Phase 2 ran.
 type ArtifactReconciler struct {
-	client.Client
-	Scheme    *runtime.Scheme
-	Namespace string
-	Log       logr.Logger
-	CacheRoot string
-
-	// Phase 2:
-	DB       *pgxpool.Pool
-	Fetchers FetcherFactory
-
-	// Issue #34 (A10/A11): see PluginReconciler.ResyncSource.
-	ResyncSource chan event.GenericEvent
-
-	// Metrics is the operator collector set (G7). Nil-tolerant.
-	Metrics *achmetrics.OperatorCollectors
+	FetchedObjectReconciler
 }
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=artifacts,verbs=get;list;watch;create;update;patch;delete

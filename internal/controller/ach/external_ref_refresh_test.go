@@ -539,12 +539,14 @@ func TestPluginReconciler_SteadyState_Success(t *testing.T) {
 	// is the reconciler state machine, not the filter behavior.
 	fake := &fakeFetcher{body: minimalPluginTarGz(t), upstreamRev: "rev-hello"}
 	r := &PluginReconciler{
-		Client:    k8sClient,
-		Scheme:    nil,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: root,
-		Fetchers:  fakeFactory(fake),
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Scheme:    nil,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: root,
+			Fetchers:  fakeFactory(fake),
+		},
 	}
 
 	// Wait until the suite reconciler is between reconciles so our
@@ -657,11 +659,13 @@ func TestPluginReconciler_ForceRefreshAnnotation_Cleared(t *testing.T) {
 	// annotation lifecycle, not the filter content.
 	fake := &fakeFetcher{body: minimalPluginTarGz(t), upstreamRev: "rev-fr"}
 	r := &PluginReconciler{
-		Client:    k8sClient,
-		Namespace: WatchNamespace,
-		Log:       logr.Discard(),
-		CacheRoot: root,
-		Fetchers:  fakeFactory(fake),
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: root,
+			Fetchers:  fakeFactory(fake),
+		},
 	}
 
 	// Drive the reconcile cycle to completion (force-refresh cleared +
