@@ -174,7 +174,7 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 	// Override the package-level *http.Client seam for the lifetime
 	// of the test so the TLS-trusting client wired through keys
 	// sees the ephemeral cert.
-	swapKeysHTTPClientForTest(t, srv.Client())
+	swapHTTPClientForTest(t, &keysHTTPClient, srv.Client())
 	return srv
 }
 

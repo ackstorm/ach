@@ -43,18 +43,6 @@ import (
 // server's TLS-trusting Client so verify can reach the ephemeral cert.
 var whoamiHTTPClient *http.Client
 
-// swapHTTPClientForTest is the test helper that swaps whoamiHTTPClient
-// for the lifetime of t.
-func swapHTTPClientForTest(t interface {
-	Helper()
-	Cleanup(func())
-}, c *http.Client) {
-	t.Helper()
-	previous := whoamiHTTPClient
-	whoamiHTTPClient = c
-	t.Cleanup(func() { whoamiHTTPClient = previous })
-}
-
 // newWhoamiCmd returns a fresh `ach whoami` cobra.Command.
 func newWhoamiCmd() *cobra.Command {
 	var (

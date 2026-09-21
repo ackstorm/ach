@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
@@ -73,7 +74,7 @@ func TestExtractorImpl_ReHydrate_NoOpAndReplace(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	hc := &httpclient.Client{BaseURL: ts.URL, APIKey: "pk_test"}
-	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 	ref := manifest.ContentRef{
 		ID:          "caveman",
 		Name:        "caveman.tar.gz",

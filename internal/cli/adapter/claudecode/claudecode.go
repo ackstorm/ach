@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
@@ -97,41 +96,12 @@ func (a *Adapter) Aliases() []string { return []string{"claude", "cc"} }
 // Returns an empty Match (zero ID + zero Confidence) when no signals
 // are seen — the autodetection layer treats that as a no-match.
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
-	signals := 0
-	reasons := make([]string, 0, 4)
-
-	check := func(rel string, reason string) {
-		full := filepath.Join(root, rel)
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, reason)
-		}
-	}
-
-	check(".claude", "found .claude/ directory")
-	check(".claude/.mcp.json", "found .claude/.mcp.json")
-	check(".claude/agents", "found .claude/agents/ directory")
-	check(".mcp.json", "found .mcp.json at root")
-
-	if signals == 0 {
-		return adapter.Match{}, nil
-	}
-
-	var conf adapter.Confidence
-	switch {
-	case signals >= 3:
-		conf = adapter.ConfidenceHigh
-	case signals == 2:
-		conf = adapter.ConfidenceMedium
-	default:
-		conf = adapter.ConfidenceLow
-	}
-
-	return adapter.Match{
-		ID:         canonicalID,
-		Confidence: conf,
-		Reasons:    reasons,
-	}, nil
+	return adapter.DetectFromSignals(canonicalID, []adapter.Signal{
+		{Path: filepath.Join(root, ".claude"), Reason: "found .claude/ directory"},
+		{Path: filepath.Join(root, ".claude", ".mcp.json"), Reason: "found .claude/.mcp.json"},
+		{Path: filepath.Join(root, ".claude", "agents"), Reason: "found .claude/agents/ directory"},
+		{Path: filepath.Join(root, ".mcp.json"), Reason: "found .mcp.json at root"},
+	}), nil
 }
 
 // mcpJSONShape is the document Claude Code reads at mcpJSONPath
@@ -267,61 +237,14 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
 // contributes so the deep-merge engine can record them in state.files[*].keys[]
 // (STATE-02 + ADAPT-05) and so the runtime-wins drop (plan 02, D-10) can drop
-// ids that clash with the runtime MCP set.
-//
-// Byte discipline (D-03): mcpDeepKeys returns `in` UNCHANGED — it parses ONLY to
-// read the top-level map keys, never re-encodes. Re-encoding would reorder the
-// user's plugin file and break FMT-05 byte-stability / drift no-op detection.
-//
-// Key shape (D-09): for each top-level `mcpServers` map key id →
-// "mcpServers."+id; if a top-level `a2aAgents` object is present, for each of
-// its keys id → "a2aAgents."+id. Keys are sorted lexicographically, mirroring
-// renderMcpJSON's contributedKeys loop, so the enumeration is deterministic.
-//
-// Malformed JSON returns a non-nil error so route.Project aborts that file
-// (first-error discipline, T-02-07) rather than letting a server slip into the
-// merge unenumerated. An input with no mcpServers object returns empty keys and
-// out==in with no error.
+// ids that clash with the runtime MCP set. Key shape (D-09): "mcpServers."+id
+// and "a2aAgents."+id, sorted like renderMcpJSON's contributedKeys loop.
 //
 // Phase-2 assumption: the plugin mcp source is treated as plain JSON. There is
 // no jsonc comment-stripping helper in this codebase today; if one is added
 // later (the source kind is mcp.{json,jsonc}) it should be reused here.
-func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error) {
-	// Decode only the top-level object so we read the contributed key names
-	// without materializing or re-encoding the nested server definitions.
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(in, &top); err != nil {
-		return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q: %w", srcRel, err)
-	}
-
-	keys = make([]string, 0)
-
-	if raw, ok := top["mcpServers"]; ok {
-		var servers map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &servers); err != nil {
-			return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q mcpServers: %w", srcRel, err)
-		}
-		for id := range servers {
-			keys = append(keys, "mcpServers."+id)
-		}
-	}
-
-	if raw, ok := top["a2aAgents"]; ok {
-		var agents map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &agents); err != nil {
-			return nil, nil, fmt.Errorf("claudecode: mcpDeepKeys parse %q a2aAgents: %w", srcRel, err)
-		}
-		for id := range agents {
-			keys = append(keys, "a2aAgents."+id)
-		}
-	}
-
-	// Sort exactly like renderMcpJSON's contributedKeys so the enumeration is
-	// stable across invocations.
-	sort.Strings(keys)
-
-	// D-03: return the input bytes UNCHANGED — no re-encode, no reorder.
-	return in, keys, nil
+func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
+	return route.MCPDeepKeys("claudecode", srcRel, in, "mcpServers", "a2aAgents")
 }
 
 // ProjectionRules returns the claude-code PASS-THROUGH projection table

@@ -103,7 +103,7 @@ func TestEnv_List_SinglePage(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeEnv(t, "list")
 	if err != nil {
@@ -154,7 +154,7 @@ func TestEnv_List_Pagination(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeEnv(t, "list")
 	if err != nil {
@@ -191,7 +191,7 @@ func TestEnv_List_LimitFlag(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "list", "--limit", "10")
 	if err != nil {
@@ -220,7 +220,7 @@ func TestEnv_List_401_Exit3(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "list")
 	if err == nil {
@@ -296,7 +296,7 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeEnv(t, "describe", "demo")
 	if err != nil {
@@ -344,7 +344,7 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeEnv(t, "describe", "demo")
 	if err != nil {
@@ -413,7 +413,7 @@ func TestEnv_Describe_PaginatedFind(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "describe", "demo")
 	if err != nil {
@@ -457,7 +457,7 @@ func TestEnv_Describe_MetadataOnly(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeEnv(t, "describe", "demo", "--metadata-only")
 	if err != nil {
@@ -500,7 +500,7 @@ func TestEnv_Describe_NotFound(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
 	})
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "describe", "nonexistent")
 	if err == nil {
@@ -559,7 +559,7 @@ func TestEnv_SyntheticMode_Allowed(t *testing.T) {
 
 	t.Setenv("ACH_BASE_URL", ts.URL)
 	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
-	swapEnvHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "list")
 	if err != nil {

@@ -70,20 +70,11 @@ func (a *Adapter) Aliases() []string { return []string{"pi", "pi-mono"} }
 //   - .pi/mcp.json file
 //   - $HOME/.pi/mcp.json (global-mode hint, checked independently of root)
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
-	signals := 0
-	reasons := make([]string, 0, 4)
-
-	check := func(rel string, reason string) {
-		full := filepath.Join(root, rel)
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, reason)
-		}
+	signals := []adapter.Signal{
+		{Path: filepath.Join(root, ".pi"), Reason: "found .pi/ directory"},
+		{Path: filepath.Join(root, ".pi", "agent"), Reason: "found .pi/agent/ directory"},
+		{Path: filepath.Join(root, ".pi", "mcp.json"), Reason: "found .pi/mcp.json"},
 	}
-
-	check(".pi", "found .pi/ directory")
-	check(".pi/agent", "found .pi/agent/ directory")
-	check(".pi/mcp.json", "found .pi/mcp.json")
 
 	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`
 	// (mirrors gemini's $HOME/.gemini/settings.json global-settings probe).
@@ -93,32 +84,13 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	// global-only match that could turn a clean single-match into a multi-
 	// match (exit 1) for a totally different project.
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		full := filepath.Join(home, ".pi", "mcp.json")
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, "found ~/.pi/mcp.json (global mode)")
-		}
+		signals = append(signals, adapter.Signal{
+			Path:   filepath.Join(home, ".pi", "mcp.json"),
+			Reason: "found ~/.pi/mcp.json (global mode)",
+		})
 	}
 
-	if signals == 0 {
-		return adapter.Match{}, nil
-	}
-
-	var conf adapter.Confidence
-	switch {
-	case signals >= 3:
-		conf = adapter.ConfidenceHigh
-	case signals == 2:
-		conf = adapter.ConfidenceMedium
-	default:
-		conf = adapter.ConfidenceLow
-	}
-
-	return adapter.Match{
-		ID:         canonicalID,
-		Confidence: conf,
-		Reasons:    reasons,
-	}, nil
+	return adapter.DetectFromSignals(canonicalID, signals), nil
 }
 
 // pimonoMCPEntry is the per-server JSON shape Pi consumes under the
@@ -215,32 +187,8 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 //
 // Unlike gemini, pimono enumerates ONLY mcpServers — it has no a2aAgents
 // surface, so an a2aAgents branch in the input is intentionally ignored.
-//
-// Byte discipline (D-03): returns `in` UNCHANGED — parses ONLY to read the
-// top-level map keys, never re-encodes. Malformed JSON returns a non-nil error
-// so route.Project aborts that file (first-error discipline, T-02-09).
-func mcpDeepKeys(srcRel string, in []byte) (out []byte, keys []string, err error) {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(in, &top); err != nil {
-		return nil, nil, fmt.Errorf("pimono: mcpDeepKeys parse %q: %w", srcRel, err)
-	}
-
-	keys = make([]string, 0)
-
-	if raw, ok := top["mcpServers"]; ok {
-		var servers map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &servers); err != nil {
-			return nil, nil, fmt.Errorf("pimono: mcpDeepKeys parse %q mcpServers: %w", srcRel, err)
-		}
-		for id := range servers {
-			keys = append(keys, "mcpServers."+id)
-		}
-	}
-
-	sort.Strings(keys)
-
-	// D-03: return the input bytes UNCHANGED — no re-encode, no reorder.
-	return in, keys, nil
+func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
+	return route.MCPDeepKeys("pimono", srcRel, in, "mcpServers")
 }
 
 // ProjectionRules returns the pimono projection table (route.RuleProvider, the

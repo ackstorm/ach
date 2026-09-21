@@ -108,7 +108,7 @@ func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
@@ -145,7 +145,7 @@ func TestHydrate_PK_EmitsWarning(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, stderr, code, err := executeHydrate(t, "demo")
 	if err != nil {
@@ -171,7 +171,7 @@ func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, stderr, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
@@ -195,7 +195,7 @@ func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t, "--no-warnings")
 	if err == nil {
@@ -234,7 +234,7 @@ func TestHydrate_RefusesHTTP_ByDefault_NoHTTP(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedHTTPProfile(t, dir, "http://localhost:8080")
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t, "demo")
 	if code == exit.OK {
@@ -254,7 +254,7 @@ func TestHydrate_AllowsHTTP_WithInsecureFlag(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	seedHTTPProfile(t, dir, "http://127.0.0.1:1")
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, _, err := executeHydrate(t, "demo", "--insecure")
 	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
@@ -272,7 +272,7 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 		URL: mock.server.URL,
 		EK:  map[string]string{"local-laptop": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	stdout, stderr, code, err := executeHydrate(t, "--env-key", "local-laptop")
 	if err != nil {
@@ -321,7 +321,7 @@ func TestHydrate_MutexCreds_Exit1_NoHTTP(t *testing.T) {
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t,
 		"--api-key", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
@@ -356,7 +356,7 @@ func TestHydrate_MutexCreds_EnvAndFlag_Exit1(t *testing.T) {
 		URL: mock.server.URL,
 		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t, "--env-key", "demo", "demo")
 	if err == nil {
@@ -380,7 +380,7 @@ func TestHydrate_NoCredential_Exit1(t *testing.T) {
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL: mock.server.URL,
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t, "demo")
 	if err == nil {
@@ -404,7 +404,7 @@ func TestHydrate_SyntheticMode_PK_Works(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	t.Setenv("ACH_BASE_URL", mock.server.URL)
 	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
 	if err != nil {
@@ -428,7 +428,7 @@ func TestHydrate_SyntheticMode_EnvKey_Exit1(t *testing.T) {
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 	t.Setenv("ACH_BASE_URL", mock.server.URL)
 	t.Setenv("ACH_API_KEY", "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz")
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	// --env-key alone (no --api-key) under synthetic → STILL mutex
 	// conflict because ACH_API_KEY env is set. So test --env-key
@@ -476,7 +476,7 @@ func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID stri
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		EK:  map[string]string{"l": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
-	swapHydrateHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, ts.Client())
 
 	_, _, code, err := executeHydrate(t, hydrateArgs...)
 	if err == nil {
@@ -520,7 +520,7 @@ func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrate(t, "--no-warnings")
 	if err != nil {
@@ -583,7 +583,7 @@ func TestRunHydrate_RawDispatchesToLegacy(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	stdout, _, code, err := executeHydrateEngine(t, "--raw",
 		"demo", "--no-warnings")
@@ -627,7 +627,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	// Swap hydrateRunFn with a recorder. The fake returns
 	// (Result{}, nil) so the cobra layer's downstream rendering is
@@ -689,7 +689,7 @@ func TestRunHydrate_ScopeTip(t *testing.T) {
 			URL: mock.server.URL,
 			PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 		})
-		swapHydrateHTTPClientForTest(t, mock.server.Client())
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 		prev := hydrateRunFn
 		hydrateRunFn = func(_ context.Context, _ hydrate.Opts) (hydrate.Result, error) {
 			return hydrate.Result{}, nil
@@ -762,7 +762,7 @@ func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrateEngine(t,
 		"--include-runtime", "--only-runtime",
@@ -790,7 +790,7 @@ func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrateEngine(t,
 		"--wait", "--lock-timeout", "5s",
@@ -815,7 +815,7 @@ func TestRunHydrate_UnknownPlatform(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	_, _, code, err := executeHydrateEngine(t,
 		"--target", "clade-code",
@@ -841,7 +841,7 @@ func TestRunHydrate_AliasPlatform(t *testing.T) {
 		URL: mock.server.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	var capturedOpts hydrate.Opts
 	prev := hydrateRunFn
@@ -1198,7 +1198,7 @@ func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
 			ClientID: "oc_1", AccessToken: "aaa.bbb.ccc", RefreshToken: "r1", ExpiresAt: time.Now().Add(time.Hour),
 		},
 	})
-	swapHydrateHTTPClientForTest(t, mock.server.Client())
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
 	if _, _, code, err := executeHydrate(t, "demo", "--no-warnings"); err != nil || code != exit.OK {
 		t.Fatalf("hydrate: code=%d err=%v", code, err)

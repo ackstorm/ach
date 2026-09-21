@@ -19,6 +19,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -131,7 +132,7 @@ func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 	stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
 	stageTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "B\n"})
 
-	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: ConflictRefuse}
+	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: conflict.Refuse}
 	var result RenderResult
 	err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result)
 	if err == nil {
@@ -153,7 +154,7 @@ func TestProjectPlugins_ReplaceCollision_NamespaceKeepsBoth(t *testing.T) {
 	stageTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "A\n"})
 	stageTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "B\n"})
 
-	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: ConflictNamespace}
+	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: conflict.Namespace}
 	var result RenderResult
 	if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectPlugins (namespace): %v", err)
@@ -179,11 +180,11 @@ func TestProjectPlugins_ReplaceCollision_NamespaceKeepsBoth(t *testing.T) {
 func TestProjectPlugins_ReplaceCollision_SkipAndOverwrite(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		policy ConflictPolicy
+		policy conflict.Policy
 		want   string // expected on-disk body at .claude/rules/foo.md
 	}{
-		{"skip keeps first", ConflictSkip, "A\n"},
-		{"overwrite keeps last", ConflictOverwrite, "B\n"},
+		{"skip keeps first", conflict.Skip, "A\n"},
+		{"overwrite keeps last", conflict.Overwrite, "B\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			achDir := t.TempDir()

@@ -26,7 +26,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -93,47 +92,18 @@ func (a *Adapter) Aliases() []string { return []string{} }
 // Returns an empty Match (zero ID + zero Confidence) when no signals
 // are seen — the autodetection layer treats that as a no-match.
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
-	signals := 0
-	reasons := make([]string, 0, 4)
-
-	check := func(rel string, reason string) {
-		full := filepath.Join(root, rel)
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, reason)
-		}
-	}
-
-	check(".opencode", "found .opencode/ directory")
-	check(".opencode/opencode.json", "found .opencode/opencode.json")
-	check(".opencode/plugins", "found .opencode/plugins/ directory")
-	check("opencode.json", "found opencode.json at root")
-	// XDG global config: in --global mode the caller passes root=$HOME, so a
-	// root-relative .config/opencode/ probe finds the global install
-	// ($HOME/.config/opencode) WITHOUT bleeding into project scope (a project
-	// almost never has a literal ./.config/opencode/). Replaces the old
-	// $HOME cross-probe that fired in project scope (UX finding #4).
-	check(".config/opencode", "found .config/opencode/ directory (XDG global)")
-
-	if signals == 0 {
-		return adapter.Match{}, nil
-	}
-
-	var conf adapter.Confidence
-	switch {
-	case signals >= 3:
-		conf = adapter.ConfidenceHigh
-	case signals == 2:
-		conf = adapter.ConfidenceMedium
-	default:
-		conf = adapter.ConfidenceLow
-	}
-
-	return adapter.Match{
-		ID:         canonicalID,
-		Confidence: conf,
-		Reasons:    reasons,
-	}, nil
+	return adapter.DetectFromSignals(canonicalID, []adapter.Signal{
+		{Path: filepath.Join(root, ".opencode"), Reason: "found .opencode/ directory"},
+		{Path: filepath.Join(root, ".opencode", "opencode.json"), Reason: "found .opencode/opencode.json"},
+		{Path: filepath.Join(root, ".opencode", "plugins"), Reason: "found .opencode/plugins/ directory"},
+		{Path: filepath.Join(root, "opencode.json"), Reason: "found opencode.json at root"},
+		// XDG global config: in --global mode the caller passes root=$HOME, so a
+		// root-relative .config/opencode/ probe finds the global install
+		// ($HOME/.config/opencode) WITHOUT bleeding into project scope (a project
+		// almost never has a literal ./.config/opencode/). Replaces the old
+		// $HOME cross-probe that fired in project scope (UX finding #4).
+		{Path: filepath.Join(root, ".config", "opencode"), Reason: "found .config/opencode/ directory (XDG global)"},
+	}), nil
 }
 
 // configJSONShape is the `.opencode/opencode.json` document OpenCode

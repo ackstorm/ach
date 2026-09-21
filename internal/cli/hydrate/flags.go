@@ -5,6 +5,8 @@ package hydrate
 import (
 	"io"
 	"time"
+
+	"github.com/ackstorm/ach/internal/cli/conflict"
 )
 
 // Opts carries every engine flag the §6.7 14-step orchestrator
@@ -71,8 +73,8 @@ type Opts struct {
 	Force bool
 
 	// Conflict selects how cross-plugin destination collisions are
-	// resolved during the projection leg. Default ConflictNamespace.
-	Conflict ConflictPolicy
+	// resolved during the projection leg. Default conflict.Namespace.
+	Conflict conflict.Policy
 
 	// DryRun runs every read+diff step but skips step 12 (state
 	// write) and step 8 (real extract). Result still reflects what

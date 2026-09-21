@@ -12,6 +12,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -83,7 +84,7 @@ func TestProjection_Pimono_Smoke(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
 	if err != nil {
@@ -272,7 +273,7 @@ func TestProjection_Pimono_RuntimeGate(t *testing.T) {
 		Context: &manifest.ContextBlock{},
 	}
 
-	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	_, disp := hydrate.NewWiring(nil, "pimono", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 
 	// Default scope: projectPlugins=true, includeRuntime=FALSE.
 	if _, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, false); err != nil {

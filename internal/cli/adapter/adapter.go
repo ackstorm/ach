@@ -4,6 +4,7 @@ package adapter
 
 import (
 	"context"
+	"os"
 
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
@@ -70,6 +71,34 @@ type Match struct {
 	// "found .claude/.mcp.json"); surfaced verbatim to stderr on
 	// multi-match exit so the user can disambiguate.
 	Reasons []string
+}
+
+// Signal is one filesystem probe an adapter's Detect runs: Path is the
+// full path to stat, Reason the human-readable evidence on a hit.
+type Signal struct {
+	Path   string
+	Reason string
+}
+
+// DetectFromSignals stats each signal and ranks the hits: 0 → empty Match
+// (no-match), 1 → Low, 2 → Medium, ≥3 → High.
+func DetectFromSignals(id string, signals []Signal) Match {
+	reasons := make([]string, 0, len(signals))
+	for _, s := range signals {
+		if _, err := os.Stat(s.Path); err == nil {
+			reasons = append(reasons, s.Reason)
+		}
+	}
+	switch n := len(reasons); {
+	case n == 0:
+		return Match{}
+	case n >= 3:
+		return Match{ID: id, Confidence: ConfidenceHigh, Reasons: reasons}
+	case n == 2:
+		return Match{ID: id, Confidence: ConfidenceMedium, Reasons: reasons}
+	default:
+		return Match{ID: id, Confidence: ConfidenceLow, Reasons: reasons}
+	}
 }
 
 // FileWrite is one materialized file produced by Adapter.RenderRuntime.

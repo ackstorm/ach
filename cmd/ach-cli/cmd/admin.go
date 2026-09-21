@@ -138,18 +138,6 @@ func adminConfirm(stdin io.Reader, w io.Writer, prompt string) error {
 // 06-03 / 06-05.
 var adminHTTPClient *http.Client
 
-// swapAdminHTTPClientForTest swaps adminHTTPClient for the lifetime
-// of t. Test-only helper.
-func swapAdminHTTPClientForTest(t interface {
-	Helper()
-	Cleanup(func())
-}, c *http.Client) {
-	t.Helper()
-	previous := adminHTTPClient
-	adminHTTPClient = c
-	t.Cleanup(func() { adminHTTPClient = previous })
-}
-
 // allowedRefreshKinds is the closed-set client-side allow-list per
 // D-CONTEXT W3b. The user-facing names `marketplace` / `skill-marketplace`
 // map to the server kinds `pluginmarketplace` / `skillmarketplace` in
@@ -397,41 +385,19 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 // runEnvKeysList) and returns the accumulated AdminObjectViews. environments
 // is special-cased onto GET /platform/environments + the EnvironmentView map.
 func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]render.AdminObjectView, error) {
-	out := []render.AdminObjectView{}
-	cursor := ""
-	for {
-		path := buildAdminListPath(kind, cursor)
-		if kind == "environments" {
-			var resp struct {
-				Items      []adminEnvItem `json:"items"`
-				NextCursor string         `json:"next_cursor"`
-			}
-			if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
-				return nil, err
-			}
-			for _, it := range resp.Items {
-				out = append(out, it.toView())
-			}
-			if resp.NextCursor == "" {
-				break
-			}
-			cursor = resp.NextCursor
-			continue
-		}
-		var resp struct {
-			Items      []render.AdminObjectView `json:"items"`
-			NextCursor string                   `json:"next_cursor"`
-		}
-		if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+	pathFor := func(c string) string { return buildAdminListPath(kind, c) }
+	if kind == "environments" {
+		items, err := fetchAll[adminEnvItem](ctx, hc, "", pathFor)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, resp.Items...)
-		if resp.NextCursor == "" {
-			break
+		out := make([]render.AdminObjectView, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.toView())
 		}
-		cursor = resp.NextCursor
+		return out, nil
 	}
-	return out, nil
+	return fetchAll[render.AdminObjectView](ctx, hc, "", pathFor)
 }
 
 // buildAdminListPath returns the endpoint + optional cursor query for a kind.
@@ -560,19 +526,11 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 	}
 
 	// Paginate until next_cursor empty. Accumulate items.
-	all := []render.KeyRowView{}
-	currentCursor := cursor
-	for {
-		path := buildAdminKeysListPath(ownerEmail, keyType, status, environment, currentCursor, limit)
-		var resp keysListResponse
-		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
-			return doErr
-		}
-		all = append(all, resp.Items...)
-		if resp.NextCursor == "" {
-			break
-		}
-		currentCursor = resp.NextCursor
+	all, err := fetchAll[render.KeyRowView](ctx, hc, cursor, func(c string) string {
+		return buildAdminKeysListPath(ownerEmail, keyType, status, environment, c, limit)
+	})
+	if err != nil {
+		return err
 	}
 
 	// W7: single source of truth via render.FormatKeyList.

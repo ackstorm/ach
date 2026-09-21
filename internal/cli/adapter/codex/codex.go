@@ -68,7 +68,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -134,39 +133,11 @@ func (a *Adapter) Aliases() []string { return []string{"codex-cli"} }
 // Returns an empty Match (zero ID + zero Confidence) when no signals
 // are seen — the autodetection layer treats that as a no-match.
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
-	signals := 0
-	reasons := make([]string, 0, 4)
-
-	check := func(full string, reason string) {
-		if _, err := os.Stat(full); err == nil {
-			signals++
-			reasons = append(reasons, reason)
-		}
-	}
-
-	check(filepath.Join(root, ".codex"), "found .codex/ directory")
-	check(filepath.Join(root, ".codex", "config.toml"), "found .codex/config.toml")
-	check(filepath.Join(root, ".codex", "agents"), "found .codex/agents/ directory")
-
-	if signals == 0 {
-		return adapter.Match{}, nil
-	}
-
-	var conf adapter.Confidence
-	switch {
-	case signals >= 3:
-		conf = adapter.ConfidenceHigh
-	case signals == 2:
-		conf = adapter.ConfidenceMedium
-	default:
-		conf = adapter.ConfidenceLow
-	}
-
-	return adapter.Match{
-		ID:         canonicalID,
-		Confidence: conf,
-		Reasons:    reasons,
-	}, nil
+	return adapter.DetectFromSignals(canonicalID, []adapter.Signal{
+		{Path: filepath.Join(root, ".codex"), Reason: "found .codex/ directory"},
+		{Path: filepath.Join(root, ".codex", "config.toml"), Reason: "found .codex/config.toml"},
+		{Path: filepath.Join(root, ".codex", "agents"), Reason: "found .codex/agents/ directory"},
+	}), nil
 }
 
 // mcpServerTable is the per-server TOML shape Codex consumes at

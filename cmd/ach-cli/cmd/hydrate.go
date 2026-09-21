@@ -59,6 +59,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/achfile"
 	"github.com/ackstorm/ach/internal/cli/config"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
@@ -83,18 +84,6 @@ const pkWarning = "warning: pk- is not Environment-scoped; use an ek- key for " 
 // this to the test server's TLS-trusting Client so https://127.0.0.1
 // with an ephemeral cert is reachable.
 var hydrateHTTPClient *http.Client
-
-// swapHydrateHTTPClientForTest is the test helper that swaps
-// hydrateHTTPClient for the lifetime of t.
-func swapHydrateHTTPClientForTest(t interface {
-	Helper()
-	Cleanup(func())
-}, c *http.Client) {
-	t.Helper()
-	previous := hydrateHTTPClient
-	hydrateHTTPClient = c
-	t.Cleanup(func() { hydrateHTTPClient = previous })
-}
 
 // hydrateRunFn is the engine-dispatch test seam. Production callers
 // leave the default (= hydrate.Run); unit tests targeting the
@@ -179,7 +168,7 @@ Exit codes:
   3 not authorized   4 wrong environment for this key   5 state mismatch
   6 network error   7 file-name collision   8 config read/write error`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conflict, err := hydrate.ParseConflictPolicy(flagConflict)
+			conflict, err := conflict.Parse(flagConflict)
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: err.Error()}
 			}
@@ -300,7 +289,7 @@ type hydrateInputs struct {
 	allowSymlinks  bool
 	platform       string
 	global         bool
-	conflict       hydrate.ConflictPolicy
+	conflict       conflict.Policy
 
 	// D-04 hidden raw flag.
 	raw bool

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -52,7 +53,7 @@ func TestProjection_MultiPlugin_CollisionRejected(t *testing.T) {
 		"rules/foo.md": "# from plug-b\n",
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictRefuse)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Refuse)
 	m := newProjectionManifest()
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
@@ -80,7 +81,7 @@ func TestProjection_MultiPlugin_Collision_NamespaceKeepsBoth(t *testing.T) {
 	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "# from plug-a\n"})
 	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 	m := newProjectionManifest()
 
 	res, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)
@@ -116,7 +117,7 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/a.md": bodyA})
 	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/b.md": bodyB})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 	m := newProjectionManifest()
 
 	res1, err := disp.Render(context.Background(), m, nil, achDir, toolRoot, true, true)

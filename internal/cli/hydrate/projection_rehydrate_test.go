@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -45,7 +46,7 @@ func TestProjection_ReHydrate_NativeDestAndByteNoOp(t *testing.T) {
 		"rules/foo.md": ruleBody,
 	})
 
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, hydrate.ConflictNamespace)
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Environment:   "demo",

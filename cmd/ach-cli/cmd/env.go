@@ -45,34 +45,10 @@ import (
 // cert without bloating the package API with per-call hooks.
 var envHTTPClient *http.Client
 
-// swapEnvHTTPClientForTest is the test helper that swaps
-// envHTTPClient for the lifetime of t.
-func swapEnvHTTPClientForTest(t interface {
-	Helper()
-	Cleanup(func())
-}, c *http.Client) {
-	t.Helper()
-	previous := envHTTPClient
-	envHTTPClient = c
-	t.Cleanup(func() { envHTTPClient = previous })
-}
-
 // defaultEnvListLimit mirrors the server-side default (100 per
 // internal/platformapi/environments handler). Surfaced as a constant
 // so the flag definition and the env-side default agree.
 const defaultEnvListLimit = 100
-
-// envListResponse decodes one page of GET /platform/environments.
-// items[].name is the only field we render today; the wire shape
-// carries spec, conditions, deletionTimestamp too — those fields are
-// ignored here (CLI doesn't render them in Phase 6).
-//
-// next_cursor is a *string so the JSON `null` case decodes to nil
-// (loop-exit signal) without an explicit type assertion.
-type envListResponse struct {
-	Items      []render.EnvView `json:"items"`
-	NextCursor *string          `json:"next_cursor"`
-}
 
 // newEnvCmd returns a fresh `ach env` parent cobra.Command with
 // the 2 children registered.
@@ -241,23 +217,7 @@ func buildEnvHTTPClient(
 // items. The first request carries ?limit=<limit>; subsequent
 // requests carry both ?limit + ?cursor=<prev_next_cursor>.
 func paginateEnvironments(ctx context.Context, hc *httpclient.Client, limit int) ([]render.EnvView, error) {
-	var (
-		items  []render.EnvView
-		cursor string
-	)
-	for {
-		path := buildEnvListPath(limit, cursor)
-		var resp envListResponse
-		if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
-			return nil, err
-		}
-		items = append(items, resp.Items...)
-		if resp.NextCursor == nil || *resp.NextCursor == "" {
-			break
-		}
-		cursor = *resp.NextCursor
-	}
-	return items, nil
+	return fetchAll[render.EnvView](ctx, hc, "", func(c string) string { return buildEnvListPath(limit, c) })
 }
 
 // buildEnvListPath composes the GET /platform/environments URL with
@@ -283,7 +243,7 @@ func findEnvironmentByName(ctx context.Context, hc *httpclient.Client, name stri
 	)
 	for {
 		path := buildEnvListPath(limit, cursor)
-		var resp envListResponse
+		var resp page[render.EnvView]
 		if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 			return render.EnvView{}, err
 		}
@@ -292,10 +252,10 @@ func findEnvironmentByName(ctx context.Context, hc *httpclient.Client, name stri
 				return e, nil
 			}
 		}
-		if resp.NextCursor == nil || *resp.NextCursor == "" {
+		if resp.NextCursor == "" {
 			break
 		}
-		cursor = *resp.NextCursor
+		cursor = resp.NextCursor
 	}
 	return render.EnvView{}, &exit.CodedError{
 		Code: exit.General,

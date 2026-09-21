@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/localpkg/manager"
 )
 
@@ -17,7 +18,7 @@ func TestResolveConflicts(t *testing.T) {
 	replace := []manager.PlannedWrite{{Path: target, Merge: adapter.MergeReplace}}
 
 	t.Run("no owner passes through", func(t *testing.T) {
-		out, acts, err := manager.ResolveConflicts(replace, map[string]string{}, manager.ConflictNamespace, "codex", "")
+		out, acts, err := manager.ResolveConflicts(replace, map[string]string{}, conflict.Namespace, "codex", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -29,7 +30,7 @@ func TestResolveConflicts(t *testing.T) {
 	t.Run("additive merge never clashes", func(t *testing.T) {
 		deep := []manager.PlannedWrite{{Path: ".claude/settings.json", Merge: adapter.MergeDeep}}
 		ownersDeep := map[string]string{".claude/settings.json": "other@r"}
-		out, acts, err := manager.ResolveConflicts(deep, ownersDeep, manager.ConflictNamespace, "codex", "")
+		out, acts, err := manager.ResolveConflicts(deep, ownersDeep, conflict.Namespace, "codex", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,7 +40,7 @@ func TestResolveConflicts(t *testing.T) {
 	})
 
 	t.Run("overwrite keeps write, no action", func(t *testing.T) {
-		out, acts, err := manager.ResolveConflicts(replace, owners, manager.ConflictOverwrite, "codex", "")
+		out, acts, err := manager.ResolveConflicts(replace, owners, conflict.Overwrite, "codex", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,27 +50,27 @@ func TestResolveConflicts(t *testing.T) {
 	})
 
 	t.Run("skip drops write, records action", func(t *testing.T) {
-		out, acts, err := manager.ResolveConflicts(replace, owners, manager.ConflictSkip, "codex", "")
+		out, acts, err := manager.ResolveConflicts(replace, owners, conflict.Skip, "codex", "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(out) != 0 {
 			t.Errorf("skip: want 0 writes; got %v", out)
 		}
-		if len(acts) != 1 || acts[0].Policy != manager.ConflictSkip || acts[0].Owner != "gemini@ackstorm" {
+		if len(acts) != 1 || acts[0].Policy != conflict.Skip || acts[0].Owner != "gemini@ackstorm" {
 			t.Errorf("skip: want one skip action owned by gemini@ackstorm; got %v", acts)
 		}
 	})
 
 	t.Run("refuse errors", func(t *testing.T) {
-		_, _, err := manager.ResolveConflicts(replace, owners, manager.ConflictRefuse, "codex", "")
+		_, _, err := manager.ResolveConflicts(replace, owners, conflict.Refuse, "codex", "")
 		if err == nil {
 			t.Fatal("refuse: want error on clash, got nil")
 		}
 	})
 
 	t.Run("namespace renames leaf, records action", func(t *testing.T) {
-		out, acts, err := manager.ResolveConflicts(replace, owners, manager.ConflictNamespace, "codex", "")
+		out, acts, err := manager.ResolveConflicts(replace, owners, conflict.Namespace, "codex", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +90,7 @@ func TestResolveConflicts_AbsoluteRootContainingSkills(t *testing.T) {
 	owners := map[string]string{target: "other@repo"}
 	writes := []manager.PlannedWrite{{Path: target, Merge: adapter.MergeReplace}}
 
-	out, actions, err := manager.ResolveConflicts(writes, owners, manager.ConflictNamespace, "codex", root)
+	out, actions, err := manager.ResolveConflicts(writes, owners, conflict.Namespace, "codex", root)
 	if err != nil {
 		t.Fatal(err)
 	}

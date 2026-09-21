@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/gitignore"
 	"github.com/ackstorm/ach/internal/cli/localpkg/discover"
@@ -210,10 +211,10 @@ func ownersAt(installed *store.InstalledFile, ref, target string) map[string]str
 func reportConflictActions(w io.Writer, ref, target string, actions []manager.ConflictAction) {
 	for _, a := range actions {
 		switch a.Policy {
-		case manager.ConflictNamespace:
+		case conflict.Namespace:
 			_, _ = fmt.Fprintf(w, "↳ %s → %s: namespaced %s → %s (clash with %s)\n",
 				ref, target, a.Path, a.NewPath, a.Owner)
-		case manager.ConflictSkip:
+		case conflict.Skip:
 			_, _ = fmt.Fprintf(w, "↳ %s → %s: skipped %s (kept %s's)\n",
 				ref, target, a.Path, a.Owner)
 		}
@@ -379,7 +380,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				return err
 			}
 
-			policy, err := manager.ParseConflictPolicy(flagConflict)
+			policy, err := conflict.Parse(flagConflict)
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: "install: " + err.Error()}
 			}
@@ -689,7 +690,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				return err
 			}
 
-			policy, err := manager.ParseConflictPolicy(flagConflict)
+			policy, err := conflict.Parse(flagConflict)
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: "update: " + err.Error()}
 			}

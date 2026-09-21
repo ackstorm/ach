@@ -49,7 +49,7 @@ func TestRuntimeKindList_RendersTable(t *testing.T) {
 			srv := httptest.NewTLSServer(mux)
 			defer srv.Close()
 			seedAdminConfig(t, srv.URL)
-			swapAdminHTTPClientForTest(t, srv.Client())
+			swapHTTPClientForTest(t, &adminHTTPClient, srv.Client())
 
 			root := newRuntimeCmd()
 			stdout, _, code, err := executeCommand(t, root, tc.args...)

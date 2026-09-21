@@ -138,7 +138,7 @@ func newAdminTestServer(t *testing.T) *adminTestServer {
 		}
 	})
 	srv.Server = httptest.NewTLSServer(mux)
-	swapAdminHTTPClientForTest(t, srv.Client())
+	swapHTTPClientForTest(t, &adminHTTPClient, srv.Client())
 	return srv
 }
 

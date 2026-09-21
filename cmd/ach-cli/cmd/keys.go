@@ -37,7 +37,6 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -67,18 +66,6 @@ import (
 // the ephemeral cert. Mirrors the whoami/login pattern from 06-03.
 var keysHTTPClient *http.Client
 
-// swapKeysHTTPClientForTest is the test helper that swaps
-// keysHTTPClient for the lifetime of t.
-func swapKeysHTTPClientForTest(t interface {
-	Helper()
-	Cleanup(func())
-}, c *http.Client) {
-	t.Helper()
-	previous := keysHTTPClient
-	keysHTTPClient = c
-	t.Cleanup(func() { keysHTTPClient = previous })
-}
-
 // envKeysCreateResponse mirrors envkeys.CreateResponse on the wire.
 // Re-declared here to avoid pulling internal/platformapi (k8s/chi
 // deps) into the CLI binary.
@@ -89,12 +76,6 @@ type envKeysCreateResponse struct {
 	Name        string `json:"name"`
 	OwnerEmail  string `json:"owner_email"`
 	CreatedAt   string `json:"created_at"`
-}
-
-// keysListResponse mirrors the GET /platform/keys response on the wire.
-type keysListResponse struct {
-	Items      []render.KeyRowView `json:"items"`
-	NextCursor string              `json:"next_cursor"`
 }
 
 // newKeysCmd returns a fresh `ach keys` parent with its
@@ -272,7 +253,7 @@ func fetchEnvNamesBestEffort(ctx context.Context, flagProfile, flagAPIKey, flagE
 		APIKey:     bearer,
 		HTTPClient: keysHTTPClient,
 	}
-	var resp envListResponse
+	var resp page[render.EnvView]
 	if doErr := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, ""), nil, &resp); doErr != nil {
 		return nil
 	}
@@ -492,19 +473,11 @@ func runKeysList(cmd *cobra.Command, environment, keyType, status, cursor string
 	}
 
 	// Paginate until next_cursor empty. Accumulate items.
-	all := []render.KeyRowView{}
-	currentCursor := cursor
-	for {
-		path := buildKeysListPath(environment, keyType, status, currentCursor, limit)
-		var resp keysListResponse
-		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
-			return doErr
-		}
-		all = append(all, resp.Items...)
-		if resp.NextCursor == "" {
-			break
-		}
-		currentCursor = resp.NextCursor
+	all, err := fetchAll[render.KeyRowView](ctx, hc, cursor, func(c string) string {
+		return buildKeysListPath(environment, keyType, status, c, limit)
+	})
+	if err != nil {
+		return err
 	}
 
 	// W7: single source of truth via render.FormatKeyList. NO inline
@@ -663,20 +636,8 @@ func runEnvKeysRevoke(cmd *cobra.Command, keyID string, yes, force bool,
 
 	// Interactive confirmation unless --yes.
 	if !yes {
-		_, _ = fmt.Fprintf(stderr, "Confirm revoke of %s [y/N]: ", keyID)
-		scanner := bufio.NewScanner(stdin)
-		answer := ""
-		if scanner.Scan() {
-			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
-		}
-		switch answer {
-		case "y", "yes":
-			// proceed.
-		default:
-			return &exit.CodedError{
-				Code: exit.General,
-				Msg:  "cancelled",
-			}
+		if err := adminConfirm(stdin, stderr, fmt.Sprintf("Confirm revoke of %s [y/N]: ", keyID)); err != nil {
+			return err
 		}
 	}
 
@@ -807,19 +768,11 @@ func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
 	}
 
 	// Fetch all active pk_ keys (paginate).
-	var pkKeys []render.KeyRowView
-	currentCursor := ""
-	for {
-		path := buildKeysListPath("", "pk", "active", currentCursor, 0)
-		var resp keysListResponse
-		if doErr := hc.Do(ctx, http.MethodGet, path, nil, &resp); doErr != nil {
-			return doErr
-		}
-		pkKeys = append(pkKeys, resp.Items...)
-		if resp.NextCursor == "" {
-			break
-		}
-		currentCursor = resp.NextCursor
+	pkKeys, err := fetchAll[render.KeyRowView](ctx, hc, "", func(c string) string {
+		return buildKeysListPath("", "pk", "active", c, 0)
+	})
+	if err != nil {
+		return err
 	}
 
 	// Sort newest-first (CreatedAt lexicographic descending = chronological descending).
@@ -851,17 +804,8 @@ func runKeysPrune(cmd *cobra.Command, keep int, dryRun, yes bool,
 
 	// Interactive confirmation unless --yes.
 	if !yes {
-		_, _ = fmt.Fprintf(stderr, "Revoke %d key(s)? [y/N]: ", len(targets))
-		scanner := bufio.NewScanner(stdin)
-		answer := ""
-		if scanner.Scan() {
-			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
-		}
-		switch answer {
-		case "y", "yes":
-			// proceed.
-		default:
-			return &exit.CodedError{Code: exit.General, Msg: "cancelled"}
+		if err := adminConfirm(stdin, stderr, fmt.Sprintf("Revoke %d key(s)? [y/N]: ", len(targets))); err != nil {
+			return err
 		}
 	}
 

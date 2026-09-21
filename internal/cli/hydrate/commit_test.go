@@ -195,7 +195,7 @@ func TestCommit_HappyPath(t *testing.T) {
 // TestCommit_Step12_ComposesAdapterSection verifies W6-01 state composition:
 // when the adapter runs, step 12 records RenderResult.WrittenFiles into
 // state.Adapter (ID + Files). That recorded section IS the prior state the
-// next hydrate's §8.4 per-key drift check (findAdapterEntry) reads — without
+// next hydrate's §8.4 per-key drift check (findEntry) reads — without
 // it drift / auto-claim (sc3 / sc4) could never fire on re-hydrate.
 func TestCommit_Step12_ComposesAdapterSection(t *testing.T) {
 	c, store, _ := newTestCommit(t)

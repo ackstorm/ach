@@ -60,6 +60,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
+	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hash"
@@ -349,8 +350,8 @@ type adapterDispatcherImpl struct {
 	// config path differs from the simple $HOME-join (currently opencode).
 	global bool
 	// conflict selects the cross-plugin destination-collision policy applied
-	// by the projection leg (Phase 1). Default ConflictNamespace.
-	conflict ConflictPolicy
+	// by the projection leg (Phase 1). Default conflict.Namespace.
+	conflict conflict.Policy
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -514,7 +515,7 @@ func runtimeKindForKey(k string) string {
 //
 // projectedWrite pairs a projected FileWrite with the plugin that produced it.
 // The two-pass collision resolver (Phase 1) collects every plugin's writes
-// first, then attributes / (for ConflictNamespace) leaf-prefixes the
+// first, then attributes / (for conflict.Namespace) leaf-prefixes the
 // cross-plugin Target collisions before any publish.
 type projectedWrite struct {
 	plugin  string
@@ -527,9 +528,9 @@ type projectedWrite struct {
 // file-owned MergeReplace writes are collision-eligible; MergeComposite +
 // MergeDeep are co-owned by multiple plugins via per-id blocks and are EXEMPT
 // (same principle as the pre-Phase-1 claimed[] check). A collision is >=2
-// DISTINCT owning plugins at one Target. ConflictRefuse reproduces the
-// pre-Phase-1 CR-01 fail-fast; ConflictNamespace (default) leaf-prefixes every
-// colliding write; ConflictSkip keeps the earliest-sorted plugin; Overwrite
+// DISTINCT owning plugins at one Target. conflict.Refuse reproduces the
+// pre-Phase-1 CR-01 fail-fast; conflict.Namespace (default) leaf-prefixes every
+// colliding write; conflict.Skip keeps the earliest-sorted plugin; Overwrite
 // keeps the latest. Plugins were sorted in Pass A so all outcomes are stable.
 func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, toolRoot string) error {
 	byTarget := map[string][]int{}
@@ -556,7 +557,7 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 			continue
 		}
 		switch d.conflict {
-		case ConflictRefuse:
+		case conflict.Refuse:
 			first := all[idxs[0]].plugin
 			second := first
 			for _, i := range idxs {
@@ -568,18 +569,18 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 			return fmt.Errorf(
 				"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource, or pass --conflict=namespace)",
 				d.platformID, first, second, t)
-		case ConflictNamespace:
+		case conflict.Namespace:
 			// Leaf-prefix EVERY colliding write (including the first) so both
 			// plugins survive; deterministic because plugins are sorted.
 			for _, i := range idxs {
 				all[i].fw.Path = namespace.LeafAtRoot(toolRoot, all[i].fw.Path, all[i].plugin)
 			}
-		case ConflictSkip:
+		case conflict.Skip:
 			// Keep the lowest index (earliest-sorted plugin); skip the rest.
 			for _, i := range idxs[1:] {
 				all[i].skipped = true
 			}
-		case ConflictOverwrite:
+		case conflict.Overwrite:
 			// Keep the highest index (latest-sorted plugin); skip the rest.
 			for _, i := range idxs[:len(idxs)-1] {
 				all[i].skipped = true
@@ -621,7 +622,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	var dropped []string
 
 	// Pass A — collect every plugin's projected writes WITHOUT publishing.
-	// Plugin dirs are sorted so ConflictNamespace yields stable, run-to-run
+	// Plugin dirs are sorted so conflict.Namespace yields stable, run-to-run
 	// identical prefixed paths for identical manifests (Phase-1 determinism;
 	// no state migration needed). os.ReadDir is already name-sorted; the
 	// explicit sort makes the ordering contract local + obvious.
@@ -728,7 +729,11 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 
 		// Look up the prior projected entry in the PLUGINS bucket (D-07) so an
 		// unchanged re-hydrate hits the publishFile no-op skip.
-		entry, err := d.publishFile(fw, findPluginEntry(s, fw.Path), toolRoot)
+		var prior *state.FileEntry
+		if s != nil {
+			prior = findEntry(s.Plugins, fw.Path)
+		}
+		entry, err := d.publishFile(fw, prior, toolRoot)
 		if err != nil {
 			return err
 		}
@@ -868,7 +873,11 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		}
 		// Look up the prior projected entry in the SKILLS bucket so an
 		// unchanged re-hydrate hits the publishFile no-op skip.
-		entry, err := d.publishFile(fw, findSkillEntry(s, fw.Path), toolRoot)
+		var prior *state.FileEntry
+		if s != nil {
+			prior = findEntry(s.Skills, fw.Path)
+		}
+		entry, err := d.publishFile(fw, prior, toolRoot)
 		if err != nil {
 			return err
 		}
@@ -1085,7 +1094,11 @@ func validatePluginName(name string) error {
 //
 // 0o600 — these files embed the plaintext x-ach-key bearer (CR-01).
 func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *state.File, toolRoot string) (FileWrite, error) {
-	return d.publishFile(fw, findAdapterEntry(s, fw.Path), toolRoot)
+	var prior *state.FileEntry
+	if s != nil {
+		prior = findEntry(s.Adapter.Files, fw.Path)
+	}
+	return d.publishFile(fw, prior, toolRoot)
 }
 
 // publishFile is the bucket-agnostic core of publishRuntimeFile: the
@@ -1158,8 +1171,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	// the source-change axis on every converted Plugins[] entry. Derive the
 	// fresh source hash with the SAME rule the state-recording block below uses
 	// (fw.SourceHash, falling back to freshHash when empty — passthrough
-	// invariant: Hash == SourceHash). Both publishFile callers (findAdapterEntry
-	// runtime + findPluginEntry projection) thus evaluate the truth table
+	// invariant: Hash == SourceHash). Both publishFile callers (Adapter.Files
+	// runtime + Plugins projection lookups) thus evaluate the truth table
 	// correctly. onDiskHash (the user-drift axis) and the per-MergeKind freshHash
 	// (recorded as Hash, used for the no-op content identity) are unchanged.
 	freshSourceHash := freshHash
@@ -1286,47 +1299,16 @@ func compositeHashes(finalAbs, id string, block []byte) (freshHash, onDiskHash s
 	return freshHash, onDiskHash, nil
 }
 
-// findAdapterEntry locates the prior state.FileEntry for target under
-// s.Adapter.Files, or nil when absent (fresh hydrate).
-func findAdapterEntry(s *state.File, target string) *state.FileEntry {
-	if s == nil {
-		return nil
-	}
-	for i := range s.Adapter.Files {
-		if s.Adapter.Files[i].Target == target {
-			return &s.Adapter.Files[i]
-		}
-	}
-	return nil
-}
-
-// findPluginEntry locates the prior state.FileEntry for target under
-// s.Plugins (the projection bucket, D-07), or nil when absent. The
-// projection leg uses this so the §8.4 drift truth table + no-op skip in
-// publishFile compare a projected file against its prior Plugins[] record
-// — not the Adapter.Files bucket — making an unchanged re-hydrate a byte
-// no-op (FMT-05).
-func findPluginEntry(s *state.File, target string) *state.FileEntry {
-	if s == nil {
-		return nil
-	}
-	for i := range s.Plugins {
-		if s.Plugins[i].Target == target {
-			return &s.Plugins[i]
-		}
-	}
-	return nil
-}
-
-// findSkillEntry is findPluginEntry for the Skills bucket — supplies the prior
-// projected skill entry to publishFile so an unchanged re-hydrate no-op-skips.
-func findSkillEntry(s *state.File, target string) *state.FileEntry {
-	if s == nil {
-		return nil
-	}
-	for i := range s.Skills {
-		if s.Skills[i].Target == target {
-			return &s.Skills[i]
+// findEntry locates the prior state.FileEntry for target in one state
+// bucket (Adapter.Files, Plugins, Skills), or nil when absent (fresh
+// hydrate). Each bucket feeds a different drift-compare leg, so callers
+// pass the bucket explicitly: the projection legs compare a projected file
+// against its prior Plugins[]/Skills[] record — not Adapter.Files — so an
+// unchanged re-hydrate hits the publishFile no-op skip (D-07, FMT-05).
+func findEntry(entries []state.FileEntry, target string) *state.FileEntry {
+	for i := range entries {
+		if entries[i].Target == target {
+			return &entries[i]
 		}
 	}
 	return nil
@@ -1849,7 +1831,7 @@ func NewWiring(
 	allowSymlinks bool,
 	force bool,
 	global bool,
-	conflict ConflictPolicy,
+	conflict conflict.Policy,
 ) (Extractor, AdapterDispatcher) {
 	ext := &extractorImpl{
 		client:        client,

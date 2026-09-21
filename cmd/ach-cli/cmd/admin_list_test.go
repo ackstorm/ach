@@ -26,7 +26,7 @@ func newInventoryTestServer(t *testing.T, bodies map[string]any) *httptest.Serve
 		})
 	}
 	srv := httptest.NewTLSServer(mux)
-	swapAdminHTTPClientForTest(t, srv.Client())
+	swapHTTPClientForTest(t, &adminHTTPClient, srv.Client())
 	t.Cleanup(srv.Close)
 	return srv
 }

@@ -131,7 +131,7 @@ func TestWhoami_Verify_PK_Calls_Environments(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbcde",
 	})
-	swapHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &whoamiHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeWhoami(t, "--verify")
 	if err != nil {
@@ -176,7 +176,7 @@ func TestWhoami_Verify_EK_Calls_Hydrate(t *testing.T) {
 		URL: ts.URL,
 		EK:  map[string]string{"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"},
 	})
-	swapHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &whoamiHTTPClient, ts.Client())
 
 	stdout, _, code, err := executeWhoami(t, "--verify", "--env-key", "demo")
 	if err != nil {
@@ -220,7 +220,7 @@ func TestWhoami_Verify_401_Exit3(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &whoamiHTTPClient, ts.Client())
 
 	_, _, code, err := executeWhoami(t, "--verify")
 	if err == nil {
@@ -295,7 +295,7 @@ func TestWhoami_Verbose_RedactsKey(t *testing.T) {
 		URL: ts.URL,
 		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
 	})
-	swapHTTPClientForTest(t, ts.Client())
+	swapHTTPClientForTest(t, &whoamiHTTPClient, ts.Client())
 
 	_, stderr, code, err := executeWhoami(t, "--verify", "--verbose")
 	if err != nil {
