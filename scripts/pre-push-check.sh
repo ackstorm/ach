@@ -13,6 +13,7 @@
 #  14. golangci-lint full sweep (full lint runs here; no pre-commit stage)
 #  15. make test-unit (pure-logic regression — ~5-10s warm)
 #  16. helm chart mirror drift (crd-sources/ — helm-sync-check)
+#  17. make test-ui (console tsc + vitest; skipped when ui/ is unchanged vs origin/main)
 #
 # Soft checks (warnings only):
 #   6. internal hostnames / private IPv4 in tracked files
@@ -374,6 +375,22 @@ if [[ -x scripts/dev.sh ]]; then
   git checkout -- deploy/helm/ach/crd-sources/ 2>/dev/null || true
 else
   warn "scripts/dev.sh missing — skipping chart-mirror-drift gate (rebuild devtools image)"
+fi
+
+# --- 17. console unit tests (ui/) ---
+# tsc + vitest via devtools (nodejs is in the image). Skipped, with a notice,
+# when nothing under ui/ changed vs origin/main — npm ci alone is ~1 min cold.
+hdr "17. console unit tests (ui/)"
+if git diff --quiet origin/main..HEAD -- ui/ 2>/dev/null; then
+  ok "ui/ unchanged vs origin/main — skipped"
+elif [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make test-ui >/tmp/pre-push-ui.log 2>&1; then
+    ok "make test-ui clean"
+  else
+    fail "make test-ui failed — see /tmp/pre-push-ui.log"
+  fi
+else
+  warn "scripts/dev.sh missing — skipping console unit gate (rebuild devtools image)"
 fi
 
 # --- Summary ---

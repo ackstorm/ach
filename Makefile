@@ -202,6 +202,14 @@ _test-unit: _fmt-check vet
 	# The OpenCode auth plugin (served by platform-api) is JS: its own test.
 	node --test internal/platformapi/opencodeauth/plugin_test.mjs
 
+.PHONY: test-ui
+test-ui: ## Console unit tests (tsc type-check + vitest) — npm ci runs if ui/node_modules is absent.
+	$(call container_target,_test-ui)
+_test-ui:
+	@test -d ui/node_modules || npm --prefix ui ci
+	npm --prefix ui run type-check
+	npm --prefix ui test
+
 .PHONY: test-envtest
 test-envtest: ## Controller envtest with -race (CI gate, ~7m).
 	$(call container_target,_test-envtest)
@@ -402,6 +410,14 @@ build-server: ## Build bin/ach (services: operator/platform-api/forwarder/conten
 	$(call container_target,_build-server)
 _build-server: gen-manifests gen-code fmt vet
 	go build -trimpath -ldflags="-s -w -X github.com/ackstorm/ach/cmd/ach/cmd.Version=$(VERSION)" -o bin/ach ./cmd/ach
+
+.PHONY: ui-build
+ui-build: ## Build the React console into internal/platformapi/console/dist (embedded by build-server; build-image does it in the Dockerfile).
+	$(call container_target,_ui-build)
+_ui-build:
+	npm --prefix ui ci
+	npm --prefix ui run build
+	@touch internal/platformapi/console/dist/.gitkeep
 
 .PHONY: build-cli
 build-cli: ## Build bin/ach-cli (user CLI; container glibc — NOT host-runnable, use build-cli-host for that).

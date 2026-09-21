@@ -30,6 +30,9 @@ ach/
 │   ├── controller/           controller-runtime reconcilers
 │   ├── platformapi/, forwarder/, contentservice/   service-mode code
 │   ├── gateway/             route table + reverse proxy for `ach gateway` mode
+│   └── platformapi/console/dist/   Vite output of ui/ (go:embed; only .gitkeep tracked)
+├── ui/                      ← React console (Vite + vitest); imported as-is from
+│                              alitellm-auth src/ui — `make ui-build` / `make test-ui`
 ├── config/                  ← kubebuilder kustomize overlays
 ├── deploy/helm/ach/         ← Helm chart shipped on release (per-mode toggles)
 │   │                          (templates/gateway-deployment.yaml = ach-gateway

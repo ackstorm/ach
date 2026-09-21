@@ -69,6 +69,13 @@ Per-release flow (after the `chore(release): v0.1.0` push):
      distinct from devtools' per-worktree `.gocache/` (which `make`
      targets use) — only the native cache feeds goreleaser.
    - cosign + cyclonedx-gomod installed on PATH (HRD-09).
+   - `actions/setup-node` (22, npm cache on `ui/package-lock.json`) +
+     `npm --prefix ui ci && npm --prefix ui run build` — the console is
+     `go:embed`ded from `internal/platformapi/console/dist`, and goreleaser
+     builds the binaries on this runner, so **dist/ must be populated
+     before goreleaser runs** (`Dockerfile.goreleaser` only copies the
+     finished binaries). The source archive ships `ui/` sources by explicit
+     path (never `ui/node_modules`).
    - goreleaser runs with `GORELEASER_CURRENT_TAG=v<X.Y.Z>` (no git
      tag at HEAD yet). The GitHub release-create API call auto-creates
      the tag at default-branch HEAD, which is the bot-bump commit.

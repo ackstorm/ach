@@ -1,5 +1,14 @@
 # syntax=docker/dockerfile:1.7
 ARG GO_VERSION=1.26
+# React console — built once here, embedded by the Go builder below
+# (internal/platformapi/console/dist, go:embed). No Node in the runtime image.
+FROM node:22-alpine AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY ui/ ./
+RUN npm run build
+
 FROM golang:${GO_VERSION} AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
@@ -13,6 +22,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY cmd/ ./cmd/
 COPY api/ ./api/
 COPY internal/ ./internal/
+# Vite outDir is ../internal/platformapi/console/dist relative to /ui — keep
+# the two paths in sync with ui/vite.config.ts.
+COPY --from=ui /internal/platformapi/console/dist ./internal/platformapi/console/dist
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev

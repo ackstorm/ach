@@ -265,6 +265,18 @@ jobs:
           go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # The React console is embedded by go build (go:embed all:dist), and
+      # goreleaser builds the binaries on this runner — so dist/ must be
+      # populated BEFORE goreleaser runs (Dockerfile.goreleaser only copies
+      # the finished binaries).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the console (embedded by go build)
+        run: npm --prefix ui ci && npm --prefix ui run build
+
       # Install goreleaser directly. goreleaser-action@v7 verifies the
       # downloaded binary against a sigstore bundle that the cosign on
       # the runner cannot parse — we trust the official release tarball

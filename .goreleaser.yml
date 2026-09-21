@@ -82,6 +82,17 @@ archives:
       - config/
       - docs/
       - test/
+      # Console sources only — never ui/node_modules (present on the runner
+      # after the release workflow's npm ci) nor a stray ui/dist.
+      - ui/src
+      - ui/index.html
+      - ui/package.json
+      - ui/package-lock.json
+      - ui/tsconfig.json
+      - ui/tsconfig.node.json
+      - ui/vite.config.ts
+      - ui/components.json
+      - ui/README.md
       - Makefile
       - Dockerfile
       - README.md

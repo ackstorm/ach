@@ -25,3 +25,7 @@ cover-*.out
 *.tmp
 # Planning + agent-facing scratch are not consumed by any Dockerfile COPY.
 .planning/
+
+# Console build inputs that never enter the image build context (the `ui` stage runs npm ci itself).
+ui/node_modules/
+ui/dist/

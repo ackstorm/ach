@@ -160,7 +160,8 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `build-all` | A | Build both binaries (ach services + ach-cli). |
-| `build-server` | A | Build `bin/ach` (operator/platform-api/forwarder/content-service/migrate). |
+| `build-server` | A | Build `bin/ach` (operator/platform-api/forwarder/content-service/migrate). Run `make ui-build` first when the console must be in the binary (else `/` answers 404 "console not built"). |
+| `ui-build` | A | `npm ci` + `vite build` of `ui/` into `internal/platformapi/console/dist` (embedded by `go build`). `build-image` needs nothing — the Dockerfile `ui` stage does it. |
 | `build-cli` | A | Build `bin/ach-cli` (user CLI; **container glibc — NOT host-runnable**). |
 | `build-cli-host` | A | Build `bin/ach-cli-host` (static, `CGO_ENABLED=0`; runs on the host outside the devtools container — use for host hydrate/login testing). |
 | `build-e2e` | A | Build `bin/ach` + `bin/ach-cli` with `-tags=e2e` (required by Phase 7 SIGKILL-seam tests). |
@@ -191,7 +192,8 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `test-full` | A | All non-cluster tests (unit + envtest, race-enabled). |
-| `test-unit` | A | Pure-logic unit tests (~10s warm); also runs the OpenCode auth plugin's `node --test` (`internal/platformapi/opencodeauth/plugin_test.mjs` — the devtools image ships nodejs for it). |
+| `test-unit` | A | Pure-logic unit tests (~10s warm); also runs the OpenCode auth plugin's `node --test` (`internal/platformapi/opencodeauth/plugin_test.mjs` — the devtools image ships Node 22 for it). |
+| `test-ui` | A | Console `tsc` type-check + vitest (`ui/`); `npm ci` runs if `ui/node_modules` is absent. CI unit job + pre-push gate 17 (skipped there when `ui/` is unchanged vs `origin/main`). |
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |
 | `test-integration` | A | Integration tests (build tag: integration; testcontainers). |

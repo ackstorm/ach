@@ -276,6 +276,7 @@ explicitly.
 
 ```bash
 make build-all                   # build both binaries (auto-routes to devtools)
+make ui-build                    # React console → internal/platformapi/console/dist (before build-server when / must serve it; build-image does it itself)
 make shell                       # interactive shell in the devtools container
 ./scripts/dev.sh go build ./...  # raw go, when no make target fits
 ```
@@ -340,7 +341,8 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make e2e-full`         | kind + Helm + e2e binary build + stdlib testing, ~6m | final gate before commit |
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) | dev loop on one sub-test |
 | `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; **rarely — CI owns it, see below** |
-| `make pre-push`         | gitleaks + trufflehog + 18 gates | host-only; before push |
+| `make test-ui`          | console `tsc` + vitest (`ui/`), ~1m warm | every iteration touching `ui/` |
+| `make pre-push`         | gitleaks + trufflehog + 19 gates | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
   `qa-fuzz-short` + `pre-push` (NOT `qa-security` — pre-push gate 13 already
@@ -393,16 +395,18 @@ before a push leaves the host:
 
 - The fast pre-commit gate was retired — lint + unit now run inside the pre-push
   gate and in CI; no separate commit-time gate remains.
-- `pre-push` (full): **18-gate** publication check. lint + unit live INSIDE the
-  18 (gates 16+17), so the full lint + unit sweep always fires before a push.
+- `pre-push` (full): **19-gate** publication check. lint + unit live INSIDE the
+  19 (gates 16+17; console unit tests are gate 19, skipped when `ui/` is
+  unchanged vs `origin/main`), so the full lint + unit sweep always fires before a push.
 
-The 18 hard gates (failure blocks push): gitleaks + trufflehog
+The 19 hard gates (failure blocks push): gitleaks + trufflehog
 (`origin/main..HEAD`; allowlist `.gitleaks.toml`) · large files >2 MB ·
 sensitive patterns (`.env`, `*.pem`, `*.key`, kubeconfig) · LICENSE + README ·
 origin-remote match · govulncheck ack-list 1:1 (`scripts/govulncheck-gate.sh`,
 list at `references/security/govulncheck-acknowledged.md`) · `go mod tidy` drift
 · per-file SPDX header · full golangci-lint · `make test-unit` · chart mirror
-drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44). Fix
+drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44) ·
+`make test-ui` (console). Fix
 the root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
 gates).
 
@@ -445,7 +449,7 @@ CrashLoopBackOffs / silently restarts.
 `git push --no-verify` bypasses the local hook ONLY (CI still runs it). ✅ Let
 the installed hook gate (`make hooks`), or `make pre-push` then push. WHY:
 pushed secrets / license-header drift / govulncheck regressions cannot be
-un-true'd from public history. The 18-gate script is the contract.
+un-true'd from public history. The 19-gate script is the contract.
 
 ### ❌ Kubectl from host against the kind cluster
 `kubectl get pods` → context not found. ✅ Go through devtools:

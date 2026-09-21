@@ -26,6 +26,7 @@ ARG ENVTEST_K8S_VERSION=1.36.0
 ARG KIND_VERSION=v0.25.0
 ARG HELM_VERSION=v3.16.3
 ARG GOVULNCHECK_VERSION=v1.3.0
+ARG NODE_VERSION=22.20.0
 
 # GOFLAGS=-mod=readonly (the Go >=1.16 default, pinned here so it survives a
 # stray environment): under -mod=mod any module-graph-walking command silently
@@ -41,14 +42,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GOBIN=/usr/local/bin
 
 # OS deps: docker CLI + compose v1 (matches host's docker-compose), build essentials.
-# nodejs runs the OpenCode auth plugin's test (internal/platformapi/opencodeauth).
 # Note: docker.io brings only the client; the host socket is mounted at runtime so
 # containers created from inside are siblings on the host daemon, not nested.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl make git jq gnupg lsb-release \
+        ca-certificates curl make git jq gnupg lsb-release xz-utils \
         bash-completion \
-        docker.io docker-compose nodejs \
+        docker.io docker-compose \
     && rm -rf /var/lib/apt/lists/*
+
+# Node 22 (official tarball, pinned) — the OpenCode auth plugin's test
+# (internal/platformapi/opencodeauth) and the console's `make ui-build` /
+# `make test-ui` (Vite 6 + vitest 4 need >= 20; Debian's nodejs is 18 and
+# ships no npm). Same major as the Dockerfile `ui` stage (node:22-alpine).
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in amd64) NARCH=x64 ;; arm64) NARCH=arm64 ;; *) echo "unsupported arch $ARCH" >&2; exit 1 ;; esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NARCH}.tar.xz" \
+       | tar -xJ -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md' \
+    && node --version && npm --version
 
 # kubebuilder v4 — pinned binary
 RUN ARCH="$(dpkg --print-architecture)" \
