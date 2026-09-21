@@ -22,6 +22,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -286,7 +287,7 @@ func mapVerifyError(err error) error {
 	// *httpclient.ServerError → main.go's errors.As branch maps via
 	// exit.MapServerError, so just return the error as-is.
 	var sErr *httpclient.ServerError
-	if asErr := errorsAs(err, &sErr); asErr {
+	if errors.As(err, &sErr) {
 		return err
 	}
 	// Anything else is a transport / network failure → exit 6.
@@ -295,28 +296,6 @@ func mapVerifyError(err error) error {
 		Msg:     err.Error(),
 		Wrapped: err,
 	}
-}
-
-// errorsAs wraps errors.As for the targeted *ServerError type. Kept
-// as a one-liner indirection so the test can stub it if needed.
-func errorsAs(err error, target **httpclient.ServerError) bool {
-	if err == nil {
-		return false
-	}
-	for unwrap := err; unwrap != nil; {
-		if t, ok := unwrap.(*httpclient.ServerError); ok {
-			*target = t
-			return true
-		}
-		// Unwrap chain.
-		type unwrapper interface{ Unwrap() error }
-		u, ok := unwrap.(unwrapper)
-		if !ok {
-			return false
-		}
-		unwrap = u.Unwrap()
-	}
-	return false
 }
 
 func init() {

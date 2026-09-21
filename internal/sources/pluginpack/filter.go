@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/ackstorm/ach/internal/sources"
@@ -385,11 +386,6 @@ func sortedKeys(m map[string]struct{}) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	// Insertion sort — set sizes here are tiny (≤ a few dozen entries).
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j-1] > out[j]; j-- {
-			out[j-1], out[j] = out[j], out[j-1]
-		}
-	}
+	slices.Sort(out)
 	return out
 }

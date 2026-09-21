@@ -1217,7 +1217,7 @@ func assertMutexCreds(flagAPIKey, flagEnvKey, envAPIKey, envEnvKey string) error
 // wrapped as Network (exit 6).
 func mapHydrateError(err error) error {
 	var sErr *httpclient.ServerError
-	if asHydrateErr(err, &sErr) {
+	if errors.As(err, &sErr) {
 		return err
 	}
 	return &exit.CodedError{
@@ -1225,27 +1225,6 @@ func mapHydrateError(err error) error {
 		Msg:     err.Error(),
 		Wrapped: err,
 	}
-}
-
-// asHydrateErr unwraps err looking for a *httpclient.ServerError.
-// Mirrors the whoami errorsAs helper to avoid cross-file coupling.
-func asHydrateErr(err error, target **httpclient.ServerError) bool {
-	if err == nil {
-		return false
-	}
-	for unwrap := err; unwrap != nil; {
-		if t, ok := unwrap.(*httpclient.ServerError); ok {
-			*target = t
-			return true
-		}
-		type unwrapper interface{ Unwrap() error }
-		u, ok := unwrap.(unwrapper)
-		if !ok {
-			return false
-		}
-		unwrap = u.Unwrap()
-	}
-	return false
 }
 
 // validateEnvHeaderValue rejects characters that have no business in a

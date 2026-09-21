@@ -25,12 +25,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/ackstorm/ach/internal/config"
 	"github.com/ackstorm/ach/internal/db"
@@ -70,8 +69,7 @@ func runGateway(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("ACH_DB_URL required (/agents routing allowlist): %w", err)
 	}
 
-	rootCtx, rootCancel := context.WithCancel(context.Background())
-	defer rootCancel()
+	rootCtx := ctrl.SetupSignalHandler()
 
 	pool, err := db.Open(rootCtx, dbURL)
 	if err != nil {
@@ -124,12 +122,9 @@ func runGateway(_ *cobra.Command, _ []string) error {
 		serverErr <- nil
 	}()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	select {
-	case <-sig:
+	case <-rootCtx.Done():
 		logger.Info("shutdown signal received, draining")
-		rootCancel() // stop the agentstore refresh loop promptly
 	case err := <-serverErr:
 		if err != nil {
 			return fmt.Errorf("server error: %w", err)

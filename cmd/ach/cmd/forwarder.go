@@ -321,10 +321,10 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		// JWT seed hot-reload.
 		bipCache = bipcache.New(pool, cfg.Namespace, ctrl.Log.WithName("bipcache"))
 		envStore = envstore.New(pool, cfg.Namespace, ctrl.Log.WithName("envstore"))
-		if err := mgr.Add(runnableFn(bipCache.Run)); err != nil {
+		if err := mgr.Add(manager.RunnableFunc(bipCache.Run)); err != nil {
 			return out, fmt.Errorf("manager.Add(bipcache): %w", err)
 		}
-		if err := mgr.Add(runnableFn(envStore.Run)); err != nil {
+		if err := mgr.Add(manager.RunnableFunc(envStore.Run)); err != nil {
 			return out, fmt.Errorf("manager.Add(envstore): %w", err)
 		}
 		baseTeamsResolver, err := keystore.NewLiteLLMTeamsResolver(ll)
@@ -437,13 +437,6 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	}
 	return out, nil
 }
-
-// runnableFn adapts a `func(ctx) error` to controller-runtime's
-// manager.Runnable interface so the bipcache + envstore Run methods can
-// be added to the manager without a wrapper type per package.
-type runnableFn func(ctx context.Context) error
-
-func (f runnableFn) Start(ctx context.Context) error { return f(ctx) }
 
 func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *forwarderConfig) error {
 	trafficHandler := forwarder.New(deps.server)

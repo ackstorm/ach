@@ -34,8 +34,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/config"
@@ -290,10 +289,8 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 		serverErr <- nil
 	}()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	select {
-	case <-sig:
+	case <-ctrl.SetupSignalHandler().Done():
 		logger.Info("shutdown signal received, draining")
 	case err := <-serverErr:
 		if err != nil {
