@@ -294,6 +294,69 @@ func TestRevokeKey_EkLiteLLMUnreachable(t *testing.T) {
 	}
 }
 
+// =========================== RV-6: single ek revoke covers a suspended row ===========================
+
+// TestRevokeKey_EkSuspended_Revokes: a suspended row is still live in
+// LiteLLM and must be swept by an admin offboarding revoke — the gate is
+// "already revoked", not "not active".
+func TestRevokeKey_EkSuspended_Revokes(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	seedEnvironmentKey(t, pool, "ekid_rv6", "credhash-rv6", "wkload6@example.com", "envC", "litellm-tok-rv6")
+	if _, err := db.SuspendEnvironmentKey(context.Background(), pool, "ekid_rv6"); err != nil {
+		t.Fatalf("pre-suspend: %v", err)
+	}
+
+	ll := &fakeLitellm{}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/keys/revoke",
+		[]byte(`{"key_id":"ekid_rv6"}`))
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
+	}
+	if ll.revokeCalled.Load() != 1 {
+		t.Fatalf("expected 1 LiteLLM revoke, got %d", ll.revokeCalled.Load())
+	}
+	row, _ := db.GetEnvironmentKey(context.Background(), pool, "ekid_rv6")
+	if row == nil || row.Status != "revoked" {
+		t.Fatalf("expected status=revoked; got %+v", row)
+	}
+}
+
+// TestRevokeKey_EkAlreadyRevoked_Skipped: a revoked row is a no-op —
+// 404, no LiteLLM call.
+func TestRevokeKey_EkAlreadyRevoked_Skipped(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	seedEnvironmentKey(t, pool, "ekid_rv7", "credhash-rv7", "wkload7@example.com", "envC", "litellm-tok-rv7")
+	if _, err := db.RevokeEnvironmentKey(context.Background(), pool, "ekid_rv7"); err != nil {
+		t.Fatalf("pre-revoke: %v", err)
+	}
+
+	ll := &fakeLitellm{}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/keys/revoke",
+		[]byte(`{"key_id":"ekid_rv7"}`))
+	if rec.Code != 404 {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body)
+	}
+	if ll.revokeCalled.Load() != 0 {
+		t.Fatalf("expected 0 LiteLLM revoke calls on an already-revoked row, got %d", ll.revokeCalled.Load())
+	}
+}
+
 // =========================== RU-1: revoke-user-keys happy path ===========================
 
 func TestRevokeUserKeys_HappyPath(t *testing.T) {
@@ -367,6 +430,74 @@ func TestRevokeUserKeys_URLDecodePlusSign(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"revoked_count":1`) {
 		t.Fatalf("expected revoked_count=1; got %s", rec.Body.String())
+	}
+}
+
+// =========================== RU-4: bulk revoke covers a suspended ek_ row ===========================
+
+// TestRevokeUserKeys_EkSuspended_Revokes: an offboarding sweep must not
+// skip a suspended ek_ — it is still live in LiteLLM.
+func TestRevokeUserKeys_EkSuspended_Revokes(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	seedEnvironmentKey(t, pool, "ekid_ru4", "ch-ru4", "u4@x.com", "envD", "lt-ru4")
+	if _, err := db.SuspendEnvironmentKey(context.Background(), pool, "ekid_ru4"); err != nil {
+		t.Fatalf("pre-suspend: %v", err)
+	}
+
+	ll := &fakeLitellm{}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps),
+		"/platform/admin/users/u4%40x.com/revoke-keys", nil)
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"revoked_count":1`) {
+		t.Fatalf("expected revoked_count=1; got %s", rec.Body.String())
+	}
+	if ll.revokeCalled.Load() != 1 {
+		t.Fatalf("expected 1 LiteLLM revoke, got %d", ll.revokeCalled.Load())
+	}
+	row, _ := db.GetEnvironmentKey(context.Background(), pool, "ekid_ru4")
+	if row == nil || row.Status != "revoked" {
+		t.Fatalf("expected status=revoked; got %+v", row)
+	}
+}
+
+// TestRevokeUserKeys_EkAlreadyRevoked_Skipped: a revoked row contributes
+// nothing to the count and triggers no LiteLLM call.
+func TestRevokeUserKeys_EkAlreadyRevoked_Skipped(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	seedEnvironmentKey(t, pool, "ekid_ru5", "ch-ru5", "u5@x.com", "envD", "lt-ru5")
+	if _, err := db.RevokeEnvironmentKey(context.Background(), pool, "ekid_ru5"); err != nil {
+		t.Fatalf("pre-revoke: %v", err)
+	}
+
+	ll := &fakeLitellm{}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps),
+		"/platform/admin/users/u5%40x.com/revoke-keys", nil)
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"revoked_count":0`) {
+		t.Fatalf("expected revoked_count=0; got %s", rec.Body.String())
+	}
+	if ll.revokeCalled.Load() != 0 {
+		t.Fatalf("expected 0 LiteLLM revoke calls on an already-revoked row, got %d", ll.revokeCalled.Load())
 	}
 }
 

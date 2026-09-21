@@ -217,9 +217,12 @@ func revokeEnvironmentKey(ctx context.Context, deps Deps, keyID, actor, reqID st
 		render.Error(w, http.StatusNotFound, audit.OutcomeExpiredOrRevoked, "key not found", reqID)
 		return
 	}
-	if row.Status != "active" {
-		// Already revoked. Same 404 shape — caller cannot distinguish
-		// from "never existed", aligns with KEY-04/06 indistinguishability.
+	if row.Status == "revoked" {
+		// Already revoked — a suspended or expired-but-not-yet-flipped row
+		// is still live in LiteLLM and must go through the same
+		// LiteLLM-first revoke below (an admin offboarding sweep must not
+		// skip past it). Same 404 shape as never-existed — caller cannot
+		// distinguish, aligns with KEY-04/06 indistinguishability.
 		render.Error(w, http.StatusNotFound, audit.OutcomeExpiredOrRevoked, "key already revoked", reqID)
 		return
 	}
@@ -329,7 +332,10 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 		for _, ek := range ekRows {
-			if ek.Status != "active" {
+			if ek.Status == "revoked" {
+				// Suspended/expired rows are still live in LiteLLM and must
+				// be revoked like an active row — only a truly revoked row
+				// has nothing left to do.
 				continue
 			}
 			// Bulk ek_ audit: revokeEkInline emits BOTH OutcomeLitellmUnreachable
@@ -445,7 +451,7 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 	// RevokeEnvironmentKey now flips ANY non-revoked status (active,
 	// suspended, or expired-but-not-yet-flipped) — (nil, nil) only when the
 	// row is already revoked. Both callers of revokeEkInline already gate
-	// row.Status != "active" before reaching here, so a nil result is not
+	// row.Status == "revoked" before reaching here, so a nil result is not
 	// expected on this path today; treat it the same as success (already
 	// revoked ⇒ nothing left to do) rather than as a DB error.
 	if _, err := db.RevokeEnvironmentKey(ctx, deps.Pool, row.KeyID); err != nil {
