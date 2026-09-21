@@ -275,6 +275,9 @@ on the host. Never prefix a wrapped `make` target with `./scripts/dev.sh`.
 controller-gen directly, so standalone they need `./scripts/dev.sh make
 helm-sync` (a bare `make helm-sync` on the host fails with `go: executable
 file not found`). See `references/makefile.md` for the 3-context model.
+`test/e2e/mcp-echo` is a nested module: root `./...` sweeps (vet, lint,
+govulncheck, tidy) do not see it; `qa-lint` and pre-push gate 12 cover it
+explicitly.
 
 ```bash
 make build-all                   # build both binaries (auto-routes to devtools)

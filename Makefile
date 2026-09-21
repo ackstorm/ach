@@ -281,6 +281,8 @@ qa-lint: ## golangci-lint full sweep.
 	$(call container_target,_qa-lint)
 _qa-lint: golangci-lint
 	$(GOLANGCI_LINT) run --timeout=10m
+	# test/e2e/mcp-echo is a nested module: the root ./... sweep does not see it.
+	cd test/e2e/mcp-echo && $(GOLANGCI_LINT) run --timeout=10m ./...
 
 .PHONY: qa-lint-fix
 qa-lint-fix: ## golangci-lint with --fix.
@@ -771,7 +773,8 @@ _e2e-run: _build-e2e
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
 		go test -tags=e2e -v -count=1 -timeout 20m ./test/e2e; suite=$$?; \
 	E2E_SKIP_SETUP=1 $(E2E_RUN_ENV) \
-		go test -tags=e2e -v -count=1 ./test/e2e/mcp-echo ./test/e2e/mcp-echo/jwt ./test/e2e/mock; backends=$$?; \
+		(cd test/e2e/mcp-echo && go test -tags=e2e -v -count=1 ./...) && \
+		go test -tags=e2e -v -count=1 ./test/e2e/mock; backends=$$?; \
 	if [ $$suite -eq 0 ] && [ $$backends -eq 0 ]; then \
 		echo ">>> E2E RESULT: PASS"; exit 0; \
 	else \

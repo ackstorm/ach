@@ -57,6 +57,8 @@ ach/
 │   └── security/govulncheck-acknowledged.md
 ├── scripts/                 ← dev.sh, cluster.sh, pre-push-check.sh, ...
 ├── test/                    ← e2e + utils
+│   ├── e2e/mcp-echo/        JWT-validating MCP fixture — its OWN Go module
+│   │                        (go.mod; mcp-go stays out of the prod graph)
 │   └── e2e/cluster/         numbered cluster bring-up stages (cluster.sh):
 │       ├── 00-namespaces 01-base 02-ach(+secrets/, identity.values.yaml, secrets-identity/) 03-test-backends
 │       │     (03's ach-local-gateway.yaml nginx is now a DEV SHIM —

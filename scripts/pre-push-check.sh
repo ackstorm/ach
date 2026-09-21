@@ -263,6 +263,8 @@ cp go.sum "$SNAP_DIR/go.sum" 2>/dev/null || true
 restore_gomod() {
   [[ -f "$SNAP_DIR/go.mod" ]] && cp "$SNAP_DIR/go.mod" go.mod
   [[ -f "$SNAP_DIR/go.sum" ]] && cp "$SNAP_DIR/go.sum" go.sum
+  [[ -f "$SNAP_DIR/mcp-echo.go.mod" ]] && cp "$SNAP_DIR/mcp-echo.go.mod" test/e2e/mcp-echo/go.mod
+  [[ -f "$SNAP_DIR/mcp-echo.go.sum" ]] && cp "$SNAP_DIR/mcp-echo.go.sum" test/e2e/mcp-echo/go.sum
   rm -rf "$SNAP_DIR"
 }
 trap restore_gomod EXIT
@@ -278,6 +280,21 @@ if ./scripts/dev.sh go mod tidy >/tmp/gomod-tidy.txt 2>&1; then
 else
   fail "go mod tidy exited non-zero (see /tmp/gomod-tidy.txt)"
   sed -n '1,20p' /tmp/gomod-tidy.txt
+fi
+# Nested module: test/e2e/mcp-echo has its own go.mod/go.sum that the root
+# tidy above does not touch. Same drift check, restored on exit like the root.
+cp test/e2e/mcp-echo/go.mod "$SNAP_DIR/mcp-echo.go.mod" 2>/dev/null || true
+cp test/e2e/mcp-echo/go.sum "$SNAP_DIR/mcp-echo.go.sum" 2>/dev/null || true
+if ./scripts/dev.sh sh -c 'cd test/e2e/mcp-echo && go mod tidy' >/tmp/gomod-tidy-mcp-echo.txt 2>&1; then
+  if git diff --quiet -- test/e2e/mcp-echo/go.mod test/e2e/mcp-echo/go.sum 2>/dev/null; then
+    ok "test/e2e/mcp-echo go.mod / go.sum are tidy"
+  else
+    fail "go mod tidy drift in test/e2e/mcp-echo"
+    git --no-pager diff -- test/e2e/mcp-echo/go.mod test/e2e/mcp-echo/go.sum | head -40
+  fi
+else
+  fail "go mod tidy (test/e2e/mcp-echo) exited non-zero (see /tmp/gomod-tidy-mcp-echo.txt)"
+  sed -n '1,20p' /tmp/gomod-tidy-mcp-echo.txt
 fi
 
 # --- 13. license-header SPDX gate (HRD-10) ---

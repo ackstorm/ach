@@ -42,17 +42,26 @@ Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
 | `/__capture/last` | none | Last request snapshot (test introspection) |
 | `/__capture/reset` | none | Reset capture buffer (test introspection) |
 
+## Module layout
+
+This directory is its own Go module (`github.com/ackstorm/ach/test/e2e/mcp-echo`,
+own `go.mod`/`go.sum`) so `mark3labs/mcp-go` stays out of the production
+dependency graph. Run `go test ./...` from inside this directory; the root
+`./...` sweeps do not include it (`make qa-lint` and pre-push gate 12 cover it
+explicitly). Build the image from the repo root with `make build-image-mcp-echo`.
+
 ## Standalone run
 
 ```bash
+cd test/e2e/mcp-echo
 ACH_JWKS_URL=https://forwarder.example/.well-known/jwks.json \
 ACH_EXPECTED_ISS=https://hub.example \
 ACH_EXPECTED_AUD=mcp:demo-mcp-echo \
-go run ./test/e2e/mcp-echo
+go run .
 ```
 
 ## E2E
 
-Built into `ach-mcp-echo:e2e` by `make e2e-mcp-echo-build`, deployed by
+Built into `ach-mcp-echo:e2e` by `make build-image-mcp-echo`, deployed by
 the Helm chart when `testMocks.mcpEcho.enabled=true`, exercised by
 `TestPhase4JWTValidate` in `test/e2e/phase4_jwt_validate_test.go`.
