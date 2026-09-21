@@ -99,10 +99,9 @@ happened in goreleaser — that is reversible by reverting the bot
 commit or by simply running the next release attempt, since `make release-bump`
 inside the workflow is idempotent.
 
-Snapshot builds (`.goreleaser.snapshot.yml`) are intentionally NOT
-signed and do NOT generate SBOMs — they are ephemeral dev artifacts
-pushed as `ghcr.io/ackstorm/ach:main` +
-`:main-<shortcommit>`.
+There is no snapshot config: `release.yml` selects `.goreleaser.yml`
+(stable) or `.goreleaser.prerelease.yml` (`-alpha|beta|rc`).
+`.goreleaser.snapshot.yml` was deleted 2026-09-21 — nothing invoked it.
 
 `docker_signs:` and `signs:` blocks require:
 - `id-token: write` in the workflow (already set).

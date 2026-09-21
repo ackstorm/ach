@@ -12,7 +12,6 @@ ach/
 │   ├── CODEOWNERS, dependabot.yml, labeler.yml, ISSUE_TEMPLATE/, PR template
 ├── .goreleaser.yml          ← stable release config (single-binary)
 ├── .goreleaser.prerelease.yml   ← prerelease (alpha/beta/rc tags)
-├── .goreleaser.snapshot.yml ← main-branch snapshot builds
 ├── Dockerfile               ← runtime image (golang builder → alpine + git)
 ├── Dockerfile.devtools      ← devtools container (scripts/dev.sh)
 ├── Dockerfile.goreleaser    ← release image, consumed by goreleaser
