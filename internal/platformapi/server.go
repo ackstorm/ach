@@ -19,6 +19,7 @@ import (
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
+	"github.com/ackstorm/ach/internal/platformapi/console"
 	"github.com/ackstorm/ach/internal/platformapi/environments"
 	"github.com/ackstorm/ach/internal/platformapi/envkeys"
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
@@ -212,6 +213,12 @@ func New(deps Deps) http.Handler {
 			})(r)
 		})
 	})
+
+	// The console at "/" (D-26). chi's NotFound is the fallback for every
+	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
+	// 404s so the fallback never shadows the API. The OpenWork handoff
+	// rescue on "/?desktopAuth=1" switches on with the Den (Task 8).
+	r.NotFound(console.SPA(console.Dist(), false).ServeHTTP)
 
 	return r
 }

@@ -59,3 +59,7 @@ spec/
 docs/plans/
 docs/superpowers/
 graphify-out/
+
+# React build output is embedded at build time (make ui-build); only the keep-file is tracked.
+internal/platformapi/console/dist/*
+!internal/platformapi/console/dist/.gitkeep
