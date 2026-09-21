@@ -2,11 +2,6 @@
 VERSION ?= dev
 IMG ?= ghcr.io/ackstorm/ach:$(VERSION)
 
-# MODES is the list of cobra subcommands that ship as long-running services.
-# Used by waiters, Helm value generation, and per-mode RBAC tooling — NOT by build.
-# Build produces a SINGLE image ($(IMG)); each Deployment runs it with args: ["<mode>"].
-MODES := operator platform-api forwarder content-service migrate
-
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set).
 # Guarded with `command -v go` so host-only targets (hooks, cluster-up, ...) do
 # not surface a "make: go: No such file or directory" error: go lives inside the
@@ -435,10 +430,6 @@ _build-e2e: gen-manifests gen-code fmt vet
 	  -o bin/ach-cli \
 	  ./cmd/ach-cli
 
-.PHONY: run
-run: gen-manifests gen-code fmt vet ## Run a controller from your host.
-	go run ./cmd/ach
-
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
@@ -462,7 +453,6 @@ $(LOCALBIN):
 ENVTEST_BIN_DIR ?= $(LOCALBIN)
 
 ## Tool Binaries
-KUBECTL ?= kubectl
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint

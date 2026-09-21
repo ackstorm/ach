@@ -22,12 +22,6 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{ default "IfNotPresent" .Values.image.pullPolicy }}
 {{- end }}
 
-{{- define "ach.extraEnv" -}}
-{{- with .Values.extraEnv -}}
-{{ toYaml . }}
-{{- end -}}
-{{- end -}}
-
 {{/*
 ach.initContainers renders the pod's `initContainers:` block from the global
 `.Values.initContainers` plus the component's own list, mirroring how extraEnv

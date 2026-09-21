@@ -38,11 +38,6 @@ gen-crd-ref-docs: $(CRD_REF_DOCS) ## Generate API reference documentation from G
 		--output-mode=group
 	@echo "API documentation generated at $(OUTPUT_DIR)/api-generated.md"
 
-.PHONY: docs
-
-.PHONY: install-docs
-install-docs: install-mkdocs ## Install all documentation dependencies
-
 # When this Makefile runs inside the devtools container (`./scripts/dev.sh
 # make docs-build`), $(abspath ...) resolves to /workspace which doesn't
 # exist on the host. The nested `docker run` shells out to the host
@@ -58,14 +53,6 @@ docs-serve: gen-crd-ref-docs install-mkdocs
 .PHONY: docs-build
 docs-build: gen-crd-ref-docs
 	docker run --rm -v $(DOCS_HOST_ROOT):/docs squidfunk/mkdocs-material:latest build
-
-.PHONY: docs-build-local
-docs-build-local: gen-crd-ref-docs install-mkdocs
-	cd $(DOCS_DIR)/.. && python3 -m mkdocs build
-
-.PHONY: docs-build-strict
-docs-build-strict: gen-crd-ref-docs install-mkdocs
-	cd $(DOCS_DIR)/.. && python3 -m mkdocs build --strict
 
 .PHONY: install-mkdocs
 install-mkdocs: ## Install mkdocs and required dependencies

@@ -1,0 +1,21 @@
+name: Setup docs toolchain
+description: Python + pip cache + docs/requirements.txt
+inputs:
+  python-version:
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+    - uses: actions/cache@v5
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r docs/requirements.txt
