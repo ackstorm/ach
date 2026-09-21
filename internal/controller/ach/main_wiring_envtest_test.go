@@ -150,7 +150,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 	// dbPool by value into NewRunnable, which assigns it to Runnable.DB
 	// (the TickOnce-time nil-deref guard is in the function-typed
 	// ListUsers/ListKeyIDs seams, exercised in Test 3 below).
-	orp := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
+	orp := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, "https://ach.test", logr.Discard())
 	if orp == nil {
 		t.Fatal("orphan.NewRunnable returned nil")
 	}
