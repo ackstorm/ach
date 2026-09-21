@@ -37,6 +37,9 @@ import (
 const (
 	sc5UserID = "u-e2e-sc5"
 	sc5KeyID  = "pkid_e2e_sc5"
+	// sc5Issuer is the ach_issuer stamped on the generated key and handed to
+	// the reaper: only keys of the same issuer are ever candidates.
+	sc5Issuer = "https://sc5.e2e.test"
 	// sc5OrphanAchKeyID is the ach_key_id stamped on the generated LiteLLM
 	// key's metadata so the ownership gate recognizes it as ACH-minted. It
 	// is deliberately NOT the seeded active row (sc5KeyID), so the loop sees
@@ -191,7 +194,7 @@ func testSC5OrphanReapLive(t *testing.T) {
 	auditBuf := &bytes.Buffer{}
 	auditLog := audit.NewLogger(auditBuf)
 	client := litellm.NewRESTClient(litellmURL, sc5MasterKey, logr.Discard())
-	r := orphan.NewRunnable(client, pool, auditLog, 5*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
+	r := orphan.NewRunnable(client, pool, auditLog, 5*time.Minute, false, orphan.DefaultMaxRevoke, sc5Issuer, logr.Discard())
 	r.TickOnce(ctx)
 
 	for _, line := range strings.Split(strings.TrimSpace(auditBuf.String()), "\n") {
@@ -295,7 +298,7 @@ func createLiteLLMKey(t *testing.T, ctx context.Context, baseURL, masterKey, use
 	// key as ACH-minted; without it the gate treats the key as foreign and
 	// never revokes it. Mirrors the real mint metadata (sso.go / handler.go).
 	body := strings.NewReader(fmt.Sprintf(
-		`{"user_id":%q,"duration":"24h","metadata":{"ach_key_id":%q,"ach_key_type":"pk","ach_owner_email":"sc5@example.com","created_by":"e2e-sc5"}}`,
+		`{"user_id":%q,"duration":"24h","metadata":{"ach_key_id":%q,"ach_key_type":"pk","ach_owner_email":"sc5@example.com","ach_issuer":"`+sc5Issuer+`","created_by":"e2e-sc5"}}`,
 		userID, achKeyID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/key/generate", body)
 	if err != nil {

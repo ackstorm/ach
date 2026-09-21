@@ -295,7 +295,7 @@ func TestMainWiring_OrphanRunnable_EmptyUserSet_NoAuditEvents(t *testing.T) {
 	auditBuf := &bytes.Buffer{}
 	auditLog := audit.NewLogger(auditBuf)
 
-	r := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, logr.Discard())
+	r := orphan.NewRunnable(fake, nil, auditLog, 10*time.Minute, false, orphan.DefaultMaxRevoke, "https://ach.test", logr.Discard())
 	// Override the production db helpers with empty-set seams so TickOnce
 	// proceeds through both list steps and finds zero work to do.
 	r.ListUsers = func(_ context.Context, _ *pgxpool.Pool) ([]string, error) {
