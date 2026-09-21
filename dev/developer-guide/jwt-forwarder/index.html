@@ -988,17 +988,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#17-profiles-full-and-identity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1.7 Profiles — full and identity
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1590,17 +1579,6 @@
     <span class="md-ellipsis">
       
         1.6 OAuth consent is declared by the backend policy
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#17-profiles-full-and-identity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1.7 Profiles — full and identity
       
     </span>
   </a>
@@ -2342,48 +2320,6 @@ redeems the broker code. The callback re-probes the same backend; only an
 <code>ok</code> outcome issues the ACH authorization code. The broker policy is resolved
 from Postgres, so there is no <code>ACH_OAUTH_SERVICES</code> or grants-Redis map.</p>
 <hr />
-<h2 id="17-profiles-full-and-identity">1.7 Profiles — <code>full</code> and <code>identity</code><a class="headerlink" href="#17-profiles-full-and-identity" title="Permanent link">&para;</a></h2>
-<p><code>ACH_PROFILE</code> (chart <code>profile:</code>) selects what the forwarder is:</p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th><code>full</code> (default)</th>
-<th><code>identity</code></th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>LiteLLM upstream</td>
-<td><code>LiteLLMConnection/default</code> projection (operator)</td>
-<td><code>ACH_LITELLM_BASE_URL</code> (chart <code>litellmConnection.endpoint</code>)</td>
-</tr>
-<tr>
-<td><code>/mcp/&lt;n&gt;</code>, <code>/a2a/&lt;n&gt;</code></td>
-<td>precheck (Environment) → BIP → per-target JWT</td>
-<td>forward the resolved identity, no precheck, no JWT — like the catch-all</td>
-</tr>
-<tr>
-<td><code>bipcache</code> / <code>envstore</code> / <code>TeamsResolver</code></td>
-<td>built</td>
-<td>not built</td>
-</tr>
-<tr>
-<td><code>ach-jwt-signing-keys</code></td>
-<td>minted by the operator</td>
-<td>minted by the forwarder at boot (<code>internal/jwtkeys.EnsureSigningKeys</code>; the chart adds <code>create</code> to its Role)</td>
-</tr>
-<tr>
-<td>Chart renders</td>
-<td>everything</td>
-<td>platform-api, forwarder, gateway, migrate — no CRDs, no operator, no content-service</td>
-</tr>
-</tbody>
-</table>
-<p>An identity release is self-contained: own domain (<code>ACH_BASE_URL</code>), own Dex
-client, own OAuth AS, own <code>pk_</code> rows, own signing key. Several releases
-coexist in one cluster, one per namespace (chart resource names are fixed).
-Reference values: <code>test/e2e/cluster/02-ach/identity.values.yaml</code>.</p>
 <h2 id="2-backendidentitypolicy-bip-turning-jwt-mint-on">2. BackendIdentityPolicy (BIP) — turning JWT mint on<a class="headerlink" href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" title="Permanent link">&para;</a></h2>
 <p>JWT mint is <strong>opt-in per target</strong>. A <code>BackendIdentityPolicy</code> CR selects
 a route and sets <code>forwardIdentityJWT: true</code>:</p>
