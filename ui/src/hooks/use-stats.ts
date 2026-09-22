@@ -1,11 +1,11 @@
-// use-stats.ts — TanStack Query hook for the session usage stats contract.
+// use-stats.ts — TanStack Query hook for the console usage stats contract.
 //
 // Mirrors use-keys.ts: the queryFn threads TanStack Query's `{ signal }` into the
 // never-throw api wrapper (lib/api::getJson) and THROWS on a non-200 / malformed
 // response so the query lands in `isError` (the dashboard renders its error
 // branch), while a 200 resolves to the StatsResponse contract.
 //
-//   useStats(range)  GET /api/session/stats?start_date=&end_date= -> StatsResponse
+//   useStats(range)  GET /platform/console/stats?start_date=&end_date= -> StatsResponse
 //
 // Keyed by the range, so changing the range refetches and each range caches
 // separately. The `{ signal }` makes cancellation work end-to-end with apiFetch's
@@ -41,7 +41,7 @@ export function useStats(range: StatsRangeInput): UseQueryResult<StatsResponse> 
         end_date: range.end,
       });
       const { status, data } = await getJson<StatsResponse>(
-        `/api/session/stats?${params.toString()}`,
+        `/platform/console/stats?${params.toString()}`,
         { signal },
       );
       if (status === 200 && data) return data;

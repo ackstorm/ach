@@ -1,6 +1,6 @@
-// use-latency.ts — TanStack Query hook for the session latency contract.
+// use-latency.ts — TanStack Query hook for the console latency contract.
 //
-//   useLatency(range)  GET /api/session/latency?start_date=&end_date= -> LatencyResponse
+//   useLatency(range)  GET /platform/console/latency?start_date=&end_date= -> LatencyResponse
 //
 // Mirrors use-stats.ts (same date window as the rest of the page), with one
 // difference: the latency panel is SUPPLEMENTARY, and a degraded backend answers a
@@ -27,7 +27,7 @@ export function useLatency(
         end_date: range.end,
       });
       const { status, data } = await getJson<LatencyResponse>(
-        `/api/session/latency?${params.toString()}`,
+        `/platform/console/latency?${params.toString()}`,
         { signal },
       );
       if (status === 200 && data) return data;

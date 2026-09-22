@@ -125,6 +125,7 @@ function makeStats(overrides: Partial<StatsResponse> = {}): StatsResponse {
       deltas: true,
       per_key_spend: true,
     },
+    data_scope: 'user',
     ...overrides,
   };
 }
@@ -184,6 +185,7 @@ beforeEach(() => {
       latency: null,
       outcomes: [],
       by_model: [],
+      data_scope: 'user',
     },
     isPending: false,
     isError: false,
@@ -236,6 +238,13 @@ describe('Stats — success', () => {
       screen.getByText(
         'Requests, tokens, models, and spend for the selected period.',
       ),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the user-global data-scope label under the title (spec §6)', () => {
+    render(<Stats />);
+    expect(
+      screen.getByText('Personal statistics · Includes all your Environments.'),
     ).toBeInTheDocument();
   });
 

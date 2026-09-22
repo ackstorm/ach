@@ -16,7 +16,7 @@ import { Boxes, ExternalLink } from 'lucide-react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableSearch, matchesSearch } from '@/components/ui/table-search';
-import { useMcp } from '@/hooks/use-mcp';
+import { useMcp } from '@/hooks/use-capabilities';
 import type { McpServerRow } from '@/lib/api-types';
 import { cn } from '@/lib/utils';
 
@@ -31,9 +31,9 @@ const ERR_BODY =
 const UNAVAIL_HEADING = 'MCP gateway not enabled';
 const UNAVAIL_BODY =
   'This deployment has no MCP gateway configured. Once servers are added, they will appear here.';
-const EMPTY_HEADING = 'No MCP servers yet';
-const EMPTY_BODY =
-  'The MCP gateway is enabled but no servers are configured for your access level.';
+const PROVISIONING_HEADING = 'Access is being provisioned';
+const PROVISIONING_BODY =
+  'Your personal catalog appears after the next Environment sync.';
 
 // Status pill: healthy=green, unhealthy=destructive, unknown/other=neutral.
 function StatusPill({ status }: { status: string | null }) {
@@ -236,10 +236,10 @@ export function Mcp() {
           <Skeleton variant="card" />
           <Skeleton variant="card" />
         </div>
-      ) : data && data.available === false ? (
-        <StateCard heading={UNAVAIL_HEADING} body={UNAVAIL_BODY} />
+      ) : servers.length === 0 && data?.provisioning ? (
+        <StateCard heading={PROVISIONING_HEADING} body={PROVISIONING_BODY} />
       ) : servers.length === 0 ? (
-        <StateCard heading={EMPTY_HEADING} body={EMPTY_BODY} />
+        <StateCard heading={UNAVAIL_HEADING} body={UNAVAIL_BODY} />
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">

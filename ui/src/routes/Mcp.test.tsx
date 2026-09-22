@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-import type { McpResponse, McpServerRow } from '@/lib/api-types';
+import type { McpServerRow } from '@/lib/api-types';
+import type { McpSelection } from '@/hooks/use-capabilities';
 
-vi.mock('@/hooks/use-mcp', () => ({ useMcp: vi.fn() }));
+vi.mock('@/hooks/use-capabilities', () => ({ useMcp: vi.fn() }));
 
-import { useMcp } from '@/hooks/use-mcp';
+import { useMcp } from '@/hooks/use-capabilities';
 import { Mcp } from './Mcp';
 
 const useMcpMock = vi.mocked(useMcp);
@@ -38,7 +39,7 @@ function setPending(): void {
     isPending: true,
     isError: false,
     refetch: vi.fn(),
-  } as unknown as UseQueryResult<McpResponse>);
+  } as unknown as UseQueryResult<McpSelection>);
 }
 
 function setError(): ReturnType<typeof vi.fn> {
@@ -48,17 +49,17 @@ function setError(): ReturnType<typeof vi.fn> {
     isPending: false,
     isError: true,
     refetch,
-  } as unknown as UseQueryResult<McpResponse>);
+  } as unknown as UseQueryResult<McpSelection>);
   return refetch;
 }
 
-function setSuccess(data: McpResponse): void {
+function setSuccess(data: McpSelection): void {
   useMcpMock.mockReturnValue({
     data,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
-  } as unknown as UseQueryResult<McpResponse>);
+  } as unknown as UseQueryResult<McpSelection>);
 }
 
 afterEach(() => {
@@ -87,25 +88,26 @@ describe('Mcp — error', () => {
   });
 });
 
-describe('Mcp — unavailable (no gateway)', () => {
-  it('shows the calm "not enabled" state when available is false', () => {
-    setSuccess({ servers: [], available: false });
+describe('Mcp — unavailable (no gateway, not provisioning)', () => {
+  it('shows the calm "not enabled" state when the list is empty and not provisioning', () => {
+    setSuccess({ servers: [], provisioning: false });
     render(<Mcp />);
     expect(screen.getByText('MCP gateway not enabled')).toBeInTheDocument();
   });
 });
 
-describe('Mcp — empty (gateway on, no servers)', () => {
-  it('shows the empty state', () => {
-    setSuccess({ servers: [], available: true });
+describe('Mcp — provisioning', () => {
+  it('shows the provisioning card, not the "not enabled" copy, when provisioning is true', () => {
+    setSuccess({ servers: [], provisioning: true });
     render(<Mcp />);
-    expect(screen.getByText('No MCP servers yet')).toBeInTheDocument();
+    expect(screen.getByText('Access is being provisioned')).toBeInTheDocument();
+    expect(screen.queryByText('MCP gateway not enabled')).not.toBeInTheDocument();
   });
 });
 
 describe('Mcp — populated', () => {
   it('renders the server name, status, tools, and access group', () => {
-    setSuccess({ servers: [makeServer()], available: true });
+    setSuccess({ servers: [makeServer()], provisioning: false });
     render(<Mcp />);
     expect(screen.getByText('GitHub')).toBeInTheDocument();
     expect(screen.getByText('healthy')).toBeInTheDocument();
@@ -118,7 +120,7 @@ describe('Mcp — populated', () => {
     const tools = Array.from({ length: 9 }, (_, i) => `tool_${i}`);
     setSuccess({
       servers: [makeServer({ tools, tool_count: 9 })],
-      available: true,
+      provisioning: false,
     });
     render(<Mcp />);
     expect(screen.getByText('tool_5')).toBeInTheDocument(); // 6th chip (index 5)

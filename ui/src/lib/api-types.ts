@@ -116,8 +116,9 @@ export interface EnvironmentsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/session/stats  — src/api/app/session.py::session_stats
-// (contract assembled by src/api/app/stats.py::build_stats_contract)
+// GET /platform/console/stats — internal/platformapi/console/stats.go::stats
+// (contract assembled by internal/observability.BuildStatsContract; field
+// names/shape carried over verbatim from the imported alitellm-auth contract)
 // ---------------------------------------------------------------------------
 
 /** stats.py::build_stats_contract range_meta.compare sub-block. */
@@ -237,7 +238,11 @@ export interface StatsCapabilities {
   per_key_spend: boolean;
 }
 
-/** GET /api/session/stats response. stats.py::build_stats_contract. */
+/**
+ * GET /platform/console/stats response. `data_scope` is ALWAYS "user" (D-13/
+ * AC-16, console.withStatsScope) — the window folds in every ek_ the caller
+ * owns, never Environment-scoped.
+ */
 export interface StatsResponse {
   range: StatsRange;
   totals: StatsTotals;
@@ -246,13 +251,14 @@ export interface StatsResponse {
   keys: StatsKeyRow[];
   budget: StatsBudget;
   capabilities: StatsCapabilities;
+  data_scope: 'user';
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/session/latency  — src/api/app/session.py::session_latency
-// (contract assembled by src/api/app/latency.py::compute_latency_contract from
-//  raw LiteLLM /spend/logs rows over a fixed 7-day window; ONLY computed metrics
-//  are returned — never the raw rows)
+// GET /platform/console/latency — internal/platformapi/console/stats.go::latency
+// (contract assembled by internal/observability.ComputeLatencyContract from
+//  raw LiteLLM /spend/logs/v2 rows over the caller's selected range; ONLY
+//  computed metrics are returned — never the raw rows)
 // ---------------------------------------------------------------------------
 
 /** The fixed latency window echoed back. latency.py window_meta. */
@@ -293,15 +299,16 @@ export interface LatencyByModel {
 }
 
 /**
- * GET /api/session/latency response. session.py::session_latency.
- * `available` is false (calm degrade, still a 200) when the sso_key_swapper
- * scoping contract is unverified or the /spend/logs fetch failed — the panel
- * shows a "not available" state. When true but the window is empty, the latency
- * figures are null and outcomes/by_model are empty.
+ * GET /platform/console/latency response (console.latency + withLatencyScope).
+ * `available` is false (calm degrade, still a 200) when the /spend/logs/v2
+ * fetch 401s (role=unknown) or fails for any other reason — the panel shows
+ * a "not available" state. When true but the window is empty, the latency
+ * figures are null and outcomes/by_model are empty. `data_scope` is ALWAYS
+ * "user" (D-13/AC-16), same as StatsResponse.
  */
 export interface LatencyResponse {
   available: boolean;
-  /** Why it degraded, when available is false ("scoping_unverified" | "fetch_failed"). */
+  /** Why it degraded, when available is false ("unavailable" | "fetch_failed"). */
   reason?: string;
   /** True when the row cap truncated the sample (figures are a sample, not exhaustive). */
   sampled: boolean;
@@ -310,6 +317,7 @@ export interface LatencyResponse {
   latency: LatencyMetrics | null;
   outcomes: LatencyOutcome[];
   by_model: LatencyByModel[];
+  data_scope: 'user';
 }
 
 // ---------------------------------------------------------------------------
@@ -318,14 +326,17 @@ export interface LatencyResponse {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// GET /api/session/models  — src/api/app/session.py::session_models
-// (rows projected by litellm_client.py::_project_model_group from LiteLLM
-//  /model_group/info — the safe public group view; no litellm_params/creds)
+// GET /platform/console/capabilities?scope=personal —
+// internal/platformapi/console/handlers.go::personal. One fetch backs the
+// Models/MCP/A2A pages (ui/src/hooks/use-capabilities.ts); `models` mirrors
+// litellm.ModelGroupInfo verbatim (field names unchanged from the imported
+// alitellm-auth contract), `mcp_servers`/`a2a_agents` mirror handlers.go's
+// mcpServerRow/a2aAgentRow public projections.
 // ---------------------------------------------------------------------------
 
 /**
- * One public model-group row. EVERY field mirrors _project_model_group's
- * explicit allow-list. `mode` is e.g. "chat" | "embedding" | "rerank" | null.
+ * One public model-group row (litellm.ModelGroupInfo, internal/litellm/
+ * userview.go). `mode` is e.g. "chat" | "embedding" | "rerank" | null.
  * Costs are per-token floats (often scientific notation); token caps are floats
  * or null (LiteLLM emits them as floats, e.g. 128000.0).
  */
@@ -343,22 +354,12 @@ export interface ModelRow {
   supports_web_search: boolean;
 }
 
-/** GET /api/session/models response. session.py::session_models. */
-export interface ModelsResponse {
-  models: ModelRow[];
-}
-
-// ---------------------------------------------------------------------------
-// GET /api/session/mcp  — src/api/app/session.py::session_mcp
-// (rows projected by litellm_client.py::_project_mcp_server from LiteLLM
-//  /v1/mcp/server — a PUBLIC subset; credentials/env/headers are stripped)
-// ---------------------------------------------------------------------------
-
 /**
- * One configured MCP server (public projection). `transport` is "sse" | "http"
- * | "stdio"; `status` is "healthy" | "unhealthy" | "unknown" | null; `auth_type`
- * is the type LABEL only (e.g. "oauth2"), never a secret. `tool_count` mirrors
- * tools.length (LiteLLM has no numeric count field).
+ * One configured MCP server (public projection, handlers.go::projectMCP).
+ * `transport` is "sse" | "http" | "stdio"; `status` is "healthy" | "unhealthy"
+ * | "unknown" | null; `auth_type` is the type LABEL only (e.g. "oauth2"),
+ * never a secret. `tool_count` mirrors tools.length (LiteLLM has no numeric
+ * count field).
  */
 export interface McpServerRow {
   id: string | null;
@@ -374,20 +375,11 @@ export interface McpServerRow {
 }
 
 /**
- * GET /api/session/mcp response. session.py::session_mcp. `available` is false
- * when the deployment's LiteLLM has no MCP gateway (a 404 the backend degrades
- * to an empty, available:false 200) — the page shows a calm "not enabled" state.
- */
-export interface McpResponse {
-  servers: McpServerRow[];
-  available: boolean;
-}
-
-/**
- * One configured A2A (Agent-to-Agent) agent (public projection). Display fields
- * come from the agent card: `transport` is the preferred transport, `version` the
- * card version, `skills` the agent's skill names (`skill_count` mirrors length),
- * `streaming` the card's streaming capability. No secret/header field is surfaced.
+ * One configured A2A (Agent-to-Agent) agent (public projection, handlers.go::
+ * projectA2A). Display fields come from the agent card: `transport` is the
+ * preferred transport, `version` the card version, `skills` the agent's skill
+ * names (`skill_count` mirrors length), `streaming` the card's streaming
+ * capability. No secret/header field is surfaced.
  */
 export interface A2aAgentRow {
   id: string | null;
@@ -402,13 +394,19 @@ export interface A2aAgentRow {
 }
 
 /**
- * GET /api/session/a2a response. session.py::session_a2a. `available` is false
- * when the deployment's LiteLLM has no A2A gateway (a 404 the backend degrades to
- * an empty, available:false 200) — the page shows a calm "not enabled" state.
+ * GET /platform/console/capabilities?scope=personal response
+ * (handlers.go::personal). `provisioning` is true when the caller's
+ * ach-user-<email> shell team has not yet been attached to any access group
+ * (the `__deny_all__` sentinel alone in the raw model list) — the Models page
+ * shows a calm "being provisioned" card instead of an empty catalog; MCP/A2A
+ * use it the same way when their own list is also empty.
  */
-export interface A2aResponse {
-  agents: A2aAgentRow[];
-  available: boolean;
+export interface CapabilitiesResponse {
+  scope: 'personal';
+  models: ModelRow[];
+  mcp_servers: McpServerRow[];
+  a2a_agents: A2aAgentRow[];
+  provisioning: boolean;
 }
 
 /** One BACKED-BY provider chip. public.py::_PROVIDERS. */

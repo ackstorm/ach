@@ -15,7 +15,7 @@ import { Bot, ExternalLink } from 'lucide-react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableSearch, matchesSearch } from '@/components/ui/table-search';
-import { useA2a } from '@/hooks/use-a2a';
+import { useA2a } from '@/hooks/use-capabilities';
 import { useSessionStore } from '@/stores/session';
 import type { A2aAgentRow } from '@/lib/api-types';
 
@@ -38,9 +38,9 @@ const ERR_BODY =
 const UNAVAIL_HEADING = 'A2A gateway not enabled';
 const UNAVAIL_BODY =
   'This deployment has no A2A gateway configured. Once agents are added, they will appear here.';
-const EMPTY_HEADING = 'No A2A agents yet';
-const EMPTY_BODY =
-  'The A2A gateway is enabled but no agents are configured for your access level.';
+const PROVISIONING_HEADING = 'Access is being provisioned';
+const PROVISIONING_BODY =
+  'Your personal catalog appears after the next Environment sync.';
 
 // A small neutral version pill (sits where the MCP status pill sits).
 function VersionPill({ version }: { version: string }) {
@@ -196,10 +196,10 @@ export function A2a() {
           <Skeleton variant="card" />
           <Skeleton variant="card" />
         </div>
-      ) : data && data.available === false ? (
-        <StateCard heading={UNAVAIL_HEADING} body={UNAVAIL_BODY} />
+      ) : agents.length === 0 && data?.provisioning ? (
+        <StateCard heading={PROVISIONING_HEADING} body={PROVISIONING_BODY} />
       ) : agents.length === 0 ? (
-        <StateCard heading={EMPTY_HEADING} body={EMPTY_BODY} />
+        <StateCard heading={UNAVAIL_HEADING} body={UNAVAIL_BODY} />
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">

@@ -58,6 +58,9 @@ import { mergeTopKeys } from '@/lib/top-keys';
 // Locked copy (mirrors src/ui/stats.js §Copywriting Contract).
 const PAGE_TITLE = 'Usage & Spend';
 const PAGE_SUB = 'Requests, tokens, models, and spend for the selected period.';
+// D-13/AC-16: every console analytics number is user-global (includes every
+// ek_ the caller owns), never Environment-scoped — spec §6, verbatim.
+const PAGE_LABEL = 'Personal statistics · Includes all your Environments.';
 const SECTION_DAILY_SPEND = 'DAILY SPEND';
 const SECTION_REQUESTS = 'REQUESTS BY DAY';
 const SECTION_USAGE_BY_MODEL = 'USAGE BY MODEL';
@@ -172,9 +175,14 @@ export function Stats() {
     <div className="flex flex-col gap-1">
       {/* Row 1: title (left) + date controls (right). */}
       <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-2">
-        <h1 className="font-sans text-2xl font-semibold leading-snug text-text-primary">
-          {PAGE_TITLE}
-        </h1>
+        <div>
+          <h1 className="font-sans text-2xl font-semibold leading-snug text-text-primary">
+            {PAGE_TITLE}
+          </h1>
+          <p className="mt-1 font-sans text-sm text-text-secondary">
+            {PAGE_LABEL}
+          </p>
+        </div>
         <DateRange
           preset={preset}
           onPreset={onPreset}

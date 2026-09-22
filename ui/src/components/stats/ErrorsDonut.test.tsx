@@ -34,6 +34,7 @@ function makeLatency(overrides: Partial<LatencyResponse> = {}): LatencyResponse 
       { status: 'failure', count: 20 },
     ],
     by_model: [],
+    data_scope: 'user',
     ...overrides,
   };
 }

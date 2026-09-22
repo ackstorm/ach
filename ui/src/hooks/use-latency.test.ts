@@ -1,9 +1,9 @@
-// use-stats.test.ts — vitest suite for the stats TanStack Query hook (jsdom).
+// use-latency.test.ts — vitest suite for the latency TanStack Query hook (jsdom).
 //
-// The api module is fully mocked so NO real fetch happens; each test programs
-// getJson's resolved { status, data }. Each test gets a FRESH QueryClient (retry
-// disabled so the error path resolves immediately) provided via a renderHook
-// wrapper (pattern copied from use-keys.test.ts).
+// Mirrors use-stats.test.ts: the api module is fully mocked so NO real fetch
+// happens; each test programs getJson's resolved { status, data }. Each test
+// gets a FRESH QueryClient (retry disabled so the error path resolves
+// immediately) provided via a renderHook wrapper.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -11,7 +11,7 @@ import { createElement } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import type { StatsResponse } from '@/lib/api-types';
+import type { LatencyResponse } from '@/lib/api-types';
 
 // Mock the api module: every entrypoint is a vi.fn() each test programs.
 vi.mock('@/lib/api', () => ({
@@ -21,52 +21,20 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { getJson } from '@/lib/api';
-import { useStats } from './use-stats';
+import { useLatency } from './use-latency';
 
 const getJsonMock = vi.mocked(getJson);
 
-// A minimal, type-valid StatsResponse (mirrors the api-types contract).
-const STATS: StatsResponse = {
-  range: {
-    start: '2026-05-01',
-    end: '2026-05-31',
-    days: 31,
-    compare: { start: '2026-03-31', end: '2026-04-30' },
-  },
-  totals: {
-    requests: 0,
-    tokens: 0,
-    spend: 0,
-    failed_requests: 0,
-    input_tokens: 0,
-    output_tokens: 0,
-    cache_read_tokens: 0,
-    cache_hit_pct: null,
-    avg_cost_per_1m_tokens: null,
-    deltas: {
-      requests_pct: null,
-      tokens_pct: null,
-      spend_pct: null,
-      avg_cost_per_1m_tokens_pct: null,
-    },
-  },
-  series: [],
-  models: [],
-  keys: [],
-  budget: {
-    current: 0,
-    max_budget: null,
-    budget_duration: null,
-    source: 'unknown',
-    pct: null,
-    has_budget: false,
-  },
-  capabilities: {
-    token_split: false,
-    per_model_last_used: false,
-    deltas: false,
-    per_key_spend: false,
-  },
+// A minimal, type-valid LatencyResponse — the calm degraded shape (§10.2).
+const LATENCY: LatencyResponse = {
+  available: false,
+  reason: 'unavailable',
+  sampled: false,
+  row_count: 0,
+  window: null,
+  latency: null,
+  outcomes: [],
+  by_model: [],
   data_scope: 'user',
 };
 
@@ -85,18 +53,18 @@ function wrapperFor(client: QueryClient) {
     createElement(QueryClientProvider, { client }, children);
 }
 
-describe('useStats', () => {
-  it('200 + StatsResponse -> data is that object', async () => {
+describe('useLatency', () => {
+  it('200 + LatencyResponse -> data is that object', async () => {
     getJsonMock.mockReset();
-    getJsonMock.mockResolvedValue({ status: 200, data: STATS });
+    getJsonMock.mockResolvedValue({ status: 200, data: LATENCY });
 
     const { result } = renderHook(
-      () => useStats({ start: '2026-05-01', end: '2026-05-31' }),
+      () => useLatency({ start: '2026-05-01', end: '2026-05-31' }),
       { wrapper: wrapperFor(makeClient()) },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(STATS);
+    expect(result.current.data).toEqual(LATENCY);
   });
 
   it('non-200 (502) -> isError', async () => {
@@ -104,7 +72,7 @@ describe('useStats', () => {
     getJsonMock.mockResolvedValue({ status: 502, data: null });
 
     const { result } = renderHook(
-      () => useStats({ start: '2026-05-01', end: '2026-05-31' }),
+      () => useLatency({ start: '2026-05-01', end: '2026-05-31' }),
       { wrapper: wrapperFor(makeClient()) },
     );
 
@@ -113,17 +81,17 @@ describe('useStats', () => {
 
   it('threads the range into the request URL + passes a signal', async () => {
     getJsonMock.mockReset();
-    getJsonMock.mockResolvedValue({ status: 200, data: STATS });
+    getJsonMock.mockResolvedValue({ status: 200, data: LATENCY });
 
     const { result } = renderHook(
-      () => useStats({ start: '2026-05-01', end: '2026-05-31' }),
+      () => useLatency({ start: '2026-05-01', end: '2026-05-31' }),
       { wrapper: wrapperFor(makeClient()) },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const [url, options] = getJsonMock.mock.calls[0];
-    expect(url).toContain('/platform/console/stats?');
+    expect(url).toContain('/platform/console/latency?');
     expect(url).toContain('start_date=2026-05-01');
     expect(url).toContain('end_date=2026-05-31');
     expect(options).toEqual(

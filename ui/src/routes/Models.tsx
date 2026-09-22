@@ -44,7 +44,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
-import { useModels } from '@/hooks/use-models';
+import { useModels } from '@/hooks/use-capabilities';
 import type { ModelRow } from '@/lib/api-types';
 import { abbreviate, formatPricePerMillion } from '@/lib/format';
 import { isRouterModel } from '@/lib/model-classify';
@@ -62,6 +62,8 @@ const ERR_BODY =
 const EMPTY_HEADING = 'No models yet';
 const EMPTY_BODY =
   'No model aliases are configured on the gateway for your access level.';
+const PROVISIONING_MSG =
+  'Access is being provisioned — your personal catalog appears after the next Environment sync.';
 
 // A small provider chip (e.g. openai, anthropic, google). UPPERCASE to match
 // the sibling Mode / Thinking / capability tags in the same row (was the lone
@@ -370,6 +372,21 @@ export function Models() {
 
   const models = query.data?.models ?? [];
   const modeOptions = modelModeOptions(models);
+
+  // Provisioning (§10.2 fact 3): the caller's shell team has not yet been
+  // attached to any access group — a calm card, not the empty-table copy.
+  if (!query.isPending && query.data?.provisioning) {
+    return (
+      <div className="flex flex-col gap-8">
+        {header}
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-border bg-surface p-12 text-center">
+          <p className="max-w-md font-sans text-sm text-text-secondary">
+            {PROVISIONING_MSG}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">

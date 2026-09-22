@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-import type { ModelsResponse, ModelRow } from '@/lib/api-types';
+import type { ModelRow } from '@/lib/api-types';
+import type { ModelsSelection } from '@/hooks/use-capabilities';
 
 vi.mock('react-router', () => ({ useNavigate: () => () => {} }));
 vi.mock('@/stores/session', () => ({
@@ -18,9 +19,9 @@ vi.mock('@/stores/session', () => ({
 vi.mock('@/stores/config', () => ({
   useConfigStore: (sel: (s: unknown) => unknown) => sel({ config: {} }),
 }));
-vi.mock('@/hooks/use-models', () => ({ useModels: vi.fn() }));
+vi.mock('@/hooks/use-capabilities', () => ({ useModels: vi.fn() }));
 
-import { useModels } from '@/hooks/use-models';
+import { useModels } from '@/hooks/use-capabilities';
 import { HowTo } from './HowTo';
 
 const useModelsMock = vi.mocked(useModels);
@@ -43,10 +44,10 @@ function model(name: string): ModelRow {
 
 function setModels(names: string[]): void {
   useModelsMock.mockReturnValue({
-    data: { models: names.map(model) } as ModelsResponse,
+    data: { models: names.map(model), provisioning: false },
     isPending: false,
     isError: false,
-  } as unknown as UseQueryResult<ModelsResponse>);
+  } as unknown as UseQueryResult<ModelsSelection>);
 }
 
 afterEach(() => {

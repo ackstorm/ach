@@ -29,6 +29,7 @@ function makeLatency(overrides: Partial<LatencyResponse> = {}): LatencyResponse 
     by_model: [
       { model: 'gemini/flash', requests: 140, failed: 0, p50_ms: 3000, p95_ms: 8580 },
     ],
+    data_scope: 'user',
     ...overrides,
   };
 }

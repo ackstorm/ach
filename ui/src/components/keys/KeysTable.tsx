@@ -166,12 +166,10 @@ export function KeysTable({ onDelete }: KeysTableProps): React.ReactElement {
         const badge = <Badge variant={variant}>{label}</Badge>;
         if (!row.reasons?.length) return badge;
         return (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>{badge}</TooltipTrigger>
-              <TooltipContent>{row.reasons.join(', ')}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>{badge}</TooltipTrigger>
+            <TooltipContent>{row.reasons.join(', ')}</TooltipContent>
+          </Tooltip>
         );
       },
       sortAccessor: (row) => STATE_RANK[row.status],
@@ -214,83 +212,85 @@ export function KeysTable({ onDelete }: KeysTableProps): React.ReactElement {
   ];
 
   return (
-    <div className="flex flex-col gap-3">
-      <DataTable
-        data-slot="keys-table"
-        columns={columns}
-        rows={rows}
-        // Default sort so the active-sort marker shows on load (newest keys first);
-        // every other column header stays click-to-sort.
-        defaultSort={{ key: 'created', dir: 'desc' }}
-        getRowId={(row) => row.key_id}
-        rowClassName={(row) => cn(row.status === 'revoked' && 'opacity-40')}
-        actionsHeader="Action"
-        empty={
-          <div data-slot="keys-table-empty" className="py-6">
-            <p className="text-foreground text-base font-semibold">No API Keys</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              You have no virtual keys yet. Create one to get started.
-            </p>
-          </div>
-        }
-        rowActions={(row) => {
-          const canSuspend = row.status === 'active' || row.status === 'invalid';
-          const canResume = row.status === 'suspended';
-          const canRevoke = row.status !== 'revoked';
-          return (
-            <div className="flex justify-end">
-              {/* Single per-row control — a kebab menu. Revoke lives INSIDE it (as a
-                  destructive item) rather than as an always-visible red trash on
-                  every row, so the table doesn't read as "delete everything". */}
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  data-slot="key-menu"
-                  aria-label="More actions"
-                  className="text-muted-foreground border-border hover:border-primary hover:text-primary inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-colors outline-none focus-visible:border-primary"
-                >
-                  <MoreVertical className="size-[15px]" aria-hidden="true" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {!canSuspend && !canResume && !canRevoke ? (
-                    <DropdownMenuItem disabled data-slot="key-no-actions">
-                      No actions available
-                    </DropdownMenuItem>
-                  ) : null}
-                  {canSuspend ? (
-                    <DropdownMenuItem
-                      data-slot="key-suspend"
-                      onSelect={() => onSuspend(row)}
-                    >
-                      Suspend key
-                    </DropdownMenuItem>
-                  ) : null}
-                  {canResume ? (
-                    <DropdownMenuItem
-                      data-slot="key-resume"
-                      onSelect={() => onResume(row)}
-                    >
-                      Resume key
-                    </DropdownMenuItem>
-                  ) : null}
-                  {canRevoke ? (
-                    <>
-                      {canSuspend || canResume ? <DropdownMenuSeparator /> : null}
-                      <DropdownMenuItem
-                        data-slot="key-delete"
-                        onSelect={() => onDelete(row)}
-                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                      >
-                        <Trash2 aria-hidden="true" />
-                        Revoke key
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+    <TooltipProvider>
+      <div className="flex flex-col gap-3">
+        <DataTable
+          data-slot="keys-table"
+          columns={columns}
+          rows={rows}
+          // Default sort so the active-sort marker shows on load (newest keys first);
+          // every other column header stays click-to-sort.
+          defaultSort={{ key: 'created', dir: 'desc' }}
+          getRowId={(row) => row.key_id}
+          rowClassName={(row) => cn(row.status === 'revoked' && 'opacity-40')}
+          actionsHeader="Action"
+          empty={
+            <div data-slot="keys-table-empty" className="py-6">
+              <p className="text-foreground text-base font-semibold">No API Keys</p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                You have no virtual keys yet. Create one to get started.
+              </p>
             </div>
-          );
-        }}
-      />
-    </div>
+          }
+          rowActions={(row) => {
+            const canSuspend = row.status === 'active' || row.status === 'invalid';
+            const canResume = row.status === 'suspended';
+            const canRevoke = row.status !== 'revoked';
+            return (
+              <div className="flex justify-end">
+                {/* Single per-row control — a kebab menu. Revoke lives INSIDE it (as a
+                    destructive item) rather than as an always-visible red trash on
+                    every row, so the table doesn't read as "delete everything". */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    data-slot="key-menu"
+                    aria-label="More actions"
+                    className="text-muted-foreground border-border hover:border-primary hover:text-primary inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-colors outline-none focus-visible:border-primary"
+                  >
+                    <MoreVertical className="size-[15px]" aria-hidden="true" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {!canSuspend && !canResume && !canRevoke ? (
+                      <DropdownMenuItem disabled data-slot="key-no-actions">
+                        No actions available
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canSuspend ? (
+                      <DropdownMenuItem
+                        data-slot="key-suspend"
+                        onSelect={() => onSuspend(row)}
+                      >
+                        Suspend key
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canResume ? (
+                      <DropdownMenuItem
+                        data-slot="key-resume"
+                        onSelect={() => onResume(row)}
+                      >
+                        Resume key
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canRevoke ? (
+                      <>
+                        {canSuspend || canResume ? <DropdownMenuSeparator /> : null}
+                        <DropdownMenuItem
+                          data-slot="key-delete"
+                          onSelect={() => onDelete(row)}
+                          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        >
+                          <Trash2 aria-hidden="true" />
+                          Revoke key
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            );
+          }}
+        />
+      </div>
+    </TooltipProvider>
   );
 }

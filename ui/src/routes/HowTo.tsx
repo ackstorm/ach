@@ -39,7 +39,7 @@ import { useNavigate } from 'react-router';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
-import { useModels } from '@/hooks/use-models';
+import { useModels } from '@/hooks/use-capabilities';
 import { TAB_PILL, TAB_PILL_LIST } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 import { deriveSubdomainUrl } from '@/lib/urls';

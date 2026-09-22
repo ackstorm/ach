@@ -8,11 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-import type { ModelRow, ModelsResponse } from '@/lib/api-types';
+import type { ModelRow } from '@/lib/api-types';
+import type { ModelsSelection } from '@/hooks/use-capabilities';
 
-vi.mock('@/hooks/use-models', () => ({ useModels: vi.fn() }));
+vi.mock('@/hooks/use-capabilities', () => ({ useModels: vi.fn() }));
 
-import { useModels } from '@/hooks/use-models';
+import { useModels } from '@/hooks/use-capabilities';
 import { Models } from './Models';
 
 const useModelsMock = vi.mocked(useModels);
@@ -40,7 +41,7 @@ function setPending(): void {
     isPending: true,
     isError: false,
     refetch: vi.fn(),
-  } as unknown as UseQueryResult<ModelsResponse>);
+  } as unknown as UseQueryResult<ModelsSelection>);
 }
 
 function setError(): ReturnType<typeof vi.fn> {
@@ -50,17 +51,17 @@ function setError(): ReturnType<typeof vi.fn> {
     isPending: false,
     isError: true,
     refetch,
-  } as unknown as UseQueryResult<ModelsResponse>);
+  } as unknown as UseQueryResult<ModelsSelection>);
   return refetch;
 }
 
-function setSuccess(models: ModelRow[]): void {
+function setSuccess(models: ModelRow[], provisioning = false): void {
   useModelsMock.mockReturnValue({
-    data: { models },
+    data: { models, provisioning },
     isPending: false,
     isError: false,
     refetch: vi.fn(),
-  } as unknown as UseQueryResult<ModelsResponse>);
+  } as unknown as UseQueryResult<ModelsSelection>);
 }
 
 afterEach(() => {
@@ -94,6 +95,19 @@ describe('Models — empty', () => {
     setSuccess([]);
     render(<Models />);
     expect(screen.getByText('No models yet')).toBeInTheDocument();
+  });
+});
+
+describe('Models — provisioning', () => {
+  it('shows the calm provisioning card instead of the empty-table copy', () => {
+    setSuccess([], true);
+    render(<Models />);
+    expect(
+      screen.getByText(
+        'Access is being provisioned — your personal catalog appears after the next Environment sync.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No models yet')).not.toBeInTheDocument();
   });
 });
 
