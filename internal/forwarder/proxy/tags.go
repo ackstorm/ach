@@ -32,13 +32,13 @@ const tagsHeader = "X-Litellm-Tags"
 // dropped before any real backend; only the test cluster forwards it.
 const headerTags = "X-Achtest-Tags"
 
-// TagsForContext returns the LiteLLM budget tags for the caller's ACH
+// tagsForContext returns the LiteLLM budget tags for the caller's ACH
 // identity, in order: the owner's tag (caps pk_ AND every ek_ they own,
 // across Environments), the Environment's tag (caps that Environment's
 // pooled traffic), and the key's own tag (caps this one ek_). LiteLLM
 // enforces each independently and blocks on the first one over budget.
 // No ACH identity (passthrough credential, unresolved bearer) ⇒ no tags.
-func TagsForContext(ctx context.Context) []string {
+func tagsForContext(ctx context.Context) []string {
 	kc, ok := middleware.KeyContextFromCtx(ctx)
 	if !ok {
 		return nil
@@ -72,7 +72,7 @@ func TagsForContext(ctx context.Context) []string {
 func stampTags(req *http.Request) {
 	req.Header.Del(tagsHeader)
 	req.Header.Del(headerTags)
-	tags := TagsForContext(req.Context())
+	tags := tagsForContext(req.Context())
 	if len(tags) == 0 {
 		return
 	}

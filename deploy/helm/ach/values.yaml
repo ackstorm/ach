@@ -133,8 +133,10 @@ platformApi:
   # their ek_ across every Environment. Budgets live only on tags — a LiteLLM
   # user-object budget is not enforced (measured; see
   # references/litellm-permission-model.md). Leave maxBudget unset for no cap.
+  # An empty maxBudget means no cap; 0 is a REAL ceiling that refuses every
+  # request once any spend lands (LiteLLM compares spend > max_budget).
   userDefaults:
-    maxBudget: ""          # e.g. 100  (USD, LiteLLM's unit)
+    maxBudget: ""          # e.g. 100  (USD, LiteLLM's unit); "" = uncapped, 0 = refuse all
     budgetDuration: "30d"  # reset window; "" = never resets
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.

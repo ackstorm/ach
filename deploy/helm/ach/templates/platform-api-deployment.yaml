@@ -105,7 +105,7 @@ spec:
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
             {{- with .Values.platformApi.userDefaults }}
-            {{- if .maxBudget }}
+            {{- if ne (toString .maxBudget) "" }}
             - name: ACH_USER_MAX_BUDGET
               value: {{ .maxBudget | quote }}
             - name: ACH_USER_BUDGET_DURATION

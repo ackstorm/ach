@@ -2,14 +2,6 @@
 
 package observability
 
-// UserInfo is the subset of LiteLLM's GET /user/info user_info block the
-// console reads.
-type UserInfo struct {
-	Spend          *float64
-	MaxBudget      *float64
-	BudgetDuration *string
-}
-
 // TagBudget is the subset of a LiteLLM /tag/info entry BudgetBlock reads —
 // the tag's accumulated spend plus its budget object. It mirrors
 // litellm.TagInfoEntry, and is declared here because litellm imports

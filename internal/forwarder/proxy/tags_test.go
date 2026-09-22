@@ -15,9 +15,9 @@ import (
 
 func ctxWith(kc middleware.KeyContext) context.Context { return ctxWithKeyAndJWT(kc, "") }
 
-// TestTagsForContextEk — an ek_ carries all three tags, owner first.
+// TesttagsForContextEk — an ek_ carries all three tags, owner first.
 func TestTagsForContextEk(t *testing.T) {
-	got := TagsForContext(ctxWith(middleware.KeyContext{
+	got := tagsForContext(ctxWith(middleware.KeyContext{
 		KeyType: keys.PrefixEk, OwnerEmail: "Pepe@Example.com",
 		Environment: "demo", KeyID: "ek_123",
 	}))
@@ -27,10 +27,10 @@ func TestTagsForContextEk(t *testing.T) {
 	}
 }
 
-// TestTagsForContextPk — a pk_ has no Environment and no per-key budget:
+// TesttagsForContextPk — a pk_ has no Environment and no per-key budget:
 // only the user tag, which is what makes one ceiling cover pk_ + ek_.
 func TestTagsForContextPk(t *testing.T) {
-	got := TagsForContext(ctxWith(middleware.KeyContext{
+	got := tagsForContext(ctxWith(middleware.KeyContext{
 		KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9",
 	}))
 	if len(got) != 1 || got[0] != "user:pepe@example.com" {
@@ -38,19 +38,19 @@ func TestTagsForContextPk(t *testing.T) {
 	}
 }
 
-// TestTagsForContextAnonymous — passthrough / unresolved credentials carry
+// TesttagsForContextAnonymous — passthrough / unresolved credentials carry
 // no ACH identity, so nothing is stamped and no ACH budget applies.
 func TestTagsForContextAnonymous(t *testing.T) {
-	if got := TagsForContext(context.Background()); len(got) != 0 {
+	if got := tagsForContext(context.Background()); len(got) != 0 {
 		t.Fatalf("got %v, want none", got)
 	}
 }
 
-// TestTagsForContextOwnerlessEk — a row with no owner email still gets its
+// TesttagsForContextOwnerlessEk — a row with no owner email still gets its
 // environment and key tags (never drop a governance tag because one field
 // is blank).
 func TestTagsForContextOwnerlessEk(t *testing.T) {
-	got := TagsForContext(ctxWith(middleware.KeyContext{
+	got := tagsForContext(ctxWith(middleware.KeyContext{
 		KeyType: keys.PrefixEk, Environment: "demo", KeyID: "ek_1",
 	}))
 	if strings.Join(got, ",") != "environment:demo,key:ek_1" {

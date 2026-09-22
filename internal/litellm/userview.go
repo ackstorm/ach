@@ -233,28 +233,6 @@ func (u *UserView) SpendLogsV2(ctx context.Context, startDate, endDateExclusive 
 	return rows, lastTotalPages > fetchedPages, nil
 }
 
-// UserInfo is GET /user/info as the user — no user_id param needed, the
-// endpoint scopes to the key's own user (measured 2026-09-21).
-func (u *UserView) UserInfo(ctx context.Context) (observability.UserInfo, error) {
-	raw, err := u.c.makeRequestAs(ctx, u.key, "GET", "/user/info", nil)
-	if err != nil {
-		return observability.UserInfo{}, err
-	}
-	var body struct {
-		UserInfo struct {
-			Spend          *float64 `json:"spend"`
-			MaxBudget      *float64 `json:"max_budget"`
-			BudgetDuration *string  `json:"budget_duration"`
-		} `json:"user_info"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return observability.UserInfo{}, fmt.Errorf("litellm: decode GET /user/info: %w", err)
-	}
-	return observability.UserInfo{
-		Spend: body.UserInfo.Spend, MaxBudget: body.UserInfo.MaxBudget, BudgetDuration: body.UserInfo.BudgetDuration,
-	}, nil
-}
-
 // decodeBareOrWrapped decodes a bare JSON array, or the first of the named
 // keys of a wrapping object, into out.
 func decodeBareOrWrapped(raw []byte, out any, keys ...string) error {

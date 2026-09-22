@@ -374,6 +374,13 @@ runs (D-30).
 These were **measured, not derived**. Do NOT re-litigate them; do re-measure
 if a LiteLLM upgrade lands.
 
+Everything here was measured on an **unlicensed** LiteLLM (the e2e values
+carry no `LITELLM_LICENSE`): tag budgets are NOT Enterprise-gated. What is
+Enterprise-gated is the **key object's** `tags` field at `/key/generate`
+(hence `isEnterpriseTagsRejection` in the keys handler) — a different surface
+from the `x-litellm-tags` request header and the `/tag/*` + `/budget/*` APIs
+this section describes.
+
 ### Why tags and not teams or users
 
 | Fact | Evidence |
@@ -449,6 +456,12 @@ three calls.
   bare `<env>` tag; the two names are different tags, do not conflate them.
 - **`ek_` revoke** reaps `key:<id>` and its budget object, best-effort: the
   credential is already dead, so a failed tag delete never fails the revoke.
+  Both the owner-scoped (`DELETE /platform/keys/{id}`) and the admin routes go
+  through `litellm.DeleteKeyBudget`. The operator's **orphan reaper** does
+  NOT: it revokes LiteLLM keys it finds unmanaged, by LiteLLM key id, and has
+  no ACH `key_id` to build the tag name from — a key reaped that way leaves
+  its `key:<id>` tag and budget object behind. Harmless (nothing stamps that
+  tag once the key is gone) but not tidy.
 - **Dropping `spec.budget`** from a live Environment does NOT remove the
   ceiling — nothing deletes the tag until the Environment is deleted.
 - Nothing reaps a `user:<email>` tag; a user's ceiling outlives their keys,

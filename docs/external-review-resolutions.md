@@ -44,68 +44,53 @@ Decision legend:
 
 ## G1 — Budget per Environment
 
-### Plain explanation
-A LiteLLM **budget** is a spending cap (USD over a period). The frozen spec
-promised that cap could live on an **Environment**: each `Environment.spec.budget`
-would become a LiteLLM **tag budget** (the env name is attached as a tag on every
-`ek_` request), so spend on that Environment was capped.
+> **SUPERSEDED 2026-09-22 — the decision below was reversed and shipped.**
+> ACH now sets budgets, on Environments and on keys. The measured record is
+> `references/litellm-permission-model.md` §15; what follows first is what
+> was delivered, then the original resolution kept for its reasoning.
 
-### What the code actually does (delivered)
-- **`Environment.spec.budget` does not exist** — removed from `EnvironmentSpec`.
-  The operator reconciles only the LiteLLM **access group** (capability gating),
-  not a budget tag.
-- `ek_` keys still carry `Tags=[env.Name]` (`AccessGroups=[env.Name]` was removed
-  in v0.6.17 — see `references/litellm-permission-model.md`)
-  (`envkeys/handler.go`) — but **for attribution only**, no budget attached.
-- **LiteLLM tags are Enterprise-only.** The handler has
-  `isEnterpriseTagsRejection`: on a `403 "This feature is only available for
-  LiteLLM Enterprise users: tags"` it **drops the tag and retries**. So on OSS
-  LiteLLM the env tag isn't even applied.
-- **ACH sets no budget anywhere today**: KEY-10 invariant — `max_budget` is
-  never set on the LiteLLM user (`UserNewRequest` has no field) nor on the key
-  (`KeyGenerateRequest.MaxBudget = nil`).
+### What the code actually does (delivered 2026-09-22)
+- **`Environment.spec.budget` exists** (`api/ach/v1alpha1/environment_types.go`).
+  The operator writes it onto the `environment:<name>` LiteLLM tag budget and
+  reports a `BudgetSynced` condition; the §6.5 drain reaps the tag and its
+  budget object on delete.
+- **ACH sets budgets in three places**, all of them tags, never a LiteLLM team
+  or user object: `user:<email>` (platform-api at login, from
+  `platformApi.userDefaults`), `environment:<name>` (the operator), and
+  `key:<ek id>` (`POST /platform/keys {budget}` / `PATCH
+  /platform/keys/{id}/budget`).
+- **KEY-10 still holds**: no `max_budget` is ever written to a LiteLLM user or
+  key object. Measured — a user-object budget is not enforced at all.
+- The forwarder stamps all three tags on every authenticated request
+  (`x-litellm-tags`), so `pk_` traffic is capped too: a `pk_` carries
+  `user:<email>`, which is the same ceiling its owner's `ek_` keys carry.
+  The "budget leaks via `pk_`" objection below no longer applies.
+- **Tag BUDGETS are not Enterprise-gated.** Every measurement above was taken
+  on the unlicensed e2e LiteLLM. What `isEnterpriseTagsRejection` covers is
+  the **key object's** `tags` field at `/key/generate` — a different surface
+  from the `x-litellm-tags` request header and the `/tag/*` budget API.
 
-So a per-Environment budget would have required: re-adding `spec.budget`, an
-operator tag-budget reconcile loop, **and** LiteLLM Enterprise. It would cap only
-`ek_` traffic (`pk_` carries no tag → uncapped).
+### Original resolution (2026-08, reversed)
 
-### Decision — **DECIDED: no budget per Environment**
-Budget is **not** an Environment-level concern. Budget governance hierarchy:
+The reasoning is kept because it is still right about WHERE a budget belongs
+— the principal — and that is exactly what the `user:<email>` tag implements;
+what it got wrong was assuming the Environment tag needed Enterprise and that
+`pk_` could not be covered.
 
-1. **Now → per-USER.** The budget boundary is the LiteLLM user. Environment is a
-   capability/context/identity boundary, **not** a cost boundary.
-2. **Future → per-KEY.** A key-level budget, **lower than** the user's budget
-   (per-key cap ⊆ per-user cap). Designed later.
-3. **Drop entirely** the per-Environment budget machinery and promise.
+> **DECIDED: no budget per Environment.** Budget is not an Environment-level
+> concern: Environment is a capability/context/identity boundary, not a cost
+> boundary. Budget governance hierarchy: per-USER now, per-KEY later, drop the
+> per-Environment machinery. Rationale: per-Environment budget was believed to
+> need LiteLLM Enterprise (tags), to leak via `pk_`, and to add an operator
+> reconcile surface.
+>
+> Sub-question — **DECIDED: (a)** budget stays out-of-band; the deployer sets
+> the user budget in LiteLLM and ACH writes nothing.
 
-Rationale: per-Environment budget needs LiteLLM Enterprise (tags), leaks via
-`pk_`, and adds an operator reconcile surface — for a cap that maps more
-naturally onto the principal (user) than onto a capability bundle (Environment).
-The user/key hierarchy is simpler and provider-tier-independent.
-
-### Follow-up work (NOT done yet)
-- **Code:** mostly already aligned — `spec.budget` is already absent. Keep the
-  `ek_` env tag as **attribution only**; keep the operator `DeleteTag` in the
-  Environment deletion drain (tag still used for attribution). Confirm nothing
-  tries to set a tag budget (it doesn't).
-- **Docs/spec:** purge the per-Environment budget promise wherever it still
-  implies enforcement:
-  - `../ach-spec/ach-spec-final-delivered.md` §6.3 / §8.6 — reframe env tag as
-    attribution-only; remove "tag budget" language; state budget = user-level
-    (now), key-level (future).
-  - README "Five Pillars / Usage Governance" + CLAUDE.md — stop selling
-    "Environment groups … limits." Governance = capabilities/identity/forwarding
-    /attribution; budget = LiteLLM user (now) → key (future).
-  - `pk_` hydrate warning text — its rationale was partly budget; reword to
-    "`ek_` gives Environment attribution + capability scoping" (drop the budget
-    justification). [ties to G13]
-- **Future design (per-key budget):** spec a key-level `max_budget` (≤ user
-  budget) for `ek_` and/or `pk_`. Reverses KEY-10 for keys when introduced.
-
-### Sub-question — **DECIDED: (a)**
-Budget stays **out-of-band**: deployer / LiteLLM-Operator sets the user budget in
-LiteLLM; ACH keeps KEY-10 (sets nothing). No code change, honest wording. Per-key
-budget (future) is where ACH would first start writing budgets.
+All three premises were re-measured on 2026-09-22 and two of them were false
+(no Enterprise requirement for tag budgets; `pk_` IS coverable, through the
+same `user:` tag). The third — the operator reconcile surface — is real and
+was accepted: it is ~45 lines behind one condition.
 
 ---
 

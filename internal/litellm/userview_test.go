@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -223,35 +221,5 @@ func TestUserView_SpendLogsV2_401IsTyped(t *testing.T) {
 	var a *Auth401Error
 	if err == nil || !errors.As(err, &a) {
 		t.Fatalf("want *Auth401Error, got %v", err)
-	}
-}
-
-func TestUserView_UserInfo_DecodesFromFixture(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("testdata", "user_info.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fixture map[string]json.RawMessage
-	if err := json.Unmarshal(b, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(fixture["with_budget"])
-	}))
-	defer srv.Close()
-	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
-
-	got, err := u.UserInfo(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Spend == nil || *got.Spend != 0.0 {
-		t.Fatalf("spend = %v, want 0.0", got.Spend)
-	}
-	if got.MaxBudget == nil || *got.MaxBudget != 500.0 {
-		t.Fatalf("max_budget = %v, want 500.0", got.MaxBudget)
-	}
-	if got.BudgetDuration == nil || *got.BudgetDuration != "30d" {
-		t.Fatalf("budget_duration = %v, want 30d", got.BudgetDuration)
 	}
 }
