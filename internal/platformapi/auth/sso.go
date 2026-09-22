@@ -40,6 +40,13 @@ type Deps struct {
 	// (MintPK).
 	LiteLLM litellm.Client
 
+	// UserBudget is the per-user default spend ceiling written onto the
+	// "user:<email>" tag at provision time (chart: platformApi.userDefaults).
+	// nil = no default configured; ACH then writes no tag and the user is
+	// uncapped. Budgets live ONLY on tags — never on a LiteLLM team or user
+	// object (a user-object budget is not enforced; measured 2026-09-22).
+	UserBudget *litellm.TagBudget
+
 	// Pool is the Postgres connection pool (pk_ rows, consent BIP lookup).
 	Pool *pgxpool.Pool
 
@@ -200,6 +207,9 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 				deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
 					"user_id", created.UserID, "branch", "first-time")
 			}
+			if budgetErr := upsertUserBudgetTag(ctx, deps, email); budgetErr != nil {
+				return "", budgetErr
+			}
 			return created.UserID, nil
 		}
 		// Transport / non-404 error.
@@ -220,7 +230,29 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 		deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
 			"user_id", user.UserID, "branch", "existing-user")
 	}
+	if budgetErr := upsertUserBudgetTag(ctx, deps, email); budgetErr != nil {
+		return "", budgetErr
+	}
 	return user.UserID, nil
+}
+
+// upsertUserBudgetTag writes the configured default ceiling onto the
+// caller's own LiteLLM tag ("user:<email>"). That tag is stamped on every
+// forwarded request the person makes, so ONE budget covers their pk_ and
+// every ek_ they own, across Environments. Both provisionUser branches call
+// it: a login must leave the ceiling in place even for a user LiteLLM
+// already knew. No default configured (nil) means no tag and no cap; a
+// refused write is fail-loud — an uncapped user is a governance hole.
+func upsertUserBudgetTag(ctx context.Context, deps Deps, email string) error {
+	if deps.UserBudget == nil {
+		return nil
+	}
+	tag := litellm.UserBudgetTag(email)
+	if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, *deps.UserBudget); err != nil {
+		deps.Logger.Error("sso.callback: user budget tag", "tag", tag, "err", err)
+		return &provisionErr{kind: provisionKindLitellm, err: err}
+	}
+	return nil
 }
 
 // isDuplicateAddErr reports whether err signals LiteLLM's "user already

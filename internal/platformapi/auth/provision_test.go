@@ -66,11 +66,17 @@ type fakeLiteLLM struct {
 	listTeamsBehaviour   func(alias string) ([]litellm.TeamListEntry, error)
 	listUserKeys         func(userID string) ([]litellm.UserKeyInfo, error)
 	createTeamBehaviour  func(req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error)
+
+	// upsertedTags records every tag budget written through
+	// UpsertTagBudget; upsertTagErr makes that write fail.
+	upsertedTags map[string]litellm.TagBudget
+	upsertTagErr error
 }
 
 func newFakeLiteLLM() *fakeLiteLLM {
 	return &fakeLiteLLM{
-		rec: &callRecord{},
+		rec:          &callRecord{},
+		upsertedTags: map[string]litellm.TagBudget{},
 		userInfoBehaviour: func(string) (*litellm.UserInfo, error) {
 			return nil, litellm.ErrNotFound
 		},
@@ -133,9 +139,15 @@ func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamLis
 }
 
 // Unused-method shims to satisfy the wider litellm.Client interface.
-func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error                  { return nil }
-func (f *fakeLiteLLM) DeleteTag(context.Context, string) error                          { return nil }
-func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
+func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
+func (f *fakeLiteLLM) DeleteTag(context.Context, string) error         { return nil }
+func (f *fakeLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
+	if f.upsertTagErr != nil {
+		return f.upsertTagErr
+	}
+	f.upsertedTags[name] = b
+	return nil
+}
 func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
 	return nil, nil
 }
@@ -345,5 +357,72 @@ func TestMintPK_ShellEnsureFailure_503_NoMint(t *testing.T) {
 	var me *MintError
 	if !errors.As(err, &me) || me.Status != 503 || !errors.Is(err, ErrMintLiteLLM) || flm.rec.keyGenerateCalls != 0 {
 		t.Fatalf("err=%v keyGenerateCalls=%d", err, flm.rec.keyGenerateCalls)
+	}
+}
+
+// TestProvisionUserWritesUserBudgetTag — a configured default budget lands
+// on the user's own tag at first login, so every later pk_ and ek_ request
+// (which carries user:<email>) is capped.
+func TestProvisionUserWritesUserBudgetTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}
+
+	if _, err := provisionUser(context.Background(), deps, "Pepe@Example.com"); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	got, ok := flm.upsertedTags["user:pepe@example.com"]
+	if !ok {
+		t.Fatalf("no budget tag written; got %v", flm.upsertedTags)
+	}
+	if got.MaxBudget != 100 || got.BudgetDuration != "30d" {
+		t.Fatalf("tag budget = %+v, want {100 30d}", got)
+	}
+}
+
+// TestProvisionUserWritesUserBudgetTagForExistingUser — the second login
+// takes the existing-user branch; the ceiling must land there too.
+func TestProvisionUserWritesUserBudgetTagForExistingUser(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+		return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com"); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if _, ok := flm.upsertedTags["user:pepe@example.com"]; !ok {
+		t.Fatalf("no budget tag written; got %v", flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserWithoutBudgetWritesNoTag — unset defaults stay unset.
+func TestProvisionUserWithoutBudgetWritesNoTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	deps := provisionDeps(flm)
+	deps.UserBudget = nil
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com"); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if len(flm.upsertedTags) != 0 {
+		t.Fatalf("want no tag writes, got %v", flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserTagFailureIsLoud — LiteLLM refusing the tag write must
+// not be swallowed: an uncapped user is a governance hole, not a detail.
+func TestProvisionUserTagFailureIsLoud(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.upsertTagErr = errors.New("boom")
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com")
+	var pe *provisionErr
+	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
+		t.Fatalf("want a litellm provisionErr, got %v", err)
 	}
 }

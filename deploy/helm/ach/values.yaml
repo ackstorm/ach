@@ -127,6 +127,15 @@ platformApi:
       mode: resolve
     - name: x-api-key
       mode: resolve
+  # userDefaults: the spend ceiling written onto each user's own LiteLLM tag
+  # ("user:<email>") the first time they log in. The tag is stamped on every
+  # forwarded request the user makes, so ONE budget covers their pk_ and all
+  # their ek_ across every Environment. Budgets live only on tags — a LiteLLM
+  # user-object budget is not enforced (measured; see
+  # references/litellm-permission-model.md). Leave maxBudget unset for no cap.
+  userDefaults:
+    maxBudget: ""          # e.g. 100  (USD, LiteLLM's unit)
+    budgetDuration: "30d"  # reset window; "" = never resets
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.
   initContainers: []

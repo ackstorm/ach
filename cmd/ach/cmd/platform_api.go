@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +89,10 @@ type platformAPIConfig struct {
 	BindAddr          string
 	Namespace         string
 	InsecureCookie    bool
+	// UserBudget is the default per-user spend ceiling (ACH_USER_MAX_BUDGET
+	// + ACH_USER_BUDGET_DURATION, chart platformApi.userDefaults). nil =
+	// unset = users are uncapped.
+	UserBudget *litellm.TagBudget
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
@@ -175,6 +180,16 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
 		return nil, err
+	}
+	if raw := os.Getenv("ACH_USER_MAX_BUDGET"); raw != "" {
+		maxBudget, perr := strconv.ParseFloat(raw, 64)
+		if perr != nil {
+			return nil, fmt.Errorf("ACH_USER_MAX_BUDGET %q: %w", raw, perr)
+		}
+		cfg.UserBudget = &litellm.TagBudget{
+			MaxBudget:      maxBudget,
+			BudgetDuration: os.Getenv("ACH_USER_BUDGET_DURATION"),
+		}
 	}
 	return cfg, nil
 }
@@ -329,6 +344,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		BaseURL:          cfg.BaseURL,
 		Namespace:        cfg.Namespace,
 		InsecureCookie:   cfg.InsecureCookie,
+		UserBudget:       cfg.UserBudget,
 		Metrics:          platformAPICollectors,
 	}
 	return out, nil

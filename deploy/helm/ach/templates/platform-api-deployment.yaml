@@ -104,6 +104,14 @@ spec:
               value: {{ .Values.platformApi.headers | toJson | quote }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
+            {{- with .Values.platformApi.userDefaults }}
+            {{- if .maxBudget }}
+            - name: ACH_USER_MAX_BUDGET
+              value: {{ .maxBudget | quote }}
+            - name: ACH_USER_BUDGET_DURATION
+              value: {{ .budgetDuration | quote }}
+            {{- end }}
+            {{- end }}
             - name: ACH_OPENWORK_ENABLED
               value: {{ .Values.openwork.enabled | quote }}
             {{- if .Values.openwork.enabled }}

@@ -45,6 +45,10 @@ type Deps struct {
 	// LiteLLM is the REST client (Phase 2 lift, Phase 3 D-25 extensions).
 	LiteLLM litellm.Client
 
+	// UserBudget is the default per-user spend ceiling the OAuth AS writes
+	// onto the "user:<email>" tag at provision time. nil = no default.
+	UserBudget *litellm.TagBudget
+
 	// LiteLLMREST is the concrete transport behind LiteLLM, for the
 	// console's user-scoped reads (AsUser: the user's own key on the shared
 	// transport, spec §10.1). nil in tests that never reach those routes.
@@ -139,6 +143,7 @@ func New(deps Deps) http.Handler {
 		IDTokenVerifier:  deps.IDTokenVerifier,
 		OAuth2Cfg:        deps.OAuth2Cfg,
 		LiteLLM:          deps.LiteLLM,
+		UserBudget:       deps.UserBudget,
 		Pool:             deps.Pool,
 		Pepper:           deps.Pepper,
 		KeyEncryptionKey: deps.KeyEncryptionKey,
