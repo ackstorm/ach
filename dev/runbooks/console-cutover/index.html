@@ -1109,10 +1109,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#preflight" class="md-nav__link">
+  <a href="#ground-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Preflight
+        Ground rules
       
     </span>
   </a>
@@ -1120,10 +1120,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-1-appsach-identity-complete-chart" class="md-nav__link">
+  <a href="#the-topology-as-it-actually-is" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1 — apps/ach-identity → complete chart
+        The topology, as it actually is
       
     </span>
   </a>
@@ -1131,10 +1131,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-console-release-litellm-on-its-own-host-d-18-d-26" class="md-nav__link">
+  <a href="#already-done-do-not-redo" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2 — console release + LiteLLM on its own host (D-18, D-26)
+        Already done — do not redo
       
     </span>
   </a>
@@ -1142,10 +1142,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-retire-alitellm-auth-d-19" class="md-nav__link">
+  <a href="#order" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3 — retire alitellm-auth (D-19)
+        Order
       
     </span>
   </a>
@@ -1153,10 +1153,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-4-remove-the-litellm-impersonation-plugin-d-06" class="md-nav__link">
+  <a href="#step-0-gate-cut-and-publish-the-console-release" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 4 — remove the LiteLLM impersonation plugin (D-06)
+        Step 0 — GATE: cut and publish the console release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-owner-the-version-09x-range-is-an-ungated-deploy-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — ⚠️ OWNER: the version: 0.9.x range is an ungated deploy path
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-deploy-verify-the-console-owner-present" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — deploy + verify the console (owner present)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-replace-what-alitellm-auth-does-besides-its-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — ⚠️ replace what alitellm-auth does besides its UI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-retire-alitellm-auth-d-19" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — retire alitellm-auth (D-19)
       
     </span>
   </a>
@@ -1175,10 +1219,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-6-archive-ach-docs" class="md-nav__link">
+  <a href="#step-6-archive-docs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 6 — archive + ACH docs
+        Step 6 — archive + docs
       
     </span>
   </a>
@@ -1239,256 +1283,404 @@
 
 
 <h1 id="runbook-unified-console-cutover">Runbook — unified console cutover<a class="headerlink" href="#runbook-unified-console-cutover" title="Permanent link">&para;</a></h1>
-<p>Move production from alitellm-auth + the LiteLLM catch-all + the <code>x-user-id</code>
-impersonation plugin to the ACH console.</p>
-<p>Every step below is a commit in the <strong>gitops repo <code>gitops-genai-blueprint</code></strong>
-(paths from spec §13, read 2026-09-21 — <strong>re-read the repo before each step</strong>;
-it is not checked out beside ACH) plus a verification command run from a host
-with cluster access. ACH-side artifacts referenced here live in this repo.</p>
-<p><code>&lt;domain&gt;</code>, <code>&lt;ach-ns&gt;</code>, <code>&lt;old alitellm-auth host&gt;</code> and <code>&lt;console release&gt;</code> are
-placeholders — substitute per deployment.</p>
-<p><strong>Order is load-bearing. Never reorder 3 → 4 → 5</strong>: the plugin serves
-alitellm-auth, and the legacy keys serve alitellm-auth's users.</p>
+<p>Move production off alitellm-auth onto the ACH console, and delete the legacy
+standalone <code>sk-</code> keys.</p>
+<blockquote>
+<p><strong>Rewritten 2026-09-22 against the real gitops repo.</strong> The previous revision
+encoded a topology that does not exist (<code>apps/ach-identity</code>, ACH on <code>api.</code>,
+LiteLLM needing a host split) and would have misled an operator. Every path
+and host below was read from the gitops repo
+(<code>ssh://git@git-ssh.ackstorm.com:2222/blueprints/gitops/apps/genai/genai-blueprint.git</code>)
+on 2026-09-22. <strong>Re-read it before each step</strong> — it is live production.</p>
+</blockquote>
+<p>Full reasoning, per-task detail and the self-review live in
+<code>docs/superpowers/plans/2026-09-21-console-phase4-cutover.md</code> (gitignored, not
+committed). This runbook is the tick-list.</p>
+<h2 id="ground-rules">Ground rules<a class="headerlink" href="#ground-rules" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Never <code>git push</code> the gitops repo from an agent session.</strong> <code>apps/</code> is a Flux
+  Kustomization with <code>prune: true</code>. A push is a production deploy. Commit
+  locally; the owner reviews and pushes.</li>
+<li>Commit style in that repo is Angular (<code>feat(scope):</code>, <code>chore(scope):</code>) with
+  <strong>no attribution trailers</strong> — match <code>git log</code>.</li>
+<li><code>${GENAI_BASE_DOMAIN}</code> is a Flux <code>postBuild.substituteFrom</code> variable out of the
+  <code>terraform-genai-data</code> Secret. Leave it written that way; do not substitute it
+  in the repo.</li>
+</ul>
+<h2 id="the-topology-as-it-actually-is">The topology, as it actually is<a class="headerlink" href="#the-topology-as-it-actually-is" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Host</th>
+<th>Serves</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ach.${GENAI_BASE_DOMAIN}</code></td>
+<td><strong>ACH</strong> — <code>/</code> → <code>ach-gateway:80</code>. The console lands here.</td>
+<td><code>apps/ach/base/httproute.yaml</code></td>
+</tr>
+<tr>
+<td><code>api.${GENAI_BASE_DOMAIN}</code></td>
+<td><strong>LiteLLM</strong> — catch-all <code>/</code> → <code>litellm:4000</code>, <code>x-user-id</code> stripped at the edge</td>
+<td><code>apps/litellm/base/httproute.yaml</code></td>
+</tr>
+<tr>
+<td><code>platform.${GENAI_BASE_DOMAIN}</code></td>
+<td><strong>alitellm-auth</strong> — the UI people log in to <em>today</em></td>
+<td><code>apps/alitellm-auth/base/httproute.yaml</code></td>
+</tr>
+<tr>
+<td><code>api.${GENAI_BASE_DOMAIN}/.well-known/oauth-protected-resource</code></td>
+<td><strong>alitellm-auth</strong> — RFC 9728 doc on LiteLLM's host</td>
+<td><code>apps/alitellm-auth/base/httproute-api.yaml</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>D-18's host split already holds.</strong> ACH and LiteLLM have always been on separate
+hosts here. There is no host-split step, and any command that curls
+<code>api.&lt;domain&gt;</code> expecting the console is wrong.</p>
+<h2 id="already-done-do-not-redo">Already done — do not redo<a class="headerlink" href="#already-done-do-not-redo" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>State</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ACH on the complete chart</td>
+<td><strong>Done.</strong> <code>apps/ach/</code> runs the full chart. No <code>profile: identity</code> exists anywhere in the gitops repo.</td>
+</tr>
+<tr>
+<td>LiteLLM on its own host (D-18)</td>
+<td><strong>Done</strong> — and always was. <code>api.</code> is LiteLLM's.</td>
+</tr>
+<tr>
+<td>The <code>x-user-id</code> impersonation plugin (D-06)</td>
+<td><strong>Done.</strong> <code>custom_auth</code> commented out in gitops <code>9697a0f</code>; file, <code>configMapGenerator</code> entry, <code>volumeMount</code> and comment block removed in <code>5e08a18</code>. Awaiting the owner's push.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="order">Order<a class="headerlink" href="#order" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
 <th>#</th>
 <th>Step</th>
 <th>Reversible?</th>
+<th>Owner present?</th>
 </tr>
 </thead>
 <tbody>
 <tr>
+<td>0</td>
+<td><strong>GATE</strong> — cut + publish the console release</td>
+<td>published charts cannot be unpublished</td>
+<td>yes</td>
+</tr>
+<tr>
 <td>1</td>
-<td><code>apps/ach-identity</code> → complete chart</td>
-<td>yes — revert the gitops commit</td>
+<td>Decide the <code>apps/ach/base/helm.yaml</code> chart pin</td>
+<td>yes</td>
+<td><strong>yes — their call</strong></td>
 </tr>
 <tr>
 <td>2</td>
-<td>Console release + LiteLLM on its own host (D-18)</td>
-<td>yes, <strong>until the D-29 boundary is crossed</strong></td>
+<td>Deploy + verify the console on <code>ach.</code></td>
+<td>yes, <strong>until the D-29 boundary</strong></td>
+<td>yes</td>
 </tr>
 <tr>
 <td>3</td>
-<td>Retire alitellm-auth (D-19)</td>
-<td>yes — revert the gitops commit</td>
+<td>Replace what alitellm-auth does besides its UI</td>
+<td>yes</td>
+<td><strong>yes — design decision</strong></td>
 </tr>
 <tr>
 <td>4</td>
-<td>Remove the LiteLLM impersonation plugin (D-06)</td>
-<td>yes — revert the gitops commit</td>
+<td>Retire alitellm-auth (D-19)</td>
+<td>yes</td>
+<td>yes</td>
 </tr>
 <tr>
 <td>5</td>
-<td>Delete legacy standalone <code>sk-</code> keys (D-31)</td>
-<td><strong>NO — irreversible, owner-gated</strong></td>
+<td>Delete the legacy standalone <code>sk-</code> keys (D-31)</td>
+<td><strong>NO — irreversible</strong></td>
+<td><strong>yes, gated</strong></td>
 </tr>
 <tr>
 <td>6</td>
-<td>Archive + ACH docs</td>
+<td>Archive + docs</td>
 <td>yes</td>
+<td>no</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Owner-gated (explicit go in-session, dry-run output in front of the owner):</strong>
-step 5, and the first <code>suspended</code> / <code>expires_at</code> row after step 2 (the D-29
-boundary).</p>
+<p><strong>Steps 3-6 are BLOCKED until 0 and 2 are green.</strong> Production ACH runs chart
+<code>0.9.10</code>, which has no console — the console entry is still <code>[Unreleased]</code>. Until
+the release ships, <strong>alitellm-auth is the login people are using</strong>, and retiring
+it or deleting their keys takes away a working UI.</p>
+<p><strong>Never reorder 3 → 4 → 5</strong>: the <code>api.</code> host's authorizer lives inside
+alitellm-auth, and the legacy keys serve alitellm-auth's users.</p>
 <hr />
-<h2 id="preflight">Preflight<a class="headerlink" href="#preflight" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>main<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"drop the identity deployment profile|console session|ek_ suspended state|console stats"</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>make<span class="w"> </span>helm-render-check<span class="w">                     </span><span class="c1"># 5 topologies</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>helm<span class="w"> </span>template<span class="w"> </span>x<span class="w"> </span>deploy/helm/ach<span class="w"> </span>--set<span class="w"> </span><span class="nv">profile</span><span class="o">=</span>identity<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-m1<span class="w"> </span><span class="s2">"identity"</span><span class="w">   </span><span class="c1"># must FAIL with the migration guidance (AC-23)</span>
+<h2 id="step-0-gate-cut-and-publish-the-console-release">Step 0 — GATE: cut and publish the console release<a class="headerlink" href="#step-0-gate-cut-and-publish-the-console-release" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] Phases 1-3 are on <code>main</code>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>main<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">"console session|ek_ suspended|console stats"</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>make<span class="w"> </span>helm-render-check
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>make<span class="w"> </span>e2e-full<span class="w">            </span><span class="c1"># local-only gate; CI does not run e2e</span>
 </code></pre></div>
 <ul>
-<li>[ ] The Phase 0-3 landmark commits are on <code>main</code>.</li>
-<li>[ ] <code>helm-render-check</code> OK.</li>
-<li>[ ] <code>profile: identity</code> render <strong>fails</strong> with the migration guidance.</li>
+<li>[ ] <code>CHANGELOG.md</code> carries the D-29 sentence verbatim under the entry being
+      released. Do not reword it.</li>
+<li>[ ] <strong>Read Step 1 before choosing the version</strong> — it interacts with the pin.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>fetch<span class="w"> </span>--tags<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>gh<span class="w"> </span>release<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-5<span class="w">    </span><span class="c1"># never cut from a stale tag list</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>make<span class="w"> </span>release-cut<span class="w"> </span><span class="nv">VERSION</span><span class="o">=</span>&lt;X.Y.Z&gt;
+</code></pre></div>
+<ul>
+<li>[ ] The chart is published to <code>oci://ghcr.io/ackstorm/charts</code> at that version.</li>
 </ul>
 <hr />
-<h2 id="step-1-appsach-identity-complete-chart">Step 1 — <code>apps/ach-identity</code> → complete chart<a class="headerlink" href="#step-1-appsach-identity-complete-chart" title="Permanent link">&para;</a></h2>
-<p>Must land <strong>before</strong> the first ACH image containing <code>9cfdc2c</code> (the Phase-0
-profile removal) reaches production: that render fails by design on
-<code>profile: identity</code>.</p>
+<h2 id="step-1-owner-the-version-09x-range-is-an-ungated-deploy-path">Step 1 — ⚠️ OWNER: the <code>version: 0.9.x</code> range is an ungated deploy path<a class="headerlink" href="#step-1-owner-the-version-09x-range-is-an-ungated-deploy-path" title="Permanent link">&para;</a></h2>
+<p><code>apps/ach/base/helm.yaml:13</code> pins <strong><code>version: 0.9.x</code></strong>, a semver range. Flux polls
+the registry every 5 m and the HelmRelease re-resolves every 24 h. <strong>Any <code>0.9.x</code>
+chart that reaches <code>oci://ghcr.io/ackstorm/charts</code> deploys itself to production
+within a day — no gitops commit, no diff, no human.</strong></p>
+<p>Two opposite failure modes, same range:</p>
+<ul>
+<li>Console cut as <strong><code>0.9.11</code></strong> → it <strong>auto-deploys on <code>helm push</code></strong>. The <strong>D-29
+  irreversible boundary gets crossed by a registry push instead of a reviewed
+  change</strong>, with nothing in the repo recording that production moved.</li>
+<li>
+<p>Console cut as <strong><code>0.10.0</code></strong> → the range <strong>never picks it up</strong>. The cutover looks
+  like a no-op; the first symptom is a user reporting no console.</p>
+</li>
+<li>
+<p>[ ] <strong>Recommendation presented to the owner</strong> (not applied): replace the range
+      with the exact console-release version, so the deploy is a reviewed commit
+      and rollback is <code>git revert</code>. The gitops repo's own <code>CLAUDE.md</code> already
+      says <em>"PRODUCCIÓN: fijar versiones exactas"</em>, so the range is out of policy
+      — <strong>but this is the owner's decision, not ours.</strong></p>
+<p>decision: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  by: <strong><em>_</em></strong><strong><em>_</em>  date: </strong><strong><em>_</em></strong>___</p>
+</li>
+<li>
+<p>[ ] If declined: note in Step 2 that there is <strong>no gitops artifact</strong> for the
+      deploy and that rollback means publishing an older chart.</p>
+</li>
+</ul>
+<hr />
+<h2 id="step-2-deploy-verify-the-console-owner-present">Step 2 — deploy + verify the console (owner present)<a class="headerlink" href="#step-2-deploy-verify-the-console-owner-present" title="Permanent link">&para;</a></h2>
 <ul>
 <li>
-<p>[ ] <strong>Snapshot.</strong> <code>pg_dump</code> the ACH Postgres that <code>apps/ach-identity</code> uses (or
-      take the managed-DB snapshot). Record the id here — this is the <strong>last
-      restore point below the D-29 boundary</strong>:</p>
+<p>[ ] <strong>Snapshot</strong> the ACH Postgres (<code>ach-postgresql</code>, ns <code>ach</code>). <strong>Last restore
+      point below the D-29 boundary.</strong></p>
 <p>snapshot id: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  taken: <strong><em>_</em></strong><strong><em>_</em>  by: </strong><strong><em>_</em></strong>___</p>
 </li>
 <li>
-<p>[ ] <strong>gitops edit</strong> — in <code>apps/ach-identity/</code> values:</p>
-<ul>
-<li>delete <code>profile: identity</code>;</li>
-<li>set the full topology: <code>operator.enabled</code>, <code>contentService</code>,
-    <code>gateway.enabled: true</code>, <code>postgres</code>/<code>valkey</code> connection, <code>security.*</code>
-    Secret refs;</li>
-<li><code>ACH_BASE_URL = https://api.&lt;domain&gt;</code> (and <code>ACH_PUBLIC_BASE_URL</code> if the
-    console host differs);</li>
-<li>keep the existing Ingress/HTTPRoute host <code>api.&lt;domain&gt;</code>;</li>
-<li><strong>do NOT</strong> yet remove the <code>x-user-id</code> header strip in
-    <code>apps/ach-identity/base/httproute.yaml:29</code> — alitellm-auth still needs
-    it until step 3.</li>
-</ul>
+<p>[ ] <strong>gitops edit</strong> — apply the Step 1 decision in <code>apps/ach/base/helm.yaml</code>.
+      That is the only ACH-side gitops change this cutover needs; the values are
+      already complete. Commit locally, hand to the owner to push.</p>
 </li>
 <li>
-<p>[ ] <strong>Verify</strong></p>
+<p>[ ] <strong>Verify — run these yourself, from a host with cluster access.</strong></p>
 </li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;ach-ns&gt;<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deploy/ach-operator<span class="w"> </span>deploy/ach-platform-api<span class="w"> </span>deploy/ach-forwarder<span class="w"> </span>deploy/ach-gateway<span class="w"> </span>--timeout<span class="o">=</span>5m
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>curl<span class="w"> </span>-fsS<span class="w"> </span>https://api.&lt;domain&gt;/.well-known/oauth-authorization-server<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.issuer<span class="w">     </span><span class="c1"># AS still answers</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>ach-cli<span class="w"> </span>login<span class="w"> </span>--url<span class="w"> </span>https://api.&lt;domain&gt;<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ach-cli<span class="w"> </span>whoami<span class="w">                            </span><span class="c1"># OAuth unchanged (AC-23)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>&lt;ach-ns&gt;<span class="w"> </span>get<span class="w"> </span>environments.ach.ackstorm.ai<span class="w">                                  </span><span class="c1"># operator reconciles the (possibly zero) CRs</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>get<span class="w"> </span>helmrelease<span class="w"> </span>ach<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.history[0].chartVersion}{"\n"}'</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deploy/ach-operator<span class="w"> </span>deploy/ach-platform-api<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">                              </span>deploy/ach-forwarder<span class="w"> </span>deploy/ach-gateway<span class="w"> </span>--timeout<span class="o">=</span>5m
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># console is at ach., NOT api.</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>curl<span class="w"> </span>-sS<span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-qi<span class="w"> </span><span class="s1">'console not built'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s1">'FAIL: chart built without make ui-build'</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># ACH has no catch-all (D-18): 404 at ACH, still live on LiteLLM's own host</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="k">for</span><span class="w"> </span>p<span class="w"> </span><span class="k">in</span><span class="w"> </span>/ui<span class="w"> </span>/key/list<span class="w"> </span>/health<span class="w"> </span>/model/info<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s2">"ach</span><span class="nv">$p</span><span class="s2"> %{http_code}\n"</span><span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span><span class="nv">$p</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="k">done</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'api/health %{http_code}\n'</span><span class="w"> </span>https://api.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/health
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>curl<span class="w"> </span>-fsS<span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/.well-known/oauth-authorization-server<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.issuer
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>curl<span class="w"> </span>-fsS<span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/.well-known/oauth-protected-resource<span class="w">   </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.resource
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>ach-cli<span class="w"> </span>login<span class="w"> </span>--url<span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ach-cli<span class="w"> </span>whoami
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>ach-cli<span class="w"> </span>env<span class="w"> </span>hydrate<span class="w"> </span>&lt;an<span class="w"> </span>existing<span class="w"> </span>Environment&gt;
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>get<span class="w"> </span>environments.ach.ackstorm.ai
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># D-29 watch — 0 until a user acts; the first non-zero crosses the boundary</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>psql<span class="w"> </span><span class="s2">"</span><span class="nv">$ACH_DB</span><span class="s2">"</span><span class="w"> </span>-c<span class="w"> </span><span class="s2">"select count(*) from environment_keys where status='suspended' or expires_at is not null"</span>
 </code></pre></div>
 <ul>
-<li>[ ] <strong>gitops commit</strong> — <code>chore(ach-identity): migrate to the complete ACH chart (spec D-21)</code></li>
+<li>
+<p>[ ] <strong>Browser (owner):</strong> sign in at <code>https://ach.${GENAI_BASE_DOMAIN}/</code> →
+      Personal → create an EK → suspend → the ≤60 s notice appears.
+      ⚠ <strong>This crosses the D-29 boundary.</strong> Do it deliberately, after the above
+      is green.</p>
+</li>
+<li>
+<p>[ ] <strong>Soak ≥ one working day</strong> with both UIs up. This is why Steps 3+ are gated.</p>
+</li>
 </ul>
 <hr />
-<h2 id="step-2-console-release-litellm-on-its-own-host-d-18-d-26">Step 2 — console release + LiteLLM on its own host (D-18, D-26)<a class="headerlink" href="#step-2-console-release-litellm-on-its-own-host-d-18-d-26" title="Permanent link">&para;</a></h2>
-<ul>
+<h2 id="step-3-replace-what-alitellm-auth-does-besides-its-ui">Step 3 — ⚠️ replace what alitellm-auth does besides its UI<a class="headerlink" href="#step-3-replace-what-alitellm-auth-does-besides-its-ui" title="Permanent link">&para;</a></h2>
+<p><strong>Retiring alitellm-auth is not <code>rm -rf apps/alitellm-auth/</code>.</strong> Read
+<code>apps/alitellm-auth/base/helm.yaml</code> in full first. It provides four things
+nothing else provides:</p>
+<ol>
+<li><strong>The Envoy <code>ext_authz</code> authorizer for the whole <code>api.${GENAI_BASE_DOMAIN}</code>
+   host.</strong> <code>authz.enabled</code> renders <code>alitellm-auth-authz…:9001</code>;
+   <code>infra/istio-system/base/helmrelease-istiod.yaml:100-111</code> registers it as the
+   <code>alitellm-authz</code> extensionProvider with <strong><code>failOpen: false</code></strong>; <code>istio.enabled</code>
+   renders the CUSTOM <code>AuthorizationPolicy</code> on <code>external-gateway</code>
+   (<code>exemptPaths: ["/health", "/.well-known/*"]</code>). Delete alitellm-auth and that
+   host either goes dark or goes wide open. <strong>Decide which before touching it.</strong></li>
+<li><strong>LibreChat's only identity path.</strong> <code>apps/librechat/base/librechat.yaml</code> sends
+   a raw <strong>Dex access token</strong> to <code>api.&lt;domain&gt;/v1</code> and <code>/mcp/vmcp-think</code>;
+   ext_authz (<code>idpIssuer</code>/<code>idpAudience: chat</code>/<code>idpSubjectClaim: email</code>) swaps it
+   for that user's LiteLLM key. <strong>ACH's forwarder cannot do this</strong> — it resolves
+   <code>pk_</code>/<code>ek_</code> in a declared header slot, or an <code>Authorization: Bearer</code> that is
+   <em>ACH's own</em> OAuth JWT; a foreign IdP token is forwarded with no ACH identity.</li>
+<li><strong><code>publicArtifacts</code></strong> — the unauthenticated OpenCode catalog at
+   <code>platform.&lt;domain&gt;/public/opencode/api.json</code>.</li>
 <li>
-<p>[ ] <strong>gitops edit (a): give LiteLLM its own host</strong> — <code>apps/litellm</code>: add an
-      Ingress/HTTPRoute for <code>litellm.&lt;domain&gt;</code> → <code>litellm.litellm.svc:4000</code>
-      (LiteLLM's own UI + <code>/key/*</code> + <code>/health</code> + <code>/model/*</code>). Re-point every
-      consumer of <code>api.&lt;domain&gt;/ui</code>, <code>/key/*</code>, <code>/health</code> — grep the gitops repo
-      for <code>api.&lt;domain&gt;</code> and for <code>/ui</code>. LibreChat's model endpoint stays on
-      <code>api.&lt;domain&gt;/v1</code> (proxied family — fine); anything hitting a non-family
-      path moves to <code>litellm.&lt;domain&gt;</code> or to the cluster-internal
-      <code>litellm.litellm.svc:4000</code>.</p>
+<p><strong><code>factoryConfig</code></strong> — the token factory that minted the keys Step 5 deletes.</p>
 </li>
 <li>
-<p>[ ] <strong>gitops edit (b): bump ACH to the console release</strong> — <code>apps/ach-identity</code>
-      image tag → the release carrying Phases 1-3 (with <code>ui/</code> embedded); set
-      <code>openwork.enabled</code> + branding if the Den is wanted. <code>ach migrate</code> runs
-      <code>000022</code> as the init container.</p>
+<p>[ ] For each of the four, record: <em>keep alitellm-auth headless for it</em> /
+      <em>move it to ACH (name the feature, say whether it exists)</em> / <em>drop it and
+      accept the consequence</em>.</p>
+<p>1: <strong><em>_</em></strong><strong><em>_</em>  2: </strong><strong><em>_</em></strong><strong><em>  3: </em></strong><strong><em>_</em></strong>__  4: <strong><em>_</em></strong>_____</p>
 </li>
 <li>
-<p>[ ] <strong>Verify</strong></p>
+<p>[ ] The <code>api.</code> host keeps an authorizer. If ext_authz goes, LiteLLM's own key
+      auth is the only edge gate — <strong>including for <code>/ui</code> and <code>/key/*</code>.</strong> Check it
+      against <code>ui_access_mode: "admin_only"</code> and decide explicitly.</p>
 </li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://api.&lt;domain&gt;/<span class="w">            </span><span class="c1"># 200 (console index) — NOT LiteLLM</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>curl<span class="w"> </span>-sS<span class="w"> </span>https://api.&lt;domain&gt;/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-qi<span class="w"> </span>litellm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"LEAK: LiteLLM served at /"</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">for</span><span class="w"> </span>p<span class="w"> </span><span class="k">in</span><span class="w"> </span>/ui<span class="w"> </span>/key/list<span class="w"> </span>/health<span class="w"> </span>/model/info<span class="p">;</span><span class="w"> </span><span class="k">do</span><span class="w"> </span>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s2">"</span><span class="nv">$p</span><span class="s2"> %{http_code}\n"</span><span class="w"> </span>https://api.&lt;domain&gt;<span class="nv">$p</span><span class="p">;</span><span class="w"> </span><span class="k">done</span><span class="w">   </span><span class="c1"># all 404 (AC-24)</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://api.&lt;domain&gt;/v1/models<span class="w"> </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer &lt;pk jwt&gt;"</span><span class="w">   </span><span class="c1"># 200 (family still proxied)</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>curl<span class="w"> </span>-sS<span class="w"> </span>https://litellm.&lt;domain&gt;/health<span class="w">                                   </span><span class="c1"># LiteLLM reachable on its own host</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># browser: sign in at https://api.&lt;domain&gt;/ → Personal view → create an EK → suspend → the 60 s notice appears</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>psql<span class="w"> </span><span class="s2">"</span><span class="nv">$ACH_DB</span><span class="s2">"</span><span class="w"> </span>-c<span class="w"> </span><span class="s2">"select count(*) from environment_keys where status='suspended' or expires_at is not null"</span>
-</code></pre></div>
-<blockquote>
-<p>⚠ <strong>D-29 boundary.</strong> That last query returns 0 until a user acts. <strong>The first
-non-zero crosses the boundary — from then on there is no rollback below
-<code>&lt;console release&gt;</code>.</strong> See Rollback below.</p>
-</blockquote>
-<ul>
-<li>[ ] Release notes: <code>CHANGELOG.md</code> in this repo carries the D-29 sentence and
-      the D-18 note (already committed — verify it is in the released tag).</li>
-</ul>
+<li>[ ] Document the design in <code>docs/site/architecture/identity-sso.md</code> <strong>in the
+      same commit</strong> (that repo's convention).</li>
+</ol>
 <hr />
-<h2 id="step-3-retire-alitellm-auth-d-19">Step 3 — retire alitellm-auth (D-19)<a class="headerlink" href="#step-3-retire-alitellm-auth-d-19" title="Permanent link">&para;</a></h2>
-<p><strong>Precondition:</strong> the console has been verified in step 2 for at least one
-working day (owner's call), and users have been told that the old login is going
-away and that their standalone keys will be <strong>deleted in step 5</strong> (D-31).</p>
+<h2 id="step-4-retire-alitellm-auth-d-19">Step 4 — retire alitellm-auth (D-19)<a class="headerlink" href="#step-4-retire-alitellm-auth-d-19" title="Permanent link">&para;</a></h2>
+<p><strong>Precondition:</strong> Step 3's four decisions are implemented; the console has soaked;
+users have been told the old login is going away and their standalone keys will be
+<strong>deleted in Step 5</strong>.</p>
 <ul>
 <li>
 <p>[ ] <strong>gitops edits</strong></p>
 <ul>
-<li>delete <code>apps/alitellm-auth/</code> (Deployment, its Istio <code>ext_authz</code> chart
-    blocks, <code>clients/ackstorm-token</code> config);</li>
-<li>remove the <code>x-user-id</code> strip from
-    <code>apps/ach-identity/base/httproute.yaml:29</code> (nothing sets it any more);</li>
-<li>remove any DNS/Ingress for the old UI host.</li>
+<li>remove <code>alitellm-auth</code> from <code>apps/kustomization.yaml</code>;</li>
+<li>delete <code>apps/alitellm-auth/</code>;</li>
+<li>remove the <code>alitellm-authz</code> extensionProvider from
+    <code>infra/istio-system/base/helmrelease-istiod.yaml:96-111</code> — <strong>only after
+    Step 3's replacement is live.</strong> A provider referenced by a surviving
+    <code>AuthorizationPolicy</code> with <code>failOpen: false</code> is an outage;</li>
+<li>remove/repoint the <code>platform.${GENAI_BASE_DOMAIN}</code> DNS record.</li>
 </ul>
+</li>
+<li>
+<p>[ ] <strong><code>/.well-known/oauth-protected-resource</code> on <code>api.</code> — DECIDED: delete the
+      route (<code>apps/alitellm-auth/base/httproute-api.yaml</code>). Do NOT re-home it on
+      ACH.</strong></p>
+<ul>
+<li>ACH's forwarder composes both discovery documents itself —
+    <code>proxy.WellKnownHandler(deps.BaseURL)</code> (<code>internal/forwarder/server.go:86</code>)
+    emits <code>{"resource": base + rest, "authorization_servers": [base]}</code> where
+    <code>base</code> is <code>ACH_BASE_URL</code> = <code>https://ach.${GENAI_BASE_DOMAIN}</code>. <strong>It never
+    reads <code>Host</code> or <code>X-Forwarded-Host</code>.</strong> Served at <code>api.&lt;domain&gt;</code> it would
+    advertise <code>resource: https://ach.&lt;domain&gt;</code>, and RFC 9728 §3.2
+    (<code>docs/developer-guide/jwt-forwarder.md</code> §1.4) requires the client to
+    <strong>reject</strong> metadata whose <code>resource</code> is not the resource it addressed.
+    Re-homing publishes a document every conforming client must throw away.</li>
+<li>Post-cutover the OAuth-protected resources are ACH's route families, and
+    their documents already exist at the right sibling paths on ACH's host:
+    <code>https://ach.${GENAI_BASE_DOMAIN}/.well-known/oauth-protected-resource[/v1|/gemini|/mcp/&lt;n&gt;|/a2a/&lt;n&gt;]</code>.
+    <code>api.</code> is LiteLLM authenticating bare virtual keys — not an OAuth
+    resource server — so no PRM belongs there.</li>
+<li>A <code>404</code> is the correct, discoverable signal. A client that hard-codes the
+    old URL is fixed by pointing it at ACH's, not by feeding it a bad doc.</li>
+</ul>
+<p>⚠ <strong>Owner: before the route disappears</strong>, confirm nothing fetches it.
+  Gateway access logs for that exact path across the soak window are the
+  evidence — <code>exemptPaths</code> makes it reachable unauthenticated today, so
+  anything could be using it.</p>
+<p>confirmed no consumers by: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  at: <strong><em>_</em></strong>_____</p>
 </li>
 <li>
 <p>[ ] <strong>Verify</strong></p>
 </li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deploy<span class="w"> </span>-A<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>alitellm-auth<span class="w">                                  </span><span class="c1"># none</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://&lt;old<span class="w"> </span>alitellm-auth<span class="w"> </span>host&gt;/<span class="w">    </span><span class="c1"># DNS gone or 404</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># console still logs in; ach-cli login still works; an EK still forwards (/v1) — the AS never lived in alitellm-auth (D-19)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deploy<span class="w"> </span>-A<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>alitellm-auth<span class="w">                                      </span><span class="c1"># none</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://platform.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/<span class="w">   </span><span class="c1"># gone or 404</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>https://api.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/.well-known/oauth-protected-resource<span class="w">            </span><span class="c1"># 404 — intended</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>curl<span class="w"> </span>-fsS<span class="w"> </span>https://ach.<span class="si">${</span><span class="nv">GENAI_BASE_DOMAIN</span><span class="si">}</span>/.well-known/oauth-protected-resource<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.resource
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># api. still authorizes (Step 3); LibreChat still answers; console + ach-cli login still work</span>
 </code></pre></div>
 <ul>
-<li>[ ] <strong>gitops commit</strong> — <code>chore: retire alitellm-auth (unified console, spec D-19)</code></li>
-</ul>
-<hr />
-<h2 id="step-4-remove-the-litellm-impersonation-plugin-d-06">Step 4 — remove the LiteLLM impersonation plugin (D-06)<a class="headerlink" href="#step-4-remove-the-litellm-impersonation-plugin-d-06" title="Permanent link">&para;</a></h2>
-<p><code>apps/litellm/base/files/x_user_id_auth.py</code> + <code>config.yaml:59-66</code>
-(<code>custom_auth: x_user_id_auth.user_api_key_auth</code>,
-<code>custom_auth_run_common_checks: true</code>). The kind cluster has run without it
-since <code>af67faa</code>; <code>make e2e-full</code> (incl. <code>TestEkStateModel</code> and the forwarder
-precheck tests) is the evidence that ACH's team/access-group model needs no
-custom auth.</p>
-<ul>
-<li>
-<p>[ ] <strong>gitops edit</strong> — remove the file and <strong>both</strong> config lines. With
-      <code>custom_auth</code> gone, <code>custom_auth_run_common_checks</code> has no effect (it only
-      governs what runs <em>after</em> a custom auth function). Keep every unrelated
-      <code>general_settings</code> key.</p>
-</li>
-<li>
-<p>[ ] <strong>Verify after the LiteLLM rollout</strong></p>
-</li>
-</ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>litellm<span class="w"> </span>rollout<span class="w"> </span>status<span class="w"> </span>deploy/litellm<span class="w"> </span>--timeout<span class="o">=</span>5m
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># team ceiling still enforced without the plugin: an ek_ of Environment A must NOT reach a model outside A's access group</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://api.&lt;domain&gt;/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s2">"x-ach-key: &lt;ek of env A&gt;"</span><span class="w"> </span>-d<span class="w"> </span><span class="s1">'{"model":"&lt;model NOT in A&gt;","messages":[{"role":"user","content":"hi"}]}'</span><span class="w">   </span><span class="c1"># 401/403 from LiteLLM</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://api.&lt;domain&gt;/v1/chat/completions<span class="w"> </span>-H<span class="w"> </span><span class="s2">"x-ach-key: &lt;ek of env A&gt;"</span><span class="w"> </span>-d<span class="w"> </span><span class="s1">'{"model":"&lt;model in A&gt;","messages":[{"role":"user","content":"hi"}]}'</span><span class="w">       </span><span class="c1"># 200</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># console stats still answer (they never used x-user-id — AC-19)</span>
-</code></pre></div>
-<ul>
-<li>[ ] <strong>gitops commit</strong> — <code>chore(litellm): drop the x-user-id impersonation plugin (spec D-06)</code></li>
+<li>[ ] <strong>gitops commit</strong> — <code>chore: retire alitellm-auth (unified console, ACH spec D-19)</code></li>
 </ul>
 <hr />
 <h2 id="step-5-delete-the-legacy-standalone-sk-keys-d-31-irreversible-owner-gated">Step 5 — delete the legacy standalone <code>sk-</code> keys (D-31) — ⚠ IRREVERSIBLE, OWNER-GATED<a class="headerlink" href="#step-5-delete-the-legacy-standalone-sk-keys-d-31-irreversible-owner-gated" title="Permanent link">&para;</a></h2>
-<p>Tool: <code>scripts/cutover-legacy-keys.sh</code> (this repo). Needs <code>LITELLM_URL</code> and
-<code>LITELLM_MASTER_KEY</code>.</p>
-<p><strong>Ownership rule — this is the corrected one; the plan file is superseded on this
-point (owner ruling, 2026-09-22):</strong></p>
+<p>Tool: <code>scripts/cutover-legacy-keys.sh</code> (this repo). It exists; do not rewrite it.</p>
+<p>Ownership rule (owner ruling 2026-09-22):</p>
 <ul>
-<li>a key carrying any <code>metadata.ach_issuer</code> is ACH-owned and is <strong>never</strong> touched;</li>
-<li>a key whose <code>metadata.source == "token-factory"</code> is alitellm-auth's own and <strong>is</strong> swept;</li>
-<li>a key with no such marker is foreign and is <strong>never</strong> touched.</li>
+<li>any <code>metadata.ach_issuer</code> → ACH-owned → <strong>never touched</strong>;</li>
+<li><code>metadata.source == "token-factory"</code> → alitellm-auth's → <strong>swept</strong>;</li>
+<li>anything else → foreign → <strong>never touched</strong>.</li>
 </ul>
-<p><code>metadata.source</code> is the only selector. The <code>key_alias</code> prefix is <strong>not</strong> a
-marker — alitellm-auth has used at least three alias forms (<code>tf-…</code>, <code>lk-…</code>,
-<code>key-YYYY-MM-DD-HHMMSS</code>), so a <code>tf-</code>-aliased token-factory key is swept like any
-other. The alias is shown in the dry-run output for your review only.</p>
+<p><code>metadata.source</code> is the only selector. <code>key_alias</code> is <strong>not</strong> a marker
+(alitellm-auth has used <code>tf-…</code>, <code>lk-…</code> and <code>key-YYYY-MM-DD-HHMMSS</code>); it is
+printed for review only.</p>
 <ul>
-<li>[ ] <strong>Dry run against production</strong></li>
+<li>[ ] <strong>Dry run.</strong> <code>LITELLM_URL</code> is LiteLLM's endpoint — in-cluster
+      <code>http://litellm.litellm.svc:4000</code>, or <code>https://api.${GENAI_BASE_DOMAIN}</code>.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">LITELLM_URL</span><span class="o">=</span>https://litellm.&lt;domain&gt;<span class="w"> </span><span class="nv">LITELLM_MASTER_KEY</span><span class="o">=</span>...<span class="w"> </span>scripts/cutover-legacy-keys.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nv">LITELLM_URL</span><span class="o">=</span>...<span class="w"> </span><span class="nv">LITELLM_MASTER_KEY</span><span class="o">=</span>...<span class="w"> </span>scripts/cutover-legacy-keys.sh
 </code></pre></div>
 <ul>
 <li>
-<p>[ ] <strong>Owner gate.</strong> Paste the candidate list to the owner — <strong>count, aliases,
-      users only; never the token values</strong> (the dry run prints exactly that).
-      <strong>STOP until the owner says go.</strong> Users must already have been told in
-      step 3 that they create new EKs from the console.</p>
+<p>[ ] <strong>Owner gate.</strong> Paste the candidate list — <strong>count, aliases, users only,
+      never token values.</strong> <strong>STOP until the owner says go.</strong></p>
 <p>owner go given by: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  at: <strong><em>_</em></strong>_____</p>
 </li>
 <li>
 <p>[ ] <strong>Apply + verify</strong></p>
 </li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>scripts/cutover-legacy-keys.sh<span class="w"> </span>--apply
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>scripts/cutover-legacy-keys.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-1<span class="w">                                           </span><span class="c1"># candidates: 0</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>psql<span class="w"> </span><span class="s2">"</span><span class="nv">$ACH_DB</span><span class="s2">"</span><span class="w"> </span>-c<span class="w"> </span><span class="s2">"select count(*) from environment_keys where status&lt;&gt;'revoked'"</span><span class="w">  </span><span class="c1"># unchanged from before the sweep</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># a console-created EK still forwards; the orphan reaper's next tick reports 0 candidates (operator logs)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>scripts/cutover-legacy-keys.sh<span class="w"> </span>--apply
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>scripts/cutover-legacy-keys.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-1<span class="w">                                           </span><span class="c1"># candidates: 0</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>psql<span class="w"> </span><span class="s2">"</span><span class="nv">$ACH_DB</span><span class="s2">"</span><span class="w"> </span>-c<span class="w"> </span><span class="s2">"select count(*) from environment_keys where status&lt;&gt;'revoked'"</span><span class="w">  </span><span class="c1"># unchanged</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># a console-created ek_ still forwards; the orphan reaper's next tick reports 0</span>
 </code></pre></div>
 <hr />
-<h2 id="step-6-archive-ach-docs">Step 6 — archive + ACH docs<a class="headerlink" href="#step-6-archive-ach-docs" title="Permanent link">&para;</a></h2>
+<h2 id="step-6-archive-docs">Step 6 — archive + docs<a class="headerlink" href="#step-6-archive-docs" title="Permanent link">&para;</a></h2>
 <ul>
-<li>[ ] <strong>Archive alitellm-auth on GitHub</strong> — owner action.</li>
-<li>[ ] <code>references/upstream-sync.md</code>: mark the ported pieces (Den, fixtures,
-      tests, brand marks) with the archive date.</li>
-<li>[ ] <code>NOTICE</code>: the alitellm-auth attribution row <strong>stays</strong> — Apache-2.0
-      provenance does not expire.</li>
-<li>[ ] <code>references/understanding.md</code>: production picture — console at <code>/</code>,
-      LiteLLM on its own host, no plugin, no alitellm-auth.</li>
-<li>[ ] <code>CLAUDE.md</code> / <code>AGENTS.md</code> Quick-context: one sentence — "The LiteLLM
-      <code>x_user_id_auth.py</code> impersonation plugin and alitellm-auth were retired at
-      the console cutover (<code>&lt;date&gt;</code>)."</li>
-<li>[ ] ACH commit — <code>docs: console cutover complete — alitellm-auth retired, LiteLLM on its own host</code></li>
+<li>[ ] <strong>gitops docs</strong>, one commit: <code>docs/site/ai-gateway/alitellm-auth.md</code>
+      (delete or mark retired, <strong>and drop it from <code>mkdocs.yml</code></strong> —
+      <code>mkdocs --strict</code> runs in that repo's CI and a dangling nav entry fails the
+      pipeline), <code>docs/site/architecture/identity-sso.md</code>,
+      <code>docs/site/applications/librechat.md</code>, <code>docs/site/security/known-gaps.md</code>,
+      <code>README.md</code> (the Mermaid diagram and the service catalog both still list
+      <code>alitellm-auth (platform.)</code>).</li>
+<li>[ ] <strong>Consider dropping the now-inert <code>x-user-id</code> strip</strong>
+      (<code>apps/litellm/base/httproute.yaml:24-31</code> and the ext_authz header list).
+      With <code>custom_auth</code> gone LiteLLM ignores the header, so the filter is a
+      no-op. <strong>Recommend keeping it</strong> — it costs nothing and is the one guard
+      between a re-enabled handler and an internet-supplied identity. Either way,
+      fix the comment, which still calls it "LiteLLM's impersonation contract".</li>
+<li>[ ] <strong>Archive alitellm-auth</strong> on GitHub (owner). <code>references/upstream-sync.md</code>:
+      mark the ported pieces (Den, fixtures, tests, brand marks) with the archive
+      date. <code>NOTICE</code>: the attribution row <strong>stays</strong> — Apache-2.0 provenance does
+      not expire.</li>
+<li>[ ] <strong>ACH docs</strong> — <code>references/understanding.md</code> (console at
+      <code>https://ach.${GENAI_BASE_DOMAIN}/</code>, LiteLLM on <code>api.</code>, no plugin, no
+      alitellm-auth); one sentence in <code>CLAUDE.md</code> / <code>AGENTS.md</code> Quick-context.</li>
+<li>[ ] <strong>ACH commit</strong> — <code>docs: console cutover complete — alitellm-auth retired</code></li>
 </ul>
 <hr />
 <h2 id="rollback">Rollback<a class="headerlink" href="#rollback" title="Permanent link">&para;</a></h2>
@@ -1502,34 +1694,39 @@ other. The alias is shown in the dry-run output for your review only.</p>
 </thead>
 <tbody>
 <tr>
+<td>0</td>
+<td>release cut</td>
+<td>Nothing in-cluster until step 2. A published chart cannot be unpublished — see step 1.</td>
+</tr>
+<tr>
 <td>1</td>
-<td>complete chart</td>
-<td>Revert the <code>apps/ach-identity</code> gitops commit; wait for the rollout. The DB snapshot from step 1 is the restore point.</td>
+<td>pin</td>
+<td>Revert the gitops commit.</td>
 </tr>
 <tr>
 <td>2</td>
-<td>console release + LiteLLM host</td>
-<td>Revert both gitops commits (image tag + <code>apps/litellm</code> host) — <strong>only while the D-29 boundary is uncrossed</strong>. Below the boundary, see the box below.</td>
+<td>console deploy</td>
+<td>Revert the <code>apps/ach/base/helm.yaml</code> commit — <strong>only while the D-29 boundary is uncrossed.</strong> If the pin was declined there is no commit to revert; rollback means publishing an older chart.</td>
 </tr>
 <tr>
 <td>3</td>
-<td>alitellm-auth retired</td>
-<td>Revert the gitops commit; alitellm-auth redeploys, and the <code>x-user-id</code> strip comes back with it. Legacy keys still exist (they are only deleted in step 5), so users can log in again.</td>
+<td>authorizer replacement</td>
+<td>Revert the gitops commit; alitellm-auth's ext_authz is still running (not deleted until step 4).</td>
 </tr>
 <tr>
 <td>4</td>
-<td>plugin removed</td>
-<td>Revert the gitops commit; the LiteLLM rollout restores <code>x_user_id_auth.py</code> and the two <code>config.yaml</code> lines.</td>
+<td>alitellm-auth retired</td>
+<td>Revert the gitops commits; alitellm-auth redeploys. Legacy keys still exist, so users can log in again.</td>
 </tr>
 <tr>
 <td>5</td>
 <td>legacy keys deleted</td>
-<td><strong>None.</strong> Deleted LiteLLM keys cannot be recreated with the same secret. Affected users mint a new EK from the console.</td>
+<td><strong>None.</strong> Deleted LiteLLM keys cannot be recreated with the same secret. Affected users mint a new <code>ek_</code> from the console.</td>
 </tr>
 <tr>
 <td>6</td>
 <td>archive + docs</td>
-<td>Revert the doc commits; un-archive the GitHub repo.</td>
+<td>Revert the doc commits; un-archive the repo.</td>
 </tr>
 </tbody>
 </table>
@@ -1538,26 +1735,31 @@ other. The alias is shown in the dry-run output for your review only.</p>
 <em>"No rollback below <code>&lt;console release&gt;</code> once any environment key is suspended
 or carries an expiry: an older orphan worker would reap suspended keys. The
 down migration refuses in that case."</em></p>
-<p>Recovery past the boundary is <strong>restore from the DB snapshot taken in step 1</strong>,
-accepting the loss of everything written since — not a chart/image revert.</p>
+<p>Recovery past the boundary is <strong>restore from the step 2 snapshot</strong>, accepting
+the loss of everything written since — not a chart/image revert.</p>
 </blockquote>
 <hr />
 <h2 id="post-cutover-checklist-all-must-be-true">Post-cutover checklist (all must be true)<a class="headerlink" href="#post-cutover-checklist-all-must-be-true" title="Permanent link">&para;</a></h2>
 <ul>
-<li>[ ] <code>https://api.&lt;domain&gt;/</code> = console; <code>/ui</code>, <code>/key/*</code>, <code>/health</code> = 404 (AC-24)</li>
-<li>[ ] <code>ach-cli login</code>, <code>env hydrate</code>, EK forwarding unchanged (AC-23)</li>
-<li>[ ] console stats/latency for a real user include EK traffic, <code>data_scope: "user"</code> (AC-16)</li>
-<li>[ ] no <code>x-user-id</code>, no <code>custom_auth</code>, no alitellm-auth Deployment (AC-19, D-06, D-19)</li>
+<li>[ ] <code>https://ach.${GENAI_BASE_DOMAIN}/</code> = console; <code>/ui</code>, <code>/key/*</code>, <code>/health</code> =
+      404 <strong>at ACH</strong> and still live on <code>api.</code> (AC-24)</li>
+<li>[ ] <code>ach-cli login</code>, <code>env hydrate</code>, <code>ek_</code> forwarding unchanged (AC-23)</li>
+<li>[ ] console stats/latency for a real user include <code>ek_</code> traffic,
+      <code>data_scope: "user"</code> (AC-16)</li>
+<li>[ ] no <code>x_user_id_auth.py</code>, no <code>custom_auth</code>, no alitellm-auth Deployment
+      (D-06, D-19)</li>
+<li>[ ] <code>api.${GENAI_BASE_DOMAIN}</code> still has an authorizer, and LibreChat works</li>
 <li>[ ] <code>scripts/cutover-legacy-keys.sh</code> dry run reports 0 candidates (AC-25)</li>
 <li>[ ] <code>CHANGELOG.md</code> carries the D-29 sentence (AC-25)</li>
 <li>[ ] P-02 measured: time from a LiteLLM team-membership change to an <code>ek_</code>
       403/200 flip on the forwarder, recorded in <code>references/troubleshooting.md</code>
-      as the stated guarantee (spec §17)</li>
+      (spec §17)</li>
 </ul>
 <hr />
 <h2 id="out-of-scope">Out of scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
-<p><strong>LibreChat's master-key MCP calls</strong> (handover §2.2) are a <strong>separate ticket</strong>.
-Do not fold them into this cutover.</p>
+<p><strong>LibreChat.</strong> Its master-key MCP calls (handover §2.2) are a separate ticket.
+Step 3 must not <em>break</em> LibreChat's current Dex-token auth path, but moving it
+onto ACH is not this cutover's work.</p>
 
 
 
