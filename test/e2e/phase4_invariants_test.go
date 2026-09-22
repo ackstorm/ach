@@ -46,7 +46,7 @@ func TestPhase4Invariants(t *testing.T) {
 
 	t.Run("SC1_HeaderRewrite", testPhase4SC1HeaderRewrite)
 	t.Run("SC2_McpA2aPrecheck", testPhase4SC2McpA2aPrecheck)
-	t.Run("SC2_EkTagInjection", testPhase4SC2EkTagInjection)
+	t.Run("SC2_EkTagStamping", testPhase4SC2EkTagStamping)
 	t.Run("SC3_JwtMintAndBipAlphaFirst", testPhase4SC3JwtMintAndBipAlphaFirst)
 	t.Run("SC4_JwksAndSecretRbac", testPhase4SC4JwksAndSecretRbac)
 }
@@ -180,20 +180,17 @@ func waitForwarderPrecheckAuthorized(t *testing.T, url, ek string) int {
 	}
 }
 
-// testPhase4SC2EkTagInjection — FWD-06 v1alpha1 scope. The forwarder injects
-// "environment:<name>" into the /v1 request body's metadata.tags for ek_
-// traffic only, and mirrors it into the X-Ach-Tags header on the SAME
-// success path (internal/forwarder/proxy/tags.go). LiteLLM consumes and
-// strips metadata.tags before the model backend, so we assert at the backend
-// (ach-mock-model "loro") on the mirror header — which the TEST cluster
-// forwards to the demo-model group via forward_client_headers_to_llm_api
-// (test/e2e/cluster/01-base/litellm.values.yaml; not enabled in prod). Header
-// presence is a faithful proxy for body-tag injection since both are set on
-// the one success path.
+// testPhase4SC2EkTagStamping — the forwarder stamps LiteLLM budget tags on
+// every authenticated request from the Director, and mirrors them into the
+// X-Achtest-Tags header (internal/forwarder/proxy/tags.go). LiteLLM consumes
+// x-litellm-tags itself, so we assert at the backend (ach-mock-model "loro")
+// on the mirror — which the TEST cluster forwards to the demo-model group via
+// forward_client_headers_to_llm_api (test/e2e/cluster/01-base/
+// litellm.values.yaml; not enabled in prod).
 //
-//   - ek_ bound to demo → loro sees X-Ach-Tags: environment:demo
-//   - pk_               → loro sees no X-Ach-Tags (no env binding, no inject)
-func testPhase4SC2EkTagInjection(t *testing.T) {
+//   - ek_ bound to demo → user:<owner>,environment:demo,key:<ek id>
+//   - pk_               → user:<owner> only (no Environment, no per-key cap)
+func testPhase4SC2EkTagStamping(t *testing.T) {
 	forwarderURL := os.Getenv("ACH_FORWARDER_URL")
 	if forwarderURL == "" {
 		t.Fatalf("ACH_FORWARDER_URL not set — required for a phase4 run (set ACH_SKIP_PHASE4=1 to opt out).")
@@ -203,20 +200,23 @@ func testPhase4SC2EkTagInjection(t *testing.T) {
 	}
 	mockLocal := strconv.Itoa(startPortForward(t, phase4Namespace, "svc/"+mockModelService, mockModelSvcPort))
 
-	// Positive: ek_ bound to demo → forwarder injects + mirrors the tag.
+	// ek_ bound to demo → all three ceilings are attributed.
 	ek := mustAcquireEkBoundToEnv(t, "demo")
 	ekSnap := driveV1ToBackend(t, forwarderURL, ek, fmt.Sprintf("sc2-ek-%d", time.Now().UnixNano()), mockLocal)
-	if got := headerValue(ekSnap.Headers, headerTagsName); got != tagEnvDemo {
-		t.Fatalf("ek_ traffic: backend %s=%q; want %q — forwarder must tag ek_ traffic. capture=%+v",
-			headerTagsName, got, tagEnvDemo, ekSnap)
+	ekTags := headerValue(ekSnap.Headers, headerTagsName)
+	if !strings.HasPrefix(ekTags, "user:") || !strings.Contains(ekTags, ","+tagEnvDemo+",") ||
+		!strings.Contains(ekTags, ",key:") {
+		t.Fatalf("ek_ traffic: backend %s=%q; want user:<owner>,%s,key:<id>. capture=%+v",
+			headerTagsName, ekTags, tagEnvDemo, ekSnap)
 	}
 
-	// Negative: pk_ → no environment binding → no tag injection, no header.
+	// pk_ → the owner ceiling only: no Environment binding, no per-key cap.
 	pk := mustAcquirePk(t)
 	pkSnap := driveV1ToBackend(t, forwarderURL, pk, fmt.Sprintf("sc2-pk-%d", time.Now().UnixNano()), mockLocal)
-	if got := headerValue(pkSnap.Headers, headerTagsName); got != "" {
-		t.Fatalf("pk_ traffic: backend %s=%q; want empty — pk_ must NOT be tagged. capture=%+v",
-			headerTagsName, got, pkSnap)
+	pkTags := headerValue(pkSnap.Headers, headerTagsName)
+	if !strings.HasPrefix(pkTags, "user:") || strings.Contains(pkTags, ",") {
+		t.Fatalf("pk_ traffic: backend %s=%q; want a single user:<owner> tag. capture=%+v",
+			headerTagsName, pkTags, pkSnap)
 	}
 }
 

@@ -3,219 +3,121 @@
 package proxy
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"io"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
-func newJSONRequest(t *testing.T, body string) *http.Request {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.ContentLength = int64(len(body))
-	return req
-}
+func ctxWith(kc middleware.KeyContext) context.Context { return ctxWithKeyAndJWT(kc, "") }
 
-func readBody(t *testing.T, r *http.Request) []byte {
-	t.Helper()
-	b, err := io.ReadAll(r.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	return b
-}
-
-// TG1: empty JSON gets {"metadata":{"tags":["environment:prod"]}}.
-func TestInjectEnvironmentTag_TG1_Empty(t *testing.T) {
-	req := newJSONRequest(t, `{}`)
-	if err := InjectEnvironmentTag(req, "prod"); err != nil {
-		t.Fatalf("err = %v; want nil", err)
-	}
-	body := readBody(t, req)
-	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("unmarshal: %v; body=%s", err, body)
-	}
-	meta, _ := doc["metadata"].(map[string]any)
-	tags, _ := meta["tags"].([]any)
-	if len(tags) != 1 || tags[0] != "environment:prod" {
-		t.Errorf("tags = %v; want [environment:prod]", tags)
-	}
-	if req.ContentLength != int64(len(body)) {
-		t.Errorf("ContentLength = %d; want %d", req.ContentLength, len(body))
+// TestTagsForContextEk — an ek_ carries all three tags, owner first.
+func TestTagsForContextEk(t *testing.T) {
+	got := TagsForContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixEk, OwnerEmail: "Pepe@Example.com",
+		Environment: "demo", KeyID: "ek_123",
+	}))
+	want := []string{"user:pepe@example.com", "environment:demo", "key:ek_123"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
-// TG2: existing tags are preserved; new tag appended.
-func TestInjectEnvironmentTag_TG2_ExistingTags(t *testing.T) {
-	req := newJSONRequest(t, `{"metadata":{"tags":["existing"]}}`)
-	if err := InjectEnvironmentTag(req, "prod"); err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	body := readBody(t, req)
-	var doc map[string]any
-	_ = json.Unmarshal(body, &doc)
-	meta, _ := doc["metadata"].(map[string]any)
-	tags, _ := meta["tags"].([]any)
-	if len(tags) != 2 || tags[0] != "existing" || tags[1] != "environment:prod" {
-		t.Errorf("tags = %v; want [existing environment:prod]", tags)
+// TestTagsForContextPk — a pk_ has no Environment and no per-key budget:
+// only the user tag, which is what makes one ceiling cover pk_ + ek_.
+func TestTagsForContextPk(t *testing.T) {
+	got := TagsForContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9",
+	}))
+	if len(got) != 1 || got[0] != "user:pepe@example.com" {
+		t.Fatalf("got %v, want [user:pepe@example.com]", got)
 	}
 }
 
-// TG3: sibling metadata fields preserved.
-func TestInjectEnvironmentTag_TG3_SiblingMetadataFields(t *testing.T) {
-	req := newJSONRequest(t, `{"metadata":{"user_id":"u1"}}`)
-	if err := InjectEnvironmentTag(req, "prod"); err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	body := readBody(t, req)
-	var doc map[string]any
-	_ = json.Unmarshal(body, &doc)
-	meta, _ := doc["metadata"].(map[string]any)
-	if meta["user_id"] != "u1" {
-		t.Errorf("metadata.user_id = %v; want u1", meta["user_id"])
-	}
-	tags, _ := meta["tags"].([]any)
-	if len(tags) != 1 || tags[0] != "environment:prod" {
-		t.Errorf("tags = %v", tags)
+// TestTagsForContextAnonymous — passthrough / unresolved credentials carry
+// no ACH identity, so nothing is stamped and no ACH budget applies.
+func TestTagsForContextAnonymous(t *testing.T) {
+	if got := TagsForContext(context.Background()); len(got) != 0 {
+		t.Fatalf("got %v, want none", got)
 	}
 }
 
-// TG5: existing non-array tags → fail-open, body unchanged.
-func TestInjectEnvironmentTag_TG5_TagsNotArray(t *testing.T) {
-	original := `{"metadata":{"tags":"oldformat"}}`
-	req := newJSONRequest(t, original)
-	err := InjectEnvironmentTag(req, "prod")
-	if err == nil {
-		t.Fatal("expected error on non-array tags")
-	}
-	body := readBody(t, req)
-	if string(body) != original {
-		t.Errorf("body mutated on fail-open: got %s; want %s", body, original)
+// TestTagsForContextOwnerlessEk — a row with no owner email still gets its
+// environment and key tags (never drop a governance tag because one field
+// is blank).
+func TestTagsForContextOwnerlessEk(t *testing.T) {
+	got := TagsForContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixEk, Environment: "demo", KeyID: "ek_1",
+	}))
+	if strings.Join(got, ",") != "environment:demo,key:ek_1" {
+		t.Fatalf("got %v", got)
 	}
 }
 
-// TG7: malformed JSON → fail-open, body restored.
-func TestInjectEnvironmentTag_TG7_MalformedJSON(t *testing.T) {
-	original := `{not json`
-	req := newJSONRequest(t, original)
-	if err := InjectEnvironmentTag(req, "prod"); err == nil {
-		t.Fatal("expected error on malformed JSON")
+// TestDirectorStampsTagHeader — every family gets x-litellm-tags from the
+// KeyContext; the X-Achtest-Tags mirror keeps the SC2 backend assertion.
+// The Director is the single stamping point, which is what puts the tags on
+// /mcp, /a2a and /v2/model/info — families the old body injection never saw.
+func TestDirectorStampsTagHeader(t *testing.T) {
+	const want = "user:pepe@example.com,environment:demo,key:ek_1"
+	kc := middleware.KeyContext{
+		KeyType: keys.PrefixEk, OwnerEmail: "pepe@example.com",
+		Environment: "demo", KeyID: "ek_1",
 	}
-	body := readBody(t, req)
-	if string(body) != original {
-		t.Errorf("body changed: got %s", body)
-	}
-}
+	for _, path := range []string{"/v1/chat/completions", "/gemini/v1beta/models/m:generateContent",
+		"/mcp/demo-mcp-nojwt", "/a2a/demo-agent", "/v2/model/info"} {
+		t.Run(path, func(t *testing.T) {
+			rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(ctxWith(kc))
 
-// TG8: non-JSON Content-Type → errNotJSON, body unchanged.
-func TestInjectEnvironmentTag_TG8_NonJSONContentType(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/x", strings.NewReader("blob"))
-	req.Header.Set("Content-Type", "multipart/form-data; boundary=---")
-	err := InjectEnvironmentTag(req, "prod")
-	if !errors.Is(err, errNotJSON) {
-		t.Errorf("err = %v; want errNotJSON", err)
-	}
-}
+			rp.Director(req)
 
-// TG9: missing Content-Type → errNotJSON.
-func TestInjectEnvironmentTag_TG9_NoContentType(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/x", strings.NewReader("{}"))
-	err := InjectEnvironmentTag(req, "prod")
-	if !errors.Is(err, errNotJSON) {
-		t.Errorf("err = %v; want errNotJSON", err)
-	}
-}
-
-// TG10: oversized body → errBodyTooLarge, no mutation.
-func TestInjectEnvironmentTag_TG10_OversizedBody(t *testing.T) {
-	big := strings.Repeat("a", maxBodyForTagInjection+1024)
-	body := `{"junk":"` + big + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/x", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	req.ContentLength = int64(len(body))
-	err := InjectEnvironmentTag(req, "prod")
-	if !errors.Is(err, errBodyTooLarge) {
-		t.Errorf("err = %v; want errBodyTooLarge", err)
-	}
-}
-
-// TG11: empty environmentName → errEmptyEnvironment.
-func TestInjectEnvironmentTag_TG11_EmptyEnv(t *testing.T) {
-	req := newJSONRequest(t, `{}`)
-	if err := InjectEnvironmentTag(req, ""); !errors.Is(err, errEmptyEnvironment) {
-		t.Errorf("err = %v; want errEmptyEnvironment", err)
-	}
-}
-
-// TG13: nil body → returns nil, no panic.
-func TestInjectEnvironmentTag_TG13_NilBody(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v1/x", nil)
-	req.Header.Set("Content-Type", "application/json")
-	if err := InjectEnvironmentTag(req, "prod"); err != nil {
-		t.Errorf("err = %v; want nil", err)
-	}
-}
-
-// TestBodylessGetUntouched: a bodyless GET short-circuits tag
-// injection (tags.go:69) — no body mutation, no X-Achtest-Tags header.
-func TestBodylessGetUntouched(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v1/model/info", nil)
-	if err := InjectEnvironmentTag(req, "demo"); err != nil {
-		t.Fatalf("InjectEnvironmentTag: %v", err)
-	}
-	if got := req.Header.Get("X-Achtest-Tags"); got != "" {
-		t.Errorf("X-Achtest-Tags = %q; want absent on a bodyless GET", got)
-	}
-	if req.ContentLength != 0 {
-		t.Errorf("ContentLength = %d; want 0 (body untouched)", req.ContentLength)
-	}
-}
-
-// TG14: success path also sets the X-Ach-Tags mirror header to the injected
-// tag value (backend-observable proxy used by the SC2 e2e).
-func TestInjectEnvironmentTag_TG14_HeaderSetOnSuccess(t *testing.T) {
-	req := newJSONRequest(t, `{"metadata":{"tags":["existing"]}}`)
-	if err := InjectEnvironmentTag(req, "demo"); err != nil {
-		t.Fatalf("err = %v; want nil", err)
-	}
-	if got := req.Header.Get(headerTags); got != "environment:demo" {
-		t.Errorf("%s = %q; want environment:demo", headerTags, got)
-	}
-}
-
-// TG15: fail-open paths must NOT set the mirror header — header presence
-// must stay coupled to body-tag injection (malformed JSON + non-array tags).
-func TestInjectEnvironmentTag_TG15_HeaderAbsentOnFailOpen(t *testing.T) {
-	cases := map[string]string{
-		"malformed":      `{not json`,
-		"tags_not_array": `{"metadata":{"tags":"oldformat"}}`,
-	}
-	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			req := newJSONRequest(t, body)
-			if err := InjectEnvironmentTag(req, "demo"); err == nil {
-				t.Fatal("expected fail-open error")
+			if got := req.Header.Get("x-litellm-tags"); got != want {
+				t.Fatalf("x-litellm-tags = %q, want %q", got, want)
 			}
-			if got := req.Header.Get(headerTags); got != "" {
-				t.Errorf("%s = %q; want empty on fail-open", headerTags, got)
+			if got := req.Header.Get("X-Achtest-Tags"); got != want {
+				t.Fatalf("X-Achtest-Tags mirror = %q, want %q", got, want)
 			}
 		})
 	}
 }
 
-// TG16: empty environmentName → no header (mirrors errEmptyEnvironment).
-func TestInjectEnvironmentTag_TG16_HeaderAbsentOnEmptyEnv(t *testing.T) {
-	req := newJSONRequest(t, `{}`)
-	if err := InjectEnvironmentTag(req, ""); !errors.Is(err, errEmptyEnvironment) {
-		t.Fatalf("err = %v; want errEmptyEnvironment", err)
+// TestDirectorStampsNoTagHeaderWithoutIdentity — a passthrough credential
+// (raw LiteLLM key, unresolved bearer) has no ACH identity: no tags, and no
+// header at all rather than an empty one.
+func TestDirectorStampsNoTagHeaderWithoutIdentity(t *testing.T) {
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+
+	rp.Director(req)
+
+	if _, ok := req.Header["X-Litellm-Tags"]; ok {
+		t.Fatalf("x-litellm-tags must be absent, got %q", req.Header.Get("x-litellm-tags"))
 	}
-	if got := req.Header.Get(headerTags); got != "" {
-		t.Errorf("%s = %q; want empty", headerTags, got)
+}
+
+// TestDirectorLeavesBodyUnmodified — tags ride the header now; the request
+// body is forwarded byte-for-byte (the 1 MiB JSON rewrite is gone).
+func TestDirectorLeavesBodyUnmodified(t *testing.T) {
+	const body = `{"model":"demo-model","metadata":{"tags":["mine"]}}`
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixEk, OwnerEmail: "p@e.com", Environment: "demo", KeyID: "ek_1",
+	}))
+
+	rp.Director(req)
+
+	got := make([]byte, len(body)+16)
+	n, _ := req.Body.Read(got)
+	if string(got[:n]) != body {
+		t.Fatalf("body = %q, want it untouched", got[:n])
 	}
 }

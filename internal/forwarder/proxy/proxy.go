@@ -146,6 +146,11 @@ func New(deps Deps) *httputil.ReverseProxy {
 				req.Header.Set("X-Goog-Api-Key", material)
 			}
 
+			// Budget tags: one stamping point for every family, so /mcp,
+			// /a2a and /v2/model/info are attributed like /v1 (FWD-06's
+			// body injection only ever reached /v1 + /gemini).
+			stampTags(req)
+
 			// JWT write LAST — overwrites whatever Authorization the client
 			// sent: on /mcp + /a2a the per-target ACH JWT is the credential.
 			if token, present := jwtFromCtx(req.Context()); present {

@@ -166,6 +166,7 @@ func upstreamSpy() (*httptest.Server, *upstreamRec) {
 		rec.calls++
 		rec.lastAuth = r.Header.Get("Authorization")
 		rec.lastKey = r.Header.Get("X-Litellm-Api-Key")
+		rec.lastTags = r.Header.Get("X-Litellm-Tags")
 		body, _ := io.ReadAll(r.Body)
 		rec.lastBody = body
 		w.WriteHeader(http.StatusOK)
@@ -179,7 +180,14 @@ type upstreamRec struct {
 	calls    int
 	lastAuth string
 	lastKey  string
+	lastTags string
 	lastBody []byte
+}
+
+func (r *upstreamRec) LastTags() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastTags
 }
 
 func (r *upstreamRec) LastKey() string {
@@ -248,32 +256,29 @@ func TestHandlerV1_PkPassthrough(t *testing.T) {
 	}
 }
 
-// H14: HandlerV1 with ek_ + Environment → metadata.tags injected.
-func TestHandlerV1_EkTagInjection(t *testing.T) {
+// H14: HandlerV1 with ek_ + Environment → the three budget tags ride the
+// x-litellm-tags header and the body reaches LiteLLM byte-for-byte (the
+// FWD-06 metadata.tags rewrite is gone).
+func TestHandlerV1_EkTagStamping(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
 	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider()}, newBIPResolver())
 
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "prod"}
-	r := requestWithKC(t, http.MethodPost, "/v1/chat/completions", kc, `{"model":"x"}`)
+	const body = `{"model":"x"}`
+	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "prod", KeyID: "ek_7"}
+	r := requestWithKC(t, http.MethodPost, "/v1/chat/completions", kc, body)
 	w := httptest.NewRecorder()
 	HandlerV1(deps)(w, r)
 
 	if rec.Calls() != 1 {
 		t.Fatalf("upstream calls = %d", rec.Calls())
 	}
-	var got map[string]any
-	if err := json.Unmarshal(rec.LastBody(), &got); err != nil {
-		t.Fatalf("decode body: %v", err)
+	if got, want := rec.LastTags(), "user:u@e,environment:prod,key:ek_7"; got != want {
+		t.Errorf("x-litellm-tags = %q; want %q", got, want)
 	}
-	meta, ok := got["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing metadata; body=%s", rec.LastBody())
-	}
-	tags, _ := meta["tags"].([]any)
-	if len(tags) != 1 || tags[0] != "environment:prod" {
-		t.Errorf("tags = %v; want [environment:prod]", tags)
+	if string(rec.LastBody()) != body {
+		t.Errorf("body = %s; want it untouched", rec.LastBody())
 	}
 }
 

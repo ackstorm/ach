@@ -46,12 +46,11 @@ type HandlerDeps struct {
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
-// /v1 and /gemini: inject the Environment attribution tag (FWD-06, ek_
-// traffic only) then forward. routeLabel is the metrics route dimension.
+// /v1 and /gemini: forward, and let the Director stamp the budget tags.
+// routeLabel is the metrics route dimension.
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
-		maybeInjectEnvironmentTag(r)
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
 		rp.ServeHTTP(w, r)
 	}
@@ -73,20 +72,9 @@ func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(dep
 // HandlerGemini mirrors HandlerV1 for /gemini/*.
 func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/gemini") }
 
-// maybeInjectEnvironmentTag is the FWD-06 ek_ guard shared by /v1 + /gemini.
-// pk_ traffic and bodyless requests pass through unmodified.
-func maybeInjectEnvironmentTag(r *http.Request) {
-	kc, ok := middleware.KeyContextFromCtx(r.Context())
-	if !ok || kc.KeyType != keys.PrefixEk || kc.Environment == "" {
-		return
-	}
-	_ = InjectEnvironmentTag(r, kc.Environment) // fail-open per FWD-06
-}
-
 // HandlerMCP returns the /mcp/{name}/* handler — runs precheck.CheckMCP,
 // optional BIP lookup + JWT attach, then proxies. See FWD-03, FWD-05,
-// FWD-07. v1alpha1: no body tag injection (deferred to v1beta1 per
-// CONTEXT.md <deferred>).
+// FWD-07.
 func HandlerMCP(deps HandlerDeps) http.HandlerFunc {
 	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp")
 }

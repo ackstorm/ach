@@ -975,7 +975,7 @@ work but leaves orphan images on the node.
 
 ### ❌ E2E capture test fails with `/__capture/reset: ... EOF`; mock container crashed
 ```bash
-# e.g. TestPhase4Invariants/SC2_EkTagInjection:
+# e.g. TestPhase4Invariants/SC2_EkTagStamping:
 #   phase4_invariants_test.go:163: POST /__capture/reset: ... EOF
 ./scripts/dev.sh kubectl -n ach-system get pod -l app.kubernetes.io/component=mock-model \
   -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{"\n"}'   # ≥ 1
