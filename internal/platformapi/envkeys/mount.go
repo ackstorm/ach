@@ -13,6 +13,7 @@ import "github.com/go-chi/chi/v5"
 //     ekid_ → LiteLLM-first 204 from any state; pkid_ → DB-first 200, active-key 409 guard).
 //   - POST   /platform/keys/{key_id}/suspend  — SuspendHandler (ek_ only, §8.2).
 //   - POST   /platform/keys/{key_id}/resume   — ResumeHandler  (ek_ only, §8.2/§11).
+//   - PATCH  /platform/keys/{key_id}/budget   — BudgetHandler  (ek_ only, owner-scoped).
 func MountKeys(r chi.Router, deps Deps) {
 	r.Route("/platform/keys", func(r chi.Router) {
 		r.Post("/", CreateHandler(deps))
@@ -20,5 +21,6 @@ func MountKeys(r chi.Router, deps Deps) {
 		r.Delete("/{key_id}", RevokeHandler(deps))
 		r.Post("/{key_id}/suspend", SuspendHandler(deps))
 		r.Post("/{key_id}/resume", ResumeHandler(deps))
+		r.Patch("/{key_id}/budget", BudgetHandler(deps))
 	})
 }

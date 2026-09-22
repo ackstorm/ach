@@ -50,6 +50,7 @@ const (
 	ActionEkRevoke             = "platform.ek.revoke"
 	ActionEkSuspend            = "platform.ek.suspend"
 	ActionEkResume             = "platform.ek.resume"
+	ActionEkBudget             = "platform.ek.budget"
 	ActionPkRevoke             = "platform.pk.revoke"
 	ActionHydrate              = "platform.hydrate"
 	ActionAdminRefresh         = "platform.admin.refresh"

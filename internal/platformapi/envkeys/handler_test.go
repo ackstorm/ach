@@ -354,7 +354,7 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 // the ek_ must be capped by team_id and must NOT carry any access-group field
 // (a key in both a team and a group triggers LiteLLM's agent-collapse bug).
 func TestCreateEkMintsIntoShellTeam(t *testing.T) {
-	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	flm := newCaptureLiteLLM()
 	store := &fakeEnvStore{env: &db.EnvironmentRow{
 		Namespace:       "ach",
 		Name:            "prod",
@@ -402,11 +402,9 @@ func TestCreateEkMintsIntoShellTeam(t *testing.T) {
 // TestCreateEkRejectsWhenShellTeamMissing: no shell team ⇒ the environment is
 // not fully provisioned, and minting would produce a fail-open key.
 func TestCreateEkRejectsWhenShellTeamMissing(t *testing.T) {
-	flm := &captureLiteLLM{
-		NoopClient: &litellm.NoopClient{},
-		// Only the caller's authorized team — no ach-env-prod entry.
-		teams: []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}},
-	}
+	flm := newCaptureLiteLLM()
+	// Only the caller's authorized team — no ach-env-prod entry.
+	flm.teams = []litellm.TeamListEntry{{TeamID: "team-uuid-default", TeamAlias: "default"}}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{
 		Namespace:       "ach",
 		Name:            "prod",
@@ -681,7 +679,7 @@ func (c *listTeamsLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEn
 // against environment "prod" (matches captureLiteLLM's default ListAllTeams
 // fixture: caller team "default" + shell team "ach-env-prod").
 func newCreateDeps(fdb dbOps) (Deps, *captureLiteLLM) {
-	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	flm := newCaptureLiteLLM()
 	store := &fakeEnvStore{env: &db.EnvironmentRow{
 		Namespace:       "ach",
 		Name:            "prod",

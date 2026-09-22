@@ -108,6 +108,12 @@ type CreateRequest struct {
 	Environment string  `json:"environment"`
 	Name        string  `json:"name"`
 	ExpiresAt   *string `json:"expires_at,omitempty"`
+
+	// Budget optionally caps THIS key's own spend through its
+	// "key:<key_id>" tag, independently of the owner's and the
+	// Environment's ceilings (LiteLLM blocks on whichever is crossed
+	// first). Omit for a key capped only by those two.
+	Budget *BudgetRequest `json:"budget,omitempty"`
 }
 
 // CreateResponse is the §15.5 success-shape body. Plaintext is returned
@@ -222,6 +228,11 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			}
 			ts = ts.UTC()
 			expiresAt = &ts
+		}
+
+		if req.Budget != nil && (req.Budget.MaxBudget == nil || *req.Budget.MaxBudget < 0) {
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument, "budget.max_budget must be >= 0", reqID)
+			return
 		}
 
 		cr := &createReq{
@@ -597,6 +608,19 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		return
 	}
 
+	// The key's own ceiling, once the row is committed and the plaintext is
+	// in hand — never for a key that failed to mint. The key exists either
+	// way, so a refused tag write is a 502, not a silent uncapped key.
+	if cr.req.Budget != nil {
+		tag := litellm.KeyBudgetTag(keyID)
+		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, cr.req.Budget.tagBudget()); err != nil {
+			deps.Logger.Error("envkeys.create: key budget tag", "key_id", keyID, "err", err)
+			render.Error(w, http.StatusBadGateway, audit.OutcomeLitellmRejected,
+				"key created but its budget could not be set", reqID)
+			return
+		}
+	}
+
 	// Step 8 success: audit + respond.
 	audit.EmitAudit(ctx, deps.Audit, audit.Event{
 		Action:    audit.ActionEkCreate,
@@ -780,6 +804,17 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 				"key_id", keyID, "err", err)
 			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 			return
+		}
+
+		// Step 6b: the key's own budget tag + budget object are dead weight
+		// once the key is gone. Both are idempotent and neither may fail the
+		// revoke — the credential is already dead, which is what matters.
+		tag := litellm.KeyBudgetTag(keyID)
+		if err := deps.LiteLLM.DeleteTagByName(ctx, tag); err != nil {
+			deps.Logger.Error("envkeys.revoke: DeleteTagByName", "key_id", keyID, "err", err)
+		}
+		if err := deps.LiteLLM.DeleteBudget(ctx, tag); err != nil {
+			deps.Logger.Error("envkeys.revoke: DeleteBudget", "key_id", keyID, "err", err)
 		}
 
 		// Step 7: Redis DEL best-effort (cache key shape must match
