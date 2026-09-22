@@ -75,11 +75,12 @@ func TestStats_RangeParsing(t *testing.T) {
 
 func TestStats_ComposesAndScopesToUser(t *testing.T) {
 	d := testDeps(t)
-	ten := 20.0
+	d.LiteLLM.(*fakeLL).tag = &litellm.TagInfoEntry{
+		Spend: 5, Budget: &litellm.TagBudget{MaxBudget: 20, BudgetDuration: "30d"},
+	}
 	cat := &fakeCatalog{
-		daily:        loadDailyFixture(t, "daily_activity_current.json"),
-		prior:        loadDailyFixture(t, "daily_activity_prior.json"),
-		memberBudget: &observability.MemberBudget{MaxBudget: &ten, Current: 5, BudgetDuration: nil},
+		daily: loadDailyFixture(t, "daily_activity_current.json"),
+		prior: loadDailyFixture(t, "daily_activity_prior.json"),
 	}
 	var usedKey string
 	d.AsUser = func(key string) UserReads { usedKey = key; return cat }
@@ -100,7 +101,9 @@ func TestStats_ComposesAndScopesToUser(t *testing.T) {
 			} `json:"deltas"`
 		} `json:"totals"`
 		Budget struct {
-			Source string `json:"source"`
+			Source    string   `json:"source"`
+			Current   float64  `json:"current"`
+			MaxBudget *float64 `json:"max_budget"`
 		} `json:"budget"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -115,8 +118,11 @@ func TestStats_ComposesAndScopesToUser(t *testing.T) {
 	if got.Totals.Deltas.RequestsPct == nil {
 		t.Fatal("deltas.requests_pct is nil, want a computed delta against the prior fixture")
 	}
-	if got.Budget.Source != "team_member" {
-		t.Fatalf("budget.source = %q, want team_member", got.Budget.Source)
+	// The ceiling reported is the one the forwarder enforces: the caller's
+	// own user:<email> tag, not a team membership.
+	if got.Budget.Source != "tag" || got.Budget.Current != 5 ||
+		got.Budget.MaxBudget == nil || *got.Budget.MaxBudget != 20 {
+		t.Fatalf("budget = %+v, want {tag 5 20}", got.Budget)
 	}
 }
 
@@ -153,13 +159,14 @@ func TestStats_PriorFailureDegradesDeltas(t *testing.T) {
 	}
 }
 
+// TestStats_BudgetFailureIsUnknownNot502 — a failed /tag/info leaves the
+// rest of the payload intact with budget.source "unknown".
 func TestStats_BudgetFailureIsUnknownNot502(t *testing.T) {
 	d := testDeps(t)
+	d.LiteLLM.(*fakeLL).tagErr = errors.New("litellm: transport error")
 	cat := &fakeCatalog{
-		daily:       loadDailyFixture(t, "daily_activity_current.json"),
-		prior:       loadDailyFixture(t, "daily_activity_prior.json"),
-		userInfoErr: errors.New("litellm: transport error"),
-		memberErr:   errors.New("litellm: transport error"),
+		daily: loadDailyFixture(t, "daily_activity_current.json"),
+		prior: loadDailyFixture(t, "daily_activity_prior.json"),
 	}
 	d.AsUser = func(string) UserReads { return cat }
 
@@ -168,6 +175,9 @@ func TestStats_BudgetFailureIsUnknownNot502(t *testing.T) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 	var got struct {
+		Totals struct {
+			Requests int `json:"requests"`
+		} `json:"totals"`
 		Budget struct {
 			Source string `json:"source"`
 		} `json:"budget"`
@@ -175,6 +185,9 @@ func TestStats_BudgetFailureIsUnknownNot502(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
 	if got.Budget.Source != "unknown" {
 		t.Fatalf("budget.source = %q, want unknown", got.Budget.Source)
+	}
+	if got.Totals.Requests != 11 {
+		t.Fatalf("totals.requests = %d — the rest of the payload must survive", got.Totals.Requests)
 	}
 }
 

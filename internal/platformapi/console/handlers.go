@@ -37,8 +37,6 @@ type UserReads interface {
 	UserCatalog
 	DailyActivity(ctx context.Context, startDate, endDate string) (observability.DailyActivity, error)
 	SpendLogsV2(ctx context.Context, startDate, endDateExclusive string, maxPages int) ([]observability.SpendLogRow, bool, error)
-	UserInfo(ctx context.Context) (observability.UserInfo, error)
-	TeamMemberBudget(ctx context.Context, teamID, email string) (*observability.MemberBudget, error)
 }
 
 type envStore interface {

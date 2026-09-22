@@ -255,38 +255,3 @@ func TestUserView_UserInfo_DecodesFromFixture(t *testing.T) {
 		t.Fatalf("budget_duration = %v, want 30d", got.BudgetDuration)
 	}
 }
-
-func TestUserView_TeamMemberBudget(t *testing.T) {
-	const body = `{"team_id":"ach-user-alice@example.com","team_info":{"team_id":"ach-user-alice@example.com"},"team_memberships":[
-		{"user_id":"alice@example.com","spend":12.5,"litellm_budget_table":{"max_budget":100.0,"budget_duration":"30d"}},
-		{"user_id":"eve@example.com","spend":null,"litellm_budget_table":{"max_budget":null,"budget_duration":null}}
-	]}`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("team_id") != "ach-user-alice@example.com" {
-			t.Errorf("team_id = %q", r.URL.Query().Get("team_id"))
-		}
-		_, _ = w.Write([]byte(body))
-	}))
-	defer srv.Close()
-	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
-
-	got, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "alice@example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got == nil || got.Current != 12.5 || got.MaxBudget == nil || *got.MaxBudget != 100.0 || got.BudgetDuration == nil || *got.BudgetDuration != "30d" {
-		t.Fatalf("%+v", got)
-	}
-
-	// Both max_budget and spend null: no budget data to report.
-	nilBudget, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "eve@example.com")
-	if err != nil || nilBudget != nil {
-		t.Fatalf("eve: %+v %v, want nil,nil", nilBudget, err)
-	}
-
-	// No matching membership row at all.
-	missing, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "nobody@example.com")
-	if err != nil || missing != nil {
-		t.Fatalf("nobody: %+v %v, want nil,nil", missing, err)
-	}
-}

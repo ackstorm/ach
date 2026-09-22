@@ -15,7 +15,7 @@ describe('BudgetPanel', () => {
       current: 12.5,
       max_budget: 50,
       budget_duration: '30d',
-      source: 'user',
+      source: 'tag',
       pct: 0.25, // contract pct is a 0..1 FRACTION (12.5/50)
       has_budget: true,
     };
@@ -67,7 +67,7 @@ describe('BudgetPanel', () => {
       current: 42, // 42/50 = 84%
       max_budget: 50,
       budget_duration: '30d',
-      source: 'user',
+      source: 'tag',
       pct: 0.84,
       has_budget: true,
     };
@@ -82,7 +82,7 @@ describe('BudgetPanel', () => {
       current: 46, // 46/50 = 92%
       max_budget: 50,
       budget_duration: '30d',
-      source: 'user',
+      source: 'tag',
       pct: 0.92,
       has_budget: true,
     };
@@ -97,7 +97,7 @@ describe('BudgetPanel', () => {
       current: 120,
       max_budget: 50,
       budget_duration: '30d',
-      source: 'user',
+      source: 'tag',
       pct: 2.4, // 120/50 as a 0..1-scale fraction
       has_budget: true,
     };
@@ -120,7 +120,7 @@ describe('BudgetPanel', () => {
           current: 16,
           max_budget: 400,
           budget_duration: '30d',
-          source: 'team_member',
+          source: 'tag',
           pct: 0.04,
           has_budget: true,
         }}
@@ -137,7 +137,7 @@ describe('BudgetPanel', () => {
           current: 16,
           max_budget: 400,
           budget_duration: '24h',
-          source: 'team_member',
+          source: 'tag',
           pct: 0.04,
           has_budget: true,
         }}

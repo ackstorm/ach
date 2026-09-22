@@ -46,10 +46,6 @@ type fakeCatalog struct {
 	lastSpendStart string
 	lastSpendEnd   string
 	lastSpendMax   int
-	userInfo       observability.UserInfo
-	userInfoErr    error
-	memberBudget   *observability.MemberBudget
-	memberErr      error
 }
 
 func (f *fakeCatalog) ListModelGroups(context.Context) ([]litellm.ModelGroupInfo, error) {
@@ -72,12 +68,6 @@ func (f *fakeCatalog) SpendLogsV2(_ context.Context, start, end string, maxPages
 	f.lastSpendStart, f.lastSpendEnd, f.lastSpendMax = start, end, maxPages
 	return f.spendRows, f.spendTruncated, f.spendErr
 }
-func (f *fakeCatalog) UserInfo(context.Context) (observability.UserInfo, error) {
-	return f.userInfo, f.userInfoErr
-}
-func (f *fakeCatalog) TeamMemberBudget(context.Context, string, string) (*observability.MemberBudget, error) {
-	return f.memberBudget, f.memberErr
-}
 
 type fakeStore map[string]*db.EnvironmentRow
 
@@ -91,6 +81,14 @@ type fakeLL struct {
 	litellm.Client
 	teams map[string][]string
 	err   error
+	// tag drives the console's budget panel (the caller's user:<email>
+	// tag); tagErr forces the degraded "unknown" branch.
+	tag    *litellm.TagInfoEntry
+	tagErr error
+}
+
+func (f *fakeLL) TagInfo(_ context.Context, _ string) (*litellm.TagInfoEntry, error) {
+	return f.tag, f.tagErr
 }
 
 func (f *fakeLL) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {

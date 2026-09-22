@@ -115,7 +115,7 @@ function makeStats(overrides: Partial<StatsResponse> = {}): StatsResponse {
       current: 12.5,
       max_budget: 50,
       budget_duration: '30d',
-      source: 'user',
+      source: 'tag',
       pct: 25,
       has_budget: true,
     },

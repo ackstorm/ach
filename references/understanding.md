@@ -48,11 +48,19 @@ underlying layer keeps its job:
   Source of truth (spec §17) for models, MCP servers, A2A agents, Teams,
   users, virtual keys, budgets. ACH never mirrors LiteLLM state as product
   truth; reaches it **exclusively via REST** (never via LiteLLM CRDs).
-  Budget model: the operator creates a LiteLLM **tag** `<environment>` per
-  Environment; `ek_` traffic carries the tag → user + Team + Environment
-  budgets stack (hard 429). `pk_` traffic carries **no** tag — human traffic
-  is capped by user/Team budgets only. "pk_ for humans, ek_ for workloads"
-  is the contract; deliberately never server-enforced (§8.6).
+  Budget model (measured 2026-09-22, `references/litellm-permission-model.md`
+  §15): every ceiling ACH enforces lives on a LiteLLM **tag**, never on a
+  team or user object — a user-object budget is not enforced at all, and a
+  team budget reaches only that team's keys. The forwarder stamps
+  `x-litellm-tags` on EVERY authenticated request: `user:<email>` always,
+  plus `environment:<env>` and `key:<ek id>` for an `ek_`. LiteLLM enforces
+  each tag independently and in parallel, blocking on the first one whose
+  spend exceeds its `max_budget` (post-paid: the crossing request is served,
+  the next is 429). So one user ceiling covers a person's `pk_` AND every
+  `ek_` they own across Environments; `Environment.spec.budget` caps an
+  Environment's pooled `ek_` spend; `POST`/`PATCH /platform/keys …/budget`
+  caps one key. "pk_ for humans, ek_ for workloads" is the contract;
+  deliberately never server-enforced (§8.6).
 - **Kubernetes** = ingress path for object creation (GitOps) + reconcile
   substrate. NOT the read path: since issue #34, **Postgres is the
   request-time source of truth**; only the operator holds K8s RBAC.
@@ -373,9 +381,10 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   `"data_scope":"user"` (D-13/AC-16) — user-global, never
   Environment-scoped, so traffic sent through an `ek_` the same owner holds
   counts toward the same totals. Independent degradation: a failed
-  prior-window read only drops `capabilities.deltas`; a failed
-  `UserInfo`/`TeamMemberBudget` read only degrades `budget.source` to
-  `"unknown"`; a failed CURRENT-window read is a hard 502
+  prior-window read only drops `capabilities.deltas`; a failed `/tag/info`
+  read only degrades `budget.source` to `"unknown"` (the budget panel reads
+  the caller's own `user:<email>` tag — the ceiling the forwarder enforces —
+  with the MASTER client, since `/tag/info` is an admin route); a failed CURRENT-window read is a hard 502
   `litellm_rejected`/503 `litellm_unreachable` (never a master-key retry);
   `latency`'s `/spend/logs/v2` fetch degrades to 200
   `{"available":false,"reason":"unavailable"|"fetch_failed"}` rather than an

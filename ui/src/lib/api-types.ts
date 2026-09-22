@@ -211,8 +211,13 @@ export interface StatsKeyRow {
   spend_pct: number | null;
 }
 
-/** Source of the spend figure. stats.py::_budget_block. */
-export type SpendSource = 'team_member' | 'user' | 'unknown';
+/**
+ * Source of the spend figure. 'tag' is the caller's own LiteLLM budget tag
+ * ("user:<email>") — the ceiling the forwarder actually enforces, covering
+ * their pk_ and every ek_ they own. 'unknown' means no budget is configured
+ * or the read failed; the panel shows no ceiling rather than a fake zero.
+ */
+export type SpendSource = 'tag' | 'unknown';
 
 /**
  * Budget block. stats.py::build_stats_contract. max_budget null when none is

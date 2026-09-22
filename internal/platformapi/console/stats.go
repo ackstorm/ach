@@ -104,22 +104,44 @@ func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
 		prevAgg = &a
 	}
 
-	user, uerr := u.UserInfo(ctx)
-	if uerr != nil {
-		d.Logger.Warn("console.stats: user info unavailable", "err", uerr)
-		user = observability.UserInfo{}
-	}
-	member, merr := u.TeamMemberBudget(ctx, litellm.UserShellAlias(kc.OwnerEmail), kc.OwnerEmail)
-	if merr != nil {
-		d.Logger.Warn("console.stats: member budget unavailable", "err", merr)
-		member = nil
-	}
+	// The caller's own ceiling lives on their LiteLLM tag, which is what
+	// the forwarder enforces. Read with the MASTER client, not UserView:
+	// /tag/info is an admin route, and the tag is ACH-owned metadata about
+	// the caller rather than a LiteLLM user read. Degrades independently —
+	// a failed read is budget.source "unknown", never an HTTP error.
+	budget := d.userTagBudget(ctx, kc.OwnerEmail)
 
 	rng := observability.Range{Start: day(start), End: day(end), Days: span}
 	rng.Compare.Start, rng.Compare.End = day(prevStart), day(prevEnd)
-	c := observability.BuildStatsContract(curAgg, prevAgg, observability.BudgetBlock(user, member), observability.LastUsedFromWindow(cur), caps, rng)
+	c := observability.BuildStatsContract(curAgg, prevAgg, observability.BudgetBlock(budget), observability.LastUsedFromWindow(cur), caps, rng)
 	c.Keys = d.nameKeys(ctx, kc.OwnerEmail, c.Keys)
 	render.JSON(w, http.StatusOK, withStatsScope(c))
+}
+
+// userTagBudget reads the caller's "user:<email>" tag and projects it into
+// the console's budget input. nil means "no ceiling to report": the tag
+// does not exist yet (nobody has spent through it and no default budget is
+// configured), or the read failed — the panel says "unknown" either way,
+// which is honest, where a zero would not be.
+func (d Deps) userTagBudget(ctx context.Context, owner string) *observability.TagBudget {
+	entry, err := d.LiteLLM.TagInfo(ctx, litellm.UserBudgetTag(owner))
+	if err != nil {
+		d.Logger.Warn("console.stats: user tag budget unavailable", "err", err)
+		return nil
+	}
+	if entry == nil {
+		return nil
+	}
+	out := &observability.TagBudget{Spend: entry.Spend}
+	if entry.Budget != nil {
+		maxBudget := entry.Budget.MaxBudget
+		out.MaxBudget = &maxBudget
+		if entry.Budget.BudgetDuration != "" {
+			duration := entry.Budget.BudgetDuration
+			out.BudgetDuration = &duration
+		}
+	}
+	return out
 }
 
 // latency serves GET /platform/console/latency — the user's own

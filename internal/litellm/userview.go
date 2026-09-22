@@ -255,64 +255,6 @@ func (u *UserView) UserInfo(ctx context.Context) (observability.UserInfo, error)
 	}, nil
 }
 
-// teamMemberRow is one team_memberships[] entry of GET /team/info.
-type teamMemberRow struct {
-	UserID string   `json:"user_id"`
-	Spend  *float64 `json:"spend"`
-	Budget *struct {
-		MaxBudget      *float64 `json:"max_budget"`
-		BudgetDuration *string  `json:"budget_duration"`
-	} `json:"litellm_budget_table"`
-}
-
-// teamInfoMemberships decodes the team_memberships[] LiteLLM returns at the
-// TOP level of GET /team/info, a sibling of team_info — not nested under it.
-func teamInfoMemberships(raw []byte) ([]teamMemberRow, error) {
-	var flat struct {
-		TeamMemberships []teamMemberRow `json:"team_memberships"`
-	}
-	if err := json.Unmarshal(raw, &flat); err != nil {
-		return nil, err
-	}
-	return flat.TeamMemberships, nil
-}
-
-// TeamMemberBudget is GET /team/info?team_id=<own shell> as the user — the
-// team_memberships[] row whose user_id == email, projected to the ENFORCED
-// per-member budget. Returns nil (no error) when the caller has no
-// membership row, or when the row carries neither a max_budget nor a
-// spend figure (both JSON null) — genuinely no budget data to report, as
-// opposed to a real zero spend.
-func (u *UserView) TeamMemberBudget(ctx context.Context, teamID, email string) (*observability.MemberBudget, error) {
-	raw, err := u.c.makeRequestAs(ctx, u.key, "GET", "/team/info?team_id="+url.QueryEscape(teamID), nil)
-	if err != nil {
-		return nil, err
-	}
-	members, err := teamInfoMemberships(raw)
-	if err != nil {
-		return nil, fmt.Errorf("litellm: decode GET /team/info: %w", err)
-	}
-	for _, m := range members {
-		if m.UserID != email {
-			continue
-		}
-		var maxBudget *float64
-		var duration *string
-		if m.Budget != nil {
-			maxBudget, duration = m.Budget.MaxBudget, m.Budget.BudgetDuration
-		}
-		if maxBudget == nil && m.Spend == nil {
-			return nil, nil
-		}
-		current := 0.0
-		if m.Spend != nil {
-			current = *m.Spend
-		}
-		return &observability.MemberBudget{MaxBudget: maxBudget, Current: current, BudgetDuration: duration}, nil
-	}
-	return nil, nil
-}
-
 // decodeBareOrWrapped decodes a bare JSON array, or the first of the named
 // keys of a wrapping object, into out.
 func decodeBareOrWrapped(raw []byte, out any, keys ...string) error {

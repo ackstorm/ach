@@ -366,3 +366,99 @@ runs (D-30).
   (`POST .../resume`) both derive the verdict from the key OWNER's actual
   Environment membership — an admin caller's own `ek_` is never treated as
   having access it does not have.
+
+---
+
+## 15. Budgets live on tags (measured 2026-09-22, kind cluster, LiteLLM as shipped in `test/e2e/cluster/01-base`)
+
+These were **measured, not derived**. Do NOT re-litigate them; do re-measure
+if a LiteLLM upgrade lands.
+
+### Why tags and not teams or users
+
+| Fact | Evidence |
+|---|---|
+| A LiteLLM **user object**'s `max_budget` is **not enforced** for keys that belong to a team (neither `pk_` nor `ek_`), even with `spend > max_budget`. | 200 throughout |
+| A **team** `max_budget` and a **team-member** `max_budget_in_team` DO cap keys minted into that team. Not used: tags cover the same ground and also cross Environments. | 429 measured on both |
+
+ACH therefore writes **no `max_budget` onto any LiteLLM team or user
+object**. Teams stay pure scoping (deny-all shells + access groups).
+
+### The three ACH tag namespaces
+
+| Tag | Caps | Written by |
+|---|---|---|
+| `user:<normalized email>` | the person's whole footprint — their `pk_` AND every `ek_` they own, across Environments | platform-api `provisionUser` at login, from `platformApi.userDefaults` (`ACH_USER_MAX_BUDGET` / `ACH_USER_BUDGET_DURATION`) |
+| `environment:<name>` | the POOLED spend of every `ek_` issued for that Environment, all owners together | the operator, from `Environment.spec.budget` (condition `BudgetSynced`) |
+| `key:<ACH key id>` | one `ek_` on its own | platform-api — `POST /platform/keys {budget}` at create, `PATCH /platform/keys/{id}/budget` later |
+
+The forwarder stamps them on EVERY authenticated request, in that order, via
+`x-litellm-tags` (`internal/forwarder/proxy/tags.go`). A `pk_` carries only
+`user:`; a request with no ACH identity carries none.
+
+### Enforcement
+
+| Fact | Evidence |
+|---|---|
+| A tag budget is a **budget object**: `LiteLLM_TagTable.budget_id` → `LiteLLM_BudgetTable {max_budget, budget_duration, budget_reset_at, soft_budget, tpm_limit, rpm_limit, max_parallel_requests}`. `/tag/info` returns it nested as `litellm_budget_table`. | `SELECT tag_name, budget_id FROM "LiteLLM_TagTable"` → non-null FK; `/tag/info` body |
+| Tags stamped via the `x-litellm-tags` header are enforced on `/v1/chat/completions`, the Gemini-compatible `/v1beta/models/<m>:generateContent`, the `/gemini` passthrough, and `/mcp/<server>` tools/call. | 429 on all four with a tag over budget |
+| Enforcement runs **before** the upstream call (a `/gemini` passthrough that would 500 upstream still 429s). | 429 vs 500 baseline |
+| Several tags on one request are enforced **independently and in parallel**; the first tag whose spend exceeds its budget blocks, with **no hierarchy**. Raising that tag's budget unblocks; the next tag to cross then blocks. | user=10/env=0.6/key=1.1, cost 0.25/call: blocked at 0.75 by `environment:`; env→5 unblocks; blocked again at 1.25 by `key:`; user→0.1 blocks immediately |
+| The comparison is `spend > max_budget` (**post-paid**): the request that crosses the line is served, the NEXT one is refused with `{"detail":"Budget has been exceeded! Tag=<tag> Current cost: <x>, Max budget <y>"}` (HTTP 429). | measured body |
+| Budget changes take effect in ≈10 s (cache), no key or team touch needed. | measured |
+| Tag spend accumulates in `LiteLLM_DailyTagSpend`; the `LiteLLM_TagTable.spend` column is NOT the enforcement counter. | forced `TagTable.spend` had no effect; organic `DailyTagSpend` did |
+| MCP calls can carry cost: register the server with `mcp_info.mcp_server_cost_info.default_cost_per_query` (or `tool_name_to_cost_per_query`) and each `tools/call` books that amount to key + tag spend. Without it an MCP call costs 0 and consumes no budget. | key spend 0.5 after 2 calls at 0.25 |
+| LiteLLM's `x-litellm-api-key` header requires the `Bearer ` prefix on `/mcp` (the forwarder already does this, `proxy.go`). | 401 "Malformed API Key" without it |
+
+### Writing a budget: the friendly-id upsert (`internal/litellm/tags.go`)
+
+Every ACH budget object uses **the tag name as its `budget_id`**
+(`user:<email>`, `environment:<env>`, `key:<id>`) so `/budget/list` is
+legible instead of a wall of uuids.
+
+| Probe | Result |
+|---|---|
+| `POST /budget/new {"budget_id":"user:probe@kilgore.trout", "max_budget":5, "budget_duration":"30d"}` | accepted — `:` and `@` are legal in a `budget_id` |
+| `POST /budget/new` on an existing id | HTTP **400** `{"detail":{"error":"Budget with id 'X' already exists."}}` |
+| `POST /budget/update {"budget_id":"<missing>"}` | HTTP **200**, body `null` — a silent no-op. **New-first is mandatory**; update-first would quietly do nothing. |
+| `POST /tag/new {"name":N,"budget_id":N}` | binds; `/tag/info` then reports `litellm_budget_table.budget_id == N` |
+| `POST /tag/update {"name":N,"budget_id":N}` | HTTP **500** — `BudgetNewRequest() got multiple values` when the budget exists, `Foreign key constraint failed on LiteLLM_TagTable_budget_id` when it does not. **An existing tag can NEVER be re-bound to a budget object.** |
+| `POST /tag/update {"name":N,"max_budget":9}` (inline) | succeeds and mints a **uuid** budget — the path ACH deliberately does NOT take |
+| `POST /tag/delete {"name":N}` | deletes the tag row only; a linked budget row is **orphaned** — always pair it with `POST /budget/delete` |
+| `POST /budget/delete {"id":N}` | deletes it; a repeat returns `null` with no error (idempotent) |
+
+**Tags auto-create from traffic, budgetless.** LiteLLM writes a tag row the
+first time a name appears in `x-litellm-tags` (description *"This is just a
+spend tag that was passed dynamically in a request. It does not control any
+LLM models."*). So "the tag already exists without our budget" is the NORMAL
+case, not an edge case. Because `/tag/update` cannot bind a budget, such a
+tag must be **deleted and recreated** to receive one — which
+`UpsertTagBudget` does. **Spend survives the rebind**: enforcement counts
+`LiteLLM_DailyTagSpend`, keyed by tag name in its own table.
+
+The resulting upsert, in order: `POST /budget/new` (fallback
+`POST /budget/update`) → `POST /tag/info` → return if already bound → else
+`POST /tag/delete` → `POST /tag/new {name, budget_id}`. Steady state is
+three calls.
+
+### Lifecycle
+
+- **Environment delete** reaps `environment:<name>` AND its budget object,
+  unconditionally — not gated on `spec.budget`, because the budgetless row
+  LiteLLM auto-created from traffic must go too. It also deletes the legacy
+  bare `<env>` tag; the two names are different tags, do not conflate them.
+- **`ek_` revoke** reaps `key:<id>` and its budget object, best-effort: the
+  credential is already dead, so a failed tag delete never fails the revoke.
+- **Dropping `spec.budget`** from a live Environment does NOT remove the
+  ceiling — nothing deletes the tag until the Environment is deleted.
+- Nothing reaps a `user:<email>` tag; a user's ceiling outlives their keys,
+  which is the point of it.
+
+### What the console shows
+
+`GET /platform/console/stats` reports `budget` from the caller's OWN
+`user:<email>` tag (`source: "tag"`), read with the MASTER client —
+`/tag/info` is an admin route and the tag is ACH-owned metadata about the
+caller, not a LiteLLM user read. A failed read degrades to
+`source: "unknown"` and never fails the response. The §10.4 `team_member`
+source is gone: it was unreachable in ACH's topology.
