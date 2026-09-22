@@ -1,14 +1,14 @@
 // Mcp.tsx — the #/mcp page (nav: KEYS · STATS · MODELS · MCP · HOW-TO).
 //
 // Read-only list of the Model Context Protocol servers wired into the gateway,
-// sourced from GET /api/session/mcp (server-side LiteLLM /v1/mcp/server, projected
-// to a PUBLIC subset — no credentials/env/headers). Per server it shows name +
+// sourced from GET /platform/console/capabilities?scope=personal (mcp_servers, a
+// PUBLIC projection — no credentials/env/headers). Per server it shows name +
 // description, status pill, endpoint URL, transport + auth-type chips, the exposed
 // tools, and access groups.
 //
-// States: per-page error+retry card (useMcp throws on non-200); a calm "MCP not
-// enabled" state when the deployment's LiteLLM has no MCP gateway (a valid 200
-// with available:false); and an empty "no servers configured" state. The page is
+// States: per-page error+retry card (useMcp throws on non-200); a calm
+// "provisioning" card while the personal credential is still being set up
+// (provisioning:true); and an empty "no servers configured" state. The page is
 // presentational — the hook owns the fetch.
 
 import { useState } from 'react';

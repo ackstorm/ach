@@ -1,13 +1,13 @@
 // A2a.tsx — the #/a2a page (nav: KEYS · MODELS · MCPs · A2A · STATS · HOW-TO).
 //
 // Read-only list of the Agent-to-Agent (A2A) agents registered on the gateway,
-// sourced from GET /api/session/a2a (server-side LiteLLM /v1/agents, projected to
-// a PUBLIC subset — no headers/params). Per agent it shows name + description,
+// sourced from GET /platform/console/capabilities?scope=personal (a2a_agents, a
+// PUBLIC projection — no headers/params). Per agent it shows name + description,
 // version pill, endpoint URL, transport + streaming chips, and the agent's skills.
 //
-// States: per-page error+retry card (useA2a throws on non-200); a calm "A2A not
-// enabled" state when the deployment's LiteLLM has no A2A gateway (a valid 200 with
-// available:false); and an empty "no agents configured" state. The page is
+// States: per-page error+retry card (useA2a throws on non-200); a calm
+// "provisioning" card while the personal credential is still being set up
+// (provisioning:true); and an empty "no agents configured" state. The page is
 // presentational — the hook owns the fetch. Mirrors routes/Mcp.tsx.
 
 import { useState } from 'react';

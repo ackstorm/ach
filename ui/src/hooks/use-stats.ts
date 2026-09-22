@@ -27,14 +27,14 @@ export interface StatsRangeInput {
 }
 
 /**
- * GET /api/session/stats?start_date=&end_date=. Throws on a non-200 / malformed
+ * GET /platform/console/stats?start_date=&end_date=. Throws on a non-200 / malformed
  * response so the query lands in `isError`; a 200 with a body resolves to the
  * StatsResponse contract. The query key carries the range so each range caches
  * separately and a range change triggers a refetch.
  */
 export function useStats(range: StatsRangeInput): UseQueryResult<StatsResponse> {
   return useQuery({
-    queryKey: ['session', 'stats', range.start, range.end],
+    queryKey: ['console', 'stats', range.start, range.end],
     queryFn: async ({ signal }): Promise<StatsResponse> => {
       const params = new URLSearchParams({
         start_date: range.start,

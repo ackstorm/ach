@@ -1,7 +1,7 @@
 // Models.tsx — the #/models catalog page (nav: KEYS · MODELS · MCPS · STATS · HOW-TO).
 //
 // Read-only catalog of the model aliases available on the gateway, sourced from
-// GET /api/session/models (server-side LiteLLM /model_group/info — the safe public
+// GET /platform/console/capabilities?scope=personal (models — the safe public
 // group view: no upstream model / api_base / api_key). Per alias it shows the
 // provider(s), mode, whether it is a thinking/reasoning model, context window
 // (max input/output tokens), per-1M-token pricing, and capability badges.

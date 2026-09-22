@@ -2,7 +2,7 @@
 //
 // React + TanStack Query + Tailwind rebuild of the old Preact container
 // src/ui/stats.js (StatsView). It owns the date-range state, drives the
-// re-query against GET /api/session/stats via useStats(range), and composes the
+// re-query against GET /platform/console/stats via useStats(range), and composes the
 // Phase-4 leaves (KpiRow, SpendChart, RequestsChart, UsageDonut, TopKeys,
 // ModelTable, BudgetPanel, DateRange) with per-panel Skeletons while loading and
 // a whole-page error card on failure.
@@ -303,7 +303,7 @@ export function Stats() {
         )}
       </div>
 
-      {/* Latency + request outcomes — sourced from /api/session/latency over the
+      {/* Latency + request outcomes — sourced from /platform/console/latency over the
           same date range as the page. Own (independent) loading state. */}
       <div className="grid grid-cols-2 gap-3 max-[880px]:grid-cols-1">
         <Panel label={SECTION_LATENCY}>
