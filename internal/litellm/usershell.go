@@ -3,7 +3,6 @@
 package litellm
 
 import (
-	"slices"
 	"strings"
 )
 
@@ -53,10 +52,10 @@ func IsUserShellManaged(e TeamListEntry, email string) bool {
 		meta[UserShellManagedUserKey] == NormalizeEmail(email)
 }
 
-// IsUserShellShaped reports whether e already carries a user shell's alias and
-// deny-all Models sentinel for email, independent of ownership metadata (the
-// migration path for shells created before the metadata existed — mirrors
-// IsShellTeamShaped).
+// IsUserShellShaped reports whether e carries a user shell's alias and a
+// deny-all Models list (either sentinel) for email, independent of ownership
+// metadata. Adoption path, not proof of ownership — see IsShellTeamShaped for
+// what that does and does not bound.
 func IsUserShellShaped(e TeamListEntry, email string) bool {
-	return e.TeamAlias == UserShellAlias(email) && slices.Equal(e.Models, []string{ShellTeamDenyAllModel})
+	return e.TeamAlias == UserShellAlias(email) && isDenyAllModelList(e.Models)
 }

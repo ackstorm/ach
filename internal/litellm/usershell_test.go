@@ -20,8 +20,8 @@ func TestNewUserShellRequestSetsIDAndSentinels(t *testing.T) {
 		t.Fatalf("id/alias = %q/%q", req.TeamID, req.TeamAlias)
 	}
 	b, _ := json.Marshal(req)
-	// deny-all: the one impossible model, agents nil-UUID, MCP explicit empty.
-	for _, want := range []string{`"__deny_all__"`, `"00000000-0000-0000-0000-000000000000"`, `"mcp_servers":[]`} {
+	// deny-all: LiteLLM's own no-default-models, agents nil-UUID, MCP explicit empty.
+	for _, want := range []string{`"` + ShellTeamDenyAllModel + `"`, `"00000000-0000-0000-0000-000000000000"`, `"mcp_servers":[]`} {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("missing %s in %s", want, b)
 		}
@@ -46,6 +46,12 @@ func TestIsUserShellManagedAndShaped(t *testing.T) {
 	}
 	if !IsUserShellShaped(shapedOnly, "jc@example.com") {
 		t.Fatal("shape not recognised")
+	}
+	// An older ACH's shell still carries the legacy sentinel; it must be
+	// adoptable, or the repair that migrates it can never run.
+	legacy := TeamListEntry{TeamAlias: "ach-user-jc@example.com", Models: []string{ShellTeamDenyAllModelLegacy}}
+	if !IsUserShellShaped(legacy, "jc@example.com") {
+		t.Fatal("legacy-sentinel shell not recognised as shaped")
 	}
 
 	// Same blob-poisoning hazard as the env shell — see

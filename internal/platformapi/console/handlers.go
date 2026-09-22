@@ -211,9 +211,14 @@ func projectA2A(e litellm.AgentEntry) a2aAgentRow {
 }
 
 // personal: effective access as LiteLLM sees the user's own key (D-05).
-// "__deny_all__" is the shell-team sentinel: alone, it means the operator
-// has not yet attached the fresh ach-user shell to any access group
-// (§10.2 fact 3) — reported as provisioning, never as "no models".
+// A deny-all shell-team sentinel alone — or an EMPTY list, which is what
+// LiteLLM returns for the current "no-default-models" sentinel because it
+// filters that value out of the catalog — means the operator has not yet
+// attached the fresh ach-user shell to any access group (§10.2 fact 3),
+// reported as provisioning, never as "no models". The legacy "__deny_all__"
+// value is still recognised (litellm.IsDenyAllModel): a user shell created
+// by an older ACH keeps it until something rewrites that team, so during an
+// upgrade the row is still there and must not read as a real model.
 func (d Deps) personal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_, u, ok := d.userReads(w, r)
@@ -228,7 +233,7 @@ func (d Deps) personal(w http.ResponseWriter, r *http.Request) {
 	provisioning := true
 	models := make([]litellm.ModelGroupInfo, 0, len(groups))
 	for _, g := range groups {
-		if g.Name == "__deny_all__" {
+		if litellm.IsDenyAllModel(g.Name) {
 			continue
 		}
 		provisioning = false

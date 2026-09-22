@@ -21,7 +21,7 @@ func TestUserView_UsesTheUserKeyNotTheMaster(t *testing.T) {
 		switch r.URL.Path {
 		case "/model_group/info":
 			_, _ = w.Write([]byte(`{"data":[
-			  {"model_group":"__deny_all__","providers":[]},
+			  {"model_group":"no-default-models","providers":[]},
 			  {"model_group":"demo-model","providers":["openai"],"mode":"chat","max_input_tokens":128000.0,
 			   "input_cost_per_token":1e-06,"supports_vision":true,"litellm_params":{"api_key":"SECRET"}}]}`))
 		case "/v1/mcp/server":

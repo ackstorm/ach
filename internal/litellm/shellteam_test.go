@@ -217,6 +217,47 @@ func TestIsShellTeamShaped(t *testing.T) {
 	if IsShellTeamShaped(TeamListEntry{TeamAlias: "ach-env-demo"}, "demo") {
 		t.Error("absent Models (nil, not the sentinel) reported as shaped")
 	}
+	// Adoption accepts the legacy sentinel — a shell written by an older ACH
+	// must be adoptable, or the repair that migrates it can never run.
+	if !IsShellTeamShaped(TeamListEntry{TeamAlias: "ach-env-demo", Models: []string{ShellTeamDenyAllModelLegacy}}, "demo") {
+		t.Error("legacy-sentinel shell reported as not shaped")
+	}
+}
+
+// TestIsDenyAllModel: reading accepts both sentinels, and nothing else.
+func TestIsDenyAllModel(t *testing.T) {
+	for _, name := range []string{ShellTeamDenyAllModel, ShellTeamDenyAllModelLegacy} {
+		if !IsDenyAllModel(name) {
+			t.Errorf("%q not recognised as deny-all", name)
+		}
+	}
+	for _, name := range []string{"", "gpt-4", "no-default-model", "deny_all"} {
+		if IsDenyAllModel(name) {
+			t.Errorf("%q wrongly recognised as deny-all", name)
+		}
+	}
+}
+
+// TestShellTeamDriftedLegacySentinel: the legacy value is drift, on purpose.
+// Reporting it makes the next reconcile rewrite the team, which is the only
+// thing that takes the phantom "__deny_all__" model out of every member's
+// catalog. Adoption accepting it and drift refusing it is the whole
+// migration.
+func TestShellTeamDriftedLegacySentinel(t *testing.T) {
+	legacy := TeamListEntry{
+		Models:           []string{ShellTeamDenyAllModelLegacy},
+		ObjectPermission: ShellTeamPermissions(),
+	}
+	if !ShellTeamDrifted(legacy, nil) {
+		t.Error("a shell still on the legacy sentinel must read as drifted")
+	}
+	current := TeamListEntry{
+		Models:           []string{ShellTeamDenyAllModel},
+		ObjectPermission: ShellTeamPermissions(),
+	}
+	if ShellTeamDrifted(current, nil) {
+		t.Error("a shell on the current sentinel must not read as drifted")
+	}
 }
 
 // TestNewShellTeamRequestCarriesGuardrails: the env shell transmits its

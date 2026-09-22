@@ -226,7 +226,7 @@ func TestUpdateTeamRequestBody(t *testing.T) {
 	c := NewRESTClient(srv.URL, "sk-master", logr.Discard())
 	out, err := c.UpdateTeam(context.Background(), &TeamUpdateRequest{
 		TeamID:           "t-1",
-		Models:           []string{"__deny_all__"},
+		Models:           []string{ShellTeamDenyAllModel},
 		ObjectPermission: &TeamObjectPermission{Agents: []string{"00000000-0000-0000-0000-000000000000"}},
 	})
 	if err != nil {
@@ -242,7 +242,7 @@ func TestUpdateTeamRequestBody(t *testing.T) {
 		t.Fatalf("body team_id = %v, want t-1", gotBody["team_id"])
 	}
 	models, _ := gotBody["models"].([]any)
-	if len(models) != 1 || models[0] != "__deny_all__" {
+	if len(models) != 1 || models[0] != ShellTeamDenyAllModel {
 		t.Fatalf("body models = %v, want the deny-all sentinel", gotBody["models"])
 	}
 	op, ok := gotBody["object_permission"].(map[string]any)
@@ -291,8 +291,8 @@ func TestDeleteTeamRequestBody(t *testing.T) {
 // on this decoding correctly.
 func TestGetTeamInfoDecodesEnvelopeAndFlat(t *testing.T) {
 	bodies := map[string]string{
-		"envelope": `{"team_id":"t-1","team_info":{"team_id":"t-1","team_alias":"ach-env-demo","models":["__deny_all__"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}}`,
-		"flat":     `{"team_id":"t-1","team_alias":"ach-env-demo","models":["__deny_all__"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}`,
+		"envelope": `{"team_id":"t-1","team_info":{"team_id":"t-1","team_alias":"ach-env-demo","models":["no-default-models"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}}`,
+		"flat":     `{"team_id":"t-1","team_alias":"ach-env-demo","models":["no-default-models"],"object_permission":{"mcp_servers":[],"agents":["00000000-0000-0000-0000-000000000000"]}}`,
 	}
 	for name, body := range bodies {
 		t.Run(name, func(t *testing.T) {

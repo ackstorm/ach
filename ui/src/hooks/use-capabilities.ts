@@ -12,10 +12,11 @@
 //   useMcp()           -> { servers: McpServerRow[], provisioning: boolean }
 //   useA2a()           -> { agents: A2aAgentRow[], provisioning: boolean }
 //
-// Every selector also carries `provisioning` (handlers.go::personal): the
-// __deny_all__ shell-team sentinel means the operator has not yet attached
-// the caller's shell to an access group — reported as provisioning, never as
-// "no models"/"not enabled".
+// Every selector also carries `provisioning` (handlers.go::personal): a
+// deny-all shell-team sentinel alone — or an empty list, since LiteLLM
+// filters the `no-default-models` sentinel out of the catalog — means the
+// operator has not yet attached the caller's shell to an access group,
+// reported as provisioning, never as "no models"/"not enabled".
 
 import { useQuery } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';

@@ -55,12 +55,38 @@ An empty or absent `models` list means every model. An empty or absent `agents`
 list means every agent. Both fail OPEN. `mcp_servers` is the exception and fails
 closed. This is why ACH's shell team carries sentinels rather than empty lists:
 
-    models                                 = ["__deny_all__"]
+    models                                 = ["no-default-models"]
     object_permission.mcp_servers          = []
     object_permission.mcp_access_groups    = []
     object_permission.mcp_tool_permissions = {}
     object_permission.agents               = ["00000000-0000-0000-0000-000000000000"]
     object_permission.agent_access_groups  = []
+
+### The models sentinel must be `no-default-models` (measured 2026-09-22, e2e cluster)
+
+Any impossible name denies. Only LiteLLM's OWN value stays out of the catalog:
+
+| team `models:` | `GET /v1/models` | `POST /v1/chat/completions` |
+|---|---|---|
+| `["__deny_all__"]` | **1 row** — the sentinel leaks into the catalog as a phantom model | 403 `team not allowed to access model. This team can only access models=['__deny_all__']` |
+| `["no-default-models"]` | **0 rows** | 403, identical shape |
+
+Both deny equally; `no-default-models` is a value LiteLLM recognises and
+filters out of the model list, an invented one is echoed back. ACH wrote
+`__deny_all__` until 2026-09-22, so every caller in a shell team saw a bogus
+model by that name — visible to ach-agent, OpenCode, anything listing models.
+
+The switch is a two-sided rule, in `internal/litellm/shellteam.go`:
+**writing** emits only `ShellTeamDenyAllModel` ("no-default-models");
+**reading** accepts both (`IsDenyAllModel`) wherever ACH detects a deny-all
+state — shell-team adoption (`IsShellTeamShaped` / `IsUserShellShaped`) and
+the console's `provisioning` projection — because a shell written by an older
+ACH still carries the legacy value until something rewrites it.
+`ShellTeamDrifted` is the deliberate exception: it compares against the
+current value only, so a legacy shell reads as DRIFTED and the next
+Environment reconcile migrates it. `/model_group/info` (what the console
+reads) was NOT part of this measurement — the 0-row result above is
+`/v1/models` — which is the other reason the console still filters by name.
 
 These sentinels cover four axes — `models`, `mcp_servers` (+
 `mcp_access_groups` and `mcp_tool_permissions`, both of which grant servers on

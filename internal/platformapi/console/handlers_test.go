@@ -152,7 +152,9 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	d := testDeps(t)
 	mode := "chat"
 	cat := &fakeCatalog{
-		models: []litellm.ModelGroupInfo{{Name: "__deny_all__", Providers: []string{}}, {Name: "demo-model", Providers: []string{"openai"}, Mode: &mode}},
+		// The LEGACY sentinel on purpose: mid-upgrade a user shell still
+		// carries it, and it must be stripped exactly like the current one.
+		models: []litellm.ModelGroupInfo{{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}, {Name: "demo-model", Providers: []string{"openai"}, Mode: &mode}},
 		mcp:    []litellm.MCPServerEntry{{ServerID: "s1", ServerName: "demo-mcp", Transport: "http", AllowedTools: []string{"a"}}},
 		a2a:    []litellm.AgentEntry{{AgentID: "a1", AgentName: "demo-agent", AgentCardParams: map[string]any{"url": "http://x", "skills": []any{map[string]any{"name": "s"}}, "capabilities": map[string]any{"streaming": true}}}},
 	}
@@ -189,14 +191,25 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	}
 }
 
+// TestCapabilities_PersonalProvisioningState: an unattached shell reads as
+// provisioning in all three shapes it can arrive in — the current sentinel,
+// the legacy one a shell written by an older ACH still carries, and an empty
+// list (what LiteLLM returns once it filters "no-default-models" out of the
+// catalog).
 func TestCapabilities_PersonalProvisioningState(t *testing.T) {
-	d := testDeps(t)
-	d.AsUser = func(string) UserReads {
-		return &fakeCatalog{models: []litellm.ModelGroupInfo{{Name: "__deny_all__", Providers: []string{}}}}
-	}
-	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"provisioning":true`) || !strings.Contains(rec.Body.String(), `"models":[]`) {
-		t.Fatalf("%d %s", rec.Code, rec.Body)
+	for name, models := range map[string][]litellm.ModelGroupInfo{
+		"current sentinel": {{Name: litellm.ShellTeamDenyAllModel, Providers: []string{}}},
+		"legacy sentinel":  {{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}},
+		"empty list":       {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := testDeps(t)
+			d.AsUser = func(string) UserReads { return &fakeCatalog{models: models} }
+			rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
+			if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"provisioning":true`) || !strings.Contains(rec.Body.String(), `"models":[]`) {
+				t.Fatalf("%d %s", rec.Code, rec.Body)
+			}
+		})
 	}
 }
 

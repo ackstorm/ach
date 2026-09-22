@@ -20,10 +20,25 @@ const (
 	// team-alias space.
 	ShellTeamPrefix = "ach-env-"
 
-	// ShellTeamDenyAllModel is a model name that must never exist upstream.
-	// An empty `models` list means EVERY model, so "deny all" has to be
-	// spelled as "allow exactly this one impossible model".
-	ShellTeamDenyAllModel = "__deny_all__"
+	// ShellTeamDenyAllModel is the value ACH writes to deny every model. An
+	// empty `models` list means EVERY model, so "deny all" has to be spelled
+	// as a list of exactly one name that grants nothing.
+	//
+	// It is LiteLLM's OWN recognised value, not an invented one, and that is
+	// the whole point: LiteLLM filters "no-default-models" out of
+	// GET /v1/models, while an arbitrary impossible name is echoed back as a
+	// phantom model row. ACH used "__deny_all__" until 2026-09-22 and every
+	// caller in a shell team saw a bogus model by that name (measured table
+	// in references/litellm-permission-model.md §5). Both deny identically;
+	// only this one stays out of the catalog.
+	ShellTeamDenyAllModel = "no-default-models"
+
+	// ShellTeamDenyAllModelLegacy is the pre-2026-09-22 sentinel. It is never
+	// WRITTEN any more — it is only still RECOGNISED, so that a shell created
+	// by an older ACH is adopted and repaired rather than mistaken for a team
+	// ACH does not own. ShellTeamDrifted deliberately does NOT accept it:
+	// reporting it as drift is what makes the next reconcile migrate it.
+	ShellTeamDenyAllModelLegacy = "__deny_all__"
 
 	// ShellTeamDenyAllAgent is the same trick for agents: an empty or absent
 	// `agents` list means every agent, so the list carries the nil UUID.
@@ -189,17 +204,35 @@ func IsShellTeamManaged(e TeamListEntry, env string) bool {
 		meta[ShellTeamManagedEnvKey] == env
 }
 
-// IsShellTeamShaped reports whether e already carries a shell team's alias
-// and deny-all Models sentinel for env, independent of ownership metadata.
+// IsDenyAllModel reports whether name is a deny-all models sentinel ACH
+// recognises — the current one or the legacy one. Reading accepts both;
+// writing only ever emits ShellTeamDenyAllModel.
+func IsDenyAllModel(name string) bool {
+	return name == ShellTeamDenyAllModel || name == ShellTeamDenyAllModelLegacy
+}
+
+// isDenyAllModelList reports whether models is exactly one deny-all sentinel.
+func isDenyAllModelList(models []string) bool {
+	return len(models) == 1 && IsDenyAllModel(models[0])
+}
+
+// IsShellTeamShaped reports whether e carries a shell team's alias and a
+// deny-all Models list (either sentinel) for env, independent of ownership
+// metadata.
 //
-// This is the migration path for shells created before
-// ShellTeamManagedMetadataKey existed: they carry no metadata, but landing
-// on exactly this alias with exactly the deny-all sentinel is not a state an
-// unrelated hand-made team would plausibly be in. ensureShellTeam treats a
-// shell-shaped-but-unmarked team as adoptable (repairs it, which also stamps
-// the metadata) instead of refusing it forever.
+// It is the ADOPTION path, not a proof of ownership: the metadata marker
+// (IsShellTeamManaged) is the proof, and this exists only so two kinds of
+// unmarked shell are repaired instead of refused forever — those created
+// before ShellTeamManagedMetadataKey existed, and those whose metadata a
+// LiteLLM UI save wiped. What bounds it is the ALIAS: "ach-env-<env>" is
+// ACH's own namespace and must match an Environment ACH reconciles. The
+// Models value bounds nothing much on its own — "no-default-models" is a
+// value LiteLLM documents, so a human could plausibly set it (that was less
+// true of the invented "__deny_all__", and the comment that used to lean on
+// it was wrong to). ensureShellTeam repairs an adopted team, which stamps
+// the metadata, so every later pass sees it as managed.
 func IsShellTeamShaped(e TeamListEntry, env string) bool {
-	return e.TeamAlias == ShellTeamAlias(env) && slices.Equal(e.Models, []string{ShellTeamDenyAllModel})
+	return e.TeamAlias == ShellTeamAlias(env) && isDenyAllModelList(e.Models)
 }
 
 // ShellTeamDrifted reports whether a shell team read back from LiteLLM has
@@ -231,6 +264,9 @@ func ShellTeamDrifted(e TeamListEntry, wantGuardrails []string) bool {
 	if e.Models == nil && e.ObjectPermission == nil {
 		return false
 	}
+	// Exact match against the CURRENT sentinel, deliberately: a shell still
+	// carrying the legacy "__deny_all__" is reported as drifted so the repair
+	// below rewrites it and the phantom model leaves the caller's catalog.
 	if !slices.Equal(e.Models, []string{ShellTeamDenyAllModel}) {
 		return true
 	}

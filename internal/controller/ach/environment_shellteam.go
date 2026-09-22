@@ -83,16 +83,20 @@ func (r *EnvironmentReconciler) ensureShellTeam(
 	// is the proof of ownership; only a marked team is touched.
 	//
 	// Migration: shells this branch created BEFORE this metadata existed
-	// (including every shell already running in the cluster today) carry
-	// none, so a strict "managed only" check would strand them as
-	// unmanaged forever. Those shells are still unambiguously recognizable
-	// by SHAPE — alias ach-env-<env> together with the exact deny-all
-	// Models sentinel is not a state an unrelated hand-made team would
-	// plausibly land in by chance — so a shell missing ONLY the metadata is
-	// adopted: the repair write below re-asserts the sentinels AND stamps
-	// the metadata, and every following pass then sees it as managed. A
-	// team that is neither marked NOR shell-shaped could be anything, so it
-	// is refused outright — loud beats a silent takeover.
+	// carry none, and a LiteLLM UI save can wipe it off a marked one, so a
+	// strict "managed only" check would strand both as unmanaged forever.
+	// Such a shell is adopted by SHAPE instead — alias ach-env-<env> (ACH's
+	// own namespace, for an Environment this operator reconciles) plus a
+	// deny-all Models list, either sentinel (litellm.IsShellTeamShaped).
+	// That is an ADOPTION heuristic, not proof: the deny-all value ACH now
+	// writes, "no-default-models", is LiteLLM's own, so a human could set
+	// it — the alias is what bounds the check, and the metadata the repair
+	// stamps is what proves ownership from then on. The repair write below
+	// re-asserts the sentinels (migrating a legacy "__deny_all__" shell to
+	// the current value) AND stamps the metadata, so every following pass
+	// sees it as managed. A team that is neither marked NOR shell-shaped
+	// could be anything, so it is refused outright — loud beats a silent
+	// takeover.
 	managed := litellm.IsShellTeamManaged(*info, env.Name)
 	if !managed && !litellm.IsShellTeamShaped(*info, env.Name) {
 		return "", fmt.Errorf(

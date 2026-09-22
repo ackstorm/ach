@@ -402,7 +402,8 @@ export interface A2aAgentRow {
  * GET /platform/console/capabilities?scope=personal response
  * (handlers.go::personal). `provisioning` is true when the caller's
  * ach-user-<email> shell team has not yet been attached to any access group
- * (the `__deny_all__` sentinel alone in the raw model list) — the Models page
+ * (a deny-all sentinel alone in the raw model list, or an empty one — LiteLLM
+ * filters the `no-default-models` sentinel out) — the Models page
  * shows a calm "being provisioned" card instead of an empty catalog; MCP/A2A
  * use it the same way when their own list is also empty.
  */
