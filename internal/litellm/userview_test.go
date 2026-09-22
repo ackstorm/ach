@@ -4,9 +4,13 @@ package litellm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -100,5 +104,189 @@ func TestUserView_RefusalIsTyped(t *testing.T) {
 	var a *Auth401Error
 	if err == nil || !errors.As(err, &a) {
 		t.Fatalf("want *Auth401Error, got %v", err)
+	}
+}
+
+func TestUserView_DailyActivity_PagesAndSumsExceptTotalPages(t *testing.T) {
+	var reqs []*http.Request
+	pages := []string{
+		`{"results":[{"date":"2026-09-19"},{"date":"2026-09-20"}],
+		  "metadata":{"total_api_requests":5,"total_pages":1,"has_more":true}}`,
+		`{"results":[{"date":"2026-09-20"}],
+		  "metadata":{"total_api_requests":3,"total_pages":2,"has_more":true}}`,
+		`{"results":[{"date":"2026-09-21"}],
+		  "metadata":{"total_api_requests":2,"total_pages":3,"has_more":false}}`,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs = append(reqs, r)
+		page := r.URL.Query().Get("page")
+		idx := map[string]int{"1": 0, "2": 1, "3": 2}[page]
+		_, _ = w.Write([]byte(pages[idx]))
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+
+	got, err := u.DailyActivity(context.Background(), "2026-09-19", "2026-09-21")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Results) != 4 {
+		t.Fatalf("results = %d, want 4 (day split across pages 1+2)", len(got.Results))
+	}
+	total, ok := got.Metadata["total_api_requests"].(json.Number)
+	if !ok {
+		t.Fatalf("total_api_requests type = %T", got.Metadata["total_api_requests"])
+	}
+	if f, _ := total.Float64(); f != 10 {
+		t.Fatalf("total_api_requests = %v, want 10 (5+3+2 summed across pages)", f)
+	}
+	if tp, _ := got.Metadata["total_pages"].(json.Number).Float64(); tp != 3 {
+		t.Fatalf("total_pages = %v, want 3 (last-page value, NOT summed)", tp)
+	}
+	if hm, ok := got.Metadata["has_more"].(bool); !ok || hm {
+		t.Fatalf("has_more = %v, want false (last page, not summed/coerced)", got.Metadata["has_more"])
+	}
+	if len(reqs) != 3 {
+		t.Fatalf("issued %d requests, want 3 (stopped at has_more=false)", len(reqs))
+	}
+	for i, r := range reqs {
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-user" {
+			t.Fatalf("request %d auth = %q, want Bearer sk-user", i, got)
+		}
+		q := r.URL.Query()
+		if q.Get("start_date") != "2026-09-19" || q.Get("end_date") != "2026-09-21" || q.Get("page_size") != "100" {
+			t.Fatalf("request %d params = %v", i, q)
+		}
+	}
+}
+
+func TestUserView_SpendLogsV2_CapsPagesAndReportsTruncated(t *testing.T) {
+	var reqs []*http.Request
+	row := func(i int) map[string]any {
+		return map[string]any{"status": "success", "model": "demo-model", "startTime": fmt.Sprintf("2026-09-2%dT00:00:00Z", i%10)}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqs = append(reqs, r)
+		rows := make([]map[string]any, 100)
+		for i := range rows {
+			rows[i] = row(i)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": rows, "total_pages": 7})
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+
+	rows, truncated, err := u.SpendLogsV2(context.Background(), "2026-09-20", "2026-09-23", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 500 {
+		t.Fatalf("rows = %d, want 500 (5 pages x 100)", len(rows))
+	}
+	if !truncated {
+		t.Fatal("truncated = false, want true (total_pages=7 > maxPages=5)")
+	}
+	if len(reqs) != 5 {
+		t.Fatalf("issued %d requests, want 5 (capped at maxPages)", len(reqs))
+	}
+	for i, r := range reqs {
+		q := r.URL.Query()
+		if q.Get("sort_by") != "startTime" || q.Get("sort_order") != "desc" {
+			t.Fatalf("request %d sort params = %v", i, q)
+		}
+		if q.Get("end_date") != "2026-09-23" {
+			t.Fatalf("request %d end_date = %q, want the caller's value verbatim (no +1 day inside this method)", i, q.Get("end_date"))
+		}
+	}
+}
+
+func TestUserView_SpendLogsV2_NoDataListIsEmptyNotError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+	rows, truncated, err := u.SpendLogsV2(context.Background(), "2026-09-20", "2026-09-23", 5)
+	if err != nil || len(rows) != 0 || truncated {
+		t.Fatalf("rows=%v truncated=%v err=%v", rows, truncated, err)
+	}
+}
+
+func TestUserView_SpendLogsV2_401IsTyped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"error":{"message":"Only proxy admin ... Your role=unknown"}}`))
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+	_, _, err := u.SpendLogsV2(context.Background(), "2026-09-20", "2026-09-23", 5)
+	var a *Auth401Error
+	if err == nil || !errors.As(err, &a) {
+		t.Fatalf("want *Auth401Error, got %v", err)
+	}
+}
+
+func TestUserView_UserInfo_DecodesFromFixture(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "user_info.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture["with_budget"])
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+
+	got, err := u.UserInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Spend == nil || *got.Spend != 0.0 {
+		t.Fatalf("spend = %v, want 0.0", got.Spend)
+	}
+	if got.MaxBudget == nil || *got.MaxBudget != 500.0 {
+		t.Fatalf("max_budget = %v, want 500.0", got.MaxBudget)
+	}
+	if got.BudgetDuration == nil || *got.BudgetDuration != "30d" {
+		t.Fatalf("budget_duration = %v, want 30d", got.BudgetDuration)
+	}
+}
+
+func TestUserView_TeamMemberBudget(t *testing.T) {
+	const body = `{"team_info":{"team_memberships":[
+		{"user_id":"alice@example.com","spend":12.5,"litellm_budget_table":{"max_budget":100.0,"budget_duration":"30d"}},
+		{"user_id":"eve@example.com","spend":null,"litellm_budget_table":{"max_budget":null,"budget_duration":null}}
+	]}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("team_id") != "ach-user-alice@example.com" {
+			t.Errorf("team_id = %q", r.URL.Query().Get("team_id"))
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	u := NewRESTClient(srv.URL, "sk-master", logr.Discard()).AsUser("sk-user")
+
+	got, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "alice@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Current != 12.5 || got.MaxBudget == nil || *got.MaxBudget != 100.0 || got.BudgetDuration == nil || *got.BudgetDuration != "30d" {
+		t.Fatalf("%+v", got)
+	}
+
+	// Both max_budget and spend null: no budget data to report.
+	nilBudget, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "eve@example.com")
+	if err != nil || nilBudget != nil {
+		t.Fatalf("eve: %+v %v, want nil,nil", nilBudget, err)
+	}
+
+	// No matching membership row at all.
+	missing, err := u.TeamMemberBudget(context.Background(), "ach-user-alice@example.com", "nobody@example.com")
+	if err != nil || missing != nil {
+		t.Fatalf("nobody: %+v %v, want nil,nil", missing, err)
 	}
 }

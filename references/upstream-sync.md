@@ -234,3 +234,12 @@ Source repository: `ackstorm/alitellm-auth` @ `5feb946c7380a4a3f3ef385ef074303a7
 | `internal/observability/budget_test.go` | `src/api/tests/test_session.py` (`test_budget_block_*`, `test_session.py:206-256`) | Case-for-case port of the 4 `_budget_block` cases (table-driven). |
 | `internal/observability/testdata/spend_logs_rows.json` | `src/api/tests/fixtures/spend_logs_rows.json` | Verbatim. Copied per the batch brief; unused by this batch's tests (`test_latency.py` builds synthetic rows, not fixture-backed) — reserved for a future Task 3/4 route-level/litellm-client test. |
 | `internal/observability/testdata/user_info.json` | `src/api/tests/fixtures/user_info.json` | Verbatim. Same as above — unused by this batch (`BudgetBlock` tests construct `UserInfo`/`MemberBudget` literals directly); reserved for Task 3/4. |
+
+## 2026-09-22 — `litellm.UserView` analytics reads (unified console Phase 3, Task 3)
+
+Source repository: `ackstorm/alitellm-auth` @ `5feb946c7380a4a3f3ef385ef074303a72d261eb` (Apache-2.0, same org) — endpoints only (`DailyActivity`/`SpendLogsV2`/`UserInfo`/`TeamMemberBudget` are ACH-original Go against LiteLLM's REST surface, not a line-for-line port); scoping measured live in `docs/plans/pk-scope-measurement.md` (2026-09-21, LiteLLM v1.99.1) — no `user_id` query param is sent on `/user/daily/activity` or `/spend/logs/v2` (both self-scope to the caller's key; the brief's own draft pseudocode listed `user_id` as a request param, superseded by the measurement).
+
+| ach file | alitellm-auth file | Notes |
+|---|---|---|
+| `internal/litellm/userview.go` | n/a (new ACH-side reads) | `DailyActivity` pages `/user/daily/activity` to completion (page_size 100, cap 200), summing every `total_*` metadata field except `total_pages` across pages. `SpendLogsV2` pages `/spend/logs/v2` newest-first up to `maxPages`, reporting `truncated` when more pages existed. `UserInfo`/`TeamMemberBudget` decode `/user/info` and `/team/info?team_id=<own shell>` respectively — all four via `makeRequestAs(ctx, u.key, …)`, never the master key. |
+| `internal/litellm/testdata/user_info.json` | `src/api/tests/fixtures/user_info.json` | Verbatim copy (same fixture already in `internal/observability/testdata/`); `TestUserView_UserInfo_DecodesFromFixture` serves its `with_budget` sub-object as the mock `/user/info` response. |
