@@ -670,6 +670,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#ek_-lifecycle-expiry-suspend-resume-revoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ek_ lifecycle: expiry, suspend, resume, revoke
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spend-ceilings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spend ceilings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1186,6 +1208,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#ek_-lifecycle-expiry-suspend-resume-revoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ek_ lifecycle: expiry, suspend, resume, revoke
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#spend-ceilings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spend ceilings
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1221,6 +1265,132 @@
 on runtime routes to catch <code>pk_</code> used where an <code>ek_</code> belongs. There is no
 server-side <code>pk_</code>-forbid toggle (honoring the frozen permanent decision);
 enforcement, if wanted, is the deployer's LiteLLM choice.</p>
+<h2 id="ek_-lifecycle-expiry-suspend-resume-revoke"><code>ek_</code> lifecycle: expiry, suspend, resume, revoke<a class="headerlink" href="#ek_-lifecycle-expiry-suspend-resume-revoke" title="Permanent link">&para;</a></h2>
+<p>An <code>ek_</code> can optionally be created with an expiration time, and can be
+manually suspended and resumed without losing the credential. This is an
+HTTP API surface for now — <code>ach-cli keys create</code> has no <code>--expires-at</code> flag
+and there is no <code>ach-cli keys suspend</code>/<code>resume</code> subcommand yet (CLI support
+is a follow-up); use the routes below directly, or through the web console.</p>
+<ul>
+<li><code>POST /platform/keys</code> accepts an optional <code>expires_at</code> (RFC3339, must be in
+  the future — a past or malformed value is <code>400 invalid_argument</code>). Omitting
+  it keeps the existing perpetual behavior. Expiry is enforced by ACH only:
+  no LiteLLM-side duration is ever set, and it is not editable after create —
+  create a new credential instead.</li>
+<li><code>POST /platform/keys/{key_id}/suspend</code> and <code>POST /platform/keys/{key_id}/resume</code>
+  disable and re-enable an <code>ek_</code> in place. Both are idempotent when the key
+  is already in the requested state. Resume fails <code>409</code> on a revoked or
+  expired key, and <code>403 unauthorized_team</code> if you no longer hold the
+  Environment's access. The backing credential is never deleted or
+  re-minted — the same <code>ek_</code> keeps working once resumed.</li>
+<li><code>DELETE /platform/keys/{key_id}</code> revokes from any state and is idempotent;
+  it cannot be undone.</li>
+</ul>
+<blockquote>
+<p>Suspension may take up to 60 seconds to apply. Requests already in
+progress may continue.</p>
+</blockquote>
+<h2 id="spend-ceilings">Spend ceilings<a class="headerlink" href="#spend-ceilings" title="Permanent link">&para;</a></h2>
+<p>Every ACH credential can carry a spend ceiling. They are enforced by LiteLLM
+on three independent counters, and a request is refused as soon as ANY of
+them is over budget — there is no hierarchy, whichever is crossed first wins:</p>
+<table>
+<thead>
+<tr>
+<th>Ceiling</th>
+<th>Covers</th>
+<th>Set by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Your own</td>
+<td>your <code>pk_</code> <strong>and</strong> every <code>ek_</code> you own, in every Environment</td>
+<td>the deployer, as a default applied at your first login</td>
+</tr>
+<tr>
+<td>Environment</td>
+<td>the pooled spend of every <code>ek_</code> issued for one Environment, across all owners</td>
+<td>an admin, via <code>Environment.spec.budget</code> in the CR</td>
+</tr>
+<tr>
+<td>Per key</td>
+<td>one <code>ek_</code> on its own</td>
+<td>you, when you create the key or at any time after</td>
+</tr>
+</tbody>
+</table>
+<p>Set a ceiling when you create a key:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;ach&gt;/platform/keys<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"environment":"demo","name":"ci","budget":{"max_budget":25,"budget_duration":"30d"}}'</span>
+</code></pre></div>
+<p>…or change it later (the key keeps working; only the ceiling moves):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/keys/&lt;key_id&gt;/budget<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":50}'</span>
+</code></pre></div>
+<p><code>max_budget</code> is in LiteLLM's spend unit (USD) and must be <code>&gt;= 0</code>; <code>0</code> is a
+real ceiling that refuses everything once any spend lands. <code>budget_duration</code>
+(e.g. <code>"30d"</code>) is the reset window — omit it for a budget that never resets.
+Only the key's owner may change its budget.</p>
+<p>When a ceiling is reached, the request fails with <strong>HTTP 429</strong> and a body
+naming the counter that blocked:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
+</code></pre></div>
+<p><code>Tag=user:…</code> means your own ceiling, <code>Tag=environment:…</code> the Environment's
+pooled one, and <code>Tag=key:…</code> that single key's. Raise the named ceiling (or
+wait for its reset window) and traffic resumes within about ten seconds.
+Two caveats: the comparison is <strong>post-paid</strong>, so the request that crosses
+the line is served and the NEXT one is refused; and revoking a key deletes
+its ceiling along with it.</p>
+<p><code>GET /platform/keys</code> reports one of five effective states, in priority order
+when more than one applies:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>revoked</code></td>
+<td>Permanently withdrawn.</td>
+<td>Cannot be recovered; create a new credential.</td>
+</tr>
+<tr>
+<td><code>expired</code></td>
+<td>Its <code>expires_at</code> has passed.</td>
+<td>Create a new credential; expiry is not editable.</td>
+</tr>
+<tr>
+<td><code>suspended</code></td>
+<td>Manually disabled by the owner.</td>
+<td><code>POST .../resume</code>, subject to current access and validity.</td>
+</tr>
+<tr>
+<td><code>invalid</code></td>
+<td>Owner no longer has access to the Environment.</td>
+<td>Automatically usable again once access returns — no action needed.</td>
+</tr>
+<tr>
+<td><code>active</code></td>
+<td>Enabled, unexpired, not revoked, owner has access.</td>
+<td>None required.</td>
+</tr>
+</tbody>
+</table>
+<p><code>?status=</code> filters on this effective state; an unrecognized value is
+<code>400 invalid_argument</code>. Because the filter is applied AFTER the effective
+state is derived (an <code>invalid</code> row is still persisted <code>active</code>), a filtered
+page can hold fewer than <code>limit</code> items even while <code>next_cursor</code> is
+non-empty — keep paging until <code>next_cursor</code> is empty rather than stopping
+at a short page.</p>
+<p><strong>Release notes:</strong> once any <code>ek_</code> has been suspended or given an expiry, the
+database cannot be rolled back below this release (D-29) — see
+<code>references/troubleshooting.md</code> for the exact refusal text and recovery.</p>
 
 
 

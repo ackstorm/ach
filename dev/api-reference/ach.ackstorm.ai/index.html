@@ -1431,6 +1431,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#budgetblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BudgetBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#capabilityspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2578,6 +2589,17 @@
     <span class="md-ellipsis">
       
         BitbucketSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budgetblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BudgetBlock
       
     </span>
   </a>
@@ -4668,6 +4690,36 @@ condition is written.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="budgetblock">BudgetBlock<a class="headerlink" href="#budgetblock" title="Permanent link">&para;</a></h4>
+<p>BudgetBlock is a spend ceiling ACH writes onto a LiteLLM tag. ACH stores
+no spend of its own: LiteLLM owns the counter and the enforcement (it
+refuses a request once the tag's accumulated spend exceeds MaxBudget).</p>
+<p><em>Appears in:</em>
+- <a href="#environmentspec">EnvironmentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxBudget</code> <em>float</em></td>
+<td>MaxBudget is the ceiling in LiteLLM's spend unit (USD). Required<br />when the block is present.</td>
+<td></td>
+<td>Minimum: 0 <br /></td>
+</tr>
+<tr>
+<td><code>budgetDuration</code> <em>string</em></td>
+<td>BudgetDuration is the reset window LiteLLM applies, e.g. "30d".<br />Empty means the budget never resets.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
 <h4 id="capabilityspec">CapabilitySpec<a class="headerlink" href="#capabilityspec" title="Permanent link">&para;</a></h4>
 <p>CapabilitySpec is the per-agent capability block (config: capability{type:ach,ach.environment,filter}).</p>
 <p><em>Appears in:</em>
@@ -5139,6 +5191,12 @@ CRD-02 at admission.</p>
 <td>Description is optional catalog metadata describing what this Environment<br />is. It is surfaced in <code>ach-cli env list</code> (truncated) and <code>env describe</code><br />(full) — the browse-time "what is this" text, distinct from Notice's<br />post-hydrate advisory. Plain text, not interpreted; empty renders nothing.</td>
 <td></td>
 <td>MaxLength: 2048 <br /></td>
+</tr>
+<tr>
+<td><code>budget</code> <em><a href="#budgetblock">BudgetBlock</a></em></td>
+<td>Budget caps the POOLED spend of every ek_ issued for this Environment<br />(all owners together). It is enforced through the "environment:<name>"<br />tag the forwarder stamps on each request, independently of the per-user<br />and per-key budgets — whichever ceiling is crossed first refuses the<br />request. Omit for an uncapped Environment.</td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>

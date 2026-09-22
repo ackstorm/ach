@@ -844,6 +844,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 EkOwnerGate — ek_ owner access re-check (D-30)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#12-jws-contract-what-the-forwarder-mints" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1442,6 +1453,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 EkOwnerGate — ek_ owner access re-check (D-30)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#12-jws-contract-what-the-forwarder-mints" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1731,9 +1753,11 @@ the rotation procedure, see
 <p><code>/v1</code> and <code>/gemini</code> are pass-through route families with <strong>no</strong> JWT
 involvement: the caller's bare <code>x-litellm-api-key</code>, no precheck; LiteLLM is
 the authorization boundary. <code>/mcp</code> and <code>/a2a</code> remain the only JWT routes.
-Every other LiteLLM path (<code>/v2/*</code>, <code>/ui</code>, <code>/key/*</code>, …) is the catch-all: same
-credential rules, except nothing is required — no credential at all is
-forwarded anonymously.</p>
+Nothing else is proxied (spec D-18): there is no catch-all, so <code>/ui</code>,
+<code>/key/*</code>, <code>/health</code>, <code>/model/*</code>… are 404 here and live on LiteLLM's own host.
+The one owned exception is <code>GET /v2/model/info</code> — ach-agent's <code>litellm_usage</code>
+cost source prices its responses there with its <code>ek_</code> — which follows the
+<code>/v1</code> rules (credential required, caller's own key forwarded, no JWT).</p>
 <hr />
 <h2 id="1-end-to-end-flow">1. End-to-end flow<a class="headerlink" href="#1-end-to-end-flow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌────────────┐  x-ach-key: pk_…           ┌──────────────┐
@@ -1783,6 +1807,24 @@ forwarded anonymously.</p>
 the <code>current</code> slot of the <code>ach-jwt-signing-keys</code> Secret (Ed25519 / 32-byte
 raw seed). The JWKS endpoint exposes the public half so any backend can
 verify offline.</p>
+<hr />
+<h2 id="11-ekownergate-ek_-owner-access-re-check-d-30">1.1 <code>EkOwnerGate</code> — ek_ owner access re-check (D-30)<a class="headerlink" href="#11-ekownergate-ek_-owner-access-re-check-d-30" title="Permanent link">&para;</a></h2>
+<p><code>proxy.EkOwnerGate</code> sits in the authenticated route group in
+<code>internal/forwarder/server.go</code>, immediately after <code>middleware.Authn</code> and
+before every family handler (<code>/v1</code>, <code>/gemini</code>, <code>/v2/model/info</code>, <code>/mcp/&lt;n&gt;</code>,
+<code>/a2a/&lt;n&gt;</code>) — so it runs before the mcp/a2a <code>CheckMCP</code>/<code>CheckA2A</code> precheck
+above and before JWT mint. It is a no-op for <code>pk_</code> and no-identity requests;
+their own rules live in the per-route handlers. For an <code>ek_</code> caller it calls
+<code>precheck.CheckEkOwner</code>, which re-derives the same <code>authorizedTeams ∩
+TeamsResolver(owner_email)</code> verdict the pk_ precheck already used, keyed on
+the resolved row's <code>owner_email</code> instead of the caller's own identity — an
+<code>ek_</code> names its Environment, but it is only usable while its human owner
+still holds that Environment's access (the console <code>invalid</code> state, §7 of
+<code>docs/plans/unified-console-spec.md</code>). A lost intersection is <code>403
+unauthorized_team</code>; a TeamsResolver/LiteLLM failure is <code>503
+litellm_unreachable</code>, never treated as a verdict. Nothing is persisted by
+this check — the same <code>ek_</code> authorizes again on the next TeamsResolver
+refresh once access returns, with no re-mint and no JWT-path change.</p>
 <hr />
 <h2 id="12-jws-contract-what-the-forwarder-mints">1.2 JWS contract — what the Forwarder mints<a class="headerlink" href="#12-jws-contract-what-the-forwarder-mints" title="Permanent link">&para;</a></h2>
 <table>
@@ -2561,7 +2603,10 @@ causes, in order of frequency:</p>
 <li>A <code>403 unauthorized_team</code> from the Forwarder means precheck rejected
   the request <strong>before</strong> JWT mint — fix the Environment's
   <code>authorizedTeams</code> or the caller's LiteLLM team membership before
-  debugging the JWT path.</li>
+  debugging the JWT path. For an <code>ek_</code> caller the same code can also come
+  from <code>EkOwnerGate</code> (§1.1) even on <code>/v1</code>/<code>/gemini</code>, which never reach
+  <code>CheckMCP</code>/<code>CheckA2A</code> — that means the key's OWNER lost Environment
+  access, not a runtime-list/team mismatch on the resource itself.</li>
 </ul>
 <p>Backend logs to look for:</p>
 <ul>
