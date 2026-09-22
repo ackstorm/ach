@@ -41,8 +41,20 @@ paths = [
 #                                 identifiers quoted in code, tests, and docs,
 #                                 never secrets, but long enough to trip the
 #                                 generic-api-key entropy rule
+#   ^(pk|ek)id_<id>$              ACH opaque key_id values. These are public
+#                                 identifiers — they are the {id} path segment
+#                                 of /platform/keys/{id} and the
+#                                 personal_keys/environment_keys.key_id column,
+#                                 and internal/keys/doc.go makes it a load-
+#                                 bearing invariant that they are NOT bearer
+#                                 values (ClassifyBearer rejects pkid_*/ekid_*).
+#                                 Key MATERIAL uses pk-/ek- — a different prefix
+#                                 AND separator — so this shape can never match
+#                                 a real secret. The 26-char ULID body trips the
+#                                 generic-api-key entropy rule.
 regexes = [
     '''^sk-1234$''',
     '''(?i)^sk-[a-z0-9]*-?(test|canary|example|fake|dummy|wrong)[a-z0-9-]*$''',
     '''^ach-[a-z0-9-]+$''',
+    '''^(pk|ek)id_[0-9a-z]+$''',
 ]
