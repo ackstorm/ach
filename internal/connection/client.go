@@ -41,14 +41,6 @@ func (c *Client) DeleteAccessGroup(ctx context.Context, name string) error {
 	return client.DeleteAccessGroup(ctx, name)
 }
 
-func (c *Client) DeleteTag(ctx context.Context, name string) error {
-	client, err := c.current()
-	if err != nil {
-		return err
-	}
-	return client.DeleteTag(ctx, name)
-}
-
 func (c *Client) UpsertTagBudget(ctx context.Context, name string, b litellm.TagBudget) error {
 	client, err := c.current()
 	if err != nil {

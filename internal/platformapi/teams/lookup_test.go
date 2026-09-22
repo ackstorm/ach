@@ -40,7 +40,6 @@ func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, 
 // Stubs for the rest of the litellm.Client interface — return zero
 // values; LookupCallerTeams must NOT invoke any of these.
 func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error              { return nil }
-func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error                      { return nil }
 func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
 func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
 	return nil, nil

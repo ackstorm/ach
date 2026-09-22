@@ -29,9 +29,6 @@ import "context"
 //     keep the finalizer in place via the reconciler's return-on-err
 //     sequencing; NoopClient logs and returns nil.
 //
-//   - DeleteTag is called at Hub §6.5 step 3 — clears the budget tag
-//     used by LiteLLM for spend attribution. Same contract.
-//
 //   - ListModels / ListMCPServers / ListA2AAgents are called by the
 //     LiteLLM-snapshot manager.Runnable (D-13, Plan 07). The snapshotter
 //     wraps errors.Is(err, ErrNotFound) → empty slice: an Environment
@@ -50,10 +47,6 @@ type Client interface {
 	// DeleteAccessGroup invokes LiteLLM DELETE /access-groups/<name>.
 	// NoopClient logs and returns nil; RESTClient propagates upstream errors.
 	DeleteAccessGroup(ctx context.Context, name string) error
-
-	// DeleteTag invokes LiteLLM DELETE /tags/<name>.
-	// NoopClient logs and returns nil; RESTClient propagates upstream errors.
-	DeleteTag(ctx context.Context, name string) error
 
 	// Tag budgets — the ONLY spend ceiling ACH enforces (measured
 	// 2026-09-22: a LiteLLM user-object budget is not enforced, and a team

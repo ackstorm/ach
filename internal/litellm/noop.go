@@ -31,13 +31,6 @@ func (c *NoopClient) DeleteAccessGroup(_ context.Context, name string) error {
 	return nil
 }
 
-// DeleteTag is the §6.5 step 3 LiteLLM call. Phase 1 logs and returns
-// nil — the deletion will happen for real in Phase 2.
-func (c *NoopClient) DeleteTag(_ context.Context, name string) error {
-	c.Log.Info("stub: would delete LiteLLM tag", "name", name)
-	return nil
-}
-
 // UpsertTagBudget is the tag-budget write. NoopClient logs and returns nil.
 func (c *NoopClient) UpsertTagBudget(_ context.Context, name string, b TagBudget) error {
 	c.Log.Info("stub: would upsert LiteLLM tag budget", "name", name, "max_budget", b.MaxBudget)

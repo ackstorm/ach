@@ -50,7 +50,6 @@ type fakeLiteLLM struct {
 }
 
 func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error              { return nil }
-func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error                      { return nil }
 func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
 func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
 	return nil, nil

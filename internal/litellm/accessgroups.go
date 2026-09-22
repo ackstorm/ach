@@ -150,13 +150,6 @@ func (c *RESTClient) DeleteAccessGroup(ctx context.Context, name string) error {
 	return nil
 }
 
-// DeleteTag is preserved verbatim from the legacy file — §6.5 step 3
-// "delete tag" is orthogonal to the access-group migration.
-func (c *RESTClient) DeleteTag(ctx context.Context, name string) error {
-	_, err := c.makeRequest(ctx, "DELETE", "/tag/"+name, nil)
-	return err
-}
-
 // Removed in issue #17:
 //   - BindTeamToAccessGroup (use AccessGroupCreateRequest.AssignedTeamIDs)
 //   - ListAccessGroupBindings (use AccessGroupResponse.AssignedTeamIDs)

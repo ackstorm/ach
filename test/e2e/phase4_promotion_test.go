@@ -343,7 +343,7 @@ func testSC11dOperatorRestart(t *testing.T) {
 
 // testSC11fFinalizerCleanup extends phase3's finalizer coverage to:
 //   - Environment delete drives the §6.5 LiteLLM DeleteAccessGroup +
-//     DeleteTag calls (assert by side-effect on the Environment CR
+//     DeleteTagByName calls (assert by side-effect on the Environment CR
 //     itself going NotFound + no orphaned ach-access-groups row).
 //   - PluginMarketplace delete drives §10.3 cache cleanup + the
 //     marketplace_plugins DELETE (covered structurally by §11c, but

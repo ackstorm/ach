@@ -73,7 +73,7 @@ var (
 
 // countingNoopClient wraps litellm.NoopClient and bumps an atomic counter
 // on each method invocation so finalizer specs can assert §6.5 step-2 +
-// step-3 ordering ("DeleteAccessGroup then DeleteTag, exactly once each").
+// step-3 ordering ("DeleteAccessGroup then DeleteTagByName, exactly once each").
 // The counter is monotonic and never decremented — tests Store(0) before
 // the assertion-relevant action.
 type countingNoopClient struct {
@@ -93,8 +93,7 @@ func (c *countingNoopClient) DeleteAccessGroup(ctx context.Context, name string)
 }
 
 // DeleteTagByName increments the counter and delegates to the embedded
-// NoopClient (which logs and returns nil). This is §6.5 step 3 — the
-// legacy DeleteTag (DELETE /tag/<name>) is no longer on the reconcile path.
+// NoopClient (which logs and returns nil). This is §6.5 step 3.
 func (c *countingNoopClient) DeleteTagByName(ctx context.Context, name string) error {
 	c.counter.Add(1)
 	deletedTags.Store(name, true)

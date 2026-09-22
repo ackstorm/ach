@@ -140,7 +140,6 @@ func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamLis
 
 // Unused-method shims to satisfy the wider litellm.Client interface.
 func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
-func (f *fakeLiteLLM) DeleteTag(context.Context, string) error         { return nil }
 func (f *fakeLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
 	if f.upsertTagErr != nil {
 		return f.upsertTagErr
