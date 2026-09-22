@@ -395,9 +395,24 @@ object**. Teams stay pure scoping (deny-all shells + access groups).
 
 | Tag | Caps | Written by |
 |---|---|---|
-| `user:<normalized email>` | the person's whole footprint — their `pk_` AND every `ek_` they own, across Environments | platform-api `provisionUser` at login, from `platformApi.userDefaults` (`ACH_USER_MAX_BUDGET` / `ACH_USER_BUDGET_DURATION`) |
+| `user:<normalized email>` | the person's whole footprint — their `pk_` AND every `ek_` they own, across Environments | platform-api — `provisionUser` at login, from `platformApi.userDefaults` (`ACH_USER_MAX_BUDGET` / `ACH_USER_BUDGET_DURATION`); an admin later, `PATCH /platform/admin/users/{email}/budget` |
 | `environment:<name>` | the POOLED spend of every `ek_` issued for that Environment, all owners together | the operator, from `Environment.spec.budget` (condition `BudgetSynced`) |
 | `key:<ACH key id>` | one `ek_` on its own | platform-api — `POST /platform/keys {budget}` at create, `PATCH /platform/keys/{id}/budget` later |
+
+**A `user:` budget an admin sets is not permanent.** `provisionUser` runs on
+EVERY login and re-applies `platformApi.userDefaults` to the tag, so the
+admin's value survives only until that person next logs in (when a default
+is configured at all — `deps.UserBudget == nil` writes nothing and leaves the
+admin value alone). Retuning one person durably today means raising the
+chart default or re-issuing the PATCH; making the per-user value win is a
+follow-up, not a v1 behaviour.
+
+**A never-logged-in user is a legitimate target.** `UpsertTagBudget` creates
+the budget object and binds the tag whether or not LiteLLM already knows the
+name — and since LiteLLM auto-creates budgetless tag rows from traffic, a
+tag's presence says nothing about whether the person exists. The admin route
+therefore never probes for the user: pre-setting a ceiling is the only way to
+cap someone from their first request.
 
 The forwarder stamps them on EVERY authenticated request, in that order, via
 `x-litellm-tags` (`internal/forwarder/proxy/tags.go`). A `pk_` carries only

@@ -49,7 +49,7 @@ them is over budget — there is no hierarchy, whichever is crossed first wins:
 
 | Ceiling | Covers | Set by |
 |---|---|---|
-| Your own | your `pk_` **and** every `ek_` you own, in every Environment | the deployer, as a default applied at your first login |
+| Your own | your `pk_` **and** every `ek_` you own, in every Environment | the deployer, as a default applied at every login; an admin, per person (below) |
 | Environment | the pooled spend of every `ek_` issued for one Environment, across all owners | an admin, via `Environment.spec.budget` in the CR |
 | Per key | one `ek_` on its own | you, when you create the key or at any time after |
 
@@ -73,6 +73,20 @@ curl -X PATCH https://<ach>/platform/keys/<key_id>/budget \
 real ceiling that refuses everything once any spend lands. `budget_duration`
 (e.g. `"30d"`) is the reset window — omit it for a budget that never resets.
 Only the key's owner may change its budget.
+
+An **admin** can retune one person's own ceiling — the one covering their
+`pk_` and every `ek_` they own — with the same body:
+
+```bash
+curl -X PATCH https://<ach>/platform/admin/users/someone%40example.com/budget \
+  -H "Authorization: Bearer $ACH_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"max_budget":200,"budget_duration":"30d"}'
+```
+
+The email is a path segment (URL-encode the `@` if your client needs it) and
+need not have logged in yet — the ceiling is waiting when they do. Note that
+logging in re-applies the deployment-wide default over this value, so a
+per-person ceiling holds until that person's next login.
 
 When a ceiling is reached, the request fails with **HTTP 429** and a body
 naming the counter that blocked:
