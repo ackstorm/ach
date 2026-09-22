@@ -56,6 +56,7 @@ const (
 	ActionAdminRefresh         = "platform.admin.refresh"
 	ActionAdminKeysRevoke      = "platform.admin.keys.revoke"
 	ActionAdminUsersRevokeKeys = "platform.admin.users.revoke_keys"
+	ActionAdminUserBudget      = "platform.admin.user.budget"
 
 	// ActionContentGet is the Content Service emission action (Phase 5
 	// D-Discretion / Plan 05-05). The handler emits exactly one audit

@@ -293,7 +293,7 @@ func (cr *createReq) emitInternalError(logMsg string, err error) {
 // owner email and the environment for correlation (the env attribute the
 // old KeyGenerate-failure block logged is preserved across all LiteLLM sites).
 func (cr *createReq) emitLitellmError(err error, logMsg string) {
-	st, oc, msg := classifyLitellmErr(err)
+	st, oc, msg := ClassifyLitellmErr(err)
 	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
 		Action: audit.ActionEkCreate, Outcome: oc,
 		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
@@ -613,7 +613,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	// way, so a refused tag write is a 502, not a silent uncapped key.
 	if cr.req.Budget != nil {
 		tag := litellm.KeyBudgetTag(keyID)
-		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, cr.req.Budget.tagBudget()); err != nil {
+		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, cr.req.Budget.TagBudget()); err != nil {
 			deps.Logger.Error("envkeys.create: key budget tag", "key_id", keyID, "err", err)
 			render.Error(w, http.StatusBadGateway, audit.OutcomeLitellmRejected,
 				"key created but its budget could not be set", reqID)
@@ -773,7 +773,7 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 			// Any OTHER error leaves the upstream state UNKNOWN → fail
 			// closed (row stays 'active', caller retries cleanly).
 			if !litellm.IsHTTPNotFound(err) {
-				st, oc, msg := classifyLitellmErr(err)
+				st, oc, msg := ClassifyLitellmErr(err)
 				audit.EmitAudit(ctx, deps.Audit, audit.Event{
 					Action:    audit.ActionEkRevoke,
 					Outcome:   oc,
@@ -1013,7 +1013,7 @@ func normalizeKeyStatus(v string) string {
 	}
 }
 
-// classifyLitellmErr maps a LiteLLM client error to the (HTTP status,
+// ClassifyLitellmErr maps a LiteLLM client error to the (HTTP status,
 // audit outcome, client message) triple the envkeys handlers should
 // surface. An upstream 4xx — a typed *litellm.APIError with a 4xx status,
 // or a *litellm.Auth401Error — means LiteLLM answered and REFUSED (bad
@@ -1035,7 +1035,7 @@ func isEnterpriseTagsRejection(err error) bool {
 	return strings.Contains(string(apiErr.Body), "LiteLLM Enterprise")
 }
 
-func classifyLitellmErr(err error) (status int, outcome, message string) {
+func ClassifyLitellmErr(err error) (status int, outcome, message string) {
 	var apiErr *litellm.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
 		return http.StatusBadGateway, audit.OutcomeLitellmRejected, "litellm rejected the request"

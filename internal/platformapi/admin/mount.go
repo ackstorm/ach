@@ -18,6 +18,7 @@ import (
 //     - GET  /keys                     → ListKeysHandler
 //     - POST /keys/revoke              → RevokeKeyHandler
 //     - POST /users/{email}/revoke-keys → RevokeUserKeysHandler
+//     - PATCH /users/{email}/budget      → UserBudgetHandler
 //     - POST /refresh                  → ForceRefreshHandler
 //  3. Registers read-only object inventory endpoints (GET):
 //     /plugins, /prompts, /artifacts, /skills, /marketplaces,
@@ -46,6 +47,7 @@ func Mount(deps Deps) func(r chi.Router) {
 		r.Get("/keys", ListKeysHandler(deps))
 		r.Post("/keys/revoke", RevokeKeyHandler(deps))
 		r.Post("/users/{email}/revoke-keys", RevokeUserKeysHandler(deps))
+		r.Patch("/users/{email}/budget", UserBudgetHandler(deps))
 		r.Post("/refresh", ForceRefreshHandler(deps))
 
 		// Read-only object inventory (GET) — projection reads from Postgres,

@@ -34,8 +34,21 @@ func (b *BudgetRequest) valid() bool {
 
 // tagBudget converts a validated request into the LiteLLM wire shape.
 // BudgetDuration is passed through verbatim — LiteLLM validates the format.
-func (b BudgetRequest) tagBudget() litellm.TagBudget {
+func (b BudgetRequest) TagBudget() litellm.TagBudget {
 	return litellm.TagBudget{MaxBudget: *b.MaxBudget, BudgetDuration: b.BudgetDuration}
+}
+
+// BudgetFromRequest decodes and validates a budget body, rendering the
+// shared 400 invalid_argument envelope itself on refusal. Both PATCH-budget
+// routes go through it — this ek_ one and the admin per-user one
+// (PATCH /platform/admin/users/{email}/budget) — so the request shape, the
+// one rule and the error envelope can never drift apart.
+func BudgetFromRequest(w http.ResponseWriter, r *http.Request, reqID string) (BudgetRequest, bool) {
+	req, ok := decodeBudget(r)
+	if !ok {
+		render.Error(w, http.StatusBadRequest, codeInvalidArgument, budgetInvalidMsg, reqID)
+	}
+	return req, ok
 }
 
 // decodeBudget reads a BudgetRequest and validates it.
@@ -67,15 +80,14 @@ func BudgetHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusConflict, "key_revoked", "a revoked key has no budget", reqID)
 			return
 		}
-		req, valid := decodeBudget(r)
+		req, valid := BudgetFromRequest(w, r, reqID)
 		if !valid {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument, budgetInvalidMsg, reqID)
 			return
 		}
 		tag := litellm.KeyBudgetTag(row.KeyID)
-		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, req.tagBudget()); err != nil {
+		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, req.TagBudget()); err != nil {
 			deps.Logger.Error("envkeys.budget: key budget tag", "key_id", row.KeyID, "err", err)
-			st, oc, msg := classifyLitellmErr(err)
+			st, oc, msg := ClassifyLitellmErr(err)
 			render.Error(w, st, oc, msg, reqID)
 			return
 		}

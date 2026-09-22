@@ -124,9 +124,9 @@ func TestClassifyLitellmErr(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			st, oc, _ := classifyLitellmErr(tc.err)
+			st, oc, _ := ClassifyLitellmErr(tc.err)
 			if st != tc.wantStatus || oc != tc.wantOutcome {
-				t.Errorf("classifyLitellmErr() = (%d, %q), want (%d, %q)",
+				t.Errorf("ClassifyLitellmErr() = (%d, %q), want (%d, %q)",
 					st, oc, tc.wantStatus, tc.wantOutcome)
 			}
 		})
