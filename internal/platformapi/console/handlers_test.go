@@ -20,6 +20,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -30,6 +31,25 @@ type fakeCatalog struct {
 	mcp    []litellm.MCPServerEntry
 	a2a    []litellm.AgentEntry
 	err    error
+
+	// Task 4 fields — zero-valued for every pre-existing capabilities test.
+	// DailyActivity is called twice per stats request (current window,
+	// then prior window); dailyCalls picks which of daily/prior to answer.
+	daily          observability.DailyActivity
+	dailyErr       error
+	prior          observability.DailyActivity
+	priorErr       error
+	dailyCalls     int
+	spendRows      []observability.SpendLogRow
+	spendTruncated bool
+	spendErr       error
+	lastSpendStart string
+	lastSpendEnd   string
+	lastSpendMax   int
+	userInfo       observability.UserInfo
+	userInfoErr    error
+	memberBudget   *observability.MemberBudget
+	memberErr      error
 }
 
 func (f *fakeCatalog) ListModelGroups(context.Context) ([]litellm.ModelGroupInfo, error) {
@@ -40,6 +60,23 @@ func (f *fakeCatalog) ListMCPServers(context.Context) ([]litellm.MCPServerEntry,
 }
 func (f *fakeCatalog) ListA2AAgents(context.Context) ([]litellm.AgentEntry, error) {
 	return f.a2a, f.err
+}
+func (f *fakeCatalog) DailyActivity(context.Context, string, string) (observability.DailyActivity, error) {
+	f.dailyCalls++
+	if f.dailyCalls == 1 {
+		return f.daily, f.dailyErr
+	}
+	return f.prior, f.priorErr
+}
+func (f *fakeCatalog) SpendLogsV2(_ context.Context, start, end string, maxPages int) ([]observability.SpendLogRow, bool, error) {
+	f.lastSpendStart, f.lastSpendEnd, f.lastSpendMax = start, end, maxPages
+	return f.spendRows, f.spendTruncated, f.spendErr
+}
+func (f *fakeCatalog) UserInfo(context.Context) (observability.UserInfo, error) {
+	return f.userInfo, f.userInfoErr
+}
+func (f *fakeCatalog) TeamMemberBudget(context.Context, string, string) (*observability.MemberBudget, error) {
+	return f.memberBudget, f.memberErr
 }
 
 type fakeStore map[string]*db.EnvironmentRow
@@ -71,7 +108,7 @@ func testDeps(t *testing.T) Deps {
 	return Deps{
 		Store:            fakeStore{"demo": {Name: "demo", AuthorizedTeams: []string{"team-a"}, RuntimeModels: []string{"demo-model"}}},
 		LiteLLM:          &fakeLL{teams: map[string][]string{"u@x.com": {"team-a"}, "v@x.com": {"team-z"}}},
-		AsUser:           func(string) UserCatalog { return &fakeCatalog{} },
+		AsUser:           func(string) UserReads { return &fakeCatalog{} },
 		KeyEncryptionKey: testDEK,
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -122,7 +159,7 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 		a2a:    []litellm.AgentEntry{{AgentID: "a1", AgentName: "demo-agent", AgentCardParams: map[string]any{"url": "http://x", "skills": []any{map[string]any{"name": "s"}}, "capabilities": map[string]any{"streaming": true}}}},
 	}
 	var usedKey string
-	d.AsUser = func(key string) UserCatalog { usedKey = key; return cat }
+	d.AsUser = func(key string) UserReads { usedKey = key; return cat }
 	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
 	if rec.Code != 200 || usedKey != "sk-user" {
 		t.Fatalf("%d key=%q %s", rec.Code, usedKey, rec.Body)
@@ -137,7 +174,7 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Scope != "personal" || len(got.Models) != 1 || got.Models[0]["name"] != "demo-model" || got.Provisioning {
+	if got.Scope != scopePersonal || len(got.Models) != 1 || got.Models[0]["name"] != "demo-model" || got.Provisioning {
 		t.Fatalf("%+v (deny-all sentinel must be stripped)", got)
 	}
 	if len(got.MCP) != 1 || got.MCP[0]["name"] != "demo-mcp" || got.MCP[0]["tool_count"] != float64(1) {
@@ -156,7 +193,7 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 
 func TestCapabilities_PersonalProvisioningState(t *testing.T) {
 	d := testDeps(t)
-	d.AsUser = func(string) UserCatalog {
+	d.AsUser = func(string) UserReads {
 		return &fakeCatalog{models: []litellm.ModelGroupInfo{{Name: "__deny_all__", Providers: []string{}}}}
 	}
 	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
@@ -167,12 +204,12 @@ func TestCapabilities_PersonalProvisioningState(t *testing.T) {
 
 func TestCapabilities_PersonalNeverRetriesAsMaster(t *testing.T) {
 	d := testDeps(t)
-	d.AsUser = func(string) UserCatalog { return &fakeCatalog{err: &litellm.Auth401Error{}} }
+	d.AsUser = func(string) UserReads { return &fakeCatalog{err: &litellm.Auth401Error{}} }
 	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
 	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "litellm_rejected") {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	d.AsUser = func(string) UserCatalog { return &fakeCatalog{err: errors.New("dial tcp: refused")} }
+	d.AsUser = func(string) UserReads { return &fakeCatalog{err: errors.New("dial tcp: refused")} }
 	if rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false)); rec.Code != 503 {
 		t.Fatalf("transport: %d %s", rec.Code, rec.Body)
 	}

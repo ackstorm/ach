@@ -215,10 +215,10 @@ func New(deps Deps) http.Handler {
 		}
 		r.Route("/platform/environments", environments.Mount(envDeps))
 
-		// Console bootstrap + capability views (spec §11).
+		// Console bootstrap + capability + stats/latency views (spec §11).
 		console.Mount(r, console.Deps{
-			Store: deps.Store, LiteLLM: deps.LiteLLM,
-			AsUser:           func(key string) console.UserCatalog { return deps.LiteLLMREST.AsUser(key) },
+			Store: deps.Store, DB: newEnvkeysDB(deps.Pool), LiteLLM: deps.LiteLLM,
+			AsUser:           func(key string) console.UserReads { return deps.LiteLLMREST.AsUser(key) },
 			KeyEncryptionKey: deps.KeyEncryptionKey, OpenWorkEnabled: deps.OpenWork.Enabled,
 			Audit: deps.Audit, Logger: deps.Logger,
 		})

@@ -15,6 +15,7 @@ import (
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
 	"github.com/ackstorm/ach/internal/platformapi/environments"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
@@ -29,8 +30,26 @@ type UserCatalog interface {
 	ListA2AAgents(ctx context.Context) ([]litellm.AgentEntry, error)
 }
 
+// UserReads widens UserCatalog with the stats/latency/budget reads Task 4
+// composes (production: *litellm.UserView, same concrete type as
+// UserCatalog — Phase 1's AsUser wiring needs no change).
+type UserReads interface {
+	UserCatalog
+	DailyActivity(ctx context.Context, startDate, endDate string) (observability.DailyActivity, error)
+	SpendLogsV2(ctx context.Context, startDate, endDateExclusive string, maxPages int) ([]observability.SpendLogRow, bool, error)
+	UserInfo(ctx context.Context) (observability.UserInfo, error)
+	TeamMemberBudget(ctx context.Context, teamID, email string) (*observability.MemberBudget, error)
+}
+
 type envStore interface {
 	GetEnvironment(ctx context.Context, name string) (*db.EnvironmentRow, error)
+}
+
+// keyLister is the owner-scoped key listing Task 4's per-key panel joins
+// stats rows against (production: the same db.ListKeys wrapper
+// platformapi wires for envkeys — internal/platformapi/adapters.go).
+type keyLister interface {
+	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
 }
 
 // Deps for the console API. AsUser binds a decrypted sk- to LiteLLM
@@ -38,13 +57,20 @@ type envStore interface {
 // KeyContext's sealed material.
 type Deps struct {
 	Store            envStore
+	DB               keyLister
 	LiteLLM          litellm.Client // environments.CallerMayRead (teams lookup)
-	AsUser           func(key string) UserCatalog
+	AsUser           func(key string) UserReads
 	KeyEncryptionKey []byte
 	OpenWorkEnabled  bool
 	Audit            *slog.Logger
 	Logger           *slog.Logger
 }
+
+// scopePersonal is the ?scope=personal capabilities value, and doubles as
+// the KeyOut.KeyAlias label nameKeys (stats.go) substitutes for a pk_ row
+// — a personal key has no ACH-assigned name the way an ek_ does, so its
+// stats-panel row is labeled the same "personal" as the capabilities scope.
+const scopePersonal = "personal"
 
 // SuspendPropagationSeconds is the UI notice bound (spec §8.2): the
 // resolver cache ceiling.
@@ -55,6 +81,8 @@ const SuspendPropagationSeconds = 60
 func Mount(r chi.Router, d Deps) {
 	r.Get("/platform/console/bootstrap", d.bootstrap)
 	r.Get("/platform/console/capabilities", d.capabilities)
+	r.Get("/platform/console/stats", d.stats)
+	r.Get("/platform/console/latency", d.latency)
 }
 
 // bootstrap: identity + console options, the first call the SPA makes.
@@ -77,13 +105,39 @@ func (d Deps) capabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Query().Get("scope") {
-	case "personal":
+	case scopePersonal:
 		d.personal(w, r, kc)
 	case "environment":
 		d.environment(w, r, kc, r.URL.Query().Get("name"))
 	default:
 		render.Error(w, http.StatusBadRequest, "invalid_argument", "scope must be personal or environment", reqID)
 	}
+}
+
+// userReads applies the §10.1 guard (pk_ callers only, decrypted key
+// material required) and returns the caller's KeyContext plus a UserReads
+// bound to their own key. On failure it writes the HTTP error itself and
+// returns ok=false — mirrors the capabilities()/personal() guard so
+// stats/latency never fall back to the master key.
+func (d Deps) userReads(w http.ResponseWriter, r *http.Request) (middleware.KeyContext, UserReads, bool) {
+	ctx := r.Context()
+	reqID := middleware.RequestIDFromCtx(ctx)
+	kc, _ := middleware.KeyContextFromCtx(ctx)
+	if kc.KeyType != keys.PrefixPk {
+		render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "console endpoints require a personal identity", reqID)
+		return middleware.KeyContext{}, nil, false
+	}
+	if kc.LiteLLMKeyMaterial == nil {
+		render.Error(w, http.StatusServiceUnavailable, "not_ready", "personal credential is being provisioned", reqID)
+		return middleware.KeyContext{}, nil, false
+	}
+	sk, err := keycrypt.Open(d.KeyEncryptionKey, *kc.LiteLLMKeyMaterial)
+	if err != nil {
+		d.Logger.Error("console: open key material failed", "key_id", kc.KeyID, "err", err)
+		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+		return middleware.KeyContext{}, nil, false
+	}
+	return kc, d.AsUser(string(sk)), true
 }
 
 // Public projections — explicit allow-lists (alitellm-auth
@@ -209,7 +263,7 @@ func (d Deps) personal(w http.ResponseWriter, r *http.Request, kc middleware.Key
 		a2aRows = append(a2aRows, projectA2A(e))
 	}
 	render.JSON(w, http.StatusOK, map[string]any{
-		"scope": "personal", "models": models, "mcp_servers": mcpRows, "a2a_agents": a2aRows,
+		"scope": scopePersonal, "models": models, "mcp_servers": mcpRows, "a2a_agents": a2aRows,
 		"provisioning": provisioning,
 	})
 }

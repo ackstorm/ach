@@ -1,0 +1,215 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package console
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/render"
+)
+
+// maxLatencySpendLogPages bounds the /spend/logs/v2 fetch behind
+// GET /platform/console/latency (spec §10.2/Task 4 brief).
+const maxLatencySpendLogPages = 5
+
+// maxRangeDays is the 366-day cap on a stats/latency window (leap-year
+// inclusive year span), mirroring alitellm-auth's session.py
+// _parse_stats_range.
+const maxRangeDays = 366
+
+// defaultRangeDays is the default window width (30 days, inclusive of
+// both endpoints) when no start_date is given.
+const defaultRangeDays = 30
+
+// dateLayout is the YYYY-MM-DD wire format both range params and the
+// LiteLLM analytics endpoints use.
+const dateLayout = "2006-01-02"
+
+// dataScopeUser is the D-13/AC-16 "data_scope" value every console
+// analytics response carries — user-global, never Environment-scoped.
+const dataScopeUser = "user"
+
+// parseRange mirrors alitellm-auth's session.py _parse_stats_range: UTC,
+// inclusive on both ends, default 30 days ending today, 366-day cap. ACH
+// answers 400 invalid_argument on a malformed or oversized range (the
+// caller renders it; this function never writes a response) — not
+// FastAPI's 422.
+func parseRange(q url.Values, now time.Time) (start, end time.Time, err error) {
+	end = now.Truncate(24 * time.Hour)
+	if v := q.Get("end_date"); v != "" {
+		if end, err = time.Parse(dateLayout, v); err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("end_date must be YYYY-MM-DD")
+		}
+	}
+	start = end.AddDate(0, 0, -(defaultRangeDays - 1))
+	if v := q.Get("start_date"); v != "" {
+		if start, err = time.Parse(dateLayout, v); err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("start_date must be YYYY-MM-DD")
+		}
+	}
+	if start.After(end) {
+		return time.Time{}, time.Time{}, fmt.Errorf("start_date must not be after end_date")
+	}
+	if days := int(end.Sub(start).Hours()/24) + 1; days > maxRangeDays {
+		return time.Time{}, time.Time{}, fmt.Errorf("range must not exceed %d days", maxRangeDays)
+	}
+	return start, end, nil
+}
+
+// stats serves GET /platform/console/stats — the user's own daily-activity
+// window folded into the page-ready StatsContract, D-13 user-global
+// (never Environment-scoped). Independent degradation (§10.3): a failed
+// PRIOR window only drops capabilities.deltas; a failed budget read only
+// degrades budget.source to "unknown"; only the CURRENT window's failure
+// is a hard error (§10.1 — never a master-key retry).
+func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	reqID := middleware.RequestIDFromCtx(ctx)
+	kc, u, ok := d.userReads(w, r)
+	if !ok {
+		return
+	}
+	start, end, err := parseRange(r.URL.Query(), time.Now().UTC())
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, "invalid_argument", err.Error(), reqID)
+		return
+	}
+	span := int(end.Sub(start).Hours()/24) + 1
+	prevEnd := start.AddDate(0, 0, -1)
+	prevStart := prevEnd.AddDate(0, 0, -(span - 1))
+	day := func(t time.Time) string { return t.Format(dateLayout) }
+
+	cur, err := u.DailyActivity(ctx, day(start), day(end))
+	if err != nil {
+		d.upstreamError(w, r, err)
+		return
+	}
+	curAgg := observability.AggregateWindow(cur)
+	caps := observability.Capabilities{TokenSplit: true, PerModelLastUsed: true, Deltas: true, PerKeySpend: true}
+	var prevAgg *observability.WindowAggregate
+	if prev, err := u.DailyActivity(ctx, day(prevStart), day(prevEnd)); err != nil {
+		d.Logger.Warn("console.stats: prior window unavailable", "err", err)
+		caps.Deltas = false
+	} else {
+		a := observability.AggregateWindow(prev)
+		prevAgg = &a
+	}
+
+	user, uerr := u.UserInfo(ctx)
+	if uerr != nil {
+		d.Logger.Warn("console.stats: user info unavailable", "err", uerr)
+		user = observability.UserInfo{}
+	}
+	member, merr := u.TeamMemberBudget(ctx, litellm.UserShellAlias(kc.OwnerEmail), kc.OwnerEmail)
+	if merr != nil {
+		d.Logger.Warn("console.stats: member budget unavailable", "err", merr)
+		member = nil
+	}
+
+	rng := observability.Range{Start: day(start), End: day(end), Days: span}
+	rng.Compare.Start, rng.Compare.End = day(prevStart), day(prevEnd)
+	c := observability.BuildStatsContract(curAgg, prevAgg, observability.BudgetBlock(user, member), observability.LastUsedFromWindow(cur), caps, rng)
+	c.Keys = d.nameKeys(ctx, kc.OwnerEmail, c.Keys)
+	render.JSON(w, http.StatusOK, withScope(c))
+}
+
+// latency serves GET /platform/console/latency — the user's own
+// /spend/logs/v2 rows folded into the page-ready LatencyContract, D-13
+// user-global. A degraded fetch (401 role=unknown, or any other failure)
+// is NOT an HTTP error: it renders 200 with available=false (§10.2 fact
+// 1) so the console can show "latency unavailable" without a page-level
+// failure. §10.2 fact 2: end_date is EXCLUSIVE on /spend/logs/v2, so the
+// fetch sends end+1 day.
+func (d Deps) latency(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	reqID := middleware.RequestIDFromCtx(ctx)
+	_, u, ok := d.userReads(w, r)
+	if !ok {
+		return
+	}
+	start, end, err := parseRange(r.URL.Query(), time.Now().UTC())
+	if err != nil {
+		render.Error(w, http.StatusBadRequest, "invalid_argument", err.Error(), reqID)
+		return
+	}
+	day := func(t time.Time) string { return t.Format(dateLayout) }
+	window := observability.Window{Start: day(start), End: day(end), Days: int(end.Sub(start).Hours()/24) + 1}
+
+	rows, truncated, err := u.SpendLogsV2(ctx, day(start), day(end.AddDate(0, 0, 1)), maxLatencySpendLogPages)
+	if err != nil {
+		reason := "fetch_failed"
+		var a401 *litellm.Auth401Error
+		if errors.As(err, &a401) {
+			reason = "unavailable"
+		}
+		render.JSON(w, http.StatusOK, withScope(observability.LatencyUnavailable(reason)))
+		return
+	}
+	c := observability.ComputeLatencyContract(rows, window, observability.DefaultRowCap, truncated)
+	render.JSON(w, http.StatusOK, withScope(c))
+}
+
+// nameKeys resolves each stats key row's key_alias — ACH stamps
+// key_alias=ekid_…/pkid_… on the LiteLLM key at mint time
+// (envkeys/handler.go, sso.go) — to the ACH-facing name: an ek_'s Name,
+// or scopePersonal for a pk_. A row whose alias does not match
+// any of the owner's ACH-managed keys (foreign/legacy LiteLLM key) is
+// left unchanged. A DB read failure degrades to "keep the raw aliases"
+// rather than failing the whole response.
+func (d Deps) nameKeys(ctx context.Context, owner string, rows []observability.KeyOut) []observability.KeyOut {
+	if d.DB == nil {
+		return rows
+	}
+	items, _, err := d.DB.ListKeys(ctx, db.KeyListFilter{OwnerEmail: &owner}, 500, "")
+	if err != nil {
+		d.Logger.Warn("console.stats: key names unavailable", "err", err)
+		return rows
+	}
+	names := make(map[string]string, len(items))
+	for _, it := range items {
+		switch it.Type {
+		case "pk":
+			names[it.KeyID] = scopePersonal
+		case "ek":
+			if it.Name != nil {
+				names[it.KeyID] = *it.Name
+			}
+		}
+	}
+	out := make([]observability.KeyOut, len(rows))
+	for i, row := range rows {
+		out[i] = row
+		if row.KeyAlias == nil {
+			continue
+		}
+		name, ok := names[*row.KeyAlias]
+		if !ok {
+			continue
+		}
+		out[i].ID = *row.KeyAlias
+		out[i].KeyAlias = &name
+	}
+	return out
+}
+
+// withScope marshals v to a JSON object and stamps data_scope:"user"
+// (D-13, AC-16): every console analytics context shows the same
+// user-global numbers, never an Environment-scoped slice.
+func withScope(v any) map[string]any {
+	m := map[string]any{}
+	if b, err := json.Marshal(v); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	m["data_scope"] = dataScopeUser
+	return m
+}
