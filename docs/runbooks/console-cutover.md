@@ -173,8 +173,19 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://api.<domain>/v1/chat/completio
 ## Step 5 — delete the legacy standalone `sk-` keys (D-31) — ⚠ IRREVERSIBLE, OWNER-GATED
 
 Tool: `scripts/cutover-legacy-keys.sh` (this repo). Needs `LITELLM_URL` and
-`LITELLM_MASTER_KEY`. It never touches a key carrying any `metadata.ach_issuer`
-and never touches a foreign key with no alitellm-auth marker.
+`LITELLM_MASTER_KEY`.
+
+**Ownership rule — this is the corrected one; the plan file is superseded on this
+point (owner ruling, 2026-09-22):**
+
+- a key carrying any `metadata.ach_issuer` is ACH-owned and is **never** touched;
+- a key whose `metadata.source == "token-factory"` is alitellm-auth's own and **is** swept;
+- a key with no such marker is foreign and is **never** touched.
+
+`metadata.source` is the only selector. The `key_alias` prefix is **not** a
+marker — alitellm-auth has used at least three alias forms (`tf-…`, `lk-…`,
+`key-YYYY-MM-DD-HHMMSS`), so a `tf-`-aliased token-factory key is swept like any
+other. The alias is shown in the dry-run output for your review only.
 
 - [ ] **Dry run against production**
 

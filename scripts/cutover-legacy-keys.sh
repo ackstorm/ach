@@ -3,26 +3,33 @@
 # cutover-legacy-keys.sh — delete the legacy standalone LiteLLM keys minted by
 # alitellm-auth, at the console cutover (spec D-31).
 #
-# Ownership rule (identical to the operator's orphan reaper):
+# Ownership rule — the ONLY selector, do not add to it:
 #   * a key carrying ANY metadata.ach_issuer is ACH-owned (this release or
 #     another) and is NEVER touched;
-#   * a key with no alitellm-auth marker is foreign and is NEVER touched.
+#   * a key whose metadata.source == "token-factory" is alitellm-auth's and IS
+#     swept;
+#   * a key with no such marker is foreign and is NEVER touched.
 #
-# Markers, pinned from alitellm-auth `generate_litellm_key`
-# (src/api/app/litellm_client.py, read 2026-09-22):
-#   * metadata.source == "token-factory"  (litellm_client.py:425 — set on every
-#     key that function mints; the same marker is stamped on the shared team at
-#     litellm_client.py:289)
-#   * key_alias prefix "lk-"              (litellm_client.py:412 —
-#     f"lk-{secrets.token_hex(8)}", the globally-unique opaque alias; the
-#     friendly name lives in metadata.key_alias)
-# The draft plan guessed a "team-" team_alias prefix: that is WRONG. The team
-# alias is settings.litellm_default_team (config.py:33, default "default"), far
-# too generic to use as an ownership marker, so team_alias is not consulted.
-# "tf-{timestamp}-{email}" was alitellm-auth's OLDER key_alias format
-# (superseded before the "lk-" scheme). It is NOT matched here because the plan
-# lists tf-* under "never touched"; if pre-"lk-" keys still exist in production
-# the owner must decide explicitly before they are swept.
+# The marker is pinned from alitellm-auth (src/api/app/litellm_client.py, read
+# 2026-09-22): `generate_litellm_key` stamps metadata.source "token-factory" on
+# every key it mints (:425) and on the shared team (:289), and alitellm-auth
+# itself uses that same field as its "is this key mine" test (:489-493).
+#
+# DO NOT select on the key_alias prefix. alitellm-auth has used at least three
+# alias forms — "tf-{timestamp}-{email}" (oldest), the opaque "lk-{random}"
+# (:412), and the friendly "key-YYYY-MM-DD-HHMMSS" kept in metadata.key_alias
+# under D-10 — so the alias is not a stable ownership marker. It is printed in
+# the dry-run output for the human reviewing the candidate list, nothing more.
+# team_alias is not consulted either: it is settings.litellm_default_team
+# (config.py:33, default the literal "default"), far too generic to own a key.
+#
+# CORRECTION — the cutover plan's Global Constraints are WRONG on this point and
+# are superseded here by the owner's ruling of 2026-09-22. The plan says
+# "foreign non-alitellm keys (dashboard tf-*, token-factory) are never touched",
+# which mislabels alitellm-auth's OWN ownership marker as foreign. Followed
+# literally, the sweep would skip the very keys D-31 exists to delete and then
+# report "candidates: 0". Do not "fix" this back to the plan's text.
+# (docs/superpowers/plans/2026-09-21-console-phase4-cutover.md, Global Constraints)
 #
 # Dry-run by default: prints only count / alias / user_id — never token values.
 # Re-run with --apply to delete.
@@ -63,9 +70,8 @@ while [ "$page" -le "$PAGE_CAP" ]; do
 
   printf '%s' "$body" | jq -r '
       .keys[]
-      | select((.metadata.ach_issuer // "") == "")              # never an ACH key
-      | select(((.metadata.source // "") == "token-factory")
-               or ((.key_alias // "") | startswith("lk-")))     # alitellm marker
+      | select(.metadata.ach_issuer == null or .metadata.ach_issuer == "")   # never an ACH key
+      | select(.metadata.source == "token-factory")                          # the alitellm-auth marker
       | [.token, (.user_id // "-"), (.key_alias // "-"), (.metadata.key_alias // "-")]
       | @tsv' >>"$candidates"
 
