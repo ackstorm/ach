@@ -2701,8 +2701,9 @@ was delivered, then the original resolution kept for its reasoning.</p>
   reports a <code>BudgetSynced</code> condition; the §6.5 drain reaps the tag and its
   budget object on delete.</li>
 <li><strong>ACH sets budgets in three places</strong>, all of them tags, never a LiteLLM team
-  or user object: <code>user:&lt;email&gt;</code> (platform-api at login, from
-  <code>platformApi.userDefaults</code>), <code>environment:&lt;name&gt;</code> (the operator), and
+  or user object: <code>user:&lt;email&gt;</code> (platform-api seeds it at login from
+  <code>platformApi.userDefaults</code>, only while the tag has no budget; an admin
+  retunes it with <code>PATCH /platform/admin/users/{email}/budget</code>), <code>environment:&lt;name&gt;</code> (the operator), and
   <code>key:&lt;ek id&gt;</code> (<code>POST /platform/keys {budget}</code> / <code>PATCH
   /platform/keys/{id}/budget</code>).</li>
 <li><strong>KEY-10 still holds</strong>: no <code>max_budget</code> is ever written to a LiteLLM user or

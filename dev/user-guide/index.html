@@ -1306,7 +1306,7 @@ them is over budget — there is no hierarchy, whichever is crossed first wins:<
 <tr>
 <td>Your own</td>
 <td>your <code>pk_</code> <strong>and</strong> every <code>ek_</code> you own, in every Environment</td>
-<td>the deployer, as a default applied at your first login</td>
+<td>the deployer, as a default seeded at your first login; an admin, per person (below)</td>
 </tr>
 <tr>
 <td>Environment</td>
@@ -1334,9 +1334,21 @@ them is over budget — there is no hierarchy, whichever is crossed first wins:<
 real ceiling that refuses everything once any spend lands. <code>budget_duration</code>
 (e.g. <code>"30d"</code>) is the reset window — omit it for a budget that never resets.
 Only the key's owner may change its budget.</p>
+<p>An <strong>admin</strong> can retune one person's own ceiling — the one covering their
+<code>pk_</code> and every <code>ek_</code> they own — with the same body:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/admin/users/someone%40example.com/budget<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_ADMIN_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":200,"budget_duration":"30d"}'</span>
+</code></pre></div>
+<p>The email is a path segment (URL-encode the <code>@</code> if your client needs it) and
+need not have logged in yet — the ceiling is waiting when they do. The value
+is durable: the deployment-wide default is seeded only onto a tag that has no
+ceiling yet, so logging in never overwrites it. The flip side is that raising
+the deployment-wide default does not retune anyone who already has one — this
+route is how you do that.</p>
 <p>When a ceiling is reached, the request fails with <strong>HTTP 429</strong> and a body
 naming the counter that blocked:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
 </code></pre></div>
 <p><code>Tag=user:…</code> means your own ceiling, <code>Tag=environment:…</code> the Environment's
 pooled one, and <code>Tag=key:…</code> that single key's. Raise the named ceiling (or
