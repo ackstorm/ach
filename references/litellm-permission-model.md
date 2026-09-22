@@ -83,10 +83,24 @@ state — shell-team adoption (`IsShellTeamShaped` / `IsUserShellShaped`) and
 the console's `provisioning` projection — because a shell written by an older
 ACH still carries the legacy value until something rewrites it.
 `ShellTeamDrifted` is the deliberate exception: it compares against the
-current value only, so a legacy shell reads as DRIFTED and the next
-Environment reconcile migrates it. `/model_group/info` (what the console
-reads) was NOT part of this measurement — the 0-row result above is
-`/v1/models` — which is the other reason the console still filters by name.
+current value only, so a legacy shell reads as DRIFTED and gets migrated.
+`/model_group/info` (what the console reads) was NOT part of this measurement
+— the 0-row result above is `/v1/models` — which is the other reason the
+console still filters by name.
+
+**Both shells repair, by different routes.** An `ach-env-<name>` shell is
+repaired by the operator's `ensureShellTeam` on every Environment reconcile.
+An `ach-user-<email>` shell has no reconciler: `MintPK`
+(`internal/platformapi/auth/mint.go`) owns it, and since 2026-09-22 a
+duplicate-team answer from `CreateTeam` (i.e. every login after the first)
+triggers `repairUserShell` — one `GET /team/info`, and one `POST /team/update`
+only when the team is ACH-owned (marker or shell shape, the same rule
+`ensureShellTeam` follows) AND `ShellTeamDrifted` says so. Before that the
+user shell was created-only, so ANY drift on it — not just the legacy
+sentinel — was permanent, which is fail-OPEN (an empty models or agents list
+means everything). Every failure in that path is logged and swallowed: the
+shell already exists and already denies, so the fallback is "unchanged", and
+a cosmetic repair must never cost the person a usable `pk_`.
 
 These sentinels cover four axes — `models`, `mcp_servers` (+
 `mcp_access_groups` and `mcp_tool_permissions`, both of which grant servers on

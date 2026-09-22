@@ -77,6 +77,12 @@ type fakeLiteLLM struct {
 	// tagInfoBehaviour answers TagInfo. The default is (nil, nil) — "LiteLLM
 	// does not know this tag", the first-login state.
 	tagInfoBehaviour func(name string) (*litellm.TagInfoEntry, error)
+
+	// getTeamInfoBehaviour / updateTeamErr + updateTeamReqs drive and record
+	// the user-shell repair MintPK runs when CreateTeam reports a duplicate.
+	getTeamInfoBehaviour func(teamID string) (*litellm.TeamListEntry, error)
+	updateTeamErr        error
+	updateTeamReqs       []*litellm.TeamUpdateRequest
 }
 
 func newFakeLiteLLM() *fakeLiteLLM {
@@ -136,11 +142,18 @@ func (f *fakeLiteLLM) CreateTeam(_ context.Context, req *litellm.NewTeamRequest)
 	}
 	return &litellm.TeamListEntry{TeamID: req.TeamID, TeamAlias: req.TeamAlias}, nil
 }
-func (f *fakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+func (f *fakeLiteLLM) UpdateTeam(_ context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	f.updateTeamReqs = append(f.updateTeamReqs, req)
+	if f.updateTeamErr != nil {
+		return nil, f.updateTeamErr
+	}
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
-func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
+	if f.getTeamInfoBehaviour != nil {
+		return f.getTeamInfoBehaviour(teamID)
+	}
 	return nil, nil
 }
 

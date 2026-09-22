@@ -17,6 +17,57 @@ import (
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
+// repairUserShell re-asserts the deny-all sentinels on a user shell that
+// already existed. It is the user-side counterpart of the operator's
+// ensureShellTeam repair: nothing else ever writes an ach-user-<email> team
+// after CreateTeam, so without this a shell that has drifted — by a hand
+// edit, a LiteLLM upgrade, or simply by being written by an older ACH — stays
+// drifted forever. That is a fail-OPEN state in the general case (an empty
+// models or agents list means EVERYTHING), which is why this exists at all;
+// migrating the legacy "__deny_all__" sentinel to "no-default-models", so the
+// phantom model leaves the person's catalog, is one instance of it.
+//
+// Ownership: only a team that is ACH-marked OR shell-shaped is touched, the
+// same rule ensureShellTeam follows. A same-alias team ACH did not create is
+// left alone and logged — an UpdateTeam on it would overwrite a stranger's
+// permissions.
+//
+// Every failure here is swallowed. Repair is opportunistic: the shell already
+// exists and already denies, so the fallback is simply "stays as it was", and
+// failing the login would deny the person a usable pk_ over a cosmetic fix.
+// That is the OPPOSITE disposition from upsertUserBudgetTag's fail-loud read
+// (sso.go) and deliberately so: there, a failed read could not tell
+// "unbudgeted" from "already budgeted" and either guess did damage; here the
+// two outcomes are "repaired" and "unchanged", and unchanged is safe.
+func (deps Deps) repairUserShell(ctx context.Context, email, shellID string) {
+	info, err := deps.LiteLLM.GetTeamInfo(ctx, shellID)
+	if err != nil || info == nil {
+		deps.Logger.Warn("mint: user shell read failed; skipping repair", "team", shellID, "err", err)
+		return
+	}
+	if !litellm.IsUserShellManaged(*info, email) && !litellm.IsUserShellShaped(*info, email) {
+		deps.Logger.Warn("mint: team is not an ACH user shell; refusing to update a team ACH did not create",
+			"team", shellID)
+		return
+	}
+	if !litellm.ShellTeamDrifted(*info, nil) {
+		return
+	}
+	// Metadata travels with every repair (it re-stamps ownership on an
+	// adopted shell); Guardrails is an explicit empty slice because a user
+	// shell never carries any and the field has no omitempty — nil would
+	// marshal as null.
+	if _, err := deps.LiteLLM.UpdateTeam(ctx, &litellm.TeamUpdateRequest{
+		TeamID:           shellID,
+		Models:           []string{litellm.ShellTeamDenyAllModel},
+		ObjectPermission: litellm.ShellTeamPermissions(),
+		Metadata:         litellm.UserShellMetadata(email),
+		Guardrails:       []string{},
+	}); err != nil {
+		deps.Logger.Warn("mint: user shell repair failed; shell left as it was", "team", shellID, "err", err)
+	}
+}
+
 // ErrMintLiteLLM marks a LiteLLM-side failure (shell team or key/generate);
 // the OAuth token endpoint maps it to 503 temporarily_unavailable.
 var ErrMintLiteLLM = errors.New("litellm unreachable during mint")
@@ -68,9 +119,12 @@ func (deps Deps) MintPK(ctx context.Context, email, userID, purpose string) (str
 	// (Hazard 4). team_id == alias, so a 400 "already exists" means the shell
 	// is already there with the id we know: success.
 	shellID := litellm.UserShellAlias(email)
-	if _, tErr := deps.LiteLLM.CreateTeam(ctx, litellm.NewUserShellRequest(email)); tErr != nil && !litellm.IsDuplicateTeamErr(tErr) {
-		return "", zero, mintErr(audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
-			"litellm user shell provision failed", "", fmt.Errorf("%w: %v", ErrMintLiteLLM, tErr))
+	if _, tErr := deps.LiteLLM.CreateTeam(ctx, litellm.NewUserShellRequest(email)); tErr != nil {
+		if !litellm.IsDuplicateTeamErr(tErr) {
+			return "", zero, mintErr(audit.OutcomeLitellmUnreachable, http.StatusServiceUnavailable,
+				"litellm user shell provision failed", "", fmt.Errorf("%w: %v", ErrMintLiteLLM, tErr))
+		}
+		deps.repairUserShell(ctx, email, shellID)
 	}
 
 	// LiteLLM key registration. ACH does NOT supply req.Key — LiteLLM owns
