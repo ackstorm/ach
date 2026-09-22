@@ -75,6 +75,13 @@ type wiringFakeLiteLLM struct {
 
 func (f *wiringFakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
 func (f *wiringFakeLiteLLM) DeleteTag(_ context.Context, _ string) error         { return nil }
+func (f *wiringFakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error {
+	return nil
+}
+func (f *wiringFakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+	return nil, nil
+}
+func (f *wiringFakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
 func (f *wiringFakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

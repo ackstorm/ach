@@ -133,8 +133,13 @@ func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamLis
 }
 
 // Unused-method shims to satisfy the wider litellm.Client interface.
-func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
-func (f *fakeLiteLLM) DeleteTag(context.Context, string) error         { return nil }
+func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error                  { return nil }
+func (f *fakeLiteLLM) DeleteTag(context.Context, string) error                          { return nil }
+func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
+func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
 func (f *fakeLiteLLM) ListModels(context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }

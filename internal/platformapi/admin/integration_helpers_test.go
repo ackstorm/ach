@@ -127,8 +127,13 @@ func (f *fakeLitellm) RevokeKey(_ context.Context, keyID string) error {
 }
 
 // Satisfy the full litellm.Client interface with no-ops.
-func (f *fakeLitellm) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
-func (f *fakeLitellm) DeleteTag(_ context.Context, _ string) error         { return nil }
+func (f *fakeLitellm) DeleteAccessGroup(_ context.Context, _ string) error              { return nil }
+func (f *fakeLitellm) DeleteTag(_ context.Context, _ string) error                      { return nil }
+func (f *fakeLitellm) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
+func (f *fakeLitellm) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+	return nil, nil
+}
+func (f *fakeLitellm) DeleteTagByName(context.Context, string) error { return nil }
 func (f *fakeLitellm) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }

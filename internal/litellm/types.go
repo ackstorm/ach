@@ -533,3 +533,21 @@ type guardrailListResponse struct {
 		LiteLLMParams guardrailParams `json:"litellm_params"`
 	} `json:"guardrails"`
 }
+
+// TagBudget is a LiteLLM budget object as ACH writes it onto a tag.
+// LiteLLM stores it in LiteLLM_BudgetTable and links it from
+// LiteLLM_TagTable.budget_id; /tag/info returns it nested under
+// "litellm_budget_table". Enforcement compares the tag's accumulated spend
+// (LiteLLM_DailyTagSpend) against MaxBudget with a strict ">", i.e. the
+// request that crosses the line is served and the NEXT one is refused 429.
+type TagBudget struct {
+	MaxBudget      float64 `json:"max_budget"`
+	BudgetDuration string  `json:"budget_duration,omitempty"`
+}
+
+// TagInfoEntry is the subset of a /tag/info entry ACH consumes.
+type TagInfoEntry struct {
+	Name   string
+	Spend  float64
+	Budget *TagBudget
+}

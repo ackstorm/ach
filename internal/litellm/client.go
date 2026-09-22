@@ -55,6 +55,22 @@ type Client interface {
 	// NoopClient logs and returns nil; RESTClient propagates upstream errors.
 	DeleteTag(ctx context.Context, name string) error
 
+	// Tag budgets — the ONLY spend ceiling ACH enforces (measured
+	// 2026-09-22: a LiteLLM user-object budget is not enforced, and a team
+	// budget reaches only that team's keys). See
+	// references/litellm-permission-model.md.
+
+	// UpsertTagBudget attaches (or re-points) a budget object to a tag,
+	// via POST /tag/new falling back to POST /tag/update.
+	UpsertTagBudget(ctx context.Context, name string, b TagBudget) error
+
+	// TagInfo issues POST /tag/info and returns the tag's spend + budget,
+	// or (nil, nil) when LiteLLM does not know the tag.
+	TagInfo(ctx context.Context, name string) (*TagInfoEntry, error)
+
+	// DeleteTagByName issues POST /tag/delete. Absent is success.
+	DeleteTagByName(ctx context.Context, name string) error
+
 	// Phase 2 — added per D-01, D-13, D-16. Consumed by the LiteLLM-snapshot
 	// Runnable (Plan 07) and the orphan-cleanup Runnable (Plan 08).
 

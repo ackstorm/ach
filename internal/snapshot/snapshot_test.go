@@ -38,8 +38,13 @@ type fakeLiteLLM struct {
 	modelCalls    atomic.Int64
 }
 
-func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error { return nil }
-func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error         { return nil }
+func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error              { return nil }
+func (f *fakeLiteLLM) DeleteTag(_ context.Context, _ string) error                      { return nil }
+func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
+func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
 
 func (f *fakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	f.mu.Lock()

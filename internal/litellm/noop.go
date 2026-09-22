@@ -38,6 +38,25 @@ func (c *NoopClient) DeleteTag(_ context.Context, name string) error {
 	return nil
 }
 
+// UpsertTagBudget is the tag-budget write. NoopClient logs and returns nil.
+func (c *NoopClient) UpsertTagBudget(_ context.Context, name string, b TagBudget) error {
+	c.Log.Info("stub: would upsert LiteLLM tag budget", "name", name, "max_budget", b.MaxBudget)
+	return nil
+}
+
+// TagInfo is the tag-budget read. NoopClient returns (nil, nil) — "no
+// budget configured", NOT an error.
+func (c *NoopClient) TagInfo(_ context.Context, name string) (*TagInfoEntry, error) {
+	c.Log.Info("stub: would read LiteLLM tag info", "name", name)
+	return nil, nil
+}
+
+// DeleteTagByName is the tag delete. NoopClient logs and returns nil.
+func (c *NoopClient) DeleteTagByName(_ context.Context, name string) error {
+	c.Log.Info("stub: would delete LiteLLM tag", "name", name)
+	return nil
+}
+
 // ListModels is the Plan 07 snapshot-Runnable call. NoopClient returns
 // (nil, nil) — an empty registered-model set, NOT an error — so Plan 07
 // tests against NoopClient compute the empty intersection consistently.

@@ -49,6 +49,30 @@ func (c *Client) DeleteTag(ctx context.Context, name string) error {
 	return client.DeleteTag(ctx, name)
 }
 
+func (c *Client) UpsertTagBudget(ctx context.Context, name string, b litellm.TagBudget) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.UpsertTagBudget(ctx, name, b)
+}
+
+func (c *Client) TagInfo(ctx context.Context, name string) (*litellm.TagInfoEntry, error) {
+	client, err := c.current()
+	if err != nil {
+		return nil, err
+	}
+	return client.TagInfo(ctx, name)
+}
+
+func (c *Client) DeleteTagByName(ctx context.Context, name string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.DeleteTagByName(ctx, name)
+}
+
 func (c *Client) ListModels(ctx context.Context) ([]litellm.ModelInfoResponse, error) {
 	client, err := c.current()
 	if err != nil {
