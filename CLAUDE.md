@@ -48,6 +48,10 @@ forwarder in front of one LiteLLM host, no operator — was removed
 2026-09-21; the chart fails the render on a leftover `profile: identity`).
 The e2e cluster runs one release: `ach.e2e.local`.
 
+A React console lives in `ui/` (imported from `alitellm-auth`), built by
+`make ui-build` into `internal/platformapi/console/dist` (`go:embed`) and
+served at `/` by platform-api.
+
 Release plumbing + CI scaffolding grafted from
 [ackstorm/alitellm-operator](https://github.com/ackstorm/alitellm-operator)
 (Apache-2.0; see `NOTICE` + `references/upstream-sync.md`) — non-code surfaces

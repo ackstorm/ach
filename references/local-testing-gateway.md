@@ -120,3 +120,27 @@ ACH_INSECURE=1 ./bin/ach-cli token | xargs -I{} curl -H "Authorization: Bearer {
 
 The forwarder resolves the token to the user's `purpose='oauth'` row and
 forwards the user's own LiteLLM virtual key.
+
+---
+
+## 4. Console UI dev loop
+
+The React console (`ui/`) has its own dev server — no need to `make ui-build`
++ reroll the operator pod on every UI edit. Port-forward the gateway to
+`localhost:8080` (either the fallback above, or the `:8080` NodePort mapping
+already reaches it) so the platform-api it fronts is where `vite.config.ts`'s
+dev proxy expects it:
+
+```bash
+kubectl -n ach-system port-forward svc/ach-local-gateway 8080:8080   # if not already reachable at :8080
+npm --prefix ui run dev
+```
+
+`npm run dev` serves the SPA on `http://localhost:5173` and proxies
+`/platform`, `/openwork`, and `/api/den` to `http://localhost:8080`
+(`ui/vite.config.ts` `server.proxy`) — everything else (JS/CSS/HMR) is
+served locally by Vite. Log in through the console UI at `:5173` as normal
+(`kilgore@kilgore.trout`); the session cookie is set for `localhost` by the
+dev server's own origin, not `ach.e2e.local`, so this path is for UI
+iteration only — use the full `ach.e2e.local:8080` origin (§2/§3 above) to
+exercise the embedded, built console end-to-end.

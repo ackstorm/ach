@@ -8,10 +8,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// assetScriptRE matches the Vite-built, content-hashed script tag src
+// (ui/vite.config.ts default asset naming: assets/<name>-<hash>.js).
+var assetScriptRE = regexp.MustCompile(`/assets/[^"]+\.js`)
 
 // consoleLogin walks /platform/console/session/login → Dex mock →
 // as-callback on the single e2e origin (rewriting every redirect hop to
@@ -166,6 +171,21 @@ func TestConsoleSession(t *testing.T) {
 	resp.Body.Close()
 	if bodyMentionsLiteLLM(b) {
 		t.Fatalf("/ is LiteLLM: %s", truncate(b, 200))
+	}
+	// Task 5: the imported console SPA is actually served — index.html embedded
+	// via go:embed all:dist (internal/platformapi/console), not just chi's
+	// NotFound fallback answering something ACH-shaped.
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /: %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("GET / content-type %q, want text/html", ct)
+	}
+	if !strings.Contains(string(b), `<div id="root">`) {
+		t.Fatalf("GET / body missing <div id=\"root\">: %s", truncate(b, 200))
+	}
+	if !assetScriptRE.Match(b) {
+		t.Fatalf("GET / body missing a /assets/*.js reference: %s", truncate(b, 200))
 	}
 }
 
