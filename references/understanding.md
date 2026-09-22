@@ -366,7 +366,8 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
 - Admin (SSO allowlist, ek → `401 invalid_key_type`, non-listed →
   `403 not_admin` BEFORE validation): keys revoke/list, users revoke-keys,
   `PATCH /platform/admin/users/{email}/budget` (one person's `user:<email>`
-  tag ceiling; login re-stamps the chart default over it),
+  tag ceiling; survives later logins — the chart default is seeded only onto
+  a tag with no budget),
   `POST /platform/admin/refresh` (PA's only "write" — force_refresh marker +
   `ach_refresh` NOTIFY; the operator's refreshsignal listener maps it to a
   GenericEvent), object inventory (SYNC column: Available/Degraded |

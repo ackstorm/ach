@@ -127,10 +127,13 @@ platformApi:
       mode: resolve
     - name: x-api-key
       mode: resolve
-  # userDefaults: the spend ceiling written onto each user's own LiteLLM tag
-  # ("user:<email>") the first time they log in. The tag is stamped on every
-  # forwarded request the user makes, so ONE budget covers their pk_ and all
-  # their ek_ across every Environment. Budgets live only on tags — a LiteLLM
+  # userDefaults: the spend ceiling SEEDED onto each user's own LiteLLM tag
+  # ("user:<email>") at login. The tag is stamped on every forwarded request
+  # the user makes, so ONE budget covers their pk_ and all their ek_ across
+  # every Environment. It is a starting value, applied only while that tag has
+  # no budget: changing it here does NOT retune people already seeded (and a
+  # login never overwrites a ceiling an admin set). Retune one person with
+  # PATCH /platform/admin/users/{email}/budget. Budgets live only on tags — a LiteLLM
   # user-object budget is not enforced (measured; see
   # references/litellm-permission-model.md). Leave maxBudget unset for no cap.
   # An empty maxBudget means no cap; 0 is a REAL ceiling that refuses every

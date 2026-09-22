@@ -395,17 +395,21 @@ object**. Teams stay pure scoping (deny-all shells + access groups).
 
 | Tag | Caps | Written by |
 |---|---|---|
-| `user:<normalized email>` | the person's whole footprint — their `pk_` AND every `ek_` they own, across Environments | platform-api — `provisionUser` at login, from `platformApi.userDefaults` (`ACH_USER_MAX_BUDGET` / `ACH_USER_BUDGET_DURATION`); an admin later, `PATCH /platform/admin/users/{email}/budget` |
+| `user:<normalized email>` | the person's whole footprint — their `pk_` AND every `ek_` they own, across Environments | platform-api — `provisionUser` SEEDS it at login from `platformApi.userDefaults` (`ACH_USER_MAX_BUDGET` / `ACH_USER_BUDGET_DURATION`) **only while the tag has no budget**; an admin retunes it with `PATCH /platform/admin/users/{email}/budget` |
 | `environment:<name>` | the POOLED spend of every `ek_` issued for that Environment, all owners together | the operator, from `Environment.spec.budget` (condition `BudgetSynced`) |
 | `key:<ACH key id>` | one `ek_` on its own | platform-api — `POST /platform/keys {budget}` at create, `PATCH /platform/keys/{id}/budget` later |
 
-**A `user:` budget an admin sets is not permanent.** `provisionUser` runs on
-EVERY login and re-applies `platformApi.userDefaults` to the tag, so the
-admin's value survives only until that person next logs in (when a default
-is configured at all — `deps.UserBudget == nil` writes nothing and leaves the
-admin value alone). Retuning one person durably today means raising the
-chart default or re-issuing the PATCH; making the per-user value win is a
-follow-up, not a v1 behaviour.
+**The chart default is a seed, not a per-login reassertion.**
+`provisionUser` reads `/tag/info` first and writes `platformApi.userDefaults`
+only when the tag carries no budget object — so an admin's
+`PATCH /platform/admin/users/{email}/budget` survives every later login. Two
+consequences: one extra `/tag/info` per login (logins are rare; the upsert
+already costs three calls), and **changing the chart default no longer
+retunes anyone already seeded** — that is the admin route's job. Both shapes
+of "no budget" seed: no tag at all (`TagInfo` → nil) and the budgetless row
+LiteLLM auto-creates from traffic. A failed `/tag/info` fails the login: it
+cannot tell "unbudgeted" from "already budgeted", and either guess is worse
+(seed and you clobber an admin's ceiling; skip and a new user is uncapped).
 
 **A never-logged-in user is a legitimate target.** `UpsertTagBudget` creates
 the budget object and binds the tag whether or not LiteLLM already knows the

@@ -68,9 +68,15 @@ type fakeLiteLLM struct {
 	createTeamBehaviour  func(req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error)
 
 	// upsertedTags records every tag budget written through
-	// UpsertTagBudget; upsertTagErr makes that write fail.
-	upsertedTags map[string]litellm.TagBudget
-	upsertTagErr error
+	// UpsertTagBudget; upsertTagErr makes that write fail. upsertTagCalls
+	// counts the writes, so a test can assert that NONE happened.
+	upsertedTags   map[string]litellm.TagBudget
+	upsertTagErr   error
+	upsertTagCalls int
+
+	// tagInfoBehaviour answers TagInfo. The default is (nil, nil) — "LiteLLM
+	// does not know this tag", the first-login state.
+	tagInfoBehaviour func(name string) (*litellm.TagInfoEntry, error)
 }
 
 func newFakeLiteLLM() *fakeLiteLLM {
@@ -141,13 +147,17 @@ func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamLis
 // Unused-method shims to satisfy the wider litellm.Client interface.
 func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
 func (f *fakeLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
+	f.upsertTagCalls++
 	if f.upsertTagErr != nil {
 		return f.upsertTagErr
 	}
 	f.upsertedTags[name] = b
 	return nil
 }
-func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+func (f *fakeLiteLLM) TagInfo(_ context.Context, name string) (*litellm.TagInfoEntry, error) {
+	if f.tagInfoBehaviour != nil {
+		return f.tagInfoBehaviour(name)
+	}
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
@@ -409,6 +419,70 @@ func TestProvisionUserWithoutBudgetWritesNoTag(t *testing.T) {
 	}
 	if len(flm.upsertedTags) != 0 {
 		t.Fatalf("want no tag writes, got %v", flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserLeavesAnExistingBudgetAlone — the default is a STARTING
+// value, not a per-login reassertion: a tag that already carries a budget
+// (an admin's PATCH /platform/admin/users/{email}/budget, say) must survive
+// the person's next login untouched — no write at all.
+func TestProvisionUserLeavesAnExistingBudgetAlone(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(name string) (*litellm.TagInfoEntry, error) {
+		return &litellm.TagInfoEntry{
+			Name:   name,
+			Budget: &litellm.TagBudget{BudgetID: name, MaxBudget: 7},
+		}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com"); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if flm.upsertTagCalls != 0 {
+		t.Fatalf("login rewrote an existing ceiling: %d writes, %v", flm.upsertTagCalls, flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserSeedsABudgetlessTag — LiteLLM auto-creates a budgetless
+// tag row the first time the name rides x-litellm-tags (§15). That is "no
+// budget", not "already capped": the default applies.
+func TestProvisionUserSeedsABudgetlessTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(name string) (*litellm.TagInfoEntry, error) {
+		return &litellm.TagInfoEntry{Name: name, Spend: 3, Budget: nil}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com"); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if got, ok := flm.upsertedTags["user:pepe@example.com"]; !ok || got.MaxBudget != 100 {
+		t.Fatalf("budgetless tag not seeded: %+v (ok=%v)", got, ok)
+	}
+}
+
+// TestProvisionUserTagReadFailureIsLoud — a failed /tag/info cannot tell
+// "unbudgeted" from "already budgeted", and guessing either way is worse
+// than failing the login (seeding would clobber an admin's ceiling;
+// skipping would leave a new user uncapped).
+func TestProvisionUserTagReadFailureIsLoud(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(string) (*litellm.TagInfoEntry, error) {
+		return nil, errors.New("litellm down")
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com")
+	var pe *provisionErr
+	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
+		t.Fatalf("want a litellm provisionErr, got %v", err)
+	}
+	if flm.upsertTagCalls != 0 {
+		t.Fatalf("a failed read must write nothing, got %d writes", flm.upsertTagCalls)
 	}
 }
 

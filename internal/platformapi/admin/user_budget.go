@@ -25,8 +25,10 @@ import (
 // cache (~10s), not instantly.
 //
 // Before this route the only ACH-side lever was the chart-wide default
-// (ACH_USER_MAX_BUDGET), applied at provision — it caps new users and cannot
-// retune an existing one.
+// (ACH_USER_MAX_BUDGET), seeded at provision — it caps new users and cannot
+// retune an existing one. The value written here is durable: provisionUser
+// seeds the default only onto a tag that has no budget yet, so a later login
+// never overwrites it.
 //
 // The body, its one rule (max_budget present and >= 0; 0 is a real "refuse
 // everything" ceiling) and the 400 envelope are the ek_ route's, verbatim

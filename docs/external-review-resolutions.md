@@ -55,8 +55,9 @@ Decision legend:
   reports a `BudgetSynced` condition; the §6.5 drain reaps the tag and its
   budget object on delete.
 - **ACH sets budgets in three places**, all of them tags, never a LiteLLM team
-  or user object: `user:<email>` (platform-api at login, from
-  `platformApi.userDefaults`), `environment:<name>` (the operator), and
+  or user object: `user:<email>` (platform-api seeds it at login from
+  `platformApi.userDefaults`, only while the tag has no budget; an admin
+  retunes it with `PATCH /platform/admin/users/{email}/budget`), `environment:<name>` (the operator), and
   `key:<ek id>` (`POST /platform/keys {budget}` / `PATCH
   /platform/keys/{id}/budget`).
 - **KEY-10 still holds**: no `max_budget` is ever written to a LiteLLM user or

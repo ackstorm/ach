@@ -40,10 +40,11 @@ type Deps struct {
 	// (MintPK).
 	LiteLLM litellm.Client
 
-	// UserBudget is the per-user default spend ceiling written onto the
+	// UserBudget is the per-user default spend ceiling SEEDED onto the
 	// "user:<email>" tag at provision time (chart: platformApi.userDefaults).
-	// nil = no default configured; ACH then writes no tag and the user is
-	// uncapped. Budgets live ONLY on tags — never on a LiteLLM team or user
+	// nil = no default configured; ACH then reads and writes no tag and the
+	// user is uncapped. Applied only to a tag that has no budget yet, so an
+	// admin's later PATCH survives every subsequent login. Budgets live ONLY on tags — never on a LiteLLM team or user
 	// object (a user-object budget is not enforced; measured 2026-09-22).
 	UserBudget *litellm.TagBudget
 
@@ -236,18 +237,39 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 	return user.UserID, nil
 }
 
-// upsertUserBudgetTag writes the configured default ceiling onto the
-// caller's own LiteLLM tag ("user:<email>"). That tag is stamped on every
-// forwarded request the person makes, so ONE budget covers their pk_ and
-// every ek_ they own, across Environments. Both provisionUser branches call
-// it: a login must leave the ceiling in place even for a user LiteLLM
-// already knew. No default configured (nil) means no tag and no cap; a
-// refused write is fail-loud — an uncapped user is a governance hole.
+// upsertUserBudgetTag seeds the configured default ceiling onto the caller's
+// own LiteLLM tag ("user:<email>"). That tag is stamped on every forwarded
+// request the person makes, so ONE budget covers their pk_ and every ek_ they
+// own, across Environments. Both provisionUser branches call it.
+//
+// The default is a STARTING value, not a per-login reassertion: it is applied
+// only when the tag carries no budget object, so an admin's
+// PATCH /platform/admin/users/{email}/budget survives the person's next
+// login. The corollary is that changing the chart default no longer retunes
+// people who have already been seeded — that is the admin route's job.
+//
+// "No budget" is BOTH shapes: no tag at all (TagInfo → nil) and a tag with no
+// budget object, which is what LiteLLM auto-creates the first time the name
+// appears in x-litellm-tags (references/litellm-permission-model.md §15).
+// Only a tag that already has a budget is left alone.
+//
+// No default configured (nil) means no read, no tag and no cap. Both the read
+// and the write are fail-loud: an uncapped user is a governance hole, and a
+// failed read cannot tell "unbudgeted" from "already budgeted" — guessing
+// either way is worse than failing the login.
 func upsertUserBudgetTag(ctx context.Context, deps Deps, email string) error {
 	if deps.UserBudget == nil {
 		return nil
 	}
 	tag := litellm.UserBudgetTag(email)
+	info, err := deps.LiteLLM.TagInfo(ctx, tag)
+	if err != nil {
+		deps.Logger.Error("sso.callback: read user budget tag", "tag", tag, "err", err)
+		return &provisionErr{kind: provisionKindLitellm, err: err}
+	}
+	if info != nil && info.Budget != nil {
+		return nil // already capped — never clobber an admin's value
+	}
 	if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, *deps.UserBudget); err != nil {
 		deps.Logger.Error("sso.callback: user budget tag", "tag", tag, "err", err)
 		return &provisionErr{kind: provisionKindLitellm, err: err}
