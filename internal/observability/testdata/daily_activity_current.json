@@ -1,0 +1,427 @@
+{
+  "results": [
+    {
+      "date": "2026-04-01",
+      "metrics": {
+        "spend": 0.023427,
+        "prompt_tokens": 5931,
+        "completion_tokens": 4087,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "total_tokens": 10018,
+        "successful_requests": 11,
+        "failed_requests": 0,
+        "api_requests": 11
+      },
+      "breakdown": {
+        "mcp_servers": {},
+        "models": {
+          "gemini/gemini-flash-lite-latest": {
+            "metrics": {
+              "spend": 8e-06,
+              "prompt_tokens": 64,
+              "completion_tokens": 4,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 68,
+              "successful_requests": 1,
+              "failed_requests": 0,
+              "api_requests": 1
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 8e-06,
+                  "prompt_tokens": 64,
+                  "completion_tokens": 4,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 68,
+                  "successful_requests": 1,
+                  "failed_requests": 0,
+                  "api_requests": 1
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "gemini/gemini-flash-latest": {
+            "metrics": {
+              "spend": 0.0005575,
+              "prompt_tokens": 800,
+              "completion_tokens": 127,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 927,
+              "successful_requests": 3,
+              "failed_requests": 0,
+              "api_requests": 3
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.0005575,
+                  "prompt_tokens": 800,
+                  "completion_tokens": 127,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 927,
+                  "successful_requests": 3,
+                  "failed_requests": 0,
+                  "api_requests": 3
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "gemini/gemini-3-pro-preview": {
+            "metrics": {
+              "spend": 0.01128,
+              "prompt_tokens": 30,
+              "completion_tokens": 935,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 965,
+              "successful_requests": 4,
+              "failed_requests": 0,
+              "api_requests": 4
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.01128,
+                  "prompt_tokens": 30,
+                  "completion_tokens": 935,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 965,
+                  "successful_requests": 4,
+                  "failed_requests": 0,
+                  "api_requests": 4
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "gemini/gemini-3-flash-preview": {
+            "metrics": {
+              "spend": 0.0115815,
+              "prompt_tokens": 5037,
+              "completion_tokens": 3021,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 8058,
+              "successful_requests": 3,
+              "failed_requests": 0,
+              "api_requests": 3
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.0115815,
+                  "prompt_tokens": 5037,
+                  "completion_tokens": 3021,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 8058,
+                  "successful_requests": 3,
+                  "failed_requests": 0,
+                  "api_requests": 3
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          }
+        },
+        "model_groups": {
+          "ackstorm.lite": {
+            "metrics": {
+              "spend": 8e-06,
+              "prompt_tokens": 64,
+              "completion_tokens": 4,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 68,
+              "successful_requests": 1,
+              "failed_requests": 0,
+              "api_requests": 1
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 8e-06,
+                  "prompt_tokens": 64,
+                  "completion_tokens": 4,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 68,
+                  "successful_requests": 1,
+                  "failed_requests": 0,
+                  "api_requests": 1
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "ackstorm.fast": {
+            "metrics": {
+              "spend": 0.0005575,
+              "prompt_tokens": 800,
+              "completion_tokens": 127,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 927,
+              "successful_requests": 3,
+              "failed_requests": 0,
+              "api_requests": 3
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.0005575,
+                  "prompt_tokens": 800,
+                  "completion_tokens": 127,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 927,
+                  "successful_requests": 3,
+                  "failed_requests": 0,
+                  "api_requests": 3
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "ackstorm.smart": {
+            "metrics": {
+              "spend": 0.01128,
+              "prompt_tokens": 30,
+              "completion_tokens": 935,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 965,
+              "successful_requests": 4,
+              "failed_requests": 0,
+              "api_requests": 4
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.01128,
+                  "prompt_tokens": 30,
+                  "completion_tokens": 935,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 965,
+                  "successful_requests": 4,
+                  "failed_requests": 0,
+                  "api_requests": 4
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          },
+          "gemini/gemini-3-flash-preview": {
+            "metrics": {
+              "spend": 0.0115815,
+              "prompt_tokens": 5037,
+              "completion_tokens": 3021,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 8058,
+              "successful_requests": 3,
+              "failed_requests": 0,
+              "api_requests": 3
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.0115815,
+                  "prompt_tokens": 5037,
+                  "completion_tokens": 3021,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 8058,
+                  "successful_requests": 3,
+                  "failed_requests": 0,
+                  "api_requests": 3
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          }
+        },
+        "providers": {
+          "gemini": {
+            "metrics": {
+              "spend": 0.023427,
+              "prompt_tokens": 5931,
+              "completion_tokens": 4087,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 10018,
+              "successful_requests": 11,
+              "failed_requests": 0,
+              "api_requests": 11
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.023427,
+                  "prompt_tokens": 5931,
+                  "completion_tokens": 4087,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 10018,
+                  "successful_requests": 11,
+                  "failed_requests": 0,
+                  "api_requests": 11
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          }
+        },
+        "endpoints": {
+          "/chat/completions": {
+            "metrics": {
+              "spend": 0.023427,
+              "prompt_tokens": 5931,
+              "completion_tokens": 4087,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 10018,
+              "successful_requests": 11,
+              "failed_requests": 0,
+              "api_requests": 11
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.023427,
+                  "prompt_tokens": 5931,
+                  "completion_tokens": 4087,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 10018,
+                  "successful_requests": 11,
+                  "failed_requests": 0,
+                  "api_requests": 11
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          }
+        },
+        "api_keys": {
+          "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+            "metrics": {
+              "spend": 0.023427,
+              "prompt_tokens": 5931,
+              "completion_tokens": 4087,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 10018,
+              "successful_requests": 11,
+              "failed_requests": 0,
+              "api_requests": 11
+            },
+            "metadata": {
+              "key_alias": null,
+              "team_id": null
+            }
+          }
+        },
+        "entities": {
+          "default_user_id": {
+            "metrics": {
+              "spend": 0.023427,
+              "prompt_tokens": 5931,
+              "completion_tokens": 4087,
+              "cache_read_input_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "total_tokens": 10018,
+              "successful_requests": 11,
+              "failed_requests": 0,
+              "api_requests": 11
+            },
+            "metadata": {},
+            "api_key_breakdown": {
+              "195b8b1f2c4e46945209387ec13e08ea7d74714fd088cd118b928630a03f2317": {
+                "metrics": {
+                  "spend": 0.023427,
+                  "prompt_tokens": 5931,
+                  "completion_tokens": 4087,
+                  "cache_read_input_tokens": 0,
+                  "cache_creation_input_tokens": 0,
+                  "total_tokens": 10018,
+                  "successful_requests": 11,
+                  "failed_requests": 0,
+                  "api_requests": 11
+                },
+                "metadata": {
+                  "key_alias": null,
+                  "team_id": null
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "total_spend": 0.023427,
+    "total_prompt_tokens": 5931,
+    "total_completion_tokens": 4087,
+    "total_tokens": 10018,
+    "total_api_requests": 11,
+    "total_successful_requests": 11,
+    "total_failed_requests": 0,
+    "total_cache_read_input_tokens": 0,
+    "total_cache_creation_input_tokens": 0,
+    "page": 1,
+    "total_pages": 1,
+    "has_more": false
+  }
+}

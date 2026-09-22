@@ -209,3 +209,15 @@ Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c0617620429
 | ach file | alitellm-auth file | Notes |
 |---|---|---|
 | `ui/**` | `src/ui/**` (minus `dist/`, `node_modules/`) | One copy, no fork drift — `ui/` is the new home; the alitellm-auth tree retires in Phase 4. Components + styling untouched; only the data-layer seams (`lib/api.ts`, `lib/api-types.ts`, `hooks/*`, `stores/*`, `App.tsx`, `routes/Login.tsx`, the logout link) are rewired to the ACH console contracts. `vite.config.ts`: `base: '/'`, `outDir ../internal/platformapi/console/dist`, dev proxy `/platform`+`/openwork`+`/api/den`; `package.json` name `ach-console`. |
+
+## 2026-09-22 — stats fold ported to Go (unified console Phase 3, Task 1)
+
+Source repository: `ackstorm/alitellm-auth` @ `5feb946c7380a4a3f3ef385ef074303a72d261eb` (Apache-2.0, same org).
+
+| ach file | alitellm-auth file | Notes |
+|---|---|---|
+| `internal/observability/stats.go` | `src/api/app/stats.py` | Direct transliteration of `aggregate_window`/`last_used_from_window`/`compute_deltas`/`build_stats_contract` + their private folds. `resolve_key_display` deliberately NOT ported — ACH keys carry `key_alias = ekid_…/pkid_…` at mint (`envkeys/handler.go:461`, `sso.go`), so per-key rows are joined to ACH names in the Task 4 handler, not by hashing an opaque LiteLLM alias. `Models`/`Keys` are returned name/id-sorted (Go's `map[string]any` doesn't preserve JSON key order the way Python's dict does); no test depends on either order. |
+| `internal/observability/stats_test.go` | `src/api/tests/test_stats.py` | Case-for-case port of the 24 non-`resolve_key_display` cases (`Test` prefix + CamelCase), asserting the SAME numbers against the SAME fixtures. |
+| `internal/observability/testdata/daily_activity_current.json` | `src/api/tests/fixtures/daily_activity_current.json` | Verbatim. |
+| `internal/observability/testdata/daily_activity_empty.json` | `src/api/tests/fixtures/daily_activity_empty.json` | Verbatim. |
+| `internal/observability/testdata/daily_activity_prior.json` | `src/api/tests/fixtures/daily_activity_prior.json` | Verbatim. |
