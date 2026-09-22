@@ -91,11 +91,12 @@ func (c *countingNoopClient) DeleteAccessGroup(ctx context.Context, name string)
 	return c.accessGroup.DeleteAccessGroup(ctx, name)
 }
 
-// DeleteTag increments the counter and delegates to the embedded
-// NoopClient (which logs and returns nil).
-func (c *countingNoopClient) DeleteTag(ctx context.Context, name string) error {
+// DeleteTagByName increments the counter and delegates to the embedded
+// NoopClient (which logs and returns nil). This is §6.5 step 3 — the
+// legacy DeleteTag (DELETE /tag/<name>) is no longer on the reconcile path.
+func (c *countingNoopClient) DeleteTagByName(ctx context.Context, name string) error {
 	c.counter.Add(1)
-	return c.NoopClient.DeleteTag(ctx, name)
+	return c.NoopClient.DeleteTagByName(ctx, name)
 }
 
 // §7 routing: forward access-group calls to the per-suite fake so tests

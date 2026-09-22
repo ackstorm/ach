@@ -201,6 +201,32 @@ type EnvironmentSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
 	Description string `json:"description,omitempty"`
+
+	// Budget caps the POOLED spend of every ek_ issued for this Environment
+	// (all owners together). It is enforced through the "environment:<name>"
+	// tag the forwarder stamps on each request, independently of the per-user
+	// and per-key budgets — whichever ceiling is crossed first refuses the
+	// request. Omit for an uncapped Environment.
+	//
+	// +optional
+	Budget *BudgetBlock `json:"budget,omitempty"`
+}
+
+// BudgetBlock is a spend ceiling ACH writes onto a LiteLLM tag. ACH stores
+// no spend of its own: LiteLLM owns the counter and the enforcement (it
+// refuses a request once the tag's accumulated spend exceeds MaxBudget).
+type BudgetBlock struct {
+	// MaxBudget is the ceiling in LiteLLM's spend unit (USD). Required
+	// when the block is present.
+	//
+	// +kubebuilder:validation:Minimum=0
+	MaxBudget float64 `json:"maxBudget"`
+
+	// BudgetDuration is the reset window LiteLLM applies, e.g. "30d".
+	// Empty means the budget never resets.
+	//
+	// +optional
+	BudgetDuration string `json:"budgetDuration,omitempty"`
 }
 
 // EnvironmentStatus defines the observed state of Environment (Hub §6.4, §6.6).

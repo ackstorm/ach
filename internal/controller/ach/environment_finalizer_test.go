@@ -2,7 +2,7 @@
 
 // Environment finalizer add/remove test — Plan 01-11 Task 4. Asserts
 // CRD-06 (finalizer add) + Hub §6.5 drain (LiteLLM.DeleteAccessGroup
-// then LiteLLM.DeleteTag) + OP-02 (the §6.5 deletion sequencing).
+// then LiteLLM.DeleteTagByName) + OP-02 (the §6.5 deletion sequencing).
 
 package ach
 
@@ -28,7 +28,7 @@ import (
 //  3. Delete the CR and poll until it disappears — proves the
 //     finalizer drained.
 //  4. Assert litellmCounter.Load() >= 2 — proves Step 2a invoked both
-//     LiteLLM.DeleteAccessGroup (§6.5 step 2) and LiteLLM.DeleteTag
+//     LiteLLM.DeleteAccessGroup (§6.5 step 2) and LiteLLM.DeleteTagByName
 //     (§6.5 step 3). The counting NoopClient (suite_test.go) bumps the
 //     atomic counter exactly once per call.
 //
@@ -99,17 +99,17 @@ func TestEnvironmentFinalizerAddRemove(t *testing.T) {
 	}
 
 	// Step 4: assert LiteLLM stub call count.
-	// §6.5 step 2 = DeleteAccessGroup (1 call); step 3 = DeleteTag
+	// §6.5 step 2 = DeleteAccessGroup (1 call); step 3 = DeleteTagByName
 	// (1 call). The counting NoopClient bumps exactly once per method.
 	// We expect AT LEAST 2 because a re-reconcile after the finalizer
 	// add could plausibly invoke the deletion path twice — once is the
 	// correct behavior, twice is the upper bound any reasonable
 	// implementation would emit. Assert the floor.
 	if got := litellmCounter.Load(); got < 2 {
-		t.Errorf("OP-02 FAIL: expected >= 2 LiteLLM noop calls (DeleteAccessGroup + DeleteTag), got %d",
+		t.Errorf("OP-02 FAIL: expected >= 2 LiteLLM noop calls (DeleteAccessGroup + DeleteTagByName), got %d",
 			got)
 	} else {
-		t.Logf("OP-02: litellmCounter=%d (>= 2 — DeleteAccessGroup + DeleteTag both invoked)", got)
+		t.Logf("OP-02: litellmCounter=%d (>= 2 — DeleteAccessGroup + DeleteTagByName both invoked)", got)
 	}
 }
 

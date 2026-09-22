@@ -593,6 +593,25 @@ _Appears in:_
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
 
 
+#### BudgetBlock
+
+
+
+BudgetBlock is a spend ceiling ACH writes onto a LiteLLM tag. ACH stores
+no spend of its own: LiteLLM owns the counter and the enforcement (it
+refuses a request once the tag's accumulated spend exceeds MaxBudget).
+
+
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `maxBudget` _float_ | MaxBudget is the ceiling in LiteLLM's spend unit (USD). Required<br />when the block is present. |  | Minimum: 0 <br /> |
+| `budgetDuration` _string_ | BudgetDuration is the reset window LiteLLM applies, e.g. "30d".<br />Empty means the budget never resets. |  |  |
+
+
 #### CapabilitySpec
 
 
@@ -807,6 +826,7 @@ _Appears in:_
 | `authorizedTeams` _string array_ | AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment<br />is unusable when no entry resolves to an existing LiteLLM Team;<br />admission requires at least one entry per Hub §6 (informational —<br />reconcile-time existence is verified per §6.4). |  | MinItems: 1 <br />Required: \{\} <br /> |
 | `notice` _string_ | Notice is an optional free-text advisory shown to the user ONLY after<br />`ach-cli env hydrate` (it is not surfaced in `env list` / `env describe`<br />— use Description for catalog metadata). Use it for operational reminders<br />("re-login after key rotation") or model guidance ("works best with the<br />openai-* models"). Plain text, not interpreted; empty renders nothing. |  | MaxLength: 2048 <br /> |
 | `description` _string_ | Description is optional catalog metadata describing what this Environment<br />is. It is surfaced in `ach-cli env list` (truncated) and `env describe`<br />(full) — the browse-time "what is this" text, distinct from Notice's<br />post-hydrate advisory. Plain text, not interpreted; empty renders nothing. |  | MaxLength: 2048 <br /> |
+| `budget` _[BudgetBlock](#budgetblock)_ | Budget caps the POOLED spend of every ek_ issued for this Environment<br />(all owners together). It is enforced through the "environment:<name>"<br />tag the forwarder stamps on each request, independently of the per-user<br />and per-key budgets — whichever ceiling is crossed first refuses the<br />request. Omit for an uncapped Environment. |  |  |
 
 
 #### EnvironmentStatus

@@ -366,7 +366,7 @@ func TestReconcileDeletionOrder(t *testing.T) {
 	// including the suspended stand-in), then THREE DeleteAccessGroup calls
 	// (canonical ach-env-<env>, the v0.6.19 ach-<env>, and the pre-v0.6.19
 	// bare <env> name — all idempotent), then DeleteTeam. deleteShellTeam's
-	// ListTeamsByAlias lookup and DeleteTag are not recorded into
+	// ListTeamsByAlias lookup and DeleteTagByName are not recorded into
 	// fake.order, so this is the full recording for the run.
 	wantOrder := []string{"RevokeKey", "RevokeKey", "RevokeKey", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteAccessGroup", "DeleteTeam"}
 	if !slices.Equal(fake.order, wantOrder) {

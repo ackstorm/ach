@@ -37,6 +37,13 @@ spec:
   authorizedTeams:
     - default
   notice: "demo environment — re-login after key rotation"
+  # budget caps the POOLED spend of every ek_ issued for this Environment,
+  # through the "environment:demo" LiteLLM tag the forwarder stamps on each
+  # request. Left unset here: the tag-budget e2e sets one at runtime, and an
+  # always-on ceiling would make every other e2e's spend a shared resource.
+  #   budget:
+  #     maxBudget: 250        # USD, LiteLLM's spend unit
+  #     budgetDuration: 30d   # reset window; omit for a budget that never resets
   description: "demo environment — data-team sandbox"
   runtime:
     models:

@@ -71,6 +71,28 @@ spec:
                   type: string
                 minItems: 1
                 type: array
+              budget:
+                description: |-
+                  Budget caps the POOLED spend of every ek_ issued for this Environment
+                  (all owners together). It is enforced through the "environment:<name>"
+                  tag the forwarder stamps on each request, independently of the per-user
+                  and per-key budgets — whichever ceiling is crossed first refuses the
+                  request. Omit for an uncapped Environment.
+                properties:
+                  budgetDuration:
+                    description: |-
+                      BudgetDuration is the reset window LiteLLM applies, e.g. "30d".
+                      Empty means the budget never resets.
+                    type: string
+                  maxBudget:
+                    description: |-
+                      MaxBudget is the ceiling in LiteLLM's spend unit (USD). Required
+                      when the block is present.
+                    minimum: 0
+                    type: number
+                required:
+                - maxBudget
+                type: object
               context:
                 default: {}
                 description: |-

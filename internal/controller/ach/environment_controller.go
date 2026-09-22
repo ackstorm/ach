@@ -332,6 +332,14 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		agCond.Message = "snapshot stale (LiteLLM unreachable); " + agCond.Message
 	}
 	apimeta.SetStatusCondition(&env.Status.Conditions, agCond)
+	// spec.budget → the "environment:<name>" LiteLLM tag. Published only
+	// when the Environment declares a budget; BudgetSynced is NOT one of
+	// the §6.6 required sub-conditions, so a failed tag write does not
+	// make the Environment unavailable — existing keys and hydrate keep
+	// working, and the next reconcile retries.
+	if budgetCond, ok := environmentBudgetCondition(ctx, r.LiteLLM, &env); ok {
+		apimeta.SetStatusCondition(&env.Status.Conditions, budgetCond)
+	}
 	// Echo the synced access group name (CRD-02 status field). Only set
 	// when AccessGroupSynced is True so a stale Status doesn't lie.
 	if agCond.Status == metav1.ConditionTrue {
@@ -546,8 +554,15 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)
 	}
-	if err := r.LiteLLM.DeleteTag(ctx, env.Name); err != nil {
-		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTag: %w", err)
+	// The tag deleted here is the legacy bare "<env>" name, NOT the
+	// "environment:<env>" budget tag the forwarder stamps. That one is
+	// deliberately left in place, along with its budget object: LiteLLM
+	// auto-creates tag rows from traffic, so an "environment:<env>" tag can
+	// predate ACH and outlive it, and its spend history (LiteLLM_DailyTagSpend)
+	// is the only record of what the Environment cost. ACH never assumes
+	// ownership of a tag it did not create — do not "fix" this by deleting it.
+	if err := r.LiteLLM.DeleteTagByName(ctx, env.Name); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName: %w", err)
 	}
 	if err := r.drainEkRows(ctx, env); err != nil {
 		return ctrl.Result{}, err
