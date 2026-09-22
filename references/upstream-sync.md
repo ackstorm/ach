@@ -221,3 +221,16 @@ Source repository: `ackstorm/alitellm-auth` @ `5feb946c7380a4a3f3ef385ef074303a7
 | `internal/observability/testdata/daily_activity_current.json` | `src/api/tests/fixtures/daily_activity_current.json` | Verbatim. |
 | `internal/observability/testdata/daily_activity_empty.json` | `src/api/tests/fixtures/daily_activity_empty.json` | Verbatim. |
 | `internal/observability/testdata/daily_activity_prior.json` | `src/api/tests/fixtures/daily_activity_prior.json` | Verbatim. |
+
+## 2026-09-22 — latency fold + read-only budget block ported to Go (unified console Phase 3, Task 2)
+
+Source repository: `ackstorm/alitellm-auth` @ `5feb946c7380a4a3f3ef385ef074303a72d261eb` (Apache-2.0, same org).
+
+| ach file | alitellm-auth file | Notes |
+|---|---|---|
+| `internal/observability/latency.go` | `src/api/app/latency.py` | Direct transliteration of `percentile`/`compute_latency_contract` + its private folds. `SpendLogRow` types the lean `_LEAN_SPEND_FIELDS` projection directly (nullable fields as `*float64`), so the dynamic-any coercion `_num`/`_parse_iso` collapse into typed struct decode + `time.Parse(time.RFC3339Nano, …)` (Z-tolerant natively, no Python `"Z"→"+00:00"` rewrite needed). |
+| `internal/observability/latency_test.go` | `src/api/tests/test_latency.py` | Case-for-case port of all 12 cases; the Python `test_contract_non_list_degrades` (passing a non-list) has no Go equivalent (`rows []SpendLogRow` can't be non-a-slice) and became `TestContract_NilRowsDegrades` (nil slice) instead. |
+| `internal/observability/budget.go` | `src/api/app/session.py` (`_budget_block`, `session.py:161`) | Extracted into its own file/exported `BudgetBlock` since `session.py`'s surrounding route/session logic is out of scope for this Go port. |
+| `internal/observability/budget_test.go` | `src/api/tests/test_session.py` (`test_budget_block_*`, `test_session.py:206-256`) | Case-for-case port of the 4 `_budget_block` cases (table-driven). |
+| `internal/observability/testdata/spend_logs_rows.json` | `src/api/tests/fixtures/spend_logs_rows.json` | Verbatim. Copied per the batch brief; unused by this batch's tests (`test_latency.py` builds synthetic rows, not fixture-backed) — reserved for a future Task 3/4 route-level/litellm-client test. |
+| `internal/observability/testdata/user_info.json` | `src/api/tests/fixtures/user_info.json` | Verbatim. Same as above — unused by this batch (`BudgetBlock` tests construct `UserInfo`/`MemberBudget` literals directly); reserved for Task 3/4. |
