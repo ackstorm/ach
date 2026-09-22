@@ -90,15 +90,38 @@ func TestDirectorStampsTagHeader(t *testing.T) {
 
 // TestDirectorStampsNoTagHeaderWithoutIdentity — a passthrough credential
 // (raw LiteLLM key, unresolved bearer) has no ACH identity: no tags, and no
-// header at all rather than an empty one.
+// header at all rather than an empty one. The caller's OWN tag headers are
+// dropped: they are ACH's control plane, so a client can never attribute its
+// spend to someone else's ceiling.
 func TestDirectorStampsNoTagHeaderWithoutIdentity(t *testing.T) {
 	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	req.Header.Set("X-Litellm-Tags", "user:victim@corp,environment:prod")
+	req.Header.Set("X-Achtest-Tags", "user:victim@corp")
 
 	rp.Director(req)
 
-	if _, ok := req.Header["X-Litellm-Tags"]; ok {
-		t.Fatalf("x-litellm-tags must be absent, got %q", req.Header.Get("x-litellm-tags"))
+	for _, h := range []string{"X-Litellm-Tags", "X-Achtest-Tags"} {
+		if _, ok := req.Header[h]; ok {
+			t.Fatalf("%s must be absent, got %q", h, req.Header.Get(h))
+		}
+	}
+}
+
+// TestDirectorOverwritesSpoofedTagHeader — an identified caller does not get
+// to append to, or keep any of, the tags ACH computes for them.
+func TestDirectorOverwritesSpoofedTagHeader(t *testing.T) {
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	req.Header.Set("X-Litellm-Tags", "user:victim@corp")
+	req = req.WithContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9",
+	}))
+
+	rp.Director(req)
+
+	if got := req.Header.Values("x-litellm-tags"); len(got) != 1 || got[0] != "user:pepe@example.com" {
+		t.Fatalf("x-litellm-tags = %v, want exactly [user:pepe@example.com]", got)
 	}
 }
 

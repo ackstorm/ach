@@ -30,6 +30,9 @@ func TestStripAndRewrite(t *testing.T) {
 		}
 	}
 	for k, want := range map[string]string{
+		// X-Litellm-Tags passes THIS transform untouched, but the Director
+		// calls stampTags after it, which deletes the client's copy — ACH
+		// owns the budget-tag header end to end (see stampTags).
 		"Authorization": "Bearer upstream-cred", "X-Litellm-Session-Id": "sess-123", "X-Litellm-Tags": "a,b",
 		"X-Goog-Api-Key": "client-goog", "Connection": "keep-alive", "Content-Type": "application/json",
 	} {

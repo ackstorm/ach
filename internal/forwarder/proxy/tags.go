@@ -59,8 +59,19 @@ func TagsForContext(ctx context.Context) []string {
 }
 
 // stampTags writes the tag header (and its test mirror) onto the upstream
-// request. Fail-open by construction: with no tags it does nothing.
+// request. Fail-open by construction: with no tags it stamps none.
+//
+// It DELETES both headers first, unconditionally. They are ACH's own
+// control plane — the budget ceilings the whole feature enforces are keyed
+// off them — and stripAndRewrite forwards unknown x-litellm-* headers as
+// they came. Without the delete, a caller with no ACH identity (a
+// passthrough credential slot, or a raw LiteLLM key in Authorization) could
+// present `x-litellm-tags: user:victim@corp` and book their spend against
+// someone else's ceiling, pushing that ceiling over budget. A client never
+// chooses its own attribution.
 func stampTags(req *http.Request) {
+	req.Header.Del(tagsHeader)
+	req.Header.Del(headerTags)
 	tags := TagsForContext(req.Context())
 	if len(tags) == 0 {
 		return
