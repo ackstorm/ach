@@ -47,18 +47,22 @@ func TestConsoleStats(t *testing.T) {
 	}
 	bearer := map[string]string{"Authorization": "Bearer " + creds.Access}
 
-	// ekRequests reads the "demo-ek" key row's requests count from a stats
-	// payload, 0 if the row is absent (no traffic through it yet).
+	// ekRequests sums the requests of every "demo-ek" key row in a stats
+	// payload (0 when none carried traffic yet). Summed, not first-match:
+	// every e2e process mints its own demo-ek (mustAcquireEkBoundToEnv caches
+	// per process), so a kept cluster holds several rows with that alias and
+	// only the newest one grows with this run's call.
 	ekRequests := func(s map[string]any) float64 {
 		keys, _ := s["keys"].([]any)
+		var total float64
 		for _, k := range keys {
 			row, _ := k.(map[string]any)
 			if row["key_alias"] == "demo-ek" {
 				n, _ := row["requests"].(float64)
-				return n
+				total += n
 			}
 		}
-		return 0
+		return total
 	}
 
 	// Baseline BEFORE sending this run's traffic: the shared e2e cluster's
