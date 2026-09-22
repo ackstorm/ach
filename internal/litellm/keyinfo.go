@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 )
 
 // ProbeConnection issues GET /models with the master key and returns
@@ -52,18 +53,36 @@ func (c *RESTClient) ProbeConnection(ctx context.Context) error {
 // keys (e.g. their pk_ was just revoked and there is no ek_ for them).
 // Callers decide whether absence is interesting.
 //
+// Pagination: LiteLLM's default /key/list page size is 10, so a single
+// request silently drops any key past the 10th. ListUserKeys walks every
+// page (size=100, LiteLLM's documented max) and concatenates Keys, using
+// the envelope's total_pages to know when to stop. total_pages == 0 is
+// treated as one page (empty result). The loop also stops early if a page
+// comes back with zero keys, which bounds it even against a malformed
+// total_pages.
+//
 // §9.1: only the user_id and status code are logged — no response body.
 func (c *RESTClient) ListUserKeys(ctx context.Context, userID string) ([]UserKeyInfo, error) {
-	path := "/key/list?user_id=" + url.QueryEscape(userID) + "&return_full_object=true&include_team_keys=false"
-	raw, err := c.makeRequest(ctx, "GET", path, nil)
-	if err != nil {
-		return nil, err
+	const pageSize = 100
+	var keys []UserKeyInfo
+	for page := 1; ; page++ {
+		path := "/key/list?user_id=" + url.QueryEscape(userID) +
+			"&return_full_object=true&include_team_keys=false" +
+			"&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(pageSize)
+		raw, err := c.makeRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		var resp ListUserKeysResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			return nil, fmt.Errorf("litellm: decode GET /key/list: %w", err)
+		}
+		keys = append(keys, resp.Keys...)
+		if len(resp.Keys) == 0 || resp.TotalPages == 0 || page >= resp.TotalPages {
+			break
+		}
 	}
-	var resp ListUserKeysResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, fmt.Errorf("litellm: decode GET /key/list: %w", err)
-	}
-	return resp.Keys, nil
+	return keys, nil
 }
 
 // RevokeKey issues POST /key/delete with body {"keys": [keyID]} —

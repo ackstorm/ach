@@ -265,8 +265,13 @@ type UserKeyInfo struct {
 
 // ListUserKeysResponse is the envelope returned by
 // GET /key/list?user_id=<id>&return_full_object=true&include_team_keys=false.
+// TotalPages drives ListUserKeys' pagination loop (LiteLLM's default page
+// size is 10 — a single page silently drops any key past the 10th).
 type ListUserKeysResponse struct {
-	Keys []UserKeyInfo `json:"keys"`
+	Keys       []UserKeyInfo `json:"keys"`
+	TotalCount int           `json:"total_count"`
+	Page       int           `json:"current_page"`
+	TotalPages int           `json:"total_pages"`
 }
 
 // --- Phase 3 (Plan 03-01) ---
