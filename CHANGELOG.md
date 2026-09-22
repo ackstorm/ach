@@ -5,6 +5,19 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- Unified console: platform-api serves the React console at `/`, with in-process
+  console sessions over the OAuth AS, `ek_` suspend/resume and optional expiry,
+  and user-scoped stats/latency.
+
+  **Rollback boundary (D-29):** No rollback below `<console release>` once any
+  environment key is suspended or carries an expiry: an older orphan worker
+  would reap suspended keys. The down migration refuses in that case.
+
+  **LiteLLM host split (D-18):** LiteLLM's UI/admin surface is no longer
+  reachable through `api.<domain>`; use `litellm.<domain>`. Only ACH's route
+  families (`/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>`, `/v2/model/info`,
+  `/.well-known`) are proxied — `/ui`, `/key/*`, `/health` and `/model/*` now
+  return 404 through ACH.
 - Add `channels[].type: webhook-script`, including CRD validation, environment/Secret
   forwarding, generated schema, and renderer support for deterministic no-model webhooks.
 
