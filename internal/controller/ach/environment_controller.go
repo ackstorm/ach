@@ -554,15 +554,22 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.deleteShellTeam(ctx, env, logger); err != nil {
 		return ctrl.Result{}, fmt.Errorf("§6.5 step 2b deleteShellTeam: %w", err)
 	}
-	// The tag deleted here is the legacy bare "<env>" name, NOT the
-	// "environment:<env>" budget tag the forwarder stamps. That one is
-	// deliberately left in place, along with its budget object: LiteLLM
-	// auto-creates tag rows from traffic, so an "environment:<env>" tag can
-	// predate ACH and outlive it, and its spend history (LiteLLM_DailyTagSpend)
-	// is the only record of what the Environment cost. ACH never assumes
-	// ownership of a tag it did not create — do not "fix" this by deleting it.
+	// Two DIFFERENT tags die here — do not conflate them. The legacy one is
+	// the bare "<env>" name (pre-budget attribution); the other is the
+	// "environment:<env>" tag the forwarder stamps, which also owns a budget
+	// object under the same id. Both deletions are unconditional: the
+	// budget tag is reaped even when spec.budget was never set, because
+	// LiteLLM auto-creates a budgetless tag row the first time the
+	// forwarder stamps it. Every call is idempotent (absent = success).
 	if err := r.LiteLLM.DeleteTagByName(ctx, env.Name); err != nil {
-		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName: %w", err)
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName(legacy): %w", err)
+	}
+	budgetTag := litellm.EnvironmentBudgetTag(env.Name)
+	if err := r.LiteLLM.DeleteTagByName(ctx, budgetTag); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName(%s): %w", budgetTag, err)
+	}
+	if err := r.LiteLLM.DeleteBudget(ctx, budgetTag); err != nil {
+		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteBudget(%s): %w", budgetTag, err)
 	}
 	if err := r.drainEkRows(ctx, env); err != nil {
 		return ctrl.Result{}, err

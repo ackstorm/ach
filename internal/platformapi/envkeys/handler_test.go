@@ -148,6 +148,40 @@ type captureLiteLLM struct {
 	// teams overrides the default ListAllTeams fixture below when non-nil —
 	// used by TestCreateEkRejectsWhenShellTeamMissing to omit the shell team.
 	teams []litellm.TeamListEntry
+
+	// Tag-budget capture (key:<id> ceilings): what was written, what was
+	// deleted, and a switch to make the write fail.
+	upsertedTags   map[string]litellm.TagBudget
+	deletedTags    map[string]bool
+	deletedBudgets map[string]bool
+	upsertTagErr   error
+}
+
+func newCaptureLiteLLM() *captureLiteLLM {
+	return &captureLiteLLM{
+		NoopClient:     &litellm.NoopClient{},
+		upsertedTags:   map[string]litellm.TagBudget{},
+		deletedTags:    map[string]bool{},
+		deletedBudgets: map[string]bool{},
+	}
+}
+
+func (c *captureLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
+	if c.upsertTagErr != nil {
+		return c.upsertTagErr
+	}
+	c.upsertedTags[name] = b
+	return nil
+}
+
+func (c *captureLiteLLM) DeleteTagByName(_ context.Context, name string) error {
+	c.deletedTags[name] = true
+	return nil
+}
+
+func (c *captureLiteLLM) DeleteBudget(_ context.Context, id string) error {
+	c.deletedBudgets[id] = true
+	return nil
 }
 
 func (c *captureLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
@@ -248,7 +282,7 @@ func (d *fakeEkDB) RevokePersonalKeyByOwner(_ context.Context, _ string, _ strin
 // to the minted ekid_ — i.e. KeyAlias != "" AND KeyAlias == ach_key_id
 // metadata (debug attribution only, never used for lookup/routing).
 func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
-	flm := &captureLiteLLM{NoopClient: &litellm.NoopClient{}}
+	flm := newCaptureLiteLLM()
 	store := &fakeEnvStore{env: &db.EnvironmentRow{
 		Namespace:       "ach",
 		Name:            "prod",

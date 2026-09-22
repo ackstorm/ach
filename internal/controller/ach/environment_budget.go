@@ -13,10 +13,9 @@ import (
 )
 
 // reconcileEnvironmentBudget makes the "environment:<name>" tag match
-// spec.budget. An unset budget is a no-op: ACH does not delete a tag it may
-// not own (LiteLLM auto-creates budgetless tag rows from traffic, and an
-// operator may have set one by hand), and an Environment delete already
-// removes the shell team + access group that scope the keys.
+// spec.budget. Dropping spec.budget from a live Environment is a no-op —
+// the ceiling stays until the tag is deleted, which happens on Environment
+// DELETE (reconcileDeletion reaps both the tag and its budget object).
 func reconcileEnvironmentBudget(ctx context.Context, ll litellm.Client, env string, b *achv1alpha1.BudgetBlock) error {
 	if b == nil {
 		return nil

@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -96,8 +97,21 @@ func (c *countingNoopClient) DeleteAccessGroup(ctx context.Context, name string)
 // legacy DeleteTag (DELETE /tag/<name>) is no longer on the reconcile path.
 func (c *countingNoopClient) DeleteTagByName(ctx context.Context, name string) error {
 	c.counter.Add(1)
+	deletedTags.Store(name, true)
 	return c.NoopClient.DeleteTagByName(ctx, name)
 }
+
+// DeleteBudget records the budget objects the finalizer reaps.
+func (c *countingNoopClient) DeleteBudget(ctx context.Context, id string) error {
+	c.counter.Add(1)
+	deletedBudgets.Store(id, true)
+	return c.NoopClient.DeleteBudget(ctx, id)
+}
+
+// deletedTags / deletedBudgets record every §6.5 step-3 name so the
+// finalizer spec can assert the legacy bare tag AND the environment:<env>
+// budget pair were all swept.
+var deletedTags, deletedBudgets sync.Map
 
 // §7 routing: forward access-group calls to the per-suite fake so tests
 // can assert call counts + inject errors. Issue #17: /v1 surface.

@@ -105,6 +105,17 @@ func TestEnvironmentFinalizerAddRemove(t *testing.T) {
 	// add could plausibly invoke the deletion path twice — once is the
 	// correct behavior, twice is the upper bound any reasonable
 	// implementation would emit. Assert the floor.
+	// Step 4b: both §6.5 step-3 tags plus the budget object were swept —
+	// the legacy bare name and the environment:<env> pair are different
+	// tags and both must go.
+	for _, name := range []string{cr.Name, "environment:" + cr.Name} {
+		if _, ok := deletedTags.Load(name); !ok {
+			t.Errorf("§6.5 step 3: tag %q was not deleted", name)
+		}
+	}
+	if _, ok := deletedBudgets.Load("environment:" + cr.Name); !ok {
+		t.Errorf("§6.5 step 3: budget object %q was not deleted", "environment:"+cr.Name)
+	}
 	if got := litellmCounter.Load(); got < 2 {
 		t.Errorf("OP-02 FAIL: expected >= 2 LiteLLM noop calls (DeleteAccessGroup + DeleteTagByName), got %d",
 			got)
