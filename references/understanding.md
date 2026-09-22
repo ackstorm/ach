@@ -365,6 +365,21 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
 - UI Objects API (G2, Environment-only v1): `origin='ui'` DRAFT rows, YAML
   export → kubectl apply → operator takeover. `ACH_DISABLE_UI_WRITES=true`
   kills the write path.
+- **Console analytics** (`GET /platform/console/{stats,latency}`, pk_-only —
+  same guard as `capabilities`, `401 invalid_key_type` for an `ek_`): folds
+  the caller's OWN LiteLLM `/user/daily/activity` + `/spend/logs/v2` windows
+  (`litellm.UserView`, never the master key, §10.1) into
+  `observability.{Stats,Latency}Contract`, always stamped
+  `"data_scope":"user"` (D-13/AC-16) — user-global, never
+  Environment-scoped, so traffic sent through an `ek_` the same owner holds
+  counts toward the same totals. Independent degradation: a failed
+  prior-window read only drops `capabilities.deltas`; a failed
+  `UserInfo`/`TeamMemberBudget` read only degrades `budget.source` to
+  `"unknown"`; a failed CURRENT-window read is a hard 502
+  `litellm_rejected`/503 `litellm_unreachable` (never a master-key retry);
+  `latency`'s `/spend/logs/v2` fetch degrades to 200
+  `{"available":false,"reason":"unavailable"|"fetch_failed"}` rather than an
+  HTTP error.
 
 ## 8. Hydrate engine (`internal/cli/hydrate`) — 14-step commit
 

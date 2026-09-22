@@ -1088,6 +1088,29 @@ those headers, or a proxy that strips fetch metadata. `503
 temporarily_unavailable` on a cookie request is Dex not answering the periodic
 revalidation; the session is kept, retry.
 
+### ❌ `GET /platform/console/latency` answers 200 `{"available":false,"reason":"unavailable"}`
+✅ `/spend/logs/v2` refused the caller's own LiteLLM key with 401
+`role=unknown` (§10.2 fact 1) — the user's LiteLLM `user_role` was never set,
+almost always because the user never went through `provisionUser` (no
+first-login OAuth round-trip minted their `sk-`/role, e.g. a row seeded
+directly in the DB for a test, or a user provisioned before the role was
+added). ACH never retries with the master key on this path (§10.1) — that
+would leak the user-scoping guarantee. Fix: have the user complete a real
+OAuth login (`ach-cli login` or the console session flow) so `provisionUser`
+runs; `reason:"fetch_failed"` instead is a different failure (transport/5xx)
+and self-heals once LiteLLM answers again.
+
+### ❌ `GET /platform/console/stats` answers `502 litellm_rejected`
+✅ The CURRENT-window `/user/daily/activity` call was refused — the caller's
+decrypted `sk-` (opened from `personal_keys.LiteLLMKeyMaterial`) no longer
+exists in LiteLLM, usually because it was deleted directly in LiteLLM
+(orphan reaper, a manual `key/delete`, or a DB reset that didn't touch
+ACH's row). ACH does not retry with the master key (§10.1), so this is a
+hard error, not a degraded 200. Self-heals on the next `/platform/oauth/token`
+issue: platform-api re-mints the `sk-` whenever `GET /key/list` no longer
+lists it (one check per issue) — have the user re-run `ach-cli login` (or
+let their client's token refresh trigger `/token`), then retry.
+
 ### ❌ `/ui`, `/key/list`, `/health`, `/v2/...` are 404 through the ACH host
 ✅ By design since D-18: nothing LiteLLM serves outside `/v1`, `/gemini`,
 `/mcp/<n>`, `/a2a/<n>` (+ `GET /v2/model/info` for ach-agent pricing) is
