@@ -100,6 +100,14 @@ func (c *countingNoopClient) DeleteTagByName(ctx context.Context, name string) e
 	return c.NoopClient.DeleteTagByName(ctx, name)
 }
 
+// UpsertTagBudget records the tag budgets the reconciler writes, so the
+// BudgetSynced envtest can assert the environment:<env> ceiling actually
+// reached LiteLLM and not just the condition.
+func (c *countingNoopClient) UpsertTagBudget(ctx context.Context, name string, b litellm.TagBudget) error {
+	upsertedTags.Store(name, b)
+	return c.NoopClient.UpsertTagBudget(ctx, name, b)
+}
+
 // DeleteBudget records the budget objects the finalizer reaps.
 func (c *countingNoopClient) DeleteBudget(ctx context.Context, id string) error {
 	c.counter.Add(1)
@@ -110,7 +118,7 @@ func (c *countingNoopClient) DeleteBudget(ctx context.Context, id string) error 
 // deletedTags / deletedBudgets record every §6.5 step-3 name so the
 // finalizer spec can assert the legacy bare tag AND the environment:<env>
 // budget pair were all swept.
-var deletedTags, deletedBudgets sync.Map
+var deletedTags, deletedBudgets, upsertedTags sync.Map
 
 // §7 routing: forward access-group calls to the per-suite fake so tests
 // can assert call counts + inject errors. Issue #17: /v1 surface.

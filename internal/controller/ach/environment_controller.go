@@ -561,15 +561,22 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	// budget tag is reaped even when spec.budget was never set, because
 	// LiteLLM auto-creates a budgetless tag row the first time the
 	// forwarder stamps it. Every call is idempotent (absent = success).
+	// Step 3 is tidiness, not a barrier — the runtime gate is step 2's
+	// DeleteAccessGroup, already done. All three calls log and continue,
+	// matching the ek_ revoke path: most of them are deletes-of-absent (the
+	// legacy tag is never created on an OSS LiteLLM, which refuses key tags,
+	// and there is no budget object unless spec.budget was set), so making
+	// the drain hinge on LiteLLM answering exactly 404 would strand the
+	// Environment in Terminating for nothing.
 	if err := r.LiteLLM.DeleteTagByName(ctx, env.Name); err != nil {
-		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName(legacy): %w", err)
+		logger.Error(err, "§6.5 step 3 DeleteTagByName(legacy)", "tag", env.Name)
 	}
 	budgetTag := litellm.EnvironmentBudgetTag(env.Name)
 	if err := r.LiteLLM.DeleteTagByName(ctx, budgetTag); err != nil {
-		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteTagByName(%s): %w", budgetTag, err)
+		logger.Error(err, "§6.5 step 3 DeleteTagByName", "tag", budgetTag)
 	}
 	if err := r.LiteLLM.DeleteBudget(ctx, budgetTag); err != nil {
-		return ctrl.Result{}, fmt.Errorf("§6.5 step 3 DeleteBudget(%s): %w", budgetTag, err)
+		logger.Error(err, "§6.5 step 3 DeleteBudget", "budget_id", budgetTag)
 	}
 	if err := r.drainEkRows(ctx, env); err != nil {
 		return ctrl.Result{}, err

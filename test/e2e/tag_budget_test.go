@@ -44,19 +44,21 @@ func TestTagBudgets(t *testing.T) {
 	keyID, plaintext := k.create("demo", fmt.Sprintf("budget-%d", time.Now().UnixNano()), nil)
 	t.Cleanup(func() { _ = k.revoke(keyID) })
 
-	// 1. Traffic through the forwarder stamps all three tags.
+	// 1. Traffic through the forwarder stamps the key's own tag, and LiteLLM
+	// books this call's spend to it. A freshly minted key_id has never been
+	// seen before, so the tag existing at all proves the forwarder stamped
+	// it — and the spend proves LiteLLM counted it, which is the counter the
+	// per-ek ceiling is compared against. (The user:/environment: tags
+	// pre-exist on a kept cluster, so asserting their mere existence would
+	// prove nothing; SC2 in phase4_invariants_test.go covers the full
+	// three-tag stamp at the backend.)
+	keyTag := "key:" + keyID
+	if entry, ok := tagInfo(t, llURL, keyTag); ok && entry != nil {
+		t.Fatalf("tag %s existed before the key was ever used: %+v", keyTag, entry)
+	}
 	if code := forwarderStatus(t, base, plaintext); code != http.StatusOK {
 		t.Fatalf("first ek_ call: status=%d, want 200", code)
 	}
-	keyTag := "key:" + keyID
-	for _, tag := range []string{"user:" + ekStateUserEmail, "environment:demo", keyTag} {
-		within(t, tagBudgetCacheWindow, "LiteLLM to know tag "+tag, func() bool {
-			entry, ok := tagInfo(t, llURL, tag)
-			return ok && entry != nil
-		})
-	}
-	// The key's own tag must accumulate this key's spend — that is the
-	// counter the per-ek ceiling is compared against.
 	within(t, tagBudgetCacheWindow, "spend on "+keyTag, func() bool {
 		entry, ok := tagInfo(t, llURL, keyTag)
 		return ok && entry != nil && entry.Spend > 0
@@ -103,6 +105,49 @@ func TestTagBudgets(t *testing.T) {
 	within(t, tagBudgetCacheWindow, "the key tag to be gone", func() bool {
 		entry, ok := tagInfo(t, llURL, keyTag)
 		return ok && entry == nil
+	})
+
+	t.Run("environment_ceiling", func(t *testing.T) { testEnvironmentBudget(t, llURL) })
+}
+
+// testEnvironmentBudget — the operator half: Environment.spec.budget writes
+// the "environment:<name>" tag budget and reports BudgetSynced.
+//
+// The ceiling applied is deliberately enormous: this patches the SHARED
+// `demo` Environment on a kept cluster, so a ceiling that could ever be
+// crossed would turn every other suite's spend into a shared resource. The
+// assertion is that the operator wrote the budget object with ACH's friendly
+// id, not that it blocks — blocking is already proven by the key: ceiling
+// above, and LiteLLM enforces all three tags through the same code path.
+func testEnvironmentBudget(t *testing.T, llURL string) {
+	const envName = "demo"
+	envTag := "environment:" + envName
+
+	patch := func(body string) {
+		t.Helper()
+		if out, err := runCmd("kubectl", "patch", "environment", envName, "-n", namespace,
+			"--type", "merge", "-p", body); err != nil {
+			t.Fatalf("kubectl patch environment %s %s: %v\n%s", envName, body, err, out)
+		}
+	}
+	t.Cleanup(func() {
+		// Restore the fixture: no budget. The tag + budget object survive
+		// (nothing deletes them until the Environment is deleted), which is
+		// the documented behaviour — §15 Lifecycle.
+		_, _ = runCmd("kubectl", "patch", "environment", envName, "-n", namespace,
+			"--type", "json", "-p", `[{"op":"remove","path":"/spec/budget"}]`)
+	})
+
+	patch(`{"spec":{"budget":{"maxBudget":1000000,"budgetDuration":"30d"}}}`)
+	waitForCondition(t, "environment", envName, "BudgetSynced", "True", 60*time.Second)
+	if got := getConditionField(t, "environment", envName, "BudgetSynced", "reason"); got != "Synced" {
+		t.Fatalf("BudgetSynced.reason = %q, want Synced", got)
+	}
+
+	within(t, tagBudgetCacheWindow, "the environment budget object", func() bool {
+		entry, ok := tagInfo(t, llURL, envTag)
+		return ok && entry != nil && entry.Budget != nil &&
+			entry.Budget.BudgetID == envTag && entry.Budget.MaxBudget == 1000000
 	})
 }
 
