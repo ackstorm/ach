@@ -257,10 +257,10 @@ func TestUserView_UserInfo_DecodesFromFixture(t *testing.T) {
 }
 
 func TestUserView_TeamMemberBudget(t *testing.T) {
-	const body = `{"team_info":{"team_memberships":[
+	const body = `{"team_id":"ach-user-alice@example.com","team_info":{"team_id":"ach-user-alice@example.com"},"team_memberships":[
 		{"user_id":"alice@example.com","spend":12.5,"litellm_budget_table":{"max_budget":100.0,"budget_duration":"30d"}},
 		{"user_id":"eve@example.com","spend":null,"litellm_budget_table":{"max_budget":null,"budget_duration":null}}
-	]}}`
+	]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("team_id") != "ach-user-alice@example.com" {
 			t.Errorf("team_id = %q", r.URL.Query().Get("team_id"))

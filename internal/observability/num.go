@@ -41,9 +41,6 @@ func safePct(n, d float64) *float64 {
 	return &p
 }
 
-func f64p(f float64) *float64 { return &f }
-func sp(s string) *string     { return &s }
-
 // unknownLabel is the "no attributable source/data" sentinel Python
 // independently spells "unknown" in three places this package ports
 // (session.py _budget_block's source, latency.py _row_model's model

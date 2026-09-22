@@ -278,13 +278,28 @@ func TestLatency_ExclusiveEndAndFacts(t *testing.T) {
 	d.AsUser = func(string) UserReads { return cat401 }
 	rec = do(t, d, "/platform/console/latency", pkCtx(t, "u@x.com", false))
 	var got401 struct {
-		Available bool   `json:"available"`
-		Reason    string `json:"reason"`
-		DataScope string `json:"data_scope"`
+		Available bool            `json:"available"`
+		Reason    string          `json:"reason"`
+		Sampled   bool            `json:"sampled"`
+		RowCount  int             `json:"row_count"`
+		Window    json.RawMessage `json:"window"`
+		Latency   json.RawMessage `json:"latency"`
+		Outcomes  json.RawMessage `json:"outcomes"`
+		ByModel   json.RawMessage `json:"by_model"`
+		DataScope string          `json:"data_scope"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &got401)
 	if rec.Code != 200 || got401.Available || got401.Reason != "unavailable" || got401.DataScope != dataScopeUser {
 		t.Fatalf("401 case: %d %+v", rec.Code, got401)
+	}
+	if got401.Sampled || got401.RowCount != 0 {
+		t.Fatalf("401 case sampled/row_count: %+v", got401)
+	}
+	if string(got401.Window) != "null" || string(got401.Latency) != "null" {
+		t.Fatalf("401 case window/latency: window=%s latency=%s, want null/null", got401.Window, got401.Latency)
+	}
+	if string(got401.Outcomes) != "[]" || string(got401.ByModel) != "[]" {
+		t.Fatalf("401 case outcomes/by_model: outcomes=%s by_model=%s, want []/[]", got401.Outcomes, got401.ByModel)
 	}
 
 	// Any other failure -> fetch_failed.

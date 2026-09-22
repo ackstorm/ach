@@ -4,7 +4,6 @@ package console
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -120,7 +119,7 @@ func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
 	rng.Compare.Start, rng.Compare.End = day(prevStart), day(prevEnd)
 	c := observability.BuildStatsContract(curAgg, prevAgg, observability.BudgetBlock(user, member), observability.LastUsedFromWindow(cur), caps, rng)
 	c.Keys = d.nameKeys(ctx, kc.OwnerEmail, c.Keys)
-	render.JSON(w, http.StatusOK, withScope(c))
+	render.JSON(w, http.StatusOK, withStatsScope(c))
 }
 
 // latency serves GET /platform/console/latency — the user's own
@@ -152,11 +151,11 @@ func (d Deps) latency(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &a401) {
 			reason = "unavailable"
 		}
-		render.JSON(w, http.StatusOK, withScope(observability.LatencyUnavailable(reason)))
+		render.JSON(w, http.StatusOK, withLatencyScope(observability.LatencyUnavailable(reason)))
 		return
 	}
 	c := observability.ComputeLatencyContract(rows, window, observability.DefaultRowCap, truncated)
-	render.JSON(w, http.StatusOK, withScope(c))
+	render.JSON(w, http.StatusOK, withLatencyScope(c))
 }
 
 // nameKeys resolves each stats key row's key_alias — ACH stamps
@@ -202,14 +201,21 @@ func (d Deps) nameKeys(ctx context.Context, owner string, rows []observability.K
 	return out
 }
 
-// withScope marshals v to a JSON object and stamps data_scope:"user"
-// (D-13, AC-16): every console analytics context shows the same
-// user-global numbers, never an Environment-scoped slice.
-func withScope(v any) map[string]any {
-	m := map[string]any{}
-	if b, err := json.Marshal(v); err == nil {
-		_ = json.Unmarshal(b, &m)
-	}
-	m["data_scope"] = dataScopeUser
-	return m
+// withStatsScope embeds a StatsContract with data_scope:"user" (D-13,
+// AC-16): every console analytics context shows the same user-global
+// numbers, never an Environment-scoped slice. One marshal, no silent
+// error path.
+func withStatsScope(c observability.StatsContract) any {
+	return struct {
+		observability.StatsContract
+		DataScope string `json:"data_scope"`
+	}{c, dataScopeUser}
+}
+
+// withLatencyScope is withStatsScope's LatencyContract equivalent.
+func withLatencyScope(c observability.LatencyContract) any {
+	return struct {
+		observability.LatencyContract
+		DataScope string `json:"data_scope"`
+	}{c, dataScopeUser}
 }

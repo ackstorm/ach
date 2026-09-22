@@ -105,7 +105,7 @@ func TestContract_LatencyPercentiles(t *testing.T) {
 	if c.RowCount != 10 {
 		t.Errorf("RowCount = %d, want 10", c.RowCount)
 	}
-	if c.Window != latencyWindow {
+	if c.Window == nil || *c.Window != latencyWindow {
 		t.Errorf("Window = %+v, want %+v", c.Window, latencyWindow)
 	}
 	if c.Latency.P50Ms == nil || *c.Latency.P50Ms != 500.0 {

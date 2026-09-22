@@ -75,23 +75,25 @@ type ModelLatency struct {
 
 // LatencyContract is the page-ready payload GET /platform/console/latency
 // serves verbatim (latency.py compute_latency_contract). Available=false
-// (LatencyUnavailable) omits every other field but Reason — see §10.2 (a
-// 401 role=unknown /spend/logs/v2 response, never a master-key retry).
+// (LatencyUnavailable) sends Window/Latency as JSON null and Outcomes/ByModel
+// as empty arrays — see §10.2 (a 401 role=unknown /spend/logs/v2 response,
+// never a master-key retry).
 type LatencyContract struct {
-	Available bool           `json:"available"`
-	Reason    string         `json:"reason,omitempty"`
-	Sampled   bool           `json:"sampled"`
-	RowCount  int            `json:"row_count"`
-	Window    Window         `json:"window"`
-	Latency   LatencyFigures `json:"latency"`
-	Outcomes  []Outcome      `json:"outcomes"`
-	ByModel   []ModelLatency `json:"by_model"`
+	Available bool            `json:"available"`
+	Reason    string          `json:"reason,omitempty"`
+	Sampled   bool            `json:"sampled"`
+	RowCount  int             `json:"row_count"`
+	Window    *Window         `json:"window"`
+	Latency   *LatencyFigures `json:"latency"`
+	Outcomes  []Outcome       `json:"outcomes"`
+	ByModel   []ModelLatency  `json:"by_model"`
 }
 
 // LatencyUnavailable is the degraded {"available":false,"reason":…}
-// contract for when /spend/logs/v2 could not be fetched at all.
+// contract for when /spend/logs/v2 could not be fetched at all: Window and
+// Latency serialize as null, Outcomes and ByModel as empty arrays.
 func LatencyUnavailable(reason string) LatencyContract {
-	return LatencyContract{Available: false, Reason: reason}
+	return LatencyContract{Available: false, Reason: reason, Outcomes: []Outcome{}, ByModel: []ModelLatency{}}
 }
 
 // Percentile is the nearest-rank percentile of an ALREADY-SORTED slice, nil
@@ -285,8 +287,8 @@ func ComputeLatencyContract(rows []SpendLogRow, w Window, rowCap int, truncated 
 		Available: true,
 		Sampled:   sampled,
 		RowCount:  len(safe),
-		Window:    w,
-		Latency:   latency,
+		Window:    &w,
+		Latency:   &latency,
 		Outcomes:  outcomes,
 		ByModel:   byModel,
 	}

@@ -106,7 +106,7 @@ func (d Deps) capabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Query().Get("scope") {
 	case scopePersonal:
-		d.personal(w, r, kc)
+		d.personal(w, r)
 	case "environment":
 		d.environment(w, r, kc, r.URL.Query().Get("name"))
 	default:
@@ -216,20 +216,12 @@ func projectA2A(e litellm.AgentEntry) a2aAgentRow {
 // "__deny_all__" is the shell-team sentinel: alone, it means the operator
 // has not yet attached the fresh ach-user shell to any access group
 // (§10.2 fact 3) — reported as provisioning, never as "no models".
-func (d Deps) personal(w http.ResponseWriter, r *http.Request, kc middleware.KeyContext) {
+func (d Deps) personal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	reqID := middleware.RequestIDFromCtx(ctx)
-	if kc.LiteLLMKeyMaterial == nil {
-		render.Error(w, http.StatusServiceUnavailable, "not_ready", "personal credential is being provisioned", reqID)
+	_, u, ok := d.userReads(w, r)
+	if !ok {
 		return
 	}
-	sk, err := keycrypt.Open(d.KeyEncryptionKey, *kc.LiteLLMKeyMaterial)
-	if err != nil {
-		d.Logger.Error("console: open key material failed", "key_id", kc.KeyID, "err", err)
-		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
-		return
-	}
-	u := d.AsUser(string(sk))
 	groups, err := u.ListModelGroups(ctx)
 	if err != nil {
 		d.upstreamError(w, r, err)

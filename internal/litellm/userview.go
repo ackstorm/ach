@@ -265,18 +265,9 @@ type teamMemberRow struct {
 	} `json:"litellm_budget_table"`
 }
 
-// teamInfoMemberships decodes the team_memberships[] LiteLLM nests under
-// either {"team_info": {...}} (the shape GetTeamInfo's master-key sibling
-// also tolerates) or a flat top-level object.
+// teamInfoMemberships decodes the team_memberships[] LiteLLM returns at the
+// TOP level of GET /team/info, a sibling of team_info — not nested under it.
 func teamInfoMemberships(raw []byte) ([]teamMemberRow, error) {
-	var envelope struct {
-		TeamInfo *struct {
-			TeamMemberships []teamMemberRow `json:"team_memberships"`
-		} `json:"team_info"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.TeamInfo != nil {
-		return envelope.TeamInfo.TeamMemberships, nil
-	}
 	var flat struct {
 		TeamMemberships []teamMemberRow `json:"team_memberships"`
 	}

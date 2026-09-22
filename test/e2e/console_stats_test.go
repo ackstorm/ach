@@ -29,22 +29,6 @@ func TestConsoleStats(t *testing.T) {
 	creds := oauthLogin(t, gateway, "")
 	ekA := mustAcquireEkBoundToEnv(t, "demo")
 
-	chat := func(header, cred string) {
-		req, _ := http.NewRequest(http.MethodPost, gateway+"/v1/chat/completions",
-			strings.NewReader(`{"model":"demo-model","messages":[{"role":"user","content":"console stats e2e"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(header, cred)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("chat via %s: %v", header, err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		t.Logf("traffic %s: %d", header, resp.StatusCode)
-	}
-	chat("Authorization", "Bearer "+creds.Access)
-	chat("x-ach-key", ekA)
-
 	get := func(t *testing.T, path string, hdr map[string]string) (int, map[string]any) {
 		t.Helper()
 		req, _ := http.NewRequest(http.MethodGet, gateway+path, nil)
@@ -63,8 +47,51 @@ func TestConsoleStats(t *testing.T) {
 	}
 	bearer := map[string]string{"Authorization": "Bearer " + creds.Access}
 
+	// ekRequests reads the "demo-ek" key row's requests count from a stats
+	// payload, 0 if the row is absent (no traffic through it yet).
+	ekRequests := func(s map[string]any) float64 {
+		keys, _ := s["keys"].([]any)
+		for _, k := range keys {
+			row, _ := k.(map[string]any)
+			if row["key_alias"] == "demo-ek" {
+				n, _ := row["requests"].(float64)
+				return n
+			}
+		}
+		return 0
+	}
+
+	// Baseline BEFORE sending this run's traffic: the shared e2e cluster's
+	// user already carries prior-run history, so an absolute floor proves
+	// nothing about THIS run (AC-16 review Important-3). A failed baseline
+	// read (e.g. the very first call for a fresh user) degrades to 0.
+	var before, beforeEk float64
+	if code, s := get(t, "/platform/console/stats", bearer); code == http.StatusOK {
+		totals, _ := s["totals"].(map[string]any)
+		before, _ = totals["requests"].(float64)
+		beforeEk = ekRequests(s)
+	}
+
+	chat := func(header, cred string) {
+		req, _ := http.NewRequest(http.MethodPost, gateway+"/v1/chat/completions",
+			strings.NewReader(`{"model":"demo-model","messages":[{"role":"user","content":"console stats e2e"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(header, cred)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("chat via %s: %v", header, err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		t.Logf("traffic %s: %d", header, resp.StatusCode)
+	}
+	chat("Authorization", "Bearer "+creds.Access)
+	chat("x-ach-key", ekA)
+
 	// LiteLLM writes spend logs asynchronously — bound the wait, never a
 	// naked loop (within() polls every 2s, fails the test past the deadline).
+	// Monotone thresholds off the pre-traffic baseline so this run's two
+	// calls (one pk_, one ek_) are what's being proven, not prior-run history.
 	var stats map[string]any
 	within(t, 90*time.Second, "console stats include EK traffic (AC-16)", func() bool {
 		code, s := get(t, "/platform/console/stats", bearer)
@@ -76,7 +103,10 @@ func TestConsoleStats(t *testing.T) {
 			return false
 		}
 		requests, _ := totals["requests"].(float64)
-		if requests < 2 {
+		if requests < before+2 {
+			return false
+		}
+		if ekRequests(s) < beforeEk+1 {
 			return false
 		}
 		stats = s
