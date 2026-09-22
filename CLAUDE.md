@@ -576,6 +576,18 @@ Never push a change touching `internal/controller|platformapi|forwarder|
 contentservice/`, `api/v1alpha1/`, `deploy/helm/ach/`, or `test/e2e/` without
 confirming E2E green.
 
+Kept-cluster tests see prior runs' history (each e2e process mints its own
+`demo-ek`; spend rows accumulate). Assert deltas from a baseline captured
+BEFORE sending traffic, and aggregate every row sharing an alias — first-match
+returns a previous run's key and never grows.
+
+Merging a worktree branch: from a `git worktree add` worktree, `cd <primary> &&
+git merge --ff-only <branch>` works; a session entered via `EnterWorktree` must
+`ExitWorktree(keep)` first (the isolation hook refuses `git -C`/`cd … && git`).
+A subagent killed mid-`make e2e-focus` leaves an `ach-devtools` container
+running (`make: *** Terminated` in its log): `docker ps | grep ach-devtools`,
+stop it before re-running.
+
 ## External references
 
 Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearch:
