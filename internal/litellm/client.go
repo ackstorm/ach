@@ -68,8 +68,13 @@ type Client interface {
 	// or (nil, nil) when LiteLLM does not know the tag.
 	TagInfo(ctx context.Context, name string) (*TagInfoEntry, error)
 
-	// DeleteTagByName issues POST /tag/delete. Absent is success.
+	// DeleteTagByName issues POST /tag/delete. Absent is success. It
+	// leaves the linked budget object behind — pair it with DeleteBudget
+	// (same name: ACH's budget_id IS the tag name).
 	DeleteTagByName(ctx context.Context, name string) error
+
+	// DeleteBudget issues POST /budget/delete. Absent is success.
+	DeleteBudget(ctx context.Context, id string) error
 
 	// Phase 2 — added per D-01, D-13, D-16. Consumed by the LiteLLM-snapshot
 	// Runnable (Plan 07) and the orphan-cleanup Runnable (Plan 08).

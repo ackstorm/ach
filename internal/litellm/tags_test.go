@@ -11,12 +11,27 @@ import (
 	"testing"
 )
 
-// TestUpsertTagBudgetCreates — a brand-new tag takes one POST /tag/new.
-func TestUpsertTagBudgetCreates(t *testing.T) {
+// paths flattens the captured request paths for sequence assertions.
+func paths(captured []capturedRequest) []string {
+	out := make([]string, 0, len(captured))
+	for _, c := range captured {
+		out = append(out, c.Path)
+	}
+	return out
+}
+
+// TestUpsertTagBudgetCreatesAndBinds — a tag LiteLLM has never seen takes
+// POST /budget/new (friendly budget_id = the tag name) then POST /tag/new
+// binding the two. No /tag/delete: there is nothing to rebind.
+func TestUpsertTagBudgetCreatesAndBinds(t *testing.T) {
 	var captured []capturedRequest
-	srv := httptest.NewServer(captureMock(t, &captured, func(_ int, w http.ResponseWriter) {
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
 		w.WriteHeader(200)
-		fmt.Fprint(w, `{"message":"Tag user:a@b created successfully"}`)
+		if captured[i].Path == "/tag/info" {
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		fmt.Fprint(w, `{"message":"ok"}`)
 	}))
 	defer srv.Close()
 
@@ -24,31 +39,37 @@ func TestUpsertTagBudgetCreates(t *testing.T) {
 	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 10, BudgetDuration: "30d"}); err != nil {
 		t.Fatalf("UpsertTagBudget: %v", err)
 	}
-	if len(captured) != 1 {
-		t.Fatalf("want 1 request, got %d", len(captured))
+	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/new" {
+		t.Fatalf("request sequence = %s", got)
 	}
-	if captured[0].Path != "/tag/new" {
-		t.Errorf("path = %q, want /tag/new", captured[0].Path)
-	}
-	for _, want := range []string{`"name":"user:a@b"`, `"max_budget":10`, `"budget_duration":"30d"`} {
+	for _, want := range []string{`"budget_id":"user:a@b"`, `"max_budget":10`, `"budget_duration":"30d"`} {
 		if !strings.Contains(string(captured[0].Body), want) {
-			t.Errorf("body %s missing %s", captured[0].Body, want)
+			t.Errorf("/budget/new body %s missing %s", captured[0].Body, want)
 		}
+	}
+	if body := string(captured[2].Body); !strings.Contains(body, `"name":"user:a@b"`) ||
+		!strings.Contains(body, `"budget_id":"user:a@b"`) {
+		t.Errorf("/tag/new body = %s", body)
 	}
 }
 
-// TestUpsertTagBudgetFallsBackToUpdate — /tag/new on an existing tag fails,
-// so the upsert retries against /tag/update with the same body.
-func TestUpsertTagBudgetFallsBackToUpdate(t *testing.T) {
+// TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag — /budget/new
+// 400s on an existing id, so the ceiling is written with /budget/update;
+// a tag already pointing at that budget is left alone (no delete/recreate).
+func TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag(t *testing.T) {
 	var captured []capturedRequest
 	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
-		if i == 0 {
+		switch captured[i].Path {
+		case "/budget/new":
 			w.WriteHeader(400)
-			fmt.Fprint(w, `{"error":{"message":"Tag user:a@b already exists"}}`)
-			return
+			fmt.Fprint(w, `{"detail":{"error":"Budget with id 'user:a@b' already exists."}}`)
+		case "/tag/info":
+			w.WriteHeader(200)
+			fmt.Fprint(w, `{"user:a@b":{"spend":1,"litellm_budget_table":{"budget_id":"user:a@b","max_budget":5}}}`)
+		default:
+			w.WriteHeader(200)
+			fmt.Fprint(w, `{"message":"ok"}`)
 		}
-		w.WriteHeader(200)
-		fmt.Fprint(w, `{"message":"Tag user:a@b updated successfully"}`)
 	}))
 	defer srv.Close()
 
@@ -56,14 +77,37 @@ func TestUpsertTagBudgetFallsBackToUpdate(t *testing.T) {
 	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 5}); err != nil {
 		t.Fatalf("UpsertTagBudget: %v", err)
 	}
-	if len(captured) != 2 {
-		t.Fatalf("want 2 requests (new then update), got %d", len(captured))
-	}
-	if captured[1].Path != "/tag/update" {
-		t.Errorf("second path = %q, want /tag/update", captured[1].Path)
+	if got := strings.Join(paths(captured), ","); got != "/budget/new,/budget/update,/tag/info" {
+		t.Fatalf("request sequence = %s", got)
 	}
 	if strings.Contains(string(captured[1].Body), "budget_duration") {
 		t.Errorf("empty duration must be omitted, got %s", captured[1].Body)
+	}
+}
+
+// TestUpsertTagBudgetRebindsForeignTag — LiteLLM auto-creates budgetless
+// tag rows from x-litellm-tags traffic, and /tag/update can never bind a
+// budget_id (500, measured), so such a tag is deleted and recreated. Spend
+// survives: it lives in LiteLLM_DailyTagSpend, keyed by tag name.
+func TestUpsertTagBudgetRebindsForeignTag(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.WriteHeader(200)
+		switch captured[i].Path {
+		case "/tag/info":
+			fmt.Fprint(w, `{"environment:demo":{"spend":2,"litellm_budget_table":{"budget_id":"6b1f-uuid","max_budget":3}}}`)
+		default:
+			fmt.Fprint(w, `{"message":"ok"}`)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if err := c.UpsertTagBudget(context.Background(), "environment:demo", TagBudget{MaxBudget: 3}); err != nil {
+		t.Fatalf("UpsertTagBudget: %v", err)
+	}
+	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/delete,/tag/new" {
+		t.Fatalf("request sequence = %s", got)
 	}
 }
 
@@ -132,5 +176,19 @@ func TestDeleteTagByNameIsIdempotent(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 	if err := c.DeleteTagByName(context.Background(), "key:ek_gone"); err != nil {
 		t.Fatalf("delete of an absent tag must be nil, got %v", err)
+	}
+}
+
+// TestDeleteBudgetIsIdempotent — a missing budget object is success.
+func TestDeleteBudgetIsIdempotent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(404)
+		fmt.Fprint(w, `{"error":{"message":"Budget not found"}}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if err := c.DeleteBudget(context.Background(), "key:ek_gone"); err != nil {
+		t.Fatalf("delete of an absent budget must be nil, got %v", err)
 	}
 }

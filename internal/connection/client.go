@@ -73,6 +73,14 @@ func (c *Client) DeleteTagByName(ctx context.Context, name string) error {
 	return client.DeleteTagByName(ctx, name)
 }
 
+func (c *Client) DeleteBudget(ctx context.Context, id string) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.DeleteBudget(ctx, id)
+}
+
 func (c *Client) ListModels(ctx context.Context) ([]litellm.ModelInfoResponse, error) {
 	client, err := c.current()
 	if err != nil {

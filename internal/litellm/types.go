@@ -543,6 +543,12 @@ type guardrailListResponse struct {
 type TagBudget struct {
 	MaxBudget      float64 `json:"max_budget"`
 	BudgetDuration string  `json:"budget_duration,omitempty"`
+
+	// BudgetID is the budget object's own id. ACH always sets it to the
+	// tag name (user:<email> / environment:<env> / key:<id>) so
+	// /budget/list is legible instead of a wall of uuids; callers never
+	// supply it — UpsertTagBudget overwrites it with the tag name.
+	BudgetID string `json:"budget_id,omitempty"`
 }
 
 // TagInfoEntry is the subset of a /tag/info entry ACH consumes.

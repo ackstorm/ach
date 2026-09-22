@@ -56,6 +56,7 @@ func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, e
 	return nil, nil
 }
 func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
+func (f *fakeLiteLLM) DeleteBudget(context.Context, string) error    { return nil }
 func (f *fakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }

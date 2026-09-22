@@ -57,6 +57,12 @@ func (c *NoopClient) DeleteTagByName(_ context.Context, name string) error {
 	return nil
 }
 
+// DeleteBudget is the budget-object delete. NoopClient logs and returns nil.
+func (c *NoopClient) DeleteBudget(_ context.Context, id string) error {
+	c.Log.Info("stub: would delete LiteLLM budget", "id", id)
+	return nil
+}
+
 // ListModels is the Plan 07 snapshot-Runnable call. NoopClient returns
 // (nil, nil) — an empty registered-model set, NOT an error — so Plan 07
 // tests against NoopClient compute the empty intersection consistently.

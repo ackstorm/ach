@@ -134,6 +134,7 @@ func (f *fakeLitellm) TagInfo(context.Context, string) (*litellm.TagInfoEntry, e
 	return nil, nil
 }
 func (f *fakeLitellm) DeleteTagByName(context.Context, string) error { return nil }
+func (f *fakeLitellm) DeleteBudget(context.Context, string) error    { return nil }
 func (f *fakeLitellm) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }

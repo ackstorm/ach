@@ -82,6 +82,7 @@ func (f *wiringFakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEn
 	return nil, nil
 }
 func (f *wiringFakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
+func (f *wiringFakeLiteLLM) DeleteBudget(context.Context, string) error    { return nil }
 func (f *wiringFakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
