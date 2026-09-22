@@ -417,7 +417,6 @@ ui-build: ## Build the React console into internal/platformapi/console/dist (emb
 _ui-build:
 	npm --prefix ui ci
 	npm --prefix ui run build
-	@touch internal/platformapi/console/dist/.gitkeep
 
 .PHONY: build-cli
 build-cli: ## Build bin/ach-cli (user CLI; container glibc — NOT host-runnable, use build-cli-host for that).

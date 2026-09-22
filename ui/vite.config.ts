@@ -10,6 +10,12 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   // Embedded by internal/platformapi/console (go:embed all:dist); keep in
   // sync with the Dockerfile `ui` stage COPY.
+  // emptyOutDir wipes the embed directory, including the tracked .gitkeep that
+  // keeps it present for `go:embed all:dist` before the console is ever built.
+  // The npm "build" script restores it — NOT the Makefile, because release.yml
+  // calls `npm run build` directly and a goreleaser run aborts on a dirty tree
+  // ("D .../dist/.gitkeep"). Keep the restore in the npm script so every caller
+  // gets it.
   build: { outDir: '../internal/platformapi/console/dist', emptyOutDir: true },
   // Dev: platform-api on 8080 (make cluster-up + port-forward, or a local binary).
   server: {
