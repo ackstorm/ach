@@ -165,6 +165,65 @@ func TestTagInfoAbsentTagIsNilNotError(t *testing.T) {
 	}
 }
 
+// TestTagInfoUnknownTagIs500WithA404Body — the shape LiteLLM ACTUALLY
+// answers for an unknown tag (measured on the e2e cluster 2026-09-22):
+// HTTP 500 whose body carries a 404. Neither the status nor the error
+// string says 404, so a naive check treats "no budget yet" as an outage —
+// which broke UpsertTagBudget for every tag LiteLLM had never seen.
+func TestTagInfoUnknownTagIs500WithA404Body(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"detail":"404: Tags not found: ['key:ekid_01m34qxs9e79bea01j0v26jq8g']"}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.TagInfo(context.Background(), "key:ekid_01m34qxs9e79bea01j0v26jq8g")
+	if err != nil || got != nil {
+		t.Fatalf("got (%+v, %v), want (nil, nil)", got, err)
+	}
+}
+
+// TestTagInfoRealErrorStillSurfaces — an outage must NOT be read as "no
+// tag": only a body that says so counts as absent.
+func TestTagInfoRealErrorStillSurfaces(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"detail":"database connection failed"}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if _, err := c.TagInfo(context.Background(), "key:ek_1"); err == nil {
+		t.Fatal("want an error when LiteLLM genuinely fails")
+	}
+}
+
+// TestUpsertTagBudgetCreatesTagLiteLLMNeverSaw — the end-to-end of the two
+// tests above: a brand-new tag (500/404 from /tag/info) must still get its
+// budget created and bound, not fail the whole upsert.
+func TestUpsertTagBudgetCreatesTagLiteLLMNeverSaw(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		if captured[i].Path == "/tag/info" {
+			w.WriteHeader(500)
+			fmt.Fprint(w, `{"detail":"404: Tags not found: ['key:ek_new']"}`)
+			return
+		}
+		w.WriteHeader(200)
+		fmt.Fprint(w, `{"message":"ok"}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if err := c.UpsertTagBudget(context.Background(), "key:ek_new", TagBudget{MaxBudget: 0}); err != nil {
+		t.Fatalf("UpsertTagBudget on a never-seen tag: %v", err)
+	}
+	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/new" {
+		t.Fatalf("request sequence = %s", got)
+	}
+}
+
 // TestDeleteTagByNameIsIdempotent — a 404 from LiteLLM is success.
 func TestDeleteTagByNameIsIdempotent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

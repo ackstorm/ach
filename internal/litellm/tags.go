@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // UpsertTagBudget points the tag at a budget object whose budget_id IS the
@@ -54,7 +55,7 @@ func (c *RESTClient) UpsertTagBudget(ctx context.Context, name string, b TagBudg
 // DeleteBudget removes a budget object. A missing budget is success.
 func (c *RESTClient) DeleteBudget(ctx context.Context, id string) error {
 	if _, err := c.makeRequest(ctx, "POST", "/budget/delete", map[string]string{"id": id}); err != nil {
-		if IsHTTPNotFound(err) {
+		if tagAbsent(err) {
 			return nil
 		}
 		return fmt.Errorf("litellm: delete budget %s: %w", id, err)
@@ -62,11 +63,34 @@ func (c *RESTClient) DeleteBudget(ctx context.Context, id string) error {
 	return nil
 }
 
+// tagAbsent reports whether err is LiteLLM's "this tag does not exist"
+// answer. Measured 2026-09-22 on the e2e cluster: /tag/info on an unknown
+// tag answers **HTTP 500** with `{"detail":"404: Tags not found: ['<tag>']"}`
+// — the handler raises a 404 that the outer error wrapper re-wraps as a 500,
+// so neither the status code nor APIError.Error() (which excludes the body
+// by §9.1) carries the 404. The body is the only signal, so this looks at
+// APIError.Body. Absent is never an error for ACH: an unbudgeted tag is the
+// normal state of the world.
+func tagAbsent(err error) bool {
+	if IsHTTPNotFound(err) {
+		return true
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	body := strings.ToLower(string(apiErr.Body))
+	return strings.Contains(body, "not found")
+}
+
 // TagInfo returns the tag's spend + budget, or (nil, nil) when LiteLLM does
 // not know the tag (no budget configured yet — not an error).
 func (c *RESTClient) TagInfo(ctx context.Context, name string) (*TagInfoEntry, error) {
 	raw, err := c.makeRequest(ctx, "POST", "/tag/info", map[string][]string{"names": {name}})
 	if err != nil {
+		if tagAbsent(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("litellm: POST /tag/info %s: %w", name, err)
 	}
 	var resp map[string]struct {
@@ -87,7 +111,7 @@ func (c *RESTClient) TagInfo(ctx context.Context, name string) (*TagInfoEntry, e
 // success — callers use it on revoke paths that may run twice.
 func (c *RESTClient) DeleteTagByName(ctx context.Context, name string) error {
 	if _, err := c.makeRequest(ctx, "POST", "/tag/delete", map[string]string{"name": name}); err != nil {
-		if IsHTTPNotFound(err) {
+		if tagAbsent(err) {
 			return nil
 		}
 		return fmt.Errorf("litellm: POST /tag/delete %s: %w", name, err)

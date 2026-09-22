@@ -412,9 +412,11 @@ The forwarder stamps them on EVERY authenticated request, in that order, via
 | Enforcement runs **before** the upstream call (a `/gemini` passthrough that would 500 upstream still 429s). | 429 vs 500 baseline |
 | Several tags on one request are enforced **independently and in parallel**; the first tag whose spend exceeds its budget blocks, with **no hierarchy**. Raising that tag's budget unblocks; the next tag to cross then blocks. | user=10/env=0.6/key=1.1, cost 0.25/call: blocked at 0.75 by `environment:`; env→5 unblocks; blocked again at 1.25 by `key:`; user→0.1 blocks immediately |
 | The comparison is `spend > max_budget` (**post-paid**): the request that crosses the line is served, the NEXT one is refused with `{"detail":"Budget has been exceeded! Tag=<tag> Current cost: <x>, Max budget <y>"}` (HTTP 429). | measured body |
-| Budget changes take effect in ≈10 s (cache), no key or team touch needed. | measured |
+| Budget changes take effect in ≈10 s (cache) on an idle proxy, no key or team touch needed. A **raised** ceiling took **longer than 30 s** to start serving again on the e2e box — allow ~2 min before calling an unblock broken. | measured |
 | Tag spend accumulates in `LiteLLM_DailyTagSpend`; the `LiteLLM_TagTable.spend` column is NOT the enforcement counter. | forced `TagTable.spend` had no effect; organic `DailyTagSpend` did |
-| MCP calls can carry cost: register the server with `mcp_info.mcp_server_cost_info.default_cost_per_query` (or `tool_name_to_cost_per_query`) and each `tools/call` books that amount to key + tag spend. Without it an MCP call costs 0 and consumes no budget. | key spend 0.5 after 2 calls at 0.25 |
+| MCP calls can carry cost: register the server with `mcp_info.mcp_server_cost_info.default_cost_per_query` (or `tool_name_to_cost_per_query`) and each `tools/call` books that amount to key + tag spend. Without it an MCP call costs 0 and consumes no budget. `PUT /v1/mcp/server` updates a registration **in place** (same `server_id`), so pricing an existing server does not disturb an access group that binds it by id. | key spend 0.5 after 2 calls at 0.25 |
+| **On the e2e cluster a costed MCP server is the ONLY priced path.** `ach-mock` answers every completion with `usage {0,0,0}`, so `/v1` traffic books spend **0** however much you send — `LiteLLM_DailyTagSpend` showed 86 api_requests at spend 0 — and `spend > max_budget` is then false even against a ceiling of 0. A budget test that drives `demo-model` can never go 429. | `select tag, spend, api_requests from "LiteLLM_DailyTagSpend"` |
+| `max_budget: 0` is storable and bindable — `/budget/new` returns `max_budget: 0.0` and `/tag/info` reports it on the bound tag. 0 is a real "refuse everything once any spend lands" ceiling, not a synonym for unset. | measured |
 | LiteLLM's `x-litellm-api-key` header requires the `Bearer ` prefix on `/mcp` (the forwarder already does this, `proxy.go`). | 401 "Malformed API Key" without it |
 
 ### Writing a budget: the friendly-id upsert (`internal/litellm/tags.go`)
@@ -431,6 +433,7 @@ legible instead of a wall of uuids.
 | `POST /tag/new {"name":N,"budget_id":N}` | binds; `/tag/info` then reports `litellm_budget_table.budget_id == N` |
 | `POST /tag/update {"name":N,"budget_id":N}` | HTTP **500** — `BudgetNewRequest() got multiple values` when the budget exists, `Foreign key constraint failed on LiteLLM_TagTable_budget_id` when it does not. **An existing tag can NEVER be re-bound to a budget object.** |
 | `POST /tag/update {"name":N,"max_budget":9}` (inline) | succeeds and mints a **uuid** budget — the path ACH deliberately does NOT take |
+| `POST /tag/info` on a tag LiteLLM does not know | HTTP **500** with `{"detail":"404: Tags not found: ['<tag>']"}` — **not** a 200 with an empty map. The handler's 404 is re-wrapped as a 500, so neither the status nor an error string that excludes the body carries the 404: the body is the only signal (`internal/litellm.tagAbsent`). Reading this as an outage breaks `UpsertTagBudget` for **every** tag that does not exist yet — which is every tag the first time ACH budgets it. |
 | `POST /tag/delete {"name":N}` | deletes the tag row only; a linked budget row is **orphaned** — always pair it with `POST /budget/delete` |
 | `POST /budget/delete {"id":N}` | deletes it; a repeat returns `null` with no error (idempotent) |
 
