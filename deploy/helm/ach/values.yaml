@@ -262,9 +262,11 @@ openwork:
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one
 # origin so the public Ingress targets a single Service; "/" is the
-# console served by platform-api. Nothing LiteLLM serves outside ACH's
-# route families is reachable through it (spec D-18) — give LiteLLM its
-# own host for /ui, /key/*, /health. It performs no auth and never routes
+# console served by platform-api. The gateway fronts ACH surfaces ONLY:
+# nothing LiteLLM serves outside ACH's route families is reachable through
+# it (spec D-18), so LiteLLM MUST be published on its own host for /ui,
+# /key/*, /health and /model/* — point every consumer of those paths
+# there. It performs no auth and never routes
 # /metrics or /dex (see internal/gateway). ClusterIP by default; the
 # public Ingress (ingress.enabled) points here.
 gateway:
