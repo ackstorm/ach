@@ -230,8 +230,8 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			expiresAt = &ts
 		}
 
-		if req.Budget != nil && (req.Budget.MaxBudget == nil || *req.Budget.MaxBudget < 0) {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument, "budget.max_budget must be >= 0", reqID)
+		if req.Budget != nil && !req.Budget.valid() {
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument, budgetInvalidMsg, reqID)
 			return
 		}
 
@@ -807,14 +807,10 @@ func revokeEnvironmentKey(deps Deps) http.HandlerFunc {
 		}
 
 		// Step 6b: the key's own budget tag + budget object are dead weight
-		// once the key is gone. Both are idempotent and neither may fail the
-		// revoke — the credential is already dead, which is what matters.
-		tag := litellm.KeyBudgetTag(keyID)
-		if err := deps.LiteLLM.DeleteTagByName(ctx, tag); err != nil {
-			deps.Logger.Error("envkeys.revoke: DeleteTagByName", "key_id", keyID, "err", err)
-		}
-		if err := deps.LiteLLM.DeleteBudget(ctx, tag); err != nil {
-			deps.Logger.Error("envkeys.revoke: DeleteBudget", "key_id", keyID, "err", err)
+		// once the key is gone. Idempotent, and never fatal — the credential
+		// is already dead, which is what matters.
+		if err := litellm.DeleteKeyBudget(ctx, deps.LiteLLM, keyID); err != nil {
+			deps.Logger.Error("envkeys.revoke: DeleteKeyBudget", "key_id", keyID, "err", err)
 		}
 
 		// Step 7: Redis DEL best-effort (cache key shape must match

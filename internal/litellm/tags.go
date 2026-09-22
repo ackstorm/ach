@@ -5,6 +5,7 @@ package litellm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -92,6 +93,16 @@ func (c *RESTClient) DeleteTagByName(ctx context.Context, name string) error {
 		return fmt.Errorf("litellm: POST /tag/delete %s: %w", name, err)
 	}
 	return nil
+}
+
+// DeleteKeyBudget reaps an ek_'s own "key:<id>" tag AND its budget object —
+// a tag delete orphans the budget row, so the two always travel together.
+// Both halves are attempted even if the first fails, and both are idempotent
+// (absent = success). Every caller is a revoke path where the credential is
+// already dead, so the error is for logging, never for failing the revoke.
+func DeleteKeyBudget(ctx context.Context, c Client, keyID string) error {
+	tag := KeyBudgetTag(keyID)
+	return errors.Join(c.DeleteTagByName(ctx, tag), c.DeleteBudget(ctx, tag))
 }
 
 // UserBudgetTag / EnvironmentBudgetTag / KeyBudgetTag are the three tag

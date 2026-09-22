@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -115,6 +116,10 @@ type fakeLitellm struct {
 	revokedKeys  []string
 	revokeErr    error
 	order        *recorderOrder
+
+	mu             sync.Mutex
+	deletedTags    []string
+	deletedBudgets []string
 }
 
 func (f *fakeLitellm) RevokeKey(_ context.Context, keyID string) error {
@@ -132,8 +137,26 @@ func (f *fakeLitellm) UpsertTagBudget(context.Context, string, litellm.TagBudget
 func (f *fakeLitellm) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
 	return nil, nil
 }
-func (f *fakeLitellm) DeleteTagByName(context.Context, string) error { return nil }
-func (f *fakeLitellm) DeleteBudget(context.Context, string) error    { return nil }
+func (f *fakeLitellm) DeleteTagByName(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedTags = append(f.deletedTags, name)
+	return nil
+}
+
+func (f *fakeLitellm) DeleteBudget(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedBudgets = append(f.deletedBudgets, id)
+	return nil
+}
+
+// Deleted returns the tag + budget names reaped so far.
+func (f *fakeLitellm) Deleted() (tags, budgets []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.deletedTags...), append([]string(nil), f.deletedBudgets...)
+}
 func (f *fakeLitellm) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	return nil, nil
 }

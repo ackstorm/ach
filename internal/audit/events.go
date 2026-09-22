@@ -74,6 +74,7 @@ const (
 	OutcomeRevoked             = "revoked" // matches orphan.OutcomeRevoked
 	OutcomeSuspended           = "suspended"
 	OutcomeResumed             = "resumed"
+	OutcomeUpdated             = "updated" // a mutation with no state of its own (an ek_ budget change)
 	OutcomeUnauthorizedTeam    = "unauthorized_team"
 	OutcomeWrongEnvironment    = "wrong_environment"
 	OutcomeMissingEnvironment  = "missing_environment"

@@ -85,6 +85,24 @@ func TestPatchBudgetUpdatesTag(t *testing.T) {
 	}
 }
 
+// TestPatchBudgetAuditsOnSuccess — a raised ceiling is a governance
+// mutation: every sibling verb on /platform/keys audits its success, and a
+// budget change is the one an auditor most wants to see.
+func TestPatchBudgetAuditsOnSuccess(t *testing.T) {
+	row := suspendableEkRow()
+	var buf bytes.Buffer
+	deps := captureAuditDeps(&envKeyStateDB{getRow: row}, newCaptureLiteLLM(), nil, &recordRedis{}, &buf)
+
+	if rec := patchBudget(deps, row.KeyID, `{"max_budget":50}`, row.OwnerEmail); rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"platform.ek.budget", "updated", row.KeyID} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("audit log missing %q: %s", want, buf.String())
+		}
+	}
+}
+
 // TestPatchBudgetNotOwnerIs403 — same authorization shape as suspend.
 func TestPatchBudgetNotOwnerIs403(t *testing.T) {
 	row := suspendableEkRow()

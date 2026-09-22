@@ -21,14 +21,24 @@ type BudgetRequest struct {
 	BudgetDuration string   `json:"budget_duration,omitempty"`
 }
 
+// budgetInvalidMsg is the single 400 message for the single rule, shared by
+// the create path and PATCH so the two can never drift.
+const budgetInvalidMsg = "max_budget required and must be >= 0"
+
+// valid is the one rule ACH owns: max_budget present and >= 0. 0 is a real
+// ceiling (refuse everything once any spend lands), which is why MaxBudget
+// is a pointer. Everything else (budget_duration's format) is LiteLLM's.
+func (b *BudgetRequest) valid() bool {
+	return b != nil && b.MaxBudget != nil && *b.MaxBudget >= 0
+}
+
 // tagBudget converts a validated request into the LiteLLM wire shape.
 // BudgetDuration is passed through verbatim — LiteLLM validates the format.
 func (b BudgetRequest) tagBudget() litellm.TagBudget {
 	return litellm.TagBudget{MaxBudget: *b.MaxBudget, BudgetDuration: b.BudgetDuration}
 }
 
-// decodeBudget reads a BudgetRequest and enforces the one rule ACH owns:
-// max_budget present and >= 0.
+// decodeBudget reads a BudgetRequest and validates it.
 func decodeBudget(r *http.Request) (BudgetRequest, bool) {
 	var req BudgetRequest
 	dec := json.NewDecoder(r.Body)
@@ -36,10 +46,7 @@ func decodeBudget(r *http.Request) (BudgetRequest, bool) {
 	if err := dec.Decode(&req); err != nil {
 		return req, false
 	}
-	if req.MaxBudget == nil || *req.MaxBudget < 0 {
-		return req, false
-	}
-	return req, true
+	return req, req.valid()
 }
 
 // BudgetHandler serves PATCH /platform/keys/{key_id}/budget: replace this
@@ -62,7 +69,7 @@ func BudgetHandler(deps Deps) http.HandlerFunc {
 		}
 		req, valid := decodeBudget(r)
 		if !valid {
-			render.Error(w, http.StatusBadRequest, codeInvalidArgument, "max_budget required and must be >= 0", reqID)
+			render.Error(w, http.StatusBadRequest, codeInvalidArgument, budgetInvalidMsg, reqID)
 			return
 		}
 		tag := litellm.KeyBudgetTag(row.KeyID)
@@ -72,6 +79,13 @@ func BudgetHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, st, oc, msg, reqID)
 			return
 		}
+		// A raised ceiling is exactly the governance mutation an audit log
+		// exists for — every sibling verb on /platform/keys emits on success.
+		audit.EmitAudit(ctx, deps.Audit, audit.Event{
+			Action: audit.ActionEkBudget, Outcome: audit.OutcomeUpdated,
+			Actor: middleware.ActorFromCtx(ctx), RequestID: reqID, KeyID: row.KeyID,
+			Target: &audit.Target{Kind: "environment", Name: row.Environment},
+		})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

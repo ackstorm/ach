@@ -457,6 +457,11 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 	if _, err := db.RevokeEnvironmentKey(ctx, deps.Pool, row.KeyID); err != nil {
 		return err
 	}
+	// Same reap as the owner-scoped revoke (envkeys): the key's own budget
+	// tag + budget object are dead weight once the key is. Never fatal.
+	if err := litellm.DeleteKeyBudget(ctx, deps.LiteLLM, row.KeyID); err != nil && deps.Logger != nil {
+		deps.Logger.Error("admin.revoke: DeleteKeyBudget", "key_id", row.KeyID, "err", err)
+	}
 	if deps.Audit != nil {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
 			Action: audit.ActionEkRevoke, Outcome: audit.OutcomeRevoked,

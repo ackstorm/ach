@@ -265,6 +265,12 @@ func TestRevokeKey_EkHappyPath_LiteLLMFirst(t *testing.T) {
 	if !strings.Contains(auditBuf.String(), `"action":"platform.ek.revoke"`) {
 		t.Fatalf("missing action=platform.ek.revoke; got %s", auditBuf.String())
 	}
+	// The key's own budget tag + budget object go with it, exactly as on the
+	// owner-scoped revoke — an admin revoke must not leave a ceiling behind.
+	tags, budgets := ll.Deleted()
+	if len(tags) != 1 || tags[0] != "key:ekid_rv4" || len(budgets) != 1 || budgets[0] != "key:ekid_rv4" {
+		t.Fatalf("key budget not reaped: tags=%v budgets=%v", tags, budgets)
+	}
 }
 
 // =========================== RV-5: ek LiteLLM unreachable (503) ===========================
