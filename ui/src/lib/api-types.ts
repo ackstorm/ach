@@ -28,121 +28,91 @@ export interface SessionMe {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/session/keys  — src/api/app/session.py::session_list_keys
-// (rows projected by litellm_client.py::_project_session_key, then the handler
-//  strips `key`/`token` before returning — D-17)
+// GET /platform/keys — ACH's own key-lifecycle surface
+// (internal/platformapi/envkeys + internal/platformapi/environments).
+// Replaces the alitellm-auth /api/session/{keys,teams} surface: ACH has no
+// team concept in the console — a key is scoped to an Environment.
 // ---------------------------------------------------------------------------
 
 /**
- * One row of GET /api/session/keys (after the backend strips `key`/`token`).
- *
- * Fields emitted by _project_session_key (minus the stripped pair):
- *   id, key_alias, spend, budget, tpm_limit, rpm_limit, models, created_at, expires
- * `budget` is ALWAYS null today (D-17 — inherited from user/team, reported by /me).
- *
- * `revoked`/`blocked` are NOT emitted by the current backend, but keys-table.js
- * (isRevoked) reads them defensively (absence === active). Modeled optional so a
- * future backend that adds them type-checks without a churn.
+ * One row of GET /platform/keys (render.KeyListRow,
+ * internal/platformapi/render/keylist.go). `status` is the EFFECTIVE state
+ * (already resolved server-side — active/suspended/expired/invalid/revoked;
+ * D-30), not something the UI derives. `environment`/`name`/`last_used_at`/
+ * `revoked_at` carry Go `omitempty` on the wire: ABSENT (not null) when unset,
+ * so they are typed optional here rather than `| null`. `expires_at` has no
+ * `omitempty` — always present, `null` = perpetual (ek_-only per D-24).
  */
 export interface KeyRow {
-  id: string | null;
-  key_alias: string | null;
-  spend: number;
-  budget: null;
-  tpm_limit: number | null;
-  rpm_limit: number | null;
-  models: string[] | null;
-  /** Team the key belongs to; null when the key is not team-scoped. */
-  team_id: string | null;
-  created_at: string | null;
-  expires: string | null;
-  /** LiteLLM per-key last-used timestamp (its `last_active`); null until used. */
-  last_used: string | null;
-  /** Explicit default-key flag (metadata-backed; session API derives it). */
-  is_default: boolean;
-  /**
-   * True only for keys THIS service minted (metadata.source == "token-factory").
-   * Foreign keys (e.g. ekid_/pkid_) are shown but locked: no delete, make-default,
-   * or change-team — only disable/enable. Backend enforces (409); the UI hides the
-   * locked actions so users don't hit the error.
-   */
-  managed?: boolean;
-  // Not emitted by the current backend; isRevoked() reads them defensively.
-  revoked?: boolean;
-  blocked?: boolean;
+  key_id: string;
+  type: 'pk' | 'ek';
+  owner_email: string;
+  environment?: string;
+  name?: string;
+  status: 'active' | 'suspended' | 'expired' | 'invalid' | 'revoked';
+  /** Secondary facts behind `status` (e.g. "suspended", "no_access"); shown in a tooltip. */
+  reasons?: string[];
+  created_at: string;
+  last_used_at?: string;
+  revoked_at?: string;
+  expires_at: string | null;
 }
 
-/** GET /api/session/keys response. session.py::session_list_keys. */
+/** GET /platform/keys response — {items,next_cursor} per Hub §15.5. */
 export interface KeysResponse {
-  keys: KeyRow[];
+  items: KeyRow[];
+  next_cursor: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/session/keys  — src/api/app/session.py (CreateKeyBody + create handler)
+// POST /platform/keys — internal/platformapi/envkeys/handler.go CreateRequest/
+// CreateResponse (§8.2 ek_ create flow).
 // ---------------------------------------------------------------------------
 
-/** POST /api/session/keys request body. session.py::CreateKeyBody (all optional). */
+/** POST /platform/keys request body. `environment` + `name` are REQUIRED (400
+ * `invalid_argument` otherwise); `expires_at` is an optional future RFC3339
+ * instant — omit for a perpetual key. */
 export interface CreateKeyBody {
-  alias?: string;
-  duration?: string;
-  /** Team to scope the new key to; omit for the session's default team. */
-  team_id?: string;
+  environment: string;
+  name: string;
+  expires_at?: string;
 }
 
 /**
- * POST /api/session/keys response — the only place the sk- (`key`) is returned,
- * once, and never stored server-side. session.py::session_create_key.
- * `team_id` comes from key_data.get("team_id") so it may be null.
+ * POST /platform/keys response — the only place the plaintext ek- secret is
+ * returned, once, and never stored server-side.
  */
 export interface CreateKeyResponse {
-  key: string;
-  id: string;
-  team_id: string | null;
+  key_id: string;
+  plaintext: string;
+  environment: string;
+  name: string;
+  owner_email: string;
+  created_at: string;
+  expires_at: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// DELETE /api/session/keys/{id}  — src/api/app/session.py::session_delete_key
+// GET /platform/environments — internal/platformapi/environments/handler.go
 // ---------------------------------------------------------------------------
 
-/** DELETE /api/session/keys/{id} response. session.py::session_delete_key. */
-export interface DeleteKeyResponse {
-  status: string;
-  id: string;
+/**
+ * One row of GET /platform/environments (store.EnvironmentView, trimmed to
+ * the console's needs). `status` carries Go `omitempty` (deriveStatus can
+ * return "" for a not-yet-reconciled Environment, which is then omitted from
+ * the wire entirely) — only the literal `"Available"` is selectable when
+ * creating a key.
+ */
+export interface EnvironmentRow {
+  name: string;
+  status?: string;
+  description?: string;
 }
 
-/** POST /api/session/keys/{id}/default response. session.py::session_make_default. */
-export interface MakeDefaultResponse {
-  status: string;
-  id: string;
-}
-
-/** POST /api/session/keys/{id}/block response. session.py::session_block_key. */
-export interface BlockKeyResponse {
-  status: 'blocked' | 'active';
-  id: string;
-}
-
-// ---------------------------------------------------------------------------
-// GET /api/session/teams  — src/api/app/session.py::session_teams
-// POST /api/session/keys/{id}/team  — session.py::session_change_key_team
-// ---------------------------------------------------------------------------
-
-/** A team the session user belongs to. GET /api/session/teams. */
-export interface Team {
-  id: string;
-  alias: string;
-}
-
-/** GET /api/session/teams response. session.py::session_teams. */
-export interface TeamsResponse {
-  teams: Team[];
-}
-
-/** POST /api/session/keys/{id}/team response. session.py::session_change_key_team. */
-export interface ChangeKeyTeamResponse {
-  status: string;
-  id: string;
-  team_id: string;
+/** GET /platform/environments response — {items,next_cursor} per Hub §15.5. */
+export interface EnvironmentsResponse {
+  items: EnvironmentRow[];
+  next_cursor: string | null;
 }
 
 // ---------------------------------------------------------------------------

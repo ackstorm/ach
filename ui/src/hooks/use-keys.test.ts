@@ -1,10 +1,13 @@
-// use-keys.test.ts — vitest suite for the keys TanStack Query hooks (jsdom).
+// use-keys.test.ts — vitest suite for the ACH env-key TanStack Query hooks
+// (jsdom).
 //
 // The api module is fully mocked so NO real fetch happens; each test programs
 // getJson/postJson/del's resolved { status, data }. Each test gets a FRESH
 // QueryClient (retry disabled so error paths resolve immediately) provided via a
 // renderHook wrapper. The fresh-keys store is reset between tests so the
-// create/delete onSuccess side-effects are asserted in isolation.
+// create/delete onSuccess side-effects are asserted in isolation. The session
+// store is seeded with a fixed `me.email` (KEYS_QUERY_KEY carries identity,
+// AC-04).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -24,35 +27,32 @@ vi.mock('@/lib/api', () => ({
 import { del, getJson, postJson } from '@/lib/api';
 import {
   KEYS_QUERY_KEY,
-  useChangeKeyTeam,
   useCreateKey,
   useDeleteKey,
-  useHasDefaultKey,
   useKeys,
-  useMakeDefault,
-  useToggleKeyBlock,
+  useResumeKey,
+  useSuspendKey,
 } from './use-keys';
 import { initialFreshKeysState, useFreshKeysStore } from '@/stores/fresh-keys';
+import { initialSessionState, useSessionStore } from '@/stores/session';
 import { useToastStore } from '@/hooks/use-toast';
 
 const getJsonMock = vi.mocked(getJson);
 const postJsonMock = vi.mocked(postJson);
 const delMock = vi.mocked(del);
 
-// A representative key list row (mirrors the api-types KeyRow contract).
+const EMAIL = 'alice@example.com';
+
+// A representative key list row (mirrors render.KeyListRow).
 const ROW: KeyRow = {
-  id: 'key-1',
-  key_alias: 'my-key',
-  spend: 0,
-  budget: null,
-  tpm_limit: null,
-  rpm_limit: null,
-  models: ['all-team-models'],
-  team_id: 'team-1',
-  created_at: '2026-03-01T10:00:00+00:00',
-  expires: null,
-  last_used: null,
-  is_default: false,
+  key_id: 'ekid_1',
+  type: 'ek',
+  owner_email: EMAIL,
+  environment: 'prod',
+  name: 'my-key',
+  status: 'active',
+  created_at: '2026-03-01T10:00:00Z',
+  expires_at: null,
 };
 
 /** Build a fresh QueryClient with retries off so error tests resolve fast. */
@@ -78,11 +78,29 @@ beforeEach(() => {
   // Reset the fresh-keys store to its empty initial state, keeping the actions.
   const { setFresh, dropFresh } = useFreshKeysStore.getState();
   useFreshKeysStore.setState({ ...initialFreshKeysState, setFresh, dropFresh }, true);
+  // Seed the session store with a fixed identity (KEYS_QUERY_KEY reads it).
+  const { loadSession, markExpired } = useSessionStore.getState();
+  useSessionStore.setState(
+    {
+      ...initialSessionState,
+      me: {
+        email: EMAIL,
+        name: EMAIL,
+        is_admin: false,
+        openwork_enabled: false,
+        suspend_propagation_seconds: 60,
+        endpoint: 'https://litellm.example.com',
+      },
+      loadSession,
+      markExpired,
+    },
+    true,
+  );
 });
 
 describe('useKeys', () => {
-  it('200 + { keys: [row] } -> data is that KeyRow[]', async () => {
-    getJsonMock.mockResolvedValue({ status: 200, data: { keys: [ROW] } });
+  it('200 + { items: [row] } -> data is that KeyRow[]', async () => {
+    getJsonMock.mockResolvedValue({ status: 200, data: { items: [ROW], next_cursor: null } });
 
     const { result } = renderHook(() => useKeys(), {
       wrapper: wrapperFor(makeClient()),
@@ -91,7 +109,7 @@ describe('useKeys', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([ROW]);
     expect(getJsonMock).toHaveBeenCalledWith(
-      '/api/session/keys',
+      '/platform/keys?type=ek&limit=500',
       expect.objectContaining({ signal: expect.anything() }),
     );
   });
@@ -108,10 +126,18 @@ describe('useKeys', () => {
 });
 
 describe('useCreateKey', () => {
-  it('200 -> stores the fresh sk- AND invalidates the keys query', async () => {
+  it('200 -> stores the fresh plaintext under key_id AND invalidates the keys query', async () => {
     postJsonMock.mockResolvedValue({
       status: 200,
-      data: { key: 'sk-abc', id: 'key-1', team_id: 'team-x' },
+      data: {
+        key_id: 'ekid_1',
+        plaintext: 'ek-abc',
+        environment: 'prod',
+        name: 'my-key',
+        owner_email: EMAIL,
+        created_at: '2026-03-01T10:00:00Z',
+        expires_at: null,
+      },
     });
 
     const client = makeClient();
@@ -121,10 +147,14 @@ describe('useCreateKey', () => {
       wrapper: wrapperFor(client),
     });
 
-    await result.current.mutateAsync({});
+    await result.current.mutateAsync({ environment: 'prod', name: 'my-key' });
 
-    expect(useFreshKeysStore.getState().freshKeys).toEqual({ 'key-1': 'sk-abc' });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY });
+    expect(postJsonMock).toHaveBeenCalledWith('/platform/keys', {
+      environment: 'prod',
+      name: 'my-key',
+    });
+    expect(useFreshKeysStore.getState().freshKeys).toEqual({ ekid_1: 'ek-abc' });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY(EMAIL) });
   });
 
   it('non-200 (502) -> rejects AND does not stash a fresh key', async () => {
@@ -134,7 +164,9 @@ describe('useCreateKey', () => {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(result.current.mutateAsync({})).rejects.toThrow();
+    await expect(
+      result.current.mutateAsync({ environment: 'prod', name: 'x' }),
+    ).rejects.toThrow();
     expect(useFreshKeysStore.getState().freshKeys).toEqual({});
   });
 
@@ -145,38 +177,33 @@ describe('useCreateKey', () => {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(result.current.mutateAsync({})).rejects.toMatchObject({
-      status: 502,
-      detail: null,
-    });
+    await expect(
+      result.current.mutateAsync({ environment: 'prod', name: 'x' }),
+    ).rejects.toMatchObject({ status: 502, detail: null });
   });
 
-  it('a 422 rejection carries status=422 + the backend detail string', async () => {
+  it('a 400 rejection reads ACH error envelope error.message as detail', async () => {
     postJsonMock.mockResolvedValue({
-      status: 422,
-      data: { detail: 'alias must be 1-128 characters' },
+      status: 400,
+      data: { error: { code: 'invalid_argument', message: 'environment and name required' } },
     });
 
     const { result } = renderHook(() => useCreateKey(), {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(result.current.mutateAsync({})).rejects.toMatchObject({
-      status: 422,
-      detail: 'alias must be 1-128 characters',
-    });
+    await expect(
+      result.current.mutateAsync({ environment: '', name: '' }),
+    ).rejects.toMatchObject({ status: 400, detail: 'environment and name required' });
   });
 });
 
 describe('useDeleteKey', () => {
-  it('200 -> drops the fresh key AND invalidates the keys query', async () => {
+  it('204 -> drops the fresh key AND invalidates the keys query', async () => {
     // Pre-seed the store so dropFresh has something to remove.
-    useFreshKeysStore.getState().setFresh('key-1', 'sk-abc');
+    useFreshKeysStore.getState().setFresh('ekid_1', 'ek-abc');
 
-    delMock.mockResolvedValue({
-      status: 200,
-      data: { status: 'deleted', id: 'key-1' },
-    });
+    delMock.mockResolvedValue({ status: 204, data: null });
 
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
@@ -185,172 +212,86 @@ describe('useDeleteKey', () => {
       wrapper: wrapperFor(client),
     });
 
-    await result.current.mutateAsync('key-1');
+    await result.current.mutateAsync('ekid_1');
 
+    expect(delMock).toHaveBeenCalledWith('/platform/keys/ekid_1');
     expect(useFreshKeysStore.getState().freshKeys).toEqual({});
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY(EMAIL) });
   });
 
-  it('non-200 (403) -> rejects', async () => {
+  it('non-204 (403) -> rejects', async () => {
     delMock.mockResolvedValue({ status: 403, data: null });
 
     const { result } = renderHook(() => useDeleteKey(), {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(result.current.mutateAsync('key-x')).rejects.toThrow();
+    await expect(result.current.mutateAsync('ekid_x')).rejects.toThrow();
   });
 });
 
-describe('useMakeDefault', () => {
-  it('200 -> POSTs the default endpoint AND invalidates the keys query', async () => {
-    postJsonMock.mockResolvedValue({
-      status: 200,
-      data: { status: 'default', id: 'key-1' },
-    });
+describe('useSuspendKey', () => {
+  it('204 -> POSTs the suspend endpoint AND invalidates the keys query', async () => {
+    postJsonMock.mockResolvedValue({ status: 204, data: null });
 
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
 
-    const { result } = renderHook(() => useMakeDefault(), {
+    const { result } = renderHook(() => useSuspendKey(), {
       wrapper: wrapperFor(client),
     });
 
-    await result.current.mutateAsync('key-1');
+    await result.current.mutateAsync('ekid_1');
 
-    expect(postJsonMock).toHaveBeenCalledWith('/api/session/keys/key-1/default', {});
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY });
+    expect(postJsonMock).toHaveBeenCalledWith('/platform/keys/ekid_1/suspend', {});
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY(EMAIL) });
   });
 
-  it('non-200 (502) -> rejects', async () => {
-    postJsonMock.mockResolvedValue({ status: 502, data: null });
-
-    const { result } = renderHook(() => useMakeDefault(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-
-    await expect(result.current.mutateAsync('key-x')).rejects.toThrow();
-  });
-
-  it('non-200 -> pushes an error toast', async () => {
+  it('non-204 -> pushes an error toast', async () => {
     postJsonMock.mockResolvedValue({ status: 502, data: null });
     const toastSpy = vi.spyOn(useToastStore.getState(), 'toast');
 
-    const { result } = renderHook(() => useMakeDefault(), {
+    const { result } = renderHook(() => useSuspendKey(), {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(result.current.mutateAsync('key-x')).rejects.toThrow();
+    await expect(result.current.mutateAsync('ekid_x')).rejects.toThrow();
     await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ variant: 'error' }),
-      ),
+      expect(toastSpy).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' })),
     );
     toastSpy.mockRestore();
   });
 });
 
-describe('useChangeKeyTeam', () => {
-  it('200 -> POSTs the team endpoint AND invalidates the keys query', async () => {
-    postJsonMock.mockResolvedValue({
-      status: 200,
-      data: { status: 'moved', id: 'key-1', team_id: 'team-2' },
-    });
+describe('useResumeKey', () => {
+  it('204 -> POSTs the resume endpoint AND invalidates the keys query', async () => {
+    postJsonMock.mockResolvedValue({ status: 204, data: null });
 
     const client = makeClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
 
-    const { result } = renderHook(() => useChangeKeyTeam(), {
+    const { result } = renderHook(() => useResumeKey(), {
       wrapper: wrapperFor(client),
     });
 
-    await result.current.mutateAsync({ id: 'key-1', teamId: 'team-2' });
+    await result.current.mutateAsync('ekid_1');
 
-    expect(postJsonMock).toHaveBeenCalledWith('/api/session/keys/key-1/team', {
-      team_id: 'team-2',
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY });
+    expect(postJsonMock).toHaveBeenCalledWith('/platform/keys/ekid_1/resume', {});
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: KEYS_QUERY_KEY(EMAIL) });
   });
 
-  it('non-200 (502) -> rejects', async () => {
-    postJsonMock.mockResolvedValue({ status: 502, data: null });
-
-    const { result } = renderHook(() => useChangeKeyTeam(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-
-    await expect(
-      result.current.mutateAsync({ id: 'key-x', teamId: 'team-2' }),
-    ).rejects.toThrow();
-  });
-
-  it('non-200 -> pushes an error toast', async () => {
-    postJsonMock.mockResolvedValue({ status: 502, data: null });
+  it('non-204 -> pushes an error toast', async () => {
+    postJsonMock.mockResolvedValue({ status: 409, data: null });
     const toastSpy = vi.spyOn(useToastStore.getState(), 'toast');
 
-    const { result } = renderHook(() => useChangeKeyTeam(), {
+    const { result } = renderHook(() => useResumeKey(), {
       wrapper: wrapperFor(makeClient()),
     });
 
-    await expect(
-      result.current.mutateAsync({ id: 'key-x', teamId: 'team-2' }),
-    ).rejects.toThrow();
+    await expect(result.current.mutateAsync('ekid_x')).rejects.toThrow();
     await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ variant: 'error' }),
-      ),
+      expect(toastSpy).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error' })),
     );
     toastSpy.mockRestore();
-  });
-});
-
-describe('useToggleKeyBlock', () => {
-  it('non-200 -> pushes an error toast', async () => {
-    postJsonMock.mockResolvedValue({ status: 502, data: null });
-    const toastSpy = vi.spyOn(useToastStore.getState(), 'toast');
-
-    const { result } = renderHook(() => useToggleKeyBlock(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-
-    await expect(
-      result.current.mutateAsync({ id: 'key-x', blocked: true }),
-    ).rejects.toThrow();
-    await waitFor(() =>
-      expect(toastSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ variant: 'error' }),
-      ),
-    );
-    toastSpy.mockRestore();
-  });
-});
-
-describe('useHasDefaultKey', () => {
-  it('true once a key with is_default loads', async () => {
-    getJsonMock.mockResolvedValue({
-      status: 200,
-      data: { keys: [{ ...ROW, is_default: true }] },
-    });
-    const { result } = renderHook(() => useHasDefaultKey(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-    await waitFor(() => expect(result.current).toBe(true));
-  });
-
-  it('false when keys load but none is_default', async () => {
-    getJsonMock.mockResolvedValue({ status: 200, data: { keys: [ROW] } });
-    const { result } = renderHook(() => useHasDefaultKey(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-    await waitFor(() => expect(getJsonMock).toHaveBeenCalled());
-    expect(result.current).toBe(false);
-  });
-
-  it('false while pending / on error (never throws)', () => {
-    getJsonMock.mockResolvedValue({ status: 500, data: null });
-    const { result } = renderHook(() => useHasDefaultKey(), {
-      wrapper: wrapperFor(makeClient()),
-    });
-    expect(result.current).toBe(false);
   });
 });

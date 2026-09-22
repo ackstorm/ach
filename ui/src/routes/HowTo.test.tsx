@@ -18,7 +18,6 @@ vi.mock('@/stores/session', () => ({
 vi.mock('@/stores/config', () => ({
   useConfigStore: (sel: (s: unknown) => unknown) => sel({ config: {} }),
 }));
-vi.mock('@/hooks/use-keys', () => ({ useHasDefaultKey: vi.fn(() => true) }));
 vi.mock('@/hooks/use-models', () => ({ useModels: vi.fn() }));
 
 import { useModels } from '@/hooks/use-models';

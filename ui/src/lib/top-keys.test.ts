@@ -11,18 +11,14 @@ function statsKey(over: Partial<StatsKeyRow> = {}): StatsKeyRow {
 
 function userKey(over: Partial<KeyRow> = {}): KeyRow {
   return {
-    id: 'k1',
-    key_alias: 'one',
-    spend: 0,
-    budget: null,
-    tpm_limit: null,
-    rpm_limit: null,
-    models: null,
-    team_id: null,
-    created_at: null,
-    expires: null,
-    last_used: null,
-    is_default: false,
+    key_id: 'k1',
+    type: 'ek',
+    owner_email: 'alice@example.com',
+    environment: 'prod',
+    name: 'one',
+    status: 'active',
+    created_at: '2026-03-01T10:00:00Z',
+    expires_at: null,
     ...over,
   };
 }
@@ -31,9 +27,9 @@ describe('mergeTopKeys', () => {
   it('pads idle user keys (no activity row) with zeros', () => {
     const active = [statsKey({ id: 'a', key_alias: 'active', requests: 10, spend: 5 })];
     const all = [
-      userKey({ id: 'a', key_alias: 'active' }),
-      userKey({ id: 'b', key_alias: 'idle-1' }),
-      userKey({ id: 'c', key_alias: 'idle-2' }),
+      userKey({ key_id: 'a', name: 'active' }),
+      userKey({ key_id: 'b', name: 'idle-1' }),
+      userKey({ key_id: 'c', name: 'idle-2' }),
     ];
     const merged = mergeTopKeys(active, all);
 
@@ -45,10 +41,10 @@ describe('mergeTopKeys', () => {
     expect(merged.filter((k) => k.spend === 0)).toHaveLength(2);
   });
 
-  it('does NOT duplicate a key present in both (matched by id or alias)', () => {
+  it('does NOT duplicate a key present in both (matched by key_id or name)', () => {
     const active = [statsKey({ id: 'a', key_alias: 'active', requests: 3, spend: 2 })];
-    // Same alias, different/absent id — must still dedup.
-    const all = [userKey({ id: null, key_alias: 'active' })];
+    // Same name, different key_id — must still dedup.
+    const all = [userKey({ key_id: 'other-id', name: 'active' })];
     const merged = mergeTopKeys(active, all);
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({ key_alias: 'active', requests: 3 });
@@ -59,7 +55,7 @@ describe('mergeTopKeys', () => {
       statsKey({ id: 'a', key_alias: 'lo', spend: 1 }),
       statsKey({ id: 'b', key_alias: 'hi', spend: 9 }),
     ];
-    const all = [userKey({ id: 'c', key_alias: 'idle' })];
+    const all = [userKey({ key_id: 'c', name: 'idle' })];
     const merged = mergeTopKeys(active, all);
     expect(merged.map((k) => k.key_alias)).toEqual(['hi', 'lo', 'idle']);
     // Inputs untouched.

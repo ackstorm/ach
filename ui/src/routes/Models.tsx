@@ -23,7 +23,6 @@ import {
 
 import { useState } from 'react';
 
-import { RequiresDefaultKey } from '@/components/layout/RequiresDefaultKey';
 import {
   ModelFilters,
   ModelModeFilters,
@@ -45,7 +44,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
-import { useHasDefaultKey } from '@/hooks/use-keys';
 import { useModels } from '@/hooks/use-models';
 import type { ModelRow } from '@/lib/api-types';
 import { abbreviate, formatPricePerMillion } from '@/lib/format';
@@ -314,10 +312,9 @@ const COLUMNS: DataTableColumn<ModelRow>[] = [
 ];
 
 export function Models() {
-  // Per-user catalog: gated on a default key (the gateway scopes the read through
-  // it). No default → render the prompt and DON'T fetch (useModels disabled).
-  const hasDefault = useHasDefaultKey();
-  const query = useModels(hasDefault);
+  // ponytail: the alitellm-auth default-key gate had no ACH equivalent (env
+  // keys are the scoping unit, not a "default" key) — always fetch.
+  const query = useModels();
   const [caps, setCaps] = useState<Set<ModelCapKey>>(new Set());
   const [modes, setModes] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
@@ -346,15 +343,6 @@ export function Models() {
     </div>
   );
 
-  // No default key → calm "set a default" prompt (no request fired).
-  if (!hasDefault) {
-    return (
-      <div className="flex flex-col gap-8">
-        {header}
-        <RequiresDefaultKey subject="Models" />
-      </div>
-    );
-  }
 
   // Error (502 / network) — same card + retry as the Stats page.
   if (query.isError) {

@@ -32,18 +32,14 @@ function setMutation(mutateAsync: ReturnType<typeof vi.fn>, isPending = false): 
 /** Build a minimal valid KeyRow with overrides. */
 function makeKey(overrides: Partial<KeyRow> = {}): KeyRow {
   return {
-    id: 'key-abc',
-    key_alias: 'ci',
-    spend: 0,
-    budget: null,
-    tpm_limit: null,
-    rpm_limit: null,
-    models: null,
-    team_id: null,
-    created_at: null,
-    expires: null,
-    last_used: null,
-    is_default: false,
+    key_id: 'ekid_abc',
+    type: 'ek',
+    owner_email: 'alice@example.com',
+    environment: 'prod',
+    name: 'ci',
+    status: 'active',
+    created_at: '2026-03-01T10:00:00Z',
+    expires_at: null,
     ...overrides,
   };
 }
@@ -67,10 +63,10 @@ describe('DeleteKeyModal — closed states', () => {
     expect(screen.queryByText('Revoke Key')).not.toBeInTheDocument();
   });
 
-  it('a key with no .id -> dialog not open / renders no confirm content (defensive)', () => {
+  it('a key with no .key_id -> dialog not open / renders no confirm content (defensive)', () => {
     setMutation(vi.fn());
     render(
-      <DeleteKeyModal keyToDelete={{ key_alias: 'x' } as KeyRow} onClose={vi.fn()} />,
+      <DeleteKeyModal keyToDelete={{ name: 'x' } as KeyRow} onClose={vi.fn()} />,
     );
 
     expect(screen.queryByText('Revoke Key')).not.toBeInTheDocument();
@@ -81,49 +77,51 @@ describe('DeleteKeyModal — closed states', () => {
 });
 
 describe('DeleteKeyModal — open', () => {
-  it('shows "Revoke Key" title and the body with the alias (name) + "This cannot be undone."', () => {
+  it('shows "Revoke Key" title and the body with the name + "This cannot be undone."', () => {
     setMutation(vi.fn());
     render(
       <DeleteKeyModal
-        keyToDelete={makeKey({ id: 'key-abc', key_alias: 'production-key' })}
+        keyToDelete={makeKey({ key_id: 'ekid_abc', name: 'production-key' })}
         onClose={vi.fn()}
       />,
     );
 
     expect(screen.getByText('Revoke Key')).toBeInTheDocument();
     const body = screen.getByText(/This will permanently revoke/);
-    // The human alias is named — NOT the raw id (which would overflow the box).
+    // The human name is named — NOT the raw key_id (which would overflow the box).
     expect(body).toHaveTextContent('production-key');
-    expect(body).not.toHaveTextContent('key-abc');
+    expect(body).not.toHaveTextContent('ekid_abc');
     expect(body).toHaveTextContent('This cannot be undone.');
   });
 
-  it('falls back to the MASKED id (prefix…last4) when the key has no alias', () => {
+  it('falls back to the MASKED key_id (prefix…last4) when the key has no name', () => {
     setMutation(vi.fn());
     render(
       <DeleteKeyModal
-        keyToDelete={makeKey({ id: 'key-0123456789abcdef', key_alias: null })}
+        keyToDelete={makeKey({ key_id: 'ekid_0123456789abcdef', name: undefined })}
         onClose={vi.fn()}
       />,
     );
 
     const body = screen.getByText(/This will permanently revoke/);
-    // maskKey('key-0123456789abcdef') -> 'key-…cdef' — bounded, never the full hash.
-    expect(body).toHaveTextContent('key-…cdef');
-    expect(body).not.toHaveTextContent('key-0123456789abcdef');
+    // maskKey('ekid_0123456789abcdef') -> 'ekid…cdef' — bounded, never the full id.
+    expect(body).toHaveTextContent('ekid…cdef');
+    expect(body).not.toHaveTextContent('ekid_0123456789abcdef');
   });
 });
 
 describe('DeleteKeyModal — confirm success', () => {
-  it('mutateAsync resolves -> called with id, success toast fired, onClose called', async () => {
-    const mutateAsync = vi.fn().mockResolvedValue({ status: 'deleted', id: 'key-abc' });
+  it('mutateAsync resolves -> called with key_id, success toast fired, onClose called', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(null);
     setMutation(mutateAsync);
     const onClose = vi.fn();
-    render(<DeleteKeyModal keyToDelete={makeKey({ id: 'key-abc' })} onClose={onClose} />);
+    render(
+      <DeleteKeyModal keyToDelete={makeKey({ key_id: 'ekid_abc' })} onClose={onClose} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Revoke' }));
 
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('key-abc'));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('ekid_abc'));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
 
     const { toasts } = useToastStore.getState();
@@ -134,13 +132,15 @@ describe('DeleteKeyModal — confirm success', () => {
 });
 
 describe('DeleteKeyModal — confirm error', () => {
-  it('mutateAsync rejects -> DELETE_ERROR shown, onClose NOT called, no success toast', async () => {
+  it('mutateAsync rejects with no detail -> DELETE_ERROR shown, onClose NOT called, no success toast', async () => {
     const mutateAsync = vi
       .fn()
       .mockRejectedValue(Object.assign(new Error(), { status: 403, detail: null }));
     setMutation(mutateAsync);
     const onClose = vi.fn();
-    render(<DeleteKeyModal keyToDelete={makeKey({ id: 'key-abc' })} onClose={onClose} />);
+    render(
+      <DeleteKeyModal keyToDelete={makeKey({ key_id: 'ekid_abc' })} onClose={onClose} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Revoke' }));
 
@@ -149,15 +149,15 @@ describe('DeleteKeyModal — confirm error', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
-  it('a 409 (default-key guard) shows the server detail, not the generic error', async () => {
-    const detail = 'Cannot delete the default key. Make another key default first.';
+  it('a rejection carrying a detail shows the server detail, not the generic error', async () => {
+    const detail = 'an expired key cannot be suspended';
     const mutateAsync = vi
       .fn()
       .mockRejectedValue(Object.assign(new Error(), { status: 409, detail }));
     setMutation(mutateAsync);
     const onClose = vi.fn();
     render(
-      <DeleteKeyModal keyToDelete={makeKey({ id: 'key-abc', is_default: true })} onClose={onClose} />,
+      <DeleteKeyModal keyToDelete={makeKey({ key_id: 'ekid_abc' })} onClose={onClose} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm Revoke' }));
@@ -172,7 +172,9 @@ describe('DeleteKeyModal — keep key', () => {
   it('"Keep Key" click -> onClose called', async () => {
     setMutation(vi.fn());
     const onClose = vi.fn();
-    render(<DeleteKeyModal keyToDelete={makeKey({ id: 'key-abc' })} onClose={onClose} />);
+    render(
+      <DeleteKeyModal keyToDelete={makeKey({ key_id: 'ekid_abc' })} onClose={onClose} />,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Keep Key' }));
 

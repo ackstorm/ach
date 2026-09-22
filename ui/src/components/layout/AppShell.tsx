@@ -14,7 +14,6 @@
 // `me` is GUARANTEED non-null here (App.tsx falls through to ErrorCard when
 // me === null — carry-forward C2), so the shell never renders against a null me.
 
-import { Fragment } from 'react';
 import { ChevronDown, ExternalLink, LogOut, Menu } from 'lucide-react';
 import { Outlet, NavLink } from 'react-router';
 import type { AppConfig, SessionMe } from '@/lib/api-types';
@@ -27,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Toaster } from '@/components/ui/toast';
-import { useKeys } from '@/hooks/use-keys';
 import { postJson } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { deriveSubdomainUrl } from '@/lib/urls';
@@ -76,60 +74,41 @@ export function AppShell({ me, config }: AppShellProps) {
   // as a clickable destination (tinted accent fill + accent border + hover lift +
   // an open-in-new-tab icon). It stays distinct from the SELECTED nav tab (a
   // mono-uppercase green underline) via sentence-case sans type, the soft fill,
-  // the shadow, and the external icon. Gated on the user having a
-  // default key — Chat needs one to authenticate; a default is never auto-assigned
-  // (explicit-only), so when none exists it renders disabled with a hint.
-  const { data: keys } = useKeys();
-  const hasDefault = (keys ?? []).some((k) => k.is_default);
+  // the shadow, and the external icon.
+  //
+  // ponytail: the alitellm-auth default-key gate (Chat/Models/MCPs/A2A needed a
+  // default virtual key to authenticate the per-user catalog reads) has no ACH
+  // equivalent — env keys are its scoping unit, not a "default" key — so every
+  // item below always renders as a live link. Real per-Environment gating (if
+  // still wanted) is a follow-up.
+  //
   // Explicit chat URL when the deployment sets CHAT_PUBLIC_URL; otherwise derive
   // chat.<domain> from the gateway host.
   const chatUrl = config.chat_public_url || deriveSubdomainUrl(me.endpoint, 'chat');
-  const chatPill =
-    'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 font-sans text-xs font-semibold leading-none transition-all';
-  const chatEl = hasDefault ? (
+  const chatEl = (
     <a
       href={chatUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className={cn(
-        chatPill,
-        'border border-primary/60 bg-primary/10 text-primary shadow-sm hover:-translate-y-px hover:bg-primary/20 hover:shadow-md'
-      )}
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/60 bg-primary/10 px-3 font-sans text-xs font-semibold leading-none text-primary shadow-sm transition-all hover:-translate-y-px hover:bg-primary/20 hover:shadow-md"
     >
       Chat
       <ExternalLink className="size-3.5" aria-hidden="true" />
     </a>
-  ) : (
-    <span
-      aria-disabled="true"
-      title="You need a default key — set one on the Keys tab"
-      className={cn(
-        chatPill,
-        'cursor-not-allowed border border-border text-text-tertiary'
-      )}
-    >
-      Chat
-      <ExternalLink className="size-3.5 opacity-50" aria-hidden="true" />
-    </span>
   );
 
   // Single source of truth for the primary nav, rendered two ways: an inline row
   // on md+ and a collapsed hamburger menu on mobile (so the header never overflows
   // the viewport — a too-wide header is what silently breaks `position: sticky` on
-  // phones). Models/MCPs/A2A are per-user catalogs scoped through the default key,
-  // so they are gated like CHAT: a real link when a default exists, else a
-  // disabled, muted item with a hint (the route itself also shows the prompt).
-  const navItems: { to: string; label: string; gated: boolean; end?: boolean }[] = [
-    { to: '/', label: 'Keys', gated: false, end: true },
-    { to: '/models', label: 'Models', gated: true },
-    { to: '/mcp', label: 'MCPs', gated: true },
-    { to: '/a2a', label: 'A2A', gated: true },
-    { to: '/stats', label: 'Stats', gated: false },
-    { to: '/howto', label: 'How-to', gated: false },
+  // phones).
+  const navItems: { to: string; label: string; end?: boolean }[] = [
+    { to: '/', label: 'Keys', end: true },
+    { to: '/models', label: 'Models' },
+    { to: '/mcp', label: 'MCPs' },
+    { to: '/a2a', label: 'A2A' },
+    { to: '/stats', label: 'Stats' },
+    { to: '/howto', label: 'How-to' },
   ];
-  const gateTitle = 'You need a default key — set one on the Keys tab';
-  const disabledNavClass =
-    'cursor-not-allowed border-b-2 border-transparent px-1 py-1.5 font-mono text-[11px] font-semibold uppercase leading-none tracking-wider text-text-tertiary';
 
   // Service-status indicator (D-02/D-03). An external link when config.links.status
   // is set, else a connected pulse-dot "operational" label. Moved OUT of the
@@ -177,28 +156,17 @@ export function AppShell({ me, config }: AppShellProps) {
             <Menu aria-hidden="true" className="size-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[12rem]">
-            {navItems.map((item) =>
-              item.gated && !hasDefault ? (
-                <DropdownMenuItem
-                  key={item.to}
-                  disabled
-                  title={gateTitle}
-                  className="font-mono text-[11px] font-semibold uppercase tracking-wider"
-                >
+            {navItems.map((item) => (
+              <DropdownMenuItem
+                key={item.to}
+                asChild
+                className="font-mono text-[11px] font-semibold uppercase tracking-wider"
+              >
+                <NavLink to={item.to} end={item.end}>
                   {item.label}
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  key={item.to}
-                  asChild
-                  className="font-mono text-[11px] font-semibold uppercase tracking-wider"
-                >
-                  <NavLink to={item.to} end={item.end}>
-                    {item.label}
-                  </NavLink>
-                </DropdownMenuItem>
-              )
-            )}
+                </NavLink>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -208,23 +176,15 @@ export function AppShell({ me, config }: AppShellProps) {
             keeps it active ONLY on the exact "/" route, not nested paths. */}
         <nav aria-label="Primary" className="hidden items-center gap-4 md:flex lg:gap-5">
           {navItems.map((item) => (
-            <Fragment key={item.to}>
-              {item.gated && !hasDefault ? (
-                <span aria-disabled="true" title={gateTitle} className={disabledNavClass}>
-                  {item.label}
-                </span>
-              ) : (
-                <NavLink to={item.to} end={item.end} className={navLinkClass}>
-                  {item.label}
-                </NavLink>
-              )}
-            </Fragment>
+            <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass}>
+              {item.label}
+            </NavLink>
           ))}
         </nav>
 
         <div className="ml-auto flex items-center gap-2 md:gap-3">
           {/* CHAT — separate destination, low-contrast outline pill, just before
-              the user menu. Gated on a default key (disabled span otherwise). */}
+              the user menu. */}
           {chatEl}
           {/* User menu: an avatar + name trigger opening a small dropdown whose
               only action (for now) is Log out. Replaces the inline name + "sign

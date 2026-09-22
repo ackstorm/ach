@@ -27,10 +27,9 @@ import { KpiRow } from '@/components/stats/KpiRow';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useKeys } from '@/hooks/use-keys';
 import { useStats } from '@/hooks/use-stats';
-import { useTeams } from '@/hooks/use-teams';
-import type { KeyRow, SessionMe, Team } from '@/lib/api-types';
+import type { KeyRow, SessionMe } from '@/lib/api-types';
 import { formatInt } from '@/lib/format';
-import { isRevoked, selectKeyRows } from '@/lib/keys';
+import { selectKeyRows } from '@/lib/keys';
 import { presetToRange } from '@/lib/stats-presets';
 import { teamColorVar } from '@/lib/team-color';
 import { cn } from '@/lib/utils';
@@ -78,29 +77,27 @@ function EndpointChip({ endpoint }: { endpoint: string }) {
   );
 }
 
-// ── KeysTeamsTile ────────────────────────────────────────────────────────────
+// ── KeysEnvironmentsTile ─────────────────────────────────────────────────────
 // The 4th KPI-row cell on the KEYS tab (swaps in for AVG COST). Shares the
 // KpiCard card chrome (see stats/KpiRow) so it reads as the same component: a
 // tinted Key accent-chip + 11px caption, the active-key COUNT as the 24px value,
-// and — below — the distinct teams those keys belong to as colored pills
-// (merging the old separate Active-keys + Teams tiles into one). Count is
-// EM_DASH until the keys query resolves; pills fall back to EM_DASH when no
-// key carries a team.
-function KeysTeamsTile({
+// and — below — the distinct Environments those keys belong to as colored pills
+// (merging the old separate Active-keys + Teams tiles into one; ACH scopes a
+// key to an Environment, not a team). Count is EM_DASH until the keys query
+// resolves; pills fall back to EM_DASH when no key carries an environment.
+function KeysEnvironmentsTile({
   keyRows,
-  teams,
   fallback,
 }: {
   keyRows: KeyRow[] | null;
-  teams: Team[];
   fallback: string;
 }) {
-  const active = keyRows ? keyRows.filter((k) => !isRevoked(k)) : null;
+  const active = keyRows ? keyRows.filter((k) => k.status !== 'revoked') : null;
   const count = active ? formatInt(active.length) : EM_DASH;
-  // Distinct, order-preserving team ids across the active keys (null team_id =
-  // not team-scoped → skipped), resolved to a display alias via the teams list.
-  const teamIds = active
-    ? [...new Set(active.map((k) => k.team_id).filter((id): id is string => !!id))]
+  // Distinct, order-preserving environment names across the active keys
+  // (already a display name — no id->alias lookup needed, unlike the old team_id).
+  const environments = active
+    ? [...new Set(active.map((k) => k.environment).filter((e): e is string => !!e))]
     : [];
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-5">
@@ -109,7 +106,7 @@ function KeysTeamsTile({
           <Key className="size-[15px]" aria-hidden="true" />
         </span>
         <div className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
-          KEYS &amp; TEAMS
+          KEYS &amp; ENVIRONMENTS
         </div>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -122,12 +119,12 @@ function KeysTeamsTile({
           </span>
         ) : null}
       </div>
-      {teamIds.length > 0 ? (
+      {environments.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {teamIds.map((id, i) => (
+          {environments.map((name, i) => (
             <span
-              key={id}
-              data-slot="team-pill"
+              key={name}
+              data-slot="environment-pill"
               className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-2 py-0.5 font-sans text-xs font-medium text-text-secondary"
             >
               <span
@@ -135,7 +132,7 @@ function KeysTeamsTile({
                 style={{ background: teamColorVar(i) }}
                 aria-hidden="true"
               />
-              {teams.find((t) => t.id === id)?.alias ?? id}
+              {name}
             </span>
           ))}
         </div>
@@ -150,7 +147,6 @@ function KeysTeamsTile({
 
 export function Dashboard({ me }: DashboardProps) {
   const query = useKeys();
-  const { data: teams } = useTeams();
   const openModal = useCreateKeyModalStore((s) => s.openModal);
 
   // The dashboard owns the delete target; KeysTable's per-row revoke action
@@ -177,17 +173,16 @@ export function Dashboard({ me }: DashboardProps) {
       </div>
 
       {/* DASH-06: metric header — the STATS KPI cards (requests/tokens/spend,
-          with deltas) over MTD, with a combined keys+teams tile in the 4th slot
-          in place of AVG COST. */}
+          with deltas) over MTD, with a combined keys+environments tile in the
+          4th slot in place of AVG COST. */}
       <KpiRow
         totals={stats.isSuccess ? stats.data?.totals : undefined}
         series={stats.isSuccess ? stats.data?.series : undefined}
         fourthCard={
-          <KeysTeamsTile
+          <KeysEnvironmentsTile
             keyRows={
               query.isSuccess && query.data ? selectKeyRows(query.data) : null
             }
-            teams={teams ?? []}
             fallback={EM_DASH}
           />
         }

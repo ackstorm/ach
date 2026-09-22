@@ -1,59 +1,57 @@
-// key-validation.test.ts — vitest unit suite for the client-side alias/duration
-// validators (node-friendly; pure functions, no DOM).
-//
-// These validators MIRROR src/api/app/session.py:session_create_key (lifted
-// verbatim from src/ui/create-key.js) so users see the locked field messages
-// without a backend round-trip. Empty input is VALID (the field is optional ->
-// the body omits it). Each validator returns an error string or null.
+// key-validation.test.ts — vitest unit suite for the client-side name
+// validator + expiry-preset conversion (node-friendly; pure functions, no DOM).
 
 import { describe, expect, it } from 'vitest';
 
 import {
   ALIAS_ERROR,
-  DURATION_ERROR,
-  validateAlias,
-  validateDuration,
+  NAME_REQUIRED_ERROR,
+  presetToExpiresAt,
+  validateName,
 } from './key-validation';
 
-describe('validateAlias', () => {
-  it('empty string is valid (optional field) -> null', () => {
-    expect(validateAlias('')).toBeNull();
+describe('validateName', () => {
+  it('empty string -> NAME_REQUIRED_ERROR (name is required, unlike the old alias)', () => {
+    expect(validateName('')).toBe(NAME_REQUIRED_ERROR);
   });
 
-  it('a valid alias (letters, numbers, dash, underscore, dot) -> null', () => {
-    expect(validateAlias('my-key_1.2')).toBeNull();
+  it('a valid name (letters, numbers, dash, underscore, dot) -> null', () => {
+    expect(validateName('my-key_1.2')).toBeNull();
   });
 
   it('more than 128 chars -> ALIAS_ERROR', () => {
-    expect(validateAlias('a'.repeat(129))).toBe(ALIAS_ERROR);
+    expect(validateName('a'.repeat(129))).toBe(ALIAS_ERROR);
   });
 
   it('exactly 128 chars (boundary) -> null', () => {
-    expect(validateAlias('a'.repeat(128))).toBeNull();
+    expect(validateName('a'.repeat(128))).toBeNull();
   });
 
-  it('an alias with a space -> ALIAS_ERROR', () => {
-    expect(validateAlias('bad name')).toBe(ALIAS_ERROR);
+  it('a name with a space -> ALIAS_ERROR', () => {
+    expect(validateName('bad name')).toBe(ALIAS_ERROR);
   });
 
-  it('an alias with an @ -> ALIAS_ERROR', () => {
-    expect(validateAlias('user@host')).toBe(ALIAS_ERROR);
+  it('a name with an @ -> ALIAS_ERROR', () => {
+    expect(validateName('user@host')).toBe(ALIAS_ERROR);
   });
 });
 
-describe('validateDuration', () => {
-  it('empty string is valid (no expiry) -> null', () => {
-    expect(validateDuration('')).toBeNull();
+describe('presetToExpiresAt', () => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+
+  it("'never' -> null (perpetual, field omitted)", () => {
+    expect(presetToExpiresAt('never', now)).toBeNull();
   });
 
-  it.each(['90d', '24h', '30m', '15s'])('valid duration %s -> null', (value) => {
-    expect(validateDuration(value)).toBeNull();
+  it("'7d' -> now + 7 days, RFC3339 UTC", () => {
+    expect(presetToExpiresAt('7d', now)).toBe('2026-01-08T00:00:00.000Z');
   });
 
-  it.each(['90', 'd', '90x', '1.5d'])(
-    'bad duration %s -> DURATION_ERROR',
-    (value) => {
-      expect(validateDuration(value)).toBe(DURATION_ERROR);
-    },
-  );
+  it("'30d' -> now + 30 days, RFC3339 UTC", () => {
+    expect(presetToExpiresAt('30d', now)).toBe('2026-01-31T00:00:00.000Z');
+  });
+
+  it("'90d' -> now + 90 days, RFC3339 UTC", () => {
+    expect(presetToExpiresAt('90d', now)).toBe('2026-04-01T00:00:00.000Z');
+  });
 });

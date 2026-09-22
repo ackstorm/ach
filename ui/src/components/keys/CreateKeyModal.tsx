@@ -1,23 +1,24 @@
-// CreateKeyModal.tsx — the single create-key modal (DASH-04), ported from
-// src/ui/create-key.js (Preact -> React + shadcn Dialog). Driven by the
-// create-key-modal open-state store (no prop-drilling): the keys table CTA and
-// the sidebar shortcut both call openModal().
+// CreateKeyModal.tsx — the single create-key modal (DASH-04), rewired onto
+// ACH's POST /platform/keys. Driven by the create-key-modal open-state store
+// (no prop-drilling): the keys table CTA and the sidebar shortcut both call
+// openModal().
 //
 // Two views toggled by local `result` state:
-//   FORM   — two OPTIONAL fields (name -> alias, expires -> duration) with
-//            client validation mirrored from session.py (validateAlias /
-//            validateDuration), submitting via useCreateKey.
-//   RESULT — after a 200, the full sk- is shown ONCE with the locked
-//            shown-once warning + a copy button, then a `done` button closes.
+//   FORM   — three fields: Environment (required, Available-only selectable),
+//            Name (required, client validation mirrored from
+//            envkeys/handler.go), Expiry preset (never/7d/30d/90d -> an
+//            absolute expires_at, computed client-side — no free-text
+//            duration input any more).
+//   RESULT — after a 200, the full plaintext ek- is shown ONCE with the
+//            locked shown-once warning + a copy button, then a `done` button
+//            closes.
 //
 // SECURITY (threat T-10-09, Information Disclosure):
-//   - The full `sk-` lives ONLY in local `result` state + the in-memory
+//   - The full plaintext lives ONLY in local `result` state + the in-memory
 //     fresh-keys store (written by useCreateKey.onSuccess, NOT here).
 //   - It is NEVER written to any web Storage, NEVER logged (no console.*),
 //     NEVER placed in a title / aria-label / thrown error. It renders only as
 //     element text in the result view (React escapes it — no innerHTML sink).
-//   - useCreateKey.onSuccess ALREADY stashes the fresh sk- and invalidates the
-//     keys query; this modal only DISPLAYS the returned key once.
 
 import { Check, Copy } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -33,36 +34,38 @@ import {
 import { Input } from '@/components/ui/input';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useCreateKey } from '@/hooks/use-keys';
-import { useTeams } from '@/hooks/use-teams';
+import { useEnvironments } from '@/hooks/use-environments';
 import type { CreateKeyBody } from '@/lib/api-types';
 import {
   CREATE_502_ERROR,
+  EXPIRY_PRESETS,
   SHOWN_ONCE_WARNING_EMPHASIS,
   SHOWN_ONCE_WARNING_POST,
   SHOWN_ONCE_WARNING_PRE,
-  validateAlias,
-  validateDuration,
+  presetToExpiresAt,
+  validateName,
+  type ExpiryPreset,
 } from '@/lib/key-validation';
 import { cn } from '@/lib/utils';
 import { useCreateKeyModalStore } from '@/stores/create-key-modal';
 
-/** The shown-once create response held in local state (id + full sk- `key`). */
+const ENVIRONMENT_REQUIRED_ERROR = 'Select an environment.';
+
+/** The shown-once create response held in local state (key_id + full plaintext). */
 interface CreateResult {
-  id: string;
-  key: string;
+  keyId: string;
+  plaintext: string;
 }
 
 export function CreateKeyModal() {
   const open = useCreateKeyModalStore((s) => s.open);
   const closeModal = useCreateKeyModalStore((s) => s.closeModal);
 
-  const [alias, setAlias] = useState('');
-  const [duration, setDuration] = useState('');
-  // '' = let the backend use the session's default team. When teams load the
-  // effect below selects the first team; an explicit user pick overrides it.
-  const [team, setTeam] = useState('');
-  const [aliasError, setAliasError] = useState<string | null>(null);
-  const [durationError, setDurationError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [environment, setEnvironment] = useState('');
+  const [expiry, setExpiry] = useState<ExpiryPreset>('never');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [environmentError, setEnvironmentError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   // `result` switches the modal from the form view to the shown-once key view
   // after a 200. Kept in component state only — never persisted (T-10-09).
@@ -72,24 +75,28 @@ export function CreateKeyModal() {
   const submitting = createKey.isPending;
   const { copied, copy } = useCopyFeedback();
 
-  // useTeams never throws — it resolves to [] when teams can't be loaded, which
-  // hides the picker and preserves single-team behaviour (submit without team_id).
-  const { data: teams = [] } = useTeams();
+  // useEnvironments never throws — it resolves to [] when the list can't be
+  // loaded, which leaves the picker empty (submit then blocked by validation).
+  const { data: environments = [] } = useEnvironments();
 
-  // Default the picker to the first team once they load, but only if the user
-  // hasn't picked yet (team still ''). A user choice or reset takes precedence.
+  // Default the picker to the first AVAILABLE environment once they load, but
+  // only if the user hasn't picked yet (environment still ''). A user choice
+  // or reset takes precedence.
   useEffect(() => {
-    if (team === '' && teams.length) setTeam(teams[0].id);
-  }, [team, teams]);
+    if (environment === '') {
+      const firstAvailable = environments.find((e) => e.status === 'Available');
+      if (firstAvailable) setEnvironment(firstAvailable.name);
+    }
+  }, [environment, environments]);
 
   // Reset every transient field then bubble the close up via the store. Wired to
   // Cancel / done AND to onOpenChange(false) (Esc / overlay click).
   const handleClose = useCallback(() => {
-    setAlias('');
-    setDuration('');
-    setTeam('');
-    setAliasError(null);
-    setDurationError(null);
+    setName('');
+    setEnvironment('');
+    setExpiry('never');
+    setNameError(null);
+    setEnvironmentError(null);
     setFormError(null);
     setResult(null);
     closeModal();
@@ -101,45 +108,38 @@ export function CreateKeyModal() {
       if (submitting) return;
       setFormError(null);
 
-      const aliasValue = alias.trim();
-      const durationValue = duration.trim();
+      const nameValue = name.trim();
 
-      // Mirror session.py validation BEFORE the request so the locked field
-      // messages surface without a round-trip.
-      const aErr = validateAlias(aliasValue);
-      const dErr = validateDuration(durationValue);
-      setAliasError(aErr);
-      setDurationError(dErr);
-      if (aErr || dErr) return;
+      // Mirror envkeys/handler.go's required-field check BEFORE the request so
+      // the locked field messages surface without a round-trip.
+      const nErr = validateName(nameValue);
+      const eErr = environment === '' ? ENVIRONMENT_REQUIRED_ERROR : null;
+      setNameError(nErr);
+      setEnvironmentError(eErr);
+      if (nErr || eErr) return;
 
-      // Body omits empty fields — an empty body is valid (session.py defaults).
-      const body: CreateKeyBody = {};
-      if (aliasValue) body.alias = aliasValue;
-      if (durationValue) body.duration = durationValue;
-      if (team) body.team_id = team;
+      const body: CreateKeyBody = { environment, name: nameValue };
+      const expiresAt = presetToExpiresAt(expiry);
+      if (expiresAt) body.expires_at = expiresAt;
 
       try {
         const data = await createKey.mutateAsync(body);
-        // Show the full sk- ONCE; the fresh-key stash + list invalidation are
-        // ALREADY handled by useCreateKey.onSuccess — do NOT duplicate here.
-        setResult({ id: data.id, key: data.key });
-      } catch (e) {
-        const err = e as { status?: number; detail?: string | null };
-        if (err.status === 422 && err.detail) {
-          // The backend returns ONE field rejection at a time with a specific
-          // `detail`. Route it to the matching field; otherwise a form-level
-          // error. Do NOT recompute the other field's validation here (WR-03).
-          const detail = err.detail;
-          if (detail.includes('alias')) setAliasError(detail);
-          else if (detail.includes('duration')) setDurationError(detail);
-          else setFormError(detail);
+        // Create always returns 200 with a body (never the 204 shape the
+        // shared mutation factory also allows for suspend/resume/delete);
+        // the null branch is unreachable defense, not an expected path.
+        if (!data) {
+          setFormError(CREATE_502_ERROR);
           return;
         }
-        // 502 (or any other non-200 without a routable detail): in-form error.
-        setFormError(CREATE_502_ERROR);
+        // Show the full plaintext ONCE; the fresh-key stash + list invalidation
+        // are ALREADY handled by useCreateKey.onSuccess — do NOT duplicate here.
+        setResult({ keyId: data.key_id, plaintext: data.plaintext });
+      } catch (e) {
+        const err = e as { status?: number; detail?: string | null };
+        setFormError(err.detail ?? CREATE_502_ERROR);
       }
     },
-    [alias, duration, team, submitting, createKey],
+    [name, environment, expiry, submitting, createKey],
   );
 
   return (
@@ -190,7 +190,7 @@ export function CreateKeyModal() {
                       copied &&
                         'border-primary bg-primary/15 text-primary hover:bg-primary/15 hover:text-primary'
                     )}
-                    onClick={() => void copy(result.key)}
+                    onClick={() => void copy(result.plaintext)}
                   >
                     {copied ? (
                       <Check aria-hidden="true" className="size-3.5" />
@@ -201,7 +201,7 @@ export function CreateKeyModal() {
                   </Button>
                 </div>
                 <div className="break-all rounded-md border border-border bg-muted px-3.5 py-3 font-mono text-sm leading-relaxed text-text-primary select-all">
-                  {result.key}
+                  {result.plaintext}
                 </div>
               </div>
             </div>
@@ -217,10 +217,43 @@ export function CreateKeyModal() {
             <DialogHeader>
               <DialogTitle>Create Key</DialogTitle>
               <DialogDescription>
-                Generate a new virtual key. Both fields are optional.
+                Generate a new virtual key for an Environment.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="ck-environment"
+                  className="font-mono text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                >
+                  environment
+                </label>
+                {/* Native <select> styled to match Input (no shadcn Select in
+                    this project). Only Available environments are selectable —
+                    others render disabled so the user sees why. */}
+                <select
+                  id="ck-environment"
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value)}
+                  disabled={submitting}
+                  aria-invalid={environmentError ? true : undefined}
+                  className="border-input dark:bg-input/30 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                >
+                  <option value="" disabled>
+                    Select an environment
+                  </option>
+                  {environments.map((env) => (
+                    <option key={env.name} value={env.name} disabled={env.status !== 'Available'}>
+                      {env.name}
+                      {env.status !== 'Available' ? ` (${env.status || 'not ready'})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {environmentError ? (
+                  <p className="text-xs text-destructive">{environmentError}</p>
+                ) : null}
+              </div>
+
               <div className="flex flex-col gap-1.5">
                 <label
                   htmlFor="ck-name"
@@ -232,44 +265,18 @@ export function CreateKeyModal() {
                   id="ck-name"
                   type="text"
                   placeholder="key-YYYY-MM-DD"
-                  value={alias}
-                  onChange={(e) => setAlias(e.target.value)}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   disabled={submitting}
-                  aria-invalid={aliasError ? true : undefined}
+                  aria-invalid={nameError ? true : undefined}
                 />
                 <p className="text-xs text-text-secondary">
                   Letters, numbers, dash, underscore, dot. Up to 128 characters.
                 </p>
-                {aliasError ? (
-                  <p className="text-xs text-destructive">{aliasError}</p>
+                {nameError ? (
+                  <p className="text-xs text-destructive">{nameError}</p>
                 ) : null}
               </div>
-
-              {teams.length ? (
-                <div className="flex flex-col gap-1.5">
-                  <label
-                    htmlFor="ck-team"
-                    className="font-mono text-xs font-semibold uppercase tracking-wide text-text-secondary"
-                  >
-                    team
-                  </label>
-                  {/* Native <select> styled to match Input (no shadcn Select in
-                      this project). Class tokens copied from input.tsx. */}
-                  <select
-                    id="ck-team"
-                    value={team}
-                    onChange={(e) => setTeam(e.target.value)}
-                    disabled={submitting}
-                    className="border-input dark:bg-input/30 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                  >
-                    {teams.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.alias}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
 
               <div className="flex flex-col gap-1.5">
                 <label
@@ -278,21 +285,21 @@ export function CreateKeyModal() {
                 >
                   expires
                 </label>
-                <Input
+                {/* Native <select> — a fixed preset, not free text (ACH takes an
+                    absolute expires_at, never a LiteLLM duration string). */}
+                <select
                   id="ck-expires"
-                  type="text"
-                  placeholder="no expiry"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
+                  value={expiry}
+                  onChange={(e) => setExpiry(e.target.value as ExpiryPreset)}
                   disabled={submitting}
-                  aria-invalid={durationError ? true : undefined}
-                />
-                <p className="text-xs text-text-secondary">
-                  Leave blank for no expiry. Format: 90d, 24h, 30m.
-                </p>
-                {durationError ? (
-                  <p className="text-xs text-destructive">{durationError}</p>
-                ) : null}
+                  className="border-input dark:bg-input/30 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                >
+                  {EXPIRY_PRESETS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {formError ? (

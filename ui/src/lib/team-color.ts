@@ -1,11 +1,13 @@
-// team-color.ts — a STABLE categorical color for a team, by its position in the
-// (shared) teams list. Uses the same --cat-1..5 palette as the usage donut, so a
-// given team reads as the same hue wherever it appears (dashboard Team tile, keys
-// table) — both call sites read the SAME useTeams() array, so equal indices agree.
+// team-color.ts — a STABLE categorical color for an item, by its position in a
+// caller-supplied list. Uses the same --cat-1..5 palette as the usage donut, so
+// a given item reads as the same hue wherever it appears. Originally sized for
+// the alitellm-auth team list; the dashboard's Environments pill list is a
+// smaller, order-preserving list built the same way, so the same index-based
+// contract applies unchanged.
 //
-// Index (not a string hash) so the first 5 teams are guaranteed DISTINCT — a hash
-// collides (two teams → same color) even with few teams, which defeats the point.
-// Returns a CSS var string (never a raw hex) for inline `style`.
+// Index (not a string hash) so the first 5 items are guaranteed DISTINCT — a
+// hash collides (two items → same color) even with few items, which defeats
+// the point. Returns a CSS var string (never a raw hex) for inline `style`.
 
 const CAT_VARS = [
   'var(--cat-1)',

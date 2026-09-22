@@ -3,9 +3,10 @@
 // The /api/session/stats `keys[]` is built from spend logs, so a key with NO
 // activity in the window is absent. The TOP API KEYS panel should still list the
 // user's keys (idle ones included), so we union the activity rows with the user's
-// key list — padding any key missing from the activity rows with zeros — then
-// rank by spend desc. Dedup is by id OR alias (a key present in both sources is
-// counted once). Pure + deterministic (no I/O), so it is unit-testable.
+// /platform/keys list — padding any key missing from the activity rows with
+// zeros — then rank by spend desc. Dedup is by key_id OR name (a key present in
+// both sources is counted once). Pure + deterministic (no I/O), so it is
+// unit-testable.
 
 import type { KeyRow, StatsKeyRow } from './api-types';
 
@@ -23,11 +24,11 @@ export function mergeTopKeys(
   // Append the user's keys that have no activity row yet, with zeroed usage.
   const padded: StatsKeyRow[] = userKeys
     .filter(
-      (k) => !(k.id && seen.has(k.id)) && !(k.key_alias && seen.has(k.key_alias))
+      (k) => !seen.has(k.key_id) && !(k.name && seen.has(k.name))
     )
     .map((k) => ({
-      id: k.id,
-      key_alias: k.key_alias,
+      id: k.key_id,
+      key_alias: k.name ?? null,
       requests: 0,
       spend: 0,
       spend_pct: 0,

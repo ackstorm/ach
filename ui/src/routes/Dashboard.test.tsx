@@ -2,32 +2,26 @@
 //
 // The keys data hook (useKeys) is fully mocked so NO real fetch happens; each
 // test programs its return to drive the metric/empty/populated branches. The
-// delete mutation (useDeleteKey, used by the DeleteKeyModal the dashboard
-// renders) is mocked too. The create-key-modal + fresh-keys stores are reset
-// between tests; the REAL toast store is reset so the delete success toast
-// stays isolated. The clipboard is stubbed for the endpoint-copy path.
+// suspend/resume + delete mutations (used by KeysTable / DeleteKeyModal the
+// dashboard renders) are mocked too. The create-key-modal + fresh-keys stores
+// are reset between tests; the REAL toast store is reset so the delete success
+// toast stays isolated. The clipboard is stubbed for the endpoint-copy path.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UseQueryResult } from '@tanstack/react-query';
+import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import type { KeyRow, SessionMe } from '@/lib/api-types';
 
 // Mock the keys hooks module — useKeys drives the dashboard metrics/table,
-// useDeleteKey backs the DeleteKeyModal the dashboard renders.
+// useDeleteKey backs the DeleteKeyModal, useSuspendKey/useResumeKey back the
+// KeysTable kebab.
 vi.mock('@/hooks/use-keys', () => ({
   useKeys: vi.fn(),
   useDeleteKey: vi.fn(),
-  useMakeDefault: vi.fn(),
-  useToggleKeyBlock: vi.fn(),
-  useChangeKeyTeam: vi.fn(),
-  KEYS_QUERY_KEY: ['session', 'keys'],
-}));
-
-// KeysTable (mounted by the dashboard) reads useTeams to gate its Change-team
-// action — mock it to [] so the dashboard test renders without a QueryClient.
-vi.mock('@/hooks/use-teams', () => ({
-  useTeams: vi.fn(() => ({ data: [] })),
+  useSuspendKey: vi.fn(),
+  useResumeKey: vi.fn(),
+  KEYS_QUERY_KEY: vi.fn(() => ['keys', null]),
 }));
 
 // useStats backs the "Requests (MTD)" tile — mocked so no real fetch fires (the
@@ -38,14 +32,12 @@ vi.mock('@/hooks/use-stats', () => ({
 }));
 
 import {
-  useChangeKeyTeam,
   useDeleteKey,
   useKeys,
-  useMakeDefault,
-  useToggleKeyBlock,
+  useResumeKey,
+  useSuspendKey,
 } from '@/hooks/use-keys';
 import { useStats } from '@/hooks/use-stats';
-import { useTeams } from '@/hooks/use-teams';
 import { Dashboard } from './Dashboard';
 import { formatCurrency } from '@/lib/format';
 import {
@@ -56,15 +48,14 @@ import {
   initialFreshKeysState,
   useFreshKeysStore,
 } from '@/stores/fresh-keys';
+import { initialSessionState, useSessionStore } from '@/stores/session';
 import { initialToastState, useToastStore } from '@/hooks/use-toast';
 
 const useKeysMock = vi.mocked(useKeys);
 const useDeleteKeyMock = vi.mocked(useDeleteKey);
-const useMakeDefaultMock = vi.mocked(useMakeDefault);
-const useToggleKeyBlockMock = vi.mocked(useToggleKeyBlock);
-const useChangeKeyTeamMock = vi.mocked(useChangeKeyTeam);
+const useSuspendKeyMock = vi.mocked(useSuspendKey);
+const useResumeKeyMock = vi.mocked(useResumeKey);
 const useStatsMock = vi.mocked(useStats);
-const useTeamsMock = vi.mocked(useTeams);
 
 // Build a valid SessionMe fixture with overrides.
 function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
@@ -79,21 +70,17 @@ function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
   };
 }
 
-// A minimal projected /keys row factory.
+// A minimal /platform/keys row factory (mirrors render.KeyListRow).
 function makeRow(overrides: Partial<KeyRow> = {}): KeyRow {
   return {
-    id: 'key-abc123',
-    key_alias: 'my-key',
-    spend: 0,
-    budget: null,
-    tpm_limit: null,
-    rpm_limit: null,
-    models: null,
-    team_id: null,
-    created_at: '2026-03-01T10:00:00+00:00',
-    expires: null,
-    last_used: null,
-    is_default: false,
+    key_id: 'ekid_abc123',
+    type: 'ek',
+    owner_email: 'alice@example.com',
+    environment: 'prod',
+    name: 'my-key',
+    status: 'active',
+    created_at: '2026-03-01T10:00:00Z',
+    expires_at: null,
     ...overrides,
   };
 }
@@ -131,26 +118,24 @@ beforeEach(() => {
   // Reset the real toast store.
   const { toast, dismiss, dismissAll } = useToastStore.getState();
   useToastStore.setState({ ...initialToastState, toast, dismiss, dismissAll }, true);
+  // Seed the session store (KeysTable reads suspend_propagation_seconds).
+  const { loadSession, markExpired } = useSessionStore.getState();
+  useSessionStore.setState(
+    { ...initialSessionState, me: makeMe(), loadSession, markExpired },
+    true,
+  );
   // Default the delete mutation to a no-op resolved mutation.
   useDeleteKeyMock.mockReturnValue({
-    mutateAsync: vi.fn().mockResolvedValue({ status: 'deleted', id: 'key-abc123' }),
+    mutateAsync: vi.fn().mockResolvedValue(null),
     isPending: false,
   } as unknown as ReturnType<typeof useDeleteKey>);
-  // Default the make-default mutation to a no-op.
-  useMakeDefaultMock.mockReturnValue({
+  // Default suspend/resume to no-op mutations.
+  useSuspendKeyMock.mockReturnValue({
     mutate: vi.fn(),
-    isPending: false,
-  } as unknown as ReturnType<typeof useMakeDefault>);
-  // Default the block-toggle mutation to a no-op.
-  useToggleKeyBlockMock.mockReturnValue({
+  } as unknown as UseMutationResult<null, Error, string>);
+  useResumeKeyMock.mockReturnValue({
     mutate: vi.fn(),
-    isPending: false,
-  } as unknown as ReturnType<typeof useToggleKeyBlock>);
-  // Default the change-team mutation to a no-op.
-  useChangeKeyTeamMock.mockReturnValue({
-    mutate: vi.fn(),
-    isPending: false,
-  } as unknown as ReturnType<typeof useChangeKeyTeam>);
+  } as unknown as UseMutationResult<null, Error, string>);
   // Default stats to a non-success state — the Requests (MTD) tile shows EM_DASH.
   useStatsMock.mockReturnValue({
     data: undefined,
@@ -158,8 +143,6 @@ beforeEach(() => {
     isPending: true,
     isError: false,
   } as unknown as ReturnType<typeof useStats>);
-  // Default teams to empty; the multi-team test overrides this per-test.
-  useTeamsMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useTeams>);
 });
 
 afterEach(() => {
@@ -176,30 +159,23 @@ describe('Dashboard — top row + tiles', () => {
     expect(screen.getByText('Alice Example')).toBeInTheDocument();
   });
 
-  it('KEYS & TEAMS tile shows a pill per distinct team the keys belong to', () => {
-    // Pills now derive from the KEYS' team_id (deduped), resolved to the team
-    // alias — NOT the full member-teams list. Two keys on team 'a', one on 'b',
-    // none on 'c' -> Alpha + Bravo pills, no Charlie.
-    useTeamsMock.mockReturnValue({
-      data: [
-        { id: 'a', alias: 'Alpha' },
-        { id: 'b', alias: 'Bravo' },
-        { id: 'c', alias: 'Charlie' },
-      ],
-    } as unknown as ReturnType<typeof useTeams>);
+  it('KEYS & ENVIRONMENTS tile shows a pill per distinct environment the keys belong to', () => {
+    // Pills derive from the KEYS' environment name (deduped) — a display name
+    // already, no id->alias lookup. Two keys on 'prod', one on 'staging', none
+    // on 'qa' -> prod + staging pills, no qa.
     setKeysSuccess([
-      makeRow({ id: 'key-1', team_id: 'a' }),
-      makeRow({ id: 'key-2', team_id: 'a' }),
-      makeRow({ id: 'key-3', team_id: 'b' }),
+      makeRow({ key_id: 'key-1', environment: 'prod' }),
+      makeRow({ key_id: 'key-2', environment: 'prod' }),
+      makeRow({ key_id: 'key-3', environment: 'staging' }),
     ]);
     const { container } = render(<Dashboard me={makeMe()} />);
     // Scope to the KPI row's pills — the KeysTable below also renders each key's
-    // team alias, so an unscoped getByText('Alpha') would match multiple nodes.
+    // environment name, so an unscoped getByText('prod') would match multiple nodes.
     const row = container.querySelector('[data-slot="kpi-row"]') as HTMLElement;
-    const pills = [...row.querySelectorAll('[data-slot="team-pill"]')].map((e) =>
+    const pills = [...row.querySelectorAll('[data-slot="environment-pill"]')].map((e) =>
       e.textContent?.trim(),
     );
-    expect(pills).toEqual(['Alpha', 'Bravo']); // deduped, no Charlie
+    expect(pills).toEqual(['prod', 'staging']); // deduped, no qa
   });
 
   it('Spend (MTD) shows formatCurrency(stats.totals.spend) when stats load', () => {
@@ -248,9 +224,9 @@ describe('Dashboard — top row + tiles', () => {
 describe('Dashboard — Active keys tile', () => {
   it('shows the non-revoked count when the keys query has loaded', () => {
     setKeysSuccess([
-      makeRow({ id: 'key-1' }),
-      makeRow({ id: 'key-2' }),
-      makeRow({ id: 'key-3', revoked: true }),
+      makeRow({ key_id: 'key-1' }),
+      makeRow({ key_id: 'key-2' }),
+      makeRow({ key_id: 'key-3', status: 'revoked' }),
     ]);
     render(<Dashboard me={makeMe()} />);
     // 3 rows, 1 revoked -> 2 active.
@@ -282,9 +258,9 @@ describe('Dashboard — keys section + modals', () => {
   });
 
   it('choosing a row Revoke opens the DeleteKeyModal ("Revoke Key" title appears)', async () => {
-    setKeysSuccess([makeRow({ id: 'key-del' })]);
+    setKeysSuccess([makeRow({ key_id: 'key-del' })]);
     render(<Dashboard me={makeMe()} />);
-    // No delete modal until a row's revoke action (now in the kebab) fires.
+    // No delete modal until a row's revoke action (in the kebab) fires.
     expect(screen.queryByText('Revoke Key')).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('button', { name: 'More actions' }), {
       key: 'Enter',

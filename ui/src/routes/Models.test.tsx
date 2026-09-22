@@ -11,18 +11,11 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ModelRow, ModelsResponse } from '@/lib/api-types';
 
 vi.mock('@/hooks/use-models', () => ({ useModels: vi.fn() }));
-vi.mock('@/hooks/use-keys', () => ({ useHasDefaultKey: vi.fn() }));
 
 import { useModels } from '@/hooks/use-models';
-import { useHasDefaultKey } from '@/hooks/use-keys';
 import { Models } from './Models';
 
 const useModelsMock = vi.mocked(useModels);
-const useHasDefaultKeyMock = vi.mocked(useHasDefaultKey);
-
-// Default: the user HAS a default key (the catalog branches under test need it).
-// The no-default gate has its own suite that flips this to false.
-beforeEach(() => useHasDefaultKeyMock.mockReturnValue(true));
 
 function makeModel(over: Partial<ModelRow> = {}): ModelRow {
   return {
@@ -73,18 +66,6 @@ function setSuccess(models: ModelRow[]): void {
 afterEach(() => {
   vi.clearAllMocks();
   cleanup();
-});
-
-describe('Models — no default key (gate)', () => {
-  it('renders the default-key prompt and does NOT call useModels', () => {
-    useHasDefaultKeyMock.mockReturnValue(false);
-    setSuccess([makeModel()]); // even if programmed, the gate short-circuits
-    render(<Models />);
-    expect(screen.getByText('A default key is required')).toBeInTheDocument();
-    expect(screen.getByText('Models')).toBeInTheDocument(); // header still shows
-    expect(screen.queryByText('ackstorm.fast')).not.toBeInTheDocument();
-    expect(useModelsMock).toHaveBeenCalledWith(false); // fetch disabled
-  });
 });
 
 describe('Models — loading', () => {
