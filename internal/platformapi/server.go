@@ -241,6 +241,9 @@ func New(deps Deps) http.Handler {
 			Audit:     deps.Audit,
 			Logger:    deps.Logger,
 			Namespace: deps.Namespace,
+			SetMaxKeys: func(ctx context.Context, email string, n int) error {
+				return db.SetUserMaxKeys(ctx, deps.Pool, email, n)
+			},
 		}
 		r.Route("/platform/admin", admin.Mount(adminDeps))
 

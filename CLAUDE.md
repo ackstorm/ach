@@ -187,6 +187,8 @@ suspended, or expired; revoked never counts). The ceiling is the Postgres
 `platformApi.userDefaults.maxKeys` → `ACH_USER_MAX_KEYS` (0 = deny by default).
 It is read fresh on every create and never seeded at login; admins are not
 exempt and grant themselves with `PATCH /platform/admin/users/{email}/limits`.
+That admin route accepts `{"max_keys": N}` (N >= 0), upserts the Postgres row,
+returns 204, and takes effect on the next create without a cache delay.
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
 `logout`/`whoami`/`config`/`env`/`keys`/`admin`/`runtime` (workspace verbs

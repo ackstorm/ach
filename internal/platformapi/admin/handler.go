@@ -49,6 +49,9 @@ type Deps struct {
 	Audit     *slog.Logger        // audit.NewLogger handle (audit=true)
 	Logger    *slog.Logger        // operational logger (NOT audit)
 	Namespace string              // POD_NAMESPACE — composed into actor strings
+	// SetMaxKeys upserts one person's ek_ key ceiling. Production binds this
+	// to db.SetUserMaxKeys; the function seam keeps handler tests pool-free.
+	SetMaxKeys func(ctx context.Context, email string, maxKeys int) error
 }
 
 // revokeRequest is the JSON body of POST /platform/admin/keys/revoke.
