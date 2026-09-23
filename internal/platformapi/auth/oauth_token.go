@@ -192,6 +192,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, cl
 // second release on another LiteLLM sharing this DB, a reset) would
 // otherwise be replayed forever as "Invalid proxy server token".
 func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error {
+	d.seedUserBudgetTag(ctx, sub)
 	cur, err := d.lookupOAuthPK(ctx, sub)
 	if err != nil {
 		return err
@@ -213,6 +214,30 @@ func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error 
 	}
 	_, _, err = d.mint(ctx, sub, userID, "oauth")
 	return err
+}
+
+// seedUserBudgetTag applies the chart-configured default spend ceiling to
+// the caller's user:<email> tag if that tag carries no budget yet.
+//
+// WHY it lives here and not only in the SSO callback: provisionUser seeds
+// at the Dex code exchange, which a user reaches once and then not again
+// for as long as their refresh token keeps rotating. Anyone who first
+// logged in before this feature shipped — or before the chart set a
+// default — would never be seeded at all, and would run with no ceiling
+// indefinitely. ensureOAuthPK is the single funnel every grant crosses:
+// login, /token refresh, the device grant, and console revalidation.
+//
+// Best-effort ON PURPOSE, unlike the callback's fail-loud seeding. This
+// path carries token refresh, so failing the request on a LiteLLM blip
+// would sign out every active user at once. What is missing on failure is
+// a ceiling, not a credential: the grant is still sound, and the next
+// refresh retries within the access-token lifetime. The no-clobber guard
+// (an existing budget is never overwritten) lives inside
+// upsertUserBudgetTag, so an admin-set ceiling is safe here too.
+func (d OAuthDeps) seedUserBudgetTag(ctx context.Context, email string) {
+	if err := upsertUserBudgetTag(ctx, d.Auth, email); err != nil {
+		d.Auth.Logger.Warn("oauth: user budget tag not seeded", "err", err)
+	}
 }
 
 // liteLLMHasKey reports whether LiteLLM still lists the row's key under

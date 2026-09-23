@@ -271,14 +271,14 @@ func upsertUserBudgetTag(ctx context.Context, deps Deps, email string) error {
 	tag := litellm.UserBudgetTag(email)
 	info, err := deps.LiteLLM.TagInfo(ctx, tag)
 	if err != nil {
-		deps.Logger.Error("sso.callback: read user budget tag", "tag", tag, "err", err)
+		deps.Logger.Error("provision: read user budget tag", "tag", tag, "err", err)
 		return &provisionErr{kind: provisionKindLitellm, err: err}
 	}
 	if info != nil && info.Budget != nil {
 		return nil // already capped — never clobber an admin's value
 	}
 	if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, *deps.UserBudget); err != nil {
-		deps.Logger.Error("sso.callback: user budget tag", "tag", tag, "err", err)
+		deps.Logger.Error("provision: write user budget tag", "tag", tag, "err", err)
 		return &provisionErr{kind: provisionKindLitellm, err: err}
 	}
 	return nil
