@@ -729,6 +729,23 @@ user; the user reaches an `/mcp/<name>` only through an Environment whose
 the pk_ case above ("A fresh `pk_` reaches nothing…"): the Environment's
 grants, then wait one reconcile.
 
+**It can equally mean the name does not exist at all**, and nothing before
+the 403 will tell you so. `GET /.well-known/oauth-protected-resource/mcp/<name>`
+answers 200 with a well-formed document for ANY well-formed name, declared or
+not — deliberate, not a bug: `proxy.WellKnownHandler` holds no resolver
+precisely so this anonymous endpoint cannot become an existence oracle over
+every MCP server in the deployment (D-15 applied to the anonymous surface; see
+the doc comment there). So the client discovers happily, runs a full OAuth
+ceremony against a real AS, gets a real token that verifies — and only the
+first real call 403s. A typo in the server name is indistinguishable from a
+missing grant at every step up to that point.
+
+Confirm the name exists before hunting grants (needs an admin credential):
+
+```bash
+ach-cli runtime mcp list
+```
+
 ### ❌ MCP client refuses: "Protected resource `<X>` does not match expected `<Y>`"
 
 ```
