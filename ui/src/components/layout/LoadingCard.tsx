@@ -2,7 +2,7 @@
 // LoadingCard). Rendered for BOTH the `loading` and `expired` views (expired
 // also fires a silent redirect effect in App.tsx, so the card is only a brief
 // placeholder). All copy is LOCKED per the UI-SPEC §Copywriting Contract:
-// INITIALIZING / "Connecting to alitellm-auth..." / "Verifying your session,
+// INITIALIZING / "Connecting to ACH..." / "Verifying your session,
 // please wait." / "checking session".
 //
 // The locked copy strings are hardcoded per the UI-SPEC (parity with app.js,
@@ -31,7 +31,7 @@ export function LoadingCard() {
             </span>
           </div>
           <h1 className="text-2xl font-semibold leading-tight text-text-primary">
-            Connecting to alitellm-auth...
+            Connecting to ACH...
           </h1>
           <p className="mt-1.5 text-sm text-text-secondary">
             Verifying your session, please wait.

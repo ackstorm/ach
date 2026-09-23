@@ -24,7 +24,7 @@ export interface SiteFooterProps {
 }
 
 export function SiteFooter({ config, rightSlot }: SiteFooterProps) {
-  const brand = config.brand || 'alitellm-auth';
+  const brand = config.brand || 'ACH';
   const links = config.links ?? {};
   const year = new Date().getFullYear();
   const privacy = links.privacy || null;

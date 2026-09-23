@@ -174,19 +174,26 @@ export function Dashboard({ me }: DashboardProps) {
 
       {/* DASH-06: metric header — the STATS KPI cards (requests/tokens/spend,
           with deltas) over MTD, with a combined keys+environments tile in the
-          4th slot in place of AVG COST. */}
-      <KpiRow
-        totals={stats.isSuccess ? stats.data?.totals : undefined}
-        series={stats.isSuccess ? stats.data?.series : undefined}
-        fourthCard={
-          <KeysEnvironmentsTile
-            keyRows={
-              query.isSuccess && query.data ? selectKeyRows(query.data) : null
-            }
-            fallback={EM_DASH}
-          />
-        }
-      />
+          4th slot in place of AVG COST. The Stats page defaults to a rolling
+          7d window instead — this caption exists so the two don't read as
+          contradictory. */}
+      <div className="flex flex-col gap-2">
+        <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+          This month
+        </p>
+        <KpiRow
+          totals={stats.isSuccess ? stats.data?.totals : undefined}
+          series={stats.isSuccess ? stats.data?.series : undefined}
+          fourthCard={
+            <KeysEnvironmentsTile
+              keyRows={
+                query.isSuccess && query.data ? selectKeyRows(query.data) : null
+              }
+              fallback={EM_DASH}
+            />
+          }
+        />
+      </div>
 
       {/* DASH-02: API KEYS section — full width (the dashboard has no sidebar) */}
       <div className="flex min-w-0 flex-col gap-5">
@@ -196,7 +203,7 @@ export function Dashboard({ me }: DashboardProps) {
               API Keys
             </h1>
             <p className="mt-1 max-w-2xl font-sans text-sm text-text-secondary">
-              Create and manage your LiteLLM virtual keys.
+              Create and manage your ACH environment keys.
             </p>
           </div>
           <button

@@ -86,7 +86,7 @@ describe('App driver — loading', () => {
   it('status null -> LoadingCard with locked copy', () => {
     renderApp(); // initial status is null
     expect(screen.getByText('INITIALIZING')).toBeInTheDocument();
-    expect(screen.getByText('Connecting to alitellm-auth...')).toBeInTheDocument();
+    expect(screen.getByText('Connecting to ACH...')).toBeInTheDocument();
   });
 });
 

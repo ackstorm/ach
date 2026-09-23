@@ -39,11 +39,11 @@ describe('SiteFooter — copyright line', () => {
     ).toBeInTheDocument();
   });
 
-  it('falls back to "alitellm-auth" when brand is empty', () => {
+  it('falls back to "ACH" when brand is empty', () => {
     const year = new Date().getFullYear();
     render(<SiteFooter config={makeConfig({ brand: '' })} />);
     expect(
-      screen.getByText(`© ${year} alitellm-auth. All rights reserved.`),
+      screen.getByText(`© ${year} ACH. All rights reserved.`),
     ).toBeInTheDocument();
   });
 });

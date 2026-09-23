@@ -52,7 +52,7 @@ export interface LoginProps {
 
 export function Login({ config }: LoginProps) {
   const links = config.links ?? {};
-  const brandShort = config.brand_short || 'LiteLLM';
+  const brandShort = config.brand_short || 'ACH';
   const tagline = config.tagline || '';
   const providers =
     Array.isArray(config.providers) && config.providers.length

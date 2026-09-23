@@ -2,7 +2,7 @@
 // ErrorCard). Shown when resolveState returns `error` (network failure status 0,
 // or any 4xx/5xx that is not the cold-load 401). All copy is LOCKED per the
 // UI-SPEC §Copywriting Contract: ERROR / "Service Unavailable" / "Unable to
-// reach alitellm-auth. Try refreshing the page." / "retry".
+// reach ACH. Try refreshing the page." / "retry".
 //
 // Carry-forward C1: the parent passes `retrying` (true while a loadSession is in
 // flight, i.e. status === null). The retry button is DISABLED while retrying so
@@ -38,7 +38,7 @@ export function ErrorCard({ onRetry, retrying = false }: ErrorCardProps) {
             Service Unavailable
           </h1>
           <p className="mt-1.5 text-sm text-text-secondary">
-            Unable to reach alitellm-auth. Try refreshing the page.
+            Unable to reach ACH. Try refreshing the page.
           </p>
         </div>
         <div className="px-8 py-7">

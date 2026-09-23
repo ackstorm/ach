@@ -64,6 +64,21 @@ describe('HowTo — quickstart SDK tabs', () => {
   });
 });
 
+// ACH ground truth (do not regress): keys are ek_/pk_, the credential header is
+// x-ach-key taken verbatim (no Bearer prefix), and x-litellm-api-key is a
+// passthrough slot that must never appear in a recommended snippet.
+describe('HowTo — ACH auth ground truth', () => {
+  it('renders x-ach-key and an ek_ placeholder, and never sk- or x-litellm-api-key', () => {
+    setModels([]);
+    const { container } = render(<HowTo />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('x-ach-key');
+    expect(text).toContain('ek_');
+    expect(text).not.toContain('sk-');
+    expect(text).not.toContain('x-litellm-api-key');
+  });
+});
+
 describe('HowTo — troubleshooting', () => {
   it('has a troubleshooting section with common errors', () => {
     setModels([]);

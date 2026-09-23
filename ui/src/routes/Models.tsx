@@ -46,8 +46,9 @@ import {
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useModels } from '@/hooks/use-capabilities';
 import type { ModelRow } from '@/lib/api-types';
+import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
 import { abbreviate, formatPricePerMillion } from '@/lib/format';
-import { isRouterModel } from '@/lib/model-classify';
+import { isA2aModelRow, isRouterModel } from '@/lib/model-classify';
 import { cn } from '@/lib/utils';
 import { useSessionStore } from '@/stores/session';
 
@@ -194,16 +195,12 @@ function CapabilitiesCell({ row }: { row: ModelRow }) {
   );
 }
 
-// The literal key placeholder — the real sk- is shown ONCE at mint time (Keys
-// tab), NEVER on this page (security constraint).
-const KEY_PLACEHOLDER = 'sk-...';
-// Fallback gateway host before the session endpoint resolves.
-const FALLBACK_API_BASE = 'https://api.your-domain.example';
-
 // A ready-to-run curl for one alias against the live gateway (key = placeholder).
+// The real ek_/pk_ is shown ONCE at mint time (Keys tab), NEVER on this page
+// (security constraint).
 function curlSnippet(endpoint: string, alias: string): string {
   return `curl ${endpoint}/v1/chat/completions \\
-  -H "x-litellm-api-key: Bearer ${KEY_PLACEHOLDER}" \\
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"${alias}","messages":[{"role":"user","content":"Hello!"}]}'`;
 }
@@ -370,7 +367,9 @@ export function Models() {
     );
   }
 
-  const models = query.data?.models ?? [];
+  // A2A agents ride the same catalog under providers: ["a2a1"] — they aren't
+  // models, so they're excluded from this table entirely.
+  const models = (query.data?.models ?? []).filter((m) => !isA2aModelRow(m));
   const modeOptions = modelModeOptions(models);
 
   // Provisioning (§10.2 fact 3): the caller's shell team has not yet been

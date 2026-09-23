@@ -195,7 +195,7 @@ describe('KeysTable — populated table', () => {
     expect(screen.getByText('Jun 15, 2027')).toBeInTheDocument();
   });
 
-  it('renders the State badge for each of the five effective states', () => {
+  it('renders the State badge for each of the five effective states (revoked shown via the toggle)', () => {
     setRows([
       makeRow({ key_id: 'k1', status: 'active' }),
       makeRow({ key_id: 'k2', status: 'suspended' }),
@@ -204,10 +204,46 @@ describe('KeysTable — populated table', () => {
       makeRow({ key_id: 'k5', status: 'revoked' }),
     ]);
     render(<KeysTable onDelete={vi.fn()} />);
+    // Revoked is hidden by default — reveal it via the toggle.
+    fireEvent.click(screen.getByRole('checkbox', { name: /show revoked/i }));
 
     for (const label of ['Active', 'Suspended', 'Expired', 'Invalid', 'Revoked']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+});
+
+describe('KeysTable — revoked keys hidden by default', () => {
+  it('hides revoked rows and offers a "Show revoked (N)" toggle', () => {
+    setRows([
+      makeRow({ key_id: 'k1', status: 'active' }),
+      makeRow({ key_id: 'k2', status: 'revoked', name: 'dead-key' }),
+    ]);
+    render(<KeysTable onDelete={vi.fn()} />);
+
+    expect(screen.queryByText('dead-key')).not.toBeInTheDocument();
+    const toggle = screen.getByRole('checkbox', { name: 'Show revoked (1)' });
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(screen.getByText('dead-key')).toBeInTheDocument();
+  });
+
+  it('shows no toggle when there are no revoked keys', () => {
+    setRows([makeRow({ key_id: 'k1', status: 'active' })]);
+    render(<KeysTable onDelete={vi.fn()} />);
+    expect(screen.queryByRole('checkbox', { name: /show revoked/i })).not.toBeInTheDocument();
+  });
+
+  it('shows filtered-empty copy (not the "no keys at all" copy) when every key is revoked and hidden', () => {
+    setRows([makeRow({ key_id: 'k1', status: 'revoked' })]);
+    render(<KeysTable onDelete={vi.fn()} />);
+
+    expect(screen.getByText('No visible API Keys')).toBeInTheDocument();
+    expect(screen.queryByText('No API Keys')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Check "Show revoked" above to view them\./),
+    ).toBeInTheDocument();
   });
 });
 
@@ -266,6 +302,8 @@ describe('KeysTable — actions per state', () => {
   it('revoked: no actions available', async () => {
     setRows([makeRow({ status: 'revoked' })]);
     render(<KeysTable onDelete={vi.fn()} />);
+    // Revoked is hidden by default — reveal it via the toggle first.
+    fireEvent.click(screen.getByRole('checkbox', { name: /show revoked/i }));
     fireEvent.keyDown(screen.getByRole('button', { name: 'More actions' }), { key: 'Enter' });
     await screen.findByRole('menuitem', { name: 'No actions available' });
     expect(screen.queryByRole('menuitem', { name: 'Revoke key' })).not.toBeInTheDocument();

@@ -161,6 +161,12 @@ describe('Dashboard — top row + tiles', () => {
     expect(screen.getByText('Alice Example')).toBeInTheDocument();
   });
 
+  it('labels the KPI row window as "This month" (Stats defaults to a different window)', () => {
+    setKeysSuccess([]);
+    render(<Dashboard me={makeMe()} />);
+    expect(screen.getByText('This month')).toBeInTheDocument();
+  });
+
   it('KEYS & ENVIRONMENTS tile shows a pill per distinct environment the keys belong to', () => {
     // Pills derive from the KEYS' environment name (deduped) — a display name
     // already, no id->alias lookup. Two keys on 'prod', one on 'staging', none

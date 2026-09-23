@@ -179,6 +179,16 @@ describe('Models — populated', () => {
     expect(screen.queryByText('blind')).not.toBeInTheDocument();
   });
 
+  it('filters out A2A agent rows (providers starting with "a2a")', () => {
+    setSuccess([
+      makeModel({ name: 'gemini/flash', providers: ['gemini'] }),
+      makeModel({ name: 'agent.finops-advisor', providers: ['a2a1'] }),
+    ]);
+    render(<Models />);
+    expect(screen.getByText('gemini/flash')).toBeInTheDocument();
+    expect(screen.queryByText('agent.finops-advisor')).not.toBeInTheDocument();
+  });
+
   it('shows "Dynamic" for auto-router price and context', () => {
     setSuccess([
       makeModel({

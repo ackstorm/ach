@@ -19,9 +19,18 @@
 // placeholder host when the endpoint is absent/unparseable.
 //
 // SECURITY (T-10-01 / info disclosure): this page NEVER renders a real key. The
-// curl/exports show the literal `sk-...` placeholder; minting (and the one-time
-// `sk-` reveal) happens only on the Keys tab. Copy buttons write exactly the
+// curl/exports show the literal `ek_...` placeholder; minting (and the one-time
+// key reveal) happens only on the Keys tab. Copy buttons write exactly the
 // shown text on an explicit click (useCopyFeedback) — no auto-copy, no logging.
+//
+// AUTH (ground truth, do not re-derive): ACH keys are `ek_…`/`pk_…` — there is
+// no `sk-` key. The forwarder resolves the declared credential header slots
+// (x-ach-key / x-api-key, chart default) VERBATIM — no `Bearer ` prefix, ever.
+// `Authorization: Bearer` is resolved ONLY for ACH's own OAuth JWT; a raw
+// ek_/pk_ there is forwarded untouched and LiteLLM rejects it. So every SDK
+// snippet here sets a custom header (default_headers/defaultHeaders) instead
+// of the SDK's own `api_key`, and every third-party tool without a
+// custom-header option gets an honest caveat instead of a snippet that 401s.
 
 import { useState } from 'react';
 import {
@@ -40,25 +49,15 @@ import { useNavigate } from 'react-router';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useModels } from '@/hooks/use-capabilities';
+import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
 import { TAB_PILL, TAB_PILL_LIST } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 import { deriveSubdomainUrl } from '@/lib/urls';
 import { useConfigStore } from '@/stores/config';
 import { useSessionStore } from '@/stores/session';
 
-// The literal key placeholder shown everywhere a real `sk-` would go. The real
-// key is shown ONCE, at creation, on the Keys tab — never on this page.
-const KEY_PLACEHOLDER = 'sk-...';
-
 // Featured model alias for the quickstart (locked copy — the standard alias).
 const MODEL_ALIAS = 'ackstorm.fast';
-
-// LiteLLM auth header (the deployment's standard: a Bearer value under the
-// custom header name, not the bare Authorization header).
-const AUTH_HEADER = 'x-litellm-api-key';
-
-// Fallback host shown before the session endpoint resolves / when unparseable.
-const FALLBACK_API_BASE = 'https://api.your-domain.example';
 
 // `deriveSubdomainUrl` now lives in @/lib/urls (shared with the CHAT nav button).
 
@@ -180,12 +179,12 @@ export function HowTo() {
   const apiBase = me?.endpoint || FALLBACK_API_BASE;
   const chatUrl =
     config.chat_public_url || deriveSubdomainUrl(me?.endpoint, 'chat');
-  const brandShort = config.brand_short || 'LiteLLM';
+  const brandShort = config.brand_short || 'ACH';
 
-  // The quickstart curl — the featured first call. Header is the deployment's
-  // standard `x-litellm-api-key: Bearer sk-...` form; the key is the placeholder.
+  // The quickstart curl — the featured first call. Header is ACH's declared
+  // credential slot, value taken VERBATIM — no `Bearer ` prefix.
   const curlSnippet = `curl ${apiBase}/v1/chat/completions \\
-  -H "${AUTH_HEADER}: Bearer ${KEY_PLACEHOLDER}" \\
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${pickedModel}",
@@ -193,9 +192,16 @@ export function HowTo() {
   }'`;
 
   // Same first call from the official OpenAI SDKs (the gateway is OpenAI-compatible).
+  // The SDK's own `api_key` lands in `Authorization: Bearer`, which ACH does NOT
+  // resolve for a raw key — so the key goes in an explicit custom header instead,
+  // via the SDK's default-headers option. `api_key` is a required-but-unused dummy.
   const pySnippet = `from openai import OpenAI
 
-client = OpenAI(api_key="${KEY_PLACEHOLDER}", base_url="${apiBase}/v1")
+client = OpenAI(
+    api_key="unused",
+    base_url="${apiBase}/v1",
+    default_headers={"${AUTH_HEADER}": "${KEY_PLACEHOLDER}"},
+)
 
 resp = client.chat.completions.create(
     model="${pickedModel}",
@@ -206,8 +212,9 @@ print(resp.choices[0].message.content)`;
   const tsSnippet = `import OpenAI from "openai";
 
 const client = new OpenAI({
-  apiKey: "${KEY_PLACEHOLDER}",
+  apiKey: "unused",
   baseURL: "${apiBase}/v1",
+  defaultHeaders: { "${AUTH_HEADER}": "${KEY_PLACEHOLDER}" },
 });
 
 const resp = await client.chat.completions.create({
@@ -224,15 +231,16 @@ console.log(resp.choices[0].message.content);`;
 
   // ── MCP gateway ────────────────────────────────────────────────────────────────
   // LiteLLM exposes an MCP gateway on the SAME host, under /mcp, authenticated with
-  // the SAME `x-litellm-api-key` Bearer key. An optional `x-mcp-servers` header (or
-  // a /mcp/<group> URL) scopes the exposed tools to named servers and/or groups.
+  // the SAME ACH credential header (verbatim, no Bearer prefix). An optional
+  // `x-mcp-servers` header (or a /mcp/<group> URL) scopes the exposed tools to
+  // named servers and/or groups.
   const mcpUrl = `${apiBase}/mcp`;
   const mcpConfig = `{
   "mcpServers": {
     "litellm": {
       "url": "${mcpUrl}",
       "headers": {
-        "${AUTH_HEADER}": "Bearer ${KEY_PLACEHOLDER}"
+        "${AUTH_HEADER}": "${KEY_PLACEHOLDER}"
       }
     }
   }
@@ -242,7 +250,7 @@ console.log(resp.choices[0].message.content);`;
     "litellm": {
       "url": "${mcpUrl}",
       "headers": {
-        "${AUTH_HEADER}": "Bearer ${KEY_PLACEHOLDER}",
+        "${AUTH_HEADER}": "${KEY_PLACEHOLDER}",
         "x-mcp-servers": "Zapier_Gmail,dev-group"
       }
     }
@@ -251,11 +259,11 @@ console.log(resp.choices[0].message.content);`;
   // Quick smoke test via the MCP REST API — list/call tools with curl, no LLM.
   const mcpCurl = `# List the MCP tools you can access
 curl -s ${apiBase}/mcp-rest/tools/list \\
-  -H "${AUTH_HEADER}: Bearer ${KEY_PLACEHOLDER}" | jq .
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" | jq .
 
 # Call a tool (server_id + tool name + arguments)
 curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
-  -H "${AUTH_HEADER}: Bearer ${KEY_PLACEHOLDER}" \\
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "server_id": "Zapier_Gmail",
@@ -265,9 +273,10 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
 
   // ── Editor / CLI setup ───────────────────────────────────────────────────────
   // Live setup for Claude Code, Gemini CLI, opencode, and codex. The base URL is
-  // the user's live gateway (apiBase); the key is the `sk-...` placeholder (mint
+  // the user's live gateway (apiBase); the key is the `ek_...` placeholder (mint
   // it on Keys). `caption` overrides the code-box label (e.g. a config-file path);
   // `note` adds a one-line instruction; `guide` links the authoritative doc.
+  const opencodeSsoCmd = `opencode plugin ${apiBase}/platform/opencode-auth -g`;
   // Tools are grouped by family (top-level tab). A family with more than one
   // variant (e.g. OpenCode → Gemini / OpenAI, Claude Code → API / Pro·Max)
   // renders a second row of pill sub-tabs; single-variant families render the
@@ -291,21 +300,29 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
     // `false` keeps the entry in source (deprecated / unmaintained setups stay
     // documented here) but hides it from the page — see VISIBLE_TOOLS below.
     enabled?: boolean;
+    // Rendered above the variant tabs — used by OpenCode to lead with the SSO
+    // plugin (no key to copy/export) ahead of the pasted-key fallback below.
+    intro?: { text: string; code: string; caption: string };
     variants: ToolVariant[];
   }[] = [
     {
       id: 'opencode',
       label: 'OpenCode',
+      intro: {
+        text: 'Recommended: sign in via the ACH SSO plugin — no key to copy or export. The config below (with a pasted key) is the fallback.',
+        caption: 'install',
+        code: opencodeSsoCmd,
+      },
       variants: [
         {
           id: 'opencode-gemini',
           subLabel: 'Gemini',
           ready: true,
           caption: '~/.config/opencode/opencode.json',
-          // OpenCode can instead use its native `google` provider against the gateway's
-          // Gemini-compatible passthrough (/gemini/v1beta). Model names must match the
-          // Gemini models your gateway exposes. apiKey is read from the LITELLM_API_KEY
-          // env var (opencode `{env:...}` interpolation), same as Codex.
+          // Fallback (see intro above): OpenCode's native `google` provider against the
+          // gateway's Gemini-compatible passthrough (/gemini/v1beta). Model names must
+          // match the Gemini models your gateway exposes. apiKey is read from the
+          // LITELLM_API_KEY env var (opencode `{env:...}` interpolation), same as Codex.
           code: `{
   "$schema": "https://opencode.ai/config.json",
   "enabled_providers": ["google"],
@@ -321,7 +338,7 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
   "model": "google/gemini-flash-latest",
   "small_model": "google/gemini-flash-lite-latest"
 }`,
-          note: 'Export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="sk-..."`, then run `opencode`. Model names must match the Gemini models your gateway exposes.',
+          note: 'Fallback: export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="ek_..."`, then run `opencode`. Model names must match the Gemini models your gateway exposes.',
           guide: {
             url: 'https://docs.litellm.ai/docs/tutorials/opencode_integration',
             label: 'OpenCode + LiteLLM guide',
@@ -332,9 +349,10 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
           subLabel: 'OpenAI',
           ready: true,
           caption: '~/.config/opencode/opencode.json',
-          // opencode is configured by a JSON file: an OpenAI-compatible provider pointed
-          // at the gateway. The model keys MUST match LiteLLM aliases. apiKey is read from
-          // the LITELLM_API_KEY env var (opencode `{env:...}` interpolation), same as Codex.
+          // Fallback (see intro above): opencode configured by a JSON file, an
+          // OpenAI-compatible provider pointed at the gateway. The model keys MUST
+          // match LiteLLM aliases. apiKey is read from the LITELLM_API_KEY env var
+          // (opencode `{env:...}` interpolation), same as Codex.
           code: `{
   "$schema": "https://opencode.ai/config.json",
   "provider": {
@@ -352,7 +370,7 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
     }
   }
 }`,
-          note: 'Export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="sk-..."`, then run `opencode` and pick a LiteLLM model with `/models`.',
+          note: 'Fallback: export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="ek_..."`, then run `opencode` and pick a LiteLLM model with `/models`.',
           guide: {
             url: 'https://docs.litellm.ai/docs/tutorials/opencode_integration',
             label: 'OpenCode + LiteLLM guide',
@@ -369,19 +387,22 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
           ready: true,
           caption: '~/.pi/agent/models.json',
           // Pi is configured by JSON, not env vars: providers keyed by name, each
-          // pointing at the gateway. `$LITELLM_API_KEY` is pi's own env
-          // interpolation, so the key never lands in the file.
+          // pointing at the gateway. `apiKey` would send an Authorization: Bearer
+          // header, which ACH does not resolve for a raw key — pi's `headers`
+          // field sends the ACH credential header directly instead.
+          // `$ACH_API_KEY` is pi's own env interpolation, so the key never lands
+          // in the file.
           code: `{
   "providers": {
     "google": {
       "api": "google-generative-ai",
       "baseUrl": "${apiBase}/v1beta",
-      "apiKey": "$LITELLM_API_KEY"
+      "headers": { "${AUTH_HEADER}": "$ACH_API_KEY" }
     },
     "litellm": {
       "api": "openai-completions",
       "baseUrl": "${apiBase}/v1",
-      "apiKey": "$LITELLM_API_KEY",
+      "headers": { "${AUTH_HEADER}": "$ACH_API_KEY" },
       "models": [
         {
           "id": "ackstorm.fast",
@@ -405,7 +426,7 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
     }
   }
 }`,
-          note: 'Install with npm install -g --ignore-scripts @earendil-works/pi-coding-agent (or curl -fsSL https://pi.dev/install.sh | sh), export the key pi interpolates — export LITELLM_API_KEY="sk-..." — then run pi. An openai-completions provider needs an explicit models array: pi ships no catalog for custom gateways, so add one entry per alias you use. The google provider needs no list — it reuses pi’s built-in Gemini catalog against the gateway.',
+          note: 'Install with npm install -g --ignore-scripts @earendil-works/pi-coding-agent (or curl -fsSL https://pi.dev/install.sh | sh), export the key pi interpolates — export ACH_API_KEY="ek_..." — then run pi. An openai-completions provider needs an explicit models array: pi ships no catalog for custom gateways, so add one entry per alias you use. The google provider needs no list — it reuses pi’s built-in Gemini catalog against the gateway.',
           guide: {
             url: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md',
             label: 'Pi providers doc',
@@ -435,9 +456,13 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
           id: 'claude-api',
           subLabel: 'API',
           ready: true,
+          // ANTHROPIC_API_KEY (not ANTHROPIC_AUTH_TOKEN) — Claude Code sends it as
+          // `x-api-key`, one of ACH's resolved credential slots by chart default.
+          // ANTHROPIC_AUTH_TOKEN sends `Authorization: Bearer`, which ACH does NOT
+          // resolve for a raw key.
           code: `# Claude Code → LiteLLM
 export ANTHROPIC_BASE_URL="${apiBase}"
-export ANTHROPIC_AUTH_TOKEN=${KEY_PLACEHOLDER}
+export ANTHROPIC_API_KEY=${KEY_PLACEHOLDER}
 export ANTHROPIC_MODEL="ackstorm.smart"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="ackstorm.smart"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="ackstorm.fast"
@@ -466,12 +491,13 @@ claude`,
           ready: true,
           // MAX/Pro subscription flow (NOT an API key): ANTHROPIC_API_KEY is left empty
           // so Claude Code authenticates with your Claude subscription OAuth token. The
-          // gateway key rides in ANTHROPIC_CUSTOM_HEADERS (x-litellm-api-key) purely for
-          // budget/limit tracking. ANTHROPIC_MODEL must be a real model your gateway maps.
+          // gateway key rides in ANTHROPIC_CUSTOM_HEADERS (ACH's credential header,
+          // value verbatim — no Bearer prefix) purely for budget/limit tracking.
+          // ANTHROPIC_MODEL must be a real model your gateway maps.
           code: `# Claude Code → LiteLLM (MAX/Pro subscription)
 export ANTHROPIC_API_KEY=""
 export ANTHROPIC_BASE_URL="${apiBase}"
-export ANTHROPIC_CUSTOM_HEADERS="${AUTH_HEADER}: Bearer ${KEY_PLACEHOLDER}"
+export ANTHROPIC_CUSTOM_HEADERS="${AUTH_HEADER}: ${KEY_PLACEHOLDER}"
 export ANTHROPIC_MODEL="claude-opus-4-8"
 
 claude`,
@@ -492,8 +518,10 @@ claude`,
           ready: true,
           caption: '~/.codex/config.toml',
           // Codex is configured by a TOML provider (NOT endpoint env vars): a named
-          // OpenAI-compatible provider pointed at the gateway. The key is read from the
-          // env var named by `env_key`, so export it before running `codex`.
+          // OpenAI-compatible provider pointed at the gateway. `env_key` would send
+          // the key as `Authorization: Bearer`, which ACH does not resolve for a raw
+          // key — `env_http_headers` sends it as ACH's own credential header instead,
+          // read from the named env var.
           code: `model = "ackstorm.router"
 model_provider = "ackstorm"
 model_reasoning_effort = "medium"
@@ -501,10 +529,10 @@ model_reasoning_effort = "medium"
 [model_providers.ackstorm]
 name = "ACKstorm"
 base_url = "${apiBase}/v1"
-env_key = "LITELLM_API_KEY"
+env_http_headers = { "${AUTH_HEADER}" = "ACH_API_KEY" }
 wire_api = "responses"
 supports_websockets = false`,
-          note: 'Export the key named by env_key first: `export LITELLM_API_KEY="sk-..."`, then run `codex`. Fallback (no config file): `export OPENAI_API_KEY=… OPENAI_BASE_URL=…/v1` then `codex --model …`.',
+          note: 'Export the key named in env_http_headers first: `export ACH_API_KEY="ek_..."`, then run `codex`.',
           guide: {
             url: 'https://openrouter.ai/docs/cookbook/coding-agents/codex-cli',
             label: 'Codex CLI provider config',
@@ -525,6 +553,10 @@ export OPENAI_API_KEY="${KEY_PLACEHOLDER}"
 export OPENAI_MODEL="${MODEL_ALIAS}"
 
 qwen`,
+          // Qwen Code has no custom-header option — OPENAI_API_KEY is sent as
+          // `Authorization: Bearer`, which ACH does not resolve for a raw key. Say
+          // so plainly rather than presenting this as a working setup.
+          note: "Qwen Code sends this key via Authorization: Bearer, which ACH does not resolve by default — this snippet will 401 unless your admin has added Authorization to the forwarder's credential headers. Prefer a tool above with a custom-header option (Codex, Pi, the Python/TypeScript SDK snippets).",
           guide: {
             url: 'https://docs.litellm.ai/docs/tutorials/litellm_qwen_code_cli',
             label: 'Qwen Code + LiteLLM guide',
@@ -548,6 +580,10 @@ export GEMINI_BASE_URL=${apiBase}/gemini/v1beta
 export GEMINI_API_KEY=${KEY_PLACEHOLDER}
 
 gemini`,
+          // GEMINI_API_KEY is Gemini CLI's own credential slot, not ACH's declared
+          // header — verify how it sends the key before re-enabling this tab; the Pi
+          // `google` provider (above) sends it via an explicit custom header instead.
+          note: 'GEMINI_API_KEY is Gemini CLI’s own credential mechanism, not ACH’s declared header slot — confirm it sends the key in a header ACH resolves before relying on this. The Pi agent’s `google` provider (above) is the verified path.',
         },
       ],
     },
@@ -568,7 +604,7 @@ gemini`,
     "debug.testOverrideProxyUrl": "${apiBase}"
   }
 }`,
-          note: 'Reload VS Code after saving. Authenticate with your gateway key when prompted — see the guide for model + auth details.',
+          note: "Reload VS Code after saving. Copilot's own key prompt sends the key via Authorization: Bearer, which ACH does not resolve by default — confirm with the guide below whether Copilot supports a custom header before relying on this.",
           guide: {
             url: 'https://docs.litellm.ai/docs/tutorials/github_copilot_integration',
             label: 'GitHub Copilot + LiteLLM guide',
@@ -694,7 +730,7 @@ gemini`,
                       Keys
                     </button>{' '}
                     tab. The{' '}
-                    <span className="font-mono text-text-primary">sk-</span> value
+                    <span className="font-mono text-text-primary">ek_</span> value
                     is shown <span className="text-text-primary">once</span>, at
                     creation — copy it then; it is never displayed again.
                   </p>
@@ -776,6 +812,14 @@ gemini`,
               </TabsList>
               {VISIBLE_TOOLS.map((g) => (
                 <TabsContent key={g.id} value={g.id} className="mt-4">
+                  {g.intro && (
+                    <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <p className="mb-2 font-sans text-xs leading-relaxed text-text-secondary">
+                        {g.intro.text}
+                      </p>
+                      <CodeBlock code={g.intro.code} caption={g.intro.caption} />
+                    </div>
+                  )}
                   {g.variants.length > 1 ? (
                     <Tabs
                       value={toolVariant[g.id]}
@@ -807,9 +851,12 @@ gemini`,
               base URL is your live gateway; only the key differs per user.
             </p>
             <p className="mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
-              Tools that read OpenAI's env vars work too:{' '}
-              <span className="text-text-secondary">export OPENAI_API_KEY=$LITELLM_API_KEY</span>{' '}
-              and <span className="text-text-secondary">export OPENAI_BASE_URL={`${apiBase}/v1`}</span>.
+              A tool that only supports the plain OPENAI_API_KEY convention sends it
+              via Authorization: Bearer, which ACH does not resolve — it needs a way
+              to set{' '}
+              <span className="text-text-secondary">{AUTH_HEADER}</span> as a custom
+              header instead (see the Codex and Pi tabs above for two ways to do
+              that).
             </p>
           </Section>
 
@@ -835,7 +882,7 @@ gemini`,
                   <span className="font-mono text-text-primary">
                     {AUTH_HEADER}
                   </span>{' '}
-                  (the same Bearer key as chat).
+                  (the same key as chat — no Bearer prefix).
                 </p>
                 <Tabs defaultValue="cursor">
                   <TabsList className={TAB_PILL_LIST}>
@@ -983,7 +1030,7 @@ gemini`,
                 ['404 Model not found', 'The model alias is not enabled for your team or does not exist. Check the Models tab for available aliases.'],
                 ['429 Rate limited', 'Your key, team, or the upstream provider hit a rate limit. Retry with backoff or check your limits.'],
                 ['MCP: no tools discovered', 'The MCP server is reachable but returned no tools. Check the server health and your access group on the MCP tab.'],
-                ['MCP: authentication failed', `Confirm your MCP client sends the ${AUTH_HEADER} header with a Bearer key.`],
+                ['MCP: authentication failed', `Confirm your MCP client sends the ${AUTH_HEADER} header with your key (no Bearer prefix).`],
               ].map(([code, body]) => (
                 <div key={code} className="rounded-lg border border-border bg-surface p-4">
                   <div className="font-mono text-sm font-semibold text-text-primary">{code}</div>

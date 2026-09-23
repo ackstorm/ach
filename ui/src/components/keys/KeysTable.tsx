@@ -14,6 +14,7 @@
 //     here.
 
 import * as React from 'react';
+import { useState } from 'react';
 import { MoreVertical, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -84,7 +85,13 @@ export function KeysTable({ onDelete }: KeysTableProps): React.ReactElement {
   const suspendPropagationSeconds = useSessionStore(
     (s) => s.me?.suspend_propagation_seconds,
   );
+  // Revoked keys are hidden by default — a busy account can carry dozens of
+  // them with no way to hide them otherwise. Dimming (rowClassName below)
+  // still applies whenever they ARE shown.
+  const [showRevoked, setShowRevoked] = useState(false);
   const rows = selectKeyRows(query.data);
+  const revokedCount = rows.filter((row) => row.status === 'revoked').length;
+  const visibleRows = showRevoked ? rows : rows.filter((row) => row.status !== 'revoked');
 
   const onSuspend = (row: KeyRow) => {
     suspendKey.mutate(row.key_id, {
@@ -214,10 +221,21 @@ export function KeysTable({ onDelete }: KeysTableProps): React.ReactElement {
   return (
     <TooltipProvider>
       <div className="flex flex-col gap-3">
+        {revokedCount > 0 ? (
+          <label className="flex cursor-pointer items-center justify-end gap-1.5 text-muted-foreground text-xs">
+            <input
+              type="checkbox"
+              checked={showRevoked}
+              onChange={(e) => setShowRevoked(e.target.checked)}
+              className="size-3.5 cursor-pointer"
+            />
+            Show revoked ({revokedCount})
+          </label>
+        ) : null}
         <DataTable
           data-slot="keys-table"
           columns={columns}
-          rows={rows}
+          rows={visibleRows}
           // Default sort so the active-sort marker shows on load (newest keys first);
           // every other column header stays click-to-sort.
           defaultSort={{ key: 'created', dir: 'desc' }}
@@ -225,12 +243,25 @@ export function KeysTable({ onDelete }: KeysTableProps): React.ReactElement {
           rowClassName={(row) => cn(row.status === 'revoked' && 'opacity-40')}
           actionsHeader="Action"
           empty={
-            <div data-slot="keys-table-empty" className="py-6">
-              <p className="text-foreground text-base font-semibold">No API Keys</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                You have no virtual keys yet. Create one to get started.
-              </p>
-            </div>
+            rows.length > 0 ? (
+              // Every key exists but is hidden by the revoked filter.
+              <div data-slot="keys-table-empty" className="py-6">
+                <p className="text-foreground text-base font-semibold">
+                  No visible API Keys
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  All {rows.length} of your keys {rows.length === 1 ? 'is' : 'are'}{' '}
+                  revoked. Check &quot;Show revoked&quot; above to view them.
+                </p>
+              </div>
+            ) : (
+              <div data-slot="keys-table-empty" className="py-6">
+                <p className="text-foreground text-base font-semibold">No API Keys</p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  You have no virtual keys yet. Create one to get started.
+                </p>
+              </div>
+            )
           }
           rowActions={(row) => {
             const canSuspend = row.status === 'active' || row.status === 'invalid';

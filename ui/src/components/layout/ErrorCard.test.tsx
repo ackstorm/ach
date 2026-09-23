@@ -13,7 +13,7 @@ describe('ErrorCard', () => {
     expect(screen.getByText('ERROR')).toBeInTheDocument();
     expect(screen.getByText('Service Unavailable')).toBeInTheDocument();
     expect(
-      screen.getByText('Unable to reach alitellm-auth. Try refreshing the page.'),
+      screen.getByText('Unable to reach ACH. Try refreshing the page.'),
     ).toBeInTheDocument();
   });
 

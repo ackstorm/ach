@@ -120,16 +120,17 @@ function ServerCard({ server }: { server: McpServerRow }) {
             <span className="font-semibold text-text-primary">{server.auth_type}</span>
           </span>
         )}
-        <span
-          className={cn(
-            'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-semibold',
-            server.tool_count > 0
-              ? 'border-primary/40 bg-primary/10 text-primary'
-              : 'border-border text-text-secondary',
-          )}
-        >
-          {server.tool_count} {server.tool_count === 1 ? 'tool' : 'tools'}
-        </span>
+        {server.tool_count > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
+            {server.tool_count} {server.tool_count === 1 ? 'tool' : 'tools'}
+          </span>
+        ) : (
+          // A zero count here is indistinguishable from LiteLLM's non-admin
+          // endpoint simply not reporting tools — don't claim "0 tools".
+          <span className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-tertiary">
+            tools not listed
+          </span>
+        )}
       </div>
 
       {/* Tools — cap the visible chips so a chatty server doesn't dominate. */}
@@ -151,11 +152,12 @@ function ServerCard({ server }: { server: McpServerRow }) {
         </div>
       )}
 
-      {/* Access groups */}
+      {/* LiteLLM access groups (NOT ACH Environments — a separate LiteLLM-side
+          grouping the server is wired into). */}
       {server.access_groups.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
           <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-            Access
+            LiteLLM access groups
           </span>
           {server.access_groups.map((g) => (
             <span

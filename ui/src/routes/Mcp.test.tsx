@@ -106,14 +106,26 @@ describe('Mcp — provisioning', () => {
 });
 
 describe('Mcp — populated', () => {
-  it('renders the server name, status, tools, and access group', () => {
+  it('renders the server name, status, tools, and the LiteLLM-access-groups label', () => {
     setSuccess({ servers: [makeServer()], provisioning: false });
     render(<Mcp />);
     expect(screen.getByText('GitHub')).toBeInTheDocument();
     expect(screen.getByText('healthy')).toBeInTheDocument();
     expect(screen.getByText('list_repos')).toBeInTheDocument();
     expect(screen.getByText('create_issue')).toBeInTheDocument();
+    // Labelled unambiguously as LiteLLM's grouping, not an ACH Environment.
+    expect(screen.getByText('LiteLLM access groups')).toBeInTheDocument();
     expect(screen.getByText('platform')).toBeInTheDocument();
+  });
+
+  it('shows "tools not listed" instead of a misleading "0 tools" when the backend reports none', () => {
+    setSuccess({
+      servers: [makeServer({ tools: [], tool_count: 0 })],
+      provisioning: false,
+    });
+    render(<Mcp />);
+    expect(screen.getByText('tools not listed')).toBeInTheDocument();
+    expect(screen.queryByText('0 tools')).not.toBeInTheDocument();
   });
 
   it('caps the visible tool chips at six with a "+N more" marker', () => {
