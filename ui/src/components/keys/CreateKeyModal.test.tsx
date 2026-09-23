@@ -33,6 +33,7 @@ import {
   initialFreshKeysState,
   useFreshKeysStore,
 } from '@/stores/fresh-keys';
+import { initialSessionState, useSessionStore } from '@/stores/session';
 
 const useCreateKeyMock = vi.mocked(useCreateKey);
 const useEnvironmentsMock = vi.mocked(useEnvironments);
@@ -73,6 +74,8 @@ beforeEach(() => {
   const { setFresh, dropFresh } = useFreshKeysStore.getState();
   useFreshKeysStore.setState({ ...initialFreshKeysState, setFresh, dropFresh }, true);
   useCreateKeyModalStore.getState().openModal();
+  const { loadSession, markExpired } = useSessionStore.getState();
+  useSessionStore.setState({ ...initialSessionState, loadSession, markExpired }, true);
   // Default to no environments -> submit is blocked by the required picker.
   setEnvironments([]);
 });
@@ -96,6 +99,28 @@ describe('CreateKeyModal — form view', () => {
         'Letters, numbers, dash, underscore, dot. Up to 128 characters.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('disables create when the key allowance is exhausted', () => {
+    useSessionStore.setState({
+      status: 200,
+      hasLoaded: true,
+      me: {
+        email: 'alice@example.com',
+        name: 'Alice Example',
+        is_admin: false,
+        openwork_enabled: false,
+        suspend_propagation_seconds: 60,
+        keys_used: 2,
+        max_keys: 2,
+        endpoint: window.location.origin,
+      },
+    });
+    setMutation(vi.fn());
+    render(<CreateKeyModal />);
+
+    expect(screen.getByRole('button', { name: 'Create Key' })).toBeDisabled();
+    expect(screen.getByText('Key limit reached (2 of 2 in use). Ask an admin to raise it.')).toBeInTheDocument();
   });
 
   it('offers the four expiry presets: Never, 7 days, 30 days, 90 days', () => {

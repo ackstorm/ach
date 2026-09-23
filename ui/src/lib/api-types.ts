@@ -19,6 +19,10 @@ export interface SessionMe {
   openwork_enabled: boolean;
   /** UI notice bound for suspend propagation (spec §8.2). */
   suspend_propagation_seconds: number;
+  /** Number of non-revoked ek_ keys held by the caller, or null if unavailable. */
+  keys_used: number | null;
+  /** Caller ceiling for non-revoked ek_ keys, or null if unavailable. */
+  max_keys: number | null;
   /**
    * Gateway base URL for curl snippets / the A2A card. Not in the payload:
    * ACH serves the console and /v1 from ONE origin, so the store fills it

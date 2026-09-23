@@ -28,6 +28,8 @@ const ME: SessionMe = {
   is_admin: false,
   openwork_enabled: false,
   suspend_propagation_seconds: 60,
+  keys_used: 2,
+  max_keys: 5,
   endpoint: window.location.origin,
 };
 
@@ -75,6 +77,8 @@ describe('session store', () => {
       is_admin: false,
       openwork_enabled: false,
       suspend_propagation_seconds: 60,
+      keys_used: 2,
+      max_keys: 5,
     };
     getJsonMock.mockResolvedValue({ status: 200, data: bootstrap });
 
@@ -89,6 +93,24 @@ describe('session store', () => {
       endpoint: window.location.origin,
     });
     expect(hasLoaded).toBe(true);
+  });
+
+  it('carries the key allowance from bootstrap', async () => {
+    getJsonMock.mockResolvedValue({
+      status: 200,
+      data: {
+        email: 'alice@example.com',
+        is_admin: false,
+        openwork_enabled: false,
+        suspend_propagation_seconds: 60,
+        keys_used: 2,
+        max_keys: 5,
+      },
+    });
+
+    await useSessionStore.getState().loadSession();
+
+    expect(useSessionStore.getState().me).toMatchObject({ keys_used: 2, max_keys: 5 });
   });
 
   it('cold-load 401 (hasLoaded was false) -> { status:401, me:null, hasLoaded:false } (App resolves signin)', async () => {

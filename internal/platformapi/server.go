@@ -230,6 +230,9 @@ func New(deps Deps) http.Handler {
 			Store: deps.Store, DB: newEnvkeysDB(deps.Pool), LiteLLM: deps.LiteLLM,
 			AsUser:           func(key string) console.UserReads { return deps.LiteLLMREST.AsUser(key) },
 			KeyEncryptionKey: deps.KeyEncryptionKey, OpenWorkEnabled: deps.OpenWork.Enabled,
+			Allowance: func(ctx context.Context, email string) (int, int, error) {
+				return db.UserKeyAllowance(ctx, deps.Pool, email, deps.DefaultMaxKeys)
+			},
 			Audit: deps.Audit, Logger: deps.Logger,
 		})
 

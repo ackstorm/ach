@@ -148,6 +148,33 @@ func TestBootstrap(t *testing.T) {
 	}
 }
 
+func TestBootstrapReportsKeyAllowance(t *testing.T) {
+	d := testDeps(t)
+	d.Allowance = func(_ context.Context, _ string) (int, int, error) { return 2, 5, nil }
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 || got["keys_used"] != float64(2) || got["max_keys"] != float64(5) {
+		t.Fatalf("%d %v", rec.Code, got)
+	}
+}
+
+func TestBootstrapDegradesWhenAllowanceUnavailable(t *testing.T) {
+	d := testDeps(t)
+	d.Allowance = func(_ context.Context, _ string) (int, int, error) {
+		return 0, 0, errors.New("boom")
+	}
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+	if rec.Code != 200 {
+		t.Fatalf("bootstrap must not fail on an allowance read error, got %d", rec.Code)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["max_keys"] != nil || got["keys_used"] != nil {
+		t.Fatalf("want both null when unreadable, got %v", got)
+	}
+}
+
 func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	d := testDeps(t)
 	mode := "chat"

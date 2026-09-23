@@ -47,6 +47,8 @@ const ME: SessionMe = {
   is_admin: false,
   openwork_enabled: false,
   suspend_propagation_seconds: 60,
+  keys_used: null,
+  max_keys: null,
   endpoint: 'https://litellm.example.com',
 };
 

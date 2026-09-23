@@ -62,6 +62,10 @@ type Deps struct {
 	OpenWorkEnabled  bool
 	Audit            *slog.Logger
 	Logger           *slog.Logger
+	// Allowance reports (held, allowed) ek_ keys for one owner. Bootstrap
+	// degrades these advisory fields to null if the read fails; POST /platform/keys
+	// remains the authoritative gate.
+	Allowance func(ctx context.Context, email string) (used int, max int, err error)
 }
 
 // scopePersonal is the ?scope=personal capabilities value, and doubles as
@@ -85,13 +89,25 @@ func Mount(r chi.Router, d Deps) {
 
 // bootstrap: identity + console options, the first call the SPA makes.
 func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
-	kc, _ := middleware.KeyContextFromCtx(r.Context())
-	render.JSON(w, http.StatusOK, map[string]any{
+	ctx := r.Context()
+	kc, _ := middleware.KeyContextFromCtx(ctx)
+	body := map[string]any{
 		"email":                       kc.OwnerEmail,
 		"is_admin":                    kc.IsAdmin,
 		"openwork_enabled":            d.OpenWorkEnabled,
 		"suspend_propagation_seconds": SuspendPropagationSeconds,
-	})
+		"keys_used":                   nil,
+		"max_keys":                    nil,
+	}
+	if d.Allowance != nil {
+		used, max, err := d.Allowance(ctx, kc.OwnerEmail)
+		if err != nil {
+			d.Logger.Warn("console.bootstrap: key allowance unavailable", "err", err)
+		} else {
+			body["keys_used"], body["max_keys"] = used, max
+		}
+	}
+	render.JSON(w, http.StatusOK, body)
 }
 
 func (d Deps) capabilities(w http.ResponseWriter, r *http.Request) {
