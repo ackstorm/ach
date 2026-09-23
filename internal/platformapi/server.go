@@ -49,6 +49,10 @@ type Deps struct {
 	// onto the "user:<email>" tag at provision time. nil = no default.
 	UserBudget *litellm.TagBudget
 
+	// DefaultMaxKeys is the chart-wide ek_ ceiling for users without an
+	// explicit user_limits row. Zero is deny-by-default.
+	DefaultMaxKeys int
+
 	// LiteLLMREST is the concrete transport behind LiteLLM, for the
 	// console's user-scoped reads (AsUser: the user's own key on the shared
 	// transport, spec §10.1). nil in tests that never reach those routes.
@@ -208,6 +212,7 @@ func New(deps Deps) http.Handler {
 			Logger:           deps.Logger,
 			Namespace:        deps.Namespace,
 			Issuer:           deps.BaseURL,
+			DefaultMaxKeys:   deps.DefaultMaxKeys,
 		}
 		envkeys.MountKeys(r, envkeysDeps)
 

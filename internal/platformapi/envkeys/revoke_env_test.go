@@ -47,6 +47,9 @@ func (d *revokeEnvDB) ListKeys(context.Context, db.KeyListFilter, int, string) (
 func (d *revokeEnvDB) RevokePersonalKeyByOwner(context.Context, string, string) (*string, error) {
 	return nil, nil
 }
+func (d *revokeEnvDB) UserKeyAllowance(context.Context, string, int) (int, int, error) {
+	return 0, 0, nil
+}
 
 // recordRedis records whether the best-effort cache DEL ran.
 type recordRedis struct{ delCalled bool }

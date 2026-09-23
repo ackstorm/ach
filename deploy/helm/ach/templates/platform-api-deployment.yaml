@@ -104,6 +104,8 @@ spec:
               value: {{ .Values.platformApi.headers | toJson | quote }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
+            - name: ACH_USER_MAX_KEYS
+              value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
             {{- with .Values.platformApi.userDefaults }}
             {{- if ne (toString .maxBudget) "" }}
             - name: ACH_USER_MAX_BUDGET

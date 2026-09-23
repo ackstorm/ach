@@ -79,6 +79,9 @@ func (d *envKeyStateDB) ListKeys(context.Context, db.KeyListFilter, int, string)
 func (d *envKeyStateDB) RevokePersonalKeyByOwner(context.Context, string, string) (*string, error) {
 	return nil, nil
 }
+func (d *envKeyStateDB) UserKeyAllowance(context.Context, string, int) (int, int, error) {
+	return 0, 0, nil
+}
 
 // resumeLiteLLM is a controllable fake litellm.Client for the Resume
 // access-check path (LookupCallerTeams): userInfoErr forces the

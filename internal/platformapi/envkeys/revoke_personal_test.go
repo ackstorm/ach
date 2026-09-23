@@ -58,6 +58,9 @@ func (d *revokePersonalDB) ResumeEnvironmentKey(context.Context, string) (*db.Ek
 func (d *revokePersonalDB) ListKeys(context.Context, db.KeyListFilter, int, string) ([]db.KeyListItem, string, error) {
 	return nil, "", nil
 }
+func (d *revokePersonalDB) UserKeyAllowance(context.Context, string, int) (int, int, error) {
+	return 0, 0, nil
+}
 
 // revokePersonalLiteLLM is a fake litellm.Client that records whether RevokeKey
 // was called and can be configured to return an error.
@@ -146,6 +149,10 @@ func (d *dispatchDB) ListKeys(_ context.Context, _ db.KeyListFilter, _ int, _ st
 
 func (d *dispatchDB) RevokePersonalKeyByOwner(_ context.Context, _ string, _ string) (*string, error) {
 	return d.pkToken, nil
+}
+
+func (d *dispatchDB) UserKeyAllowance(context.Context, string, int) (int, int, error) {
+	return 0, 0, nil
 }
 
 // TestRevokeHandler_DispatchesByPrefix asserts the unified DELETE

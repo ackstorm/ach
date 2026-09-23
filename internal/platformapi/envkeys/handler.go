@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -55,6 +56,9 @@ type dbOps interface {
 	ResumeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error)
 	ListKeys(ctx context.Context, f db.KeyListFilter, limit int, cursor string) ([]db.KeyListItem, string, error)
 	RevokePersonalKeyByOwner(ctx context.Context, keyID, owner string) (litellmToken *string, err error)
+	// UserKeyAllowance reports (held, allowed) for one owner. CreateHandler
+	// gates on it before any LiteLLM work.
+	UserKeyAllowance(ctx context.Context, email string, defaultMax int) (int, int, error)
 }
 
 // redisOps is the subset of go-redis the envkeys handlers exercise. The
@@ -99,6 +103,9 @@ type Deps struct {
 	Namespace        string
 	// Issuer is ACH_BASE_URL, stamped as metadata.ach_issuer (see auth.Deps).
 	Issuer string
+	// DefaultMaxKeys is the chart-wide ek_ ceiling (ACH_USER_MAX_KEYS)
+	// applied to anyone without a user_limits row. 0 means deny-by-default.
+	DefaultMaxKeys int
 }
 
 // CreateRequest is the POST /platform/keys request body shape (D-16
@@ -134,6 +141,10 @@ type CreateResponse struct {
 // invalid_argument is not a §18.2 audit outcome — it's purely an HTTP
 // envelope code for malformed requests.
 const codeInvalidArgument = "invalid_argument"
+
+// codeKeyLimitReached is the 403 outcome when the caller already holds as
+// many non-revoked ek_ keys as their ceiling allows.
+const codeKeyLimitReached = "key_limit_reached"
 
 // The ek_/pk_ status vocabulary (§7.1). statusActive/statusSuspended/
 // statusRevoked are persisted db column values; statusExpired is what
@@ -232,6 +243,28 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 
 		if req.Budget != nil && !req.Budget.valid() {
 			render.Error(w, http.StatusBadRequest, codeInvalidArgument, budgetInvalidMsg, reqID)
+			return
+		}
+
+		// Check before any LiteLLM work: a refusal must not strand a minted key.
+		used, allowed, err := deps.DB.UserKeyAllowance(ctx, keyCtx.OwnerEmail, deps.DefaultMaxKeys)
+		if err != nil {
+			deps.Logger.Error("envkeys.create: key allowance read", "owner", keyCtx.OwnerEmail, "err", err)
+			audit.EmitAudit(ctx, deps.Audit, audit.Event{
+				Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
+				Actor: actor, RequestID: reqID,
+			})
+			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
+			return
+		}
+		if used >= allowed {
+			audit.EmitAudit(ctx, deps.Audit, audit.Event{
+				Action: audit.ActionEkCreate, Outcome: codeKeyLimitReached,
+				Actor: actor, RequestID: reqID,
+				Target: &audit.Target{Kind: "environment", Name: req.Environment},
+			})
+			render.Error(w, http.StatusForbidden, codeKeyLimitReached,
+				fmt.Sprintf("key limit reached: %d of %d in use — ask an admin to raise it", used, allowed), reqID)
 			return
 		}
 

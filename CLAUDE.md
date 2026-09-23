@@ -180,6 +180,14 @@ convenience**, not a co-equal mode.
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA, D-26); no LiteLLM path outside the ACH families is reachable through ACH (D-18) — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. Also reads the `achagents` projection (**`ACH_DB_URL` required — refuses to start without it**) and serves `/agents/{ns}/{service}/…` to per-agent Services (`{service}` = the Service name, e.g. `achagent-gh`; the tail after it is forwarded verbatim — webhook, a2a, whatever the harness serves) — **only agents that opt in via `spec.expose.gateway=true` are in the route set** (`exposed` projection column); still no auth/no header rewrite; the `ach-agent` harness verifies HMAC on its webhook route |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
+Per-user `ek_` key ceiling: `POST /platform/keys` returns 403
+`key_limit_reached` once the caller holds `max_keys` non-revoked rows (active,
+suspended, or expired; revoked never counts). The ceiling is the Postgres
+`user_limits` row for that email, otherwise
+`platformApi.userDefaults.maxKeys` → `ACH_USER_MAX_KEYS` (0 = deny by default).
+It is read fresh on every create and never seeded at login; admins are not
+exempt and grant themselves with `PATCH /platform/admin/users/{email}/limits`.
+
 User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
 `logout`/`whoami`/`config`/`env`/`keys`/`admin`/`runtime` (workspace verbs
 `hydrate`/`status`/`save`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).

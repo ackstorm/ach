@@ -93,6 +93,9 @@ type platformAPIConfig struct {
 	// + ACH_USER_BUDGET_DURATION, chart platformApi.userDefaults). nil =
 	// unset = users are uncapped.
 	UserBudget *litellm.TagBudget
+	// DefaultMaxKeys is the chart-wide fallback ek_ ceiling. Zero is
+	// deny-by-default; explicit per-user allowances live in Postgres.
+	DefaultMaxKeys int
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
@@ -190,6 +193,15 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 			MaxBudget:      maxBudget,
 			BudgetDuration: os.Getenv("ACH_USER_BUDGET_DURATION"),
 		}
+	}
+	// ACH_USER_MAX_KEYS: chart-wide fallback ek_ ceiling for anyone without
+	// a user_limits row. Unset or empty means 0 — deny-by-default.
+	if raw := os.Getenv("ACH_USER_MAX_KEYS"); raw != "" {
+		n, perr := strconv.Atoi(raw)
+		if perr != nil || n < 0 {
+			return nil, fmt.Errorf("ACH_USER_MAX_KEYS %q: must be a non-negative integer", raw)
+		}
+		cfg.DefaultMaxKeys = n
 	}
 	return cfg, nil
 }
@@ -345,6 +357,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Namespace:        cfg.Namespace,
 		InsecureCookie:   cfg.InsecureCookie,
 		UserBudget:       cfg.UserBudget,
+		DefaultMaxKeys:   cfg.DefaultMaxKeys,
 		Metrics:          platformAPICollectors,
 	}
 	return out, nil

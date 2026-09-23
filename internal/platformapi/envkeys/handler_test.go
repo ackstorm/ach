@@ -235,11 +235,14 @@ func (s *fakeEnvStore) AccessGroupSyncedFromRow(_ *db.EnvironmentRow) bool { ret
 // items overrides the default two-row ListKeys fixture when non-nil (the
 // zero value keeps every pre-existing test's fixture unchanged).
 type fakeEkDB struct {
-	inserted     *db.EkInsertRow
-	lastFilter   db.KeyListFilter
-	items        []db.KeyListItem
-	suspendCalls []string
-	resumeCalls  []string
+	inserted      *db.EkInsertRow
+	lastFilter    db.KeyListFilter
+	items         []db.KeyListItem
+	suspendCalls  []string
+	resumeCalls   []string
+	allowanceUsed int
+	allowanceMax  int
+	allowanceErr  error
 }
 
 func (d *fakeEkDB) InsertEnvironmentKey(_ context.Context, row db.EkInsertRow) error {
@@ -276,6 +279,15 @@ func (d *fakeEkDB) ListKeys(_ context.Context, f db.KeyListFilter, _ int, _ stri
 func (d *fakeEkDB) RevokePersonalKeyByOwner(_ context.Context, _ string, _ string) (*string, error) {
 	return nil, nil
 }
+func (d *fakeEkDB) UserKeyAllowance(_ context.Context, _ string, defaultMax int) (int, int, error) {
+	if d.allowanceErr != nil {
+		return 0, 0, d.allowanceErr
+	}
+	if d.allowanceMax == 0 && d.allowanceUsed == 0 {
+		return 0, defaultMax, nil
+	}
+	return d.allowanceUsed, d.allowanceMax, nil
+}
 
 // TestCreateHandler_KeyAliasIsAchKeyID drives the §8.2 ek_ create happy path
 // end-to-end and asserts the LiteLLM KeyGenerate request carried KeyAlias set
@@ -298,6 +310,7 @@ func TestCreateHandler_KeyAliasIsAchKeyID(t *testing.T) {
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
 		Issuer:           "https://ach.test",
+		DefaultMaxKeys:   10,
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -369,6 +382,7 @@ func TestCreateEkMintsIntoShellTeam(t *testing.T) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		DefaultMaxKeys:   10,
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -419,6 +433,7 @@ func TestCreateEkRejectsWhenShellTeamMissing(t *testing.T) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		DefaultMaxKeys:   10,
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -515,6 +530,7 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		DefaultMaxKeys:   10,
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -575,6 +591,7 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		DefaultMaxKeys:   10,
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -694,6 +711,8 @@ func newCreateDeps(fdb dbOps) (Deps, *captureLiteLLM) {
 		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
+		// Existing create fixtures use a non-zero allowance; production defaults to 0.
+		DefaultMaxKeys: 10,
 	}, flm
 }
 
@@ -710,6 +729,52 @@ func doCreate(deps Deps, body string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	CreateHandler(deps).ServeHTTP(rec, req)
 	return rec
+}
+
+func TestCreate_RefusesWhenAllowanceExhausted(t *testing.T) {
+	fdb := &fakeEkDB{allowanceUsed: 2, allowanceMax: 2}
+	deps, flm := newCreateDeps(fdb)
+	rr := doCreate(deps, `{"environment":"prod","name":"k"}`)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "key_limit_reached") {
+		t.Fatalf("want key_limit_reached, got %s", rr.Body.String())
+	}
+	if flm.lastKeyGenerateReq != nil {
+		t.Fatalf("no LiteLLM key may be minted on a refused create, got %+v", flm.lastKeyGenerateReq)
+	}
+	if fdb.inserted != nil {
+		t.Fatalf("no environment_keys row may be written on a refused create")
+	}
+}
+
+func TestCreate_RefusesAtZeroDefault(t *testing.T) {
+	fdb := &fakeEkDB{}
+	deps, _ := newCreateDeps(fdb)
+	deps.DefaultMaxKeys = 0
+	rr := doCreate(deps, `{"environment":"prod","name":"k"}`)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("deny-by-default: want 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreate_AllowsBelowCeiling(t *testing.T) {
+	fdb := &fakeEkDB{allowanceUsed: 1, allowanceMax: 5}
+	deps, _ := newCreateDeps(fdb)
+	rr := doCreate(deps, `{"environment":"prod","name":"k"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreate_AllowanceReadFailureIs500(t *testing.T) {
+	fdb := &fakeEkDB{allowanceErr: errors.New("boom")}
+	deps, _ := newCreateDeps(fdb)
+	rr := doCreate(deps, `{"environment":"prod","name":"k"}`)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("an unreadable ceiling must fail closed with 500, got %d", rr.Code)
+	}
 }
 
 func TestCreate_ExpiresAtValidatedAndStored(t *testing.T) {

@@ -74,6 +74,11 @@ litellmConnection:
 platformApi:
   admins:
     - kilgore@kilgore.trout
+  # e2e-full keeps the cluster and mints a non-revoked demo-ek on each run.
+  # Keep this fixture ceiling well above the accumulated run count; product
+  # default remains 0 (deny-by-default).
+  userDefaults:
+    maxKeys: 1000
 
 # Declared credential slots (chart defaults, spelled out so the e2e values
 # document what the suite exercises): x-ach-key (ach-cli, hydrate, ach-agent)
