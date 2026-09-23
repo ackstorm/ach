@@ -61,6 +61,18 @@ type Deps struct {
 	// (issue #177, see challenge.go). Empty or unparseable disables the
 	// rewrite; it is NOT required for any other part of the proxy.
 	BaseURL string
+
+	// GeminiStripModelPrefixes are vendor prefixes removed from the model
+	// name on the /gemini route only (chart forwarder.gemini.
+	// stripModelPrefixes -> ACH_GEMINI_STRIP_MODEL_PREFIXES), in declared
+	// order, first match wins. It exists because LiteLLM registers a model
+	// as "<vendor>.<model>" while a native Gemini client addresses it by
+	// its bare Google name; the caller may send either.
+	//
+	// /v1 deliberately has no equivalent: there the model travels in the
+	// JSON body, and the Director never touches req.Body (D-05 streaming).
+	// Use LiteLLM's own model_group_alias for that surface.
+	GeminiStripModelPrefixes []string
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
@@ -144,6 +156,13 @@ func New(deps Deps) *httputil.ReverseProxy {
 			if routeFor(req.URL.Path) == "/gemini" {
 				req.Header.Del("X-Litellm-Api-Key")
 				req.Header.Set("X-Goog-Api-Key", material)
+				// Model-name rewrite (path only — the body is never read).
+				// Anchored after "/models/" so a configured "gemini/" can
+				// never match ACH's own /gemini route prefix.
+				if p := stripGeminiModelPrefix(req.URL.Path, deps.GeminiStripModelPrefixes); p != req.URL.Path {
+					req.URL.Path = p
+					req.URL.RawPath = ""
+				}
 			}
 
 			// Budget tags: one stamping point for every family, so /mcp,

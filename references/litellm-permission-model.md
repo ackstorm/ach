@@ -537,3 +537,48 @@ three calls.
 caller, not a LiteLLM user read. A failed read degrades to
 `source: "unknown"` and never fails the response. The §10.4 `team_member`
 source is gone: it was unreachable in ACH's topology.
+
+## 16. `model_group_alias` is invisible to every catalog endpoint (measured 2026-09-23, api.ackstorm.ai + kind cluster)
+
+A LiteLLM `model_group_alias` routes requests but **does not appear in any
+model catalog LiteLLM serves**. Measured on the ackstorm proxy against two
+alias names known to work for inference (`gemini-3.7-flash`,
+`gemini-3.8-flash`), with `gemini-flash-latest` — a genuinely registered
+model — as the control:
+
+| Read | alias name | control (`gemini-flash-latest`) |
+|---|---|---|
+| `GET /v1/models` | absent | present |
+| `GET /model_group/info` (list) | absent | present |
+| `GET /model_group/info?model_group=<name>` | **0 rows** | 1 row |
+| `GET /v1/model/info` | n/a — master-key only, 0 rows for a virtual key | — |
+
+The per-name query returning nothing is the decisive one: this is not a
+listing filter or a key-scoping artifact, the alias simply is not a model
+group as far as the read API is concerned.
+
+**Where LiteLLM does declare them:** `GET /router/settings` exposes a
+`model_group_alias` field among its `fields[]` descriptors. Confirmed on the
+e2e cluster with the master key (value `{}` there — no aliases configured).
+The endpoint is **proxy-admin only**: a non-admin virtual key gets 401, not
+404. Siblings in the same family (`/model/settings`, `/get/config/callbacks`,
+`/config/field/info`) behave the same way.
+
+**Why ACH cares.** The Environment reconciler resolves
+`spec.runtime.models` by exact string match against the Snapshotter's set,
+which is built from `GET /v1/model/info` → `model_name`
+(`internal/litellm/model.go`, `internal/snapshot/snapshot.go`). An
+Environment naming an alias therefore reports
+`ExecutionResourcesResolved=False` forever, however well the alias works for
+inference. **This is cosmetic**, and the blast radius is smaller than it
+looks: `reconcileAccessGroup` never inspects `spec.runtime.models` (it
+writes the names through unfiltered), `ek_` creation gates on
+`AccessGroupSynced` alone, and neither existing traffic nor hydrate is
+affected. Only the rolled-up `Available` goes False.
+
+**ACH's chosen answer is NOT to read the alias table.** Aliases are a `/v1`
+concern (LiteLLM resolves them there itself). For the `/gemini` native
+route, where the model rides in the URL path, the forwarder strips
+configured vendor prefixes instead — see `forwarder.gemini.
+stripModelPrefixes` in CLAUDE.md. Environments should name the REAL
+registered model (`<vendor>.<model>`), which resolves cleanly.

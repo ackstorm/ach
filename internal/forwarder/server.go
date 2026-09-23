@@ -37,6 +37,9 @@ type Deps struct {
 	LiteLLMUpstream  *url.URL
 	// AuthnOptions: the RFC 9728 challenge on 401 + the declared credential headers.
 	AuthnOptions pamw.AuthnOptions
+	// GeminiStripModelPrefixes: vendor prefixes removed from the model name
+	// on /gemini only (ACH_GEMINI_STRIP_MODEL_PREFIXES). See proxy.Deps.
+	GeminiStripModelPrefixes []string
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -64,6 +67,8 @@ func New(deps Deps) http.Handler {
 			Logger:           deps.Logger,
 			KeyEncryptionKey: deps.KeyEncryptionKey,
 			BaseURL:          deps.BaseURL,
+
+			GeminiStripModelPrefixes: deps.GeminiStripModelPrefixes,
 		},
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,

@@ -102,17 +102,20 @@ when ACH_BASE_URL is not http(s)://, ACH_KEY_ENCRYPTION_KEY is unset/invalid
 type forwarderConfig struct {
 	BaseURL           string
 	CredentialHeaders []pamw.CredentialHeader // ACH_CREDENTIAL_HEADERS
-	DBURL             string
-	Pepper            []byte
-	KeyEncryptionKey  []byte
-	RedisAddr         string
-	RedisPassword     string
-	RedisTLS          bool
-	RedisDB           int
-	TrafficBindAddr   string
-	HealthBindAddr    string
-	Namespace         string
-	JWTSecretName     string
+	// GeminiStripModelPrefixes: ACH_GEMINI_STRIP_MODEL_PREFIXES — vendor
+	// prefixes stripped from the model name on /gemini only.
+	GeminiStripModelPrefixes []string
+	DBURL                    string
+	Pepper                   []byte
+	KeyEncryptionKey         []byte
+	RedisAddr                string
+	RedisPassword            string
+	RedisTLS                 bool
+	RedisDB                  int
+	TrafficBindAddr          string
+	HealthBindAddr           string
+	Namespace                string
+	JWTSecretName            string
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -127,6 +130,10 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	cfg.BaseURL = baseURL
 	if cfg.CredentialHeaders, err = pamw.ParseCredentialHeaders(os.Getenv("ACH_CREDENTIAL_HEADERS")); err != nil {
 		return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %w", err)
+	}
+	if cfg.GeminiStripModelPrefixes, err = proxy.ParseGeminiStripModelPrefixes(
+		os.Getenv("ACH_GEMINI_STRIP_MODEL_PREFIXES")); err != nil {
+		return nil, fmt.Errorf("ACH_GEMINI_STRIP_MODEL_PREFIXES: %w", err)
 	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
@@ -387,6 +394,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			Challenge: proxy.ChallengeFor(cfg.BaseURL),
 			Headers:   cfg.CredentialHeaders,
 		},
+		GeminiStripModelPrefixes: cfg.GeminiStripModelPrefixes,
 	}
 	return out, nil
 }

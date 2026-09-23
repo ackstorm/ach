@@ -197,6 +197,21 @@ forwarder:
       mode: resolve
     # - name: x-genai-api-key   # a raw LiteLLM key under a customer-facing name
     #   mode: passthrough
+  # gemini.stripModelPrefixes: vendor prefixes removed from the MODEL NAME on
+  # the /gemini route, in declared order, first match wins. LiteLLM registers
+  # a model as "<vendor>.<model>" while a native Gemini client addresses it by
+  # its bare Google name; a caller may send either, so the proxy normalises
+  # the path before forwarding. Empty (the default) = no rewrite.
+  #
+  # Only /gemini: on /v1 the model travels in the JSON body and the Director
+  # never reads req.Body (streaming, D-05) — use LiteLLM's own
+  # model_group_alias for that surface instead.
+  #
+  # The rewrite is anchored after the "/models/" path element, so an entry
+  # like "gemini/" cannot match ACH's own /gemini route prefix.
+  gemini:
+    stripModelPrefixes: []
+    # stripModelPrefixes: ["gemini.", "gemini/", "vertex_ai."]
 
 # litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
 # Configure endpoint + master-key Secret ref here ONCE; the chart fans it
