@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -180,13 +181,36 @@ func (d Deps) latency(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, http.StatusOK, withLatencyScope(c))
 }
 
+// keyExternal labels the single folded row standing for every key in the
+// window that ACH did not mint. The parenthetical names where such a key
+// DOES come from, so the row reads as an explanation rather than an error.
+const keyExternal = "external (LiteLLM)"
+
 // nameKeys resolves each stats key row's key_alias — ACH stamps
 // key_alias=ekid_…/pkid_… on the LiteLLM key at mint time
 // (envkeys/handler.go, sso.go) — to the ACH-facing name: an ek_'s Name,
-// or scopePersonal for a pk_. A row whose alias does not match
-// any of the owner's ACH-managed keys (foreign/legacy LiteLLM key) is
-// left unchanged. A DB read failure degrades to "keep the raw aliases"
-// rather than failing the whole response.
+// or scopePersonal for a pk_.
+//
+// Every row that is NOT one of the owner's ACH-managed keys is folded into
+// a single keyExternal row. LiteLLM aggregates a user's spend across every
+// key tied to them, so this window legitimately contains keys ACH never
+// issued — another product's, another ACH release's, or one made by hand
+// in LiteLLM's UI. Left alone they render as raw key hashes (and a
+// degenerate one as a bare "0"), which reads as a broken table rather than
+// as what it is: spend outside ACH's control. Folding also keeps the row
+// labels unique, which the UI relies on to key the table.
+//
+// Ownership is decided by the owner's OWN key rows, not by a metadata
+// issuer check: each ACH release tracks its keys in its own database, so
+// "absent from our rows" already means "not ours" — and it stays true for
+// a sibling release, which an issuer comparison would have to special-case.
+//
+// Totals stay honest: the fold sums, never drops, so the keys block still
+// accounts for the whole user-global window (D-13).
+//
+// A DB read failure degrades to "keep the raw aliases" rather than failing
+// the whole response — without the key rows there is no basis to call any
+// row foreign, and guessing would mislabel the user's own keys.
 func (d Deps) nameKeys(ctx context.Context, owner string, rows []observability.KeyOut) []observability.KeyOut {
 	if d.DB == nil {
 		return rows
@@ -196,29 +220,55 @@ func (d Deps) nameKeys(ctx context.Context, owner string, rows []observability.K
 		d.Logger.Warn("console.stats: key names unavailable", "err", err)
 		return rows
 	}
+	// ours is ownership; names is presentation. They are separate because an
+	// ek_ row may carry a NULL name — still ours, just unnamed, and folding
+	// it into the external row would be a lie.
+	ours := make(map[string]bool, len(items))
 	names := make(map[string]string, len(items))
 	for _, it := range items {
 		switch it.Type {
 		case "pk":
+			ours[it.KeyID] = true
 			names[it.KeyID] = scopePersonal
 		case "ek":
+			ours[it.KeyID] = true
 			if it.Name != nil {
 				names[it.KeyID] = *it.Name
 			}
 		}
 	}
-	out := make([]observability.KeyOut, len(rows))
-	for i, row := range rows {
-		out[i] = row
-		if row.KeyAlias == nil {
+
+	out := make([]observability.KeyOut, 0, len(rows)+1)
+	external := observability.KeyOut{ID: "external", KeyAlias: nil}
+	foundExternal := false
+	for _, row := range rows {
+		if row.KeyAlias != nil && ours[*row.KeyAlias] {
+			row.ID = *row.KeyAlias
+			if name, ok := names[*row.KeyAlias]; ok {
+				row.KeyAlias = &name
+			}
+			out = append(out, row)
 			continue
 		}
-		name, ok := names[*row.KeyAlias]
-		if !ok {
-			continue
+		foundExternal = true
+		external.Requests += row.Requests
+		external.Spend += row.Spend
+		if row.SpendPct != nil {
+			pct := row.SpendPct
+			if external.SpendPct == nil {
+				zero := 0.0
+				external.SpendPct = &zero
+			}
+			*external.SpendPct += *pct
 		}
-		out[i].ID = *row.KeyAlias
-		out[i].KeyAlias = &name
+	}
+	if foundExternal {
+		label := keyExternal
+		external.KeyAlias = &label
+		out = append(out, external)
+		// BuildStatsContract hands these over sorted by spend descending;
+		// the folded row has to land in that order too.
+		sort.SliceStable(out, func(i, j int) bool { return out[i].Spend > out[j].Spend })
 	}
 	return out
 }

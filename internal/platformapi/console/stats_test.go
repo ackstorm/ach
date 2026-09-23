@@ -255,8 +255,13 @@ func TestStats_KeyRowsCarryACHNames(t *testing.T) {
 	if alias := byID["pkid_1"]; alias == nil || *alias != scopePersonal {
 		t.Fatalf("pkid_1 alias = %v, want personal", alias)
 	}
-	if alias := byID["hash3"]; alias == nil || *alias != "ekid_unknown" {
-		t.Fatalf("unmatched row = %v, want unchanged key_alias ekid_unknown under its original hash id", alias)
+	// A row ACH did not mint no longer leaks its raw hash into the table:
+	// it is folded under the single external label (see nameKeys).
+	if _, leaked := byID["hash3"]; leaked {
+		t.Fatalf("foreign row still rendered under its raw hash: %v", byID)
+	}
+	if alias := byID["external"]; alias == nil || *alias != keyExternal {
+		t.Fatalf("external row = %v, want %q", alias, keyExternal)
 	}
 }
 
