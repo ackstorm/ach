@@ -133,18 +133,65 @@ describe('CreateKeyModal — form view', () => {
     expect(select.value).toBe('never');
   });
 
-  it('only Available environments are selectable; others render disabled', () => {
+  // The real backend gate is AccessGroupSynced, not the collapsed `status`
+  // (an Environment can be keyable while some OTHER condition leaves
+  // status !== 'Available' — that mismatch disabled every key-create in
+  // production). isKeyable/degradedReason (lib/env-status.ts) are the source
+  // of truth the picker renders from.
+  it('AccessGroupSynced=True is selectable even when status !== Available, and shows the degraded hint', () => {
     setMutation(vi.fn());
     setEnvironments([
-      { name: 'prod', status: 'Available' },
-      { name: 'staging', status: 'UnresolvedReferences' },
+      {
+        name: 'prod',
+        status: 'UnresolvedReferences',
+        conditions: [
+          { type: 'AccessGroupSynced', status: 'True' },
+          { type: 'Available', status: 'False', reason: 'ContentPending' },
+        ],
+      },
     ]);
     render(<CreateKeyModal />);
 
     const select = screen.getByLabelText('environment') as HTMLSelectElement;
     const prodOption = [...select.options].find((o) => o.value === 'prod');
-    const stagingOption = [...select.options].find((o) => o.value === 'staging');
     expect(prodOption?.disabled).toBe(false);
+    expect(select.value).toBe('prod'); // still defaulted, since it's keyable
+    expect(screen.getByText('degraded: ContentPending')).toBeInTheDocument();
+  });
+
+  it('AccessGroupSynced=False renders the option disabled', () => {
+    setMutation(vi.fn());
+    setEnvironments([
+      {
+        name: 'staging',
+        status: 'UnresolvedReferences',
+        conditions: [{ type: 'AccessGroupSynced', status: 'False' }],
+      },
+    ]);
+    render(<CreateKeyModal />);
+
+    const select = screen.getByLabelText('environment') as HTMLSelectElement;
+    const stagingOption = [...select.options].find((o) => o.value === 'staging');
+    expect(stagingOption?.disabled).toBe(true);
+  });
+
+  it('legacy fallback: no conditions + status Available -> selectable', () => {
+    setMutation(vi.fn());
+    setEnvironments([{ name: 'prod', status: 'Available' }]);
+    render(<CreateKeyModal />);
+
+    const select = screen.getByLabelText('environment') as HTMLSelectElement;
+    const prodOption = [...select.options].find((o) => o.value === 'prod');
+    expect(prodOption?.disabled).toBe(false);
+  });
+
+  it('legacy fallback: no conditions + status not Available -> disabled', () => {
+    setMutation(vi.fn());
+    setEnvironments([{ name: 'staging', status: 'UnresolvedReferences' }]);
+    render(<CreateKeyModal />);
+
+    const select = screen.getByLabelText('environment') as HTMLSelectElement;
+    const stagingOption = [...select.options].find((o) => o.value === 'staging');
     expect(stagingOption?.disabled).toBe(true);
   });
 

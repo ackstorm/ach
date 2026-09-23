@@ -36,6 +36,7 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback';
 import { useCreateKey } from '@/hooks/use-keys';
 import { useEnvironments } from '@/hooks/use-environments';
 import type { CreateKeyBody } from '@/lib/api-types';
+import { degradedReason, isKeyable } from '@/lib/env-status';
 import {
   CREATE_502_ERROR,
   EXPIRY_PRESETS,
@@ -83,13 +84,22 @@ export function CreateKeyModal() {
   // loaded, which leaves the picker empty (submit then blocked by validation).
   const { data: environments = [] } = useEnvironments();
 
-  // Default the picker to the first AVAILABLE environment once they load, but
+  // Non-blocking hint for the currently selected environment when it's
+  // keyable but not fully `Available` (some other condition still pending).
+  const selectedDegradedReason = (() => {
+    const selected = environments.find((e) => e.name === environment);
+    return selected ? degradedReason(selected) : undefined;
+  })();
+
+  // Default the picker to the first KEYABLE environment once they load, but
   // only if the user hasn't picked yet (environment still ''). A user choice
-  // or reset takes precedence.
+  // or reset takes precedence. Keyable is the real backend gate
+  // (AccessGroupSynced), not the collapsed `Available` status — see
+  // lib/env-status.ts.
   useEffect(() => {
     if (environment === '') {
-      const firstAvailable = environments.find((e) => e.status === 'Available');
-      if (firstAvailable) setEnvironment(firstAvailable.name);
+      const firstKeyable = environments.find(isKeyable);
+      if (firstKeyable) setEnvironment(firstKeyable.name);
     }
   }, [environment, environments]);
 
@@ -233,8 +243,11 @@ export function CreateKeyModal() {
                   environment
                 </label>
                 {/* Native <select> styled to match Input (no shadcn Select in
-                    this project). Only Available environments are selectable —
-                    others render disabled so the user sees why. */}
+                    this project). Only KEYABLE environments are selectable —
+                    others render disabled so the user sees why. Keyable is the
+                    real backend gate (AccessGroupSynced), not the collapsed
+                    `status` — an Environment can be fully keyable while some
+                    OTHER sub-condition leaves `status !== 'Available'`. */}
                 <select
                   id="ck-environment"
                   value={environment}
@@ -246,15 +259,22 @@ export function CreateKeyModal() {
                   <option value="" disabled>
                     Select an environment
                   </option>
-                  {environments.map((env) => (
-                    <option key={env.name} value={env.name} disabled={env.status !== 'Available'}>
-                      {env.name}
-                      {env.status !== 'Available' ? ` (${env.status || 'not ready'})` : ''}
-                    </option>
-                  ))}
+                  {environments.map((env) => {
+                    const keyable = isKeyable(env);
+                    return (
+                      <option key={env.name} value={env.name} disabled={!keyable}>
+                        {env.name}
+                        {!keyable ? ` (${env.status || 'not ready'})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
                 {environmentError ? (
                   <p className="text-xs text-destructive">{environmentError}</p>
+                ) : selectedDegradedReason ? (
+                  <p className="text-xs text-text-secondary">
+                    degraded: {selectedDegradedReason}
+                  </p>
                 ) : null}
               </div>
 

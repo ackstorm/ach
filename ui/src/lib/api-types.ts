@@ -111,6 +111,12 @@ export interface EnvironmentRow {
   name: string;
   status?: string;
   description?: string;
+  /**
+   * The row's condition array (Go metav1.Condition), when the backend sends
+   * one. The real key-mint gate is `AccessGroupSynced`, not the collapsed
+   * `status` — see lib/env-status.ts. Absent on an older platform-api.
+   */
+  conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
 }
 
 /** GET /platform/environments response — {items,next_cursor} per Hub §15.5. */

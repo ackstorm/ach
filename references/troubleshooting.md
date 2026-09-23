@@ -1152,3 +1152,31 @@ box does not. Restore it from inside devtools:
 `./scripts/dev.sh bash -c 'kind get kubeconfig --name ach-e2e > /workspace/.gocache/kube/config'`.
 The cluster itself is untouched (`./scripts/dev.sh kind get clusters`).
 
+
+### ❌ Console: the create-key Environment picker is empty, but `ach-cli keys create` works
+
+Symptom: every Environment in the modal's dropdown is greyed out, so the
+console can mint no keys at all, while the same create against
+`POST /platform/keys` succeeds for those same Environments.
+
+Cause: the two surfaces were gating on different conditions. The backend
+requires **`AccessGroupSynced=True`** and nothing else
+(`envkeys/handler.go` → `Store.AccessGroupSyncedFromRow`). The UI was
+gating on the rolled-up `status` string being exactly `"Available"`, which
+is `AccessGroupSynced` **AND** `ExecutionResourcesResolved`. Any
+Environment with an unresolved runtime/context reference — an unresolvable
+model name is the common one — reports `Available=False` with a reason
+like `ResourceUnresolved` while remaining perfectly able to mint keys.
+Nine such Environments in production meant an empty picker.
+
+Fix (2026-09-23): the UI reads the `conditions` array, which
+`GET /platform/environments` has always returned (`store.RowToView`), and
+gates on `AccessGroupSynced` via `ui/src/lib/env-status.ts`; a synced but
+degraded Environment stays selectable and shows its reason as a hint. With
+no `conditions` on the wire it falls back to the old `status` check, so an
+older platform-api behaves as before.
+
+Check it from outside the browser:
+`curl -s "$ACH/platform/environments?limit=500" -H "x-ach-key: pk_…" | jq '.items[] | {name, status, sync: (.conditions[]? | select(.type=="AccessGroupSynced") | .status)}'`
+— `status` other than `Available` with `sync: "True"` is the condition this
+entry describes, and keys can be created.
