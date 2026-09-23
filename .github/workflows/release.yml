@@ -277,6 +277,21 @@ jobs:
       - name: Build the console (embedded by go build)
         run: npm --prefix ui ci && npm --prefix ui run build
 
+      # goreleaser refuses to run on a dirty tree, and it runs AFTER the tag is
+      # already pushed (see the tag step below) — so a build step that dirties
+      # the tree burns the version number and strands a public tag with no
+      # artifacts behind it. v0.9.11 died exactly here: `vite build`'s
+      # emptyOutDir deleted the tracked dist/.gitkeep. Fail while the tag is
+      # still private, and name the offending paths.
+      - name: Assert a clean tree before tagging
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::working tree is dirty before tagging — goreleaser would abort AFTER the tag is public. Offending paths:"
+            git status --porcelain
+            exit 1
+          fi
+          echo "working tree clean"
+
       # Install goreleaser directly. goreleaser-action@v7 verifies the
       # downloaded binary against a sigstore bundle that the cosign on
       # the runner cannot parse — we trust the official release tarball

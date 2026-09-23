@@ -12,10 +12,12 @@ export default defineConfig({
   // sync with the Dockerfile `ui` stage COPY.
   // emptyOutDir wipes the embed directory, including the tracked .gitkeep that
   // keeps it present for `go:embed all:dist` before the console is ever built.
-  // The npm "build" script restores it — NOT the Makefile, because release.yml
+  // The npm "postbuild" hook restores it — NOT the Makefile, because release.yml
   // calls `npm run build` directly and a goreleaser run aborts on a dirty tree
-  // ("D .../dist/.gitkeep"). Keep the restore in the npm script so every caller
-  // gets it.
+  // ("D .../dist/.gitkeep", which is how v0.9.11 died). The hook covers the
+  // `build` script only: a bare `npx vite build`, or a build that fails AFTER
+  // emptyOutDir has run, still leaves the keep-file deleted. release.yml asserts
+  // a clean tree right after the console build for exactly that reason.
   build: { outDir: '../internal/platformapi/console/dist', emptyOutDir: true },
   // Dev: platform-api on 8080 (make cluster-up + port-forward, or a local binary).
   server: {

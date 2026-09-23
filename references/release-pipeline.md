@@ -12,11 +12,13 @@
 
 Release artifacts are produced by **goreleaser** orchestrated by
 `.github/workflows/release.yml`. The flow is **commit-message-driven
-with tag-last**: a push to `main` whose head commit message starts with
-`chore(release): v<MAJOR>.<MINOR>.<PATCH>` fires the pipeline. The
-workflow then runs the tests, bumps manifests itself, builds + signs
-artifacts, and creates the git tag as the final step — so a failure
-anywhere upstream leaves origin with no orphan tag.
+with tag-before-build**: a push to `main` whose head commit message starts
+with `chore(release): v<MAJOR>.<MINOR>.<PATCH>` fires the pipeline. The
+workflow then runs the tests, bumps manifests itself, builds the console,
+**creates and force-pushes the git tag**, and only then runs goreleaser to
+build + sign artifacts. Because the tag precedes the build, a failure in
+goreleaser or the chart push **does leave an orphan tag on origin** — see
+"Orphan-tag posture" below.
 
 Cutting a release (stable example, `v0.1.0`):
 
@@ -76,9 +78,17 @@ Per-release flow (after the `chore(release): v0.1.0` push):
      before goreleaser runs** (`Dockerfile.goreleaser` only copies the
      finished binaries). The source archive ships `ui/` sources by explicit
      path (never `ui/node_modules`).
-   - goreleaser runs with `GORELEASER_CURRENT_TAG=v<X.Y.Z>` (no git
-     tag at HEAD yet). The GitHub release-create API call auto-creates
-     the tag at default-branch HEAD, which is the bot-bump commit.
+   - Asserts a **clean working tree** (`git status --porcelain`) before
+     tagging. goreleaser refuses to run dirty, and it runs after the tag is
+     already public — so a build step that dirties the tree would burn the
+     version number. v0.9.11 died exactly this way (`vite build`'s
+     emptyOutDir deleted the tracked `dist/.gitkeep`); the assert now fails
+     while the tag is still private.
+   - Force-creates and pushes the annotated tag `v<X.Y.Z>` at HEAD, BEFORE
+     goreleaser, which then runs against a real tag. `-f` is deliberate: it
+     re-points a stale tag left by a previous failed attempt whose HEAD has
+     since moved. Guard: the step refuses to move a tag whose GitHub release
+     already exists.
      - cross-builds amd64 + arm64 (CGO_ENABLED=0, alpine runtime with
        git + ca-certificates baked).
      - builds multi-arch manifest list at
@@ -95,16 +105,24 @@ Per-release flow (after the `chore(release): v0.1.0` push):
        manifest list) with cosign keyless OIDC.
    - Pushes the chart to
      `oci://ghcr.io/ackstorm/charts/ach:<X.Y.Z>`.
-   - **LAST**: idempotently creates and pushes the annotated git tag
-     `v<X.Y.Z>`. If goreleaser's release API call already implicitly
-     created the tag, this is a no-op.
+Orphan-tag posture: **the tag is pushed BEFORE goreleaser runs**, so a
+failure in goreleaser or the chart push leaves `refs/tags/vX.Y.Z` on origin
+with no GitHub release, no image, and no chart behind it. This is not
+theoretical — v0.6.13 and v0.9.11 both hit it. Recovery is one of:
 
-Orphan-tag posture: tag-creation is the LAST step. A failure in tests
-or bump or goreleaser leaves no tag on origin and no GH release
-attached to one. The bot bump commit may be on `main` if the failure
-happened in goreleaser — that is reversible by reverting the bot
-commit or by simply running the next release attempt, since `make release-bump`
-inside the workflow is idempotent.
+- `gh run rerun --failed` — HEAD is unchanged, the tag already points at the
+  right commit, and the run resumes.
+- a fresh `chore(release): vX.Y.Z` push — HEAD moves and the force-push
+  re-points the tag.
+- **abandoning that version** (what v0.9.11 did, moving on to v0.9.12) — then
+  DELETE the orphan tag by hand: `git push origin :refs/tags/vX.Y.Z`. Left in
+  place, the Go module proxy will still serve `@vX.Y.Z` and `helm pull
+  --version X.Y.Z` 404s.
+
+The bot bump commit may also be on `main` if the failure happened in
+goreleaser — reversible by reverting the bot commit or by simply running the
+next release attempt, since `make release-bump` inside the workflow is
+idempotent.
 
 There is no snapshot config: `release.yml` selects `.goreleaser.yml`
 (stable) or `.goreleaser.prerelease.yml` (`-alpha|beta|rc`).

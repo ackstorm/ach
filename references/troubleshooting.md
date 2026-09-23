@@ -1077,6 +1077,24 @@ console/dist` only tracks `.gitkeep`, and `go build` embeds whatever is there.
 image runs the Node stage itself. The API is unaffected — only "/" and the
 client routes fall back to this notice; `/platform/*` stays a JSON 404.
 
+### ❌ Release fails: `git is in a dirty state` / `D .../console/dist/.gitkeep`
+✅ goreleaser refuses to run on a dirty tree. `vite build` sets
+`emptyOutDir: true` on `internal/platformapi/console/dist`, which wipes the
+directory **including the tracked `.gitkeep`** that keeps it embeddable by
+`go:embed all:dist` before the console is ever built. The `ui` package's
+`postbuild` npm hook restores it; it covers the `build` script only, so a bare
+`npx vite build` (or a build that fails after `emptyOutDir` has already run)
+still leaves the tree dirty.
+
+This is a **release-burning** failure, not a local nuisance: `release.yml`
+pushes the git tag BEFORE goreleaser runs, so the abort strands a public
+`vX.Y.Z` tag with no release, image, or chart behind it (v0.9.11). The
+workflow now asserts `git status --porcelain` is empty right after the console
+build, failing while the tag is still private. If an orphan tag did get
+pushed, delete it: `git push origin :refs/tags/vX.Y.Z` — otherwise the Go
+module proxy keeps serving `@vX.Y.Z`. Full recovery matrix in
+`references/release-pipeline.md` ("Orphan-tag posture").
+
 ### ❌ Console: `400 ambiguous_credentials` on every request
 ✅ The browser sent the console cookie AND an API credential — usually a
 browser extension injecting `Authorization`, or a client reusing a browser

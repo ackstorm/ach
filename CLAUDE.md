@@ -276,7 +276,7 @@ controller-gen directly, so standalone they need `./scripts/dev.sh make
 helm-sync` (a bare `make helm-sync` on the host fails with `go: executable
 file not found`). See `references/makefile.md` for the 3-context model.
 `test/e2e/mcp-echo` is a nested module: root `./...` sweeps (vet, lint,
-govulncheck, tidy) do not see it; `qa-lint` and pre-push gate 12 cover it
+govulncheck, tidy) do not see it; `qa-lint` and pre-push gate 14 cover it
 explicitly.
 
 ```bash
@@ -347,12 +347,10 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) | dev loop on one sub-test |
 | `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; **rarely — CI owns it, see below** |
 | `make test-ui`          | console `tsc` + vitest (`ui/`), ~1m warm | every iteration touching `ui/` |
-| `make pre-push`         | gitleaks + trufflehog + 19 gates | host-only; before push |
+| `make pre-push`         | gitleaks + 16 more gates (11 hard, 6 informational) | host-only; before push |
 
 - Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
-  `qa-fuzz-short` + `pre-push` (NOT `qa-security` — pre-push gate 13 already
-  runs the same `govulncheck-gate.sh`, so calling both ran the identical
-  whole-module analysis twice); `make hooks` installs `.git/hooks/pre-push ->
+  `qa-fuzz-short` + `pre-push`; `make hooks` installs `.git/hooks/pre-push ->
   scripts/pre-push-check.sh` (and removes any stale pre-commit hook from a prior
   install). Inner loop: `make test-unit-pkg PKG=...`,
   `make test-envtest-pkg PKG=... [FOCUS=TestX]`.
@@ -361,14 +359,16 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
   `--no-verify` push).
 - The fast pre-commit gate was retired — lint + unit now run inside the
   pre-push gate and in CI.
-- **Don't run `qa-security` by hand as routine.** `ci.yml`'s security job runs
-  it on every PR, and `pre-push` gate 13 runs the same
-  `scripts/govulncheck-gate.sh` before every push — so a local run is a third
-  copy of an analysis that is already covered twice. `govulncheck ./...`
-  analyses the WHOLE module every time (reachability is a whole-program
-  property, so it can never be scoped to the diff) and it cannot be
-  incremental. Run it locally only when you are actively chasing a specific
-  advisory or bumping the toolchain.
+- **`qa-security` is NOT in the pre-push gate.** `scripts/govulncheck-gate.sh`
+  is called from exactly two places: `make qa-security` (which `ci.yml`'s
+  security job runs on every PR) and the Monday `govulncheck.yml` cron. The
+  pre-push script runs neither govulncheck nor trufflehog. Since branch
+  protection on `main` is not enabled, **a direct push to `main` gets no
+  govulncheck at all** until the next cron. Run `make qa-security` by hand
+  before a release cut or a direct-to-main push that changes dependencies;
+  skip it in the inner loop, because `govulncheck ./...` analyses the WHOLE
+  module every time (reachability is a whole-program property, so it can never
+  be scoped to the diff) and it cannot be incremental.
 
 ## Waiting for state — use blessed make targets
 
@@ -400,18 +400,21 @@ before a push leaves the host:
 
 - The fast pre-commit gate was retired — lint + unit now run inside the pre-push
   gate and in CI; no separate commit-time gate remains.
-- `pre-push` (full): **19-gate** publication check. lint + unit live INSIDE the
-  19 (gates 16+17; console unit tests are gate 19, skipped when `ui/` is
-  unchanged vs `origin/main`), so the full lint + unit sweep always fires before a push.
+- `pre-push` (full): **17 numbered gates, 11 of them hard** (failure blocks the
+  push); 6 are informational warnings. lint + unit live INSIDE them (gates 14 +
+  15; console tests are gate 17, skipped when `ui/` is unchanged vs
+  `origin/main`), so the full lint + unit sweep always fires before a push.
 
-The 19 hard gates (failure blocks push): gitleaks + trufflehog
-(`origin/main..HEAD`; allowlist `.gitleaks.toml`) · large files >2 MB ·
-sensitive patterns (`.env`, `*.pem`, `*.key`, kubeconfig) · LICENSE + README ·
-origin-remote match · govulncheck ack-list 1:1 (`scripts/govulncheck-gate.sh`,
-list at `references/security/govulncheck-acknowledged.md`) · `go mod tidy` drift
-· per-file SPDX header · full golangci-lint · `make test-unit` · chart mirror
-drift (`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44) ·
-`make test-ui` (console). Fix
+The 11 hard gates: gitleaks (1, `origin/main..HEAD`; allowlist
+`.gitleaks.toml`) · large files >2 MB (2) · sensitive patterns (`.env`,
+`*.pem`, `*.key`, kubeconfig) (3) · LICENSE + README (4) · origin-remote match
+(5) · `go mod tidy` drift (12) · per-file SPDX header (13) · full
+golangci-lint (14) · `make test-unit` (15) · chart mirror drift (16,
+`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44) ·
+`make test-ui` (17). Informational only (6-11): internal hostnames/private
+IPv4, ackstorm emails, `.gitignore` sanity, commit authors, TODO markers,
+uncommitted working-tree changes. **Not here at all: trufflehog and
+govulncheck** — the latter is CI + cron only (see "Test phases"). Fix
 the root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
 gates).
 
@@ -454,7 +457,7 @@ CrashLoopBackOffs / silently restarts.
 `git push --no-verify` bypasses the local hook ONLY (CI still runs it). ✅ Let
 the installed hook gate (`make hooks`), or `make pre-push` then push. WHY:
 pushed secrets / license-header drift / govulncheck regressions cannot be
-un-true'd from public history. The 19-gate script is the contract.
+un-true'd from public history. The 17-gate script is the contract.
 
 ### ❌ Kubectl from host against the kind cluster
 `kubectl get pods` → context not found. ✅ Go through devtools:

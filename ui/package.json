@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && vite build && touch ../internal/platformapi/console/dist/.gitkeep",
+    "build": "npm run type-check && vite build",
+    "postbuild": "touch ../internal/platformapi/console/dist/.gitkeep",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "type-check": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit"
