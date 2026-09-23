@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -202,7 +201,7 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 			// team-missing, transport) still surface as
 			// default_team_missing per Hub §17 / API-02.
 			if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, created.UserID, "user"); tmaErr != nil {
-				if !isDuplicateAddErr(tmaErr) {
+				if !litellm.IsHTTPBadRequest(tmaErr) {
 					return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
 				}
 				deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
@@ -219,11 +218,19 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 
 	// Existing-user branch. Per BLK-05 sub-point 3 + D-25, ALWAYS call
 	// TeamMemberAdd to be idempotent against out-of-band team-membership
-	// revocation. Duplicate-add 4xx is the steady-state expected
-	// outcome — swallow it. Any other error surfaces as
-	// default_team_missing.
+	// revocation. Duplicate-add is the steady-state outcome here — every
+	// login after the first — so getting its classification wrong breaks
+	// login for everyone EXCEPT new users, and the retry loop is
+	// unwinnable (the member is still a member next time).
+	//
+	// Any 400 is that outcome. We never parse LiteLLM's prose for it: the
+	// 4xx wrapper drops the body anyway (§9.1), and the wording has moved
+	// across versions. The other conceivable 400 here — an unknown team_id
+	// — cannot reach this branch, because ListTeamsByAlias resolved the
+	// team above and already returned default_team_missing if it was gone.
+	// A 404 or a transport error still surfaces as default_team_missing.
 	if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, user.UserID, "user"); tmaErr != nil {
-		if !isDuplicateAddErr(tmaErr) {
+		if !litellm.IsHTTPBadRequest(tmaErr) {
 			deps.Logger.Warn("sso.callback: TeamMemberAdd on existing-user path failed",
 				"err", tmaErr, "user_id", user.UserID)
 			return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
@@ -275,34 +282,6 @@ func upsertUserBudgetTag(ctx context.Context, deps Deps, email string) error {
 		return &provisionErr{kind: provisionKindLitellm, err: err}
 	}
 	return nil
-}
-
-// isDuplicateAddErr reports whether err signals LiteLLM's "user already
-// on this team" response.
-//
-// LiteLLM v1.83's `POST /team/member_add` returns 400 for the
-// duplicate-add case AND the response body is dropped by the
-// `internal/litellm/restclient.go` 4xx wrapper (only `litellm: %d on
-// POST %s (code=%s)` reaches the caller). Match on path + status
-// instead of trying to substring-find "already" / "Bad Request" in a
-// body that isn't there.
-//
-// Our SSO code path is the only caller that issues `POST
-// /team/member_add` (Plan 03-07), and we always send a well-formed
-// envelope `{team_id, member: {user_id, role}}`. The realistic 400
-// causes in production are:
-//   - user already on the team (the case we want to swallow)
-//   - team_id unknown (would fail earlier at ListTeamsByAlias and
-//     surface as default_team_missing, NOT reaching this branch)
-//
-// So (path + 400) is a sufficient duplicate-add discriminator.
-func isDuplicateAddErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "/team/member_add") &&
-		(strings.Contains(s, "litellm: 400") || strings.Contains(s, "Bad Request"))
 }
 
 // provisionKind is the failure-classification used by classifyProvisionError.

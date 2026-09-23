@@ -71,6 +71,18 @@ func IsHTTPForbidden(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden
 }
 
+// IsHTTPBadRequest reports whether err is an *APIError carrying HTTP 400.
+// Used by callers whose request is idempotent by nature, where a 400 means
+// the state they asked for is already true: POST /team/member_add answers 400
+// when the user is already on the team, which is the desired outcome, not a
+// failure. The body is dropped by the 4xx wrapper (§9.1), so the status is
+// the whole of the signal available — and the right one to read, since
+// LiteLLM's prose for this case has changed across versions.
+func IsHTTPBadRequest(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest
+}
+
 // Auth401Error is the typed error returned by Client.makeRequest when
 // LiteLLM responds with HTTP 401. The reconciler's §7.7 fast-path uses
 // errors.As(err, &auth401) to detect it and trigger cache-invalidate +

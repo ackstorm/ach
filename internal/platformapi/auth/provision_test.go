@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -295,10 +296,17 @@ func TestProvisionUser(t *testing.T) {
 		flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
 			return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email}, nil
 		}
-		// LiteLLM 1.83 returns 400 on duplicate-add; the 4xx wrapper drops the
-		// body, so only path + status identify it (isDuplicateAddErr).
+		// LiteLLM returns 400 on duplicate-add and the 4xx wrapper drops the
+		// body (§9.1), so the status is the whole signal. Build the real
+		// *litellm.APIError the client produces rather than a hand-typed
+		// message: the classifier reads the typed status, so a test asserting
+		// against a literal string would keep passing through a format change
+		// that broke production login for every existing user.
 		flm.teamMemberAddError = func(string, string, string) error {
-			return errors.New("litellm: 400 on POST /team/member_add (code=400)")
+			return &litellm.APIError{
+				Method: http.MethodPost, Path: "/team/member_add",
+				StatusCode: http.StatusBadRequest, Code: "400",
+			}
 		}
 		uid, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com")
 		if err != nil || uid != "litellm-existing" || flm.rec.userNewCalls != 0 || flm.rec.teamMemberAddCalls != 1 {
