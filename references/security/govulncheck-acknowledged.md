@@ -31,6 +31,18 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-09-23: Bumped six Dependabot-flagged **indirect** dependencies —
+  `google.golang.org/grpc` 1.83.1 → 1.83.2 (GHSA-2v4p-qf9q-27wj, high),
+  `github.com/moby/go-archive` 0.2.0 → 0.3.0 (GHSA-hfg8-hc9c-6c3h, high),
+  `github.com/google/cel-go` 0.27.0 → 0.29.0 (GHSA-gcjh-h69q-9w9g, medium)
+  and the `go.opentelemetry.io/otel` sdk/otlptrace/otlptracegrpc set to 1.45.0
+  (GHSA-8wmf-6v46-5gfg, low ×3). None of the six was ever **reachable** —
+  govulncheck reported 0 before the bump and 0 after, so nothing was cleared
+  from this list and nothing was added. Recorded because the file's
+  Verification step was re-run: Dependabot gates on the declared version
+  range, govulncheck on reachability, and the two disagree by design.
+  Ack-list stays empty; gate expects 0.
+
 - 2026-08-26: Bumped Go toolchain 1.26.5 → **1.26.6** (`go.mod` `toolchain` +
   `Dockerfile.devtools` pinned to `golang:1.26.6-bookworm`). Cleared seven
   stdlib advisories surfaced by a govulncheck DB refresh: `GO-2026-5026`,
