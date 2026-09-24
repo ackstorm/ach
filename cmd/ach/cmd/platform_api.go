@@ -208,14 +208,26 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		}
 		cfg.DefaultMaxKeys = n
 	}
-	if raw := os.Getenv("ACH_CONSOLE_CHAT_URL"); raw != "" {
-		u, perr := url.Parse(raw)
-		if perr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-			return nil, fmt.Errorf("ACH_CONSOLE_CHAT_URL %q: must be an absolute http(s) URL", raw)
-		}
-		cfg.ConsoleChatURL = raw
+	chatURL, err := consoleChatURL()
+	if err != nil {
+		return nil, err
 	}
+	cfg.ConsoleChatURL = chatURL
 	return cfg, nil
+}
+
+// consoleChatURL reads ACH_CONSOLE_CHAT_URL: empty (the console hides its
+// Chat button) or an absolute http(s) URL.
+func consoleChatURL() (string, error) {
+	raw := os.Getenv("ACH_CONSOLE_CHAT_URL")
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return "", fmt.Errorf("ACH_CONSOLE_CHAT_URL %q: must be an absolute http(s) URL", raw)
+	}
+	return raw, nil
 }
 
 type platformAPIProcessDeps struct {
