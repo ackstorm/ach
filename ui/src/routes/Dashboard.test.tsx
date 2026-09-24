@@ -31,6 +31,12 @@ vi.mock('@/hooks/use-stats', () => ({
   useStats: vi.fn(),
 }));
 
+// useEnvironments backs the KEYS & ENVIRONMENTS pills (every Environment the
+// caller can access). Defaults to [] in beforeEach.
+vi.mock('@/hooks/use-environments', () => ({
+  useEnvironments: vi.fn(),
+}));
+
 import {
   useDeleteKey,
   useKeys,
@@ -38,6 +44,7 @@ import {
   useSuspendKey,
 } from '@/hooks/use-keys';
 import { useStats } from '@/hooks/use-stats';
+import { useEnvironments } from '@/hooks/use-environments';
 import { Dashboard } from './Dashboard';
 import { formatCurrency } from '@/lib/format';
 import {
@@ -56,6 +63,13 @@ const useDeleteKeyMock = vi.mocked(useDeleteKey);
 const useSuspendKeyMock = vi.mocked(useSuspendKey);
 const useResumeKeyMock = vi.mocked(useResumeKey);
 const useStatsMock = vi.mocked(useStats);
+const useEnvironmentsMock = vi.mocked(useEnvironments);
+
+function setEnvironments(names: string[]): void {
+  useEnvironmentsMock.mockReturnValue({
+    data: names.map((name) => ({ name })),
+  } as unknown as ReturnType<typeof useEnvironments>);
+}
 
 // Build a valid SessionMe fixture with overrides.
 function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
@@ -109,6 +123,7 @@ function setKeysPending(): void {
 }
 
 beforeEach(() => {
+  setEnvironments([]);
   // Reset the create-key-modal store to closed, preserving its actions.
   const { openModal, closeModal } = useCreateKeyModalStore.getState();
   useCreateKeyModalStore.setState(
@@ -168,15 +183,10 @@ describe('Dashboard — top row + tiles', () => {
     expect(screen.getByText('This month')).toBeInTheDocument();
   });
 
-  it('KEYS & ENVIRONMENTS tile shows a pill per distinct environment the keys belong to', () => {
-    // Pills derive from the KEYS' environment name (deduped) — a display name
-    // already, no id->alias lookup. Two keys on 'prod', one on 'staging', none
-    // on 'qa' -> prod + staging pills, no qa.
-    setKeysSuccess([
-      makeRow({ key_id: 'key-1', environment: 'prod' }),
-      makeRow({ key_id: 'key-2', environment: 'prod' }),
-      makeRow({ key_id: 'key-3', environment: 'staging' }),
-    ]);
+  it('KEYS & ENVIRONMENTS tile shows every accessible environment, not just the keys\' ones', () => {
+    // One key on 'prod' — but the caller can access prod + staging + qa.
+    setKeysSuccess([makeRow({ key_id: 'key-1', environment: 'prod' })]);
+    setEnvironments(['prod', 'staging', 'qa']);
     const { container } = render(<Dashboard me={makeMe()} />);
     // Scope to the KPI row's pills — the KeysTable below also renders each key's
     // environment name, so an unscoped getByText('prod') would match multiple nodes.
@@ -184,7 +194,19 @@ describe('Dashboard — top row + tiles', () => {
     const pills = [...row.querySelectorAll('[data-slot="environment-pill"]')].map((e) =>
       e.textContent?.trim(),
     );
-    expect(pills).toEqual(['prod', 'staging']); // deduped, no qa
+    expect(pills).toEqual(['prod', 'staging', 'qa']);
+    expect(row.querySelector('[data-slot="environment-more"]')).toBeNull();
+  });
+
+  it('KEYS & ENVIRONMENTS tile caps pills at 6 and lists the rest in a "+N" hover title', () => {
+    setKeysSuccess([]);
+    setEnvironments(['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8']);
+    const { container } = render(<Dashboard me={makeMe()} />);
+    const row = container.querySelector('[data-slot="kpi-row"]') as HTMLElement;
+    expect(row.querySelectorAll('[data-slot="environment-pill"]')).toHaveLength(6);
+    const more = row.querySelector('[data-slot="environment-more"]') as HTMLElement;
+    expect(more.textContent).toBe('+2');
+    expect(more.title).toBe('e7, e8');
   });
 
   it('Spend (MTD) shows formatCurrency(stats.totals.spend) when stats load', () => {

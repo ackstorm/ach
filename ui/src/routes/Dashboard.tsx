@@ -25,6 +25,7 @@ import { DeleteKeyModal } from '@/components/keys/DeleteKeyModal';
 import { KeysTable } from '@/components/keys/KeysTable';
 import { KpiRow } from '@/components/stats/KpiRow';
 import { useCopyFeedback } from '@/hooks/use-copy-feedback';
+import { useEnvironments } from '@/hooks/use-environments';
 import { useKeys } from '@/hooks/use-keys';
 import { useStats } from '@/hooks/use-stats';
 import type { KeyRow, SessionMe } from '@/lib/api-types';
@@ -81,24 +82,30 @@ function EndpointChip({ endpoint }: { endpoint: string }) {
 // The 4th KPI-row cell on the KEYS tab (swaps in for AVG COST). Shares the
 // KpiCard card chrome (see stats/KpiRow) so it reads as the same component: a
 // tinted Key accent-chip + 11px caption, the active-key COUNT as the 24px value,
-// and — below — the distinct Environments those keys belong to as colored pills
-// (merging the old separate Active-keys + Teams tiles into one; ACH scopes a
-// key to an Environment, not a team). Count is EM_DASH until the keys query
-// resolves; pills fall back to EM_DASH when no key carries an environment.
+// and — below — every Environment the caller can access (GET
+// /platform/environments, already filtered server-side), NOT just the ones
+// their keys point at. The first MAX_ENV_PILLS render as colored pills; the
+// rest collapse into a "+N" pill whose hover title lists them. Count is
+// EM_DASH until the keys query resolves; pills fall back to EM_DASH when the
+// caller has no Environment.
+const MAX_ENV_PILLS = 6;
+
+const PILL_CLASS =
+  'inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-2 py-0.5 font-sans text-xs font-medium text-text-secondary';
+
 function KeysEnvironmentsTile({
   keyRows,
+  environments,
   fallback,
 }: {
   keyRows: KeyRow[] | null;
+  environments: string[];
   fallback: string;
 }) {
   const active = keyRows ? keyRows.filter((k) => k.status !== 'revoked') : null;
   const count = active ? formatInt(active.length) : EM_DASH;
-  // Distinct, order-preserving environment names across the active keys
-  // (already a display name — no id->alias lookup needed, unlike the old team_id).
-  const environments = active
-    ? [...new Set(active.map((k) => k.environment).filter((e): e is string => !!e))]
-    : [];
+  const shown = environments.slice(0, MAX_ENV_PILLS);
+  const hidden = environments.slice(MAX_ENV_PILLS);
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-5">
       <div className="flex items-center gap-2">
@@ -121,12 +128,8 @@ function KeysEnvironmentsTile({
       </div>
       {environments.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
-          {environments.map((name, i) => (
-            <span
-              key={name}
-              data-slot="environment-pill"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-2 py-0.5 font-sans text-xs font-medium text-text-secondary"
-            >
+          {shown.map((name, i) => (
+            <span key={name} data-slot="environment-pill" className={PILL_CLASS}>
               <span
                 className="size-2 shrink-0 rounded-full"
                 style={{ background: teamColorVar(i) }}
@@ -135,6 +138,11 @@ function KeysEnvironmentsTile({
               {name}
             </span>
           ))}
+          {hidden.length > 0 ? (
+            <span data-slot="environment-more" className={PILL_CLASS} title={hidden.join(', ')}>
+              +{hidden.length}
+            </span>
+          ) : null}
         </div>
       ) : (
         <div className="break-words font-sans text-xs text-text-secondary">
@@ -147,6 +155,7 @@ function KeysEnvironmentsTile({
 
 export function Dashboard({ me }: DashboardProps) {
   const query = useKeys();
+  const { data: environments = [] } = useEnvironments();
   const openModal = useCreateKeyModalStore((s) => s.openModal);
 
   // The dashboard owns the delete target; KeysTable's per-row revoke action
@@ -189,6 +198,7 @@ export function Dashboard({ me }: DashboardProps) {
               keyRows={
                 query.isSuccess && query.data ? selectKeyRows(query.data) : null
               }
+              environments={environments.map((e) => e.name)}
               fallback={EM_DASH}
             />
           }
