@@ -73,6 +73,7 @@ ach/
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
 │                            + guardrail-unresolved (P0-A provisioning barrier)
+│                            + env-groups (runtime group tags only)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE
 ```

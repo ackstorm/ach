@@ -582,3 +582,28 @@ route, where the model rides in the URL path, the forwarder strips
 configured vendor prefixes instead — see `forwarder.gemini.
 stripModelPrefixes` in CLAUDE.md. Environments should name the REAL
 registered model (`<vendor>.<model>`), which resolves cleanly.
+
+## 17. Runtime groups: tags, not names (measured 2026-09-24, kind cluster)
+
+`Environment.spec.runtime` takes LiteLLM access-group TAGS beside the
+concrete names (mirrors alitellm-operator's `LiteLLMAccessGroup`):
+
+| Field | LiteLLM tag | Who expands it |
+|-------|-------------|----------------|
+| `modelGroups` | `model_info.access_groups` | **LiteLLM**, at request time. The tag is unioned into the access group's `access_model_names` as-is. ACH never resolves it (tags change at any moment), so tag-granted models are absent from the hydrate manifest and the console. |
+| `mcpServerGroups` | `mcp_access_groups` | **The operator**, every reconcile, from the cached `LiteLLMSnapshot` (tag → names). `access_mcp_server_ids` takes IDs, and the forwarder precheck + hydrate read concrete names from `runtime_mcp_servers`, so the expanded names join that projection and the IDs join the access group. |
+| `agentGroups` | `agent_access_groups` | The operator, as above. **Stock LiteLLM does not store `agent_access_groups` on an agent** (POST accepts it, GET returns none) — only a proxy with the ackstorm patch does; on stock LiteLLM the field grants nothing. |
+
+- Measured: an `ek_` in an Environment with only `modelGroups: [e2e-grp]` got
+  200 on a model tagged `e2e-grp` and 403 `team_model_access_denied` on an
+  untagged one ("This team can only access models=['e2e-grp']") — LiteLLM
+  expands a tag inside `access_model_names`.
+- A tag matching nothing is ignored, not unresolved. A group member that
+  vanished from the live list after the snapshot is dropped silently.
+- `status.expandedRuntime` lists the names granted ONLY through a group.
+- The operator never expands against a snapshot that has not refreshed yet
+  (it requeues in 15s instead): expanding to empty would PUT a narrower
+  access group — a revocation.
+- **Security:** tagging a resource in LiteLLM grants it to every Environment
+  naming the tag, with no CR change — within the 5-min snapshot refresh for
+  MCP/agents, immediately for models.

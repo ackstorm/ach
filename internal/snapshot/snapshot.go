@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -48,6 +49,13 @@ type LiteLLMSnapshot struct {
 	// A2AAgents is the set of LiteLLM agent_name strings (the
 	// AgentEntry.AgentName field — D-13).
 	A2AAgents map[string]struct{}
+
+	// MCPServerGroups / A2AAgentGroups map an access-group tag
+	// (mcp_access_groups / agent_access_groups) to the sorted names carrying
+	// it. Non-nil after any successful refresh, so nil means "never
+	// refreshed" — the EnvironmentReconciler must not expand groups then.
+	MCPServerGroups map[string][]string
+	A2AAgentGroups  map[string][]string
 
 	// Teams is the set of LiteLLM team_alias strings (the
 	// TeamListEntry.TeamAlias field). Empty-alias entries are skipped.
@@ -295,9 +303,15 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 	}
 
 	next := &LiteLLMSnapshot{
-		Models:      toSet(models, func(m litellm.ModelInfoResponse) string { return m.ModelName }),
-		MCPServers:  toSet(mcps, func(m litellm.MCPServerEntry) string { return m.ServerName }),
-		A2AAgents:   toSet(agents, func(a litellm.AgentEntry) string { return a.AgentName }),
+		Models:     toSet(models, func(m litellm.ModelInfoResponse) string { return m.ModelName }),
+		MCPServers: toSet(mcps, func(m litellm.MCPServerEntry) string { return m.ServerName }),
+		A2AAgents:  toSet(agents, func(a litellm.AgentEntry) string { return a.AgentName }),
+		MCPServerGroups: groupsByTag(mcps, func(m litellm.MCPServerEntry) (string, []string) {
+			return m.ServerName, m.MCPAccessGroups
+		}),
+		A2AAgentGroups: groupsByTag(agents, func(a litellm.AgentEntry) (string, []string) {
+			return a.AgentName, a.AgentAccessGroups
+		}),
 		Teams:       toSet(teams, func(t litellm.TeamListEntry) string { return t.TeamAlias }),
 		Guardrails:  guardrailsByName(guardrails),
 		RefreshedAt: time.Now(),
@@ -325,6 +339,26 @@ func (s *Snapshotter) refresh(ctx context.Context) bool {
 		"guardrails", len(next.Guardrails),
 	)
 	return true
+}
+
+// groupsByTag inverts each item's tags into tag -> sorted, deduped names.
+// Always non-nil; items with an empty name are skipped.
+func groupsByTag[T any](items []T, tagged func(T) (string, []string)) map[string][]string {
+	out := map[string][]string{}
+	for _, it := range items {
+		name, tags := tagged(it)
+		if name == "" {
+			continue
+		}
+		for _, tag := range tags {
+			out[tag] = append(out[tag], name)
+		}
+	}
+	for tag, names := range out {
+		slices.Sort(names)
+		out[tag] = slices.Compact(names)
+	}
+	return out
 }
 
 // toSet projects items into a name set via key. Empty keys are skipped

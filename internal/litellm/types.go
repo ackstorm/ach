@@ -229,8 +229,11 @@ type AgentEntry struct {
 	AgentName       string         `json:"agent_name"`
 	AgentCardParams map[string]any `json:"agent_card_params,omitempty"`
 	LiteLLMParams   LiteLLMParams  `json:"litellm_params,omitempty"`
-	CreatedAt       string         `json:"created_at,omitempty"`
-	UpdatedAt       string         `json:"updated_at,omitempty"`
+	// AgentAccessGroups are the agent's access-group tags; the operator
+	// expands Environment.spec.runtime.agentGroups against them.
+	AgentAccessGroups []string `json:"agent_access_groups,omitempty"`
+	CreatedAt         string   `json:"created_at,omitempty"`
+	UpdatedAt         string   `json:"updated_at,omitempty"`
 }
 
 // UserKeyInfo is one row from

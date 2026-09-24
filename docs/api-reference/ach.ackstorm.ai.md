@@ -845,6 +845,7 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the reconciler<br />most recently processed. |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions carries Environment condition types per §6.6 closed set:<br />Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced. |  |  |
 | `unresolvedRuntime` _[UnresolvedRuntime](#unresolvedruntime)_ | UnresolvedRuntime lists runtime references not currently registered in<br />LiteLLM. Surfaced for `kubectl describe environment` per §6.4. The<br />field contract belongs here from Phase 1; the reconciler in Phase 2<br />rewrites it on every reconcile. |  |  |
+| `expandedRuntime` _[ExpandedRuntime](#expandedruntime)_ | ExpandedRuntime lists the MCP servers and A2A agents granted ONLY via<br />spec.runtime.mcpServerGroups / agentGroups (names also listed<br />explicitly are omitted). Nil when the groups grant nothing extra. |  |  |
 | `unresolvedContextPlugins` _string array_ | UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present. | \{  \} |  |
 | `unresolvedContextSkills` _string array_ | UnresolvedContextSkills lists context.skills entries whose content has<br />not yet been synced (last_successful_refresh IS NULL in the skills<br />projection row). A non-empty list blocks ExecutionResourcesResolved<br />from becoming True — same content-gating as UnresolvedContextPlugins. | \{  \} |  |
 | `litellmAccessGroup` _string_ | LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set. |  |  |
@@ -866,6 +867,25 @@ _Appears in:_
 | `tools` _string array_ |  |  |  |
 | `mcpServers` _string array_ |  |  |  |
 | `skills` _string array_ |  |  |  |
+
+
+#### ExpandedRuntime
+
+
+
+UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
+names the specific entries that did not resolve against LiteLLM.
+ExpandedRuntime is the group-derived part of the effective runtime.
+
+
+
+_Appears in:_
+- [EnvironmentStatus](#environmentstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mcpServers` _string array_ |  |  |  |
+| `a2aAgents` _string array_ |  |  |  |
 
 
 #### ExposeSpec
@@ -1838,6 +1858,9 @@ _Appears in:_
 | `models` _string array_ | Models lists LiteLLM model names (model_name) included in this Environment.<br />Names are projected into LiteLLM API request bodies (not ACH URL routing),<br />so the looser deny-pattern admits provider-prefixed ("openai/gpt-4") and<br />tagged ("gpt-4o:latest") names while forbidding URL-injection metacharacters<br />? # % plus whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). Only Models uses the loose pattern; see MCPServers<br />and A2AAgents below for why those must use the strict (no-slash) pattern. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `mcpServers` _string array_ | MCPServers lists LiteLLM MCP server names (server_name).<br />Names are used as chi route parameters at the forwarder (/mcp/\{name\});<br />a slash-containing name would be admitted but always 403 (chi matches<br />raw "%2F"-encoded segment against the decoded DB value — never matches).<br />The strict deny-pattern therefore also forbids "/" and "\" in addition<br />to ? # % whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `a2aAgents` _string array_ | A2AAgents lists LiteLLM A2A agent names (agent_name).<br />Names are used as chi route parameters at the forwarder (/a2a/\{name\});<br />same routing constraint as MCPServers — slash-containing names always 403.<br />The strict deny-pattern forbids "/" and "\" in addition to ? # %<br />whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `modelGroups` _string array_ | ModelGroups lists LiteLLM model access-group TAGS<br />(model_info.access_groups, e.g. "openai"). They are passed through to<br />the LiteLLM access group alongside Models and LiteLLM expands them at<br />request time; ACH never resolves them, so they never appear in the<br />hydrate manifest or the console. A tag matching no model grants nothing.<br />SECURITY: this widens automatically — tagging a new model in LiteLLM<br />grants it to every Environment naming the tag, with no CR change. |  | items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `mcpServerGroups` _string array_ | MCPServerGroups lists LiteLLM MCP server access-group TAGS<br />(mcp_access_groups). The operator expands them on every reconcile into<br />the MCP servers carrying any of the tags, unioned with MCPServers; the<br />names it added are reported in status.expandedRuntime. A tag matching<br />no server is ignored.<br />SECURITY: this widens automatically — tagging a new MCP server in<br />LiteLLM grants it to every Environment naming the tag, with no CR<br />change (picked up within the 5-minute LiteLLM snapshot refresh). |  | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
+| `agentGroups` _string array_ | A2AAgentGroups lists LiteLLM A2A agent access-group TAGS<br />(agent_access_groups), expanded exactly like MCPServerGroups.<br />Upstream LiteLLM does not store agent_access_groups on an agent (only<br />a LiteLLM carrying the ackstorm agent_access_groups patch does); on a<br />stock proxy every agent reports no tags and this field grants nothing.<br />SECURITY: same automatic widening as MCPServerGroups. |  | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `guardrails` _string array_ | Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM<br />runs on this Environment's ek_ traffic.<br />REQUIRES A LITELLM ENTERPRISE LICENCE. Team-scoped guardrails are premium-<br />gated: without LITELLM_LICENSE set on the proxy, a non-empty list here is<br />rejected 403 TWICE — when the operator attaches it to the shell team<br />(AccessGroupSynced=False, so the Environment never goes Available and NEW<br />ek_ minting is blocked) and again on every request a key in that team<br />makes. Leaving this empty is exempt and is the only supported shape on an<br />unlicensed proxy. Measured on LiteLLM v1.93.0, 2026-07-29; see<br />references/litellm-permission-model.md §11.<br />GLOBAL default_on guardrails are NOT gated and run on every request with<br />no licence and no ACH configuration — check `ach-cli runtime guardrails<br />list` before adding a name here, because naming a default_on guardrail<br />changes nothing except your exposure to the gate above.<br />WHICH traffic is each guardrail's own business, not ACH's: a guardrail<br />declares one or more modes, and ACH only attaches the name. A<br />pre_call/post_call guardrail inspects LLM completions and does NOT run on<br />/mcp traffic — that needs a guardrail configured with pre_mcp_call or<br />during_mcp_call. Listing a name here is therefore not a blanket promise<br />of coverage; `ach-cli runtime guardrails` prints each one's MODE.<br />This axis INVERTS the semantics of its siblings: models, mcpServers and<br />a2aAgents are additive grants, a guardrail is a constraint. ACH attaches<br />the names to the Environment's deny-all shell team; LiteLLM unions them<br />across key, team and request body, so a caller can ADD to the set but<br />never subtract from it.<br />Coverage is EK-only. ek_ keys live in this Environment's shell team and<br />inherit its guardrails; pk_ keys live in ach-user-<email> and reach the<br />Environment through the access group, which carries no guardrail field.<br />See references/litellm-permission-model.md.<br />An unresolved name blocks AccessGroupSynced, which blocks NEW ek_<br />minting — it does NOT stop existing keys, hydrate, or forwarded traffic.<br />Entries must be unique: the operator compares the attached set against<br />LiteLLM's stored list to decide whether a repair is needed, and<br />duplicates make that comparison undecidable (LiteLLM's own duplicate<br />handling differs between its storage and enforcement paths).<br />ACH never creates, updates or deletes guardrail definitions. | \{  \} | MaxItems: 50 <br />items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
@@ -2191,8 +2214,7 @@ _Appears in:_
 
 
 
-UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
-names the specific entries that did not resolve against LiteLLM.
+
 
 
 

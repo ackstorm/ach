@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runtime groups fixture. No explicit model/MCP names: everything this
+# Environment grants comes from LiteLLM access-group TAGS seeded by
+# scripts/cluster.sh — demo.demo-flash carries model_info.access_groups
+# ["e2e-grp"] (passed through to LiteLLM as a tag) and demo-mcp-nojwt carries
+# mcp_access_groups ["e2e-grp"] (expanded by the operator). agentGroups is not
+# exercised here: stock LiteLLM does not store agent_access_groups.
+# Part of the SYNCED set (verify_all gates Available); TestEnvironmentGroups
+# asserts against it.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: env-groups
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    modelGroups:
+      - e2e-grp
+    mcpServerGroups:
+      - e2e-grp
+  context: {}

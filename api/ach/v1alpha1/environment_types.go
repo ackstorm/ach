@@ -52,6 +52,45 @@ type RuntimeBlock struct {
 	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
 	A2AAgents []string `json:"a2aAgents,omitempty"`
 
+	// ModelGroups lists LiteLLM model access-group TAGS
+	// (model_info.access_groups, e.g. "openai"). They are passed through to
+	// the LiteLLM access group alongside Models and LiteLLM expands them at
+	// request time; ACH never resolves them, so they never appear in the
+	// hydrate manifest or the console. A tag matching no model grants nothing.
+	//
+	// SECURITY: this widens automatically — tagging a new model in LiteLLM
+	// grants it to every Environment naming the tag, with no CR change.
+	// +optional
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^?#%\s\x00-\x1f\x7f]+$`
+	ModelGroups []string `json:"modelGroups,omitempty"`
+
+	// MCPServerGroups lists LiteLLM MCP server access-group TAGS
+	// (mcp_access_groups). The operator expands them on every reconcile into
+	// the MCP servers carrying any of the tags, unioned with MCPServers; the
+	// names it added are reported in status.expandedRuntime. A tag matching
+	// no server is ignored.
+	//
+	// SECURITY: this widens automatically — tagging a new MCP server in
+	// LiteLLM grants it to every Environment naming the tag, with no CR
+	// change (picked up within the 5-minute LiteLLM snapshot refresh).
+	// +optional
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	MCPServerGroups []string `json:"mcpServerGroups,omitempty"`
+
+	// A2AAgentGroups lists LiteLLM A2A agent access-group TAGS
+	// (agent_access_groups), expanded exactly like MCPServerGroups.
+	// Upstream LiteLLM does not store agent_access_groups on an agent (only
+	// a LiteLLM carrying the ackstorm agent_access_groups patch does); on a
+	// stock proxy every agent reports no tags and this field grants nothing.
+	//
+	// SECURITY: same automatic widening as MCPServerGroups.
+	// +optional
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	A2AAgentGroups []string `json:"agentGroups,omitempty"`
+
 	// Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM
 	// runs on this Environment's ek_ traffic.
 	//
@@ -253,6 +292,12 @@ type EnvironmentStatus struct {
 	// +optional
 	UnresolvedRuntime *UnresolvedRuntime `json:"unresolvedRuntime,omitempty"`
 
+	// ExpandedRuntime lists the MCP servers and A2A agents granted ONLY via
+	// spec.runtime.mcpServerGroups / agentGroups (names also listed
+	// explicitly are omitted). Nil when the groups grant nothing extra.
+	// +optional
+	ExpandedRuntime *ExpandedRuntime `json:"expandedRuntime,omitempty"`
+
 	// UnresolvedContextPlugins lists context.plugins entries whose content
 	// has not yet been synced (last_successful_refresh IS NULL in the
 	// plugins or marketplace_plugins projection row). A non-empty list
@@ -287,6 +332,15 @@ type EnvironmentStatus struct {
 
 // UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
 // names the specific entries that did not resolve against LiteLLM.
+// ExpandedRuntime is the group-derived part of the effective runtime.
+type ExpandedRuntime struct {
+	// +optional
+	MCPServers []string `json:"mcpServers,omitempty"`
+
+	// +optional
+	A2AAgents []string `json:"a2aAgents,omitempty"`
+}
+
 type UnresolvedRuntime struct {
 	// +optional
 	// +kubebuilder:default={}

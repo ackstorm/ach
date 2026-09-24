@@ -228,27 +228,12 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// spec.runtime.X \ snapshot.X for X ∈ {Models, MCPServers, A2AAgents, Guardrails}.
 	// Lookup cost is O(n) in spec.runtime size, NOT in snapshot size.
 	snap := r.Snapshotter.Snapshot()
-	unresolved := achv1alpha1.UnresolvedRuntime{}
-	for _, m := range env.Spec.Runtime.Models {
-		if _, ok := snap.Models[m]; !ok {
-			unresolved.Models = append(unresolved.Models, m)
-		}
+	groupMCP, groupAgents, ok := expandRuntimeGroups(&env, snap)
+	if !ok {
+		logger.Info("runtime groups declared but LiteLLM snapshot not yet refreshed; requeueing")
+		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
-	for _, mcp := range env.Spec.Runtime.MCPServers {
-		if _, ok := snap.MCPServers[mcp]; !ok {
-			unresolved.MCPServers = append(unresolved.MCPServers, mcp)
-		}
-	}
-	for _, a := range env.Spec.Runtime.A2AAgents {
-		if _, ok := snap.A2AAgents[a]; !ok {
-			unresolved.A2AAgents = append(unresolved.A2AAgents, a)
-		}
-	}
-	for _, g := range env.Spec.Runtime.Guardrails {
-		if _, ok := snap.Guardrails[g]; !ok {
-			unresolved.Guardrails = append(unresolved.Guardrails, g)
-		}
-	}
+	unresolved := runtimeUnresolved(env.Spec.Runtime, snap)
 	totalUnresolved := len(unresolved.Models) + len(unresolved.MCPServers) +
 		len(unresolved.A2AAgents) + len(unresolved.Guardrails)
 
@@ -325,7 +310,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// §7: real AccessGroupSynced reconciliation. The helper owns the
 	// closed-set Type/Reason mapping per Hub §6.6 and returns the
 	// metav1.Condition to publish.
-	agCond := r.reconcileAccessGroup(ctx, &env, unresolved.Guardrails)
+	agCond := r.reconcileAccessGroup(ctx, &env, unresolved.Guardrails, groupMCP, groupAgents)
 	// Surface snapshot-stale prefix so operators see when the binding
 	// decision was made against cached LiteLLM data (Hub §6.4 / D-14).
 	if snap.Stale && agCond.Status == metav1.ConditionTrue {
@@ -399,6 +384,33 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: pluginUnresolvedRequeueAfter}, nil
 	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// runtimeUnresolved is spec.runtime.X \ snapshot.X for the explicit names of
+// every axis (group tags are never unresolved). O(n) in spec size.
+func runtimeUnresolved(rt achv1alpha1.RuntimeBlock, snap snapshot.LiteLLMSnapshot) achv1alpha1.UnresolvedRuntime {
+	unresolved := achv1alpha1.UnresolvedRuntime{}
+	for _, m := range rt.Models {
+		if _, ok := snap.Models[m]; !ok {
+			unresolved.Models = append(unresolved.Models, m)
+		}
+	}
+	for _, mcp := range rt.MCPServers {
+		if _, ok := snap.MCPServers[mcp]; !ok {
+			unresolved.MCPServers = append(unresolved.MCPServers, mcp)
+		}
+	}
+	for _, a := range rt.A2AAgents {
+		if _, ok := snap.A2AAgents[a]; !ok {
+			unresolved.A2AAgents = append(unresolved.A2AAgents, a)
+		}
+	}
+	for _, g := range rt.Guardrails {
+		if _, ok := snap.Guardrails[g]; !ok {
+			unresolved.Guardrails = append(unresolved.Guardrails, g)
+		}
+	}
+	return unresolved
 }
 
 // staleRequeueAfter is the requeue cadence when the LiteLLM snapshot
@@ -629,6 +641,12 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		}
 		execResolvedBytes = b
 	}
+	// Group-derived names join the explicit ones: the forwarder precheck and
+	// hydrate read concrete names from this row, never the group tags.
+	var expMCP, expAgents []string
+	if e := env.Status.ExpandedRuntime; e != nil {
+		expMCP, expAgents = e.MCPServers, e.A2AAgents
+	}
 	row := achdb.EnvironmentRow{
 		Namespace:                           env.Namespace,
 		Name:                                env.Name,
@@ -638,8 +656,8 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ContextArtifacts:                    env.Spec.Context.Artifacts,
 		ContextSkills:                       env.Spec.Context.Skills,
 		RuntimeModels:                       env.Spec.Runtime.Models,
-		RuntimeMCPServers:                   env.Spec.Runtime.MCPServers,
-		RuntimeA2AAgents:                    env.Spec.Runtime.A2AAgents,
+		RuntimeMCPServers:                   append(slices.Clone(env.Spec.Runtime.MCPServers), expMCP...),
+		RuntimeA2AAgents:                    append(slices.Clone(env.Spec.Runtime.A2AAgents), expAgents...),
 		RuntimeGuardrails:                   env.Spec.Runtime.Guardrails,
 		AvailableCondition:                  availBytes,
 		AccessGroupSyncedCondition:          agSyncedBytes,
@@ -726,6 +744,7 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
 	unresolvedGuardrails []string,
+	groupMCP, groupAgents []string,
 ) metav1.Condition {
 	logger := log.FromContext(ctx).WithValues("environment", env.Name)
 
@@ -769,6 +788,13 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 
 	mcpIDs, mcpUnresolved := mapResolve(env.Spec.Runtime.MCPServers, mcpMap)
 	agentIDs, agentUnresolved := mapResolve(env.Spec.Runtime.A2AAgents, agentMap)
+	// Group members come from the snapshot; one that vanished from the live
+	// list since is dropped, never reported — a group matching nothing is
+	// not an error, so a group member that no longer exists is not either.
+	groupMCPIDs, _ := mapResolve(groupMCP, mcpMap)
+	groupAgentIDs, _ := mapResolve(groupAgents, agentMap)
+	mcpIDs = append(mcpIDs, groupMCPIDs...)
+	agentIDs = append(agentIDs, groupAgentIDs...)
 	// mapResolve returns nil for empty input; normalize to a non-nil []
 	// so the PUT body serializes the dimension as `[]` (clear) rather
 	// than `null` — AccessGroupUpdateRequest no longer uses omitempty on
@@ -890,10 +916,9 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 		}
 	}
 
-	desiredModels := env.Spec.Runtime.Models
-	if desiredModels == nil {
-		desiredModels = []string{}
-	}
+	// Model group tags go to LiteLLM as-is: it expands them at request time,
+	// and they may change at any moment, so ACH never resolves them.
+	desiredModels := unionSorted(env.Spec.Runtime.Models, env.Spec.Runtime.ModelGroups)
 
 	// Step 3a: POST when absent.
 	if existing == nil {

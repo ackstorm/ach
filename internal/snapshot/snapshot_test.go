@@ -5,6 +5,7 @@ package snapshot
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -472,6 +473,40 @@ func TestSnapshotter_TeamsLandInSnapshot(t *testing.T) {
 	}
 	if _, ok := snap.Teams[""]; ok {
 		t.Error("Teams contains empty alias; toTeamSet must skip it")
+	}
+}
+
+// TestSnapshotter_GroupsByTag asserts the tag -> names maps the
+// EnvironmentReconciler expands mcpServerGroups / agentGroups against:
+// sorted, deduped, empty names skipped, and non-nil even with no tags.
+func TestSnapshotter_GroupsByTag(t *testing.T) {
+	fake := &fakeLiteLLM{
+		mcps: []litellm.MCPServerEntry{
+			{ServerName: "b", MCPAccessGroups: []string{"default", "ro"}},
+			{ServerName: "a", MCPAccessGroups: []string{"default"}},
+			{ServerName: "", MCPAccessGroups: []string{"default"}},
+		},
+		agents: []litellm.AgentEntry{{AgentName: "x", AgentAccessGroups: []string{"agents"}}},
+	}
+	s := NewSnapshotter(fake, logr.Discard())
+	if ok := s.refresh(context.Background()); !ok {
+		t.Fatalf("refresh returned false on healthy fake client")
+	}
+	snap := s.Snapshot()
+	if got := snap.MCPServerGroups["default"]; !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("MCPServerGroups[default] = %v; want [a b]", got)
+	}
+	if got := snap.MCPServerGroups["ro"]; !slices.Equal(got, []string{"b"}) {
+		t.Errorf("MCPServerGroups[ro] = %v; want [b]", got)
+	}
+	if got := snap.A2AAgentGroups["agents"]; !slices.Equal(got, []string{"x"}) {
+		t.Errorf("A2AAgentGroups[agents] = %v; want [x]", got)
+	}
+
+	empty := NewSnapshotter(&fakeLiteLLM{}, logr.Discard())
+	empty.refresh(context.Background())
+	if empty.Snapshot().MCPServerGroups == nil || empty.Snapshot().A2AAgentGroups == nil {
+		t.Error("group maps must be non-nil after a successful refresh")
 	}
 }
 

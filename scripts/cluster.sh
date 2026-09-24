@@ -341,6 +341,8 @@ reconcile_litellm() {
   # reproducing the live evidence shape of spec.md B.2 so the harness's documented
   # fallback to input_cost_per_token (A.2) is pinned by a real fixture. The dotted
   # alias matches the production model_name key shape.
+  # It also carries model_info.access_groups=["e2e-grp"]: env-groups reaches
+  # it ONLY through spec.runtime.modelGroups (TestEnvironmentGroups).
   for mid in $(curl -s http://localhost:4001/v1/model/info \
         -H "Authorization: Bearer ${mk}" \
       | jq -r '.data[] | select(.model_name=="demo.demo-flash") | .model_info.id'); do
@@ -360,7 +362,8 @@ reconcile_litellm() {
           "input_cost_per_token": 0.0000033,
           "output_cost_per_token": 0.0000044,
           "cache_read_input_token_cost": 0.00000033
-        }
+        },
+        "model_info": {"access_groups": ["e2e-grp"]}
       }' 2>&1)"
   echo "[cluster.sh]   model 'demo.demo-flash' → ${seed_out}"
 
@@ -397,11 +400,16 @@ reconcile_litellm() {
         -H 'Authorization: Bearer sk-test-master-key'
       echo "[cluster.sh]   mcp server '${srv}' (stale ${sid}) deleted"
     done
+    # demo-mcp-nojwt alone carries the e2e-grp tag: env-groups reaches it
+    # ONLY through spec.runtime.mcpServerGroups (TestEnvironmentGroups).
+    local groups='[]'
+    [ "${srv}" = "${MCP_NOJWT_SERVER_NAME}" ] && groups='["e2e-grp"]'
     seed_out="$(curl -s -X POST http://localhost:4001/v1/mcp/server \
         -H 'Authorization: Bearer sk-test-master-key' \
         -H 'Content-Type: application/json' \
         -d "{
           \"server_name\": \"${srv}\",
+          \"mcp_access_groups\": ${groups},
           \"transport\": \"http\",
           \"url\": \"http://ach-mcp-echo.ach-system.svc\",
           \"extra_headers\": [\"authorization\"],
@@ -778,6 +786,8 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/prompt-valid
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/artifact-valid
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
+  # Runtime groups only (no explicit names) — tag-granted model + MCP server.
+  kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-groups
   # Phase 5 SC2 unauthorized_team negative fixture. authorizedTeams names a
   # sentinel team absent from LiteLLM → AccessGroupSynced=False → Available=False
   # BY DESIGN, so it is NOT gated on Available. ExecutionResourcesResolved=True

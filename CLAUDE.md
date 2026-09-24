@@ -532,6 +532,12 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
   rolls both up — that's what `ach-cli env hydrate` / the demo gate on.
+  `spec.runtime.{modelGroups,mcpServerGroups,agentGroups}` take LiteLLM
+  access-group TAGS: model tags pass through to LiteLLM (never resolved by
+  ACH, so absent from hydrate/console); MCP/agent tags are expanded by the
+  operator from the LiteLLM snapshot into `runtime_*` + the access group
+  (`status.expandedRuntime`); no-match tags are ignored; stock LiteLLM stores
+  no `agent_access_groups` — see `references/litellm-permission-model.md` §17.
   `spec.runtime.guardrails` (LiteLLM guardrail names) **requires a LiteLLM
   Enterprise licence** — team-scoped guardrails are premium-gated, so on an
   unlicensed proxy a non-empty list 403s at attach (the Environment never goes

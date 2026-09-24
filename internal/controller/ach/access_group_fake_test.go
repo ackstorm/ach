@@ -46,8 +46,11 @@ type accessGroupFakeImpl struct {
 	// Resolver seeds — tests populate BEFORE creating the Environment CR.
 	// mcps / agents are name→id. teamsByAlias is alias→entries (matching
 	// the existing ListTeamsByAlias([]TeamListEntry, error) shape).
-	mcps         map[string]string
-	agents       map[string]string
+	mcps   map[string]string
+	agents map[string]string
+	// tags is name→access-group tags, shared by MCP servers and agents
+	// (mcp_access_groups / agent_access_groups). Nil-safe on read.
+	tags         map[string][]string
 	teamsByAlias map[string][]litellm.TeamListEntry
 	// guardrails seeds ListGuardrails — name→entry, populated via
 	// SeedGuardrail before creating the Environment CR and BEFORE calling
@@ -139,6 +142,7 @@ func (f *accessGroupFakeImpl) Reset() {
 	f.stored = map[string]*litellm.AccessGroupResponse{}
 	f.mcps = map[string]string{}
 	f.agents = map[string]string{}
+	f.tags = nil
 	f.teamsByAlias = map[string][]litellm.TeamListEntry{}
 	f.guardrails = map[string]litellm.GuardrailEntry{}
 	f.teamMirror = map[string][]string{}
@@ -341,7 +345,7 @@ func (f *accessGroupFakeImpl) ListMCPServers(_ context.Context) ([]litellm.MCPSe
 	}
 	out := make([]litellm.MCPServerEntry, 0, len(f.mcps))
 	for name, id := range f.mcps {
-		out = append(out, litellm.MCPServerEntry{ServerID: id, ServerName: name})
+		out = append(out, litellm.MCPServerEntry{ServerID: id, ServerName: name, MCPAccessGroups: f.tags[name]})
 	}
 	return out, nil
 }
@@ -355,7 +359,7 @@ func (f *accessGroupFakeImpl) ListA2AAgents(_ context.Context) ([]litellm.AgentE
 	}
 	out := make([]litellm.AgentEntry, 0, len(f.agents))
 	for name, id := range f.agents {
-		out = append(out, litellm.AgentEntry{AgentID: id, AgentName: name})
+		out = append(out, litellm.AgentEntry{AgentID: id, AgentName: name, AgentAccessGroups: f.tags[name]})
 	}
 	return out, nil
 }
@@ -548,6 +552,17 @@ func (f *accessGroupFakeImpl) SeedMCP(name, id string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mcps[name] = id
+}
+
+// SeedTags sets the access-group tags ListMCPServers / ListA2AAgents report
+// for name. Callers must refresh envSnapshotter afterwards.
+func (f *accessGroupFakeImpl) SeedTags(name string, tags ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.tags == nil {
+		f.tags = map[string][]string{}
+	}
+	f.tags[name] = tags
 }
 
 func (f *accessGroupFakeImpl) SeedAgent(name, id string) {

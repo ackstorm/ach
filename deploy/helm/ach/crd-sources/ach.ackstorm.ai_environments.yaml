@@ -193,6 +193,20 @@ spec:
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
                       type: string
                     type: array
+                  agentGroups:
+                    description: |-
+                      A2AAgentGroups lists LiteLLM A2A agent access-group TAGS
+                      (agent_access_groups), expanded exactly like MCPServerGroups.
+                      Upstream LiteLLM does not store agent_access_groups on an agent (only
+                      a LiteLLM carrying the ackstorm agent_access_groups patch does); on a
+                      stock proxy every agent reports no tags and this field grants nothing.
+
+                      SECURITY: same automatic widening as MCPServerGroups.
+                    items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      type: string
+                    type: array
                   guardrails:
                     default: []
                     description: |-
@@ -249,6 +263,22 @@ spec:
                     x-kubernetes-validations:
                     - message: spec.runtime.guardrails entries must be unique
                       rule: self.all(x, self.exists_one(y, y == x))
+                  mcpServerGroups:
+                    description: |-
+                      MCPServerGroups lists LiteLLM MCP server access-group TAGS
+                      (mcp_access_groups). The operator expands them on every reconcile into
+                      the MCP servers carrying any of the tags, unioned with MCPServers; the
+                      names it added are reported in status.expandedRuntime. A tag matching
+                      no server is ignored.
+
+                      SECURITY: this widens automatically — tagging a new MCP server in
+                      LiteLLM grants it to every Environment naming the tag, with no CR
+                      change (picked up within the 5-minute LiteLLM snapshot refresh).
+                    items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      type: string
+                    type: array
                   mcpServers:
                     default: []
                     description: |-
@@ -262,6 +292,21 @@ spec:
                     items:
                       maxLength: 253
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      type: string
+                    type: array
+                  modelGroups:
+                    description: |-
+                      ModelGroups lists LiteLLM model access-group TAGS
+                      (model_info.access_groups, e.g. "openai"). They are passed through to
+                      the LiteLLM access group alongside Models and LiteLLM expands them at
+                      request time; ACH never resolves them, so they never appear in the
+                      hydrate manifest or the console. A tag matching no model grants nothing.
+
+                      SECURITY: this widens automatically — tagging a new model in LiteLLM
+                      grants it to every Environment naming the tag, with no CR change.
+                    items:
+                      maxLength: 253
+                      pattern: ^[^?#%\s\x00-\x1f\x7f]+$
                       type: string
                     type: array
                   models:
@@ -346,6 +391,21 @@ spec:
                   - type
                   type: object
                 type: array
+              expandedRuntime:
+                description: |-
+                  ExpandedRuntime lists the MCP servers and A2A agents granted ONLY via
+                  spec.runtime.mcpServerGroups / agentGroups (names also listed
+                  explicitly are omitted). Nil when the groups grant nothing extra.
+                properties:
+                  a2aAgents:
+                    items:
+                      type: string
+                    type: array
+                  mcpServers:
+                    items:
+                      type: string
+                    type: array
+                type: object
               litellmAccessGroup:
                 description: |-
                   LitellmAccessGroup is the synced LiteLLM access group name (§6.4).
