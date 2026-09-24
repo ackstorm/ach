@@ -101,7 +101,7 @@ describe('CreateKeyModal — form view', () => {
     ).toBeInTheDocument();
   });
 
-  it('disables create when the key allowance is exhausted', () => {
+  it('leaves the key limit to the server: submits even when bootstrap says exhausted', async () => {
     useSessionStore.setState({
       status: 200,
       hasLoaded: true,
@@ -117,11 +117,23 @@ describe('CreateKeyModal — form view', () => {
         chat_url: '',
       },
     });
-    setMutation(vi.fn());
+    setEnvironments([{ name: 'prod', status: 'Available' }]);
+    const mutateAsync = vi.fn().mockRejectedValue(
+      Object.assign(new Error(), {
+        status: 403,
+        detail: 'key limit reached: 2 of 2 in use — ask an admin to raise it',
+      }),
+    );
+    setMutation(mutateAsync);
     render(<CreateKeyModal />);
 
-    expect(screen.getByRole('button', { name: 'Create Key' })).toBeDisabled();
-    expect(screen.getByText('Key limit reached (2 of 2 in use). Ask an admin to raise it.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('name'), { target: { value: 'my-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Key' }));
+
+    expect(
+      await screen.findByText('key limit reached: 2 of 2 in use — ask an admin to raise it'),
+    ).toBeInTheDocument();
+    expect(mutateAsync).toHaveBeenCalled();
   });
 
   it('offers the four expiry presets: Never, 7 days, 30 days, 90 days', () => {

@@ -49,7 +49,6 @@ import {
 } from '@/lib/key-validation';
 import { cn } from '@/lib/utils';
 import { useCreateKeyModalStore } from '@/stores/create-key-modal';
-import { useSessionStore } from '@/stores/session';
 
 const ENVIRONMENT_REQUIRED_ERROR = 'Select an environment.';
 
@@ -62,7 +61,6 @@ interface CreateResult {
 export function CreateKeyModal() {
   const open = useCreateKeyModalStore((s) => s.open);
   const closeModal = useCreateKeyModalStore((s) => s.closeModal);
-  const me = useSessionStore((s) => s.me);
 
   const [name, setName] = useState('');
   const [environment, setEnvironment] = useState('');
@@ -76,8 +74,6 @@ export function CreateKeyModal() {
 
   const createKey = useCreateKey();
   const submitting = createKey.isPending;
-  const keyLimitReached =
-    me?.keys_used != null && me.max_keys != null && me.keys_used >= me.max_keys;
   const { copied, copy } = useCopyFeedback();
 
   // useEnvironments never throws — it resolves to [] when the list can't be
@@ -119,7 +115,7 @@ export function CreateKeyModal() {
   const onSubmit = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-      if (submitting || keyLimitReached) return;
+      if (submitting) return;
       setFormError(null);
 
       const nameValue = name.trim();
@@ -153,7 +149,7 @@ export function CreateKeyModal() {
         setFormError(err.detail ?? CREATE_502_ERROR);
       }
     },
-    [name, environment, expiry, submitting, keyLimitReached, createKey],
+    [name, environment, expiry, submitting, createKey],
   );
 
   return (
@@ -329,11 +325,6 @@ export function CreateKeyModal() {
               {formError ? (
                 <p className="text-xs text-destructive">{formError}</p>
               ) : null}
-              {keyLimitReached ? (
-                <p className="text-xs text-destructive">
-                  Key limit reached ({me?.keys_used} of {me?.max_keys} in use). Ask an admin to raise it.
-                </p>
-              ) : null}
             </div>
             <div className="flex justify-end gap-3">
               <Button
@@ -344,7 +335,7 @@ export function CreateKeyModal() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={submitting || keyLimitReached}>
+              <Button type="submit" disabled={submitting}>
                 Create Key
               </Button>
             </div>
