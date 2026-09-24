@@ -641,6 +641,10 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		}
 		execResolvedBytes = b
 	}
+	specBytes, err := json.Marshal(env.Spec)
+	if err != nil {
+		return fmt.Errorf("marshal Environment spec: %w", err)
+	}
 	// Group-derived names join the explicit ones: the forwarder precheck and
 	// hydrate read concrete names from this row, never the group tags.
 	var expMCP, expAgents []string
@@ -665,6 +669,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		ResourceVersion:                     env.ResourceVersion,
 		Notice:                              env.Spec.Notice,
 		Description:                         env.Spec.Description,
+		Spec:                                specBytes,
 	}
 	// Issue #34 + GitOps-wins (G2): project + NOTIFY atomically so any
 	// consumer waking on ach_environments_changed SELECTs a snapshot that

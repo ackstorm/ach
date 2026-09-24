@@ -38,7 +38,11 @@ type manifest struct {
 // helpers consume. Conditions/ResourceVersion are left zero — the DB layer pins
 // those (origin='ui', conditions NULL) for a draft row.
 func specToRow(ns, name string, spec v1alpha1.EnvironmentSpec) db.EnvironmentRow {
+	// Marshalling a decoded EnvironmentSpec cannot fail: it holds only
+	// strings, slices and a float64 that came from JSON (never NaN/Inf).
+	raw, _ := json.Marshal(spec)
 	return db.EnvironmentRow{
+		Spec:              raw,
 		Namespace:         ns,
 		Name:              name,
 		AuthorizedTeams:   spec.AuthorizedTeams,
@@ -55,9 +59,16 @@ func specToRow(ns, name string, spec v1alpha1.EnvironmentSpec) db.EnvironmentRow
 	}
 }
 
-// rowToSpec is the inverse of specToRow: it projects the spec-bearing columns of
-// a row back into an EnvironmentSpec (status/condition columns are dropped).
+// rowToSpec is the inverse of specToRow. It returns the stored spec verbatim
+// (every field, including spec.budget and the runtime group tags), and only
+// rebuilds it from the per-field columns for a row written before migration
+// 000024 — that rebuild drops fields without a column, and on a CR row its
+// runtime lists carry the operator's group expansion.
 func rowToSpec(row db.EnvironmentRow) v1alpha1.EnvironmentSpec {
+	var spec v1alpha1.EnvironmentSpec
+	if len(row.Spec) > 0 && json.Unmarshal(row.Spec, &spec) == nil {
+		return spec
+	}
 	return v1alpha1.EnvironmentSpec{
 		Runtime: v1alpha1.RuntimeBlock{
 			Models:     row.RuntimeModels,

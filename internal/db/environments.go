@@ -74,6 +74,10 @@ type EnvironmentRow struct {
 	// Description is spec.description — optional catalog metadata (may be "").
 	Description string
 
+	// Spec is the whole Environment spec as JSON (migration 000024) — what the
+	// UI Objects API exports. Nil on rows written before 000024.
+	Spec []byte
+
 	DeletionTimestamp *time.Time // non-nil = drain-mode (CS-09)
 	ResourceVersion   string     // K8s metadata.resourceVersion at write time
 	UpdatedAt         time.Time  // server-set on UPSERT
@@ -107,12 +111,12 @@ const upsertEnvironmentSQL = `
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     available_condition, access_group_synced_condition,
 	     execution_resources_resolved_condition,
-	     resource_version, context_skills, notice, description, runtime_guardrails, updated_at, origin, locked)
+	     resource_version, context_skills, notice, description, runtime_guardrails, spec, updated_at, origin, locked)
 	VALUES ($1, $2,
 	        $3, $4, $5, $6,
 	        $7, $8, $9,
 	        $10, $11, $12,
-	        $13, $14, $15, $16, $17, now(), 'cr', TRUE)
+	        $13, $14, $15, $16, $17, $18, now(), 'cr', TRUE)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    authorized_teams                       = EXCLUDED.authorized_teams,
 	    context_prompts                        = EXCLUDED.context_prompts,
@@ -125,6 +129,7 @@ const upsertEnvironmentSQL = `
 	    runtime_mcp_servers                    = EXCLUDED.runtime_mcp_servers,
 	    runtime_a2a_agents                     = EXCLUDED.runtime_a2a_agents,
 	    runtime_guardrails                     = EXCLUDED.runtime_guardrails,
+	    spec                                   = EXCLUDED.spec,
 	    available_condition                    = EXCLUDED.available_condition,
 	    access_group_synced_condition          = EXCLUDED.access_group_synced_condition,
 	    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
@@ -163,6 +168,29 @@ func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) err
 		// slice binds to SQL NULL (the column is present in every INSERT, so
 		// the DEFAULT never applies), which would violate the constraint.
 		orEmptyStrings(row.RuntimeGuardrails),
+		row.Spec,
+	)
+}
+
+// environmentColumns is the SELECT list scanEnvironment reads, in order.
+const environmentColumns = `namespace, name,
+		       authorized_teams, context_prompts, context_plugins, context_artifacts,
+		       context_skills, notice, description,
+		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
+		       available_condition, access_group_synced_condition,
+		       execution_resources_resolved_condition,
+		       deletion_timestamp, resource_version, updated_at, spec`
+
+// scanEnvironment scans one environmentColumns row into r.
+func scanEnvironment(row pgx.Row, r *EnvironmentRow) error {
+	return row.Scan(
+		&r.Namespace, &r.Name,
+		&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
+		&r.ContextSkills, &r.Notice, &r.Description,
+		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
+		&r.AvailableCondition, &r.AccessGroupSyncedCondition,
+		&r.ExecutionResourcesResolvedCondition,
+		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Spec,
 	)
 }
 
@@ -177,26 +205,12 @@ func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) err
 // (namespace, name) identifiers per the package convention.
 func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*EnvironmentRow, error) {
 	const sql = `
-		SELECT namespace, name,
-		       authorized_teams, context_prompts, context_plugins, context_artifacts,
-		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
-		       available_condition, access_group_synced_condition,
-		       execution_resources_resolved_condition,
-		       deletion_timestamp, resource_version, updated_at
+		SELECT ` + environmentColumns + `
 		  FROM environments
 		 WHERE namespace = $1 AND name = $2
 	`
 	r := &EnvironmentRow{}
-	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
-		&r.Namespace, &r.Name,
-		&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
-		&r.ContextSkills, &r.Notice, &r.Description,
-		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
-		&r.AvailableCondition, &r.AccessGroupSyncedCondition,
-		&r.ExecutionResourcesResolvedCondition,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
-	); err != nil {
+	if err := scanEnvironment(pool.QueryRow(ctx, sql, ns, name), r); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -216,13 +230,7 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 // which deliberately surfaces drain-mode rows per CS-09).
 func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
 	const sql = `
-		SELECT namespace, name,
-		       authorized_teams, context_prompts, context_plugins, context_artifacts,
-		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
-		       available_condition, access_group_synced_condition,
-		       execution_resources_resolved_condition,
-		       deletion_timestamp, resource_version, updated_at
+		SELECT ` + environmentColumns + `
 		  FROM environments
 		 WHERE namespace = $1 AND deletion_timestamp IS NULL
 		 ORDER BY name ASC
@@ -238,15 +246,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 	out := []EnvironmentRow{}
 	for rows.Next() {
 		var r EnvironmentRow
-		if err := rows.Scan(
-			&r.Namespace, &r.Name,
-			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
-			&r.ContextSkills, &r.Notice, &r.Description,
-			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
-			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
-			&r.ExecutionResourcesResolvedCondition,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
-		); err != nil {
+		if err := scanEnvironment(rows, &r); err != nil {
 			return nil, fmt.Errorf("db: ListEnvironments(%s) scan: %w", ns, err)
 		}
 		out = append(out, r)
@@ -268,13 +268,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 // callers.
 func ListEnvironmentsIncludingDraining(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
 	const sql = `
-		SELECT namespace, name,
-		       authorized_teams, context_prompts, context_plugins, context_artifacts,
-		       context_skills, notice, description,
-		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
-		       available_condition, access_group_synced_condition,
-		       execution_resources_resolved_condition,
-		       deletion_timestamp, resource_version, updated_at
+		SELECT ` + environmentColumns + `
 		  FROM environments
 		 WHERE namespace = $1
 		 ORDER BY name ASC
@@ -290,15 +284,7 @@ func ListEnvironmentsIncludingDraining(ctx context.Context, pool *pgxpool.Pool, 
 	out := []EnvironmentRow{}
 	for rows.Next() {
 		var r EnvironmentRow
-		if err := rows.Scan(
-			&r.Namespace, &r.Name,
-			&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
-			&r.ContextSkills, &r.Notice, &r.Description,
-			&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
-			&r.AvailableCondition, &r.AccessGroupSyncedCondition,
-			&r.ExecutionResourcesResolvedCondition,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
-		); err != nil {
+		if err := scanEnvironment(rows, &r); err != nil {
 			return nil, fmt.Errorf("db: ListEnvironmentsIncludingDraining(%s) scan: %w", ns, err)
 		}
 		out = append(out, r)

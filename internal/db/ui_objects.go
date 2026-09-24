@@ -72,6 +72,7 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 		row.Notice,
 		row.Description,
 		orEmptyStrings(row.RuntimeGuardrails),
+		row.Spec,
 	}
 }
 
@@ -80,12 +81,12 @@ const insertUIEnvironmentSQL = `
 	    (namespace, name,
 	     authorized_teams, context_prompts, context_plugins, context_artifacts,
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
-	     context_skills, notice, description, runtime_guardrails,
+	     context_skills, notice, description, runtime_guardrails, spec,
 	     resource_version, updated_at, origin, locked)
 	VALUES ($1, $2,
 	        $3, $4, $5, $6,
 	        $7, $8, $9,
-	        $10, $11, $12, $13,
+	        $10, $11, $12, $13, $14,
 	        '', now(), 'ui', FALSE)
 	ON CONFLICT (namespace, name) DO NOTHING
 	RETURNING namespace
@@ -134,6 +135,7 @@ const updateUIEnvironmentSQL = `
 	    notice              = $11,
 	    description         = $12,
 	    runtime_guardrails  = $13,
+	    spec                = $14,
 	    updated_at          = now()
 	 WHERE namespace = $1 AND name = $2 AND origin = 'ui'
 	RETURNING namespace

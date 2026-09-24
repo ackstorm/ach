@@ -90,7 +90,11 @@ Objects API (`/platform/objects`, Environment only in v1) also writes
 `origin='ui'` draft rows; the operator is always authoritative and TAKES OVER a
 matching `ui` row on CR apply (`origin` 'ui'→'cr', `locked=TRUE`), while the UI
 is fenced from operator-owned rows (`403 immutable_via_ui`). Round-trip: draft
-in UI → `GET …/yaml` export → commit + `kubectl apply` → operator takeover. The forwarder's only remaining k8s read is the
+in UI → `GET …/yaml` export → commit + `kubectl apply` → operator takeover.
+The export renders the spec stored verbatim in `environments.spec` (jsonb,
+migration 000024 — written by the operator and the UI path), NOT the per-field
+columns: those carry the operator's runtime-group expansion and lack e.g.
+`budget`; they are rebuilt only for a row older than 000024. The forwarder's only remaining k8s read is the
 `ach-jwt-signing-keys` Secret informer; the platform-api's only remaining k8s
 touchpoint is the Dex leg of the OAuth AS.
 
