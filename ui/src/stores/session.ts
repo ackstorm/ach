@@ -16,7 +16,7 @@
 //   1. set status = null FIRST (show loading immediately on every (re)load);
 //   2. await getJson('/platform/console/bootstrap') (never-throws; status 0 on
 //      network failure);
-//   3. on 200: store `me` (bootstrap + name = email + endpoint = this origin)
+//   3. on 200: store `me` (bootstrap + name falling back to email + endpoint = this origin)
 //      AND flip hasLoaded true (a LATER 401 now resolves to expired, not signin);
 //   4. ALWAYS set status to the response status.
 //
@@ -50,7 +50,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     // (UI-SPEC §Loading Sequence step 1).
     set({ status: null });
 
-    const { status, data } = await getJson<Omit<SessionMe, 'name' | 'endpoint'>>(
+    const { status, data } = await getJson<Omit<SessionMe, 'endpoint'>>(
       '/platform/console/bootstrap',
     );
 
@@ -58,7 +58,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       // `me` is set ONLY on 200; hasLoaded flips true so a later 401 routes to
       // "expired". hasLoaded is monotonic — never set back to false here.
       set({
-        me: { ...data, name: data.email, endpoint: window.location.origin },
+        me: { ...data, name: data.name || data.email, endpoint: window.location.origin },
         hasLoaded: true,
       });
     }

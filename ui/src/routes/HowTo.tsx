@@ -14,9 +14,8 @@
 //
 // PERSONALIZATION (no rebuild): the gateway base URL is read live from the
 // session (`me.endpoint` === settings.api_public_url, e.g. https://api.<domain>);
-// the hosted-chat URL is derived by swapping the `api.` host label for `chat.`
-// (the deployment's convention — chat.<domain>). Falls back to a neutral
-// placeholder host when the endpoint is absent/unparseable.
+// the hosted-chat card renders only when the deployment configures a chat URL
+// (bootstrap `chat_url`, chart platformApi.console.chatUrl).
 //
 // SECURITY (T-10-01 / info disclosure): this page NEVER renders a real key. The
 // curl/exports show the literal `ek_...` placeholder; minting (and the one-time
@@ -52,14 +51,11 @@ import { useModels } from '@/hooks/use-capabilities';
 import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
 import { TAB_PILL, TAB_PILL_LIST } from '@/lib/ui';
 import { cn } from '@/lib/utils';
-import { deriveSubdomainUrl } from '@/lib/urls';
 import { useConfigStore } from '@/stores/config';
 import { useSessionStore } from '@/stores/session';
 
 // Featured model alias for the quickstart (locked copy — the standard alias).
 const MODEL_ALIAS = 'ackstorm.fast';
-
-// `deriveSubdomainUrl` now lives in @/lib/urls (shared with the CHAT nav button).
 
 // ── TOC ──────────────────────────────────────────────────────────────────────
 // Sticky in-page nav. NOTE: this app is a HASH router (#/howto), so the URL hash
@@ -177,8 +173,7 @@ export function HowTo() {
   // Live gateway base (api_public_url). Falls back to a neutral placeholder so
   // the page reads sensibly before the session resolves.
   const apiBase = me?.endpoint || FALLBACK_API_BASE;
-  const chatUrl =
-    config.chat_public_url || deriveSubdomainUrl(me?.endpoint, 'chat');
+  const chatUrl = me?.chat_url;
   const brandShort = config.brand_short || 'ACH';
 
   // The quickstart curl — the featured first call. Header is ACH's declared
@@ -955,7 +950,8 @@ gemini`,
             sub="Prefer a chat window over a shell? Use a browser UI — paste your key once and start chatting."
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* ACKstorm Chat — hosted */}
+              {/* ACKstorm Chat — hosted; only when a chat URL is configured */}
+              {chatUrl && (
               <a
                 href={chatUrl}
                 target="_blank"
@@ -984,6 +980,7 @@ gemini`,
                   {chatUrl}
                 </span>
               </a>
+              )}
 
               {/* openwork — coming soon (not yet wired to the gateway) */}
               <a

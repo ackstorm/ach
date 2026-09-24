@@ -114,6 +114,7 @@ describe('CreateKeyModal — form view', () => {
         keys_used: 2,
         max_keys: 2,
         endpoint: window.location.origin,
+        chat_url: '',
       },
     });
     setMutation(vi.fn());

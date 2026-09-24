@@ -28,7 +28,6 @@ import {
 import { Toaster } from '@/components/ui/toast';
 import { postJson } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { deriveSubdomainUrl } from '@/lib/urls';
 import { BrandLockup } from './BrandLockup';
 import { SiteFooter } from './SiteFooter';
 import { ThemeToggle } from './ThemeToggle';
@@ -82,10 +81,10 @@ export function AppShell({ me, config }: AppShellProps) {
   // item below always renders as a live link. Real per-Environment gating (if
   // still wanted) is a follow-up.
   //
-  // Explicit chat URL when the deployment sets CHAT_PUBLIC_URL; otherwise derive
-  // chat.<domain> from the gateway host.
-  const chatUrl = config.chat_public_url || deriveSubdomainUrl(me.endpoint, 'chat');
-  const chatEl = (
+  // The chat URL is deployment config (chart platformApi.console.chatUrl,
+  // served by bootstrap); unset hides the button rather than guessing a host.
+  const chatUrl = me.chat_url;
+  const chatEl = chatUrl ? (
     <a
       href={chatUrl}
       target="_blank"
@@ -95,7 +94,7 @@ export function AppShell({ me, config }: AppShellProps) {
       Chat
       <ExternalLink className="size-3.5" aria-hidden="true" />
     </a>
-  );
+  ) : null;
 
   // Single source of truth for the primary nav, rendered two ways: an inline row
   // on md+ and a collapsed hamburger menu on mobile (so the header never overflows

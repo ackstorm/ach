@@ -66,6 +66,12 @@ type Deps struct {
 	// degrades these advisory fields to null if the read fails; POST /platform/keys
 	// remains the authoritative gate.
 	Allowance func(ctx context.Context, email string) (used int, max int, err error)
+	// DisplayName is the signed-in user's IdP name for the console header,
+	// "" when unknown (a bearer caller, an IdP without a name claim) — the
+	// SPA then shows the email.
+	DisplayName func(r *http.Request) string
+	// ChatURL is the hosted chat UI the Chat button opens; "" hides it.
+	ChatURL string
 }
 
 // scopePersonal is the ?scope=personal capabilities value, and doubles as
@@ -93,11 +99,16 @@ func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
 	kc, _ := middleware.KeyContextFromCtx(ctx)
 	body := map[string]any{
 		"email":                       kc.OwnerEmail,
+		"name":                        "",
+		"chat_url":                    d.ChatURL,
 		"is_admin":                    kc.IsAdmin,
 		"openwork_enabled":            d.OpenWorkEnabled,
 		"suspend_propagation_seconds": SuspendPropagationSeconds,
 		"keys_used":                   nil,
 		"max_keys":                    nil,
+	}
+	if d.DisplayName != nil {
+		body["name"] = d.DisplayName(r)
 	}
 	if d.Allowance != nil {
 		used, max, err := d.Allowance(ctx, kc.OwnerEmail)

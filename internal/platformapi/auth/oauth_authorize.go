@@ -89,6 +89,9 @@ func bindingHash(secret string) string {
 type oauthUser struct {
 	Sub    string `json:"sub"`
 	UserID string `json:"user_id"`
+	// Name is the IdP display name, shown by the console; empty when the
+	// IdP sends none.
+	Name string `json:"name,omitempty"`
 }
 
 // dexRefreshKind stores the user's Dex refresh token (offline_access) —
@@ -212,7 +215,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		clientRedirect(w, r, p.RedirectURI, pv)
 		return
 	}
-	email, dexRefresh, err := d.dexExchange(r.Context(), q.Get("code"), p.DexVerifier)
+	email, name, dexRefresh, err := d.dexExchange(r.Context(), q.Get("code"), p.DexVerifier)
 	if err != nil || email == "" {
 		d.Auth.Logger.Warn("oauth: dex callback failed", "err", err)
 		htmlError(w, 400, "the identity provider did not complete the login")
@@ -235,7 +238,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, status, msg)
 		return
 	}
-	u := oauthUser{Sub: email, UserID: userID}
+	u := oauthUser{Sub: email, UserID: userID, Name: name}
 	if p.Console {
 		d.consoleFinish(w, r, p, pendingID, u)
 		return
@@ -291,30 +294,30 @@ func (d OAuthDeps) dexLogin(state, verifier string) string {
 // refresh token (offline_access) is what every later ACH refresh hands back
 // to Dex. A Dex that issues none (scope not granted, connector without
 // refresh) fails the login here, loudly, instead of an hourly re-login.
-func (d OAuthDeps) dexExchange(ctx context.Context, code, verifier string) (email, dexRefresh string, err error) {
+func (d OAuthDeps) dexExchange(ctx context.Context, code, verifier string) (email, name, dexRefresh string, err error) {
 	if d.DexExchange != nil {
 		return d.DexExchange(ctx, code, verifier)
 	}
 	tok, err := d.dexConfig().Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	rawID, _ := tok.Extra("id_token").(string)
 	if rawID == "" {
-		return "", "", errors.New("no id_token in the Dex response")
+		return "", "", "", errors.New("no id_token in the Dex response")
 	}
 	if tok.RefreshToken == "" {
-		return "", "", errors.New("no refresh_token in the Dex response (offline_access not granted)")
+		return "", "", "", errors.New("no refresh_token in the Dex response (offline_access not granted)")
 	}
 	idt, err := d.Auth.IDTokenVerifier.Verify(ctx, rawID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	var claims idTokenClaims
 	if err := idt.Claims(&claims); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return claims.Email, tok.RefreshToken, nil
+	return claims.Email, strings.TrimSpace(claims.Name), tok.RefreshToken, nil
 }
 
 // dexRefresh asks Dex — and through it the identity provider — whether

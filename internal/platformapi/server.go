@@ -53,6 +53,9 @@ type Deps struct {
 	// explicit user_limits row. Zero is deny-by-default.
 	DefaultMaxKeys int
 
+	// ConsoleChatURL is the console Chat button's target; empty hides it.
+	ConsoleChatURL string
+
 	// LiteLLMREST is the concrete transport behind LiteLLM, for the
 	// console's user-scoped reads (AsUser: the user's own key on the shared
 	// transport, spec §10.1). nil in tests that never reach those routes.
@@ -160,9 +163,19 @@ func New(deps Deps) http.Handler {
 	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
 	// a client that does not yet hold a credential).
 	authnOpts := deps.AuthnOptions
+	var displayName func(*http.Request) string
 	if deps.OAuth != nil {
 		od := *deps.OAuth
 		od.Auth = authDeps
+		// The console header's name rides the console session cookie, like
+		// the email does.
+		displayName = func(r *http.Request) string {
+			c, err := r.Cookie(auth.ConsoleCookieName(deps.InsecureCookie))
+			if err != nil {
+				return ""
+			}
+			return od.ConsoleSessionName(r.Context(), c.Value)
+		}
 		r.Route("/platform/oauth", auth.MountOAuth(od))
 		// The OpenCode client of that AS, as an npm tarball (anonymous too).
 		r.Get("/platform/opencode-auth", opencodeauth.Handler())
@@ -233,7 +246,9 @@ func New(deps Deps) http.Handler {
 			Allowance: func(ctx context.Context, email string) (int, int, error) {
 				return db.UserKeyAllowance(ctx, deps.Pool, email, deps.DefaultMaxKeys)
 			},
-			Audit: deps.Audit, Logger: deps.Logger,
+			DisplayName: displayName,
+			ChatURL:     deps.ConsoleChatURL,
+			Audit:       deps.Audit, Logger: deps.Logger,
 		})
 
 		adminDeps := admin.Deps{

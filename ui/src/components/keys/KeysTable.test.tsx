@@ -64,6 +64,7 @@ beforeEach(() => {
         keys_used: null,
         max_keys: null,
         endpoint: 'https://litellm.example.com',
+        chat_url: '',
       },
       loadSession,
       markExpired,

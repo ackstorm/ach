@@ -13,8 +13,10 @@
 
 export interface SessionMe {
   email: string;
-  /** No display name in ACH's identity — mirrors email (set by the store). */
+  /** IdP display name from the console session; the store falls back to email when empty. */
   name: string;
+  /** Hosted chat UI (chart platformApi.console.chatUrl); "" hides the Chat button. */
+  chat_url: string;
   is_admin: boolean;
   openwork_enabled: boolean;
   /** UI notice bound for suspend propagation (spec §8.2). */
@@ -441,9 +443,6 @@ export interface AppConfig {
   tagline: string;
   accent_segment: string;
   public_host: string;
-  // Explicit hosted-chat URL. Empty string => the SPA derives chat.<domain> from
-  // the gateway host (deriveSubdomainUrl over me.endpoint).
-  chat_public_url: string;
   providers: ConfigProvider[];
   links: Record<string, string>;
 }

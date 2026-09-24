@@ -74,6 +74,12 @@ func TestConsole_LoginSetsSessionAndRevalidatesLater(t *testing.T) {
 	if err != nil || !ok || email != "u@x.com" {
 		t.Fatalf("session: %q %v %v", email, ok, err)
 	}
+	if name := f.deps.ConsoleSessionName(context.Background(), c.Value); name != "Test User" {
+		t.Fatalf("session must keep the IdP display name: %q", name)
+	}
+	if name := f.deps.ConsoleSessionName(context.Background(), "no-such-session"); name != "" {
+		t.Fatalf("unknown session name = %q, want empty", name)
+	}
 	var rt string
 	if ok, _ := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &rt); !ok || rt != "dex-rt-0" {
 		t.Fatalf("login must store the shared Dex refresh token (D-22): %q", rt)

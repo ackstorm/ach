@@ -106,6 +106,10 @@ spec:
               value: /etc/ach/jwt
             - name: ACH_USER_MAX_KEYS
               value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
+            {{- with (.Values.platformApi.console).chatUrl }}
+            - name: ACH_CONSOLE_CHAT_URL
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.platformApi.userDefaults }}
             {{- if ne (toString .maxBudget) "" }}
             - name: ACH_USER_MAX_BUDGET

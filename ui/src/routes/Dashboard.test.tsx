@@ -68,6 +68,7 @@ function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
     keys_used: null,
     max_keys: null,
     endpoint: 'https://litellm.example.com',
+    chat_url: '',
     ...overrides,
   };
 }

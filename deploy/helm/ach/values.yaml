@@ -144,6 +144,11 @@ platformApi:
     # maxKeys is the number of non-revoked ek_ keys one person may hold.
     # 0 means deny-by-default; an admin grants an explicit allowance.
     maxKeys: 0
+  # console: settings for the web console served at /.
+  console:
+    # chatUrl is the hosted chat UI the console's Chat button (and the How-to
+    # chat card) opens, e.g. https://chat.example.com. Empty hides both.
+    chatUrl: ""
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.
   initContainers: []

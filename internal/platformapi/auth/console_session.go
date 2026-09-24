@@ -139,6 +139,17 @@ func (d OAuthDeps) consoleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ConsoleSessionName is the IdP display name stored with a console session,
+// "" when absent or unknown. Display only: Authn has already validated the
+// same cookie through ConsoleSession, so no revalidation happens here.
+func (d OAuthDeps) ConsoleSessionName(ctx context.Context, sid string) string {
+	var s consoleSession
+	if ok, err := d.Store.Get(ctx, consoleSessionKind, sid, &s); err != nil || !ok {
+		return ""
+	}
+	return s.Name
+}
+
 // ConsoleSession resolves a cookie value to the signed-in user. Every
 // AccessTTL the IdP is asked through the shared Dex refresh token
 // (revalidateAtIdP) and the user's oauth pk_ row is kept alive

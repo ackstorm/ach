@@ -120,9 +120,11 @@ func (deps Deps) callbackNow() time.Time {
 
 // idTokenClaims is the minimal subset of the Dex ID-token payload ACH
 // reads. The email claim is the SSO-resolved user identity per Hub §16
-// DB-05 (verbatim, never normalized).
+// DB-05 (verbatim, never normalized); name (the `profile` scope) is display
+// only — the console header — and may be empty.
 type idTokenClaims struct {
 	Email string `json:"email"`
+	Name  string `json:"name"`
 }
 
 // pkExpiryWindow is the sliding-window TTL for newly minted pk_ rows.

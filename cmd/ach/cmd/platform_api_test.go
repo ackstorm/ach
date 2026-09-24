@@ -93,3 +93,18 @@ func TestPlatformAPIConfig_CredentialHeadersResolveOnly(t *testing.T) {
 		t.Fatalf("passthrough on platform-api must be refused: %v", err)
 	}
 }
+
+func TestValidatePlatformAPIConfig_ConsoleChatURL(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	t.Setenv("ACH_CONSOLE_CHAT_URL", "https://chat.example.com")
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil || cfg.ConsoleChatURL != "https://chat.example.com" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	for _, bad := range []string{"chat.example.com", "javascript:alert(1)", "https://"} {
+		t.Setenv("ACH_CONSOLE_CHAT_URL", bad)
+		if _, err := validatePlatformAPIConfig(); err == nil {
+			t.Errorf("ACH_CONSOLE_CHAT_URL=%q: want error", bad)
+		}
+	}
+}

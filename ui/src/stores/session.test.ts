@@ -31,6 +31,7 @@ const ME: SessionMe = {
   keys_used: 2,
   max_keys: 5,
   endpoint: window.location.origin,
+  chat_url: '',
 };
 
 beforeEach(() => {
@@ -69,11 +70,12 @@ describe('session store', () => {
   });
 
   it('200 on /platform/console/bootstrap -> me = bootstrap + name (email) + endpoint (origin); hasLoaded:true', async () => {
-    // The bootstrap payload carries no display name and no gateway base:
-    // `name` mirrors the email and `endpoint` is this origin (ACH serves the
-    // console and /v1 from one host).
+    // An empty display name (no IdP name claim, or a bearer caller) falls
+    // back to the email; `endpoint` is this origin (ACH serves the console
+    // and /v1 from one host).
     const bootstrap = {
       email: 'alice@example.com',
+      name: '',
       is_admin: false,
       openwork_enabled: false,
       suspend_propagation_seconds: 60,
@@ -93,6 +95,17 @@ describe('session store', () => {
       endpoint: window.location.origin,
     });
     expect(hasLoaded).toBe(true);
+  });
+
+  it('keeps the IdP display name from bootstrap', async () => {
+    getJsonMock.mockResolvedValue({
+      status: 200,
+      data: { email: 'alice@example.com', name: 'Alice Doe', is_admin: false },
+    });
+
+    await useSessionStore.getState().loadSession();
+
+    expect(useSessionStore.getState().me?.name).toBe('Alice Doe');
   });
 
   it('carries the key allowance from bootstrap', async () => {

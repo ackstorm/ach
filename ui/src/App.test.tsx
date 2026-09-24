@@ -50,6 +50,7 @@ const ME: SessionMe = {
   keys_used: null,
   max_keys: null,
   endpoint: 'https://litellm.example.com',
+  chat_url: '',
 };
 
 // Spies stand in for the store boot actions so mounting App never fetches.

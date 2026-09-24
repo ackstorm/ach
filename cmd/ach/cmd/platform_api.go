@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -96,6 +97,10 @@ type platformAPIConfig struct {
 	// DefaultMaxKeys is the chart-wide fallback ek_ ceiling. Zero is
 	// deny-by-default; explicit per-user allowances live in Postgres.
 	DefaultMaxKeys int
+	// ConsoleChatURL is the hosted chat UI the console's Chat button opens
+	// (ACH_CONSOLE_CHAT_URL, chart platformApi.console.chatUrl). Empty hides
+	// the button.
+	ConsoleChatURL string
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
@@ -202,6 +207,13 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 			return nil, fmt.Errorf("ACH_USER_MAX_KEYS %q: must be a non-negative integer", raw)
 		}
 		cfg.DefaultMaxKeys = n
+	}
+	if raw := os.Getenv("ACH_CONSOLE_CHAT_URL"); raw != "" {
+		u, perr := url.Parse(raw)
+		if perr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return nil, fmt.Errorf("ACH_CONSOLE_CHAT_URL %q: must be an absolute http(s) URL", raw)
+		}
+		cfg.ConsoleChatURL = raw
 	}
 	return cfg, nil
 }
@@ -358,6 +370,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		InsecureCookie:   cfg.InsecureCookie,
 		UserBudget:       cfg.UserBudget,
 		DefaultMaxKeys:   cfg.DefaultMaxKeys,
+		ConsoleChatURL:   cfg.ConsoleChatURL,
 		Metrics:          platformAPICollectors,
 	}
 	return out, nil

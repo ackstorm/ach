@@ -208,11 +208,11 @@ func authorizeURL(clientID string, over map[string]string) string {
 
 func withFakeDex(f *asFixture, email string) *asFixture {
 	f.deps.DexLogin = func(state, _ string) string { return "http://dex.test/auth?state=" + state }
-	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, error) {
+	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, string, error) {
 		if code != "dexcode" {
-			return "", "", errors.New("bad code")
+			return "", "", "", errors.New("bad code")
 		}
-		return email, "dex-rt-0", nil
+		return email, "Test User", "dex-rt-0", nil
 	}
 	f.deps.Provision = func(_ context.Context, _ string) (string, error) { return "litellm-user-1", nil }
 	f.mount()

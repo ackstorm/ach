@@ -15,7 +15,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   tagline: 'Agent Capability Hub',
   accent_segment: '',
   public_host: '',
-  chat_public_url: '',
   providers: [],
   links: {},
 };

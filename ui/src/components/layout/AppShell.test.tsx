@@ -37,14 +37,15 @@ const ME: SessionMe = {
   keys_used: null,
   max_keys: null,
   endpoint: 'https://api.acme.ai',
+  chat_url: 'https://chat.acme.ai',
 };
 
 const CONFIG = { links: {} } as unknown as AppConfig;
 
-function renderShell(): void {
+function renderShell(me: SessionMe = ME): void {
   render(
     <MemoryRouter>
-      <AppShell me={ME} config={CONFIG} />
+      <AppShell me={me} config={CONFIG} />
     </MemoryRouter>,
   );
 }
@@ -55,11 +56,16 @@ afterEach(() => {
 });
 
 describe('AppShell — CHAT link', () => {
-  it('CHAT is always an external link to chat.<domain>', () => {
+  it('CHAT is an external link to the configured chat_url', () => {
     renderShell();
     const link = screen.getByRole('link', { name: 'Chat' });
     expect(link).toHaveAttribute('href', 'https://chat.acme.ai');
     expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('no chat_url hides CHAT instead of guessing a host', () => {
+    renderShell({ ...ME, chat_url: '' });
+    expect(screen.queryByRole('link', { name: 'Chat' })).toBeNull();
   });
 });
 
