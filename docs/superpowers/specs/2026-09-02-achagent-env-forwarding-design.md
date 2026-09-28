@@ -1,5 +1,7 @@
 # ACHAgent environment forwarding design
 
+> prepare/cleanup superseded by handoff/hooks — see 2026-09-28 plan
+
 **Date:** 2026-09-02  
 **Status:** Approved  
 **Compatibility:** Breaking change to the `v1alpha1` CRD

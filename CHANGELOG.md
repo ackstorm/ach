@@ -20,6 +20,18 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   return 404 through ACH.
 - Add `channels[].type: webhook-script`, including CRD validation, environment/Secret
   forwarding, generated schema, and renderer support for deterministic no-model webhooks.
+- `ACHAgent.spec.channels[].handoff`: a credentialed harness script (same shape as the
+  old `prepare`, plus `scope: event|session`) that runs in an empty `$ACH_HANDOFF_DIR`
+  and whose output wholesale-replaces the session workspace's `handoff/` directory.
+  `scope: event` (default) runs it every invocation — the handoff always starts from an
+  empty directory, so a script must clone/fetch from scratch each time; `scope: session`
+  runs it only when a new session is created. Generated secret aliases move from
+  `ACH_SECRET_<CHANNEL>_PREPARE_<VAR>` to `ACH_SECRET_<CHANNEL>_HANDOFF_<VAR>`.
+- `ACHAgent.spec.hooks.{sessionStart,sessionSuspend}`: agent-level session lifecycle
+  hooks run inside the mini-harness with only `engine.forwardEnv` variables (never
+  channel credentials). `sessionStart` runs once per new session, after the handoff and
+  before the first turn (fail-closed); `sessionSuspend` runs every time the session's
+  engine stops (idle, shutdown, sandbox suspend), before any HOME archive (best-effort).
 
 ### Changed
 - Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
@@ -34,6 +46,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   supported topology remains (operator + CRDs + platform-api + forwarder +
   content-service + gateway). A values file still carrying `profile: identity`
   fails the Helm render with migration guidance; `profile: full` is tolerated.
+- **BREAKING:** `channels[].prepare` and `channels[].cleanup` are removed. `prepare`
+  is replaced by `channels[].handoff`; `cleanup` has no direct replacement at the
+  channel level — session-stop behavior moves to `spec.hooks.sessionSuspend`. Also
+  removes `mcpServers[].type: repoCheckout` (the harness-hosted `checkout_repo` facade
+  is redundant with `handoff`, which puts a real working tree at the engine's cwd
+  without a tool call the model can get wrong).
 
 ### Added
 - Add singular `channels[].cleanup` hooks with independent environment forwarding and secret aliases.
