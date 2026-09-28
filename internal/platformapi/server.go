@@ -26,7 +26,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/hydrate"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/objects"
-	"github.com/ackstorm/ach/internal/platformapi/opencodeauth"
+	"github.com/ackstorm/ach/internal/platformapi/opencode"
 	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
@@ -125,6 +125,10 @@ type Deps struct {
 	// OpenWork is the Den configuration (ACH_OPENWORK_*); off by default,
 	// and mounted only alongside the OAuth AS (it needs the console session).
 	OpenWork openwork.Config
+	// GenAIProvider is the client-neutral provider name ACH configures its
+	// clients with (ACH_GENAI_PROVIDER_NAME): the OpenCode provider id the
+	// plugin signs in and the config names.
+	GenAIProvider string
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -178,7 +182,7 @@ func New(deps Deps) http.Handler {
 		}
 		r.Route("/platform/oauth", auth.MountOAuth(od))
 		// The OpenCode client of that AS, as an npm tarball (anonymous too).
-		r.Get("/platform/opencode-auth", opencodeauth.Handler())
+		r.Get("/clients/opencode/plugin", opencode.PluginHandler(deps.BaseURL, deps.GenAIProvider))
 		// Web console login/logout (D-27): the same AS, one more pending kind.
 		r.Route("/platform/console/session", auth.MountConsole(od))
 		// …and the cookie it sets resolves, through Authn, to the same

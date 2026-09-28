@@ -192,7 +192,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `test-full` | A | All non-cluster tests (unit + envtest, race-enabled). |
-| `test-unit` | A | Pure-logic unit tests (~10s warm); also runs the OpenCode auth plugin's `node --test` (`internal/platformapi/opencodeauth/plugin_test.mjs` — the devtools image ships Node 22 for it). |
+| `test-unit` | A | Pure-logic unit tests (~10s warm); also runs the OpenCode auth plugin's `node --test` (`internal/platformapi/opencode/plugin_test.mjs` — the devtools image ships Node 22 for it). |
 | `test-ui` | A | Console `tsc` type-check + vitest (`ui/`); `npm ci` runs if `ui/node_modules` is absent. CI unit job + pre-push gate 17 (skipped there when `ui/` is unchanged vs `origin/main`). |
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |

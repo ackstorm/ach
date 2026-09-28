@@ -368,6 +368,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		LiteLLM:          liteLLM,
 		LiteLLMREST:      liteLLM,
 		OpenWork:         openwork.FromEnv(),
+		GenAIProvider:    config.EnvOr("ACH_GENAI_PROVIDER_NAME", "ai-platform"),
 		Pepper:           cfg.Pepper,
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		Allowlist:        allowlist,

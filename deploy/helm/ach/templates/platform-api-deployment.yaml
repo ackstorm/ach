@@ -118,6 +118,8 @@ spec:
               value: {{ .budgetDuration | quote }}
             {{- end }}
             {{- end }}
+            - name: ACH_GENAI_PROVIDER_NAME
+              value: {{ .Values.genai.providerName | quote }}
             - name: ACH_OPENWORK_ENABLED
               value: {{ .Values.openwork.enabled | quote }}
             {{- if .Values.openwork.enabled }}

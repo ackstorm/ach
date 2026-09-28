@@ -1,4 +1,4 @@
-// node --test internal/platformapi/opencodeauth/plugin_test.mjs
+// node --test internal/platformapi/opencode/plugin_test.mjs
 // The three behaviours the 2026-09 audit reproduced, pinned against a fake AS:
 // a refresh race must not spend a rotated token, a failed discovery must not
 // poison the process, and a stray loopback hit must not consume the listener.

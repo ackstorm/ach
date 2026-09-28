@@ -3,7 +3,7 @@
 // Package console serves the React console at "/" and the
 // /platform/console/* contracts the console calls (session bootstrap and
 // capability views). The React build lands in dist/ (make ui-build) and is
-// embedded into the binary — the same shape as opencodeauth's plugin/.
+// embedded into the binary — the same shape as opencode's plugin/.
 package console
 
 import (

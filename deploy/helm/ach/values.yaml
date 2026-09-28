@@ -269,6 +269,13 @@ security:
       name: ach-credential-hash-pepper
       key: pepper
 
+# genai: client-neutral naming for the GenAI clients ACH configures
+# (OpenCode today). providerName is the provider id users sign in with —
+# `opencode auth login -p <providerName>` — and the name the per-user client
+# config (/clients/opencode/config) and the plugin's platform.json carry.
+genai:
+  providerName: ai-platform
+
 # openwork: the OpenWork organization server ("Den") served by platform-api
 # at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den
 # (the desktop API). Off by default. Connect MCP answers with an EMPTY

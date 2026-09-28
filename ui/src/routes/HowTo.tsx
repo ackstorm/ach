@@ -271,7 +271,7 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
   // the user's live gateway (apiBase); the key is the `ek_...` placeholder (mint
   // it on Keys). `caption` overrides the code-box label (e.g. a config-file path);
   // `note` adds a one-line instruction; `guide` links the authoritative doc.
-  const opencodeSsoCmd = `opencode plugin ${apiBase}/platform/opencode-auth -g`;
+  const opencodeSsoCmd = `opencode plugin ${apiBase}/clients/opencode/plugin -g`;
   // Tools are grouped by family (top-level tab). A family with more than one
   // variant (e.g. OpenCode → Gemini / OpenAI, Claude Code → API / Pro·Max)
   // renders a second row of pill sub-tabs; single-variant families render the

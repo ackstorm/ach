@@ -200,7 +200,7 @@ _test-unit: _fmt-check vet
 		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e") \
 		-coverprofile cover-unit.out
 	# The OpenCode auth plugin (served by platform-api) is JS: its own test.
-	node --test internal/platformapi/opencodeauth/plugin_test.mjs
+	node --test internal/platformapi/opencode/plugin_test.mjs
 
 .PHONY: test-ui
 test-ui: ## Console unit tests (tsc type-check + vitest) — npm ci runs if ui/node_modules is absent.
