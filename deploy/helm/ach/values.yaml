@@ -273,6 +273,9 @@ security:
 # (OpenCode today). providerName is the provider id users sign in with —
 # `opencode auth login -p <providerName>` — and the name the per-user client
 # config (/clients/opencode/config) and the plugin's platform.json carry.
+# Format: ^[a-z0-9][a-z0-9-]{0,63}$ (platform-api refuses to start otherwise).
+# Keep it stable: the plugin keeps its data under ~/.local/share/opencode/<name>/
+# and OpenCode keys the user's credentials by it — changing it signs users out.
 genai:
   providerName: ai-platform
 

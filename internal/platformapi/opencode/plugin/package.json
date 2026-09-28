@@ -1,9 +1,9 @@
 {
   "name": "alitellm-opencode-auth",
-  "version": "0.2.0",
-  "description": "OpenCode plugin: SSO login for the platform model provider via the ACH authorization server",
+  "version": "0.3.0",
+  "description": "OpenCode plugin: SSO sign-in to a GenAI platform backend and its per-user OpenCode config",
   "license": "Apache-2.0",
   "type": "module",
   "main": "index.mjs",
-  "files": ["index.mjs"]
+  "files": ["index.mjs", "platform.json", "README.md"]
 }

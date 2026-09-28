@@ -1,49 +1,78 @@
-// opencode plugin: SSO (OAuth) login for the platform's model provider.
+// opencode plugin: SSO (OAuth) sign-in to a GenAI platform backend's model
+// gateway, and that backend's per-user OpenCode config at every start.
 //
-//   opencode plugin https://<ach>/platform/opencode-auth -g
-//   opencode auth login -p ackstorm
+//   opencode plugin https://<origin>/clients/opencode/plugin -g
+//   opencode auth login -p <provider>
 //
-// Two ways in: a browser on this machine (loopback redirect), or the RFC 8628
-// device grant for a remote/headless host — the URL is opened on ANY browser,
-// the plugin polls the AS until the user has signed in there; nothing comes
-// back to this machine but the token.
+// Product-neutral: the backend that served the tarball wrote platform.json next
+// to this file ({"api": "<gateway>/v1", "platform": "<origin serving /clients/*>",
+// "provider": "<id>"}); plugin options in opencode.json override it. See README.md.
 //
-// PROVIDER is the provider id in the served api.json, not branding; the user
-// sees only "SSO (browser)".
+// Sign-in: `api` -> RFC 9728 protected-resource document -> RFC 8414 AS metadata;
+// browser (loopback + PKCE) or RFC 8628 device grant. opencode stores the tokens
+// (auth.json) but never refreshes them: `fresh()` does, for every model request
+// and for the config fetch.
 //
-// Nothing is configured here. The provider's API URL comes from opencode (the
-// served api.json); the authorization server comes from that URL's RFC 9728
-// document; endpoints and scope from there. Every request then carries a fresh
-// access token in Authorization, which the platform gateway maps to the user's
-// LiteLLM key.
-//
-// opencode stores the tokens (~/.local/share/opencode/auth.json) but never
-// refreshes them: the `fetch` returned by `loader` does, per request, the way
-// opencode's own Anthropic plugin does.
+// Config: the `config` hook fetches <platform>/clients/opencode/config
+// (ackstorm.opencode-config/1) and fills in what the user's own config lacks.
+// The user's config always wins. The provider id comes from platform.json
+// (`provider`).
 import { createServer } from "node:http"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { randomBytes, createHash } from "node:crypto"
 
-const PROVIDER = "ackstorm"
+// The provider id and data folder come from the backend (platform.json
+// `provider`, or plugin options). ponytail: one backend per opencode process, so
+// module-level; set once in SsoAuth before anything reads it.
+let PROVIDER = "ai-platform"
+const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,63}$/
 const DATA = `${process.env.XDG_DATA_HOME ?? `${process.env.HOME}/.local/share`}/opencode`
-const CLIENT_FILE = `${DATA}/ackstorm-client.json` // DCR result; opencode has no plugin KV
+const AUTH_FILE = `${DATA}/auth.json` // opencode's own credential store: read only, never written here
+const paths = () => ({
+  client: `${DATA}/${PROVIDER}/client.json`, // DCR result; opencode has no plugin KV
+  legacyClient: `${DATA}/${PROVIDER}-client.json`, // layout before the per-provider folder
+  cache: `${DATA}/${PROVIDER}/config.json`,
+  skills: `${DATA}/${PROVIDER}/skills`,
+})
+const CONFIG_SCHEMA = "ackstorm.opencode-config/1"
+const CONFIG_KEYS = ["provider", "mcp", "instructions"] // anything else the server sends is ignored
+const CACHE_MAX_AGE = 30 * 86_400_000
+const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const b64 = (b) => Buffer.from(b).toString("base64url")
 
 async function json(url, init) {
   const r = await fetch(url, { signal: AbortSignal.timeout(15_000), ...init })
-  if (!r.ok) throw new Error(`${r.status} ${url}`)
+  if (!r.ok) throw Object.assign(new Error(`${r.status} ${url}`), { status: r.status })
   return r.json()
 }
 
-// Provider API URL (opencode) -> protected-resource document (RFC 9728) ->
-// authorization-server metadata (RFC 8414). Once per process.
+// Where this plugin's backend is. platform.json is written into the tarball by
+// the backend that served it; options come from ["<url>", {...}] in opencode.json.
+let platformFile
+async function backend(options) {
+  platformFile ??= readFile(new URL("./platform.json", import.meta.url), "utf8")
+    .then(JSON.parse)
+    .catch(() => ({}))
+  return { ...(await platformFile), ...options }
+}
+
+async function apiUrl(client, options) {
+  const { api } = await backend(options)
+  if (api) return api
+  // ponytail: installs from before platform.json read the provider from config
+  // (the served api.json). Drop once every user has reinstalled.
+  const { data } = await client.config.providers()
+  const provider = data?.providers?.find((p) => p.id === PROVIDER)
+  return Object.values(provider?.models ?? {})[0]?.api?.url ?? provider?.options?.baseURL
+}
+
+// API URL -> protected-resource document (RFC 9728) -> authorization-server
+// metadata (RFC 8414). Once per process.
 let discovered
-function discover(client) {
+function discover(client, options) {
   return (discovered ??= (async () => {
-    const { data } = await client.config.providers()
-    const provider = data?.providers?.find((p) => p.id === PROVIDER)
-    const api = Object.values(provider?.models ?? {})[0]?.api?.url ?? provider?.options?.baseURL
-    if (!api) throw new Error(`provider ${PROVIDER} has no API URL`)
+    const api = await apiUrl(client, options)
+    if (!api) throw new Error(`no backend for ${PROVIDER}: reinstall the plugin from <origin>/clients/opencode/plugin`)
     const u = new URL(api)
     const prm = await json(`${u.origin}/.well-known/oauth-protected-resource${u.pathname.replace(/\/$/, "")}`)
     const issuer = prm.authorization_servers[0]
@@ -56,10 +85,12 @@ function discover(client) {
 // The saved DCR identity, or null. A refresh token belongs to the client that
 // obtained it, so a refresh must never register a new one (login does).
 async function savedClientId(issuer) {
-  try {
-    const saved = JSON.parse(await readFile(CLIENT_FILE, "utf8"))
-    if (saved.issuer === issuer) return saved.client_id
-  } catch {}
+  for (const file of [paths().client, paths().legacyClient]) {
+    try {
+      const saved = JSON.parse(await readFile(file, "utf8"))
+      if (saved.issuer === issuer) return saved.client_id
+    } catch {}
+  }
   return null
 }
 
@@ -79,8 +110,8 @@ async function clientId({ issuer, as }) {
       token_endpoint_auth_method: "none",
     }),
   })
-  await mkdir(DATA, { recursive: true })
-  await writeFile(CLIENT_FILE, JSON.stringify({ issuer, client_id }), { mode: 0o600 })
+  await mkdir(`${DATA}/${PROVIDER}`, { recursive: true, mode: 0o700 })
+  await writeFile(paths().client, JSON.stringify({ issuer, client_id }), { mode: 0o600 })
   return client_id
 }
 
@@ -91,6 +122,149 @@ async function token({ as }, form) {
     body: new URLSearchParams(form),
   })
   return { access: j.access_token, refresh: j.refresh_token, expires: Date.now() + j.expires_in * 1000 }
+}
+
+// One in-flight refresh per process, shared by loader.fetch and the config hook.
+// ponytail: a lost race across processes spends a rotated refresh token.
+let refreshing
+// Tokens from a refresh whose client.auth.set failed; preferred until saved.
+let unsaved
+async function fresh(cur, { client, options, getAuth }) {
+  if (unsaved && unsaved.expires > (cur?.expires ?? 0)) cur = unsaved
+  if (cur.expires >= Date.now() + 60_000) return cur
+  refreshing ??= (async () => {
+    // Re-read: a caller that read stale auth just after the previous refresh
+    // cleared would otherwise spend an already-rotated token.
+    const again = (await getAuth()) ?? cur
+    if (again?.type === "oauth" && again.expires >= Date.now() + 60_000) return again
+    const d = await discover(client, options)
+    const client_id = await savedClientId(d.issuer)
+    if (!client_id) throw new Error(`SSO client identity lost, run \`opencode auth login -p ${PROVIDER}\``)
+    const t = {
+      type: "oauth",
+      // Only the token endpoint's 4xx means "signed out"; a 4xx from discovery
+      // (a misrouted .well-known) is an outage, not a revoked session.
+      ...(await token(d, { grant_type: "refresh_token", refresh_token: again.refresh, client_id }).catch((e) => {
+        throw Object.assign(e, { signedOut: e.status >= 400 && e.status < 500 })
+      })),
+    }
+    t.refresh ||= again.refresh
+    try {
+      await client.auth.set({ path: { id: PROVIDER }, body: t })
+      unsaved = undefined
+    } catch {
+      unsaved = t // opencode's store unreachable: never lose a rotated refresh token
+    }
+    return t
+  })().finally(() => { refreshing = undefined })
+  return refreshing
+}
+
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+
+function fill(target, source) {
+  if (target === undefined) return structuredClone(source)
+  if (!isObject(target) || !isObject(source)) return target // the user's value wins
+  for (const [k, v] of Object.entries(source)) {
+    // __proto__/constructor/prototype from a hostile backend must never reach
+    // Object.prototype via bracket assignment on an already-existing target.
+    if (k === "__proto__" || k === "constructor" || k === "prototype") continue
+    target[k] = fill(target[k], v)
+  }
+  return target
+}
+
+// Backend config UNDER the user's: only allow-listed keys, a key the user set
+// always wins, `instructions` gains the entries it lacks.
+export function fillMissing(target, source) {
+  for (const key of CONFIG_KEYS) {
+    const value = source?.[key]
+    if (value === undefined) continue
+    if (key === "instructions") {
+      if (!Array.isArray(value) || (target.instructions !== undefined && !Array.isArray(target.instructions))) continue
+      target.instructions = [...(target.instructions ?? [])]
+      for (const x of value) if (!target.instructions.includes(x)) target.instructions.push(x)
+    } else target[key] = fill(target[key], value)
+  }
+  return target
+}
+
+const readJson = (path) => readFile(path, "utf8").then(JSON.parse).catch(() => null)
+const sub = (access) => { try { return JSON.parse(Buffer.from(access.split(".")[1], "base64url")).sub } catch { return null } }
+
+async function writePrivate(path, text) {
+  await mkdir(`${DATA}/${PROVIDER}`, { recursive: true, mode: 0o700 })
+  await writeFile(path, text, { mode: 0o600 })
+}
+
+// Skills as native opencode skills: one dir per skill, rewritten only when its
+// version changes, removed when the backend stops listing it. Names are
+// kebab-case, so a name can never leave the skills dir.
+async function writeSkills(skills) {
+  const dir = paths().skills
+  const keep = new Set()
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  for (const s of (Array.isArray(skills) ? skills : []).slice(0, 50)) {
+    const md = s?.files?.["SKILL.md"]
+    if (typeof s?.name !== "string" || s.name.length > 64 || !SKILL_NAME.test(s.name)) continue
+    if (typeof md !== "string" || md.length > 256 * 1024) continue
+    keep.add(s.name)
+    const skillDir = `${dir}/${s.name}`
+    if ((await readFile(`${skillDir}/.version`, "utf8").catch(() => null)) === String(s.version)) continue
+    await mkdir(skillDir, { recursive: true, mode: 0o700 })
+    await writeFile(`${skillDir}/SKILL.md`, md, { mode: 0o600 })
+    await writeFile(`${skillDir}/.version`, String(s.version), { mode: 0o600 })
+  }
+  for (const name of await readdir(dir)) {
+    if (!keep.has(name)) await rm(`${dir}/${name}`, { recursive: true, force: true })
+  }
+  return keep.size > 0
+}
+
+async function fetchConfig(platform, access) {
+  if (!platform) return null
+  try {
+    const r = await fetch(`${platform.replace(/\/$/, "")}/clients/opencode/config`, {
+      headers: { authorization: `Bearer ${access}` },
+      signal: AbortSignal.timeout(2_000),
+    })
+    if (!r.ok) return null
+    const body = await r.json()
+    return body?.schema === CONFIG_SCHEMA ? body : null
+  } catch {
+    return null
+  }
+}
+
+// The config hook. Signed out → nothing (not even the cache). Backend down →
+// the same user's cache if < 30 d. Never throws; errors mean "no backend config".
+async function applyConfig(cfg, { client, options }) {
+  const getAuth = async () => (await readJson(AUTH_FILE))?.[PROVIDER]
+  const stored = await getAuth()
+  if (stored?.type !== "oauth") return
+  const forget = () => rm(paths().cache, { force: true })
+  let auth = null
+  try {
+    auth = await fresh(stored, { client, options, getAuth })
+  } catch (e) {
+    if (e.signedOut) return forget() // refresh token rejected
+    // AS unreachable: an expired access token would read as "invalid", so use the cache.
+  }
+  let body = auth ? await fetchConfig((await backend(options)).platform, auth.access) : null
+  if (body?.auth === "invalid") return forget()
+  if (body) {
+    await writePrivate(paths().cache, JSON.stringify({ user: body.user, fetchedAt: Date.now(), body }))
+  } else {
+    const cache = await readJson(paths().cache)
+    if (!cache || cache.user !== sub(stored.access) || Date.now() - cache.fetchedAt > CACHE_MAX_AGE) return
+    body = cache.body
+  }
+  fillMissing(cfg, body.config ?? {})
+  if (await writeSkills(body.skills)) {
+    cfg.skills = isObject(cfg.skills) ? cfg.skills : {}
+    cfg.skills.paths = Array.isArray(cfg.skills.paths) ? cfg.skills.paths : []
+    if (!cfg.skills.paths.includes(paths().skills)) cfg.skills.paths.push(paths().skills)
+  }
 }
 
 // RFC 8628 §3.4–3.5: poll /token every `interval` until the user has signed
@@ -139,8 +313,9 @@ function listen(state) {
   return { port, code }
 }
 
-export async function SsoAuth({ client }) {
-  let refreshing // ponytail: one in-flight refresh; a lost race spends a rotated refresh token
+export async function SsoAuth({ client }, options = {}) {
+  const { provider } = await backend(options)
+  if (PROVIDER_ID.test(provider ?? "")) PROVIDER = provider
   return {
     auth: {
       provider: PROVIDER,
@@ -150,22 +325,7 @@ export async function SsoAuth({ client }) {
           async fetch(input, init) {
             let auth = await getAuth()
             if (auth?.type !== "oauth") return fetch(input, init)
-            if (auth.expires < Date.now() + 60_000) {
-              refreshing ??= (async () => {
-                // Re-read: a caller that read stale auth just after the previous
-                // refresh cleared would otherwise spend an already-rotated token.
-                const cur = await getAuth()
-                if (cur?.type === "oauth" && cur.expires >= Date.now() + 60_000) return cur
-                const d = await discover(client)
-                const client_id = await savedClientId(d.issuer)
-                if (!client_id) throw new Error(`SSO client identity lost, run \`opencode auth login -p ${PROVIDER}\``)
-                const t = await token(d, { grant_type: "refresh_token", refresh_token: cur.refresh, client_id })
-                t.refresh ||= cur.refresh
-                await client.auth.set({ path: { id: PROVIDER }, body: { type: "oauth", ...t } })
-                return t
-              })().finally(() => { refreshing = undefined })
-              auth = await refreshing
-            }
+            auth = await fresh(auth, { client, options, getAuth })
             const req = new Request(input, init) // normalises url/Request + any headers shape
             req.headers.set("authorization", `Bearer ${auth.access}`)
             return fetch(req)
@@ -177,7 +337,7 @@ export async function SsoAuth({ client }) {
           type: "oauth",
           label: "SSO (browser)",
           async authorize() {
-            const d = await discover(client)
+            const d = await discover(client, options)
             const verifier = b64(randomBytes(32))
             const state = b64(randomBytes(16))
             const client_id = await clientId(d) // before the listener: a failure here must not leave a port waiting
@@ -212,7 +372,7 @@ export async function SsoAuth({ client }) {
           type: "oauth",
           label: "SSO (device code — sign in from another browser)",
           async authorize() {
-            const d = await discover(client)
+            const d = await discover(client, options)
             if (!d.as.device_authorization_endpoint) throw new Error("the authorization server does not offer the device grant")
             const client_id = await clientId(d)
             const da = await json(d.as.device_authorization_endpoint, {
@@ -236,6 +396,12 @@ export async function SsoAuth({ client }) {
           },
         },
       ],
+    },
+    // Runs at every opencode start, before providers/agents read the config.
+    async config(cfg) {
+      try {
+        await applyConfig(cfg, { client, options })
+      } catch {} // ponytail: silent; a broken backend must never stop opencode starting
     },
   }
 }

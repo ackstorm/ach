@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
+
+// genaiProviderID is the plugin's PROVIDER_ID (clients/opencode/index.mjs).
+var genaiProviderID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 func init() {
 	rootCmd.AddCommand(platformAPICmd)
@@ -348,6 +352,14 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
 		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
 	}
+	// The OpenCode plugin (alitellm-auth clients/opencode) only accepts a
+	// provider id matching its PROVIDER_ID and silently falls back to
+	// "ai-platform" otherwise — which would no longer match the provider the
+	// config names. Refuse to start instead.
+	genaiProvider := config.EnvOr("ACH_GENAI_PROVIDER_NAME", "ai-platform")
+	if !genaiProviderID.MatchString(genaiProvider) {
+		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: want lowercase letters, digits and '-' (%s)", genaiProvider, genaiProviderID)
+	}
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, signer, cfg.BaseURL, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
@@ -368,7 +380,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		LiteLLM:       liteLLM,
 		LiteLLMREST:   liteLLM,
 		OpenWork:      openwork.FromEnv(),
-		GenAIProvider: config.EnvOr("ACH_GENAI_PROVIDER_NAME", "ai-platform"),
+		GenAIProvider: genaiProvider,
 		// Same issuer/audience as the OAuth resolver above.
 		VerifyAccessToken: func(tok string) (string, error) { return signer.Verify(tok, cfg.BaseURL, "ach") },
 		Pepper:            cfg.Pepper,

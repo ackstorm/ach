@@ -202,6 +202,14 @@ Ported to Go (re-synced to `7605a9c`): Connect MCP (`/v1/mcp/token`, `/mcp/agent
 | `internal/platformapi/openwork/brand/openwork-{logo,icon}.svg` | `src/api/brand/openwork-{logo,icon}.svg` | Verbatim |
 | `internal/platformapi/openwork/den_test.go` | `src/api/tests/test_openwork.py` | Case-for-case port; Connect MCP cases in `mcp_test.go` |
 
+## 2026-09-28 — OpenCode auth plugin vendored from alitellm-auth
+
+Source repository: `ackstorm/alitellm-auth` tag `v0.19.0` (`6509333`, plugin 0.3.0). Vendored **unmodified**: the tag lives in `internal/platformapi/opencode/UPSTREAM` and `TestPlugin_MatchesUpstreamTag` byte-compares every file with the sibling checkout at that tag. ACH adds only the generated `package/platform.json` at serve time.
+
+| ach file | alitellm-auth file | Notes |
+|---|---|---|
+| `internal/platformapi/opencode/plugin/{index.mjs,package.json,README.md}` | `clients/opencode/{index.mjs,package.json,README.md}` | Verbatim. Plugin tests stay upstream (ACH's `plugin_test.mjs` and its `make test-unit` step were dropped) |
+
 ## 2026-09-21 — React console imported as-is (unified console, spec §4.1, AC-01)
 
 Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c06176204292abb57f` (Apache-2.0, same org).
