@@ -285,9 +285,6 @@ openwork:
   # A non-empty list disables interactive terminals in the desktop outright.
   blockedCommands: []
   blockBrowserUploads: false
-  # Static join-link tokens (^[A-Za-z0-9_-]{8,}$), one per org or audience:
-  # users paste https://<ach host>/install?token=<token> in the desktop.
-  installTokens: []
 
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one

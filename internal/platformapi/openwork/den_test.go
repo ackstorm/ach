@@ -33,7 +33,7 @@ func newDen(t *testing.T, enabled bool) *fixture {
 	store := &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
 	f := &fixture{store: store, deps: Deps{
 		Config: Config{Enabled: enabled, OrgName: "Acme", OrgSlug: "acme", BrandAppName: "Acme AI",
-			BlockedCommands: []string{"rm"}, InstallTokens: []string{"join-acme-1"}, GrantTTL: 5 * time.Minute, TokenTTL: time.Hour},
+			BlockedCommands: []string{"rm"}, GrantTTL: 5 * time.Minute, TokenTTL: time.Hour},
 		Store: store, BaseURL: "https://ach.test/", CookieName: "ach_console",
 		Session: func(_ context.Context, sid string) (string, bool, error) { return "u@x.com", sid == "sid1", nil },
 	}}
@@ -346,8 +346,7 @@ func TestFromEnv_BlockedCommandsList(t *testing.T) {
 	t.Setenv("ACH_OPENWORK_ENABLED", "true")
 	t.Setenv("ACH_OPENWORK_BLOCKED_COMMANDS", "rm, sudo ,,")
 	c := FromEnv()
-	if !c.Enabled || len(c.BlockedCommands) != 2 || c.BlockedCommands[1] != "sudo" || c.GrantTTL != 5*time.Minute || c.TokenTTL != 30*24*time.Hour ||
-		c.InstallTokens != nil {
+	if !c.Enabled || len(c.BlockedCommands) != 2 || c.BlockedCommands[1] != "sudo" || c.GrantTTL != 5*time.Minute || c.TokenTTL != 30*24*time.Hour {
 		t.Fatalf("%+v", c)
 	}
 }

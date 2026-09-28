@@ -146,21 +146,3 @@ func TestMCP_BatchKeepsOrderAndDropsNotifications(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
-
-func TestInstallConfig(t *testing.T) {
-	f := newDen(t, true)
-	w := f.do(t, "GET", "/api/den/v1/install-config?token=join-acme-1", nil, nil)
-	m := decode(t, w)
-	if w.Code != 200 || m["appName"] != "Acme AI" || m["clientName"] != "Acme" || m["webUrl"] != "https://ach.test" ||
-		m["apiUrl"] != "https://ach.test" || m["requireSignin"] != true || m["logoUrl"] != nil || m["iconUrl"] != nil {
-		t.Fatalf("%d %v", w.Code, m)
-	}
-	if _, ok := m["logoUrl"]; !ok {
-		t.Fatal("logoUrl must be present as null")
-	}
-	for _, tok := range []string{"unknown-token", "", "short", "join-acme-2"} {
-		if w := f.do(t, "GET", "/api/den/v1/install-config?token="+tok, nil, nil); w.Code != 404 || decode(t, w)["error"] == nil {
-			t.Fatalf("%q: %d", tok, w.Code)
-		}
-	}
-}

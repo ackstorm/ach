@@ -136,7 +136,6 @@ func Mount(r chi.Router, d Deps) {
 			r.Post("/api/auth/sign-out", d.signOut)
 			r.Post("/v1/telemetry/ingest", d.telemetry)
 			r.Post("/v1/mcp/token", d.mcpToken)
-			r.Get("/v1/install-config", d.installConfig)
 			r.HandleFunc("/mcp/agent", d.mcpAgent)
 			r.HandleFunc("/v1/*", d.catalog) // the explicit routes above win
 		})

@@ -5,8 +5,6 @@ package openwork
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/platformapi/auth"
@@ -213,35 +211,4 @@ func mcpReply(raw json.RawMessage) any {
 		return ok(map[string]any{"prompts": []any{}})
 	}
 	return rpcError(id, -32601, "Method not found: "+m.Method)
-}
-
-// installConfig answers the desktop's "Join organization" link
-// (<origin>/install?token=X, which the desktop maps here itself). Public:
-// the token only names this org — joining still needs sign-in. Unknown
-// token → 404, shown by the desktop as "expired".
-func (d Deps) installConfig(w http.ResponseWriter, r *http.Request) {
-	tok := r.URL.Query().Get("token")
-	known := false
-	for _, t := range d.InstallTokens {
-		known = known || t == tok
-	}
-	if !installTokenRe.MatchString(tok) || !known {
-		denError(w, 404, "install_token_not_found", "This install link is unknown or expired.")
-		return
-	}
-	origin := strings.TrimRight(d.BaseURL, "/")
-	denJSON(w, map[string]any{
-		"appName": d.BrandAppName, "clientName": d.OrgName,
-		"webUrl": origin, "apiUrl": origin, "requireSignin": true,
-		"logoUrl": nullIfEmpty(d.BrandLogoURL), "iconUrl": nullIfEmpty(d.BrandIconURL),
-	})
-}
-
-var installTokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{8,}$`)
-
-func nullIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }

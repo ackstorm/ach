@@ -32,9 +32,6 @@ type Config struct {
 	AccentColor         string
 	BlockedCommands     []string
 	BlockBrowserUploads bool
-	// InstallTokens are the static tokens of the <origin>/install?token=
-	// join links (one per org or audience).
-	InstallTokens []string
 	// GrantTTL bounds the single-use handoff grant; TokenTTL the desktop's
 	// session token (spec §12 defaults: five minutes, thirty days).
 	GrantTTL time.Duration
@@ -52,21 +49,13 @@ func FromEnv() Config {
 		BrandIconURL:        config.EnvOr("ACH_OPENWORK_BRAND_ICON_URL", ""),
 		AccentColor:         config.EnvOr("ACH_OPENWORK_ACCENT_COLOR", ""),
 		BlockBrowserUploads: config.EnvBool("ACH_OPENWORK_BLOCK_BROWSER_UPLOADS", false),
-		InstallTokens:       splitList(config.EnvOr("ACH_OPENWORK_INSTALL_TOKENS", "")),
 		GrantTTL:            5 * time.Minute,
 		TokenTTL:            30 * 24 * time.Hour,
 	}
-	c.BlockedCommands = splitList(config.EnvOr("ACH_OPENWORK_BLOCKED_COMMANDS", ""))
-	return c
-}
-
-// splitList parses a comma-separated env value, dropping blanks.
-func splitList(v string) []string {
-	var out []string
-	for _, s := range strings.Split(v, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
+	for _, cmd := range strings.Split(config.EnvOr("ACH_OPENWORK_BLOCKED_COMMANDS", ""), ",") {
+		if cmd = strings.TrimSpace(cmd); cmd != "" {
+			c.BlockedCommands = append(c.BlockedCommands, cmd)
 		}
 	}
-	return out
+	return c
 }
