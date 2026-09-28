@@ -488,7 +488,7 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	waitAgentCond(t, ctx, "aa-mem-nokey", condChannelSecretsResolved, metav1.ConditionFalse)
 }
 
-func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
+func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-env", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-clone-env", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("one")}})
@@ -511,8 +511,7 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 			Env:        []corev1.EnvVar{{Name: "SHARED", Value: "agent"}},
 			Channels: []achv1alpha1.ChannelSpec{{
 				Name: "review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-				Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}},
-				Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}},
+				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}}},
 			}},
 		},
 	})
@@ -524,7 +523,7 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEnv := map[string]string{"GITLAB_BASE_URL": "https://git.example.com", "SHARED": "agent"}
-	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_CLEANUP_GITLAB_TOKEN": false}
+	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_HANDOFF_GITLAB_TOKEN": false}
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		if want, ok := wantEnv[e.Name]; ok {
 			if e.Value != want {
@@ -556,25 +555,15 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 	if err := json.Unmarshal([]byte(cm.Data[configFileName]), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	prepare := cfg["channels"].([]any)[0].(map[string]any)["prepare"].(map[string]any)
-	if prepare["env"].(map[string]any)["GITLAB_BASE_URL"] != "https://git.example.com" {
-		t.Fatalf("prepare literals = %v", prepare["env"])
+	handoff := cfg["channels"].([]any)[0].(map[string]any)["handoff"].(map[string]any)
+	if handoff["env"].(map[string]any)["GITLAB_BASE_URL"] != "https://git.example.com" {
+		t.Fatalf("handoff literals = %v", handoff["env"])
 	}
-	if prepare["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_PREPARE_GITLAB_TOKEN" {
-		t.Fatalf("prepare secret aliases = %v", prepare["secretEnv"])
+	if handoff["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_HANDOFF_GITLAB_TOKEN" {
+		t.Fatalf("handoff secret aliases = %v", handoff["secretEnv"])
 	}
-	if _, ok := prepare["env"].(map[string]any)["MISSING"]; ok {
+	if _, ok := handoff["env"].(map[string]any)["MISSING"]; ok {
 		t.Fatal("unknown forwardEnv name must remain unset")
-	}
-	cleanup := cfg["channels"].([]any)[0].(map[string]any)["cleanup"].(map[string]any)
-	if cleanup["env"].(map[string]any)["GITLAB_BASE_URL"] != "https://git.example.com" {
-		t.Fatalf("cleanup literals = %v", cleanup["env"])
-	}
-	if cleanup["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_CLEANUP_GITLAB_TOKEN" {
-		t.Fatalf("cleanup secret aliases = %v", cleanup["secretEnv"])
-	}
-	if _, ok := cleanup["env"].(map[string]any)["MISSING"]; ok {
-		t.Fatal("unknown cleanup forwardEnv name must remain unset")
 	}
 
 	oldHash := dep.Spec.Template.Annotations[configHashAnnotation]
@@ -596,26 +585,27 @@ func TestACHAgent_EnvInheritancePrepareAndSecretRotation(t *testing.T) {
 	}
 }
 
-func TestACHAgent_CleanupRequiresPrepare(t *testing.T) {
+func TestACHAgent_WebhookScriptRejectsHandoff(t *testing.T) {
 	ctx := context.Background()
 	agent := &achv1alpha1.ACHAgent{
-		ObjectMeta: metav1.ObjectMeta{Name: "cleanup-without-prepare", Namespace: WatchNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "webhook-script-with-handoff", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
 			ProfileRef: achv1alpha1.LocalObjectRef{Name: "unused"},
 			Identity: achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{
 				Name: "unused", Key: "ek",
 			}},
 			Channels: []achv1alpha1.ChannelSpec{{
-				Name:    "nightly",
-				Type:    "cron",
-				Cron:    &achv1alpha1.CronSpec{Schedule: "0 1 * * *"},
-				Cleanup: &achv1alpha1.PrepareSpec{Script: "true"},
+				Name:    "register",
+				Type:    "webhook-script",
+				Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}},
+				Script:  &achv1alpha1.PrepareSpec{Script: "true"},
+				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true"}},
 			}},
 		},
 	}
 
 	err := k8sClient.Create(ctx, agent)
-	if err == nil || !strings.Contains(err.Error(), "channels.cleanup requires channels.prepare") {
+	if err == nil || !strings.Contains(err.Error(), "webhook-script forbids prompt and handoff") {
 		t.Fatalf("Create error = %v", err)
 	}
 }

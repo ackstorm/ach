@@ -266,7 +266,7 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 }
 
-func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
+func TestBuildAgentEnv_HandoffSecretGetsGeneratedAlias(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
@@ -274,33 +274,25 @@ func TestBuildAgentEnv_PrepareSecretGetsGeneratedAlias(t *testing.T) {
 	}}}}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-		Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}},
-		Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}},
+		Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 
-	var original, prepareAlias, cleanupAlias *corev1.EnvVar
+	var original, handoffAlias *corev1.EnvVar
 	env := buildAgentEnv(a, p, "")
 	for i := range env {
 		e := &env[i]
 		switch e.Name {
 		case "GITLAB_TOKEN":
 			original = e
-		case "ACH_SECRET_GITLAB_MR_REVIEW_PREPARE_GITLAB_TOKEN":
-			prepareAlias = e
-		case "ACH_SECRET_GITLAB_MR_REVIEW_CLEANUP_GITLAB_TOKEN":
-			cleanupAlias = e
+		case "ACH_SECRET_GITLAB_MR_REVIEW_HANDOFF_GITLAB_TOKEN":
+			handoffAlias = e
 		}
 	}
-	for name, alias := range map[string]*corev1.EnvVar{
-		"prepare": prepareAlias,
-		"cleanup": cleanupAlias,
-	} {
-		if alias == nil || alias.ValueFrom == nil || alias.ValueFrom.SecretKeyRef == nil ||
-			alias.ValueFrom.SecretKeyRef.Name != "gl-clone" ||
-			alias.ValueFrom.SecretKeyRef.Key != "token" {
-			t.Fatalf("%s alias=%+v original=%+v", name, alias, original)
-		}
+	if handoffAlias == nil || handoffAlias.ValueFrom == nil || handoffAlias.ValueFrom.SecretKeyRef == nil ||
+		handoffAlias.ValueFrom.SecretKeyRef.Name != "gl-clone" ||
+		handoffAlias.ValueFrom.SecretKeyRef.Key != "token" {
+		t.Fatalf("handoff alias=%+v original=%+v", handoffAlias, original)
 	}
 }
 

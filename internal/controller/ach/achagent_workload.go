@@ -125,7 +125,7 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 		}
 		env = append(env, e)
 	}
-	// Channel auth and generated prepare aliases are injected as env vars, NOT
+	// Channel auth and generated handoff/script aliases are injected as env vars, NOT
 	// mounted files: the agent runs same-uid as the harness and can read mounted
 	// secret files, but not the harness process env (PR_SET_DUMPABLE=0). Value via
 	// secretKeyRef only — never an inline literal in the PodSpec.
