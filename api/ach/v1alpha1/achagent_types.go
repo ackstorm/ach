@@ -142,10 +142,9 @@ type AchMemorySpec struct {
 	// advisory: the agent reaches another tenant's bank by calling the copy next to it.
 	// Naming the id is what lets the harness close that second path.
 	//
-	// Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may
-	// resolve in another cluster, and the operator holds no ek_, so it cannot check that
-	// this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),
-	// never a guessed URL.
+	// Not admission-validated: capability.environment may resolve in another cluster,
+	// and the operator holds no ek_, so it cannot check that this id exists. Not
+	// hydrated ⇒ the harness runs with NO memory (fail-open §6.5), never a guessed URL.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	McpServerID string `json:"mcpServerId,omitempty"`
@@ -379,48 +378,23 @@ type ExposeSpec struct {
 }
 
 // McpServerSpec is one harness-managed MCP server (rendered into config
-// mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
-// harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
-// PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
-// directly, NOT via the ACH proxy). The operator renders the list into the config's
-// mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
-// (hydrated as runtime.mcpServers) — different namespace, no collision.
-// +kubebuilder:validation:XValidation:rule="(self.type=='repoCheckout' && has(self.repoCheckout)) || (self.type=='local' && has(self.local)) || (self.type=='remote' && has(self.remote))",message="mcpServers: the block matching type is required"
+// mcpServers[<name>]). Both variants are PASSTHROUGH (opencode launches a stdio
+// subprocess / connects to a remote endpoint directly, NOT via the ACH proxy). The
+// operator renders the list into the config's mcpServers map keyed by name. Distinct
+// from the Environment's ACH-fronted MCP set (hydrated as runtime.mcpServers) —
+// different namespace, no collision.
+// +kubebuilder:validation:XValidation:rule="(self.type=='local' && has(self.local)) || (self.type=='remote' && has(self.remote))",message="mcpServers: the block matching type is required"
 type McpServerSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=repoCheckout;local;remote
+	// +kubebuilder:validation:Enum=local;remote
 	Type string `json:"type"`
-	// +optional
-	RepoCheckout *RepoCheckoutSpec `json:"repoCheckout,omitempty"`
 	// +optional
 	Local *LocalMcpSpec `json:"local,omitempty"`
 	// +optional
 	Remote *RemoteMcpSpec `json:"remote,omitempty"`
-}
-
-// RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
-// gitlab://{project}/archive/{ref} from the hydrated MCP server named by
-// sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
-// per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
-// server the agent's Environment exposes makes the tool fail-soft at runtime (no
-// crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
-type RepoCheckoutSpec struct {
-	// SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves
-	// the gitlab archive resource.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	SourceMcpServerID string `json:"sourceMcpServerId"`
-	// TmpBase is the parent dir for per-checkout tmp dirs (harness default /tmp/gitlab).
-	// +optional
-	TmpBase string `json:"tmpBase,omitempty"`
-	// TTLSeconds bounds how long a stale checkout lingers before the next call sweeps
-	// it (harness default 3600).
-	// +optional
-	// +kubebuilder:validation:Minimum=0
-	TTLSeconds *int64 `json:"ttlSeconds,omitempty"`
 }
 
 // LocalMcpSpec is a passthrough stdio MCP server opencode launches as a subprocess.
@@ -518,8 +492,8 @@ type ACHAgentSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	Channels []ChannelSpec `json:"channels"`
-	// MCPServers are harness-managed MCP servers (repoCheckout / local / remote)
-	// rendered into the config's mcpServers map. Presence = enabled; omit for none.
+	// MCPServers are harness-managed MCP servers (local / remote) rendered into the
+	// config's mcpServers map. Presence = enabled; omit for none.
 	// +optional
 	// +listType=map
 	// +listMapKey=name

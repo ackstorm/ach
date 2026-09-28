@@ -79,6 +79,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 		Persistence: renderPersistence(p.Spec.Persistence),
 		Health:      renderHealth(a.Spec.Health, p.Spec.Achagent.Health),
 		Cost:        renderCost(ResolveCost(a.Spec.Cost, p.Spec.Achagent.Cost)),
+		Hooks:       renderHooks(a.Spec.Hooks),
 	}
 	resolvedEnv := ResolveEnv(a.Spec.Env, p.Spec.Env)
 	for i := range a.Spec.Channels {
@@ -89,7 +90,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 }
 
 // renderMcpServers turns the spec.mcpServers[] list into the config map keyed by name.
-// repoCheckout params pass through; local.env is sanitized (ACH_*/ek_ stripped, same
+// local.env is sanitized (ACH_*/ek_ stripped, same
 // rule as engine.forwardEnv); remote.headers pass through verbatim as ${env:NAME} refs.
 func renderMcpServers(servers []achv1alpha1.McpServerSpec) map[string]McpServerBlock {
 	if len(servers) == 0 {
@@ -100,14 +101,6 @@ func renderMcpServers(servers []achv1alpha1.McpServerSpec) map[string]McpServerB
 		s := &servers[i]
 		b := McpServerBlock{Type: s.Type}
 		switch s.Type {
-		case "repoCheckout":
-			if s.RepoCheckout != nil {
-				b.RepoCheckout = &RepoCheckoutParamsBlock{
-					SourceMcpServerID: s.RepoCheckout.SourceMcpServerID,
-					TmpBase:           s.RepoCheckout.TmpBase,
-					TTLSeconds:        s.RepoCheckout.TTLSeconds,
-				}
-			}
 		case "local":
 			if s.Local != nil {
 				b.Command = s.Local.Command
@@ -199,13 +192,13 @@ func ChannelSecretEnv(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) []Chan
 		}
 		// Hook credentials need a generated alias so harness secret redaction cannot
 		// strip an independently engine-forwarded original name.
-		hooks := []struct {
+		type namedHook struct {
 			phase string
 			spec  *achv1alpha1.PrepareSpec
-		}{
-			{phase: "PREPARE", spec: ch.Prepare},
-			{phase: "CLEANUP", spec: ch.Cleanup},
-			{phase: "SCRIPT", spec: ch.Script},
+		}
+		hooks := []namedHook{{phase: "SCRIPT", spec: ch.Script}}
+		if ch.Handoff != nil {
+			hooks = append(hooks, namedHook{phase: "HANDOFF", spec: &ch.Handoff.PrepareSpec})
 		}
 		for _, hook := range hooks {
 			if hook.spec == nil {
@@ -405,6 +398,22 @@ func renderCost(c *achv1alpha1.CostSpec) *CostBlock {
 		return nil
 	}
 	return &CostBlock{Source: c.Source}
+}
+
+// renderSessionHook emits an agent-level hook verbatim — no env resolution, since hooks
+// carry no forwardEnv of their own (only engine.forwardEnv, already on the engine block).
+func renderSessionHook(h *achv1alpha1.HookSpec) *HookBlock {
+	if h == nil {
+		return nil
+	}
+	return &HookBlock{Script: h.Script, TimeoutSeconds: h.TimeoutSeconds}
+}
+
+func renderHooks(h *achv1alpha1.HooksSpec) *HooksBlock {
+	if h == nil {
+		return nil
+	}
+	return &HooksBlock{SessionStart: renderSessionHook(h.SessionStart), SessionSuspend: renderSessionHook(h.SessionSuspend)}
 }
 
 // ResolvePlacement is the pod-topology resolution: agent wins when set, else the
@@ -616,8 +625,16 @@ func renderHook(ch *achv1alpha1.ChannelSpec, hook *achv1alpha1.PrepareSpec, reso
 	return out
 }
 
+func renderHandoff(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) *HandoffBlock {
+	if ch.Handoff == nil {
+		return nil
+	}
+	hook := renderHook(ch, &ch.Handoff.PrepareSpec, resolvedEnv, "HANDOFF")
+	return &HandoffBlock{Script: hook.Script, Env: hook.Env, SecretEnv: hook.SecretEnv, TimeoutSeconds: hook.TimeoutSeconds, Scope: ch.Handoff.Scope}
+}
+
 func renderChannel(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Prepare: renderHook(ch, ch.Prepare, resolvedEnv, "PREPARE"), Cleanup: renderHook(ch, ch.Cleanup, resolvedEnv, "CLEANUP"), Script: renderHook(ch, ch.Script, resolvedEnv, "SCRIPT")}
+	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Handoff: renderHandoff(ch, resolvedEnv), Script: renderHook(ch, ch.Script, resolvedEnv, "SCRIPT")}
 	switch ch.Type {
 	case channelTypeWebhook, channelTypeWebhookScript:
 		if ch.Webhook != nil {

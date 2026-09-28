@@ -136,11 +136,7 @@ spec.mcpServers[].name	string
 spec.mcpServers[].remote	object
 spec.mcpServers[].remote.headers	object
 spec.mcpServers[].remote.url	string
-spec.mcpServers[].repoCheckout	object
-spec.mcpServers[].repoCheckout.sourceMcpServerId	string
-spec.mcpServers[].repoCheckout.tmpBase	string
-spec.mcpServers[].repoCheckout.ttlSeconds	integer
-spec.mcpServers[].type	string enum[local,remote,repoCheckout]
+spec.mcpServers[].type	string enum[local,remote]
 spec.memory	object
 spec.memory.achMemory	object
 spec.memory.achMemory.auth	object

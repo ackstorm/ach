@@ -164,10 +164,13 @@ parity checklist: `references/adding-a-cr-kind.md`.
   rotate overflow); memory ach-memory (project slug NEVER templated from
   payload — cross-tenant risk; empty ⇒ harness derives {POD_NAMESPACE}-{agent
   .name}, so the Deployment carries POD_NAMESPACE via the downward API) /
-  codemem; harness MCP servers repoCheckout (harness-
-  hosted, ek-injected) / local (stdio passthrough, ACH_*/ek stripped from env
+  codemem; harness MCP servers local (stdio passthrough, ACH_*/ek stripped from env
   fwd) / remote (headers = ${env:NAME} refs; co-resident same-uid CAN read —
-  front via ACH if unacceptable); `expose.service` + `expose.gateway` both
+  front via ACH if unacceptable); channel `handoff` (scope event|session) replaces
+  the old prepare/cleanup pair — a credentialed harness script run in an empty dir,
+  its output wholesale-replacing the session workspace's handoff/; agent-level
+  `spec.hooks.{sessionStart,sessionSuspend}` run inside the mini-harness with only
+  engine.forwardEnv; `expose.service` + `expose.gateway` both
   default false, gateway requires service). Operator renders `agent-config-v1`
   ConfigMap + single-replica Deployment (`internal/agentrender`, JSON tags
   schema-locked); salted config-hash roll; harness **self-hydrates** at boot —

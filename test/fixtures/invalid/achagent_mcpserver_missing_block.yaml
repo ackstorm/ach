@@ -4,8 +4,7 @@
 # Expected error substring: "mcpServers"
 #
 # This manifest is otherwise valid but declares an mcpServers entry with
-# type=repoCheckout and NO repoCheckout: block. The discriminator CEL rule
-#   (self.type=='repoCheckout' && has(self.repoCheckout)) ||
+# type=local and NO local: block. The discriminator CEL rule
 #   (self.type=='local' && has(self.local)) ||
 #   (self.type=='remote' && has(self.remote))
 # rejects with: "mcpServers: the block matching type is required".
@@ -29,6 +28,6 @@ spec:
       cron:
         schedule: "* * * * *"
   mcpServers:
-    - name: repo-checkout
-      type: repoCheckout
-      # repoCheckout block deliberately omitted → CEL rejection
+    - name: filesystem
+      type: local
+      # local block deliberately omitted → CEL rejection

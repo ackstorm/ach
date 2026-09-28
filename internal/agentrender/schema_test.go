@@ -116,13 +116,13 @@ func renderMatrix() map[string]renderCase {
 		"queue": base("q", []achv1alpha1.ChannelSpec{{Name: "q", Type: "queue", Queue: &achv1alpha1.QueueSpec{Key: "k"}}}),
 		"a2a":   base("a", []achv1alpha1.ChannelSpec{{Name: "a", Type: "a2a", A2A: &achv1alpha1.A2ASpec{Auth: achv1alpha1.A2AAuthSpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "s", Key: "k"}}}}}),
 	}
-	cleanup := base("cleanup", cron)
-	cleanup.agent.Spec.Env = []corev1.EnvVar{{Name: "MODE", Value: "review"}}
-	cleanup.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{Script: "true"}
-	cleanup.agent.Spec.Channels[0].Cleanup = &achv1alpha1.PrepareSpec{
-		Script: "true", ForwardEnv: []string{"MODE"},
+	hooks := base("hooks", cron)
+	hooks.agent.Spec.Env = []corev1.EnvVar{{Name: "MODE", Value: "review"}}
+	hooks.agent.Spec.Hooks = &achv1alpha1.HooksSpec{
+		SessionStart:   &achv1alpha1.HookSpec{Script: "true"},
+		SessionSuspend: &achv1alpha1.HookSpec{Script: "true", TimeoutSeconds: ptr(int64(30))},
 	}
-	m["cleanup"] = cleanup
+	m["hooks"] = hooks
 	promptText := base("pt", cron)
 	promptText.agent.Spec.Prompt = &achv1alpha1.AgentPromptSpec{System: achv1alpha1.PromptSystemSpec{Type: "text", Text: "hi"}}
 	m["prompt-text"] = promptText
@@ -176,28 +176,29 @@ func renderMatrix() map[string]renderCase {
 	m["session-custom"] = sess
 	mcp := base("mcp", cron)
 	mcp.agent.Spec.MCPServers = []achv1alpha1.McpServerSpec{
-		{Name: "repo-checkout", Type: "repoCheckout", RepoCheckout: &achv1alpha1.RepoCheckoutSpec{
-			SourceMcpServerID: "mcp-gitlab-ro", TmpBase: "/tmp/gitlab", TTLSeconds: ptr(int64(3600))}},
 		{Name: "filesystem", Type: "local", Local: &achv1alpha1.LocalMcpSpec{
 			Command: "docker", Args: []string{"run", "-i", "--rm", "mcp/filesystem", "/projects"}, Env: []string{"SOME_VAR"}}},
 		{Name: "other", Type: "remote", Remote: &achv1alpha1.RemoteMcpSpec{
 			URL: "https://mcp.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${env:OTHER_MCP_TOKEN}"}}},
 	}
 	m["mcp-servers"] = mcp
-	prep := base("prep", []achv1alpha1.ChannelSpec{{
+	handoff := base("handoff", []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}},
-		Prepare: &achv1alpha1.PrepareSpec{
-			Script:         "git clone \"$REPO_BASE_URL/$ACH_EVENT_PROJECT_PATH.git\" \"$ACH_WORKSPACE/repo\"",
-			ForwardEnv:     []string{"REPO_BASE_URL", "GITLAB_TOKEN"},
-			TimeoutSeconds: ptr(int64(120)),
+		Handoff: &achv1alpha1.HandoffSpec{
+			PrepareSpec: achv1alpha1.PrepareSpec{
+				Script:         "git clone \"$REPO_BASE_URL/$ACH_EVENT_PROJECT_PATH.git\" \"$ACH_HANDOFF_DIR\"",
+				ForwardEnv:     []string{"REPO_BASE_URL", "GITLAB_TOKEN"},
+				TimeoutSeconds: ptr(int64(120)),
+			},
+			Scope: "session",
 		},
 	}})
-	prep.profile.Spec.Env = []corev1.EnvVar{{Name: "REPO_BASE_URL", Value: "https://gitlab.example.com"}}
-	prep.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+	handoff.profile.Spec.Env = []corev1.EnvVar{{Name: "REPO_BASE_URL", Value: "https://gitlab.example.com"}}
+	handoff.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: "gl-clone"}, Key: "token",
 	}}}}
-	m["channel-prepare"] = prep
+	m["channel-handoff"] = handoff
 	return m
 }
 

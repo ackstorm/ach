@@ -724,40 +724,57 @@ func TestResolveEnv_AgentWinsByName(t *testing.T) {
 	}
 }
 
-func TestPrepare_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
+func TestHandoff_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
 	tc := renderMatrix()["minimal"]
 	tc.profile.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_BASE_URL", Value: "https://gitlab.example.com"}}
 	tc.agent.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: "gl"}, Key: "token",
 	}}}}
-	tc.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{
-		Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "DOES_NOT_EXIST"},
+	tc.agent.Spec.Channels[0].Handoff = &achv1alpha1.HandoffSpec{
+		PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "DOES_NOT_EXIST"}},
 	}
 
 	cfg, err := Render(tc.profile, tc.agent, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	prep := cfg.Channels[0].Prepare
-	if prep == nil || prep.Env["GITLAB_BASE_URL"] != "https://gitlab.example.com" {
-		t.Fatalf("literal prepare env not resolved: %+v", prep)
+	handoff := cfg.Channels[0].Handoff
+	if handoff == nil || handoff.Env["GITLAB_BASE_URL"] != "https://gitlab.example.com" {
+		t.Fatalf("literal handoff env not resolved: %+v", handoff)
 	}
-	if got := prep.SecretEnv["GITLAB_TOKEN"].Env; got != "ACH_SECRET_C_PREPARE_GITLAB_TOKEN" {
-		t.Fatalf("secret prepare alias = %q", got)
+	if handoff.Scope != "" {
+		t.Fatalf("omitted scope must not be defaulted by the operator (harness default is event): %q", handoff.Scope)
 	}
-	if _, ok := prep.Env["DOES_NOT_EXIST"]; ok {
+	if got := handoff.SecretEnv["GITLAB_TOKEN"].Env; got != "ACH_SECRET_C_HANDOFF_GITLAB_TOKEN" {
+		t.Fatalf("secret handoff alias = %q", got)
+	}
+	if _, ok := handoff.Env["DOES_NOT_EXIST"]; ok {
 		t.Fatal("missing forwardEnv name must remain unset")
 	}
-	if _, ok := prep.SecretEnv["DOES_NOT_EXIST"]; ok {
+	if _, ok := handoff.SecretEnv["DOES_NOT_EXIST"]; ok {
 		t.Fatal("missing forwardEnv name must not become secretEnv")
 	}
 
 	refs := ChannelSecretEnv(tc.profile, tc.agent)
-	if len(refs) != 1 || refs[0].EnvName != "ACH_SECRET_C_PREPARE_GITLAB_TOKEN" || refs[0].SecretName != "gl" || refs[0].Key != "token" {
-		t.Fatalf("prepare Pod secret alias = %+v", refs)
+	if len(refs) != 1 || refs[0].EnvName != "ACH_SECRET_C_HANDOFF_GITLAB_TOKEN" || refs[0].SecretName != "gl" || refs[0].Key != "token" {
+		t.Fatalf("handoff Pod secret alias = %+v", refs)
 	}
 	if got := ReferencedSecrets(tc.profile, tc.agent)["gl"]; len(got) != 1 || got[0] != "token" {
 		t.Fatalf("referenced env secret = %v", ReferencedSecrets(tc.profile, tc.agent))
+	}
+}
+
+func TestHandoff_ScopeCopiedVerbatim(t *testing.T) {
+	tc := renderMatrix()["minimal"]
+	tc.agent.Spec.Channels[0].Handoff = &achv1alpha1.HandoffSpec{
+		PrepareSpec: achv1alpha1.PrepareSpec{Script: "true"}, Scope: "session",
+	}
+	cfg, err := Render(tc.profile, tc.agent, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Channels[0].Handoff == nil || cfg.Channels[0].Handoff.Scope != "session" {
+		t.Fatalf("scope not copied: %+v", cfg.Channels[0].Handoff)
 	}
 }
 
@@ -798,47 +815,6 @@ func TestWebhookScript_RendersAuthScriptAndForwardEnv(t *testing.T) {
 	}
 }
 
-func TestCleanup_ForwardEnvResolvesLiteralsSecretsAndMissing(t *testing.T) {
-	tc := renderMatrix()["minimal"]
-	tc.profile.Spec.Env = []corev1.EnvVar{
-		{Name: "GITLAB_BASE_URL", Value: "https://git.example.com"},
-		{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "gitlab"},
-				Key:                  "token",
-			},
-		}},
-	}
-	tc.agent.Spec.Channels[0].Prepare = &achv1alpha1.PrepareSpec{Script: "true"}
-	tc.agent.Spec.Channels[0].Cleanup = &achv1alpha1.PrepareSpec{
-		Script:     "rm -rf -- \"$ACH_WORKSPACE\"",
-		ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"},
-	}
-
-	cfg, err := Render(tc.profile, tc.agent, "https://ach")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := cfg.Channels[0].Cleanup
-	if got == nil || got.Env["GITLAB_BASE_URL"] != "https://git.example.com" {
-		t.Fatalf("cleanup literal env = %#v", got)
-	}
-	if got.SecretEnv["GITLAB_TOKEN"].Env != "ACH_SECRET_C_CLEANUP_GITLAB_TOKEN" {
-		t.Fatalf("cleanup secret env = %#v", got.SecretEnv)
-	}
-	if _, found := got.Env["MISSING"]; found {
-		t.Fatal("missing forwardEnv name must remain absent")
-	}
-	if _, found := got.SecretEnv["MISSING"]; found {
-		t.Fatal("missing forwardEnv name must not become secretEnv")
-	}
-	refs := ChannelSecretEnv(tc.profile, tc.agent)
-	if len(refs) != 1 || refs[0].EnvName != "ACH_SECRET_C_CLEANUP_GITLAB_TOKEN" ||
-		refs[0].SecretName != "gitlab" || refs[0].Key != "token" {
-		t.Fatalf("cleanup Pod secret alias = %+v", refs)
-	}
-}
-
 func TestRender_RejectsCollidingChannelSecretAliases(t *testing.T) {
 	secret := func(name, secret, key string) corev1.EnvVar {
 		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
@@ -847,18 +823,17 @@ func TestRender_RejectsCollidingChannelSecretAliases(t *testing.T) {
 	}
 	tc := renderMatrix()["minimal"]
 	tc.profile.Spec.Env = []corev1.EnvVar{
-		secret("TOKEN_CLEANUP_X", "prepare-credential", "prepare-key"),
-		secret("X", "cleanup-credential", "cleanup-key"),
+		secret("TOKEN_SCRIPT_X", "handoff-credential", "handoff-key"),
+		secret("X", "script-credential", "script-key"),
 	}
 	tc.agent.Spec.Channels = []achv1alpha1.ChannelSpec{
 		{
 			Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-			Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"TOKEN_CLEANUP_X"}},
+			Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"TOKEN_SCRIPT_X"}}},
 		},
 		{
-			Name: "c-prepare-token", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-			Prepare: &achv1alpha1.PrepareSpec{Script: "true"},
-			Cleanup: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"X"}},
+			Name: "c-handoff-token", Type: "webhook-script", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "hmac"}},
+			Script: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"X"}},
 		},
 	}
 
@@ -866,21 +841,21 @@ func TestRender_RejectsCollidingChannelSecretAliases(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "duplicate generated channel secret env alias") {
 		t.Fatalf("Render error = %v", err)
 	}
-	for _, secretData := range []string{"prepare-credential", "prepare-key", "cleanup-credential", "cleanup-key"} {
+	for _, secretData := range []string{"handoff-credential", "handoff-key", "script-credential", "script-key"} {
 		if strings.Contains(err.Error(), secretData) {
 			t.Fatalf("Render error leaked secret reference data: %v", err)
 		}
 	}
 }
 
-func TestPrepare_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
+func TestHandoff_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
 	secret := func(name, secret string) corev1.EnvVar {
 		return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: secret}, Key: "key"}}}
 	}
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Env: []corev1.EnvVar{secret("token", "lower"), secret("TOKEN", "upper")}}}
 	a := achv1alpha1.ACHAgent{Spec: achv1alpha1.ACHAgentSpec{Channels: []achv1alpha1.ChannelSpec{{
 		Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-		Prepare: &achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"token", "TOKEN"}},
+		Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"token", "TOKEN"}}},
 	}}}}
 	refs := ChannelSecretEnv(p, a)
 	if len(refs) != 2 || refs[0].EnvName == refs[1].EnvName {
@@ -888,13 +863,13 @@ func TestPrepare_SecretAliasesDoNotCollapseEnvNameCase(t *testing.T) {
 	}
 }
 
-// TestPrepare_OnCronChannel: prepare is not tied to webhook — a scheduled agent may want a
+// TestHandoff_OnCronChannel: handoff is not tied to webhook — a scheduled agent may want a
 // workspace too, so it must render outside the type switch.
-func TestPrepare_OnCronChannel(t *testing.T) {
+func TestHandoff_OnCronChannel(t *testing.T) {
 	ch := achv1alpha1.ChannelSpec{Name: "nightly", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "0 8 * * *"},
-		Prepare: &achv1alpha1.PrepareSpec{Script: "true"}}
-	if renderChannel(&ch, nil).Prepare == nil {
-		t.Fatal("prepare must render for a cron channel")
+		Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true"}}}
+	if renderChannel(&ch, nil).Handoff == nil {
+		t.Fatal("handoff must render for a cron channel")
 	}
 }
 

@@ -46,30 +46,27 @@ spec:
       source: gitlab
       concurrency: 4
       prompt: >-
-        Review this event. The channel prepare hook maintains a repository checkout at
-        $ACH_WORKSPACE/repo; inspect and test that working tree before replying.
+        Review this event. The channel handoff clones a fresh checkout into
+        handoff/ for every invocation; inspect and test that working tree before
+        replying.
       webhook:
         auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
         gitlabEvents: [merge_request, note]
-      prepare:
+      handoff:
+        # scope: event (default) — runs every invocation, cloning from scratch into
+        # the empty $ACH_HANDOFF_DIR each time (a handoff always starts empty, so
+        # there is no existing tree to fetch into). Use scope: session to run this
+        # only when a new session is created instead.
         script: |
           AUTH=$(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
           export GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH"
-          if [ ! -d "$ACH_WORKSPACE/repo/.git" ]; then
-            git clone --filter=blob:none --no-checkout --no-recurse-submodules \
-              "$GITLAB_BASE_URL/$ACH_EVENT_PROJECT_PATH.git" "$ACH_WORKSPACE/repo"
-          fi
-          git -C "$ACH_WORKSPACE/repo" fetch origin "refs/merge-requests/$ACH_EVENT_MR_IID/head"
-          git -C "$ACH_WORKSPACE/repo" checkout --detach "$ACH_EVENT_HEAD_SHA"
+          git clone --filter=blob:none --no-recurse-submodules \
+            "$GITLAB_BASE_URL/$ACH_EVENT_PROJECT_PATH.git" "$ACH_HANDOFF_DIR"
+          git -C "$ACH_HANDOFF_DIR" fetch origin "refs/merge-requests/$ACH_EVENT_MR_IID/head"
+          git -C "$ACH_HANDOFF_DIR" checkout --detach "$ACH_EVENT_HEAD_SHA"
         forwardEnv: [GITLAB_TOKEN, GITLAB_BASE_URL]
         timeoutSeconds: 120
-      cleanup:
-        script: |
-          set -eu
-          test -n "$ACH_WORKSPACE"
-          rm -rf -- "$ACH_WORKSPACE"
-        timeoutSeconds: 30
     # Deterministic System Hook handler: authenticated and queued like a webhook, but
     # runs only this script. The normalized webhook JSON is on stdin; no model starts.
     - name: gitlab-register
@@ -94,20 +91,20 @@ spec:
         type: none
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Scan main for new CVEs; open an issue if any are critical."
+  # Agent-level session hooks, run inside the mini-harness with only
+  # engine.forwardEnv variables (never channel credentials).
+  hooks:
+    sessionStart:
+      script: |
+        echo "session starting for $ACH_AGENT_NAME" >&2
+      timeoutSeconds: 30
+    sessionSuspend:
+      script: |
+        echo "session suspending" >&2
   # Harness-managed MCP servers (rendered into the config mcpServers map).
-  # Three kinds; presence = enabled. Distinct from the Environment's ACH-fronted
+  # Two kinds; presence = enabled. Distinct from the Environment's ACH-fronted
   # MCP set (which is hydrated, not declared here).
   mcpServers:
-    # repoCheckout — the harness HOSTS a checkout_repo(project, ref, subpath?) tool
-    # (gitlab archive → on-disk tree; full-tree rg / run tests / build). It reads the
-    # archive from the hydrated MCP server named by sourceMcpServerId, which MUST be
-    # one the Environment (engineering-prod) exposes; a wrong id fails soft at runtime.
-    - name: repo-checkout
-      type: repoCheckout
-      repoCheckout:
-        sourceMcpServerId: gitlab-ro   # must exist in the Environment's MCP set
-        # tmpBase: /tmp/gitlab         # optional (harness default)
-        # ttlSeconds: 3600             # optional (harness default)
     # local — opencode LAUNCHES a stdio MCP subprocess (bring-your-own tool).
     # env lists var NAMES to forward; wire their values via profile/agent spec.env.
     # - name: filesystem

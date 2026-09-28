@@ -30,8 +30,8 @@ spec:
       # then advisory only: the agent reaches another tenant's bank by calling the
       # copy next to it. Naming the id closes that second path.
       # Not hydrated in this Environment → NO memory (fail-open), never a guessed
-      # URL. ACH does not cross-validate the id (same as repoCheckout's
-      # sourceMcpServerId): the Environment may resolve in another cluster.
+      # URL. ACH does not cross-validate the id: the Environment may resolve in
+      # another cluster.
       mcpServerId: ach-memory
       # endpoint is the alternative, for a deployment with no ACH manifest to
       # resolve against. COMPLETE MCP endpoint, rendered VERBATIM: the harness

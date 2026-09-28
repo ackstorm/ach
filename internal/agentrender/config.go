@@ -19,6 +19,7 @@ type AgentConfig struct {
 	Persistence   *PersistBlock   `json:"persistence,omitempty"`
 	Health        *HealthBlock    `json:"health,omitempty"`
 	Cost          *CostBlock      `json:"cost,omitempty"`
+	Hooks         *HooksBlock     `json:"hooks,omitempty"`
 	Channels      []ChannelBlock  `json:"channels,omitempty"`
 	// McpServers is the harness-managed MCP server map keyed by name (schema
 	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
@@ -85,8 +86,6 @@ type PiBlock struct {
 // rest so each entry matches exactly one union branch.
 type McpServerBlock struct {
 	Type string `json:"type"`
-	// repoCheckout (harness-hosted):
-	RepoCheckout *RepoCheckoutParamsBlock `json:"repoCheckout,omitempty"`
 	// local (passthrough stdio subprocess):
 	Command string   `json:"command,omitempty"`
 	Args    []string `json:"args,omitempty"`
@@ -94,13 +93,6 @@ type McpServerBlock struct {
 	// remote (passthrough direct connect):
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
-}
-
-// RepoCheckoutParamsBlock is the nested params of a repoCheckout mcpServers entry.
-type RepoCheckoutParamsBlock struct {
-	SourceMcpServerID string `json:"sourceMcpServerId"`
-	TmpBase           string `json:"tmpBase,omitempty"`
-	TTLSeconds        *int64 `json:"ttlSeconds,omitempty"`
 }
 
 type PromptBlock struct {
@@ -183,19 +175,42 @@ type ChannelBlock struct {
 	Cron        *CronBlock    `json:"cron,omitempty"`
 	Queue       *QueueBlock   `json:"queue,omitempty"`
 	A2A         *A2ABlock     `json:"a2a,omitempty"`
-	Prepare     *PrepareBlock `json:"prepare,omitempty"`
-	Cleanup     *PrepareBlock `json:"cleanup,omitempty"`
+	Handoff     *HandoffBlock `json:"handoff,omitempty"`
 	Script      *PrepareBlock `json:"script,omitempty"`
 }
 
-// PrepareBlock is the rendered channels[].prepare (schema $defs/PrepareBlock) — the
-// per-invocation workspace hook. SecretEnv carries env NAMES only; the values reach the
-// harness process through secretKeyRef env injection (see ChannelSecretEnv).
+// PrepareBlock is the rendered per-invocation workspace hook (channels[].handoff,
+// channels[].script). SecretEnv carries env NAMES only; the values reach the harness
+// process through secretKeyRef env injection (see ChannelSecretEnv).
 type PrepareBlock struct {
 	Script         string                       `json:"script"`
 	Env            map[string]string            `json:"env,omitempty"`
 	SecretEnv      map[string]SecretSourceBlock `json:"secretEnv,omitempty"`
 	TimeoutSeconds *int64                       `json:"timeoutSeconds,omitempty"`
+}
+
+// HandoffBlock is the rendered channels[].handoff (schema $defs/HandoffBlock) — PrepareBlock
+// fields plus scope (event|session, harness default event when omitted).
+type HandoffBlock struct {
+	Script         string                       `json:"script"`
+	Env            map[string]string            `json:"env,omitempty"`
+	SecretEnv      map[string]SecretSourceBlock `json:"secretEnv,omitempty"`
+	TimeoutSeconds *int64                       `json:"timeoutSeconds,omitempty"`
+	Scope          string                       `json:"scope,omitempty"`
+}
+
+// HookBlock is the rendered agent-level session hook (schema $defs/HookBlock,
+// hooks.sessionStart / hooks.sessionSuspend). Verbatim — no env resolution: hooks get only
+// engine.forwardEnv, already rendered on the engine block.
+type HookBlock struct {
+	Script         string `json:"script"`
+	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
+}
+
+// HooksBlock is the rendered top-level hooks (schema $defs/HooksBlock).
+type HooksBlock struct {
+	SessionStart   *HookBlock `json:"sessionStart,omitempty"`
+	SessionSuspend *HookBlock `json:"sessionSuspend,omitempty"`
 }
 
 // SessionBlock is the rendered channels[].session (schema $defs/SessionBlock).

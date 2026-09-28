@@ -755,17 +755,16 @@ spec:
                 type: object
               mcpServers:
                 description: |-
-                  MCPServers are harness-managed MCP servers (repoCheckout / local / remote)
-                  rendered into the config's mcpServers map. Presence = enabled; omit for none.
+                  MCPServers are harness-managed MCP servers (local / remote) rendered into the
+                  config's mcpServers map. Presence = enabled; omit for none.
                 items:
                   description: |-
                     McpServerSpec is one harness-managed MCP server (rendered into config
-                    mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
-                    harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
-                    PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
-                    directly, NOT via the ACH proxy). The operator renders the list into the config's
-                    mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
-                    (hydrated as runtime.mcpServers) — different namespace, no collision.
+                    mcpServers[<name>]). Both variants are PASSTHROUGH (opencode launches a stdio
+                    subprocess / connects to a remote endpoint directly, NOT via the ACH proxy). The
+                    operator renders the list into the config's mcpServers map keyed by name. Distinct
+                    from the Environment's ACH-fronted MCP set (hydrated as runtime.mcpServers) —
+                    different namespace, no collision.
                   properties:
                     local:
                       description: |-
@@ -808,38 +807,8 @@ spec:
                       required:
                       - url
                       type: object
-                    repoCheckout:
-                      description: |-
-                        RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
-                        gitlab://{project}/archive/{ref} from the hydrated MCP server named by
-                        sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
-                        per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
-                        server the agent's Environment exposes makes the tool fail-soft at runtime (no
-                        crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
-                      properties:
-                        sourceMcpServerId:
-                          description: |-
-                            SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves
-                            the gitlab archive resource.
-                          minLength: 1
-                          type: string
-                        tmpBase:
-                          description: TmpBase is the parent dir for per-checkout
-                            tmp dirs (harness default /tmp/gitlab).
-                          type: string
-                        ttlSeconds:
-                          description: |-
-                            TTLSeconds bounds how long a stale checkout lingers before the next call sweeps
-                            it (harness default 3600).
-                          format: int64
-                          minimum: 0
-                          type: integer
-                      required:
-                      - sourceMcpServerId
-                      type: object
                     type:
                       enum:
-                      - repoCheckout
                       - local
                       - remote
                       type: string
@@ -849,8 +818,7 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: 'mcpServers: the block matching type is required'
-                    rule: (self.type=='repoCheckout' && has(self.repoCheckout)) ||
-                      (self.type=='local' && has(self.local)) || (self.type=='remote'
+                    rule: (self.type=='local' && has(self.local)) || (self.type=='remote'
                       && has(self.remote))
                 type: array
                 x-kubernetes-list-map-keys:
@@ -962,10 +930,9 @@ spec:
                           advisory: the agent reaches another tenant's bank by calling the copy next to it.
                           Naming the id is what lets the harness close that second path.
 
-                          Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may
-                          resolve in another cluster, and the operator holds no ek_, so it cannot check that
-                          this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),
-                          never a guessed URL.
+                          Not admission-validated: capability.environment may resolve in another cluster,
+                          and the operator holds no ek_, so it cannot check that this id exists. Not
+                          hydrated ⇒ the harness runs with NO memory (fail-open §6.5), never a guessed URL.
                         minLength: 1
                         type: string
                       project:

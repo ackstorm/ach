@@ -139,7 +139,7 @@ _Appears in:_
 | `hooks` _[HooksSpec](#hooksspec)_ | Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run<br />inside the mini-harness with only engine.forwardEnv variables. |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
-| `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (repoCheckout / local / remote)<br />rendered into the config's mcpServers map. Presence = enabled; omit for none. |  |  |
+| `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (local / remote) rendered into the<br />config's mcpServers map. Presence = enabled; omit for none. |  |  |
 
 
 #### ACHAgentStatus
@@ -222,7 +222,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `endpoint` _string_ | Endpoint is the COMPLETE MCP endpoint, rendered VERBATIM — the harness appends<br />nothing, not `/mcp`, not a trailing slash. Whether ach-memory sits at a root<br />(`https://memory.internal/mcp/`) or behind ACH's gateway<br />(`https://api.ackstorm.ai/mcp/ach-memory`) is the operator's call. Do NOT append a<br />path here: a client that appends its own is how requests end up at `/mcp/mcp/`.<br />Use this for a deployment with no ACH manifest to resolve against; otherwise<br />prefer mcpServerId, which cannot drift and closes the second path. |  | MinLength: 1 <br /> |
-| `mcpServerId` _string_ | McpServerID names the hydrated runtime.mcpServers[].id serving ach-memory, as an<br />ALTERNATIVE to endpoint: the harness reads the address out of the same manifest<br />ACH granted, so it cannot drift from it.<br />It ALSO EXCLUDES that server from the harness's MCP proxy, and that is the point.<br />With endpoint, an Environment that ALSO grants ach-memory hands the agent the same<br />service by TWO paths — the harness facade, which pins scope and injects<br />project_slug beneath the agent, and the proxied server, where project_slug is an<br />ordinary argument and the ek_ is attached. The facade's containment is then merely<br />advisory: the agent reaches another tenant's bank by calling the copy next to it.<br />Naming the id is what lets the harness close that second path.<br />Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may<br />resolve in another cluster, and the operator holds no ek_, so it cannot check that<br />this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),<br />never a guessed URL. |  | MinLength: 1 <br /> |
+| `mcpServerId` _string_ | McpServerID names the hydrated runtime.mcpServers[].id serving ach-memory, as an<br />ALTERNATIVE to endpoint: the harness reads the address out of the same manifest<br />ACH granted, so it cannot drift from it.<br />It ALSO EXCLUDES that server from the harness's MCP proxy, and that is the point.<br />With endpoint, an Environment that ALSO grants ach-memory hands the agent the same<br />service by TWO paths — the harness facade, which pins scope and injects<br />project_slug beneath the agent, and the proxied server, where project_slug is an<br />ordinary argument and the ek_ is attached. The facade's containment is then merely<br />advisory: the agent reaches another tenant's bank by calling the copy next to it.<br />Naming the id is what lets the harness close that second path.<br />Not admission-validated: capability.environment may resolve in another cluster,<br />and the operator holds no ek_, so it cannot check that this id exists. Not<br />hydrated ⇒ the harness runs with NO memory (fail-open §6.5), never a guessed URL. |  | MinLength: 1 <br /> |
 | `auth` _[AchMemoryAuthSpec](#achmemoryauthspec)_ |  |  |  |
 | `project` _string_ | Project overrides the memory-bank slug. Empty (the norm) → the harness derives<br />\{POD_NAMESPACE\}-\{agent.name\} at boot, one bank per agent. Static: the slug SELECTS a<br />bank, so a payload-derived one would let an inbound event pick which bank the agent<br />reads and writes — the harness rejects \{\{ \}\} here, and so does the CEL below. |  |  |
 
@@ -1337,12 +1337,11 @@ _Appears in:_
 
 
 McpServerSpec is one harness-managed MCP server (rendered into config
-mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
-harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
-PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
-directly, NOT via the ACH proxy). The operator renders the list into the config's
-mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
-(hydrated as runtime.mcpServers) — different namespace, no collision.
+mcpServers[<name>]). Both variants are PASSTHROUGH (opencode launches a stdio
+subprocess / connects to a remote endpoint directly, NOT via the ACH proxy). The
+operator renders the list into the config's mcpServers map keyed by name. Distinct
+from the Environment's ACH-fronted MCP set (hydrated as runtime.mcpServers) —
+different namespace, no collision.
 
 
 
@@ -1352,8 +1351,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `type` _string_ |  |  | Enum: [repoCheckout local remote] <br />Required: \{\} <br /> |
-| `repoCheckout` _[RepoCheckoutSpec](#repocheckoutspec)_ |  |  |  |
+| `type` _string_ |  |  | Enum: [local remote] <br />Required: \{\} <br /> |
 | `local` _[LocalMcpSpec](#localmcpspec)_ |  |  |  |
 | `remote` _[RemoteMcpSpec](#remotemcpspec)_ |  |  |  |
 
@@ -1870,29 +1868,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `url` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `headers` _object (keys:string, values:string)_ |  |  |  |
-
-
-#### RepoCheckoutSpec
-
-
-
-RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
-gitlab://{project}/archive/{ref} from the hydrated MCP server named by
-sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
-per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
-server the agent's Environment exposes makes the tool fail-soft at runtime (no
-crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
-
-
-
-_Appears in:_
-- [McpServerSpec](#mcpserverspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `sourceMcpServerId` _string_ | SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves<br />the gitlab archive resource. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `tmpBase` _string_ | TmpBase is the parent dir for per-checkout tmp dirs (harness default /tmp/gitlab). |  |  |
-| `ttlSeconds` _integer_ | TTLSeconds bounds how long a stale checkout lingers before the next call sweeps<br />it (harness default 3600). |  | Minimum: 0 <br /> |
 
 
 #### RuntimeBlock

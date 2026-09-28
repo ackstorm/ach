@@ -202,7 +202,7 @@ func TestCELAdmission(t *testing.T) {
 		},
 		// CONTRACT_v3 mcpServers addendum — the discriminated union on
 		// ACHAgent.spec.mcpServers[].type requires the matching sub-block.
-		// type=repoCheckout with no repoCheckout: block → rejected.
+		// type=local with no local: block → rejected.
 		{
 			name:           "invalid_achagent_mcpserver_missing_block",
 			fixturePath:    "../../../test/fixtures/invalid/achagent_mcpserver_missing_block.yaml",

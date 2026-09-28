@@ -138,40 +138,6 @@ spec:
                       required:
                       - auth
                       type: object
-                    cleanup:
-                      description: |-
-                        Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,
-                        or after prepare/engine-acquire failure before acquisition completes. It is best-effort:
-                        failures are logged and counted without changing invocation delivery. Graceful shutdown
-                        attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.
-                      properties:
-                        forwardEnv:
-                          description: |-
-                            ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
-                            Literal values become the hook's env; secretKeyRef values become its secretEnv via
-                            generated Pod aliases. Unknown names are ignored and remain unset.
-                          items:
-                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                            type: string
-                          type: array
-                          x-kubernetes-list-type: set
-                        script:
-                          description: |-
-                            Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
-                            webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
-                          minLength: 1
-                          type: string
-                        timeoutSeconds:
-                          description: |-
-                            TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process
-                            group. Harness default is 120 when omitted.
-                          format: int64
-                          maximum: 3600
-                          minimum: 1
-                          type: integer
-                      required:
-                      - script
-                      type: object
                     concurrency:
                       default: 1
                       format: int64
@@ -188,15 +154,12 @@ spec:
                       required:
                       - schedule
                       type: object
-                    name:
-                      minLength: 1
-                      type: string
-                    prepare:
+                    handoff:
                       description: |-
-                        Prepare runs on the channel lane before the session engine is acquired or reused for
-                        an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing
-                        is posted. It re-runs for every event on a session workspace that persists, so scripts
-                        such as clone-or-fetch must be idempotent. Valid for every channel type.
+                        Handoff runs in the harness, in an empty directory; its output wholesale-replaces the
+                        session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary
+                        files). scope=event (default) runs it every invocation, the old prepare cadence;
+                        scope=session runs it only when a new session is created. Valid for every channel type.
                       properties:
                         forwardEnv:
                           description: |-
@@ -208,6 +171,15 @@ spec:
                             type: string
                           type: array
                           x-kubernetes-list-type: set
+                        scope:
+                          default: event
+                          description: |-
+                            Scope selects when the handoff runs: every event (the old prepare cadence), or only
+                            when a new session is created.
+                          enum:
+                          - event
+                          - session
+                          type: string
                         script:
                           description: |-
                             Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
@@ -225,6 +197,9 @@ spec:
                       required:
                       - script
                       type: object
+                    name:
+                      minLength: 1
+                      type: string
                     prompt:
                       type: string
                     queue:
@@ -419,11 +394,8 @@ spec:
                     rule: self.type=='webhook' || self.type=='webhook-script' || !has(self.source)
                   - message: channels.script is required only for webhook-script
                     rule: 'self.type==''webhook-script'' ? has(self.script) : !has(self.script)'
-                  - message: webhook-script forbids prompt, prepare, and cleanup
-                    rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.prepare)
-                      && !has(self.cleanup))
-                  - message: channels.cleanup requires channels.prepare
-                    rule: '!has(self.cleanup) || has(self.prepare)'
+                  - message: webhook-script forbids prompt and handoff
+                    rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.handoff))
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:
@@ -690,6 +662,44 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              hooks:
+                description: |-
+                  Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
+                  inside the mini-harness with only engine.forwardEnv variables.
+                properties:
+                  sessionStart:
+                    description: |-
+                      SessionStart runs once per new session, after the handoff and before the first turn.
+                      Failure fails the invocation.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
+                  sessionSuspend:
+                    description: |-
+                      SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox
+                      suspend), before any HOME archive. May run many times per session. Best-effort.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
+                type: object
               identity:
                 description: 'IdentitySpec carries the ACH ek_ (config: injected as
                   ACH_TOKEN env via secretKeyRef).'
@@ -746,17 +756,16 @@ spec:
                 type: object
               mcpServers:
                 description: |-
-                  MCPServers are harness-managed MCP servers (repoCheckout / local / remote)
-                  rendered into the config's mcpServers map. Presence = enabled; omit for none.
+                  MCPServers are harness-managed MCP servers (local / remote) rendered into the
+                  config's mcpServers map. Presence = enabled; omit for none.
                 items:
                   description: |-
                     McpServerSpec is one harness-managed MCP server (rendered into config
-                    mcpServers[<name>]). Discriminated by type: repoCheckout is HARNESS-HOSTED (the
-                    harness runs a checkout_repo facade, injecting the agent's ek_); local/remote are
-                    PASSTHROUGH (opencode launches a stdio subprocess / connects to a remote endpoint
-                    directly, NOT via the ACH proxy). The operator renders the list into the config's
-                    mcpServers map keyed by name. Distinct from the Environment's ACH-fronted MCP set
-                    (hydrated as runtime.mcpServers) — different namespace, no collision.
+                    mcpServers[<name>]). Both variants are PASSTHROUGH (opencode launches a stdio
+                    subprocess / connects to a remote endpoint directly, NOT via the ACH proxy). The
+                    operator renders the list into the config's mcpServers map keyed by name. Distinct
+                    from the Environment's ACH-fronted MCP set (hydrated as runtime.mcpServers) —
+                    different namespace, no collision.
                   properties:
                     local:
                       description: |-
@@ -799,38 +808,8 @@ spec:
                       required:
                       - url
                       type: object
-                    repoCheckout:
-                      description: |-
-                        RepoCheckoutSpec configures the harness-hosted checkout_repo tool. The harness reads
-                        gitlab://{project}/archive/{ref} from the hydrated MCP server named by
-                        sourceMcpServerId (with the agent's ek_, harness-side) and extracts it into a
-                        per-checkout dir under tmpBase, TTL-swept. A sourceMcpServerId that names no MCP
-                        server the agent's Environment exposes makes the tool fail-soft at runtime (no
-                        crash); ACH does not cross-validate it at admission (see the 2026-07-07 addendum).
-                      properties:
-                        sourceMcpServerId:
-                          description: |-
-                            SourceMcpServerID is the hydrated runtime.mcpServers[].id whose endpoint serves
-                            the gitlab archive resource.
-                          minLength: 1
-                          type: string
-                        tmpBase:
-                          description: TmpBase is the parent dir for per-checkout
-                            tmp dirs (harness default /tmp/gitlab).
-                          type: string
-                        ttlSeconds:
-                          description: |-
-                            TTLSeconds bounds how long a stale checkout lingers before the next call sweeps
-                            it (harness default 3600).
-                          format: int64
-                          minimum: 0
-                          type: integer
-                      required:
-                      - sourceMcpServerId
-                      type: object
                     type:
                       enum:
-                      - repoCheckout
                       - local
                       - remote
                       type: string
@@ -840,8 +819,7 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: 'mcpServers: the block matching type is required'
-                    rule: (self.type=='repoCheckout' && has(self.repoCheckout)) ||
-                      (self.type=='local' && has(self.local)) || (self.type=='remote'
+                    rule: (self.type=='local' && has(self.local)) || (self.type=='remote'
                       && has(self.remote))
                 type: array
                 x-kubernetes-list-map-keys:
@@ -953,10 +931,9 @@ spec:
                           advisory: the agent reaches another tenant's bank by calling the copy next to it.
                           Naming the id is what lets the harness close that second path.
 
-                          Same non-validation as repoCheckout.sourceMcpServerId: capability.environment may
-                          resolve in another cluster, and the operator holds no ek_, so it cannot check that
-                          this id exists. Not hydrated ⇒ the harness runs with NO memory (fail-open §6.5),
-                          never a guessed URL.
+                          Not admission-validated: capability.environment may resolve in another cluster,
+                          and the operator holds no ek_, so it cannot check that this id exists. Not
+                          hydrated ⇒ the harness runs with NO memory (fail-open §6.5), never a guessed URL.
                         minLength: 1
                         type: string
                       project:
