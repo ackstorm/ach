@@ -304,12 +304,24 @@ type PrepareSpec struct {
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
+// HandoffSpec configures channels[].handoff: a credentialed harness script that runs in an
+// empty $ACH_HANDOFF_DIR; its output replaces the session workspace's handoff/ directory.
+// Replaces the old prepare/cleanup pair.
+type HandoffSpec struct {
+	PrepareSpec `json:",inline"`
+	// Scope selects when the handoff runs: every event (the old prepare cadence), or only
+	// when a new session is created.
+	// +kubebuilder:validation:Enum=event;session
+	// +kubebuilder:default=event
+	// +optional
+	Scope string `json:"scope,omitempty"`
+}
+
 // ChannelSpec is one inbound channel (config: channels[]).
 // +kubebuilder:validation:XValidation:rule="((self.type=='webhook' || self.type=='webhook-script') && has(self.webhook)) || (self.type=='cron' && has(self.cron)) || (self.type=='queue' && has(self.queue)) || (self.type=='a2a' && has(self.a2a))",message="channels: the block matching type is required"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook' || self.type=='webhook-script' || !has(self.source)",message="channels.source is only valid for webhook channels"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook-script' ? has(self.script) : !has(self.script)",message="channels.script is required only for webhook-script"
-// +kubebuilder:validation:XValidation:rule="self.type!='webhook-script' || (!has(self.prompt) && !has(self.prepare) && !has(self.cleanup))",message="webhook-script forbids prompt, prepare, and cleanup"
-// +kubebuilder:validation:XValidation:rule="!has(self.cleanup) || has(self.prepare)",message="channels.cleanup requires channels.prepare"
+// +kubebuilder:validation:XValidation:rule="self.type!='webhook-script' || (!has(self.prompt) && !has(self.handoff))",message="webhook-script forbids prompt and handoff"
 type ChannelSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -336,18 +348,12 @@ type ChannelSpec struct {
 	Queue *QueueSpec `json:"queue,omitempty"`
 	// +optional
 	A2A *A2ASpec `json:"a2a,omitempty"`
-	// Prepare runs on the channel lane before the session engine is acquired or reused for
-	// an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing
-	// is posted. It re-runs for every event on a session workspace that persists, so scripts
-	// such as clone-or-fetch must be idempotent. Valid for every channel type.
+	// Handoff runs in the harness, in an empty directory; its output wholesale-replaces the
+	// session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary
+	// files). scope=event (default) runs it every invocation, the old prepare cadence;
+	// scope=session runs it only when a new session is created. Valid for every channel type.
 	// +optional
-	Prepare *PrepareSpec `json:"prepare,omitempty"`
-	// Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,
-	// or after prepare/engine-acquire failure before acquisition completes. It is best-effort:
-	// failures are logged and counted without changing invocation delivery. Graceful shutdown
-	// attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.
-	// +optional
-	Cleanup *PrepareSpec `json:"cleanup,omitempty"`
+	Handoff *HandoffSpec `json:"handoff,omitempty"`
 	// Script is the deterministic handler for type=webhook-script. The normalized webhook
 	// JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is
 	// temporary and removed after each event.
@@ -443,6 +449,32 @@ type RemoteMcpSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
+// HookSpec is a script run inside the agent's execution environment (the mini-harness),
+// with only engine.forwardEnv variables. It carries no forwardEnv of its own: a hook never
+// gets channel credentials.
+type HookSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Script string `json:"script"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=3600
+	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
+}
+
+// HooksSpec configures the agent's session lifecycle hooks. Agent-level only: hooks
+// describe one agent's session behaviour and are not part of AgentProfile/AgentDefaults.
+type HooksSpec struct {
+	// SessionStart runs once per new session, after the handoff and before the first turn.
+	// Failure fails the invocation.
+	// +optional
+	SessionStart *HookSpec `json:"sessionStart,omitempty"`
+	// SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox
+	// suspend), before any HOME archive. May run many times per session. Best-effort.
+	// +optional
+	SessionSuspend *HookSpec `json:"sessionSuspend,omitempty"`
+}
+
 // ACHAgentSpec defines the desired state of an agent instance.
 type ACHAgentSpec struct {
 	// +kubebuilder:validation:Required
@@ -473,6 +505,10 @@ type ACHAgentSpec struct {
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional
 	Memory *MemorySpec `json:"memory,omitempty"`
+	// Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
+	// inside the mini-harness with only engine.forwardEnv variables.
+	// +optional
+	Hooks *HooksSpec `json:"hooks,omitempty"`
 	// Expose controls reachability (Service + gateway route). Omit for a fully
 	// private agent (no Service, no public URL).
 	// +optional

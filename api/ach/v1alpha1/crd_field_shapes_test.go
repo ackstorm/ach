@@ -94,7 +94,7 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 	if len(roots) == 0 {
 		t.Fatal("no schema fields found — CRD layout changed, fix the navigation")
 	}
-	cleanupWants := []string{"when a reserved session is torn down", "after an acquired engine is stopped", "after prepare/engine-acquire failure before acquisition completes", "best-effort"}
+	sessionSuspendWants := []string{"every time the session's engine stops", "idle, shutdown, sandbox", "before any HOME archive", "Best-effort"}
 	for _, root := range roots {
 		spec := crdProperty(t, root, "spec")
 		channels := crdProperty(t, spec, "channels")
@@ -102,37 +102,37 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 		if !ok {
 			t.Fatal("spec.channels items schema missing")
 		}
-		prepare := crdProperty(t, items, "prepare")
-		assertDescriptionContains(t, "CRD prepare", prepare, "before the session engine is acquired or reused", "fail-closed")
-		assertDescriptionOmits(t, "CRD prepare", prepare, "before engine creation")
-		cleanup := crdProperty(t, items, "cleanup")
-		assertDescriptionContains(t, "CRD cleanup", cleanup, cleanupWants...)
-		assertDescriptionOmits(t, "CRD cleanup", cleanup, "channels[].prepare", "after the session engine stops", "before the engine exists", "fail-closed", "nothing is posted")
-		for _, field := range []string{"script", "forwardEnv", "timeoutSeconds"} {
-			shared := crdProperty(t, cleanup, field)
-			assertDescriptionOmits(t, "CRD cleanup."+field, shared, "prepare.env", "prepare.secretEnv", "before the engine exists", "fail-closed", "nothing is posted")
-		}
+		handoff := crdProperty(t, items, "handoff")
+		assertDescriptionContains(t, "CRD handoff", handoff, "wholesale-replaces", "session workspace's handoff")
+		scope := crdProperty(t, handoff, "scope")
+		assertDescriptionContains(t, "CRD handoff.scope", scope, "every event", "a new session is created")
 		script := crdProperty(t, items, "script")
 		assertDescriptionContains(t, "CRD script", script, "deterministic handler", "never invokes the agent engine", "temporary")
+
+		hooks := crdProperty(t, spec, "hooks")
+		sessionStart := crdProperty(t, hooks, "sessionStart")
+		assertDescriptionContains(t, "CRD hooks.sessionStart", sessionStart, "once per new session", "after the handoff", "Failure fails the invocation")
+		sessionSuspend := crdProperty(t, hooks, "sessionSuspend")
+		assertDescriptionContains(t, "CRD hooks.sessionSuspend", sessionSuspend, sessionSuspendWants...)
 	}
 
 	doc, err := os.ReadFile("../../../docs/api-reference/ach.ackstorm.ai.md")
 	if err != nil {
 		t.Fatalf("read API reference: %v", err)
 	}
-	var cleanupRow string
+	var sessionSuspendRow string
 	for _, line := range strings.Split(string(doc), "\n") {
-		if strings.HasPrefix(line, "| `cleanup` _[PrepareSpec](#preparespec)_") {
-			cleanupRow = line
+		if strings.HasPrefix(line, "| `sessionSuspend` _[HookSpec](#hookspec)_") {
+			sessionSuspendRow = line
 			break
 		}
 	}
-	if cleanupRow == "" {
-		t.Fatal("cleanup API-reference row missing")
+	if sessionSuspendRow == "" {
+		t.Fatal("sessionSuspend API-reference row missing")
 	}
-	for _, want := range cleanupWants {
-		if !strings.Contains(cleanupRow, want) {
-			t.Errorf("cleanup API-reference row missing %q: %s", want, cleanupRow)
+	for _, want := range sessionSuspendWants {
+		if !strings.Contains(sessionSuspendRow, want) {
+			t.Errorf("sessionSuspend API-reference row missing %q: %s", want, sessionSuspendRow)
 		}
 	}
 }

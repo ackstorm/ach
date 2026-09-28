@@ -137,40 +137,6 @@ spec:
                       required:
                       - auth
                       type: object
-                    cleanup:
-                      description: |-
-                        Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,
-                        or after prepare/engine-acquire failure before acquisition completes. It is best-effort:
-                        failures are logged and counted without changing invocation delivery. Graceful shutdown
-                        attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare.
-                      properties:
-                        forwardEnv:
-                          description: |-
-                            ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
-                            Literal values become the hook's env; secretKeyRef values become its secretEnv via
-                            generated Pod aliases. Unknown names are ignored and remain unset.
-                          items:
-                            pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                            type: string
-                          type: array
-                          x-kubernetes-list-type: set
-                        script:
-                          description: |-
-                            Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
-                            webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON.
-                          minLength: 1
-                          type: string
-                        timeoutSeconds:
-                          description: |-
-                            TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process
-                            group. Harness default is 120 when omitted.
-                          format: int64
-                          maximum: 3600
-                          minimum: 1
-                          type: integer
-                      required:
-                      - script
-                      type: object
                     concurrency:
                       default: 1
                       format: int64
@@ -187,15 +153,12 @@ spec:
                       required:
                       - schedule
                       type: object
-                    name:
-                      minLength: 1
-                      type: string
-                    prepare:
+                    handoff:
                       description: |-
-                        Prepare runs on the channel lane before the session engine is acquired or reused for
-                        an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing
-                        is posted. It re-runs for every event on a session workspace that persists, so scripts
-                        such as clone-or-fetch must be idempotent. Valid for every channel type.
+                        Handoff runs in the harness, in an empty directory; its output wholesale-replaces the
+                        session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary
+                        files). scope=event (default) runs it every invocation, the old prepare cadence;
+                        scope=session runs it only when a new session is created. Valid for every channel type.
                       properties:
                         forwardEnv:
                           description: |-
@@ -207,6 +170,15 @@ spec:
                             type: string
                           type: array
                           x-kubernetes-list-type: set
+                        scope:
+                          default: event
+                          description: |-
+                            Scope selects when the handoff runs: every event (the old prepare cadence), or only
+                            when a new session is created.
+                          enum:
+                          - event
+                          - session
+                          type: string
                         script:
                           description: |-
                             Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
@@ -224,6 +196,9 @@ spec:
                       required:
                       - script
                       type: object
+                    name:
+                      minLength: 1
+                      type: string
                     prompt:
                       type: string
                     queue:
@@ -418,11 +393,8 @@ spec:
                     rule: self.type=='webhook' || self.type=='webhook-script' || !has(self.source)
                   - message: channels.script is required only for webhook-script
                     rule: 'self.type==''webhook-script'' ? has(self.script) : !has(self.script)'
-                  - message: webhook-script forbids prompt, prepare, and cleanup
-                    rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.prepare)
-                      && !has(self.cleanup))
-                  - message: channels.cleanup requires channels.prepare
-                    rule: '!has(self.cleanup) || has(self.prepare)'
+                  - message: webhook-script forbids prompt and handoff
+                    rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.handoff))
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:
@@ -688,6 +660,44 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                type: object
+              hooks:
+                description: |-
+                  Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
+                  inside the mini-harness with only engine.forwardEnv variables.
+                properties:
+                  sessionStart:
+                    description: |-
+                      SessionStart runs once per new session, after the handoff and before the first turn.
+                      Failure fails the invocation.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
+                  sessionSuspend:
+                    description: |-
+                      SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox
+                      suspend), before any HOME archive. May run many times per session. Best-effort.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
                 type: object
               identity:
                 description: 'IdentitySpec carries the ACH ek_ (config: injected as

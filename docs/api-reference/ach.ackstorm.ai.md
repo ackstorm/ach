@@ -136,6 +136,7 @@ _Appears in:_
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
+| `hooks` _[HooksSpec](#hooksspec)_ | Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run<br />inside the mini-harness with only engine.forwardEnv variables. |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
 | `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (repoCheckout / local / remote)<br />rendered into the config's mcpServers map. Presence = enabled; omit for none. |  |  |
@@ -652,8 +653,7 @@ _Appears in:_
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
-| `prepare` _[PrepareSpec](#preparespec)_ | Prepare runs on the channel lane before the session engine is acquired or reused for<br />an invocation. It is fail-closed: a non-zero exit abandons the invocation, so nothing<br />is posted. It re-runs for every event on a session workspace that persists, so scripts<br />such as clone-or-fetch must be idempotent. Valid for every channel type. |  |  |
-| `cleanup` _[PrepareSpec](#preparespec)_ | Cleanup runs when a reserved session is torn down: after an acquired engine is stopped,<br />or after prepare/engine-acquire failure before acquisition completes. It is best-effort:<br />failures are logged and counted without changing invocation delivery. Graceful shutdown<br />attempts cleanup; abrupt Pod or node termination cannot guarantee it. Requires prepare. |  |  |
+| `handoff` _[HandoffSpec](#handoffspec)_ | Handoff runs in the harness, in an empty directory; its output wholesale-replaces the<br />session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary<br />files). scope=event (default) runs it every invocation, the old prepare cadence;<br />scope=session runs it only when a new session is created. Valid for every channel type. |  |  |
 | `script` _[PrepareSpec](#preparespec)_ | Script is the deterministic handler for type=webhook-script. The normalized webhook<br />JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is<br />temporary and removed after each event. |  |  |
 
 
@@ -1053,6 +1053,27 @@ _Appears in:_
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef optionally attaches an authentication header<br />(e.g. Authorization: Bearer ...). The data key named via<br />.headerValueKey supplies the header value at request time. |  |  |
 
 
+#### HandoffSpec
+
+
+
+HandoffSpec configures channels[].handoff: a credentialed harness script that runs in an
+empty $ACH_HANDOFF_DIR; its output replaces the session workspace's handoff/ directory.
+Replaces the old prepare/cleanup pair.
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `script` _string_ | Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;<br />webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become the hook's env; secretKeyRef values become its secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
+| `timeoutSeconds` _integer_ | TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
+| `scope` _string_ | Scope selects when the handoff runs: every event (the old prepare cadence), or only<br />when a new session is created. | event | Enum: [event session] <br /> |
+
+
 #### HealthSpec
 
 
@@ -1073,6 +1094,43 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `host` _string_ |  |  |  |
 | `port` _integer_ |  |  | Maximum: 65535 <br />Minimum: 1 <br /> |
+
+
+#### HookSpec
+
+
+
+HookSpec is a script run inside the agent's execution environment (the mini-harness),
+with only engine.forwardEnv variables. It carries no forwardEnv of its own: a hook never
+gets channel credentials.
+
+
+
+_Appears in:_
+- [HooksSpec](#hooksspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `script` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `timeoutSeconds` _integer_ |  |  | Maximum: 3600 <br />Minimum: 1 <br /> |
+
+
+#### HooksSpec
+
+
+
+HooksSpec configures the agent's session lifecycle hooks. Agent-level only: hooks
+describe one agent's session behaviour and are not part of AgentProfile/AgentDefaults.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `sessionStart` _[HookSpec](#hookspec)_ | SessionStart runs once per new session, after the handoff and before the first turn.<br />Failure fails the invocation. |  |  |
+| `sessionSuspend` _[HookSpec](#hookspec)_ | SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox<br />suspend), before any HOME archive. May run many times per session. Best-effort. |  |  |
 
 
 #### IdentitySpec
@@ -1627,6 +1685,7 @@ receives normalized JSON on stdin.
 
 _Appears in:_
 - [ChannelSpec](#channelspec)
+- [HandoffSpec](#handoffspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
