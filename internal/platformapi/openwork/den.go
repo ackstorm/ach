@@ -229,7 +229,8 @@ func (d Deps) resources(w http.ResponseWriter, r *http.Request) {
 // organization_policy_denied — real limits, not UI preferences).
 // Deliberately permissive: allowCustomProviders=false would hide the
 // provider OpenCode loads from its own config; allowManageExtensions=false
-// would block installing the auth plugin.
+// would block installing the auth plugin. The one hard deny is Zen:
+// OpenCode's hosted provider sends data outside the org's gateway.
 func (d Deps) desktopConfig(w http.ResponseWriter, r *http.Request) {
 	if _, ok := d.requireToken(w, r); !ok {
 		return
@@ -241,7 +242,7 @@ func (d Deps) desktopConfig(w http.ResponseWriter, r *http.Request) {
 	p := map[string]any{
 		"brandAppName": d.BrandAppName, "brandAccentColor": d.AccentColor,
 		"allowCustomProviders": true, "allowManageExtensions": true, "allowControlSettings": true,
-		"allowBuiltInExtensions": true, "allowMultipleWorkspaces": true, "allowZenModel": d.AllowZenModel,
+		"allowBuiltInExtensions": true, "allowMultipleWorkspaces": true, "allowZenModel": false,
 		"allowAlphaUpdates": false, "showWelcomePage": false,
 		// A non-empty blockedCommands disables interactive terminals outright
 		// (managed-policy-rules.ts:77-78).

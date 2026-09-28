@@ -285,10 +285,6 @@ openwork:
   # A non-empty list disables interactive terminals in the desktop outright.
   blockedCommands: []
   blockBrowserUploads: false
-  # OpenCode's hosted Zen provider. Set false only once the OpenCode plugin
-  # delivers this deployment's models — before that Zen is a fresh
-  # desktop's only model.
-  allowZenModel: true
   # Static join-link tokens (^[A-Za-z0-9_-]{8,}$), one per org or audience:
   # users paste https://<ach host>/install?token=<token> in the desktop.
   installTokens: []

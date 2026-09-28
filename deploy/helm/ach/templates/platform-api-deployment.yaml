@@ -137,8 +137,6 @@ spec:
               value: {{ join "," .Values.openwork.blockedCommands | quote }}
             - name: ACH_OPENWORK_BLOCK_BROWSER_UPLOADS
               value: {{ .Values.openwork.blockBrowserUploads | quote }}
-            - name: ACH_OPENWORK_ALLOW_ZEN_MODEL
-              value: {{ .Values.openwork.allowZenModel | quote }}
             - name: ACH_OPENWORK_INSTALL_TOKENS
               value: {{ join "," .Values.openwork.installTokens | quote }}
             {{- end }}

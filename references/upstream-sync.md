@@ -193,7 +193,7 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 ## 2026-09-21 — OpenWork Den ported from alitellm-auth (unified console, spec D-15/§12)
 
 Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c06176204292abb57f` (Apache-2.0, same org).
-Ported to Go (re-synced to `7605a9c`): Connect MCP (`/v1/mcp/token`, `/mcp/agent`, `mcp.go`) ships an empty catalog and `connectEnabled` is `true`. ACH adds `/v1/install-config` (not in the reference) and a configurable `allowZenModel`.
+Ported to Go (re-synced to `7605a9c`): Connect MCP (`/v1/mcp/token`, `/mcp/agent`, `mcp.go`) ships an empty catalog and `connectEnabled` is `true`. ACH adds `/v1/install-config` (not in the reference) and hardcodes `allowZenModel=false`.
 
 | ach file | alitellm-auth file | Notes |
 |---|---|---|

@@ -347,7 +347,7 @@ func TestFromEnv_BlockedCommandsList(t *testing.T) {
 	t.Setenv("ACH_OPENWORK_BLOCKED_COMMANDS", "rm, sudo ,,")
 	c := FromEnv()
 	if !c.Enabled || len(c.BlockedCommands) != 2 || c.BlockedCommands[1] != "sudo" || c.GrantTTL != 5*time.Minute || c.TokenTTL != 30*24*time.Hour ||
-		!c.AllowZenModel || c.InstallTokens != nil {
+		c.InstallTokens != nil {
 		t.Fatalf("%+v", c)
 	}
 }

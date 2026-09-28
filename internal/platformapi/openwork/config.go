@@ -32,10 +32,6 @@ type Config struct {
 	AccentColor         string
 	BlockedCommands     []string
 	BlockBrowserUploads bool
-	// AllowZenModel keeps OpenCode's hosted Zen provider; turn it off only
-	// once the plugin delivers the deployment's models (before that Zen is
-	// a fresh desktop's only model).
-	AllowZenModel bool
 	// InstallTokens are the static tokens of the <origin>/install?token=
 	// join links (one per org or audience).
 	InstallTokens []string
@@ -56,7 +52,6 @@ func FromEnv() Config {
 		BrandIconURL:        config.EnvOr("ACH_OPENWORK_BRAND_ICON_URL", ""),
 		AccentColor:         config.EnvOr("ACH_OPENWORK_ACCENT_COLOR", ""),
 		BlockBrowserUploads: config.EnvBool("ACH_OPENWORK_BLOCK_BROWSER_UPLOADS", false),
-		AllowZenModel:       config.EnvBool("ACH_OPENWORK_ALLOW_ZEN_MODEL", true),
 		InstallTokens:       splitList(config.EnvOr("ACH_OPENWORK_INSTALL_TOKENS", "")),
 		GrantTTL:            5 * time.Minute,
 		TokenTTL:            30 * 24 * time.Hour,
