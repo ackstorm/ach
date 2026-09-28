@@ -4,7 +4,7 @@
 // chips, real-links) is the compile-time DEFAULT_CONFIG. The store keeps the
 // same `useConfigStore((s) => s.config)` read so the components are untouched.
 // `links` stays {} — the real-links-only rule (D-02/D-03) drops every
-// nav/footer anchor; `providers` is empty so ProviderChips renders nothing.
+// nav/footer anchor; `providers` feeds the login's BACKED BY chips.
 
 import { create } from 'zustand';
 import type { AppConfig } from '../lib/api-types';
@@ -15,7 +15,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   tagline: 'Agent Capability Hub',
   accent_segment: '',
   public_host: '',
-  providers: [],
+  providers: [{ label: 'Dex' }, { label: 'OpenID Connect' }],
   links: {},
 };
 

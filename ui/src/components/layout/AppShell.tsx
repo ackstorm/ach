@@ -150,7 +150,7 @@ export function AppShell({ me, config }: AppShellProps) {
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             aria-label="Open menu"
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-primary/5 hover:text-text-primary focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
+            className="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-primary/5 hover:text-text-primary focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
           >
             <Menu aria-hidden="true" className="size-5" />
           </DropdownMenuTrigger>
@@ -193,7 +193,7 @@ export function AppShell({ me, config }: AppShellProps) {
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger
               aria-label="User menu"
-              className="group inline-flex items-center gap-2 rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-8 sm:rounded-lg sm:border sm:border-border sm:bg-surface sm:pl-1 sm:pr-2 sm:hover:border-primary/40 sm:hover:bg-primary/5 sm:data-[state=open]:border-primary/40 sm:data-[state=open]:bg-primary/5"
+              className="group inline-flex cursor-pointer items-center gap-2 rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 sm:h-8 sm:rounded-lg sm:border sm:border-border sm:bg-surface sm:pl-1 sm:pr-2 sm:hover:border-primary/40 sm:hover:bg-primary/5 sm:data-[state=open]:border-primary/40 sm:data-[state=open]:bg-primary/5"
             >
               {/* Mobile compacts to JUST the rounded avatar (no pill, name, or
                   chevron); the full pill returns at sm+. */}

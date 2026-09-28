@@ -198,15 +198,15 @@ describe('Dashboard — top row + tiles', () => {
     expect(row.querySelector('[data-slot="environment-more"]')).toBeNull();
   });
 
-  it('KEYS & ENVIRONMENTS tile caps pills at 6 and lists the rest in a "+N" hover title', () => {
+  it('KEYS & ENVIRONMENTS tile caps pills at 3 and lists the rest in a "+N" hover title', () => {
     setKeysSuccess([]);
     setEnvironments(['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7', 'e8']);
     const { container } = render(<Dashboard me={makeMe()} />);
     const row = container.querySelector('[data-slot="kpi-row"]') as HTMLElement;
-    expect(row.querySelectorAll('[data-slot="environment-pill"]')).toHaveLength(6);
+    expect(row.querySelectorAll('[data-slot="environment-pill"]')).toHaveLength(3);
     const more = row.querySelector('[data-slot="environment-more"]') as HTMLElement;
-    expect(more.textContent).toBe('+2');
-    expect(more.title).toBe('e7, e8');
+    expect(more.textContent).toBe('+5');
+    expect(more.title).toBe('e4, e5, e6, e7, e8');
   });
 
   it('Spend (MTD) shows formatCurrency(stats.totals.spend) when stats load', () => {

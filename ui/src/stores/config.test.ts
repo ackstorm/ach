@@ -11,6 +11,6 @@ describe('config store', () => {
 
   it('defaults carry no links and no provider chips (real-links-only rule)', () => {
     expect(DEFAULT_CONFIG.links).toEqual({});
-    expect(DEFAULT_CONFIG.providers).toEqual([]);
+    expect(DEFAULT_CONFIG.providers.map((p) => p.label)).toEqual(['Dex', 'OpenID Connect']);
   });
 });

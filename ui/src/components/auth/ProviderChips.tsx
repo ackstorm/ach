@@ -2,7 +2,7 @@
 // src/ui/login.js TwoColumnLogin's `.backed-by` + `.backed-by-row`.
 //
 // Renders one rounded chip per `config.providers` entry (an icon tile + the
-// provider label). Known providers show their REAL brand glyph (Google, Dex);
+// provider label). Known providers show their brand glyph (Google, Dex, OpenID);
 // everything else falls back to the generic shield. The chips are STATIC
 // illustrative content naming which IdPs back the SSO button — NOT live auth
 // state (T-09-18 is about *live* data).
@@ -57,6 +57,22 @@ function DexGlyph(): ReactElement {
   );
 }
 
+// OpenID mark — simplified: the orange "I" bar with the grey arc and arrow.
+function OpenIdGlyph(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-[15px]">
+      <path fill="#F78C40" d="M11 3.5 14 2v19.5L11 23z" />
+      <path
+        fill="none"
+        stroke="#B2B2B2"
+        strokeWidth={2}
+        d="M9.5 7.6C5.4 8.3 2.5 10.8 2.5 13.8c0 3.3 3.6 6 8.5 6.7M15.5 8c1.9.3 3.6.9 4.9 1.8"
+      />
+      <path fill="#B2B2B2" d="M23 7.5v5.2l-4.8-1.6z" />
+    </svg>
+  );
+}
+
 // Generic shield — the fallback for any provider without a known brand glyph.
 function ShieldGlyph(): ReactElement {
   return (
@@ -82,6 +98,10 @@ function resolveGlyph(label: string): { glyph: ReactElement; brand: boolean } {
       return { glyph: <GoogleGlyph />, brand: true };
     case 'dex':
       return { glyph: <DexGlyph />, brand: true };
+    case 'openid':
+    case 'openid connect':
+    case 'oidc':
+      return { glyph: <OpenIdGlyph />, brand: true };
     default:
       return { glyph: <ShieldGlyph />, brand: false };
   }

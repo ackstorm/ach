@@ -88,7 +88,7 @@ function EndpointChip({ endpoint }: { endpoint: string }) {
 // rest collapse into a "+N" pill whose hover title lists them. Count is
 // EM_DASH until the keys query resolves; pills fall back to EM_DASH when the
 // caller has no Environment.
-const MAX_ENV_PILLS = 6;
+const MAX_ENV_PILLS = 3;
 
 const PILL_CLASS =
   'inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-2 py-0.5 font-sans text-xs font-medium text-text-secondary';

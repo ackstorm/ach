@@ -55,8 +55,8 @@ describe('Login', () => {
     expect(screen.getByText('BACKED BY')).toBeInTheDocument();
   });
 
-  it('renders no BACKED BY block for DEFAULT_CONFIG (no providers)', () => {
-    render(<Login config={DEFAULT_CONFIG} />);
+  it('renders no BACKED BY block when no providers are configured', () => {
+    render(<Login config={{ ...DEFAULT_CONFIG, providers: [] }} />);
     expect(screen.queryByText('BACKED BY')).toBeNull();
   });
 
