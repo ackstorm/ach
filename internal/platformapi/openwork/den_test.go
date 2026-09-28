@@ -33,7 +33,7 @@ func newDen(t *testing.T, enabled bool) *fixture {
 	store := &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
 	f := &fixture{store: store, deps: Deps{
 		Config: Config{Enabled: enabled, OrgName: "Acme", OrgSlug: "acme", BrandAppName: "Acme AI",
-			BlockedCommands: []string{"rm"}, GrantTTL: 5 * time.Minute, TokenTTL: time.Hour},
+			BlockedCommands: []string{"rm"}, InstallTokens: []string{"join-acme-1"}, GrantTTL: 5 * time.Minute, TokenTTL: time.Hour},
 		Store: store, BaseURL: "https://ach.test/", CookieName: "ach_console",
 		Session: func(_ context.Context, sid string) (string, bool, error) { return "u@x.com", sid == "sid1", nil },
 	}}
@@ -162,7 +162,7 @@ func TestDen_GrantExchangeIsSingleUse(t *testing.T) {
 	m := decode(t, w)
 	sum := sha256.Sum256([]byte("acme"))
 	org := m["organization"].(map[string]any)
-	if w.Code != 200 || m["token"] == "" || m["connectEnabled"] != false ||
+	if w.Code != 200 || m["token"] == "" || m["connectEnabled"] != true ||
 		org["id"] != "organization_"+hex.EncodeToString(sum[:])[:16] || org["slug"] != "acme" || org["name"] != "Acme" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -231,7 +231,7 @@ func TestDen_DesktopConfigCarriesBrandingAndPolicy(t *testing.T) {
 	f := newDen(t, true)
 	m := decode(t, f.do(t, "GET", "/api/den/v1/me/desktop-config", nil, bearerHdr(token(t, f))))
 	if m["brandAppName"] != "Acme AI" || m["allowCustomProviders"] != true || m["allowManageExtensions"] != true ||
-		m["allowAlphaUpdates"] != false || m["connectEnabled"] != false || m["dashboardEnabled"] != false {
+		m["allowAlphaUpdates"] != false || m["connectEnabled"] != true || m["allowZenModel"] != false || m["dashboardEnabled"] != false {
 		t.Fatalf("%v", m)
 	}
 	ex := m["execution"].(map[string]any)
@@ -300,15 +300,11 @@ func TestDen_CatalogStubsEmptyButWellFormed(t *testing.T) {
 func TestDen_UnknownCatalogUsesTheDen404(t *testing.T) {
 	f := newDen(t, true)
 	tok := token(t, f)
-	for _, c := range []struct{ method, path string }{{"GET", "whatever"}, {"POST", "llm-providers"}, {"PUT", "plugins"}, {"POST", "mcp/token"}} {
+	for _, c := range []struct{ method, path string }{{"GET", "whatever"}, {"POST", "llm-providers"}, {"PUT", "plugins"}} {
 		w := f.do(t, c.method, "/api/den/v1/"+c.path, nil, bearerHdr(tok))
 		if w.Code != 404 || decode(t, w)["error"] != "not_implemented" {
 			t.Fatalf("%s %s: %d %s", c.method, c.path, w.Code, w.Body)
 		}
-	}
-	// Cloud MCP is gone entirely.
-	if w := f.do(t, "POST", "/api/den/mcp/agent", nil, bearerHdr(tok)); w.Code != 404 {
-		t.Fatalf("mcp/agent: %d", w.Code)
 	}
 }
 
@@ -350,7 +346,8 @@ func TestFromEnv_BlockedCommandsList(t *testing.T) {
 	t.Setenv("ACH_OPENWORK_ENABLED", "true")
 	t.Setenv("ACH_OPENWORK_BLOCKED_COMMANDS", "rm, sudo ,,")
 	c := FromEnv()
-	if !c.Enabled || len(c.BlockedCommands) != 2 || c.BlockedCommands[1] != "sudo" || c.GrantTTL != 5*time.Minute || c.TokenTTL != 30*24*time.Hour {
+	if !c.Enabled || len(c.BlockedCommands) != 2 || c.BlockedCommands[1] != "sudo" || c.GrantTTL != 5*time.Minute || c.TokenTTL != 30*24*time.Hour ||
+		!c.AllowZenModel || c.InstallTokens != nil {
 		t.Fatalf("%+v", c)
 	}
 }

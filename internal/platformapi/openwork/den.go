@@ -135,6 +135,9 @@ func Mount(r chi.Router, d Deps) {
 			r.Get("/v1/me/desktop-config", d.desktopConfig)
 			r.Post("/api/auth/sign-out", d.signOut)
 			r.Post("/v1/telemetry/ingest", d.telemetry)
+			r.Post("/v1/mcp/token", d.mcpToken)
+			r.Get("/v1/install-config", d.installConfig)
+			r.HandleFunc("/mcp/agent", d.mcpAgent)
 			r.HandleFunc("/v1/*", d.catalog) // the explicit routes above win
 		})
 	}
@@ -181,7 +184,7 @@ func (d Deps) exchange(w http.ResponseWriter, r *http.Request) {
 		"token":          tok,
 		"user":           map[string]string{"id": userIDFor(s.Email), "email": s.Email, "name": s.Name},
 		"organization":   d.organization(),
-		"connectEnabled": false, // Cloud MCP is excluded (spec §12)
+		"connectEnabled": true, // empty Connect MCP, for a green health badge (mcp.go)
 	})
 }
 
@@ -238,13 +241,13 @@ func (d Deps) desktopConfig(w http.ResponseWriter, r *http.Request) {
 	p := map[string]any{
 		"brandAppName": d.BrandAppName, "brandAccentColor": d.AccentColor,
 		"allowCustomProviders": true, "allowManageExtensions": true, "allowControlSettings": true,
-		"allowBuiltInExtensions": true, "allowMultipleWorkspaces": true, "allowZenModel": true,
+		"allowBuiltInExtensions": true, "allowMultipleWorkspaces": true, "allowZenModel": d.AllowZenModel,
 		"allowAlphaUpdates": false, "showWelcomePage": false,
 		// A non-empty blockedCommands disables interactive terminals outright
 		// (managed-policy-rules.ts:77-78).
 		"execution":          map[string]any{"commands": "allow", "blockedCommands": blocked, "blockBrowserUploads": d.BlockBrowserUploads},
 		"automationsEnabled": false, "dashboardEnabled": false,
-		"connectEnabled": false,
+		"connectEnabled": true,
 	}
 	// A non-URL value is dropped by the client normalizer: omit, don't send "".
 	if d.BrandLogoURL != "" {
@@ -293,8 +296,7 @@ var emptyCatalogs = map[string]any{
 }
 
 // catalog is the /v1/{path} catch-all: known empty catalogs on GET, the
-// Den 404 envelope otherwise (never chi's bare 404/405) — including every
-// former Cloud MCP route.
+// Den 404 envelope otherwise (never chi's bare 404/405).
 func (d Deps) catalog(w http.ResponseWriter, r *http.Request) {
 	if _, ok := d.requireToken(w, r); !ok {
 		return

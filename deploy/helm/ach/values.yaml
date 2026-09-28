@@ -271,8 +271,9 @@ security:
 
 # openwork: the OpenWork organization server ("Den") served by platform-api
 # at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den
-# (the desktop API). Off by default. Cloud MCP is not offered. The desktop
-# deep-link target is https://<ach host>/?desktopAuth=1.
+# (the desktop API). Off by default. Connect MCP answers with an EMPTY
+# catalog (green Connect health only). The desktop deep-link target is
+# https://<ach host>/?desktopAuth=1.
 openwork:
   enabled: false
   orgName: ACH
@@ -284,6 +285,13 @@ openwork:
   # A non-empty list disables interactive terminals in the desktop outright.
   blockedCommands: []
   blockBrowserUploads: false
+  # OpenCode's hosted Zen provider. Set false only once the OpenCode plugin
+  # delivers this deployment's models — before that Zen is a fresh
+  # desktop's only model.
+  allowZenModel: true
+  # Static join-link tokens (^[A-Za-z0-9_-]{8,}$), one per org or audience:
+  # users paste https://<ach host>/install?token=<token> in the desktop.
+  installTokens: []
 
 # gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
 # platform-api, content-service, and forwarder HTTP surfaces behind one
