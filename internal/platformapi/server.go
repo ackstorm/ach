@@ -129,6 +129,9 @@ type Deps struct {
 	// clients with (ACH_GENAI_PROVIDER_NAME): the OpenCode provider id the
 	// plugin signs in and the config names.
 	GenAIProvider string
+	// VerifyAccessToken checks ACH's own OAuth access token locally (no I/O)
+	// and returns its subject email; nil disables /clients/opencode/config.
+	VerifyAccessToken func(token string) (email string, err error)
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -183,6 +186,16 @@ func New(deps Deps) http.Handler {
 		r.Route("/platform/oauth", auth.MountOAuth(od))
 		// The OpenCode client of that AS, as an npm tarball (anonymous too).
 		r.Get("/clients/opencode/plugin", opencode.PluginHandler(deps.BaseURL, deps.GenAIProvider))
+		// Its per-user config. Outside Authn on purpose: it answers 200 to a
+		// token Authn would 401 (the baseline), so OpenCode always starts.
+		if deps.VerifyAccessToken != nil {
+			r.Get("/clients/opencode/config", opencode.ConfigHandler(opencode.ConfigDeps{
+				BaseURL: deps.BaseURL, Provider: deps.GenAIProvider, Verify: deps.VerifyAccessToken,
+				Resolver: deps.Resolver, KeyEncryptionKey: deps.KeyEncryptionKey,
+				AsUser: func(k string) opencode.UserCatalog { return deps.LiteLLMREST.AsUser(k) },
+				Admin:  deps.LiteLLMREST, Store: od.Store, Logger: deps.Logger,
+			}))
+		}
 		// Web console login/logout (D-27): the same AS, one more pending kind.
 		r.Route("/platform/console/session", auth.MountConsole(od))
 		// …and the cookie it sets resolves, through Authn, to the same

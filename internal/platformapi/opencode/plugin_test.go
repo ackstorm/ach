@@ -54,10 +54,10 @@ func TestPluginHandler_NpmTarball(t *testing.T) {
 		Main string `json:"main"`
 	}
 	if err := json.Unmarshal(files["package/package.json"], &pkg); err != nil {
-		t.Fatalf("package/package.json: %v (entries %v)", err, keys(files))
+		t.Fatalf("package/package.json: %v (entries %v)", err, names(files))
 	}
 	if pkg.Name == "" || len(files["package/"+pkg.Main]) == 0 {
-		t.Fatalf("main %q missing from %v", pkg.Main, keys(files))
+		t.Fatalf("main %q missing from %v", pkg.Main, names(files))
 	}
 }
 
@@ -72,7 +72,7 @@ func TestPluginHandler_PlatformJSON(t *testing.T) {
 	}
 }
 
-func keys(m map[string][]byte) []string {
+func names(m map[string][]byte) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
