@@ -126,11 +126,6 @@ SIBLING_ACH_AGENT_MOUNT=()
 if [[ -d "$(dirname "${WORKSPACE}")/ach-agent" ]]; then
     SIBLING_ACH_AGENT_MOUNT=(-v "$(cd "$(dirname "${WORKSPACE}")/ach-agent" && pwd):/ach-agent:ro")
 fi
-# Same for the OpenCode plugin: internal/platformapi/opencode/vendor_test.go
-# compares the vendored plugin/ with ../alitellm-auth at the tag in UPSTREAM.
-if [[ -d "$(dirname "${WORKSPACE}")/alitellm-auth" ]]; then
-    SIBLING_ACH_AGENT_MOUNT+=(-v "$(cd "$(dirname "${WORKSPACE}")/alitellm-auth" && pwd):/alitellm-auth:ro")
-fi
 
 # Default command: drop into bash if no args.
 if [[ $# -eq 0 ]]; then

@@ -241,7 +241,8 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `release-bump VERSION=X.Y.Z` | B | Bump version across manifests (used by release.yml). |
-| `release-cut VERSION=X.Y.Z` | B | Empty `chore(release)` commit + pre-push + push to main. |
+| `release-cut VERSION=X.Y.Z` | B | `opencode-plugin-sync`, then the `chore(release)` commit (empty unless the plugin changed) + pre-push + push to main. |
+| `opencode-plugin-sync` | B | Copy `clients/opencode` from `../alitellm-auth` (`ALITELLM_AUTH_DIR`) at its newest `v*` tag into `internal/platformapi/opencode/plugin/`. Fails without the checkout. |
 
 ### Docs (`docs-`)
 | Target | Ctx | Description |
