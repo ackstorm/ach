@@ -95,6 +95,7 @@ func newFixture(t *testing.T) *fixture {
 				{Name: "ackstorm.smart", Mode: ptr("chat"), SupportsVision: true},
 				{Name: "gemini.flash", Mode: ptr("chat")},
 				{Name: "text-embedding", Mode: ptr("embedding")},
+				{Name: "a2a/finops-advisor", Mode: ptr("chat")},
 				{Name: "ackstorm.router", Mode: ptr("chat"), SupportsFunctionCalling: true},
 			},
 			mcps: []litellm.MCPServerEntry{{ServerName: "github"}, {ServerName: ""}},
@@ -202,7 +203,7 @@ func TestConfig_ModelMapping(t *testing.T) {
 	f := newFixture(t)
 	_, m := f.get(t, "Bearer "+goodTok)
 	ms := models(m)
-	if len(ms) != 3 || ms["text-embedding"] != nil {
+	if len(ms) != 3 || ms["text-embedding"] != nil || ms["a2a/finops-advisor"] != nil {
 		t.Fatalf("models %v", ms)
 	}
 	smart := ms["ackstorm.smart"].(map[string]any)

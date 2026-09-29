@@ -166,6 +166,12 @@ func buildConfig(base, provider string, groups []litellm.ModelGroupInfo, mcps []
 		if g.Name == "" || g.Mode == nil || *g.Mode != "chat" {
 			continue // OpenCode cannot use embeddings, TTS, image, transcription
 		}
+		if strings.HasPrefix(g.Name, "a2a/") {
+			// An A2A agent, not a model: LiteLLM lists it once the agent is granted, but
+			// routes "a2a/" names (its own _is_a2a_agent_model) through the team's MODEL
+			// list, which never holds agents, so every call is refused.
+			continue
+		}
 		target := g.Name
 		if a, ok := aliases[g.Name]; ok {
 			target = a
