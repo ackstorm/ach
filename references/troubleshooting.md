@@ -1197,3 +1197,32 @@ Check it from outside the browser:
 `curl -s "$ACH/platform/environments?limit=500" -H "x-ach-key: pk_…" | jq '.items[] | {name, status, sync: (.conditions[]? | select(.type=="AccessGroupSynced") | .status)}'`
 — `status` other than `Available` with `sync: "True"` is the condition this
 entry describes, and keys can be created.
+
+### ❌ OpenCode v2: no `ackstorm` models and `opencode mcp list` empty after `opencode auth login`
+
+Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
++ `opencode service restart`: `opencode models` lists only `<provider>/*`, and
+`opencode mcp list` lists every MCP server the user's own LiteLLM key reaches, all
+`disabled` (ACH serves them `enabled:false` in `/clients/opencode/config`; the plugin
+registers them through `ctx.mcp.transform`). Observed 2026-09-29, three separate causes:
+
+- **Right after the restart.** The service loads the plugin, which then fetches the
+  config (2 s timeout). A `models` / `mcp list` run in the same second races it.
+  Wait a few seconds and run it again.
+- **The credentials never reached the service's database.** Check
+  `opencode debug config`: the first source must be the well-known document
+  (`plugins: [git+…opencode-oidc-provider…]` + `experimental.policies` deny `*` /
+  allow `<provider>`). If it is missing, read `~/.local/share/opencode/opencode.db`:
+  `select value from kv where key='wellknown:sources'` must list the ACH origin and
+  the `credential` table must hold it plus the `<provider>` oauth row. Both empty
+  while the log shows `credential created` (with no `credential removed`) means the
+  service that took the login did not persist it. Log in again with both commands,
+  then restart.
+- **`OPENCODE_MODELS_URL` left from an older setup** (e.g. alitellm-auth's
+  `/public/opencode`): the log shows `Failed to fetch models.dev … 404` on every
+  service start. Unset it in the shell profile; the service inherits the environment
+  of the shell that restarts it.
+
+A plugin under `~/.config/opencode/plugins/` that logs `Plugin must export a default
+definition with an id and an effect or setup function` is a v1-only plugin that v2
+skips. Harmless to ACH.
