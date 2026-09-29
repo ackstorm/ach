@@ -13,7 +13,10 @@ import (
 // login https://<ach>` (engines v1 and v2) installs the SSO plugin from spec
 // with this deployment's options — api for OAuth discovery, platform (the
 // origin serving /clients/*) for its config, provider for the provider id it
-// signs in. Anonymous, public data only. OpenCode requires an auth block;
+// signs in. enabled_providers keeps only that provider in the model picker
+// (v1 as is, v2 as provider.use policies); a default, not a lock — the
+// user's own opencode.json overrides it. Anonymous, public data only.
+// OpenCode requires an auth block;
 // the plugin never uses the credential its command yields, so any portable
 // command does.
 func WellKnownHandler(baseURL, provider, spec string) http.HandlerFunc {
@@ -24,9 +27,12 @@ func WellKnownHandler(baseURL, provider, spec string) http.HandlerFunc {
 	}
 	doc, _ := json.Marshal(map[string]any{
 		"auth": map[string]any{"command": []string{"opencode", "--version"}, "env": ""},
-		"config": map[string]any{"plugin": []any{[]any{spec, map[string]string{
-			"api": base + "/v1", "platform": u.Scheme + "://" + u.Host, "provider": provider,
-		}}}},
+		"config": map[string]any{
+			"plugin": []any{[]any{spec, map[string]string{
+				"api": base + "/v1", "platform": u.Scheme + "://" + u.Host, "provider": provider,
+			}}},
+			"enabled_providers": []string{provider},
+		},
 	})
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

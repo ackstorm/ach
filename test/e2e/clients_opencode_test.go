@@ -31,7 +31,8 @@ func TestClientsOpenCode(t *testing.T) {
 			Env     *string  `json:"env"`
 		} `json:"auth"`
 		Config struct {
-			Plugin [][]json.RawMessage `json:"plugin"`
+			Plugin           [][]json.RawMessage `json:"plugin"`
+			EnabledProviders []string            `json:"enabled_providers"`
 		} `json:"config"`
 	}
 	err = json.NewDecoder(resp.Body).Decode(&wk)
@@ -42,8 +43,9 @@ func TestClientsOpenCode(t *testing.T) {
 	}
 	var opts map[string]string
 	_ = json.Unmarshal(wk.Config.Plugin[0][1], &opts)
-	if opts["provider"] != "ai-platform" || opts["api"] != base+"/v1" || opts["platform"] != base {
-		t.Fatalf("plugin options = %v", opts)
+	if opts["provider"] != "ai-platform" || opts["api"] != base+"/v1" || opts["platform"] != base ||
+		len(wk.Config.EnabledProviders) != 1 || wk.Config.EnabledProviders[0] != "ai-platform" {
+		t.Fatalf("plugin options = %v, enabled_providers = %v", opts, wk.Config.EnabledProviders)
 	}
 
 	get := func(authz string) (int, http.Header, map[string]any) {

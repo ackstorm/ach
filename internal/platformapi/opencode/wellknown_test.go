@@ -22,9 +22,12 @@ func TestWellKnownHandler_Manifest(t *testing.T) {
 	}
 	want := map[string]any{
 		"auth": map[string]any{"command": []any{"opencode", "--version"}, "env": ""},
-		"config": map[string]any{"plugin": []any{[]any{"git+https://x/p.git#v1", map[string]any{
-			"api": "https://ach.test/v1", "platform": "https://ach.test", "provider": "acme",
-		}}}},
+		"config": map[string]any{
+			"plugin": []any{[]any{"git+https://x/p.git#v1", map[string]any{
+				"api": "https://ach.test/v1", "platform": "https://ach.test", "provider": "acme",
+			}}},
+			"enabled_providers": []any{"acme"},
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("manifest = %s", rec.Body)
