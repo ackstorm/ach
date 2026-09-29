@@ -622,4 +622,3 @@ func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
 		t.Errorf("standalone Service targetPort must stay the health port (default 8000), got %d", tp)
 	}
 }
-
