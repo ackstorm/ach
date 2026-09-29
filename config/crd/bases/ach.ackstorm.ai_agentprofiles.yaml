@@ -203,6 +203,7 @@ spec:
                       exactly as before. Operator-only: never rendered into config.json.
                     enum:
                     - standalone
+                    - sandboxed
                     type: string
                 type: object
               env:
@@ -398,8 +399,20 @@ spec:
                 type: array
               networkPolicy:
                 description: |-
-                  NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
-                  Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
+                  NetworkPolicySpec renders a default-deny EGRESS NetworkPolicy selecting the agent pod.
+                  Presence is the opt-in: an omitted block means no policy at all (the agent keeps
+                  unrestricted egress — the pre-feature behaviour). An empty block (`networkPolicy: {}`)
+                  is deny-all-except-DNS.
+
+                  Egress-only by design: policyTypes never includes Ingress, so expose.service /
+                  gateway→agent routing is untouched.
+
+                  Rules are DECLARED here, not derived from ach.baseUrl: upstream NetworkPolicy has no
+                  FQDN peer type and ACH_BASE_URL is a URL, so the operator cannot translate the ACH
+                  endpoint into a peer portably. Declare the forwarder/gateway peer yourself — an
+                  in-cluster podSelector+namespaceSelector, or an ipBlock CIDR for an external endpoint.
+                  The operator contributes what only it knows: the pod selector (operator-owned labels),
+                  the DNS rule, and lifecycle (created/pruned/GC'd with the agent).
                 properties:
                   egress:
                     description: |-
@@ -697,6 +710,109 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
+              sandbox:
+                description: |-
+                  NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
+                  Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
+                  Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;
+                  an agent that picks sandboxed over a profile without it fails to render).
+                properties:
+                  idleSeconds:
+                    description: IdleSeconds before an idle sandbox archives its HOME
+                      and is released. Unset = harness default.
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  resources:
+                    description: Resources for the sandbox container.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  runtimeClassName:
+                    description: RuntimeClassName for sandbox pods, e.g. gvisor. Empty
+                      = the cluster default runtime.
+                    type: string
+                  serviceAccountName:
+                    default: ach-sandboxed-agent
+                    description: |-
+                      ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the
+                      sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled).
+                    type: string
+                  sessions:
+                    description: Sessions is where session HOME archives are stored.
+                    properties:
+                      bucket:
+                        minLength: 1
+                        type: string
+                      maxArchiveBytes:
+                        format: int64
+                        type: integer
+                    required:
+                    - bucket
+                    type: object
+                  warmPoolReplicas:
+                    default: 1
+                    description: WarmPoolReplicas is the number of pre-started sandboxes.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                required:
+                - sessions
+                type: object
               terminationGracePeriodSeconds:
                 format: int64
                 minimum: 0
@@ -759,6 +875,10 @@ spec:
         - message: spec.achagent.image is required (nonempty)
           rule: has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image)
             > 0
+        - message: placement sandboxed requires spec.sandbox and spec.persistence.enabled
+          rule: '!has(self.spec.achagent.placement) || self.spec.achagent.placement
+            != ''sandboxed'' || (has(self.spec.sandbox) && has(self.spec.persistence)
+            && self.spec.persistence.enabled)'
     served: true
     storage: true
     subresources:

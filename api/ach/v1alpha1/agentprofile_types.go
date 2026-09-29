@@ -70,7 +70,7 @@ type AgentDefaults struct {
 	// value cannot shadow the profile's). standalone renders one `agent` container
 	// exactly as before. Operator-only: never rendered into config.json.
 	// +optional
-	// +kubebuilder:validation:Enum=standalone
+	// +kubebuilder:validation:Enum=standalone;sandboxed
 	Placement string `json:"placement,omitempty"`
 }
 
@@ -213,7 +213,46 @@ const (
 	// PlacementStandalone runs the whole ach-agent in ONE container (the pre-placement
 	// rendering, unchanged).
 	PlacementStandalone = "standalone"
+	// PlacementSandboxed keeps the harness in the Deployment and runs each session's engine
+	// in an agent-sandbox pod (kubernetes-sigs/agent-sandbox, a cluster prerequisite). Needs
+	// the profile's spec.sandbox and persistence. No NetworkPolicy is rendered.
+	PlacementSandboxed = "sandboxed"
 )
+
+// SandboxSpec configures the sandboxed placement: each session's engine runs in an
+// agent-sandbox pod (kubernetes-sigs/agent-sandbox v1.0.x, a cluster prerequisite).
+type SandboxSpec struct {
+	// RuntimeClassName for sandbox pods, e.g. gvisor. Empty = the cluster default runtime.
+	// +optional
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+	// WarmPoolReplicas is the number of pre-started sandboxes.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=1
+	// +optional
+	WarmPoolReplicas *int32 `json:"warmPoolReplicas,omitempty"`
+	// IdleSeconds before an idle sandbox archives its HOME and is released. Unset = harness default.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	IdleSeconds *int64 `json:"idleSeconds,omitempty"`
+	// Resources for the sandbox container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the
+	// sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled).
+	// +kubebuilder:default=ach-sandboxed-agent
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// Sessions is where session HOME archives are stored.
+	Sessions SandboxSessionsSpec `json:"sessions"`
+}
+
+// SandboxSessionsSpec is the S3 archive location (harness-side; the sandbox never sees it).
+type SandboxSessionsSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	Bucket string `json:"bucket"`
+	// +optional
+	MaxArchiveBytes *int64 `json:"maxArchiveBytes,omitempty"`
+}
 
 // AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
 // (image/ach/model/engine/limits/health/cost) live under the named achagent block and
@@ -246,6 +285,10 @@ type AgentProfileSpec struct {
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 	// NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
 	// Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
+	// Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;
+	// an agent that picks sandboxed over a profile without it fails to render).
+	// +optional
+	Sandbox *SandboxSpec `json:"sandbox,omitempty"`
 	// +optional
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 	// +optional
@@ -277,6 +320,7 @@ type AgentProfileStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="AgentProfile name must be <= 50 chars (operator derives <=63-char child names)"
 // +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image) > 0",message="spec.achagent.image is required (nonempty)"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.achagent.placement) || self.spec.achagent.placement != 'sandboxed' || (has(self.spec.sandbox) && has(self.spec.persistence) && self.spec.persistence.enabled)",message="placement sandboxed requires spec.sandbox and spec.persistence.enabled"
 
 // AgentProfile is the reusable infra + defaults for a class of agents.
 type AgentProfile struct {

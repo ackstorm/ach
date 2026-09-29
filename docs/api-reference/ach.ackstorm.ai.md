@@ -131,7 +131,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone] <br /> |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone sandboxed] <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
@@ -255,7 +255,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone] <br /> |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone sandboxed] <br /> |
 
 
 #### AgentProfile
@@ -323,7 +323,8 @@ _Appears in:_
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
-| `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
+| `sandbox` _[SandboxSpec](#sandboxspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec.<br />Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;<br />an agent that picks sandboxed over a profile without it fails to render). |  |  |
+| `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ |  |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
 | `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />— scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
@@ -1974,6 +1975,45 @@ _Appears in:_
 | `region` _string_ | Region of the bucket. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `endpoint` _string_ | Endpoint for S3-compatible storage. Optional; defaults to AWS S3<br />when empty. |  |  |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef points at the Secret carrying access-key-id and<br />secret-access-key (data keys named via accessKeyIdKey /<br />secretAccessKeyKey). |  | Required: \{\} <br /> |
+
+
+#### SandboxSessionsSpec
+
+
+
+SandboxSessionsSpec is the S3 archive location (harness-side; the sandbox never sees it).
+
+
+
+_Appears in:_
+- [SandboxSpec](#sandboxspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `bucket` _string_ |  |  | MinLength: 1 <br /> |
+| `maxArchiveBytes` _integer_ |  |  |  |
+
+
+#### SandboxSpec
+
+
+
+SandboxSpec configures the sandboxed placement: each session's engine runs in an
+agent-sandbox pod (kubernetes-sigs/agent-sandbox v1.0.x, a cluster prerequisite).
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `runtimeClassName` _string_ | RuntimeClassName for sandbox pods, e.g. gvisor. Empty = the cluster default runtime. |  |  |
+| `warmPoolReplicas` _integer_ | WarmPoolReplicas is the number of pre-started sandboxes. | 1 | Minimum: 0 <br /> |
+| `idleSeconds` _integer_ | IdleSeconds before an idle sandbox archives its HOME and is released. Unset = harness default. |  | Minimum: 0 <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ | Resources for the sandbox container. |  |  |
+| `serviceAccountName` _string_ | ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the<br />sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled). | ach-sandboxed-agent |  |
+| `sessions` _[SandboxSessionsSpec](#sandboxsessionsspec)_ | Sessions is where session HOME archives are stored. |  |  |
 
 
 #### SecretKeyRef
