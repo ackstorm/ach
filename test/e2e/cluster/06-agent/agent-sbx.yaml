@@ -1,0 +1,24 @@
+# Sandboxed cron-only agent; see profile-sbx.yaml. No session-bound channel: the fixture only
+# proves the operator renders template + warm pool + harness side.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: e2e-agent-sbx
+  namespace: ach-system
+spec:
+  profileRef:
+    name: e2e-profile-sbx
+  identity:
+    secretRef:
+      name: e2e-agent-ek
+      key: ek
+  capability:
+    environment: demo
+  channels:
+    - name: daily
+      type: cron
+      session:
+        type: none
+      cron:
+        schedule: "0 8 * * 1-5"
+      prompt: "Scan for CVEs."

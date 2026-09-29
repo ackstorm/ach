@@ -28,8 +28,8 @@ spec:
     health:
       host: 0.0.0.0
       port: 8000
-    # Pod topology (agent-overridable via ACHAgent.spec.placement). standalone is the only
-    # value and the default: one `agent` container.
+    # Pod topology (agent-overridable via ACHAgent.spec.placement): standalone (default, one
+    # `agent` container) or sandboxed (see profile-sandboxed.yaml).
     # placement: standalone
     # Where the per-invocation cost figure comes from (requires an ach-agent image
     # >= v0.10.0; one of engine|litellm_usage|litellm_headers|none — the harness

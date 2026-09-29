@@ -3,7 +3,8 @@ kind: Kustomization
 
 # Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only
 # ACHAgent (standalone, ephemeral) + the same standalone agent on a
-# persistent profile (profile-pvc.yaml + agent-pvc.yaml, PVC-backed) + their
+# persistent profile (profile-pvc.yaml + agent-pvc.yaml, PVC-backed) + a sandboxed
+# agent (profile-sbx.yaml + agent-sbx.yaml, runc on kind, operator-output gate only) + their
 # shared ek Secret. Applied after the CRDs (stage 02) exist. Order
 # within the stage does not matter — the operator re-reconciles on the profile
 # and secret watches until both resolve.
@@ -24,3 +25,5 @@ resources:
   - agent.yaml
   - profile-pvc.yaml
   - agent-pvc.yaml
+  - profile-sbx.yaml
+  - agent-sbx.yaml

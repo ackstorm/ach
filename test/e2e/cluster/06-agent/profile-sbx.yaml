@@ -1,0 +1,25 @@
+# Sandboxed placement on kind: runc (no runtimeClassName — kind has no gVisor) and a fake bucket
+# (no S3 here; the real S3 round-trip is verified on the cluster). The e2e image predates sandbox
+# mode, so the harness pod never goes Ready: the gate is the operator's rendered output
+# (scripts/cluster.sh stage 07), not runtime readiness.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: AgentProfile
+metadata:
+  name: e2e-profile-sbx
+  namespace: ach-system
+spec:
+  persistence:
+    enabled: true
+    size: 1Gi
+  sandbox:
+    warmPoolReplicas: 1
+    sessions:
+      bucket: e2e-not-used
+  achagent:
+    image: ghcr.io/ackstorm/ach-agent:v0.16.5@sha256:9ef89f09eed0b33ceb77cb7a35f90dadd3141d10a864460674cf5f5d429f45ec
+    placement: sandboxed
+    ach:
+      baseUrl: http://ach-gateway.ach-system.svc
+    model:
+      name: demo-model
+      type: openai

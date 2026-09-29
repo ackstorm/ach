@@ -10,6 +10,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   Live clusters had none.
 
 ### Added
+- `sandboxed` placement: the harness keeps its Deployment and each session's engine runs in an
+  agent-sandbox pod (`SandboxTemplate` + `SandboxWarmPool` per agent, gVisor via
+  `AgentProfile.spec.sandbox.runtimeClassName`, session HOME archived to S3). New profile block
+  `spec.sandbox`; chart `agentSandbox.enabled` creates the shared harness SA + sandboxclaims Role.
+  The operator now **creates** one Secret per sandboxed agent (`<agent>-sandbox-key`, never rotated;
+  first Secret it writes into agent namespaces) and needs RBAC on the agent-sandbox kinds. Requires
+  agent-sandbox v1.0.x installed and ach-agent >= v0.18.0-rc1. No NetworkPolicy is rendered.
 - `ACHAgent.spec.egress`: the harness injects upstream credentials for declared https
   origins (`auth.secretKeyRef` → harness-only `ACH_SECRET_EGRESS_<i>` + `config.json`
   `egress`). Requires an ach-agent image with egress support (>= v0.17.0 rejects the

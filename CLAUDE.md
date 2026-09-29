@@ -133,10 +133,24 @@ probe-backed `pod.status` only.
 `ACHAgent.spec.egress` (agent-only) renders a `config.json` `egress` block + harness-only
 `ACH_SECRET_EGRESS_<i>` env (secretKeyRef, list order); the operator mirrors NO harness validation —
 the harness rejects bad origins/placeholders/`forwardEnv` collisions at load (pod fails readiness).
-`placement` (`standalone` only, the CRD default; `sandboxed` pending; `ACHAgent.spec.placement ??
+`placement` (`standalone` (CRD default) | `sandboxed`; `ACHAgent.spec.placement ??
 AgentProfile.spec.achagent.placement`, agent wins; operator-only, never in config.json)
 picks the pod topology; standalone is the single `agent` container. Placement is a config-hash
-input. The pod pins uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud
+input. **`sandboxed`**: the harness stays in the Deployment and each session's engine runs in an
+agent-sandbox pod (kubernetes-sigs v1.0.x, cluster prerequisite; the operator checks the CRDs once
+at start — absent ⇒ `WorkloadApplied=False/SandboxCRDsMissing`). Needs the profile's `spec.sandbox`
+(bucket, runtimeClassName e.g. gvisor, warmPoolReplicas, …) + persistence, else RenderFailed. The
+operator renders `config.json` `sandbox` (`warmPool`/`gatewayHost` = `achagent-<name>`), an
+unstructured `SandboxTemplate` + `SandboxWarmPool` named `achagent-<name>` (template: engine
+container `--role engine`, no SA token, `networkPolicyManagement: Unmanaged`, env = only
+`engine.forwardEnv` + mcpServers env refs, plus the PUBLIC `ACH_SANDBOX_VERIFY_KEY` derived from K),
+always the Service (+ ports 8095 gateway, 8096 egress when `spec.egress`), and runs the harness as the
+shared SA `ach-sandboxed-agent` (chart `agentSandbox.enabled`: SA + sandboxclaims Role; Pod Identity
+binds S3 to that SA name; missing ⇒ `SandboxServiceAccountMissing`, requeued every 15s). K =
+Secret `achagent-<name>-sandbox-key` (`key`, 64 hex): created once by the operator (first Secret it
+writes), never rotated (delete by hand ⇒ harness rolls), harness env `ACH_SANDBOX_KEY` only.
+`ACH_SANDBOX_KEY`, `ACH_SECRET_*` and the ek never enter the template (`TestSandboxTemplate_NoHarnessSecrets`).
+No NetworkPolicy: trust is derived tokens only. Needs ach-agent >= v0.18.0-rc1. The pod pins uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud
 PVC (EBS) was unwritable on a persistent pod (ach-agent finding 2026-09-15; kind's
 local-path dirs are 0777 and never show it). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
@@ -486,8 +500,10 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 ## Repository-specific patterns
 
 - **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`). The e2e
-  stage 06 ships TWO shapes: `e2e-agent` (standalone, ephemeral) + `e2e-agent-pvc` (standalone on
-  the persistent `e2e-profile-pvc`), image `v0.16.5` pinned by digest, model `demo-model`. Two
+  stage 06 ships THREE shapes: `e2e-agent` (standalone, ephemeral) + `e2e-agent-pvc` (standalone on
+  the persistent `e2e-profile-pvc`) + `e2e-agent-sbx` (sandboxed on runc; gate = operator output:
+  template/pool/key/Service + no harness secret in the warm pod; agent-sandbox installed by
+  `cluster.sh`), image `v0.16.5` pinned by digest, model `demo-model`. Two
   evidence tracks: `scripts/cluster.sh` gates the rendered shape (`WorkloadApplied`, uid/fsGroup
   10001 on both); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`, swaps it into
   `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid 10001. Pods can hydrate because the e2e origin is

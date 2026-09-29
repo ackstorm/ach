@@ -67,6 +67,7 @@ chart_version_of() {
 # missing freshly-built image.
 ACH_IMAGE_REPO="${ACH_IMAGE_REPO:-ghcr.io/ackstorm/ach}"
 ACH_IMAGE_TAG="${ACH_IMAGE_TAG:-e2e}"
+AGENT_SANDBOX_VERSION="${AGENT_SANDBOX_VERSION:-v1.0.4}"
 ACH_IMAGE="${ACH_IMAGE_REPO}:${ACH_IMAGE_TAG}"
 
 # ach-mcp-echo backend image (issue #35). Built + kind-loaded unconditionally
@@ -437,6 +438,15 @@ reconcile_litellm() {
   kill "${pf_pid}" 2>/dev/null || true
   rm -rf "${tmpdir}"
   trap - EXIT
+}
+
+install_agent_sandbox() {
+  # kubernetes-sigs/agent-sandbox, a cluster prerequisite of the sandboxed placement. Installed
+  # BEFORE the operator so it sees the CRDs at start (it checks once). Keep the tag in step with
+  # test/crds/agent-sandbox/ and the gitops install.
+  echo "[cluster.sh] installing agent-sandbox ${AGENT_SANDBOX_VERSION}..."
+  kubectl apply --server-side -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox-with-extensions.yaml"
+  kubectl -n agent-sandbox-system rollout status deploy/agent-sandbox-controller --timeout=300s
 }
 
 reconcile_ach() {
@@ -843,6 +853,22 @@ verify_all() {
       -o jsonpath='{.spec.template.spec.securityContext.runAsUser} {.spec.template.spec.securityContext.fsGroup}' \
       | grep -qx '10001 10001'
   done
+  # Sandboxed placement (runc — kind has no gVisor). The pinned e2e image predates sandbox mode, so
+  # the harness pod never goes Ready; the gate is the operator's OUTPUT: template + pool + key
+  # Secret + Service, and NO harness secret in the warm sandbox pod (the S3/K/egress invariant).
+  kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-sbx
+  kubectl -n ach-system get sandboxtemplate.extensions.agents.x-k8s.io achagent-e2e-agent-sbx >/dev/null
+  kubectl -n ach-system get sandboxwarmpool.extensions.agents.x-k8s.io achagent-e2e-agent-sbx >/dev/null
+  kubectl -n ach-system get secret achagent-e2e-agent-sbx-sandbox-key >/dev/null
+  kubectl -n ach-system get svc achagent-e2e-agent-sbx -o json \
+    | jq -e '[.spec.ports[].name] | index("gateway") != null' >/dev/null
+  kubectl -n ach-system get deploy achagent-e2e-agent-sbx -o json \
+    | jq -e '.spec.template.spec.serviceAccountName == "ach-sandboxed-agent"' >/dev/null
+  # The warm pool creates pods whether or not they become Ready.
+  timeout 120 bash -c 'until kubectl -n ach-system get pods -l ach.ackstorm.ai/role=sandbox -o name | grep -q .; do sleep 3; done' \
+    || { echo "[cluster.sh] no warm sandbox pod appeared" >&2; return 1; }
+  kubectl -n ach-system get pods -l ach.ackstorm.ai/role=sandbox -o json \
+    | jq -e '[.items[].spec.containers[].env[]?.name] | all(. != "ACH_SANDBOX_KEY" and (startswith("ACH_SECRET_") | not) and . != "ACH_TOKEN")' >/dev/null
   echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }
 
@@ -851,6 +877,7 @@ reconcile_all() {
   reconcile_valkey
   reconcile_dex
   reconcile_litellm
+  install_agent_sandbox
   reconcile_ach          # operator chart + secrets (Task 1) + build/load mcp-echo + mock-model + mock-a2a/broker (Task 2)
   reconcile_fixtures     # jwt keys + test backends (gateway + mcp-echo + mock-model + mock-a2a + mock-broker, stage 03)
   reconcile_objects      # stage 04

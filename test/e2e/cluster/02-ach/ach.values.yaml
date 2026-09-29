@@ -98,3 +98,7 @@ forwarder:
 #                           (/v1/* + /__capture) for ek_ tag-injection asserts.
 # The legacy ach-mock-mcp sibling was dropped (unused; the JWT MCP path uses
 # ach-mcp-echo). There is intentionally no testMocks: block here anymore.
+
+# Shared harness ServiceAccount + sandboxclaims Role for the stage-06 sandboxed fixture.
+agentSandbox:
+  enabled: true
