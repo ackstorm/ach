@@ -912,7 +912,7 @@ func TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes(t *testing.T) {
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
 		t.Fatal(err)
 	}
-	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != "SandboxServiceAccountMissing" {
+	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != reasonSandboxSAMissing {
 		t.Fatalf("want SandboxServiceAccountMissing, got %+v", c)
 	}
 

@@ -163,7 +163,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if reason != "" {
 			setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, reason, msg, agent.Generation)
 			res, err := r.finish(ctx, &agent, conds)
-			if reason == "SandboxServiceAccountMissing" && err == nil {
+			if reason == reasonSandboxSAMissing && err == nil {
 				res.RequeueAfter = 15 * time.Second // the shared SA is not watched; poll until the chart creates it
 			}
 			return res, err

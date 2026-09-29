@@ -39,6 +39,8 @@ const (
 	sandboxContainer    = "engine"
 )
 
+const reasonSandboxSAMissing = "SandboxServiceAccountMissing"
+
 var mcpEnvRef = regexp.MustCompile(`\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}`)
 
 // sandboxKeySecretName is the per-agent Secret holding K, the root of every sandbox credential.
@@ -91,7 +93,7 @@ func (r *ACHAgentReconciler) checkSandboxPrereqs(ctx context.Context, a *achv1al
 	name := p.Spec.Sandbox.ServiceAccountName
 	if err := r.Get(ctx, types.NamespacedName{Namespace: a.Namespace, Name: name}, &corev1.ServiceAccount{}); err != nil {
 		if apierrors.IsNotFound(err) {
-			return "SandboxServiceAccountMissing", fmt.Sprintf("ServiceAccount %q not found (chart agentSandbox.enabled creates it)", name), nil
+			return reasonSandboxSAMissing, fmt.Sprintf("ServiceAccount %q not found (chart agentSandbox.enabled creates it)", name), nil
 		}
 		return "", "", err
 	}
