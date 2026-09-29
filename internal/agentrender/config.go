@@ -22,6 +22,7 @@ type AgentConfig struct {
 	Hooks         *HooksBlock     `json:"hooks,omitempty"`
 	Channels      []ChannelBlock  `json:"channels,omitempty"`
 	Egress        *EgressBlock    `json:"egress,omitempty"`
+	Sandbox       *SandboxBlock   `json:"sandbox,omitempty"`
 	// McpServers is the harness-managed MCP server map keyed by name (schema
 	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
 	McpServers map[string]McpServerBlock `json:"mcpServers,omitempty"`

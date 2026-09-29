@@ -87,6 +87,9 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 	}
 	cfg.McpServers = renderMcpServers(a.Spec.MCPServers)
 	cfg.Egress = renderEgress(a.Spec.Egress)
+	if cfg.Sandbox, err = renderSandbox(p, a); err != nil {
+		return AgentConfig{}, err
+	}
 	return cfg, nil
 }
 
