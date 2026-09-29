@@ -33,24 +33,8 @@ const (
 	configHashAnnotation = "ach.ackstorm.ai/config-hash"
 	agentLabelKey        = "ach.ackstorm.ai/agent"
 	defaultGraceSeconds  = int64(120)
-
-	// Distributed placement (contract 2026-09-14): three role containers in ONE pod.
-	roleChannels  = "channels"
-	roleHarness   = "harness"
-	roleEngine    = "engine"
-	channelsPort  = int32(8080) // public ingress + channels health port; the Service targets it
-	harnessPort   = int32(8090) // harness /healthz + /readyz (distributed only)
-	enginePort    = int32(8081) // engine /healthz + /readyz (distributed only)
-	agentUID      = int64(10001)
-	ipcDir        = "/run/ach-agent"
-	ephemeralBase = "/tmp/ach-agent" // data base when persistence is off
+	agentUID             = int64(10001)
 )
-
-// rolePorts is the distributed HTTP probe/ingress port per role (contract 2026-09-14 rev 2):
-// every container serves /healthz + /readyz on its port, bound to 0.0.0.0 by ach-agent.
-// Unix sockets stay internal transports — the operator never probes them. Standalone keeps
-// the configured health port instead (resolveHealthPort).
-var rolePorts = map[string]int32{roleChannels: channelsPort, roleHarness: harnessPort, roleEngine: enginePort}
 
 var (
 	defaultCPURequest    = resource.MustParse("100m")
@@ -145,31 +129,6 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 	return env
 }
 
-// engineEnv is the engine container's env in distributed placement: the operator env
-// filtered to the names the resolved engine.forwardEnv selects (agent replaces profile,
-// per ResolveEngine). Values and secretKeyRefs are the existing ones — nothing is inlined,
-// nothing is copied wholesale, no envFrom. ACH_* can never be selected (the operator owns
-// that namespace; renderEngine strips it from config.json for the same reason).
-func engineEnv(env []corev1.EnvVar, a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) []corev1.EnvVar {
-	eng := agentrender.ResolveEngine(a.Spec.Engine, p.Spec.Achagent.Engine)
-	if eng == nil {
-		return nil
-	}
-	allow := map[string]struct{}{}
-	for _, n := range eng.ForwardEnv {
-		if !strings.HasPrefix(n, "ACH_") {
-			allow[n] = struct{}{}
-		}
-	}
-	var out []corev1.EnvVar
-	for _, e := range env {
-		if _, ok := allow[e.Name]; ok {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
 func buildConfigMap(a *achv1alpha1.ACHAgent, configJSON []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
@@ -204,14 +163,9 @@ func buildPVC(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) (*corev1.Per
 	}, nil
 }
 
-// buildService fronts the pod on port 8080. Standalone targets the harness health port;
-// distributed targets the channels container (contract §5: "distributed public ingress
-// is Channels port 8080").
+// buildService fronts the pod on port 8080, targeting the harness health port.
 func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.Service {
 	target := resolveHealthPort(a, p)
-	if resolvePlacement(a, p) == achv1alpha1.PlacementDistributed {
-		target = channelsPort
-	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: corev1.ServiceSpec{
@@ -286,105 +240,7 @@ func exposeGateway(a *achv1alpha1.ACHAgent) bool {
 	return a.Spec.Expose != nil && a.Spec.Expose.Gateway
 }
 
-func emptyDir(name string) corev1.Volume {
-	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}
-}
-
-// distributedVolumes is the volume set for the three-role pod: config (ConfigMap), ONE
-// data volume (the PVC when persistent, an emptyDir otherwise — mounted by subPath, never
-// whole), three IPC emptyDirs (directories, not socket files) and a private /tmp per role.
-func distributedVolumes(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) []corev1.Volume {
-	data := emptyDir(pvcVolumeName)
-	if p.Spec.Persistence != nil && p.Spec.Persistence.Enabled {
-		data.VolumeSource = corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: agentResourceName(a.Name)}}
-	}
-	return []corev1.Volume{
-		{Name: configVolumeName, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: agentResourceName(a.Name)}}}},
-		data,
-		emptyDir("ach-agent-ipc-transfer"), emptyDir("ach-agent-ipc-channels"), emptyDir("ach-agent-ipc-engine"),
-		emptyDir("tmp-" + roleChannels), emptyDir("tmp-" + roleHarness), emptyDir("tmp-" + roleEngine),
-	}
-}
-
-// distributedContainers renders the contract's container matrix. env is the operator env
-// (buildAgentEnv) — channels and harness get it verbatim, engine gets engineEnv(env).
-// ach-agent owns every path under base and /run/ach-agent; the operator only mounts the
-// directories the contract names (no tool-specific mounts, nothing derived from engine
-// config).
-func distributedContainers(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, env []corev1.EnvVar, resources corev1.ResourceRequirements) []corev1.Container {
-	base := ephemeralBase
-	if p.Spec.Persistence != nil && p.Spec.Persistence.Enabled {
-		base = p.Spec.Persistence.MountPath
-	}
-	// The workspace stays at its standalone location, base/home/workspace (subPath
-	// home/workspace): a placement flip on a populated PVC must keep the absolute
-	// path and the physical directory so native tool sessions survive it (ach-agent
-	// v0.16.5 contract). The engine sees it through its home mount; the harness
-	// mounts only that nested dir, never the rest of engine home.
-	data := func(sub string) corev1.VolumeMount {
-		return corev1.VolumeMount{Name: pvcVolumeName, MountPath: base + "/" + sub, SubPath: sub}
-	}
-	ipc := func(name string, ro bool) corev1.VolumeMount {
-		return corev1.VolumeMount{Name: "ach-agent-ipc-" + name, MountPath: ipcDir + "/" + name, ReadOnly: ro}
-	}
-	// /tmp is listed FIRST so the ephemeral base (/tmp/ach-agent/*) nests under the
-	// private /tmp rather than being shadowed by it.
-	tmp := func(role string) corev1.VolumeMount {
-		return corev1.VolumeMount{Name: "tmp-" + role, MountPath: "/tmp"}
-	}
-	configMount := corev1.VolumeMount{Name: configVolumeName, MountPath: configFilePath, SubPath: configFileName, ReadOnly: true}
-
-	roles := []struct {
-		name   string
-		env    []corev1.EnvVar
-		ports  []corev1.ContainerPort
-		mounts []corev1.VolumeMount
-	}{
-		{roleChannels, env,
-			[]corev1.ContainerPort{{Name: "http", ContainerPort: rolePorts[roleChannels], Protocol: corev1.ProtocolTCP}},
-			[]corev1.VolumeMount{tmp(roleChannels), ipc("channels", true)}},
-		{roleHarness, env,
-			// Named so the PodMonitor (monitoring.coreos.com/v1) can scrape /metrics by port name.
-			[]corev1.ContainerPort{{Name: "health", ContainerPort: rolePorts[roleHarness], Protocol: corev1.ProtocolTCP}},
-			[]corev1.VolumeMount{tmp(roleHarness), configMount, data("state"), data("home/workspace"), ipc("transfer", false), ipc("channels", false), ipc("engine", true)}},
-		{roleEngine, engineEnv(env, a, p),
-			[]corev1.ContainerPort{{Name: "engine", ContainerPort: rolePorts[roleEngine], Protocol: corev1.ProtocolTCP}},
-			[]corev1.VolumeMount{tmp(roleEngine), data("home"), ipc("transfer", false), ipc("engine", false)}},
-	}
-
-	falseVal := false
-	image := agentrender.ResolveImage(a.Spec.Image, p.Spec.Achagent.Image)
-	out := make([]corev1.Container, 0, len(roles))
-	for _, r := range roles {
-		probe := func(path string) corev1.ProbeHandler {
-			return corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: path, Port: intstr.FromInt(int(rolePorts[r.name]))}}
-		}
-		out = append(out, corev1.Container{
-			Name:         r.name,
-			Image:        image,
-			Args:         []string{"--role", r.name}, // command never set: image entrypoint (tini) preserved
-			Ports:        r.ports,
-			Env:          r.env,
-			VolumeMounts: r.mounts,
-			Resources:    *resources.DeepCopy(),
-			// Contract §4 timings. Initialization (incl. hydration) completes before /readyz
-			// succeeds; liveness arms only after startup succeeds (kubelet semantics), so an
-			// init failure keeps the container not-Ready and restarts it. ach-agent owns the
-			// readiness logic — the operator only renders the schedule.
-			StartupProbe:   &corev1.Probe{ProbeHandler: probe("/readyz"), InitialDelaySeconds: 15, PeriodSeconds: 5, TimeoutSeconds: 3, FailureThreshold: 6},
-			ReadinessProbe: &corev1.Probe{ProbeHandler: probe("/readyz"), PeriodSeconds: 10, TimeoutSeconds: 3, FailureThreshold: 3},
-			LivenessProbe:  &corev1.Probe{ProbeHandler: probe("/healthz"), PeriodSeconds: 20, TimeoutSeconds: 3, FailureThreshold: 3},
-			SecurityContext: &corev1.SecurityContext{
-				AllowPrivilegeEscalation: &falseVal,
-				Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			},
-		})
-	}
-	return out
-}
-
-// buildDeployment builds the single-replica agent Deployment for either placement
-// (standalone: one `agent` container; distributed: channels/harness/engine). env is built
+// buildDeployment builds the single-replica agent Deployment (one `agent` container). env is built
 // once by the caller (buildAgentEnv) so what's hashed equals what's deployed. Inbound
 // channel-auth secrets ride in env (secretKeyRef), never as mounted files.
 func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar) (*appsv1.Deployment, error) {
@@ -429,16 +285,9 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 	podLabels := agentLabels(a)
 	maps.Copy(podLabels, agentSelectorLabels(a.Name))
 
-	// Both placements pin uid/gid/fsGroup 10001: the image runs as that uid and a
-	// fresh cloud PVC (EBS, root-owned 0755) is unwritable without fsGroup — found
-	// by ach-agent on a persistent standalone pod (2026-09-15; kind's local-path
-	// provisioner hands out 0777 dirs and never showed it). Standalone: the single
-	// container, otherwise unchanged. Distributed: the three-role matrix, whose
-	// shared data/IPC emptyDirs and PVC subPaths rely on the same fsGroup, plus
-	// dropped kubelet Service-link env (~90 ACH_*_SERVICE_* vars from the ach-*
-	// Services in the namespace would otherwise land in every container, engine
-	// included — discovery is explicit env + DNS, this is not a network control).
-	var enableServiceLinks *bool
+	// Pin uid/gid/fsGroup 10001: the image runs as that uid and a fresh cloud PVC (EBS,
+	// root-owned 0755) is unwritable without fsGroup — found by ach-agent on a persistent
+	// pod (2026-09-15; kind's local-path provisioner hands out 0777 dirs and never showed it).
 	uid := agentUID
 	podSC := &corev1.PodSecurityContext{
 		RunAsNonRoot: &trueVal, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid,
@@ -462,11 +311,6 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
 	}}
-	if resolvePlacement(a, p) == achv1alpha1.PlacementDistributed {
-		volumes = distributedVolumes(a, p)
-		containers = distributedContainers(a, p, env, resources)
-		enableServiceLinks = &falseVal
-	}
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
@@ -482,7 +326,6 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            agentResourceName(a.Name),
 					AutomountServiceAccountToken:  &falseVal,
-					EnableServiceLinks:            enableServiceLinks,
 					TerminationGracePeriodSeconds: &grace,
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,
