@@ -227,6 +227,8 @@ func buildSandboxTemplate(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, 
 		// auth and 503s only when the engine is unhealthy.
 		ReadinessProbe: sandboxProbe(),
 		LivenessProbe:  sandboxProbe(),
+		// HOME is not in the image and the root fs is not the agent's; the engine writes it.
+		VolumeMounts: []corev1.VolumeMount{{Name: "home", MountPath: agentrender.SandboxHome}},
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: &falseVal,
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
@@ -244,6 +246,7 @@ func buildSandboxTemplate(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, 
 			SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		},
 		Containers: []corev1.Container{container},
+		Volumes:    []corev1.Volume{{Name: "home", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
 	}
 	if sb.RuntimeClassName != "" {
 		spec.RuntimeClassName = &sb.RuntimeClassName

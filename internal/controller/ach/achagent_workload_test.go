@@ -718,6 +718,17 @@ func TestSandboxTemplate_ProbesPreConfigureHealth(t *testing.T) {
 	}
 }
 
+// The engine creates HOME on configure; without a writable mount it cannot, and every claim 503s.
+func TestSandboxTemplate_WritableHome(t *testing.T) {
+	a, p := sandboxedFixture()
+	raw, _ := json.Marshal(buildSandboxTemplate(a, p, strings.Repeat("0", 64)).Object)
+	for _, want := range []string{`"mountPath":"/home/agent","name":"home"`, `"emptyDir":{},"name":"home"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("template missing %s: %s", want, raw)
+		}
+	}
+}
+
 func TestSandboxWarmPool_Recreate(t *testing.T) {
 	a, p := sandboxedFixture()
 	if v, _, _ := unstructured.NestedString(buildSandboxWarmPool(a, p).Object, "spec", "updateStrategy", "type"); v != "Recreate" {
