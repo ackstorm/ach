@@ -45,12 +45,16 @@ type fakeUser struct {
 	groups []litellm.ModelGroupInfo
 	mcps   []litellm.MCPServerEntry
 	err    error
+	mcpErr error
 }
 
 func (f *fakeUser) ListModelGroups(context.Context) ([]litellm.ModelGroupInfo, error) {
 	return f.groups, f.err
 }
 func (f *fakeUser) ListMCPServers(context.Context) ([]litellm.MCPServerEntry, error) {
+	if f.mcpErr != nil {
+		return nil, f.mcpErr
+	}
 	return f.mcps, f.err
 }
 
@@ -238,6 +242,15 @@ func TestConfig_UpstreamDownServesCacheThenBareFallback(t *testing.T) {
 			len(m["config"].(map[string]any)) != 0 || m["skills"].([]any)[0].(map[string]any)["name"] != "genai-api" {
 			t.Fatalf("%s: %d %s", name, w.Code, w.Body)
 		}
+	}
+}
+
+func TestConfig_MCPListDownStillServesModels(t *testing.T) {
+	f := newFixture(t)
+	f.user.mcpErr = errors.New("no MCP gateway")
+	w, m := f.get(t, "Bearer "+goodTok)
+	if w.Code != 200 || m["stale"] != false || len(models(m)) != 3 || m["config"].(map[string]any)["mcp"] != nil {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
 

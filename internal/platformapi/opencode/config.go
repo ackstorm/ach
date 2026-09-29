@@ -141,9 +141,12 @@ func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 		go func() { defer wg.Done(); mcps, mErr = user.ListMCPServers(uctx) }()
 		go func() { defer wg.Done(); deps, aliases = caps.get(uctx) }()
 		wg.Wait()
-		if gErr != nil || mErr != nil {
+		if gErr != nil {
 			fallback()
 			return
+		}
+		if mErr != nil { // the models still stand on their own: serve them without MCP
+			d.Logger.Warn("opencode config: MCP list failed", "user", email, "err", mErr)
 		}
 		b := body(&email, buildConfig(base, d.Provider, groups, mcps, deps, aliases), []any{skill}, "ok", false)
 		if err := d.Store.Put(ctx, cacheKind, email, b, cacheTTL); err != nil {

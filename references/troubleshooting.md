@@ -1223,6 +1223,17 @@ registers them through `ctx.mcp.transform`). Observed 2026-09-29, three separate
   service start. Unset it in the shell profile; the service inherits the environment
   of the shell that restarts it.
 
+Two v2 `auth logout` traps (from alitellm-auth, same plugin):
+
+- **Log out the provider before the origin.** `opencode auth logout <provider>` first,
+  then `opencode auth logout <origin>`. With the origin gone first the plugin unloads,
+  `auth logout <provider>` answers "Integration not found", and the tokens stay stored
+  with nothing able to reach them.
+- **A saved origin that no longer answers** its `/.well-known/opencode` makes every
+  login and logout fail with "Integration not found". Remove it from
+  `kv['wellknown:sources']` in `opencode.db`; never delete the db (it holds every
+  session and login).
+
 A plugin under `~/.config/opencode/plugins/` that logs `Plugin must export a default
 definition with an id and an effect or setup function` is a v1-only plugin that v2
 skips. Harmless to ACH.
