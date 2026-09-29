@@ -52,8 +52,8 @@ func renderSandbox(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) (*Sandbox
 		return nil, nil
 	}
 	sb := p.Spec.Sandbox
-	if sb == nil || p.Spec.Persistence == nil || !p.Spec.Persistence.Enabled {
-		return nil, fmt.Errorf("placement sandboxed requires the profile's spec.sandbox and spec.persistence.enabled")
+	if sb == nil {
+		return nil, fmt.Errorf("placement sandboxed requires the profile's spec.sandbox")
 	}
 	return &SandboxBlock{
 		Enabled:     true,

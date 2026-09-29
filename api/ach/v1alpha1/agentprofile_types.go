@@ -320,7 +320,6 @@ type AgentProfileStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="AgentProfile name must be <= 50 chars (operator derives <=63-char child names)"
 // +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image) > 0",message="spec.achagent.image is required (nonempty)"
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.achagent.placement) || self.spec.achagent.placement != 'sandboxed' || (has(self.spec.sandbox) && has(self.spec.persistence) && self.spec.persistence.enabled)",message="placement sandboxed requires spec.sandbox and spec.persistence.enabled"
 
 // AgentProfile is the reusable infra + defaults for a class of agents.
 type AgentProfile struct {

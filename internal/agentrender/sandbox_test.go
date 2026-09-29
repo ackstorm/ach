@@ -49,16 +49,11 @@ func TestRenderSandbox_StandaloneHasNoBlock(t *testing.T) {
 	}
 }
 
-func TestRenderSandbox_RequiresProfileBlockAndPersistence(t *testing.T) {
+func TestRenderSandbox_RequiresProfileBlock(t *testing.T) {
 	p, a := sandboxedPair()
 	p.Spec.Sandbox = nil
 	if _, err := Render(p, a, ""); err == nil || !strings.Contains(err.Error(), "spec.sandbox") {
 		t.Errorf("missing sandbox block: err = %v", err)
-	}
-	p, a = sandboxedPair()
-	p.Spec.Persistence = nil
-	if _, err := Render(p, a, ""); err == nil || !strings.Contains(err.Error(), "persistence") {
-		t.Errorf("missing persistence: err = %v", err)
 	}
 }
 

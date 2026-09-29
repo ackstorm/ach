@@ -435,9 +435,6 @@ spec:
                               maxLength: 64
                               pattern: ^[A-Za-z0-9!#$%&'*+.^_`|~-]+$
                               type: string
-                              x-kubernetes-validations:
-                              - message: header is reserved
-                                rule: '!(self.lowerAscii() in [''host'',''content-length'',''transfer-encoding'',''connection'',''cookie'',''proxy-authorization''])'
                             placeholderEnv:
                               description: |-
                                 PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that

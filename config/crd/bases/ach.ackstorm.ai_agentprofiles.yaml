@@ -875,10 +875,6 @@ spec:
         - message: spec.achagent.image is required (nonempty)
           rule: has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image)
             > 0
-        - message: placement sandboxed requires spec.sandbox and spec.persistence.enabled
-          rule: '!has(self.spec.achagent.placement) || self.spec.achagent.placement
-            != ''sandboxed'' || (has(self.spec.sandbox) && has(self.spec.persistence)
-            && self.spec.persistence.enabled)'
     served: true
     storage: true
     subresources:

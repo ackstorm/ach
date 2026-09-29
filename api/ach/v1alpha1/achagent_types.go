@@ -531,7 +531,6 @@ type EgressAuth struct {
 	// Header the proxy sets (RFC 9110 field-name token).
 	// +kubebuilder:validation:Pattern="^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
 	// +kubebuilder:validation:MaxLength=64
-	// +kubebuilder:validation:XValidation:rule="!(self.lowerAscii() in ['host','content-length','transfer-encoding','connection','cookie','proxy-authorization'])",message="header is reserved"
 	Header string `json:"header"`
 	// Prefix is prepended to the secret value, e.g. "Bearer ".
 	// +kubebuilder:validation:MaxLength=64
