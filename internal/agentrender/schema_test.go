@@ -202,6 +202,8 @@ func renderMatrix() map[string]renderCase {
 		LocalObjectReference: corev1.LocalObjectReference{Name: "gl-clone"}, Key: "token",
 	}}}}
 	m["channel-handoff"] = handoff
+	sp, sa := sandboxedPair()
+	m["sandboxed"] = renderCase{profile: sp, agent: sa}
 	return m
 }
 
