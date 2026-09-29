@@ -877,10 +877,10 @@ func TestResolvePlacement_AgentWinsElseProfileElseStandalone(t *testing.T) {
 	if got := ResolvePlacement("", ""); got != achv1alpha1.PlacementStandalone {
 		t.Errorf("unset ⇒ standalone, got %q", got)
 	}
-	if got := ResolvePlacement("", achv1alpha1.PlacementDistributed); got != achv1alpha1.PlacementDistributed {
+	if got := ResolvePlacement("", "other"); got != "other" {
 		t.Errorf("profile applies when agent unset, got %q", got)
 	}
-	if got := ResolvePlacement(achv1alpha1.PlacementStandalone, achv1alpha1.PlacementDistributed); got != achv1alpha1.PlacementStandalone {
+	if got := ResolvePlacement(achv1alpha1.PlacementStandalone, "other"); got != achv1alpha1.PlacementStandalone {
 		t.Errorf("agent wins, got %q", got)
 	}
 }
@@ -890,7 +890,7 @@ func TestRender_PlacementNeverInConfig(t *testing.T) {
 	p := achv1alpha1.AgentProfile{Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
 		Image: "x", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "u"},
 		Model:     &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
-		Placement: achv1alpha1.PlacementDistributed,
+		Placement: "other",
 	}}}
 	a := achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
@@ -898,7 +898,7 @@ func TestRender_PlacementNeverInConfig(t *testing.T) {
 			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "p"},
 			Identity:      achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
 			Capability:    achv1alpha1.CapabilitySpec{Environment: "e"},
-			AgentDefaults: achv1alpha1.AgentDefaults{Placement: achv1alpha1.PlacementDistributed},
+			AgentDefaults: achv1alpha1.AgentDefaults{Placement: "other"},
 			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	}

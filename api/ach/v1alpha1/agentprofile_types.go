@@ -68,14 +68,9 @@ type AgentDefaults struct {
 	// Placement selects the pod topology; resolves ACHAgent.spec.placement ??
 	// AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
 	// value cannot shadow the profile's). standalone renders one `agent` container
-	// exactly as before. distributed renders three containers from the same image in
-	// ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args
-	// `--role <name>`, image entrypoint preserved). Operator-only: never rendered into
-	// config.json. Requires an ach-agent image with role support AND the HTTP role-port
-	// probe contract (> v0.16.2). In distributed mode the profile's spec.resources
-	// applies to EACH container, so the pod requests/limits total 3× the declared values.
+	// exactly as before. Operator-only: never rendered into config.json.
 	// +optional
-	// +kubebuilder:validation:Enum=standalone;distributed
+	// +kubebuilder:validation:Enum=standalone
 	Placement string `json:"placement,omitempty"`
 }
 
@@ -149,11 +144,8 @@ type LimitsSpec struct {
 	TerminalOutputRetries *int64 `json:"terminalOutputRetries,omitempty"`
 }
 
-// HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
-// placement it drives the Service targetPort and the container probes. In distributed
-// placement it is NOT used by the operator: the Service targets channels on 8080 and every
-// role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
-// bound by ach-agent. Harness default port is 8080.
+// HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
+// targetPort and the container probes. Harness default port is 8080.
 type HealthSpec struct {
 	// +optional
 	Host string `json:"host,omitempty"`
@@ -221,9 +213,6 @@ const (
 	// PlacementStandalone runs the whole ach-agent in ONE container (the pre-placement
 	// rendering, unchanged).
 	PlacementStandalone = "standalone"
-	// PlacementDistributed runs channels, harness and engine as THREE containers in the
-	// same pod, selected by `--role <name>` args on the same image.
-	PlacementDistributed = "distributed"
 )
 
 // AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
@@ -264,7 +253,7 @@ type AgentProfileSpec struct {
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 	// PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
 	// template (containers/env/volumes merge by name — the operator renders container "agent"
-	// (standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design
+	// — scalars user-wins). Pass-through by design
 	// (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
 	// everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
 	// (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
