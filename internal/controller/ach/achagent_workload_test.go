@@ -705,6 +705,19 @@ func TestSandboxTemplate_PodLabelsDoNotMatchHarnessSelector(t *testing.T) {
 	}
 }
 
+// A warm sandbox is unconfigured until claimed: its probe must not wait for configuration.
+func TestSandboxTemplate_ProbesPreConfigureHealth(t *testing.T) {
+	a, p := sandboxedFixture()
+	c := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
+	containers, _, _ := unstructured.NestedSlice(c.Object, "spec", "podTemplate", "spec", "containers")
+	for _, probe := range []string{"readinessProbe", "livenessProbe"} {
+		get, _, _ := unstructured.NestedMap(containers[0].(map[string]any), probe, "httpGet")
+		if get["path"] != "/execution/v1/health" || get["port"] != int64(8082) {
+			t.Errorf("%s httpGet = %v", probe, get)
+		}
+	}
+}
+
 func TestSandboxWarmPool_Recreate(t *testing.T) {
 	a, p := sandboxedFixture()
 	if v, _, _ := unstructured.NestedString(buildSandboxWarmPool(a, p).Object, "spec", "updateStrategy", "type"); v != "Recreate" {

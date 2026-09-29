@@ -221,10 +221,12 @@ func buildSandboxTemplate(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, 
 		Env:   env,
 		Ports: []corev1.ContainerPort{
 			{Name: "engine", ContainerPort: agentrender.SandboxEnginePort, Protocol: corev1.ProtocolTCP},
-			{Name: "health", ContainerPort: agentrender.SandboxHealthPort, Protocol: corev1.ProtocolTCP},
 		},
-		ReadinessProbe: sandboxProbe("/readyz"),
-		LivenessProbe:  sandboxProbe("/healthz"),
+		// Not /readyz on the health port: that 503s until the harness configures the engine,
+		// which it only does after claiming a Ready sandbox. /execution/v1/health skips engine
+		// auth and 503s only when the engine is unhealthy.
+		ReadinessProbe: sandboxProbe(),
+		LivenessProbe:  sandboxProbe(),
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: &falseVal,
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
@@ -268,9 +270,9 @@ func buildSandboxTemplate(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, 
 	return u
 }
 
-func sandboxProbe(path string) *corev1.Probe {
+func sandboxProbe() *corev1.Probe {
 	return &corev1.Probe{
-		ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: path, Port: intstr.FromInt32(agentrender.SandboxHealthPort)}},
+		ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/execution/v1/health", Port: intstr.FromInt32(agentrender.SandboxEnginePort)}},
 		PeriodSeconds: 10, FailureThreshold: 3,
 	}
 }
