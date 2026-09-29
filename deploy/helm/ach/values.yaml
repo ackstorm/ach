@@ -545,3 +545,10 @@ extraEnv: []
 #         capabilities:
 #           drop: ["ALL"]
 initContainers: []
+
+# Shared harness identity for sandboxed ACHAgents (AgentProfile.spec.sandbox).
+agentSandbox:
+  # Create the ServiceAccount + sandboxclaims Role in the release namespace. Pod Identity
+  # (terraform) binds the S3 session bucket to this SA name.
+  enabled: false
+  serviceAccountName: ach-sandboxed-agent

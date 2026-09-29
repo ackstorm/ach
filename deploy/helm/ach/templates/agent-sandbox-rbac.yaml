@@ -1,0 +1,43 @@
+{{- if .Values.agentSandbox.enabled }}
+---
+# Shared harness ServiceAccount for sandboxed ACHAgents. The operator creates no
+# Roles/RoleBindings, so this lives in the chart. S3 access comes from Pod Identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.agentSandbox.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.agentSandbox.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-sandbox
+rules:
+- apiGroups: ["extensions.agents.x-k8s.io"]
+  resources: ["sandboxclaims"]
+  verbs: ["create", "delete", "get", "list", "patch", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.agentSandbox.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.agentSandbox.serviceAccountName }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.agentSandbox.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

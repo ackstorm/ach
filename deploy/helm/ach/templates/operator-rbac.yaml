@@ -18,9 +18,19 @@ rules:
 - apiGroups: [""]
   resources: ["pods", "secrets"]
   verbs: ["get", "list", "watch"]
+# Sandboxed ACHAgents: the operator creates (never updates) the per-agent
+# <agent>-sandbox-key Secret — the first Secret it writes into agent namespaces.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
+# Sandboxed ACHAgents: agent-sandbox template + warm pool (cluster prerequisite;
+# the rule is inert when the CRDs are absent).
+- apiGroups: ["extensions.agents.x-k8s.io"]
+  resources: ["sandboxtemplates", "sandboxwarmpools"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 # ACHAgent workload children (Deployment/ConfigMap/Service/ServiceAccount/PVC).
 # The ACHAgentReconciler is the operator's only workload-creating controller.
 - apiGroups: [""]

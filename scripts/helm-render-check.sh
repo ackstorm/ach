@@ -38,4 +38,9 @@ grep -q "name: ach-dashboard-" <<<"$out" || fail "dashboards.enabled=true: no da
 render --set metrics.dashboards.enabled=true \
        --set metrics.dashboards.labels.grafana_dashboard=1 >/dev/null
 
-echo "helm-render-check OK (5 topologies)"
+# 6. Sandboxed-agent harness identity. Off by default.
+out="$(render --set agentSandbox.enabled=true)"
+grep -q "name: ach-sandboxed-agent" <<<"$out" || fail "agentSandbox.enabled=true: ServiceAccount/Role missing"
+grep -q "sandboxclaims" <<<"$out" || fail "agentSandbox.enabled=true: sandboxclaims rule missing"
+
+echo "helm-render-check OK (6 topologies)"
