@@ -10,7 +10,9 @@ is already signed in to it here: the models of the `{{provider}}` provider in th
 OpenCode come from ACH through single sign-on, with no API key. If they stop working,
 the user signs in again with `opencode auth login {{provider}}` (OpenCode v1:
 `opencode auth login -p {{provider}}`). No plugin at all? `opencode auth login {{base}}`
-installs it first.
+installs it first. After installing or signing in, restart OpenCode: on OpenCode v2,
+`opencode service restart` (the background service loads the plugin only when it
+starts); the models appear a few seconds later.
 
 Never ask for, print, paste or commit a key or token. Keys created below are shown
 once, on the user's terminal, and stay there.

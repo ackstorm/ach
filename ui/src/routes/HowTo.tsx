@@ -275,7 +275,8 @@ curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
   // <origin>/.well-known/opencode, then signs in with it.
   const provider = me?.provider_name || '<provider>';
   const opencodeSsoCmd = `opencode auth login ${apiBase}
-opencode auth login ${provider}   # opencode v1: opencode auth login -p ${provider}`;
+opencode auth login ${provider}   # opencode v1: opencode auth login -p ${provider}
+opencode service restart          # opencode v2: the running service loads the plugin only at start`;
   // Tools are grouped by family (top-level tab). A family with more than one
   // variant (e.g. OpenCode → Gemini / OpenAI, Claude Code → API / Pro·Max)
   // renders a second row of pill sub-tabs; single-variant families render the

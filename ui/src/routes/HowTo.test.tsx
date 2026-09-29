@@ -109,6 +109,7 @@ describe('HowTo — OpenCode install', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('opencode auth login https://api.ackstorm.ai');
     expect(text).toContain('opencode auth login acme');
+    expect(text).toContain('opencode service restart');
     expect(text).not.toContain('/clients/opencode/plugin');
   });
 });
