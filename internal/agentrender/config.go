@@ -21,6 +21,7 @@ type AgentConfig struct {
 	Cost          *CostBlock      `json:"cost,omitempty"`
 	Hooks         *HooksBlock     `json:"hooks,omitempty"`
 	Channels      []ChannelBlock  `json:"channels,omitempty"`
+	Egress        *EgressBlock    `json:"egress,omitempty"`
 	// McpServers is the harness-managed MCP server map keyed by name (schema
 	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
 	McpServers map[string]McpServerBlock `json:"mcpServers,omitempty"`
@@ -263,4 +264,22 @@ type A2ABlock struct {
 type A2AAuthBlock struct {
 	Header string             `json:"header,omitempty"`
 	Secret *SecretSourceBlock `json:"secret,omitempty"`
+}
+
+// EgressBlock is the harness credential-injection proxy config (schema EgressBlock).
+type EgressBlock struct {
+	Services []EgressServiceBlock `json:"services"`
+}
+
+type EgressServiceBlock struct {
+	Name   string          `json:"name"`
+	Origin string          `json:"origin"`
+	Auth   EgressAuthBlock `json:"auth"`
+}
+
+type EgressAuthBlock struct {
+	Header         string            `json:"header"`
+	Prefix         string            `json:"prefix,omitempty"`
+	Secret         SecretSourceBlock `json:"secret"`
+	PlaceholderEnv string            `json:"placeholderEnv,omitempty"`
 }

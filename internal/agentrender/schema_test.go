@@ -182,6 +182,9 @@ func renderMatrix() map[string]renderCase {
 			URL: "https://mcp.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${env:OTHER_MCP_TOKEN}"}}},
 	}
 	m["mcp-servers"] = mcp
+	eg := base("egress", cron)
+	eg.agent.Spec.Egress = egressAgent().Spec.Egress
+	m["egress"] = eg
 	handoff := base("handoff", []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "webhook", Source: "gitlab",
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "s", Key: "secret"}}},

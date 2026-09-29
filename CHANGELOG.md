@@ -10,6 +10,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   Live clusters had none.
 
 ### Added
+- `ACHAgent.spec.egress`: the harness injects upstream credentials for declared https
+  origins (`auth.secretKeyRef` → harness-only `ACH_SECRET_EGRESS_<i>` + `config.json`
+  `egress`). Requires an ach-agent image with egress support (>= v0.17.0 rejects the
+  block on older ones); the profile must not forward `HTTPS_PROXY`/`SSL_CERT_FILE`.
+  Validation of origins/placeholders/forwardEnv collisions is the harness's, at load.
 - Unified console: platform-api serves the React console at `/`, with in-process
   console sessions over the OAuth AS, `ek_` suspend/resume and optional expiry,
   and user-scoped stats/latency.

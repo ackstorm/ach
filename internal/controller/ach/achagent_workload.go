@@ -126,6 +126,13 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 			Key:                  ref.Key,
 		}}})
 	}
+	// Egress credentials: harness-only (this is the harness container's env).
+	for _, ref := range agentrender.EgressSecretEnv(*a) {
+		env = append(env, corev1.EnvVar{Name: ref.EnvName, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ref.SecretName},
+			Key:                  ref.Key,
+		}}})
+	}
 	return env
 }
 

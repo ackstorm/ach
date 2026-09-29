@@ -86,6 +86,7 @@ func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL s
 		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i], resolvedEnv))
 	}
 	cfg.McpServers = renderMcpServers(a.Spec.MCPServers)
+	cfg.Egress = renderEgress(a.Spec.Egress)
 	return cfg, nil
 }
 
@@ -689,6 +690,9 @@ func ReferencedSecrets(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) map[s
 		}
 	}
 	if ref := MemorySecretEnv(a); ref != nil {
+		add(ref.SecretName, ref.Key)
+	}
+	for _, ref := range EgressSecretEnv(a) {
 		add(ref.SecretName, ref.Key)
 	}
 	out := make(map[string][]string, len(set))

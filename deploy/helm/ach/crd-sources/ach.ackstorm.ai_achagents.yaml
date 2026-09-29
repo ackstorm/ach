@@ -413,6 +413,86 @@ spec:
                   source:
                     type: string
                 type: object
+              egress:
+                description: |-
+                  Egress makes the harness inject upstream credentials on the engine's behalf: the engine
+                  calls a declared origin with no credential (or a non-secret placeholder) and the
+                  harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only
+                  (not profile-inheritable). Needs an ach-agent image with egress support.
+                properties:
+                  services:
+                    items:
+                      description: EgressService is one upstream origin and the credential
+                        the harness adds to it.
+                      properties:
+                        auth:
+                          description: EgressAuth is the header the proxy sets and
+                            where its value comes from.
+                          properties:
+                            header:
+                              description: Header the proxy sets (RFC 9110 field-name
+                                token).
+                              maxLength: 64
+                              pattern: ^[A-Za-z0-9!#$%&'*+.^_`|~-]+$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: header is reserved
+                                rule: '!(self.lowerAscii() in [''host'',''content-length'',''transfer-encoding'',''connection'',''cookie'',''proxy-authorization''])'
+                            placeholderEnv:
+                              description: |-
+                                PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that
+                                refuse to start without a token still run.
+                              pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                              type: string
+                            prefix:
+                              description: Prefix is prepended to the secret value,
+                                e.g. "Bearer ".
+                              maxLength: 64
+                              pattern: ^[^\r\n\x00]*$
+                              type: string
+                            secretKeyRef:
+                              description: SecretKeyRef holds the credential (same
+                                namespace). Bound only into the harness container.
+                              properties:
+                                key:
+                                  description: Key is the data key inside the Secret.
+                                  minLength: 1
+                                  type: string
+                                name:
+                                  description: Name is the Kubernetes Secret name.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
+                          required:
+                          - header
+                          - secretKeyRef
+                          type: object
+                        name:
+                          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+                          type: string
+                        origin:
+                          description: |-
+                            Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.
+                            The harness validates it fully at load.
+                          pattern: ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$
+                          type: string
+                      required:
+                      - auth
+                      - name
+                      - origin
+                      type: object
+                    maxItems: 32
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                required:
+                - services
+                type: object
               engine:
                 description: |-
                   EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted

@@ -498,6 +498,53 @@ type ACHAgentSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	MCPServers []McpServerSpec `json:"mcpServers,omitempty"`
+	// Egress makes the harness inject upstream credentials on the engine's behalf: the engine
+	// calls a declared origin with no credential (or a non-secret placeholder) and the
+	// harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only
+	// (not profile-inheritable). Needs an ach-agent image with egress support.
+	// +optional
+	Egress *EgressSpec `json:"egress,omitempty"`
+}
+
+// EgressSpec lists the upstream services whose credentials the harness injects.
+type EgressSpec struct {
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	// +listType=map
+	// +listMapKey=name
+	Services []EgressService `json:"services"`
+}
+
+// EgressService is one upstream origin and the credential the harness adds to it.
+type EgressService struct {
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`
+	Name string `json:"name"`
+	// Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.
+	// The harness validates it fully at load.
+	// +kubebuilder:validation:Pattern=`^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$`
+	Origin string     `json:"origin"`
+	Auth   EgressAuth `json:"auth"`
+}
+
+// EgressAuth is the header the proxy sets and where its value comes from.
+type EgressAuth struct {
+	// Header the proxy sets (RFC 9110 field-name token).
+	// +kubebuilder:validation:Pattern="^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:XValidation:rule="!(self.lowerAscii() in ['host','content-length','transfer-encoding','connection','cookie','proxy-authorization'])",message="header is reserved"
+	Header string `json:"header"`
+	// Prefix is prepended to the secret value, e.g. "Bearer ".
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern=`^[^\r\n\x00]*$`
+	// +optional
+	Prefix string `json:"prefix,omitempty"`
+	// SecretKeyRef holds the credential (same namespace). Bound only into the harness container.
+	SecretKeyRef SecretKeyRef `json:"secretKeyRef"`
+	// PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that
+	// refuse to start without a token still run.
+	// +kubebuilder:validation:Pattern=`^[A-Za-z_][A-Za-z0-9_]*$`
+	// +optional
+	PlaceholderEnv string `json:"placeholderEnv,omitempty"`
 }
 
 // ACHAgentStatus is the observed state.

@@ -622,3 +622,30 @@ func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
 		t.Errorf("standalone Service targetPort must stay the health port (default 8000), got %d", tp)
 	}
 }
+
+func TestBuildAgentEnv_EgressSecretsInjectedAsEnv(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Egress = &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{
+		{Name: "github", Origin: "https://api.github.com", Auth: achv1alpha1.EgressAuth{
+			Header: "Authorization", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "gh", Key: "token"}}},
+	}}
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+
+	var found bool
+	for _, e := range buildAgentEnv(a, p, "") {
+		if e.Name != "ACH_SECRET_EGRESS_0" {
+			continue
+		}
+		found = true
+		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+			e.ValueFrom.SecretKeyRef.Name != "gh" || e.ValueFrom.SecretKeyRef.Key != "token" {
+			t.Errorf("egress secret env must be a secretKeyRef to gh/token, got %+v", e)
+		}
+	}
+	if !found {
+		t.Error("ACH_SECRET_EGRESS_0 missing from harness env")
+	}
+}

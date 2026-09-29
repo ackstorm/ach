@@ -40,6 +40,20 @@ spec:
   expose:
     service: true
     gateway: true
+  # Egress credential injection (needs an ach-agent image with egress support): the engine
+  # calls the origin with no credential and the harness proxy adds the header. The secret is
+  # bound into the harness only. The profile must NOT forward HTTPS_PROXY / SSL_CERT_FILE
+  # (the harness manages them; profile.yaml forwards them today, so use a separate profile
+  # or an agent-level engine.forwardEnv override).
+  # egress:
+  #   services:
+  #     - name: github
+  #       origin: https://api.github.com
+  #       auth:
+  #         header: Authorization
+  #         prefix: "Bearer "
+  #         secretKeyRef: { name: github-token, key: token }
+  #         placeholderEnv: GH_TOKEN
   channels:
     - name: gitlab-mr-review
       type: webhook

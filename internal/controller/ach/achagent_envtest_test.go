@@ -823,3 +823,64 @@ func TestACHAgent_CostOverride_AgentWinsInRenderedConfig(t *testing.T) {
 		t.Fatalf("config cost = %v, want source none (agent overrides profile)", cfg["cost"])
 	}
 }
+
+func TestACHAgent_Egress_WiresConfigAndHarnessEnv(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-egr", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-egr", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+
+	egrAgent := func(name, header string) *achv1alpha1.ACHAgent {
+		return &achv1alpha1.ACHAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
+			Spec: achv1alpha1.ACHAgentSpec{
+				ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-egr"},
+				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-egr", Key: "ek"}},
+				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+				Egress: &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{{
+					Name: "github", Origin: "https://api.github.com",
+					Auth: achv1alpha1.EgressAuth{Header: header, Prefix: "Bearer ", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "aa-gh", Key: "token"}},
+				}}},
+				Channels: []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			},
+		}
+	}
+
+	// Reserved header → rejected at admission.
+	if err := k8sClient.Create(ctx, egrAgent("aa-egr-host", "Host")); err == nil {
+		t.Fatal("egress header Host must be rejected by CEL")
+	}
+
+	// Secret missing → not resolved; adding it → applied with config + harness env.
+	mustApply(t, ctx, egrAgent("aa-egr", "Authorization"))
+	waitAgentCond(t, ctx, "aa-egr", condChannelSecretsResolved, metav1.ConditionFalse)
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-gh", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("ghp_x")}})
+	waitAgentCond(t, ctx, "aa-egr", condWorkloadApplied, metav1.ConditionTrue)
+
+	var cm corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-egr")}, &cm); err != nil {
+		t.Fatalf("get configmap: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
+		t.Fatalf("config.json invalid: %v", err)
+	}
+	svc := cfg["egress"].(map[string]any)["services"].([]any)[0].(map[string]any)
+	if env := svc["auth"].(map[string]any)["secret"].(map[string]any)["env"]; env != "ACH_SECRET_EGRESS_0" {
+		t.Errorf("config egress secret.env = %v, want ACH_SECRET_EGRESS_0", env)
+	}
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-egr")}, &dep); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	var found bool
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "ACH_SECRET_EGRESS_0" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil &&
+			e.ValueFrom.SecretKeyRef.Name == "aa-gh" && e.ValueFrom.SecretKeyRef.Key == "token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("deployment missing ACH_SECRET_EGRESS_0 secretKeyRef aa-gh/token")
+	}
+}

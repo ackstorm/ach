@@ -130,6 +130,9 @@ strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
 probe-backed `pod.status` only.
+`ACHAgent.spec.egress` (agent-only) renders a `config.json` `egress` block + harness-only
+`ACH_SECRET_EGRESS_<i>` env (secretKeyRef, list order); the operator mirrors NO harness validation —
+the harness rejects bad origins/placeholders/`forwardEnv` collisions at load (pod fails readiness).
 `placement` (`standalone` only, the CRD default; `sandboxed` pending; `ACHAgent.spec.placement ??
 AgentProfile.spec.achagent.placement`, agent wins; operator-only, never in config.json)
 picks the pod topology; standalone is the single `agent` container. Placement is a config-hash

@@ -140,6 +140,7 @@ _Appears in:_
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
 | `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (local / remote) rendered into the<br />config's mcpServers map. Presence = enabled; omit for none. |  |  |
+| `egress` _[EgressSpec](#egressspec)_ | Egress makes the harness inject upstream credentials on the engine's behalf: the engine<br />calls a declared origin with no credential (or a non-secret placeholder) and the<br />harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only<br />(not profile-inheritable). Needs an ach-agent image with egress support. |  |  |
 
 
 #### ACHAgentStatus
@@ -732,6 +733,59 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `schedule` _string_ |  |  | Required: \{\} <br /> |
 | `timezone` _string_ |  | UTC |  |
+
+
+#### EgressAuth
+
+
+
+EgressAuth is the header the proxy sets and where its value comes from.
+
+
+
+_Appears in:_
+- [EgressService](#egressservice)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `header` _string_ | Header the proxy sets (RFC 9110 field-name token). |  | MaxLength: 64 <br />Pattern: `^[A-Za-z0-9!#$%&'*+.^_`\|~-]+$` <br /> |
+| `prefix` _string_ | Prefix is prepended to the secret value, e.g. "Bearer ". |  | MaxLength: 64 <br />Pattern: `^[^\r\n\x00]*$` <br /> |
+| `secretKeyRef` _[SecretKeyRef](#secretkeyref)_ | SecretKeyRef holds the credential (same namespace). Bound only into the harness container. |  |  |
+| `placeholderEnv` _string_ | PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that<br />refuse to start without a token still run. |  | Pattern: `^[A-Za-z_][A-Za-z0-9_]*$` <br /> |
+
+
+#### EgressService
+
+
+
+EgressService is one upstream origin and the credential the harness adds to it.
+
+
+
+_Appears in:_
+- [EgressSpec](#egressspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ |  |  | Pattern: `^[a-z0-9]([a-z0-9-]\{0,61\}[a-z0-9])?$` <br /> |
+| `origin` _string_ | Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.<br />The harness validates it fully at load. |  | Pattern: `^https://[A-Za-z0-9.-]+(:[0-9]\{1,5\})?$` <br /> |
+| `auth` _[EgressAuth](#egressauth)_ |  |  |  |
+
+
+#### EgressSpec
+
+
+
+EgressSpec lists the upstream services whose credentials the harness injects.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `services` _[EgressService](#egressservice) array_ |  |  | MaxItems: 32 <br />MinItems: 1 <br /> |
 
 
 #### EngineSpec
@@ -1933,6 +1987,7 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 _Appears in:_
 - [A2AAuthSpec](#a2aauthspec)
 - [AchMemoryAuthSpec](#achmemoryauthspec)
+- [EgressAuth](#egressauth)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
 - [WebhookAuthSpec](#webhookauthspec)
