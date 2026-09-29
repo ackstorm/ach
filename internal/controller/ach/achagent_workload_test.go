@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -691,21 +692,34 @@ func TestBuildDeployment_SandboxedUsesSharedSAAndMountsToken(t *testing.T) {
 	if ps.ServiceAccountName != "ach-sandboxed-agent" || ps.AutomountServiceAccountToken == nil || !*ps.AutomountServiceAccountToken {
 		t.Errorf("SA=%q automount=%v", ps.ServiceAccountName, ps.AutomountServiceAccountToken)
 	}
-	var key *corev1.EnvVar
-	for i, e := range ps.Containers[0].Env {
-		if e.Name == "ACH_SANDBOX_KEY" {
-			key = &ps.Containers[0].Env[i]
+}
+
+func TestSandboxTemplate_PodLabelsDoNotMatchHarnessSelector(t *testing.T) {
+	a, p := sandboxedFixture()
+	u := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
+	labels, _, _ := unstructured.NestedStringMap(u.Object, "spec", "podTemplate", "metadata", "labels")
+	for k, v := range agentSelectorLabels(a.Name) {
+		if labels[k] == v {
+			t.Errorf("template pod carries harness selector label %s=%s", k, v)
 		}
 	}
-	if key == nil || key.ValueFrom.SecretKeyRef.Name != "achagent-demo-sandbox-key" {
-		t.Errorf("ACH_SANDBOX_KEY = %+v", key)
+}
+
+func TestSandboxWarmPool_Recreate(t *testing.T) {
+	a, p := sandboxedFixture()
+	if v, _, _ := unstructured.NestedString(buildSandboxWarmPool(a, p).Object, "spec", "updateStrategy", "type"); v != "Recreate" {
+		t.Errorf("updateStrategy.type = %q", v)
 	}
 }
 
 // The security invariant: nothing the harness holds may reach the sandbox template.
 func TestSandboxTemplate_NoHarnessSecrets(t *testing.T) {
 	a, p := sandboxedFixture()
-	p.Spec.Env = []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: "http://x"}}
+	p.Spec.Env = []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: "http://x"}, {Name: "X_MCP", Value: "x"}, {Name: "Y_MCP", Value: "y"}}
+	a.Spec.MCPServers = []achv1alpha1.McpServerSpec{
+		{Name: "loc", Type: "local", Local: &achv1alpha1.LocalMcpSpec{Command: "x", Env: []string{"X_MCP"}}},
+		{Name: "rem", Type: "remote", Remote: &achv1alpha1.RemoteMcpSpec{URL: "https://m", Headers: map[string]string{"Authorization": "Bearer ${env:Y_MCP}"}}},
+	}
 	a.Spec.Engine.ForwardEnv = append(a.Spec.Engine.ForwardEnv, "ACH_SANDBOX_KEY", "ACH_SECRET_EGRESS_0", "HTTPS_PROXY", "SSL_CERT_FILE")
 	a.Spec.Identity.SecretRef.Name = "demo-ek"
 	u := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
@@ -715,7 +729,7 @@ func TestSandboxTemplate_NoHarnessSecrets(t *testing.T) {
 			t.Errorf("template contains %q: %s", bad, raw)
 		}
 	}
-	for _, want := range []string{"ACH_SANDBOX_VERIFY_KEY", "lZLI1hcEx9ydNM7EoaQ213ri9oNsmILvrFE6AB2YO94", `"networkPolicyManagement":"Unmanaged"`, `"runtimeClassName":"gvisor"`, "GH_TOKEN", `"automountServiceAccountToken":false`} {
+	for _, want := range []string{"ACH_SANDBOX_VERIFY_KEY", "lZLI1hcEx9ydNM7EoaQ213ri9oNsmILvrFE6AB2YO94", `"networkPolicyManagement":"Unmanaged"`, `"runtimeClassName":"gvisor"`, "GH_TOKEN", "X_MCP", "Y_MCP", `"automountServiceAccountToken":false`} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("template missing %q: %s", want, raw)
 		}

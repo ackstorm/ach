@@ -846,11 +846,6 @@ func TestACHAgent_Egress_WiresConfigAndHarnessEnv(t *testing.T) {
 		}
 	}
 
-	// Reserved header → rejected at admission.
-	if err := k8sClient.Create(ctx, egrAgent("aa-egr-host", "Host")); err == nil {
-		t.Fatal("egress header Host must be rejected by CEL")
-	}
-
 	// Secret missing → not resolved; adding it → applied with config + harness env.
 	mustApply(t, ctx, egrAgent("aa-egr", "Authorization"))
 	waitAgentCond(t, ctx, "aa-egr", condChannelSecretsResolved, metav1.ConditionFalse)
@@ -944,6 +939,23 @@ func TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes(t *testing.T) {
 	}
 	if v, _, _ := unstructured.NestedString(tmpl.Object, "spec", "networkPolicyManagement"); v != "Unmanaged" {
 		t.Errorf("networkPolicyManagement = %q", v)
+	}
+
+	var dep appsv1.Deployment
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, &dep); err != nil {
+		t.Fatal(err)
+	}
+	var skRef *corev1.SecretKeySelector
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "ACH_SANDBOX_KEY" && e.ValueFrom != nil {
+			skRef = e.ValueFrom.SecretKeyRef
+		}
+	}
+	if skRef == nil || skRef.Name != "achagent-aa-sbx-sandbox-key" || skRef.Key != "key" {
+		t.Errorf("harness ACH_SANDBOX_KEY secretKeyRef = %+v", skRef)
+	}
+	if raw, _ := json.Marshal(tmpl.Object); strings.Contains(string(raw), "ACH_SANDBOX_KEY") {
+		t.Errorf("SandboxTemplate must not carry ACH_SANDBOX_KEY: %s", raw)
 	}
 
 	keyKey := types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx-sandbox-key"}

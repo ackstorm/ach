@@ -35,6 +35,7 @@ var (
 
 const (
 	sandboxRoleLabelKey = "ach.ackstorm.ai/role"
+	sandboxOfLabelKey   = "ach.ackstorm.ai/sandbox-of"
 	sandboxKeyDataKey   = "key"
 	sandboxContainer    = "engine"
 )
@@ -55,10 +56,7 @@ func (r *ACHAgentReconciler) ensureSandboxKey(ctx context.Context, a *achv1alpha
 	var s corev1.Secret
 	err := r.APIReader.Get(ctx, key, &s)
 	if err == nil {
-		if k := string(s.Data[sandboxKeyDataKey]); k != "" {
-			return k, nil
-		}
-		return "", fmt.Errorf("secret %q has no %q key", key.Name, sandboxKeyDataKey)
+		return string(s.Data[sandboxKeyDataKey]), nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return "", err
@@ -142,6 +140,7 @@ func buildSandboxWarmPool(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) 
 	u := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
 		"replicas":           replicas,
 		"sandboxTemplateRef": map[string]any{"name": agentrender.SandboxName(a.Name)},
+		"updateStrategy":     map[string]any{"type": "Recreate"},
 	}}}
 	u.SetGroupVersionKind(sandboxWarmPoolGVK)
 	u.SetNamespace(a.Namespace)
@@ -255,7 +254,8 @@ func buildSandboxTemplate(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, 
 		"networkPolicyManagement": "Unmanaged",
 		"podTemplate": map[string]any{
 			"metadata": map[string]any{"labels": map[string]any{
-				agentLabelKey:       a.Name,
+				// Not agentLabelKey: the harness Service selector and NetworkPolicy match it.
+				sandboxOfLabelKey:   a.Name,
 				sandboxRoleLabelKey: "sandbox",
 			}},
 			"spec": specMap,
