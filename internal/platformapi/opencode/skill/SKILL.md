@@ -8,7 +8,9 @@ description: Work with this organization's GenAI API gateway (ACH). Use when the
 The organization's gateway for models and MCP servers is ACH, at `{{base}}`. The user
 is already signed in to it here: the models of the `{{provider}}` provider in this
 OpenCode come from ACH through single sign-on, with no API key. If they stop working,
-the user signs in again with `opencode auth login -p {{provider}}`.
+the user signs in again with `opencode auth login {{provider}}` (OpenCode v1:
+`opencode auth login -p {{provider}}`). No plugin at all? `opencode auth login {{base}}`
+installs it first.
 
 Never ask for, print, paste or commit a key or token. Keys created below are shown
 once, on the user's terminal, and stay there.
@@ -41,7 +43,7 @@ To use one:
 3. Sign in: `opencode mcp auth <name>` opens the browser (ACH single sign-on, then,
    for some servers, the provider's own consent screen). Or use a tool of that server
    in chat and open the sign-in link OpenCode shows.
-4. Check: `opencode mcp list`; for one that does not connect, `opencode mcp debug <name>`.
+4. Check: `opencode mcp list`.
 
 Troubleshooting:
 - 401 after signing in: `opencode mcp logout <name>`, then `opencode mcp auth <name>`.

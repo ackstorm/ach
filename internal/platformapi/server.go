@@ -129,6 +129,9 @@ type Deps struct {
 	// clients with (ACH_GENAI_PROVIDER_NAME): the OpenCode provider id the
 	// plugin signs in and the config names.
 	GenAIProvider string
+	// OpenCodePluginSpec is the plugin /.well-known/opencode installs
+	// (ACH_OPENCODE_PLUGIN_SPEC, an npm or git spec); empty leaves it unmounted.
+	OpenCodePluginSpec string
 	// VerifyAccessToken checks ACH's own OAuth access token locally (no I/O)
 	// and returns its subject email; nil disables /clients/opencode/config.
 	VerifyAccessToken func(token string) (email string, err error)
@@ -184,8 +187,10 @@ func New(deps Deps) http.Handler {
 			return od.ConsoleSessionName(r.Context(), c.Value)
 		}
 		r.Route("/platform/oauth", auth.MountOAuth(od))
-		// The OpenCode client of that AS, as an npm tarball (anonymous too).
-		r.Get("/clients/opencode/plugin", opencode.PluginHandler(deps.BaseURL, deps.GenAIProvider))
+		// OpenCode's well-known manifest: installs the plugin for that AS (anonymous too).
+		if deps.OpenCodePluginSpec != "" {
+			r.Get("/.well-known/opencode", opencode.WellKnownHandler(deps.BaseURL, deps.GenAIProvider, deps.OpenCodePluginSpec))
+		}
 		// Its per-user config. Outside Authn on purpose: it answers 200 to a
 		// token Authn would 401 (the baseline), so OpenCode always starts.
 		if deps.VerifyAccessToken != nil {
@@ -264,8 +269,8 @@ func New(deps Deps) http.Handler {
 				return db.UserKeyAllowance(ctx, deps.Pool, email, deps.DefaultMaxKeys)
 			},
 			DisplayName: displayName,
-			ChatURL:     deps.ConsoleChatURL,
-			Audit:       deps.Audit, Logger: deps.Logger,
+			ChatURL:     deps.ConsoleChatURL, ProviderName: deps.GenAIProvider,
+			Audit: deps.Audit, Logger: deps.Logger,
 		})
 
 		adminDeps := admin.Deps{

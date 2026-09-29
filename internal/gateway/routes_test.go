@@ -15,15 +15,16 @@ func TestServiceRoutes(t *testing.T) {
 	routes := ServiceRoutes("ach-system")
 
 	want := map[string]string{
-		"/platform/":     "http://ach-platform-api.ach-system.svc.cluster.local:80",
-		"/content/":      "http://ach-content-service.ach-system.svc.cluster.local:8082",
-		"/v1/":           "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/gemini/":       "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/mcp/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/a2a/":          "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/.well-known/":  "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/v2/model/info": "http://ach-forwarder.ach-system.svc.cluster.local:80",
-		"/":              "http://ach-platform-api.ach-system.svc.cluster.local:80",
+		"/platform/":            "http://ach-platform-api.ach-system.svc.cluster.local:80",
+		"/content/":             "http://ach-content-service.ach-system.svc.cluster.local:8082",
+		"/v1/":                  "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/gemini/":              "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/mcp/":                 "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/a2a/":                 "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/.well-known/":         "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/.well-known/opencode": "http://ach-platform-api.ach-system.svc.cluster.local:80",
+		"/v2/model/info":        "http://ach-forwarder.ach-system.svc.cluster.local:80",
+		"/":                     "http://ach-platform-api.ach-system.svc.cluster.local:80",
 	}
 
 	if len(routes) != len(want) {
@@ -66,6 +67,7 @@ func TestRootRouteIsLastMatch(t *testing.T) {
 	for path, want := range map[string]string{
 		"/": "/", "/index.html": "/", "/assets/app.js": "/", "/openwork": "/", "/api/den/v1/me": "/", "/clients/opencode/config": "/", "/ui": "/",
 		"/v2/model/info": "/v2/model/info", "/v2/other": "/",
+		"/.well-known/opencode": "/.well-known/opencode", "/.well-known/jwks.json": "/.well-known/",
 		"/platform/keys": "/platform/", "/content/x": "/content/", "/v1/models": "/v1/", "/healthz": "/healthz",
 		"/metrics": "/metrics", "/metrics/": "/metrics/", "/metrics/x": "/metrics/",
 	} {

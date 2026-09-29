@@ -272,12 +272,17 @@ security:
 # genai: client-neutral naming for the GenAI clients ACH configures
 # (OpenCode today). providerName is the provider id users sign in with —
 # `opencode auth login -p <providerName>` — and the name the per-user client
-# config (/clients/opencode/config) and the plugin's platform.json carry.
+# config (/clients/opencode/config) and the plugin's options in
+# /.well-known/opencode carry.
 # Format: ^[a-z0-9][a-z0-9-]{0,63}$ (platform-api refuses to start otherwise).
 # Keep it stable: the plugin keeps its data under ~/.local/share/opencode/<name>/
 # and OpenCode keys the user's credentials by it — changing it signs users out.
 genai:
   providerName: ai-platform
+  # The plugin `opencode auth login https://<ach host>` installs (engines v1
+  # and v2) via /.well-known/opencode: an npm or git spec. Git at the repo
+  # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
+  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.0"
 
 # openwork: the OpenWork organization server ("Den") served by platform-api
 # at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den

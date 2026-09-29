@@ -12,7 +12,8 @@ func TestGenaiSkill(t *testing.T) {
 	md := s["files"].(map[string]string)["SKILL.md"]
 	if s["name"] != "genai-api" || !strings.HasPrefix(md, "---\nname: genai-api\n") ||
 		!strings.Contains(md, "ach-cli login --base-url https://ach.test ") ||
-		!strings.Contains(md, "`https://ach.test/v1`") || !strings.Contains(md, "opencode auth login -p acme") ||
+		!strings.Contains(md, "`https://ach.test/v1`") || !strings.Contains(md, "opencode auth login acme") ||
+		!strings.Contains(md, "opencode auth login https://ach.test`") ||
 		strings.Contains(md, "{{") {
 		t.Fatalf("%v", s)
 	}

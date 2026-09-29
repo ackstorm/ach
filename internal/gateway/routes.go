@@ -15,7 +15,8 @@ type Route struct {
 // ServiceRoutes returns the production route table for the given
 // namespace. Upstreams are in-cluster Service DNS names. The forwarder
 // owns four route families (/v1, /gemini, /mcp, /a2a) plus /.well-known
-// (JWKS + the RFC 9728 protected-resource document, both anonymous) and
+// (JWKS + the RFC 9728 protected-resource document, both anonymous; except
+// /.well-known/opencode, platform-api's OpenCode install manifest) and
 // the single owned /v2/model/info (ach-agent pricing); platform-api owns
 // /platform and "/" (the console, D-26); content-service owns /content.
 //
@@ -34,6 +35,9 @@ func ServiceRoutes(namespace string) []Route {
 		{Prefix: "/gemini/", Upstream: forwarder},
 		{Prefix: "/mcp/", Upstream: forwarder},
 		{Prefix: "/a2a/", Upstream: forwarder},
+		// OpenCode's well-known manifest is platform-api's (it knows the
+		// provider name); every other /.well-known document is the forwarder's.
+		{Prefix: "/.well-known/opencode", Upstream: svc("ach-platform-api", 80)},
 		{Prefix: "/.well-known/", Upstream: forwarder},
 		// The one owned route outside the families: ach-agent prices its
 		// usage at GET /v2/model/info with its ek_ (exact path, no subtree —

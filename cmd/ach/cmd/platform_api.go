@@ -54,7 +54,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
-// genaiProviderID is the plugin's PROVIDER_ID (clients/opencode/index.mjs).
+// genaiProviderID is the OpenCode plugin's PROVIDER_ID pattern.
 var genaiProviderID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 func init() {
@@ -352,7 +352,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
 		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
 	}
-	// The OpenCode plugin (alitellm-auth clients/opencode) only accepts a
+	// The OpenCode plugin (github.com/ackstorm/opencode-oidc-provider) only accepts a
 	// provider id matching its PROVIDER_ID and silently falls back to
 	// "ai-platform" otherwise — which would no longer match the provider the
 	// config names. Refuse to start instead.
@@ -375,12 +375,13 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 			},
 			Headers: cfg.CredentialHeaders,
 		},
-		Pool:          pool,
-		Redis:         out.redis,
-		LiteLLM:       liteLLM,
-		LiteLLMREST:   liteLLM,
-		OpenWork:      openwork.FromEnv(),
-		GenAIProvider: genaiProvider,
+		Pool:               pool,
+		Redis:              out.redis,
+		LiteLLM:            liteLLM,
+		LiteLLMREST:        liteLLM,
+		OpenWork:           openwork.FromEnv(),
+		GenAIProvider:      genaiProvider,
+		OpenCodePluginSpec: os.Getenv("ACH_OPENCODE_PLUGIN_SPEC"),
 		// Same issuer/audience as the OAuth resolver above.
 		VerifyAccessToken: func(tok string) (string, error) { return signer.Verify(tok, cfg.BaseURL, "ach") },
 		Pepper:            cfg.Pepper,

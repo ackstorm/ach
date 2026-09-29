@@ -72,6 +72,9 @@ type Deps struct {
 	DisplayName func(r *http.Request) string
 	// ChatURL is the hosted chat UI the Chat button opens; "" hides it.
 	ChatURL string
+	// ProviderName is the OpenCode provider id (ACH_GENAI_PROVIDER_NAME) the
+	// HowTo page tells users to sign in with.
+	ProviderName string
 }
 
 // scopePersonal is the ?scope=personal capabilities value, and doubles as
@@ -101,6 +104,7 @@ func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"email":                       kc.OwnerEmail,
 		"name":                        "",
 		"chat_url":                    d.ChatURL,
+		"provider_name":               d.ProviderName,
 		"is_admin":                    kc.IsAdmin,
 		"openwork_enabled":            d.OpenWorkEnabled,
 		"suspend_propagation_seconds": SuspendPropagationSeconds,

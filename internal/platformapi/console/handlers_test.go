@@ -289,10 +289,11 @@ func TestBootstrapReportsDisplayName(t *testing.T) {
 	d := testDeps(t)
 	d.DisplayName = func(*http.Request) string { return "John Doe" }
 	d.ChatURL = "https://chat.example.com"
+	d.ProviderName = "acme"
 	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
 	var got map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
-	if rec.Code != 200 || got["name"] != "John Doe" || got["chat_url"] != "https://chat.example.com" {
+	if rec.Code != 200 || got["name"] != "John Doe" || got["chat_url"] != "https://chat.example.com" || got["provider_name"] != "acme" {
 		t.Fatalf("%d %v", rec.Code, got)
 	}
 }

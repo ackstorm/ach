@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Package opencode serves ACH's OpenCode client surface: the well-known
+// manifest that installs the SSO plugin (wellknown.go) and the per-user
+// config the plugin pulls at every start (config.go).
 package opencode
 
 import (
