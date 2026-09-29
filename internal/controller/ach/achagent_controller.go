@@ -16,6 +16,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -23,7 +24,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -60,7 +63,8 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=extensions.agents.x-k8s.io,resources=sandboxtemplates;sandboxwarmpools,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 
@@ -89,6 +93,9 @@ type ACHAgentReconciler struct {
 	// sets baseUrl. Empty + no per-object override => the agent is blocked (Render
 	// errors) because it has no ACH to hydrate against.
 	DefaultAchBaseURL string
+
+	// sandboxCRDs is set in SetupWithManager: the agent-sandbox kinds are served.
+	sandboxCRDs bool
 }
 
 //nolint:gocyclo // Single linear resolve→render→apply→status flow; splitting scatters status ordering.
@@ -145,6 +152,27 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	setCond(&conds, condChannelSecretsResolved, metav1.ConditionTrue, "ChannelSecretsFound", "", agent.Generation)
 
+	// 3b. Sandboxed placement: prerequisites, then the per-agent key K (create-once Secret).
+	sandboxed := agentrender.SandboxedPlacement(profile, agent)
+	var sandboxKey string
+	if sandboxed && profile.Spec.Sandbox != nil {
+		reason, msg, err := r.checkSandboxPrereqs(ctx, &agent, &profile)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if reason != "" {
+			setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, reason, msg, agent.Generation)
+			res, err := r.finish(ctx, &agent, conds)
+			if reason == "SandboxServiceAccountMissing" && err == nil {
+				res.RequeueAfter = 15 * time.Second // the shared SA is not watched; poll until the chart creates it
+			}
+			return res, err
+		}
+		if sandboxKey, err = r.ensureSandboxKey(ctx, &agent); err != nil {
+			return ctrl.Result{}, fmt.Errorf("sandbox key: %w", err)
+		}
+	}
+
 	// 4. Render.
 	cfg, err := agentrender.Render(profile, agent, r.DefaultAchBaseURL)
 	if err != nil {
@@ -158,6 +186,9 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// 5. Env (once) + salted secret hash + config hash.
 	env := buildAgentEnv(&agent, &profile, r.DefaultAchBaseURL)
+	if sandboxed {
+		env = append(env, sandboxKeyEnv(&agent))
+	}
 	envJSON, err := json.Marshal(env)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("marshal env: %w", err)
@@ -171,7 +202,14 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		podTemplateJSON = profile.Spec.PodTemplate.Raw
 	}
 	resolvedImage := agentrender.ResolveImage(agent.Spec.Image, profile.Spec.Achagent.Image)
-	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash, resolvePlacement(&agent, &profile))
+	hashPlacement := resolvePlacement(&agent, &profile)
+	if sandboxed {
+		// K rotation (Secret deleted by hand) must roll the harness; salted like secretHash.
+		mac := hmac.New(sha256.New, []byte(agent.UID))
+		mac.Write([]byte(sandboxKey))
+		hashPlacement += ":" + hex.EncodeToString(mac.Sum(nil))[:16]
+	}
+	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash, hashPlacement)
 
 	// buildDeployment currently fails only on the podTemplate overlay, so mapping every error to
 	// reason PodTemplateInvalid is correct today — revisit if the builder gains other error paths.
@@ -198,7 +236,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.apply(ctx, &agent, dep); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Deployment", err)
 	}
-	if needsService(&agent) {
+	if wantsService(&agent, &profile) {
 		if err := r.apply(ctx, &agent, buildService(&agent, &profile)); err != nil {
 			return r.applyFail(ctx, &agent, conds, "Service", err)
 		}
@@ -215,6 +253,9 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// Converge profile networkPolicy present→absent, same as the Service: owner-ref
 		// GC only fires on ACHAgent delete, not when the owner stops desiring the child.
 		return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
+	}
+	if err := r.applySandbox(ctx, &agent, &profile, sandboxKey); err != nil {
+		return r.applyFail(ctx, &agent, conds, "Sandbox", err)
 	}
 	setCond(&conds, condWorkloadApplied, metav1.ConditionTrue, "WorkloadApplied", "", agent.Generation)
 
@@ -427,7 +468,8 @@ func allTrue(conds []metav1.Condition, condTypes ...string) bool {
 }
 
 func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	r.sandboxCRDs = sandboxCRDsServed(mgr.GetRESTMapper())
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.ACHAgent{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
@@ -435,10 +477,18 @@ func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&networkingv1.NetworkPolicy{}).
+		Owns(&corev1.Secret{}, builder.OnlyMetadata).
 		Watches(&achv1alpha1.AgentProfile{}, handler.EnqueueRequestsFromMapFunc(r.agentsForProfile)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.agentsForSecret), builder.OnlyMetadata).
-		Named("achagent").
-		Complete(r)
+		Named("achagent")
+	if r.sandboxCRDs {
+		for _, gvk := range []schema.GroupVersionKind{sandboxTemplateGVK, sandboxWarmPoolGVK} {
+			u := &unstructured.Unstructured{}
+			u.SetGroupVersionKind(gvk)
+			b = b.Owns(u)
+		}
+	}
+	return b.Complete(r)
 }
 
 func (r *ACHAgentReconciler) agentsForProfile(ctx context.Context, obj client.Object) []reconcile.Request {

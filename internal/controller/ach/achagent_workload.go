@@ -173,12 +173,19 @@ func buildPVC(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) (*corev1.Per
 // buildService fronts the pod on port 8080, targeting the harness health port.
 func buildService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) *corev1.Service {
 	target := resolveHealthPort(a, p)
+	ports := []corev1.ServicePort{{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(int(target))}}
+	if agentrender.SandboxedPlacement(*p, *a) {
+		ports = append(ports, corev1.ServicePort{Name: "gateway", Port: agentrender.SandboxGatewayPort, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt32(agentrender.SandboxGatewayPort)})
+		if a.Spec.Egress != nil {
+			ports = append(ports, corev1.ServicePort{Name: "egress", Port: agentrender.SandboxEgressPort, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt32(agentrender.SandboxEgressPort)})
+		}
+	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: agentResourceName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: corev1.ServiceSpec{
 			Type:     corev1.ServiceTypeClusterIP,
 			Selector: agentSelectorLabels(a.Name),
-			Ports:    []corev1.ServicePort{{Name: "http", Port: 8080, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(int(target))}},
+			Ports:    ports,
 		},
 	}
 }
@@ -241,6 +248,20 @@ func needsService(a *achv1alpha1.ACHAgent) bool {
 	return a.Spec.Expose != nil && a.Spec.Expose.Service
 }
 
+// wantsService is needsService plus the sandboxed placement, which always needs the Service
+// (the projection/gateway route set still follows expose only).
+func wantsService(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) bool {
+	return agentrender.SandboxedPlacement(*p, *a) || needsService(a)
+}
+
+// sandboxKeyEnv binds K into the harness container only (never the sandbox template).
+func sandboxKeyEnv(a *achv1alpha1.ACHAgent) corev1.EnvVar {
+	return corev1.EnvVar{Name: agentrender.SandboxKeyEnv, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: sandboxKeySecretName(a.Name)},
+		Key:                  sandboxKeyDataKey,
+	}}}
+}
+
 // exposeGateway reports whether the agent opts into shared-gateway routing.
 // CEL guarantees gateway ⇒ service, so an exposed agent always has a Service.
 func exposeGateway(a *achv1alpha1.ACHAgent) bool {
@@ -300,13 +321,21 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 		RunAsNonRoot: &trueVal, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid,
 		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
+	cports := []corev1.ContainerPort{{Name: "health", ContainerPort: port, Protocol: corev1.ProtocolTCP}}
+	sandboxed := agentrender.SandboxedPlacement(*p, *a)
+	if sandboxed {
+		cports = append(cports, corev1.ContainerPort{Name: "gateway", ContainerPort: agentrender.SandboxGatewayPort, Protocol: corev1.ProtocolTCP})
+		if a.Spec.Egress != nil {
+			cports = append(cports, corev1.ContainerPort{Name: "egress", ContainerPort: agentrender.SandboxEgressPort, Protocol: corev1.ProtocolTCP})
+		}
+	}
 	containers := []corev1.Container{{
 		Name:  agentContainerName,
 		Image: agentrender.ResolveImage(a.Spec.Image, p.Spec.Achagent.Image),
 		// The health port doubles as the harness /metrics port (same server as
 		// /healthz + /readyz). Declared named so the PodMonitor
 		// (monitoring.coreos.com/v1) can reference it by name for scraping.
-		Ports:          []corev1.ContainerPort{{Name: "health", ContainerPort: port, Protocol: corev1.ProtocolTCP}},
+		Ports:          cports,
 		Env:            env,
 		VolumeMounts:   mounts,
 		Resources:      resources,
@@ -343,6 +372,13 @@ func buildDeployment(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, confi
 				},
 			},
 		},
+	}
+
+	if sandboxed && p.Spec.Sandbox != nil {
+		// The shared SA carries S3 (Pod Identity) and the sandboxclaims Role; the harness calls
+		// the Kubernetes API, so the token must be mounted (the per-agent SA stays unused).
+		dep.Spec.Template.Spec.ServiceAccountName = p.Spec.Sandbox.ServiceAccountName
+		dep.Spec.Template.Spec.AutomountServiceAccountToken = &trueVal
 	}
 
 	if p.Spec.PodTemplate != nil && len(p.Spec.PodTemplate.Raw) > 0 {
@@ -411,13 +447,15 @@ func copySpec(existing, desired client.Object) {
 		e.Labels = d.Labels
 		e.Spec.Type = d.Spec.Type
 		e.Spec.Selector = d.Spec.Selector
-		if len(e.Spec.Ports) == 0 {
+		if len(e.Spec.Ports) != len(d.Spec.Ports) {
 			e.Spec.Ports = d.Spec.Ports
 		} else {
-			e.Spec.Ports[0].Name = d.Spec.Ports[0].Name
-			e.Spec.Ports[0].Port = d.Spec.Ports[0].Port
-			e.Spec.Ports[0].Protocol = d.Spec.Ports[0].Protocol
-			e.Spec.Ports[0].TargetPort = d.Spec.Ports[0].TargetPort
+			for i := range e.Spec.Ports {
+				e.Spec.Ports[i].Name = d.Spec.Ports[i].Name
+				e.Spec.Ports[i].Port = d.Spec.Ports[i].Port
+				e.Spec.Ports[i].Protocol = d.Spec.Ports[i].Protocol
+				e.Spec.Ports[i].TargetPort = d.Spec.Ports[i].TargetPort
+			}
 		}
 	case *networkingv1.NetworkPolicy:
 		d := desired.(*networkingv1.NetworkPolicy)

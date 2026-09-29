@@ -218,8 +218,9 @@ func setupAndRun(m *testing.M) int {
 	// internal/controller/ach/.
 	_, thisFile, _, _ := runtime.Caller(0)
 	crdDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "config", "crd", "bases")
+	sandboxCRDDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "test", "crds", "agent-sandbox")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{crdDir},
+		CRDDirectoryPaths:     []string{crdDir, sandboxCRDDir},
 		ErrorIfCRDPathMissing: true,
 	}
 

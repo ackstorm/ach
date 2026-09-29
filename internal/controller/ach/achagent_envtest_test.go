@@ -23,6 +23,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -882,5 +883,100 @@ func TestACHAgent_Egress_WiresConfigAndHarnessEnv(t *testing.T) {
 	}
 	if !found {
 		t.Error("deployment missing ACH_SECRET_EGRESS_0 secretKeyRef aa-gh/token")
+	}
+}
+
+// TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes drives the sandboxed placement end to end:
+// missing shared SA blocks apply, then key Secret (create-once), SandboxTemplate, SandboxWarmPool and
+// Service appear; flipping to standalone removes template + pool.
+func TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-sbx", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	warm := int32(2)
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-sbx", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{
+		Achagent:    achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Placement: achv1alpha1.PlacementSandboxed},
+		Persistence: &achv1alpha1.PersistenceSpec{Enabled: true, Size: "1Gi", MountPath: "/var/lib/ach-agent"},
+		Sandbox:     &achv1alpha1.SandboxSpec{ServiceAccountName: "ach-sandboxed-agent", WarmPoolReplicas: &warm, Sessions: achv1alpha1.SandboxSessionsSpec{Bucket: "b"}},
+	}})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-sbx", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-sbx"},
+			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-sbx", Key: "ek"}},
+			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook", Source: "github", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-sbx", condWorkloadApplied, metav1.ConditionFalse)
+	var a achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != "SandboxServiceAccountMissing" {
+		t.Fatalf("want SandboxServiceAccountMissing, got %+v", c)
+	}
+
+	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-sandboxed-agent", Namespace: WatchNamespace}})
+	// The shared SA is not watched (production polls via RequeueAfter); nudge instead of waiting 15s.
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	a.Annotations = map[string]string{"nudge": "1"}
+	if err := k8sClient.Update(ctx, &a); err != nil {
+		t.Fatal(err)
+	}
+	waitAgentCond(t, ctx, "aa-sbx", condWorkloadApplied, metav1.ConditionTrue)
+
+	get := func(gvk schema.GroupVersionKind) *unstructured.Unstructured {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, u); err != nil {
+			t.Fatalf("get %s: %v", gvk.Kind, err)
+		}
+		return u
+	}
+	tmpl, pool := get(sandboxTemplateGVK), get(sandboxWarmPoolGVK)
+	if n, _, _ := unstructured.NestedInt64(pool.Object, "spec", "replicas"); n != 2 {
+		t.Errorf("warm pool replicas = %d, want 2", n)
+	}
+	if n, _, _ := unstructured.NestedString(pool.Object, "spec", "sandboxTemplateRef", "name"); n != "achagent-aa-sbx" {
+		t.Errorf("sandboxTemplateRef.name = %q", n)
+	}
+	if v, _, _ := unstructured.NestedString(tmpl.Object, "spec", "networkPolicyManagement"); v != "Unmanaged" {
+		t.Errorf("networkPolicyManagement = %q", v)
+	}
+
+	keyKey := types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx-sandbox-key"}
+	var k1 corev1.Secret
+	if err := k8sClient.Get(ctx, keyKey, &k1); err != nil || len(k1.Data["key"]) != 64 {
+		t.Fatalf("sandbox key secret: err=%v len=%d", err, len(k1.Data["key"]))
+	}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, &corev1.Service{}); err != nil {
+		t.Errorf("sandboxed agent must always have a Service: %v", err)
+	}
+	cm := &corev1.ConfigMap{}
+	_ = k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, cm)
+	if !strings.Contains(cm.Data["config.json"], `"warmPool":"achagent-aa-sbx"`) {
+		t.Errorf("config.json lacks sandbox block: %s", cm.Data["config.json"])
+	}
+
+	// Never rotated: another reconcile keeps the same bytes.
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	a.Spec.Placement = achv1alpha1.PlacementStandalone
+	if err := k8sClient.Update(ctx, &a); err != nil {
+		t.Fatal(err)
+	}
+	if !Eventually(func() bool {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(sandboxTemplateGVK)
+		return apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, u))
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("SandboxTemplate must be pruned after flipping to standalone")
+	}
+	var k2 corev1.Secret
+	if err := k8sClient.Get(ctx, keyKey, &k2); err != nil || string(k2.Data["key"]) != string(k1.Data["key"]) {
+		t.Errorf("key must survive unchanged (err=%v)", err)
 	}
 }

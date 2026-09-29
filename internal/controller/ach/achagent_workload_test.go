@@ -3,6 +3,8 @@
 package ach
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -647,5 +649,75 @@ func TestBuildAgentEnv_EgressSecretsInjectedAsEnv(t *testing.T) {
 	}
 	if !found {
 		t.Error("ACH_SECRET_EGRESS_0 missing from harness env")
+	}
+}
+
+func sandboxedFixture() (*achv1alpha1.ACHAgent, *achv1alpha1.AgentProfile) {
+	a, p := workloadFixture(true)
+	a.Spec.Placement = achv1alpha1.PlacementSandboxed
+	a.Spec.Egress = &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{{
+		Name: "gh", Origin: "https://api.github.com",
+		Auth: achv1alpha1.EgressAuth{Header: "Authorization", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "gh-egress", Key: "token"}}}}}
+	p.Spec.Sandbox = &achv1alpha1.SandboxSpec{ServiceAccountName: "ach-sandboxed-agent", RuntimeClassName: "gvisor",
+		Sessions: achv1alpha1.SandboxSessionsSpec{Bucket: "b"}}
+	return a, p
+}
+
+func TestBuildService_SandboxedPortsAndAlwaysRendered(t *testing.T) {
+	a, p := sandboxedFixture()
+	if !wantsService(a, p) || needsService(a) {
+		t.Fatal("sandboxed must always want a Service without opting into expose")
+	}
+	got := map[string]int32{}
+	for _, sp := range buildService(a, p).Spec.Ports {
+		got[sp.Name] = sp.Port
+	}
+	if got["http"] != 8080 || got["gateway"] != 8095 || got["egress"] != 8096 {
+		t.Errorf("ports = %v", got)
+	}
+	a.Spec.Egress = nil
+	if len(buildService(a, p).Spec.Ports) != 2 {
+		t.Errorf("no egress: want http+gateway only, got %v", buildService(a, p).Spec.Ports)
+	}
+}
+
+func TestBuildDeployment_SandboxedUsesSharedSAAndMountsToken(t *testing.T) {
+	a, p := sandboxedFixture()
+	dep, err := buildDeployment(a, p, "h", append(buildAgentEnv(a, p, ""), sandboxKeyEnv(a)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := dep.Spec.Template.Spec
+	if ps.ServiceAccountName != "ach-sandboxed-agent" || ps.AutomountServiceAccountToken == nil || !*ps.AutomountServiceAccountToken {
+		t.Errorf("SA=%q automount=%v", ps.ServiceAccountName, ps.AutomountServiceAccountToken)
+	}
+	var key *corev1.EnvVar
+	for i, e := range ps.Containers[0].Env {
+		if e.Name == "ACH_SANDBOX_KEY" {
+			key = &ps.Containers[0].Env[i]
+		}
+	}
+	if key == nil || key.ValueFrom.SecretKeyRef.Name != "achagent-demo-sandbox-key" {
+		t.Errorf("ACH_SANDBOX_KEY = %+v", key)
+	}
+}
+
+// The security invariant: nothing the harness holds may reach the sandbox template.
+func TestSandboxTemplate_NoHarnessSecrets(t *testing.T) {
+	a, p := sandboxedFixture()
+	p.Spec.Env = []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: "http://x"}}
+	a.Spec.Engine.ForwardEnv = append(a.Spec.Engine.ForwardEnv, "ACH_SANDBOX_KEY", "ACH_SECRET_EGRESS_0", "HTTPS_PROXY", "SSL_CERT_FILE")
+	a.Spec.Identity.SecretRef.Name = "demo-ek"
+	u := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
+	raw, _ := json.Marshal(u.Object)
+	for _, bad := range []string{"ACH_SANDBOX_KEY", "ACH_SECRET_", "ACH_TOKEN", "ACH_API_KEY", "demo-ek", "gh-egress", "sandbox-key", "envFrom", "HTTPS_PROXY", "SSL_CERT_FILE", `"secret"`} {
+		if strings.Contains(string(raw), bad) {
+			t.Errorf("template contains %q: %s", bad, raw)
+		}
+	}
+	for _, want := range []string{"ACH_SANDBOX_VERIFY_KEY", "lZLI1hcEx9ydNM7EoaQ213ri9oNsmILvrFE6AB2YO94", `"networkPolicyManagement":"Unmanaged"`, `"runtimeClassName":"gvisor"`, "GH_TOKEN", `"automountServiceAccountToken":false`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("template missing %q: %s", want, raw)
+		}
 	}
 }
