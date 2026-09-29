@@ -131,7 +131,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args<br />`--role <name>`, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (> v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values. |  | Enum: [standalone distributed] <br /> |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone] <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
 | `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
@@ -254,7 +254,7 @@ _Appears in:_
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
 | `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — `channels`, `harness`, `engine` (args<br />`--role <name>`, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (> v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values. |  | Enum: [standalone distributed] <br /> |
+| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone] <br /> |
 
 
 #### AgentProfile
@@ -324,7 +324,7 @@ _Appears in:_
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
 | `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
-| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />(standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />— scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
 
 
 #### AgentProfileStatus
@@ -1078,11 +1078,8 @@ _Appears in:_
 
 
 
-HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
-placement it drives the Service targetPort and the container probes. In distributed
-placement it is NOT used by the operator: the Service targets channels on 8080 and every
-role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
-bound by ach-agent. Harness default port is 8080.
+HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
+targetPort and the container probes. Harness default port is 8080.
 
 
 

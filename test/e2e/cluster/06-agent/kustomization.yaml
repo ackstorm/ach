@@ -2,8 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only
-# ACHAgent (standalone, ephemeral) + the same agent with spec.placement=distributed
-# (agent-dist.yaml, three-role pod shape) + the same standalone agent on a
+# ACHAgent (standalone, ephemeral) + the same standalone agent on a
 # persistent profile (profile-pvc.yaml + agent-pvc.yaml, PVC-backed) + their
 # shared ek Secret. Applied after the CRDs (stage 02) exist. Order
 # within the stage does not matter — the operator re-reconciles on the profile
@@ -12,17 +11,16 @@ kind: Kustomization
 # Two evidence tracks, kept separate on purpose (ach-agent handoff 2026-09-15):
 #   - rendering shape: scripts/cluster.sh stage 07 gates WorkloadApplied=True,
 #     a schema-valid config.json, the ACH_TOKEN secretKeyRef, and the
-#     standalone/distributed container matrix — no image needed.
+#     standalone container shape — no image needed.
 #   - runtime readiness: test/e2e/agent_runtime_ready_test.go mints a real ek
 #     for the demo Environment at test time, swaps it into e2e-agent-ek, and
-#     requires WorkloadReady=True on ALL THREE agents (hydration + native config +
-#     directory prep completed in the pod), then checks distributed isolation
-#     and that the persistent standalone pod can write under its PVC as uid 10001.
+#     requires WorkloadReady=True on both agents (hydration + native config +
+#     directory prep completed in the pod), then checks that the persistent
+#     standalone pod can write under its PVC as uid 10001.
 # The committed ek value is a placeholder; nothing bypasses hydration.
 resources:
   - ek-secret.yaml
   - profile.yaml
   - agent.yaml
-  - agent-dist.yaml
   - profile-pvc.yaml
   - agent-pvc.yaml

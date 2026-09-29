@@ -28,17 +28,9 @@ spec:
     health:
       host: 0.0.0.0
       port: 8000
-    # Pod topology (agent-overridable via ACHAgent.spec.placement). standalone (default) =
-    # one `agent` container, exactly the rendering before placement existed. distributed =
-    # three containers from the same image in ONE single-replica Recreate Deployment —
-    # channels (public ingress 8080), harness (the only container that mounts
-    # config.json), engine (receives ONLY the env named by engine.forwardEnv). Probes are
-    # httpGet on fixed role ports (channels 8080, harness 8090, engine 8081); the health
-    # block above is ignored in this mode. Needs ach-agent v0.16.5 or newer (HTTP
-    # role-port probes + workspace kept at <base>/home/workspace, so flipping placement on
-    # a populated PVC preserves it). The profile's resources apply to EACH container: a
-    # distributed pod requests and limits 3× what is declared.
-    # placement: distributed
+    # Pod topology (agent-overridable via ACHAgent.spec.placement). standalone is the only
+    # value and the default: one `agent` container.
+    # placement: standalone
     # Where the per-invocation cost figure comes from (requires an ach-agent image
     # >= v0.10.0; one of engine|litellm_usage|litellm_headers|none — the harness
     # validates and hard-fails on an unknown value). Omit for today's behavior
@@ -99,8 +91,7 @@ spec:
       #     - protocol: TCP
       #       port: 443
   # Optional raw overlay strategic-merged over the operator-rendered pod template.
-  # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent" in
-  # standalone, "channels" | "harness" | "engine" in distributed). The overlay WINS on
+  # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent"). The overlay WINS on
   # conflict: the operator already sets runAsUser/runAsGroup/fsGroup 10001 (the image
   # uid — a fresh root-owned cloud PVC is unwritable without fsGroup), so do not override
   # them; add policy-only knobs like fsGroupChangePolicy.

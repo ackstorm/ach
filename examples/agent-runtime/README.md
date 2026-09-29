@@ -41,24 +41,8 @@ mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness
 **self-hydrates** against ACH at boot — there is no init container and no CLI
 step.
 
-With `placement: distributed` (profile `spec.achagent.placement`, or per-agent
-`ACHAgent.spec.placement` — agent wins), that Deployment's one pod runs three
-containers from the same image — `channels` (ingress, port 8080), `harness` (mounts
-`config.json`, owns `<base>/state`, shares `<base>/home/workspace`) and `engine` (owns
-`<base>/home`, workspace included; env limited to `engine.forwardEnv`) — wired through
-`/run/ach-agent/{transfer,channels,engine}` emptyDirs, each with a private `/tmp`,
-`enableServiceLinks: false`, each probed over HTTP on its own port
-(8080/8090/8081). `<base>` is
-`persistence.mountPath` (PVC subPaths) or `/tmp/ach-agent` (emptyDir). Profile `resources`
-apply per container (pod total = 3×). Requires ach-agent `v0.16.5` or newer.
-
-Both placements run the pod as uid/gid/fsGroup 10001 (the image uid), so a fresh
-PVC — root-owned 0755 on cloud provisioners such as EBS — is writable without a
-`podTemplate` overlay. The workspace lives at `<base>/home/workspace` in both
-placements, so switching an **existing** default-layout PVC between `standalone`
-and `distributed` changes only the pod shape: same PVC, same workspace path and
-contents, native tool sessions intact. Custom layouts, or a PVC populated by an
-older distributed image under `<base>/workspace`, are not relocated.
+The pod runs as uid/gid/fsGroup 10001 (the image uid), so a fresh PVC — root-owned
+0755 on cloud provisioners such as EBS — is writable without a `podTemplate` overlay.
 
 ## Prerequisites — Secrets you create yourself
 

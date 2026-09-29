@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Removed
+- **BREAKING:** `placement: distributed` is removed from `AgentProfile`/`ACHAgent`. The CRD
+  enum is now `standalone`, so an object that still sets `distributed` is rejected on apply.
+  Live clusters had none.
+
 ### Added
 - Unified console: platform-api serves the React console at `/`, with in-process
   console sessions over the OAuth AS, `ek_` suspend/resume and optional expiry,

@@ -130,32 +130,12 @@ strategic-merged over the pod template — pass-through, selector label +
 config-hash re-pinned) — the harness **self-hydrates**
 against ACH at boot (no init container, no CLI), so operator status derives from
 probe-backed `pod.status` only.
-`placement` (`standalone` default | `distributed`; `ACHAgent.spec.placement ??
+`placement` (`standalone` only, the CRD default; `sandboxed` pending; `ACHAgent.spec.placement ??
 AgentProfile.spec.achagent.placement`, agent wins; operator-only, never in config.json)
-picks the pod topology: standalone is the single `agent` container rendering,
-unchanged; distributed renders `channels`/`harness`/`engine` containers (`args: [--role,
-<name>]`, same image, `command` never set) in the same single-replica `Recreate`
-Deployment — channels+harness get the operator env verbatim, engine gets only the
-`engine.forwardEnv`-selected entries (secretKeyRef preserved, never `ACH_*`); `config.json`
-mounts into harness only; data = `<base>/state`→harness, `<base>/home`→engine,
-`<base>/home/workspace`→harness (subPath `home/workspace` — the workspace KEEPS its standalone
-location so a placement flip on a populated PVC preserves path + directory; the engine reaches
-it through `home`, the harness never sees the rest of engine home; never a `workspace` subPath)
-via PVC subPath (or one emptyDir when not persistent, `<base>=/tmp/ach-agent`); IPC dirs
-`/run/ach-agent/{transfer (H+E), channels (H rw, C ro), engine (E rw, H ro)}`; private
-`/tmp` per container; probes are httpGet `/readyz`+`/healthz` on fixed role ports
-(`rolePorts` in `achagent_workload.go`: channels 8080, harness 8090, engine 8081 — the
-profile/agent `health.port` is ignored in this mode; never exec/socket probes);
-`enableServiceLinks: false`; Service targetPort 8080 (channels); profile `resources` per
-container (pod total 3×). Placement is a config-hash input. Requires ach-agent
-`v0.16.5`+ (HTTP role-port probes since v0.16.3; `home/workspace` layout since v0.16.5 —
-v0.16.3/v0.16.4 expect `base/workspace` and are NOT aligned). BOTH placements pin pod
-uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud PVC (EBS)
-was unwritable on a persistent standalone pod (ach-agent finding 2026-09-15; kind's
-local-path dirs are 0777 and never show it). A default-layout PVC survives a
-standalone↔distributed flip in place (same PV, same `home/workspace`; e2e
-`pvc_placement_transition`); explicit custom layouts and PVCs already populated under an
-older distributed `base/workspace` are NOT relocated. The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
+picks the pod topology; standalone is the single `agent` container. Placement is a config-hash
+input. The pod pins uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud
+PVC (EBS) was unwritable on a persistent pod (ach-agent finding 2026-09-15; kind's
+local-path dirs are 0777 and never show it). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
 the agent-overridable defaults; an ACHAgent sets the same fields flat on its
 spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
 (`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost,Placement}` + `ResolveAchBaseURL`):
@@ -168,8 +148,7 @@ else on the profile is profile-only infrastructure an agent cannot override:
 `ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.achagent.ach ??
 operator ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent); `health`
 is resolved ONCE via `agentrender.ResolveHealth` so the config health block,
-Service targetPort, and container probes never drift (standalone; distributed uses the
-fixed role ports above).
+Service targetPort, and container probes never drift.
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging
@@ -503,18 +482,12 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 ## Repository-specific patterns
 
-- **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`); the distributed
-  matrix lives in `distributedContainers`/`distributedVolumes` (`achagent_workload.go`) and
-  is asserted by `TestBuildDeployment_Distributed*`. The e2e stage 06 ships THREE shapes:
-  `e2e-agent` (standalone, ephemeral) + `e2e-agent-dist` (`spec.placement: distributed`) +
-  `e2e-agent-pvc` (standalone on the persistent `e2e-profile-pvc`), image `v0.16.5` pinned by
-  digest, model `demo-model`. Two evidence tracks: `scripts/cluster.sh` gates the
-  rendered shape (`WorkloadApplied`, uid/fsGroup 10001 on all three, harness
-  `home/workspace` mount, no `workspace` subPath); `test/e2e/agent_runtime_ready_test.go`
-  mints a real `ek_`, swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on all
-  three + the distributed isolation matrix + a PVC write as uid 10001 + the placement
-  transition (populate standalone PVC → flip to distributed → same PV, same
-  `home/workspace` contents, harness confined to it → flip back). Pods can hydrate because the e2e origin is
+- **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`). The e2e
+  stage 06 ships TWO shapes: `e2e-agent` (standalone, ephemeral) + `e2e-agent-pvc` (standalone on
+  the persistent `e2e-profile-pvc`), image `v0.16.5` pinned by digest, model `demo-model`. Two
+  evidence tracks: `scripts/cluster.sh` gates the rendered shape (`WorkloadApplied`, uid/fsGroup
+  10001 on both); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`, swaps it into
+  `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid 10001. Pods can hydrate because the e2e origin is
   `http://ach.e2e.local:8080` on BOTH sides (devtools `--add-host` → 127.0.0.1; CoreDNS
   rewrite → `ach-local-gateway:8080`) — never `localhost:8080`, which a pod resolves to
   itself.
