@@ -1508,6 +1508,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#egressauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#egressservice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressService
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#egressspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#enginespec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2084,6 +2117,28 @@
     <span class="md-ellipsis">
       
         S3Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandboxsessionsspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxSessionsSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandboxspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxSpec
       
     </span>
   </a>
@@ -2706,6 +2761,39 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#egressauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#egressservice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressService
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#egressspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EgressSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#enginespec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3289,6 +3377,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sandboxsessionsspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxSessionsSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandboxspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SandboxSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#secretkeyref" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3754,9 +3864,9 @@
 </tr>
 <tr>
 <td><code>placement</code> <em>string</em></td>
-<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — <code>channels</code>, <code>harness</code>, <code>engine</code> (args<br /><code>--role &lt;name&gt;</code>, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (&gt; v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values.</td>
+<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. Operator-only: never rendered into config.json.</td>
 <td></td>
-<td>Enum: [standalone distributed] <br /></td>
+<td>Enum: [standalone sandboxed] <br /></td>
 </tr>
 <tr>
 <td><code>env</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core">EnvVar</a> array</em></td>
@@ -3803,6 +3913,12 @@
 <tr>
 <td><code>mcpServers</code> <em><a href="#mcpserverspec">McpServerSpec</a> array</em></td>
 <td>MCPServers are harness-managed MCP servers (local / remote) rendered into the<br />config's mcpServers map. Presence = enabled; omit for none.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>egress</code> <em><a href="#egressspec">EgressSpec</a></em></td>
+<td>Egress makes the harness inject upstream credentials on the engine's behalf: the engine<br />calls a declared origin with no credential (or a non-secret placeholder) and the<br />harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only<br />(not profile-inheritable). Needs an ach-agent image with egress support.</td>
 <td></td>
 <td></td>
 </tr>
@@ -4016,9 +4132,9 @@ the profile, but optional on the agent and inherited when omitted.</p>
 </tr>
 <tr>
 <td><code>placement</code> <em>string</em></td>
-<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. distributed renders three containers from the same image in<br />ONE single-replica Recreate Deployment — <code>channels</code>, <code>harness</code>, <code>engine</code> (args<br /><code>--role &lt;name&gt;</code>, image entrypoint preserved). Operator-only: never rendered into<br />config.json. Requires an ach-agent image with role support AND the HTTP role-port<br />probe contract (&gt; v0.16.2). In distributed mode the profile's spec.resources<br />applies to EACH container, so the pod requests/limits total 3× the declared values.</td>
+<td>Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one <code>agent</code> container<br />exactly as before. Operator-only: never rendered into config.json.</td>
 <td></td>
-<td>Enum: [standalone distributed] <br /></td>
+<td>Enum: [standalone sandboxed] <br /></td>
 </tr>
 </tbody>
 </table>
@@ -4190,8 +4306,14 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 <td></td>
 </tr>
 <tr>
+<td><code>sandbox</code> <em><a href="#sandboxspec">SandboxSpec</a></em></td>
+<td>NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec.<br />Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;<br />an agent that picks sandboxed over a profile without it fails to render).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>networkPolicy</code> <em><a href="#networkpolicyspec">NetworkPolicySpec</a></em></td>
-<td>NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec.</td>
+<td></td>
 <td></td>
 <td></td>
 </tr>
@@ -4203,7 +4325,7 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 </tr>
 <tr>
 <td><code>podTemplate</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io">JSON</a></em></td>
-<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />(standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
+<td>PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />— scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5034,6 +5156,102 @@ ach-agent image &gt;= v0.10.0.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="egressauth">EgressAuth<a class="headerlink" href="#egressauth" title="Permanent link">&para;</a></h4>
+<p>EgressAuth is the header the proxy sets and where its value comes from.</p>
+<p><em>Appears in:</em>
+- <a href="#egressservice">EgressService</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>header</code> <em>string</em></td>
+<td>Header the proxy sets (RFC 9110 field-name token).</td>
+<td></td>
+<td>MaxLength: 64 <br />Pattern: <code>^[A-Za-z0-9!#$%&amp;'*+.^_</code>|~-]+$` <br /></td>
+</tr>
+<tr>
+<td><code>prefix</code> <em>string</em></td>
+<td>Prefix is prepended to the secret value, e.g. "Bearer ".</td>
+<td></td>
+<td>MaxLength: 64 <br />Pattern: <code>^[^\r\n\x00]*$</code> <br /></td>
+</tr>
+<tr>
+<td><code>secretKeyRef</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
+<td>SecretKeyRef holds the credential (same namespace). Bound only into the harness container.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>placeholderEnv</code> <em>string</em></td>
+<td>PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that<br />refuse to start without a token still run.</td>
+<td></td>
+<td>Pattern: <code>^[A-Za-z_][A-Za-z0-9_]*$</code> <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="egressservice">EgressService<a class="headerlink" href="#egressservice" title="Permanent link">&para;</a></h4>
+<p>EgressService is one upstream origin and the credential the harness adds to it.</p>
+<p><em>Appears in:</em>
+- <a href="#egressspec">EgressSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>Pattern: <code>^[a-z0-9]([a-z0-9-]\{0,61\}[a-z0-9])?$</code> <br /></td>
+</tr>
+<tr>
+<td><code>origin</code> <em>string</em></td>
+<td>Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.<br />The harness validates it fully at load.</td>
+<td></td>
+<td>Pattern: <code>^https://[A-Za-z0-9.-]+(:[0-9]\{1,5\})?$</code> <br /></td>
+</tr>
+<tr>
+<td><code>auth</code> <em><a href="#egressauth">EgressAuth</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="egressspec">EgressSpec<a class="headerlink" href="#egressspec" title="Permanent link">&para;</a></h4>
+<p>EgressSpec lists the upstream services whose credentials the harness injects.</p>
+<p><em>Appears in:</em>
+- <a href="#achagentspec">ACHAgentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>services</code> <em><a href="#egressservice">EgressService</a> array</em></td>
+<td></td>
+<td></td>
+<td>MaxItems: 32 <br />MinItems: 1 <br /></td>
+</tr>
+</tbody>
+</table>
 <h4 id="enginespec">EngineSpec<a class="headerlink" href="#enginespec" title="Permanent link">&para;</a></h4>
 <p>EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
 (the harness defaults them).</p>
@@ -5712,11 +5930,8 @@ Replaces the old prepare/cleanup pair.</p>
 </tbody>
 </table>
 <h4 id="healthspec">HealthSpec<a class="headerlink" href="#healthspec" title="Permanent link">&para;</a></h4>
-<p>HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
-placement it drives the Service targetPort and the container probes. In distributed
-placement it is NOT used by the operator: the Service targets channels on 8080 and every
-role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
-bound by ach-agent. Harness default port is 8080.</p>
+<p>HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
+targetPort and the container probes. Harness default port is 8080.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a>
 - <a href="#agentdefaults">AgentDefaults</a></p>
@@ -7407,11 +7622,93 @@ prefix listing (directory scope).</p>
 </tr>
 </tbody>
 </table>
+<h4 id="sandboxsessionsspec">SandboxSessionsSpec<a class="headerlink" href="#sandboxsessionsspec" title="Permanent link">&para;</a></h4>
+<p>SandboxSessionsSpec is the S3 archive location (harness-side; the sandbox never sees it).</p>
+<p><em>Appears in:</em>
+- <a href="#sandboxspec">SandboxSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bucket</code> <em>string</em></td>
+<td></td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+<tr>
+<td><code>maxArchiveBytes</code> <em>integer</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="sandboxspec">SandboxSpec<a class="headerlink" href="#sandboxspec" title="Permanent link">&para;</a></h4>
+<p>SandboxSpec configures the sandboxed placement: each session's engine runs in an
+agent-sandbox pod (kubernetes-sigs/agent-sandbox v1.0.x, a cluster prerequisite).</p>
+<p><em>Appears in:</em>
+- <a href="#agentprofilespec">AgentProfileSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtimeClassName</code> <em>string</em></td>
+<td>RuntimeClassName for sandbox pods, e.g. gvisor. Empty = the cluster default runtime.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>warmPoolReplicas</code> <em>integer</em></td>
+<td>WarmPoolReplicas is the number of pre-started sandboxes.</td>
+<td>1</td>
+<td>Minimum: 0 <br /></td>
+</tr>
+<tr>
+<td><code>idleSeconds</code> <em>integer</em></td>
+<td>IdleSeconds before an idle sandbox archives its HOME and is released. Unset = harness default.</td>
+<td></td>
+<td>Minimum: 0 <br /></td>
+</tr>
+<tr>
+<td><code>resources</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core">ResourceRequirements</a></em></td>
+<td>Resources for the sandbox container.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>serviceAccountName</code> <em>string</em></td>
+<td>ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the<br />sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled).</td>
+<td>ach-sandboxed-agent</td>
+<td></td>
+</tr>
+<tr>
+<td><code>sessions</code> <em><a href="#sandboxsessionsspec">SandboxSessionsSpec</a></em></td>
+<td>Sessions is where session HOME archives are stored.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
 <h4 id="secretkeyref">SecretKeyRef<a class="headerlink" href="#secretkeyref" title="Permanent link">&para;</a></h4>
 <p>SecretKeyRef identifies a key in a same-namespace Secret.</p>
 <p><em>Appears in:</em>
 - <a href="#a2aauthspec">A2AAuthSpec</a>
 - <a href="#achmemoryauthspec">AchMemoryAuthSpec</a>
+- <a href="#egressauth">EgressAuth</a>
 - <a href="#identityspec">IdentitySpec</a>
 - <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a>
 - <a href="#webhookauthspec">WebhookAuthSpec</a></p>
