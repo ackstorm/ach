@@ -5,17 +5,14 @@
 package e2e
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 	"time"
 )
 
 // TestClientsOpenCode — the OpenCode client surface on the single e2e origin:
-// the plugin tarball carries this deployment's platform.json, and the
+// /.well-known/opencode installs the plugin with this deployment's options, and the
 // per-user config answers a real OAuth access token with the user's models
 // under the chart's provider name, and an unverifiable token with the
 // baseline (still 200).
@@ -24,28 +21,29 @@ func TestClientsOpenCode(t *testing.T) {
 	base := "http://" + phase4GatewayAuthority(t)
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	resp, err := client.Get(base + "/clients/opencode/plugin")
+	resp, err := client.Get(base + "/.well-known/opencode")
 	if err != nil {
 		t.Fatal(err)
 	}
-	gz, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		t.Fatalf("plugin: %d not gzip: %v", resp.StatusCode, err)
+	var wk struct {
+		Auth struct {
+			Command []string `json:"command"`
+			Env     *string  `json:"env"`
+		} `json:"auth"`
+		Config struct {
+			Plugin [][]json.RawMessage `json:"plugin"`
+		} `json:"config"`
 	}
-	var platform map[string]string
-	for tr := tar.NewReader(gz); ; {
-		h, err := tr.Next()
-		if err != nil {
-			break
-		}
-		if h.Name == "package/platform.json" {
-			b, _ := io.ReadAll(tr)
-			_ = json.Unmarshal(b, &platform)
-		}
-	}
+	err = json.NewDecoder(resp.Body).Decode(&wk)
 	_ = resp.Body.Close()
-	if platform["provider"] != "ai-platform" || platform["api"] == "" || platform["platform"] == "" {
-		t.Fatalf("platform.json = %v", platform)
+	if err != nil || resp.StatusCode != 200 || len(wk.Auth.Command) == 0 || wk.Auth.Env == nil ||
+		len(wk.Config.Plugin) != 1 || len(wk.Config.Plugin[0]) != 2 {
+		t.Fatalf("well-known: %d %v %+v", resp.StatusCode, err, wk)
+	}
+	var opts map[string]string
+	_ = json.Unmarshal(wk.Config.Plugin[0][1], &opts)
+	if opts["provider"] != "ai-platform" || opts["api"] != base+"/v1" || opts["platform"] != base {
+		t.Fatalf("plugin options = %v", opts)
 	}
 
 	get := func(authz string) (int, http.Header, map[string]any) {

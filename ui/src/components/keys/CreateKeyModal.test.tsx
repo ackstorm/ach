@@ -115,6 +115,7 @@ describe('CreateKeyModal — form view', () => {
         max_keys: 2,
         endpoint: window.location.origin,
         chat_url: '',
+        provider_name: 'ai-platform',
       },
     });
     setEnvironments([{ name: 'prod', status: 'Available' }]);

@@ -202,13 +202,9 @@ Ported to Go (re-synced to `7605a9c`): Connect MCP (`/v1/mcp/token`, `/mcp/agent
 | `internal/platformapi/openwork/brand/openwork-{logo,icon}.svg` | `src/api/brand/openwork-{logo,icon}.svg` | Verbatim |
 | `internal/platformapi/openwork/den_test.go` | `src/api/tests/test_openwork.py` | Case-for-case port; Connect MCP cases in `mcp_test.go` |
 
-## 2026-09-28 — OpenCode auth plugin taken from alitellm-auth
+## 2026-09-28 — OpenCode auth plugin taken from alitellm-auth (removed 2026-09-29)
 
-Source repository: `ackstorm/alitellm-auth` `clients/opencode`, first at `v0.19.0` (plugin 0.3.0). Not pinned: every `make release-cut` runs `make opencode-plugin-sync`, which copies it **unmodified** from the sibling checkout's newest `v*` tag. ACH adds only the generated `package/platform.json` at serve time.
-
-| ach file | alitellm-auth file | Notes |
-|---|---|---|
-| `internal/platformapi/opencode/plugin/*` | `clients/opencode/*` | Verbatim. Plugin tests stay upstream (ACH's `plugin_test.mjs` and its `make test-unit` step were dropped) |
+ACH briefly served an unmodified copy of alitellm-auth `clients/opencode` as an npm tarball. OpenCode v2 rejects tarball URLs, so the plugin moved to its own public repo (`github.com/ackstorm/opencode-oidc-provider`) and ACH now only points at it from `GET /.well-known/opencode` (`genai.opencodePluginSpec`). No ACH file is grafted from it any more.
 
 ## 2026-09-21 — React console imported as-is (unified console, spec §4.1, AC-01)
 

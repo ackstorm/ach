@@ -17,6 +17,8 @@ export interface SessionMe {
   name: string;
   /** Hosted chat UI (chart platformApi.console.chatUrl); "" hides the Chat button. */
   chat_url: string;
+  /** OpenCode provider id users sign in with (chart genai.providerName). */
+  provider_name: string;
   is_admin: boolean;
   openwork_enabled: boolean;
   /** UI notice bound for suspend propagation (spec §8.2). */

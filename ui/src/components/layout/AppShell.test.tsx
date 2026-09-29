@@ -38,6 +38,7 @@ const ME: SessionMe = {
   max_keys: null,
   endpoint: 'https://api.acme.ai',
   chat_url: 'https://chat.acme.ai',
+  provider_name: 'ai-platform',
 };
 
 const CONFIG = { links: {} } as unknown as AppConfig;

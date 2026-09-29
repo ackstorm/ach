@@ -51,6 +51,7 @@ const ME: SessionMe = {
   max_keys: null,
   endpoint: 'https://litellm.example.com',
   chat_url: '',
+  provider_name: 'ai-platform',
 };
 
 // Spies stand in for the store boot actions so mounting App never fetches.

@@ -65,6 +65,7 @@ beforeEach(() => {
         max_keys: null,
         endpoint: 'https://litellm.example.com',
         chat_url: '',
+        provider_name: 'ai-platform',
       },
       loadSession,
       markExpired,

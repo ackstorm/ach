@@ -377,17 +377,6 @@ release-bump: ## Internal: bump version across all manifests. Used by release.ym
 	@sed -i -E 's|^([[:space:]]+)newTag: v.*|\1newTag: v$(VERSION)|' config/manager/kustomization.yaml
 	@echo "Manifests bumped to v$(VERSION)."
 
-# The OpenCode auth plugin is owned by alitellm-auth (clients/opencode); ACH
-# serves an unmodified copy. Every release-cut takes the newest released one.
-ALITELLM_AUTH_DIR ?= ../alitellm-auth
-OPENCODE_PLUGIN_DIR := internal/platformapi/opencode/plugin
-
-.PHONY: opencode-plugin-sync
-opencode-plugin-sync: ## Copy clients/opencode from ../alitellm-auth at its newest v* tag into the embedded plugin dir (host-only; release-cut runs it).
-	@test -d "$(ALITELLM_AUTH_DIR)/.git" || (echo "ERROR: no alitellm-auth checkout at $(ALITELLM_AUTH_DIR) (set ALITELLM_AUTH_DIR)" >&2; exit 1)
-	@git -C "$(ALITELLM_AUTH_DIR)" fetch --tags --quiet origin
-	@tag=$$(git -C "$(ALITELLM_AUTH_DIR)" tag -l 'v*' --sort=-v:refname | head -1); 	test -n "$$tag" || (echo "ERROR: no v* tag in $(ALITELLM_AUTH_DIR)" >&2; exit 1); 	rm -rf "$(OPENCODE_PLUGIN_DIR)" && mkdir -p "$(OPENCODE_PLUGIN_DIR)" && 	git -C "$(ALITELLM_AUTH_DIR)" archive "$$tag" clients/opencode | tar -x --strip-components=2 -C "$(OPENCODE_PLUGIN_DIR)" && 	echo "opencode plugin <- alitellm-auth $$tag ($$(git -C "$(ALITELLM_AUTH_DIR)" show "$$tag:clients/opencode/package.json" | jq -r .version))"
-
 .PHONY: release-cut
 release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, push to main. Usage: make release-cut VERSION=X.Y.Z
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
@@ -400,8 +389,6 @@ release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-pu
 	@git fetch origin main --quiet
 	@local=$$(git rev-parse HEAD); remote=$$(git rev-parse origin/main); \
 	test "$$local" = "$$remote" || (echo "ERROR: local main differs from origin/main; rebase or pull first" >&2; exit 1)
-	$(MAKE) opencode-plugin-sync
-	git add $(OPENCODE_PLUGIN_DIR)
 	git commit --allow-empty -m "chore(release): v$(VERSION)"
 	$(MAKE) pre-push
 	git push origin main

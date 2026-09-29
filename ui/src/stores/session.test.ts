@@ -32,6 +32,7 @@ const ME: SessionMe = {
   max_keys: 5,
   endpoint: window.location.origin,
   chat_url: '',
+  provider_name: 'ai-platform',
 };
 
 beforeEach(() => {

@@ -25,9 +25,7 @@ Cutting a release (stable example, `v0.1.0`):
 ```bash
 # Most common — empty release commit (no manifest pre-bump).
 # `make release-cut` runs preconditions (on main, clean tree, in-sync
-# with origin/main), refreshes the OpenCode plugin from ../alitellm-auth's
-# newest v* tag (make opencode-plugin-sync; needs that sibling checkout),
-# creates `chore(release): v0.1.0` (empty unless the plugin changed),
+# with origin/main), creates the empty `chore(release): v0.1.0` commit,
 # runs the 17-gate pre-push, and pushes to main.
 make release-cut VERSION=0.1.0
 

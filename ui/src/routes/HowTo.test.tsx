@@ -14,7 +14,7 @@ import type { ModelsSelection } from '@/hooks/use-capabilities';
 vi.mock('react-router', () => ({ useNavigate: () => () => {} }));
 vi.mock('@/stores/session', () => ({
   useSessionStore: (sel: (s: unknown) => unknown) =>
-    sel({ me: { endpoint: 'https://api.ackstorm.ai' } }),
+    sel({ me: { endpoint: 'https://api.ackstorm.ai', provider_name: 'acme' } }),
 }));
 vi.mock('@/stores/config', () => ({
   useConfigStore: (sel: (s: unknown) => unknown) => sel({ config: {} }),
@@ -98,5 +98,17 @@ describe('HowTo — model picker', () => {
     fireEvent.change(select, { target: { value: 'zeta.model' } });
     // The visible curl snippet now carries the picked alias.
     expect(screen.getByText(/"model": "zeta.model"/)).toBeInTheDocument();
+  });
+});
+
+describe('HowTo — OpenCode install', () => {
+  it('installs via the well-known URL and signs in with provider_name', () => {
+    setModels([]);
+    const { container } = render(<HowTo />);
+    fireEvent.click(screen.getByRole('tab', { name: 'OpenCode' }));
+    const text = container.textContent ?? '';
+    expect(text).toContain('opencode auth login https://api.ackstorm.ai');
+    expect(text).toContain('opencode auth login acme');
+    expect(text).not.toContain('/clients/opencode/plugin');
   });
 });
