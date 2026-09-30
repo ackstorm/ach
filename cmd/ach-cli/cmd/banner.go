@@ -25,7 +25,7 @@ import (
 // agents, set one row below the lettering so its leaf row shares the tagline.
 const bannerUTF8 = "" +
 	"\n" +
-	"                        _\n" +
+	"                      _\n" +
 	"    ◆       __ _  ___| |__\n" +
 	"  ┌─┼─┐    / _` |/ __| '_ \\\n" +
 	"  o o o   | (_| | (__| | | |\n" +
@@ -37,7 +37,7 @@ const bannerUTF8 = "" +
 // Same column widths as bannerUTF8 so the letters stay aligned.
 const bannerASCII = "" +
 	"\n" +
-	"                        _\n" +
+	"                      _\n" +
 	"    *       __ _  ___| |__\n" +
 	"  +-+-+    / _` |/ __| '_ \\\n" +
 	"  o o o   | (_| | (__| | | |\n" +
