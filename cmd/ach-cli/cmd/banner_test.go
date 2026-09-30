@@ -69,8 +69,8 @@ func TestWriteBanner_Variant(t *testing.T) {
 		var b bytes.Buffer
 		writeBanner(&b)
 		out := b.String()
-		if !strings.Contains(out, "●") {
-			t.Errorf("utf8 banner missing bullet ●: %q", out)
+		if !strings.Contains(out, "◆") {
+			t.Errorf("utf8 banner missing hub ◆: %q", out)
 		}
 		if !strings.Contains(out, "Agent Capability Hub") {
 			t.Errorf("utf8 banner missing tagline: %q", out)
@@ -83,11 +83,11 @@ func TestWriteBanner_Variant(t *testing.T) {
 		var b bytes.Buffer
 		writeBanner(&b)
 		out := b.String()
-		if strings.Contains(out, "●") || strings.Contains(out, "─") {
+		if strings.Contains(out, "◆") || strings.Contains(out, "─") {
 			t.Errorf("ascii banner leaked UTF-8 glyphs: %q", out)
 		}
-		if !strings.Contains(out, "(o)") {
-			t.Errorf("ascii banner missing (o) hub: %q", out)
+		if !strings.Contains(out, "+-+-+") {
+			t.Errorf("ascii banner missing hub rail: %q", out)
 		}
 		if !strings.Contains(out, "Agent Capability Hub") {
 			t.Errorf("ascii banner missing tagline: %q", out)

@@ -21,30 +21,28 @@ import (
 	"strings"
 )
 
-// bannerUTF8 is the preferred banner. The hub spokes use ASCII `|`/`\`/`/`;
-// only the hub row (`──`) and center (`●`) are box-drawing/bullet glyphs.
-// Spacing is FROZEN — the row-3 `──(●)──` left edge intentionally sits one
-// column right of the spokes above/below. Do not "fix" the asymmetry.
+// bannerUTF8 is the preferred banner: a hub (◆) handing capabilities out to
+// agents, set one row below the lettering so its leaf row shares the tagline.
 const bannerUTF8 = "" +
 	"\n" +
-	"\\  |  /              _\n" +
-	" \\ | /     __ _  ___| |__\n" +
-	"──(●)──   / _` |/ __| '_ \\\n" +
-	" / | \\   | (_| | (__| | | |\n" +
-	"/  |  \\   \\__,_|\\___|_| |_|\n" +
-	"       Agent Capability Hub\n" +
+	"                        _\n" +
+	"    ◆       __ _  ___| |__\n" +
+	"  ┌─┼─┐    / _` |/ __| '_ \\\n" +
+	"  o o o   | (_| | (__| | | |\n" +
+	"  │ │ │    \\__,_|\\___|_| |_|\n" +
+	"  ▪ ▪ ▪   Agent Capability Hub\n" +
 	"\n"
 
-// bannerASCII is the LANG=C / non-UTF-8 fallback: `──`→`--`, `●`→`o`. Same
-// column widths as bannerUTF8 so the letters stay aligned.
+// bannerASCII is the LANG=C / non-UTF-8 fallback: ◆→*, box lines→+-|, ▪→#.
+// Same column widths as bannerUTF8 so the letters stay aligned.
 const bannerASCII = "" +
 	"\n" +
-	"\\  |  /              _\n" +
-	" \\ | /     __ _  ___| |__\n" +
-	"--(o)--   / _` |/ __| '_ \\\n" +
-	" / | \\   | (_| | (__| | | |\n" +
-	"/  |  \\   \\__,_|\\___|_| |_|\n" +
-	"       Agent Capability Hub\n" +
+	"                        _\n" +
+	"    *       __ _  ___| |__\n" +
+	"  +-+-+    / _` |/ __| '_ \\\n" +
+	"  o o o   | (_| | (__| | | |\n" +
+	"  | | |    \\__,_|\\___|_| |_|\n" +
+	"  # # #   Agent Capability Hub\n" +
 	"\n"
 
 // writeBanner emits the locale-appropriate banner to w. It does NOT gate
