@@ -1267,10 +1267,13 @@ server-side <code>pk_</code>-forbid toggle (honoring the frozen permanent decisi
 enforcement, if wanted, is the deployer's LiteLLM choice.</p>
 <h2 id="ek_-lifecycle-expiry-suspend-resume-revoke"><code>ek_</code> lifecycle: expiry, suspend, resume, revoke<a class="headerlink" href="#ek_-lifecycle-expiry-suspend-resume-revoke" title="Permanent link">&para;</a></h2>
 <p>An <code>ek_</code> can optionally be created with an expiration time, and can be
-manually suspended and resumed without losing the credential. This is an
-HTTP API surface for now — <code>ach-cli keys create</code> has no <code>--expires-at</code> flag
-and there is no <code>ach-cli keys suspend</code>/<code>resume</code> subcommand yet (CLI support
-is a follow-up); use the routes below directly, or through the web console.</p>
+manually suspended and resumed without losing the credential. From the CLI
+(a key is named by the name it was saved under, or by its <code>ekid_…</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ach-cli<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>&lt;env&gt;<span class="w"> </span>--name<span class="w"> </span>ci-bot<span class="w"> </span>--expires<span class="w"> </span>90d
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ach-cli<span class="w"> </span>keys<span class="w"> </span><span class="nb">suspend</span><span class="w"> </span>ci-bot<span class="w">      </span><span class="c1"># ach-cli keys resume ci-bot undoes it</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ach-cli<span class="w"> </span>keys<span class="w"> </span>revoke<span class="w"> </span>ci-bot
+</code></pre></div>
+<p>The routes behind them, also usable directly or through the web console:</p>
 <ul>
 <li><code>POST /platform/keys</code> accepts an optional <code>expires_at</code> (RFC3339, must be in
   the future — a past or malformed value is <code>400 invalid_argument</code>). Omitting
@@ -1321,14 +1324,14 @@ them is over budget — there is no hierarchy, whichever is crossed first wins:<
 </tbody>
 </table>
 <p>Set a ceiling when you create a key:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;ach&gt;/platform/keys<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"environment":"demo","name":"ci","budget":{"max_budget":25,"budget_duration":"30d"}}'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;ach&gt;/platform/keys<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"environment":"demo","name":"ci","budget":{"max_budget":25,"budget_duration":"30d"}}'</span>
 </code></pre></div>
 <p>…or change it later (the key keeps working; only the ceiling moves):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/keys/&lt;key_id&gt;/budget<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":50}'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/keys/&lt;key_id&gt;/budget<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":50}'</span>
 </code></pre></div>
 <p><code>max_budget</code> is in LiteLLM's spend unit (USD) and must be <code>&gt;= 0</code>; <code>0</code> is a
 real ceiling that refuses everything once any spend lands. <code>budget_duration</code>
@@ -1336,9 +1339,9 @@ real ceiling that refuses everything once any spend lands. <code>budget_duration
 Only the key's owner may change its budget.</p>
 <p>An <strong>admin</strong> can retune one person's own ceiling — the one covering their
 <code>pk_</code> and every <code>ek_</code> they own — with the same body:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/admin/users/someone%40example.com/budget<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_ADMIN_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":200,"budget_duration":"30d"}'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>curl<span class="w"> </span>-X<span class="w"> </span>PATCH<span class="w"> </span>https://&lt;ach&gt;/platform/admin/users/someone%40example.com/budget<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$ACH_ADMIN_TOKEN</span><span class="s2">"</span><span class="w"> </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"max_budget":200,"budget_duration":"30d"}'</span>
 </code></pre></div>
 <p>The email is a path segment (URL-encode the <code>@</code> if your client needs it) and
 need not have logged in yet — the ceiling is waiting when they do. The value
@@ -1348,7 +1351,7 @@ the deployment-wide default does not retune anyone who already has one — this
 route is how you do that.</p>
 <p>When a ceiling is reached, the request fails with <strong>HTTP 429</strong> and a body
 naming the counter that blocked:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
 </code></pre></div>
 <p><code>Tag=user:…</code> means your own ceiling, <code>Tag=environment:…</code> the Environment's
 pooled one, and <code>Tag=key:…</code> that single key's. Raise the named ceiling (or

@@ -1443,7 +1443,7 @@ results so the GSD orchestrator can close out the verification cycle.</p>
 <h2 id="check-1-surface-separation-ach-cli-user-cli-vs-ach-services">CHECK 1 — surface separation: <code>ach-cli</code> (user CLI) vs <code>ach</code> (services)<a class="headerlink" href="#check-1-surface-separation-ach-cli-user-cli-vs-ach-services" title="Permanent link">&para;</a></h2>
 <p><strong>Why human:</strong> both binaries compile inside CI, but a runtime smoke confirms
 the cobra trees are fully wired AND that the user CLI / service-mode split
-landed (the 8 user subcommands live on <code>ach-cli</code>; the 5 service modes on
+landed (the user subcommands live on <code>ach-cli</code>; the 5 service modes on
 <code>ach</code>). <code>make build</code> writes both <code>bin/ach</code> and <code>bin/ach-cli</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>build
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./bin/ach-cli<span class="w"> </span>--help<span class="w">    </span><span class="c1"># user CLI</span>
@@ -1451,14 +1451,15 @@ landed (the 8 user subcommands live on <code>ach-cli</code>; the 5 service modes
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">"EXIT=</span><span class="nv">$?</span><span class="s2">"</span>
 </code></pre></div>
 <p><strong>Expected:</strong> <code>./bin/ach-cli --help</code> exits <code>0</code> and lists every one of:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>  login         Authenticate against the platform-api
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  logout        Revoke local session
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  whoami        Show current identity
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  config        Inspect / mutate local config
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  env           List + switch environments
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  keys          List pk_ + ek_ keys (TYPE column); create / revoke environment keys (env-keys is a back-compat alias). `keys list` defaults to `--status active` — revoked keys are hidden; pass `--status all` (or revoked/expired) to include them. `--type pk|ek` filters by key type.
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  hydrate       Materialize workspace artifacts
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  admin         Admin subcommands (keys revoke, users revoke-keys, refresh)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>  admin         Admin operations (inventory, keys, user budgets and limits, refresh)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  env           Inspect environments visible to the active credential
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  keys          Manage your environment keys (ek-…)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  local         Local, ungoverned developer package path (repo/plugin/skill)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  login         Sign in to a Hub (browser on this machine, or a code from any browser)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  logout        Sign out of the active profile (saved keys are kept)
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  profile       Manage your profiles (~/.config/ach/config.yaml)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  token         Print the active profile's token, or its key (credential helper)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  whoami        Show who you are signed in as, your budget and your key allowance
 </code></pre></div>
 <p>AND <code>./bin/ach --help</code> lists only the 5 service modes:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>  operator, platform-api, forwarder, content-service, migrate

@@ -1278,9 +1278,9 @@ your organisation's SSO (Dex) and hold a short-lived access token (1 h)
 that works for <strong>model calls</strong> and <strong>MCP servers</strong> through ACH. Every
 refresh goes back to your SSO: an account disabled there stops working at
 the next refresh (within the hour), exactly like any other SSO-backed
-tool. Agents and CI keep the persistent <code>pk_</code> / <code>ek_</code> keys; this page
-is for a person at a keyboard.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ach-cli<span class="w"> </span>login<span class="w">                 </span><span class="c1"># browser → SSO → "Signed in to ACH"</span>
+tool. Agents and CI use environment keys (<code>ek-…</code>, <code>ach-cli keys create</code>);
+this page is for a person at a keyboard.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ach-cli<span class="w"> </span>login<span class="w"> </span>&lt;url&gt;<span class="w">           </span><span class="c1"># browser → SSO → "Signed in to ACH"</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ach-cli<span class="w"> </span>token<span class="w">                 </span><span class="c1"># prints ONE line: a fresh access token</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ach-cli<span class="w"> </span>env<span class="w"> </span>hydrate<span class="w"> </span>&lt;env&gt;<span class="w">     </span><span class="c1"># writes the tools' configs (no credential inside — see below)</span>
 </code></pre></div>
@@ -1368,7 +1368,8 @@ case you set it up by hand:</p>
 any extra output); every diagnostic goes to stderr. On an OAuth profile it
 refreshes automatically when the stored token is within 6 minutes of expiry,
 under a file lock so Claude Code and Codex firing it together spend one
-refresh, not two; on a <code>pk_</code> profile it prints the <code>pk_</code>.</p>
+refresh, not two; on a key profile (<code>ach-cli profile add … --key ek-…</code>) it
+prints that key.</p>
 <h2 id="what-a-token-can-reach">What a token can reach<a class="headerlink" href="#what-a-token-can-reach" title="Permanent link">&para;</a></h2>
 <p>Nothing changes in authorization: the token stands for you, exactly as a
 <code>pk_</code> does. What you can reach is what your Environments' <code>authorizedTeams</code>
