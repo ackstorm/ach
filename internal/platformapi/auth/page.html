@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+{{- /* Every browser page of the OAuth AS: the device-code confirm form, its
+    result, and the error page. A static twin of the console's Login card
+    (ui/src/routes/Login.tsx): same theme tokens (ui/src/index.css), and the
+    same stored theme ('alitellm-theme', shared origin) picked before paint. */ -}}
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%2316c47f'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M12%202%204%206v6c0%204.5%203.4%207.3%208%2010%204.6-2.7%208-5.5%208-10V6z'/%3E%3Cpath%20d='m9%2012%202%202%204-4'/%3E%3C/svg%3E">
+<title>ACH — {{.Title}}</title>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('alitellm-theme');
+      if (t !== 'dark' && t !== 'light' && t !== 'pastel' && t !== 'red') {
+        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      var el = document.documentElement;
+      el.classList.remove('dark', 'light', 'pastel', 'red');
+      el.classList.add(t);
+    } catch (e) {}
+  })();
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root { --background: oklch(0.14 0.005 260); --surface: oklch(0.18 0.008 260); --surface-inset: oklch(0.12 0.005 260); --card: oklch(0.18 0.008 260); --border: oklch(0.28 0.01 260); --text-primary: oklch(0.93 0.005 260); --text-secondary: oklch(0.65 0.01 260); --text-tertiary: oklch(0.45 0.01 260); --primary: oklch(0.72 0.19 150); --primary-foreground: oklch(0.18 0.04 150); --destructive: oklch(0.6 0.2 25); --glow-1: oklch(0.72 0.19 150 / 0.12); --glow-2: oklch(0.65 0.18 210 / 0.07); --glow-3: oklch(0.72 0.19 150 / 0.05); }
+  :root.light { --background: oklch(0.985 0.004 260); --surface: oklch(1 0 0); --surface-inset: oklch(0.96 0.004 260); --card: oklch(1 0 0); --border: oklch(0.9 0.008 260); --text-primary: oklch(0.22 0.015 260); --text-secondary: oklch(0.44 0.012 260); --text-tertiary: oklch(0.58 0.01 260); --primary: oklch(0.68 0.19 150); --primary-foreground: oklch(1 0 0); --destructive: oklch(0.55 0.22 25); --glow-1: oklch(0.68 0.19 150 / 0.12); --glow-2: oklch(0.7 0.16 210 / 0.1); --glow-3: oklch(0.82 0.12 150 / 0.12); }
+  :root.pastel { --background: oklch(0.975 0.022 330); --surface: oklch(0.99 0.012 320); --surface-inset: oklch(0.975 0.018 320); --card: oklch(0.992 0.01 320); --border: oklch(0.9 0.032 320); --text-primary: oklch(0.31 0.08 305); --text-secondary: oklch(0.5 0.06 305); --text-tertiary: oklch(0.62 0.05 312); --primary: oklch(0.71 0.17 322); --primary-foreground: oklch(0.97 0.012 320); --destructive: oklch(0.62 0.2 18); --glow-1: oklch(0.8 0.15 300 / 0.62); --glow-2: oklch(0.84 0.12 220 / 0.62); --glow-3: oklch(0.84 0.13 350 / 0.62); }
+  :root.red { --background: oklch(0.985 0.004 277); --surface: oklch(1 0 0); --surface-inset: oklch(0.965 0.006 277); --card: oklch(1 0 0); --border: oklch(0.863 0.019 279); --text-primary: oklch(0.241 0.092 259); --text-secondary: oklch(0.5 0.042 268); --text-tertiary: oklch(0.62 0.03 281); --primary: oklch(0.682 0.207 20); --primary-foreground: oklch(1 0 0); --destructive: oklch(0.564 0.223 28); --glow-1: oklch(0.78 0.13 22 / 0.55); --glow-2: oklch(0.72 0.11 245 / 0.4); --glow-3: oklch(0.8 0.12 20 / 0.5); }
+  :root { --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+  .tone-err { --primary: var(--destructive); }
+
+  body {
+    font-family: var(--sans); color: var(--text-primary);
+    min-height: 100vh; display: flex; flex-direction: column;
+    background-color: var(--background);
+    background-image:
+      radial-gradient(ellipse 70% 55% at 12% -5%, var(--glow-1), transparent),
+      radial-gradient(ellipse 65% 55% at 88% 8%, var(--glow-2), transparent),
+      radial-gradient(ellipse 80% 65% at 50% 105%, var(--glow-3), transparent);
+  }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-primary); }
+  .brand svg { fill: none; stroke: var(--primary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  header { height: 56px; flex: none; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 14px; }
+  header svg { width: 18px; height: 18px; }
+
+  .stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+  main { width: 100%; max-width: 480px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
+
+  .top { padding: 32px 32px 24px; border-bottom: 1px solid var(--border); }
+  .top .brand { font-size: 24px; letter-spacing: -0.02em; }
+  .top .brand svg { width: 26px; height: 26px; }
+  h1 { margin-top: 16px; font-size: 24px; font-weight: 600; line-height: 1.25; }
+  .sub { margin-top: 16px; font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
+  .cmd { margin-top: 20px; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; white-space: nowrap; overflow: hidden; color: var(--text-secondary); }
+  .cmd .ps { color: var(--text-tertiary); user-select: none; }
+  .cmd .verb { color: var(--primary); }
+  .cursor { display: inline-block; width: 0.5em; height: 1.05em; background: var(--primary); animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .mid { padding: 28px 32px; display: grid; gap: 16px; }
+  label { font-family: var(--mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); }
+  .code {
+    width: 100%; margin-top: 8px;
+    font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: 0.2em;
+    text-align: center; text-transform: uppercase;
+    background: var(--surface-inset); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 12px; outline: none;
+  }
+  .code:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 25%, transparent); }
+  button {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font: 600 14px var(--sans); padding: 10px 16px; border-radius: 6px; border: 0; cursor: pointer;
+    background: var(--primary); color: var(--primary-foreground); transition: filter .15s;
+  }
+  button:hover { filter: brightness(1.08); }
+  button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .problem { font-size: 13px; line-height: 1.5; color: var(--destructive); border: 1px solid color-mix(in oklch, var(--destructive) 35%, transparent); background: color-mix(in oklch, var(--destructive) 8%, transparent); border-radius: 6px; padding: 10px 12px; }
+
+  .foot { display: flex; align-items: center; gap: 16px; padding: 20px 32px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
+  .foot .lock { display: inline-flex; align-items: center; gap: 8px; }
+  .foot .lock svg { width: 15px; height: 15px; fill: none; stroke: var(--text-secondary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .status { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--primary); font-weight: 600; letter-spacing: 0.1em; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .4; } }
+
+  @media (max-width: 520px) {
+    .top, .mid, .foot { padding-left: 20px; padding-right: 20px; }
+    .code { font-size: 22px; }
+  }
+</style>
+</head>
+<body{{if .Error}} class="tone-err"{{end}}>
+  <header>
+    <span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>ACH</span>
+  </header>
+
+  <div class="stage">
+    <main>
+      <div class="top">
+        <span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>ACH</span>
+        <h1>{{.Title}}</h1>
+        <p class="sub">{{.Sub}}</p>
+        <div class="cmd" aria-hidden="true"><span class="ps">$</span><span><span class="verb">sign-in</span> {{.Cmd}}</span><span class="cursor"></span></div>
+      </div>
+
+      {{- if or .Form .Problem}}
+      <div class="mid">
+        {{- if .Form}}
+        <form method="post" style="display:grid;gap:16px">
+          <div>
+            <label for="user_code">Code shown in your terminal</label>
+            <input class="code" id="user_code" name="user_code" value="{{.Code}}" autocomplete="off" autocapitalize="characters" spellcheck="false" required autofocus>
+          </div>
+          <button type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>Confirm and continue with SSO</button>
+        </form>
+        {{- end}}
+        {{- if .Problem}}
+        <div class="problem" role="alert">{{.Problem}}</div>
+        {{- end}}
+      </div>
+      {{- end}}
+
+      <div class="foot">
+        <span class="lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>{{.Footer}}</span>
+        <span class="status" role="status"><span class="dot" aria-hidden="true"></span>{{.Label}}</span>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

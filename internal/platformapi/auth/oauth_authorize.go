@@ -6,10 +6,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"html"
+	"html/template"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -116,9 +116,27 @@ func clientRedirect(w http.ResponseWriter, r *http.Request, redirectURI string, 
 }
 
 func htmlError(w http.ResponseWriter, status int, msg string) {
+	renderPage(w, status, page{Label: "FAILED", Cmd: "--sso", Title: "Authorization failed", Sub: "Nothing was granted.",
+		Problem: msg, Error: true, Footer: "no credential was issued"})
+}
+
+//go:embed page.html
+var pageHTML string
+
+var pageTmpl = template.Must(template.New("page").Parse(pageHTML))
+
+// page is one browser page of the AS (page.html); html/template escapes every
+// field. Label is the footer status word, Cmd the decorative command line.
+type page struct {
+	Label, Cmd, Title, Sub, Code, Problem, Footer string
+	Form, Error                                   bool
+}
+
+func renderPage(w http.ResponseWriter, status int, p page) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, "<h1>Authorization failed</h1><p>%s</p>", html.EscapeString(msg))
+	_ = pageTmpl.Execute(w, p)
 }
 
 func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {

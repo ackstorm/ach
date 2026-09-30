@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -216,12 +215,13 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 	}
 	_ = d.Store.Del(r.Context(), "device_user", rec.UserCode)
 	d.Auth.Logger.Info("oauth: device authorization "+status, "client_id", rec.ClientID)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if status == deviceStatusApproved {
-		_, _ = fmt.Fprint(w, "<h1>Signed in to ACH</h1><p>Return to your terminal — you can close this tab.</p>")
+		renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "--device", Title: "Signed in to ACH",
+			Sub: "Return to your terminal — you can close this tab.", Footer: "your terminal picks up the session on its own"})
 		return
 	}
-	_, _ = fmt.Fprint(w, "<h1>Sign-in cancelled</h1><p>Nothing was granted. You can close this tab.</p>")
+	renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "--device", Title: "Sign-in cancelled",
+		Sub: "Nothing was granted. You can close this tab.", Error: true, Footer: "no credential was issued"})
 }
 
 // deviceToken is the /token branch for grant_type=…:device_code.
@@ -259,15 +259,7 @@ func (d OAuthDeps) deviceToken(w http.ResponseWriter, r *http.Request, clientID 
 }
 
 func renderDevicePage(w http.ResponseWriter, code, problem string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = fmt.Fprintf(w, `<!doctype html><title>Sign in to ACH</title>
-<h1>Sign in to ACH</h1>
-<p>Confirm this is the code shown in your terminal, then continue.</p>
-<form method="post">
-<input name="user_code" value="%s" autocomplete="off" autocapitalize="characters" spellcheck="false" size="12" required>
-<button type="submit">Confirm</button>
-</form>
-<p>%s</p>
-`, html.EscapeString(code), html.EscapeString(problem))
+	renderPage(w, http.StatusOK, page{Label: "READY", Cmd: "--device", Title: "Sign in to ACH",
+		Sub: "Confirm this is the code shown in your terminal, then continue.", Form: true, Code: code,
+		Problem: problem, Footer: fmt.Sprintf("the code expires %d minutes after your terminal shows it", int(deviceTTL.Minutes()))})
 }
