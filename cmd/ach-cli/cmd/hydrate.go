@@ -952,10 +952,10 @@ func countNoun(n int, singular, plural string) string {
 // ambiguity / unknown id.
 func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string, error) {
 	if len(in.platform) > 0 {
-		return resolvePlatformList(strings.Join(in.platform, ","))
+		return parseTargets(in.platform)
 	}
 	if in.envTarget != "" {
-		return resolvePlatformList(in.envTarget)
+		return parseTargets([]string{in.envTarget})
 	}
 
 	root := in.output
@@ -987,37 +987,6 @@ func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string,
 		return nil, err
 	}
 	return []string{id}, nil
-}
-
-// resolvePlatformList parses an explicit --target / ACH_TARGET value into a
-// deduped, order-preserving list of canonical platform ids. The value may be
-// comma-separated (e.g. "codex,opencode"); each part is resolved via
-// hydrate.ResolvePlatform (alias-aware), and an unknown part surfaces its
-// CodedError. An effectively-empty value (all blanks) is an error.
-func resolvePlatformList(raw string) ([]string, error) {
-	seen := map[string]bool{}
-	var out []string
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		id, err := hydrate.ResolvePlatform(part)
-		if err != nil {
-			return nil, err
-		}
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	if len(out) == 0 {
-		return nil, &exit.CodedError{
-			Code: exit.General,
-			Msg:  "--target is empty: provide one or more platform ids (e.g. claude-code,codex)",
-		}
-	}
-	return out, nil
 }
 
 // runHydrateRaw is the Phase 6 surface-only POST+stream body extracted

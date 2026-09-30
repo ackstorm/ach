@@ -7,7 +7,7 @@
 // the plugin, providing "plugin" lens, not "plugin-marketplace"). This is the
 // simplest end-to-end path:
 //
-//	plugin install p1@fix --target claude --dest <tmp>
+//	plugin install p1@fix --target claude --dir <tmp>
 //	→ <tmp>/.claude/commands/x.md written
 //	→ installed.json has entry p1@fix / claude-code / Files
 //	plugin list → output contains "p1@fix"
@@ -19,9 +19,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
@@ -115,7 +118,7 @@ func seedRepo(t *testing.T, entry store.RepoEntry) {
 
 // TestPluginCmd_Install_List_Uninstall exercises the direct-plugin path.
 // It seeds a "fix" repo with Provides=[{Lens:"plugin",Count:1}], then
-// installs p1@fix --target claude --dest <tmp>, asserts the file is on disk
+// installs p1@fix --target claude --dir <tmp>, asserts the file is on disk
 // and the installed.json entry is correct, checks list output, then uninstalls
 // and verifies cleanup.
 func TestPluginCmd_Install_List_Uninstall(t *testing.T) {
@@ -153,7 +156,7 @@ func TestPluginCmd_Install_List_Uninstall(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"install", "fix@fix", "--target", "claude", "--dest", destDir})
+		cmd.SetArgs([]string{"install", "fix@fix", "--target", "claude", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin install: %v (output: %s)", err, buf.String())
 		}
@@ -224,7 +227,7 @@ func TestPluginCmd_Install_List_Uninstall(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"uninstall", "fix@fix", "--dest", destDir})
+		cmd.SetArgs([]string{"uninstall", "fix@fix", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin uninstall: %v", err)
 		}
@@ -257,7 +260,7 @@ func TestPluginCmd_Install_NoAtSign(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"install", "badname", "--target", "claude", "--dest", t.TempDir()})
+	cmd.SetArgs([]string{"install", "badname", "--target", "claude", "--dir", t.TempDir()})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected error for missing @, got nil")
 	}
@@ -272,9 +275,27 @@ func TestPluginCmd_Install_UnknownTarget(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"install", "p@repo", "--target", "nonexistent-target-xyz", "--dest", t.TempDir()})
-	if err := cmd.Execute(); err == nil {
+	cmd.SetArgs([]string{"install", "p@repo", "--target", "nonexistent-target-xyz", "--dir", t.TempDir()})
+	err := cmd.Execute()
+	if err == nil {
 		t.Fatal("expected error for unknown target, got nil")
+	}
+	for _, id := range []string{"claude-code", "codex", "gemini-cli", "opencode", "pimono"} {
+		if !strings.Contains(err.Error(), id) {
+			t.Errorf("unknown-target error should list %q: %v", id, err)
+		}
+	}
+}
+
+// TestParseTargets_CommaAndRepeat: --target values split on commas AND
+// repeat, resolve aliases, and dedupe in order.
+func TestParseTargets_CommaAndRepeat(t *testing.T) {
+	got, err := parseTargets([]string{"claude,codex-cli", "gemini", "cc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"claude-code", "codex", "gemini-cli"}; !slices.Equal(got, want) {
+		t.Errorf("parseTargets = %v, want %v", got, want)
 	}
 }
 
@@ -345,7 +366,7 @@ func TestSkillCmd_Install_List_Uninstall(t *testing.T) {
 		cmd := newSkillCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"install", "myskill@sfix", "--target", "claude", "--dest", destDir})
+		cmd.SetArgs([]string{"install", "myskill@sfix", "--target", "claude", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("skill install: %v (output: %s)", err, buf.String())
 		}
@@ -397,7 +418,7 @@ func TestSkillCmd_Install_List_Uninstall(t *testing.T) {
 		cmd := newSkillCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"uninstall", "myskill@sfix", "--dest", destDir})
+		cmd.SetArgs([]string{"uninstall", "myskill@sfix", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("skill uninstall: %v", err)
 		}
@@ -423,7 +444,7 @@ func TestPluginCmd_Uninstall_Idempotent(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"uninstall", "ghost@repo", "--dest", t.TempDir()})
+	cmd.SetArgs([]string{"uninstall", "ghost@repo", "--dir", t.TempDir()})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin uninstall (idempotent): expected exit 0, got: %v", err)
 	}
@@ -485,7 +506,7 @@ func TestPluginCmd_Uninstall_MultiTarget(t *testing.T) {
 			"install", "fix2@fix2",
 			"--target", "claude",
 			"--target", "codex-cli",
-			"--dest", destDir,
+			"--dir", destDir,
 		})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin install both targets: %v (output: %s)", err, buf.String())
@@ -523,7 +544,7 @@ func TestPluginCmd_Uninstall_MultiTarget(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"uninstall", "fix2@fix2", "--target", "claude", "--dest", destDir})
+		cmd.SetArgs([]string{"uninstall", "fix2@fix2", "--target", "claude", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin uninstall --target claude: %v (output: %s)", err, buf.String())
 		}
@@ -555,18 +576,21 @@ func TestPluginCmd_Uninstall_MultiTarget(t *testing.T) {
 	})
 }
 
-// TestPkgUpdateCmd_DestFlag is the regression test for Bug D: the `update`
-// subcommand must register a `--dest` flag (so a package installed with --dest
-// can also be updated with the same root override). Mirrors install's flag.
-func TestPkgUpdateCmd_DestFlag(t *testing.T) {
+// TestPkgCmds_DirAndGlobalFlags: install, uninstall and update all take
+// --dir (was --dest) and -g, so a package installed under a root can be
+// updated/removed with the same override.
+func TestPkgCmds_DirAndGlobalFlags(t *testing.T) {
 	for _, kind := range []pkgKind{kindPlugin, kindSkill} {
-		c := newPkgUpdateCmd(kind)
-		f := c.Flags().Lookup("dest")
-		if f == nil {
-			t.Fatalf("%s update: expected --dest flag to be registered", kind)
-		}
-		if f.DefValue != "" {
-			t.Errorf("%s update --dest: DefValue = %q; want empty", kind, f.DefValue)
+		for _, c := range []*cobra.Command{newPkgInstallCmd(kind), newPkgUninstallCmd(kind), newPkgUpdateCmd(kind)} {
+			if f := c.Flags().Lookup("dir"); f == nil || f.DefValue != "" {
+				t.Errorf("%s %s: --dir missing or defaulted: %+v", kind, c.Name(), f)
+			}
+			if c.Flags().Lookup("dest") != nil {
+				t.Errorf("%s %s: --dest still registered", kind, c.Name())
+			}
+			if f := c.Flags().ShorthandLookup("g"); f == nil || f.Name != "global" {
+				t.Errorf("%s %s: -g is not --global", kind, c.Name())
+			}
 		}
 	}
 }
@@ -607,7 +631,7 @@ func TestPluginCmd_Install_ZeroFiles(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&out)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs([]string{"install", "zfix@zfix", "--target", "claude", "--dest", destDir})
+	cmd.SetArgs([]string{"install", "zfix@zfix", "--target", "claude", "--dir", destDir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin install (0-file): expected exit nil, got: %v (stderr: %s)", err, errBuf.String())
 	}
@@ -673,7 +697,7 @@ func TestPluginCmd_List_RepoFlag(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"install", ref, "--target", "claude", "--dest", destDir})
+		cmd.SetArgs([]string{"install", ref, "--target", "claude", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin install %s: %v (output: %s)", ref, err, buf.String())
 		}
@@ -821,7 +845,7 @@ func TestPluginCmd_DryRun_And_Outdated(t *testing.T) {
 	}
 
 	t.Run("install_dry_run_writes_nothing", func(t *testing.T) {
-		out := run(t, "install", "fix@fix", "--target", "claude", "--dest", destDir, "--dry-run")
+		out := run(t, "install", "fix@fix", "--target", "claude", "--dir", destDir, "--dry-run")
 		if !strings.Contains(out, "[dry-run]") || !strings.Contains(out, "no changes written") {
 			t.Errorf("missing dry-run markers in: %s", out)
 		}
@@ -835,7 +859,7 @@ func TestPluginCmd_DryRun_And_Outdated(t *testing.T) {
 	})
 
 	t.Run("real_install", func(t *testing.T) {
-		run(t, "install", "fix@fix", "--target", "claude", "--dest", destDir)
+		run(t, "install", "fix@fix", "--target", "claude", "--dir", destDir)
 		if _, err := os.Stat(target); err != nil {
 			t.Fatalf("expected %s after real install: %v", target, err)
 		}
@@ -849,7 +873,7 @@ func TestPluginCmd_DryRun_And_Outdated(t *testing.T) {
 	})
 
 	t.Run("uninstall_dry_run_removes_nothing", func(t *testing.T) {
-		out := run(t, "uninstall", "fix@fix", "--dest", destDir, "--dry-run")
+		out := run(t, "uninstall", "fix@fix", "--dir", destDir, "--dry-run")
 		if !strings.Contains(out, "would uninstall") || !strings.Contains(out, "remove") {
 			t.Errorf("missing uninstall plan in: %s", out)
 		}

@@ -76,7 +76,7 @@ func TestPluginCmd_Install_ConflictNamespace(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dest", destDir}, extra...))
+		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dir", destDir}, extra...))
 		err := cmd.Execute()
 		return buf.String(), err
 	}
@@ -126,7 +126,7 @@ func TestPluginCmd_Install_ConflictRefuse(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dest", destDir}, extra...))
+		cmd.SetArgs(append([]string{"install", ref, "--target", "claude", "--dir", destDir}, extra...))
 		return cmd.Execute()
 	}
 
@@ -157,7 +157,7 @@ func TestPluginCmd_Install_Verbose(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"install", "v@v", "--target", "claude", "--dest", t.TempDir(), "--verbose"})
+	cmd.SetArgs([]string{"install", "v@v", "--target", "claude", "--dir", t.TempDir(), "--verbose"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("verbose install: %v (%s)", err, buf.String())
 	}
@@ -202,7 +202,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
 	// All three targets in ONE comma-separated --target value.
-	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,gemini", "--dest", destDir})
+	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,gemini", "--dir", destDir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin install multi-target: %v (output: %s)", err, buf.String())
 	}
@@ -280,7 +280,7 @@ func TestPluginCmd_Update_SHADrift(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"install", "dr@dr", "--target", "claude", "--dest", destDir})
+		cmd.SetArgs([]string{"install", "dr@dr", "--target", "claude", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin install v1: %v (output: %s)", err, buf.String())
 		}
@@ -337,7 +337,7 @@ func TestPluginCmd_Update_SHADrift(t *testing.T) {
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
-		cmd.SetArgs([]string{"update", "dr@dr", "--dest", destDir})
+		cmd.SetArgs([]string{"update", "dr@dr", "--dir", destDir})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("plugin update: %v (output: %s)", err, buf.String())
 		}
@@ -423,7 +423,7 @@ func TestPluginCmd_Install_Global_Claude(t *testing.T) {
 	cmd := newPluginCmd()
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetArgs([]string{"install", "gfix@gfix", "--global", "--target", "claude"})
+	cmd.SetArgs([]string{"install", "gfix@gfix", "-g", "--target", "claude"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin install --global: %v (output: %s)", err, buf.String())
 	}

@@ -1088,22 +1088,22 @@ func TestResolvePlatformList(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolvePlatformList(tc.raw)
+			got, err := parseTargets([]string{tc.raw})
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("resolvePlatformList(%q) = %v, want error", tc.raw, got)
+					t.Fatalf("parseTargets(%q) = %v, want error", tc.raw, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolvePlatformList(%q): unexpected error: %v", tc.raw, err)
+				t.Fatalf("parseTargets(%q): unexpected error: %v", tc.raw, err)
 			}
 			if len(got) != len(tc.want) {
-				t.Fatalf("resolvePlatformList(%q) = %v, want %v", tc.raw, got, tc.want)
+				t.Fatalf("parseTargets(%q) = %v, want %v", tc.raw, got, tc.want)
 			}
 			for i := range got {
 				if got[i] != tc.want[i] {
-					t.Errorf("resolvePlatformList(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
+					t.Errorf("parseTargets(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
 				}
 			}
 		})

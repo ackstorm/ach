@@ -27,6 +27,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/gitignore"
+	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/localpkg/discover"
 	"github.com/ackstorm/ach/internal/cli/localpkg/manager"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
@@ -69,36 +70,41 @@ func preferredLens(kind pkgKind, caps []store.Capability) string {
 	return ""
 }
 
-// parseTargets splits --target values (comma-separated AND/OR repeatable) into
-// canonical adapter IDs. Returns a CodedError{General} if any target is unknown.
-func parseTargets(targets []string) ([]string, error) {
-	seen := map[string]struct{}{}
+// parseTargets is the ONE --target / ACH_TARGET parser (env hydrate and
+// local install/uninstall): values split on commas AND repeat, each part
+// resolves through hydrate.ResolvePlatform (adapter ids + aliases; an unknown
+// part's error lists every registered id), deduped in order. An effectively
+// empty value is an error.
+func parseTargets(values []string) ([]string, error) {
+	seen := map[string]bool{}
 	var out []string
-	for _, t := range targets {
-		for _, part := range strings.Split(t, ",") {
+	for _, v := range values {
+		for _, part := range strings.Split(v, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
 			}
-			ad, ok := adapter.Lookup(part)
-			if !ok {
-				return nil, &exit.CodedError{
-					Code: exit.General,
-					Msg:  fmt.Sprintf("unknown target adapter %q (known: claude, codex, gemini, opencode)", part),
-				}
+			id, err := hydrate.ResolvePlatform(part)
+			if err != nil {
+				return nil, err
 			}
-			id := ad.ID()
-			if _, dup := seen[id]; !dup {
-				seen[id] = struct{}{}
+			if !seen[id] {
+				seen[id] = true
 				out = append(out, id)
 			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, &exit.CodedError{
+			Code: exit.General,
+			Msg:  "--target is empty: provide one or more platform ids (e.g. claude-code,codex)",
 		}
 	}
 	return out, nil
 }
 
 // resolveRoot returns the install root directory.
-// Priority: --global → $HOME; --dest if set; else os.Getwd().
+// Priority: --global → $HOME; --dir if set; else os.Getwd().
 func resolveRoot(global bool, dest string) (string, error) {
 	if global {
 		home, err := os.UserHomeDir()
@@ -535,10 +541,10 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringArrayVar(&flagTargets, "target", nil,
-		"Adapter(s) to install for (comma-separated or repeatable): claude, codex, gemini, opencode")
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Install to the adapter's global config root instead of --dest / cwd")
-	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
+	c.Flags().StringSliceVar(&flagTargets, "target", nil,
+		"Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pimono")
+	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Install to the tool's global config root")
+	c.Flags().StringVar(&flagDest, "dir", "", "Project root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
@@ -660,9 +666,10 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringArrayVar(&flagTargets, "target", nil, "Limit uninstall to this adapter (optional)")
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Uninstall from the adapter's global config root")
-	c.Flags().StringVar(&flagDest, "dest", "", "Root directory (default: cwd)")
+	c.Flags().StringSliceVar(&flagTargets, "target", nil,
+		"Limit uninstall to these tools, comma-separated or repeated (optional)")
+	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Uninstall from the tool's global config root")
+	c.Flags().StringVar(&flagDest, "dir", "", "Project root directory (default: cwd)")
 	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Print the removal plan, but change nothing")
 	return c
 }
@@ -684,7 +691,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			ctx := cmd.Context()
 
 			// Root for re-install; uninstall uses same root derived from stored files.
-			// For update we need a root — use $HOME when --global, --dest if set, else cwd.
+			// For update we need a root — use $HOME when --global, --dir if set, else cwd.
 			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {
 				return err
@@ -875,8 +882,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&flagGlobal, "global", false, "Update from the adapter's global config root")
-	c.Flags().StringVar(&flagDest, "dest", "", "Destination root directory (default: cwd)")
+	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Update in the tool's global config root")
+	c.Flags().StringVar(&flagDest, "dir", "", "Project root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
