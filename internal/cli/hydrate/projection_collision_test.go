@@ -239,3 +239,130 @@ func TestProjection_MaliciousPluginName_Rejected(t *testing.T) {
 		t.Errorf("ValidatePluginName(%q) = %v; want nil (valid single segment)", "good-plugin", err)
 	}
 }
+
+// ---- --only (partial run) ----
+
+// installedRows converts a Render's projected files into the state rows a
+// hydrate records (the prior state of the next run).
+func installedRows(res hydrate.RenderResult) *state.File {
+	f := &state.File{SchemaVersion: "3", Environment: "demo"}
+	for _, pf := range res.ProjectedFiles {
+		f.Plugins = append(f.Plugins, state.FileEntry{Target: pf.Target, Hash: pf.Hash, SourceHash: pf.SourceHash,
+			Merge: pf.Merge, Keys: pf.Keys, Source: pf.Source})
+	}
+	return f
+}
+
+// renderOnlyA wipes the plugin stage, stages ONLY plug-a (what `--only
+// plugin/plug-a` extracts) and renders as a partial run against prior.
+func renderOnlyA(t *testing.T, achDir, toolRoot string, policy conflict.Policy, prior *state.File) (hydrate.RenderResult, error) {
+	t.Helper()
+	if err := os.RemoveAll(filepath.Join(achDir, "plugin")); err != nil {
+		t.Fatal(err)
+	}
+	stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "# from plug-a\n"})
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, policy)
+	return disp.Render(hydrate.WithPartialRun(context.Background()), newProjectionManifest(), prior, achDir, toolRoot, true, false)
+}
+
+// TestProjection_Only_CollidesWithInstalledPlugin: plug-b is installed at
+// .claude/rules/foo.md; `--only plugin/plug-a` projecting the same file must
+// resolve the collision like a full hydrate would (namespace → plug-a-foo.md)
+// and leave plug-b's file untouched. Covers plug-b installed bare AND already
+// namespaced by an earlier full hydrate of both.
+func TestProjection_Only_CollidesWithInstalledPlugin(t *testing.T) {
+	for name, stageBoth := range map[string]bool{"b bare": false, "b namespaced": true} {
+		t.Run(name, func(t *testing.T) {
+			withCleanHome(t)
+			achDir, toolRoot := t.TempDir(), t.TempDir()
+			stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
+			if stageBoth {
+				stagePluginTree(t, achDir, "plug-a", map[string]string{"rules/foo.md": "# from plug-a\n"})
+			}
+			_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+			full, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+			if err != nil {
+				t.Fatalf("install: %v", err)
+			}
+			prior := installedRows(full)
+			bTarget := filepath.Join(toolRoot, ".claude", "rules", "foo.md")
+			if stageBoth {
+				bTarget = filepath.Join(toolRoot, ".claude", "rules", "plug-b-foo.md")
+			}
+
+			res, err := renderOnlyA(t, achDir, toolRoot, conflict.Namespace, prior)
+			if err != nil {
+				t.Fatalf("--only render: %v", err)
+			}
+			if len(res.ProjectedFiles) != 1 || res.ProjectedFiles[0].Target != ".claude/rules/plug-a-foo.md" {
+				t.Fatalf("ProjectedFiles = %+v; want only .claude/rules/plug-a-foo.md", res.ProjectedFiles)
+			}
+			if b, _ := os.ReadFile(bTarget); string(b) != "# from plug-b\n" {
+				t.Errorf("plug-b's file %s = %q; want untouched", bTarget, b)
+			}
+		})
+	}
+}
+
+// TestProjection_Only_SkipKeepsInstalledIncumbent: under skip/overwrite an
+// --only run never overwrites another item's installed file.
+func TestProjection_Only_SkipKeepsInstalledIncumbent(t *testing.T) {
+	for _, policy := range []conflict.Policy{conflict.Skip, conflict.Overwrite} {
+		withCleanHome(t)
+		achDir, toolRoot := t.TempDir(), t.TempDir()
+		stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
+		_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, policy)
+		full, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+		if err != nil {
+			t.Fatalf("install: %v", err)
+		}
+		res, err := renderOnlyA(t, achDir, toolRoot, policy, installedRows(full))
+		if err != nil {
+			t.Fatalf("%s: --only render: %v", policy, err)
+		}
+		if len(res.ProjectedFiles) != 0 {
+			t.Errorf("%s: ProjectedFiles = %+v; want plug-a skipped", policy, res.ProjectedFiles)
+		}
+		if b, _ := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); string(b) != "# from plug-b\n" {
+			t.Errorf("%s: plug-b's file = %q; want untouched", policy, b)
+		}
+	}
+}
+
+// TestProjection_Only_RuntimeWinsAgainstPriorRuntime: runtime is not written
+// under --only, so the runtime-wins MCP drop (D-10) must use the prior
+// state's runtime keys — a plugin MCP id equal to a runtime-owned one is
+// dropped and the runtime entry stays, as in a full hydrate.
+func TestProjection_Only_RuntimeWinsAgainstPriorRuntime(t *testing.T) {
+	withCleanHome(t)
+	achDir, toolRoot := t.TempDir(), t.TempDir()
+	stagePluginTree(t, achDir, "plug-a", map[string]string{
+		".mcp.json": `{"mcpServers":{"foo":{"type":"http","url":"https://PLUGIN-foo"},"bar":{"type":"http","url":"https://PLUGIN-bar"}}}`,
+	})
+	mcpAbs := filepath.Join(toolRoot, ".mcp.json")
+	if err := os.WriteFile(mcpAbs, []byte(`{"mcpServers":{"foo":{"type":"http","url":"https://RUNTIME-foo"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prior := &state.File{SchemaVersion: "3", Environment: "demo", Adapter: state.AdapterSection{ID: "claude-code",
+		Files: []state.FileEntry{{Target: ".mcp.json", Merge: "deep", Keys: []string{"mcpServers.foo"}}}}}
+
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+	res, err := disp.Render(hydrate.WithPartialRun(context.Background()), newProjectionManifest(), prior, achDir, toolRoot, true, false)
+	if err != nil {
+		t.Fatalf("--only render: %v", err)
+	}
+	body, _ := os.ReadFile(mcpAbs)
+	if strings.Contains(string(body), "PLUGIN-foo") || !strings.Contains(string(body), "RUNTIME-foo") {
+		t.Errorf("runtime-owned foo shadowed: %s", body)
+	}
+	if !strings.Contains(string(body), "PLUGIN-bar") {
+		t.Errorf("non-colliding plugin bar missing: %s", body)
+	}
+	for _, pf := range res.ProjectedFiles {
+		for _, k := range pf.Keys {
+			if k == "mcpServers.foo" {
+				t.Errorf("plugin row claims runtime-owned mcpServers.foo: %+v", pf)
+			}
+		}
+	}
+}

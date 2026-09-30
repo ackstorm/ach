@@ -1910,3 +1910,16 @@ func TestCommit_Only_ByIDReplacesTheItemRows(t *testing.T) {
 		t.Errorf("Plugins targets = %v; want b kept, old a replaced by the fresh a", targets)
 	}
 }
+
+// TestRenderContext_OnlyMarksPartialRun: the dispatcher learns it runs for
+// ONE item (collision claims, own-row prior) through the render context.
+func TestRenderContext_OnlyMarksPartialRun(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	if isPartialRun(c.renderContext(context.Background())) {
+		t.Error("full run marked partial")
+	}
+	c.opts.Only = &Item{Kind: kindPlugin, Name: "a"}
+	if !isPartialRun(c.renderContext(context.Background())) {
+		t.Error("--only run not marked partial")
+	}
+}

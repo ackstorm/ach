@@ -424,7 +424,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 			// projected by the adapter's RenderRuntime leg (which reads
 			// m.Runtime directly, independent of diffTargets), never fetched +
 			// extracted. Feeding one to ExtractContent yields an empty content
-			// name → "content name: empty" (the --include-runtime crash). Skip
+			// name → "content name: empty" (a historical runtime-scope crash). Skip
 			// non-context kinds here; step6Diff still emits them for scope
 			// symmetry, but extraction is a context-only leg.
 			if !dt.isExtractableContent() {
@@ -1210,9 +1210,9 @@ func addPublishedCounts(result *Result, rr RenderResult) {
 }
 
 // step10bRuntimeMirror writes the credential-free runtime mirror and folds
-// its file count into result. Gated on !DryRun && includeRuntime:
-// the runtime block (mcp / a2a / models) is the --include-runtime scope slice,
-// so a default hydrate reads no runtime objects and writes no mirror —
+// its file count into result. Gated on !DryRun && includeRuntime (on by
+// default; off under NoRuntime and --only, see commit.includeRuntime), so a
+// run without runtime reads no runtime objects and writes no mirror —
 // consistent with the gated RenderRuntime projection. The mirror is the
 // canonical secret-free cache + the state rows that let --sync/uninstall and
 // drift see runtime entries (incl. models, which have no adapter destination).
@@ -1433,6 +1433,9 @@ func (c *commit) renderContext(ctx context.Context) context.Context {
 	ctx = adapter.WithCredential(ctx, renderCred)
 	if personBearer(c.opts.Bearer) {
 		ctx = adapter.WithHelperBaseURL(ctx, c.opts.BaseURL)
+	}
+	if c.opts.Only != nil {
+		ctx = withPartialRun(ctx)
 	}
 	return ctx
 }

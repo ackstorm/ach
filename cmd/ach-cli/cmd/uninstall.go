@@ -226,7 +226,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		if prev == nil {
 			continue
 		}
-		scopedEmpty := hydrate.BuildScopedEmpty(prev, !in.onlyRuntime, in.onlyRuntime)
+		var scopedEmpty *state.File
 		if in.only != nil {
 			// --only: survivor = prev minus the item's rows; a platform state
 			// that never installed the item is left alone.
@@ -234,6 +234,8 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			if scopedEmpty, ok = hydrate.BuildItemRemoved(prev, *in.only); !ok {
 				continue
 			}
+		} else {
+			scopedEmpty = hydrate.BuildScopedEmpty(prev, !in.onlyRuntime, in.onlyRuntime)
 		}
 		matched = true
 		stats, serr := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{

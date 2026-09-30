@@ -393,10 +393,10 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 
 	var result RenderResult
 
-	// Direct runtime block (m.Runtime mcp/a2a/models) is the --include-runtime
-	// scope slice — gated so a default hydrate projects ONLY plugin-contributed
-	// mcps (via projectPlugins below), not the Environment's directly-attached
-	// runtime endpoints. RenderRuntime is the only consumer of m.Runtime here,
+	// Direct runtime block (m.Runtime mcp/a2a/models) — gated on includeRuntime
+	// (on by default; off under NoRuntime and --only) so such a run projects
+	// ONLY plugin-contributed mcps (via projectPlugins below), not the
+	// Environment's directly-attached runtime endpoints. RenderRuntime is the only consumer of m.Runtime here,
 	// so skipping it gates the whole direct-runtime projection.
 	if includeRuntime && hasDirectRuntime(m) {
 		fws, err := ad.RenderRuntime(ctx, m, s)
@@ -429,7 +429,14 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 
 	// Projection leg (D-05). Skipped under the scope gate (--only-runtime).
 	if projectPlugins {
-		if err := d.projectPlugins(ad, s, achDir, toolRoot, &result); err != nil {
+		// Runtime-wins (D-10) needs the runtime-owned keys: this run's runtime
+		// writes, or — when runtime is not written (--only) — the prior
+		// state's, which are still on disk.
+		runtimeOwned := result.WrittenFiles
+		if !includeRuntime && s != nil {
+			runtimeOwned = fileWritesOf(s.Adapter.Files)
+		}
+		if err := d.projectPlugins(ad, s, achDir, toolRoot, runtimeOwned, isPartialRun(ctx), &result); err != nil {
 			return RenderResult{}, err
 		}
 		// Standalone Skills project on the same gate (context projection, like
@@ -521,6 +528,81 @@ type projectedWrite struct {
 	plugin  string
 	fw      adapter.FileWrite
 	skipped bool
+	// phantom marks another item's INSTALLED Target on a partial (--only)
+	// run: it takes part in collision resolution but is never published.
+	phantom bool
+}
+
+// partialRunKey marks a Render that (re)installs ONE item (--only): other
+// items' installed files are claims this run must not overwrite.
+type partialRunKey struct{}
+
+func withPartialRun(ctx context.Context) context.Context {
+	return context.WithValue(ctx, partialRunKey{}, true)
+}
+
+func isPartialRun(ctx context.Context) bool {
+	v, _ := ctx.Value(partialRunKey{}).(bool)
+	return v
+}
+
+// fileWritesOf converts state rows to the FileWrite shape the runtime-wins
+// drop reads (Target + Keys).
+func fileWritesOf(rows []state.FileEntry) []FileWrite {
+	out := make([]FileWrite, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, FileWrite{Target: r.Target, Merge: r.Merge, Keys: r.Keys})
+	}
+	return out
+}
+
+// priorPluginRow is the Plugins row a projected write publishes against. A
+// partial (--only) run only takes the plugin's OWN row.
+func priorPluginRow(s *state.File, target, plugin string, partial bool) *state.FileEntry {
+	if s == nil {
+		return nil
+	}
+	rows := s.Plugins
+	if partial {
+		rows = slices.DeleteFunc(slices.Clone(rows), func(e state.FileEntry) bool { return e.Source != plugin })
+	}
+	return findEntry(rows, target)
+}
+
+// installedClaims returns a phantom write for every OTHER plugin's installed
+// file-owned Target that a staged write would collide with — at its raw path,
+// or at the path --conflict=namespace gave it in an earlier full hydrate.
+// Used only on a partial (--only) run, where the other plugins are not staged
+// and resolvePluginCollisions would otherwise see no collision at all.
+func installedClaims(all []projectedWrite, s *state.File, root string) []projectedWrite {
+	if s == nil {
+		return nil
+	}
+	staged := map[string]bool{}
+	for _, w := range all {
+		staged[w.plugin] = true
+	}
+	var out []projectedWrite
+	seen := map[string]bool{}
+	for _, w := range all {
+		if w.fw.Merge != adapter.MergeReplace {
+			continue
+		}
+		for _, r := range s.Plugins {
+			if staged[r.Source] || (r.Merge != "" && r.Merge != mergeStrReplace) {
+				continue
+			}
+			if r.Target != w.fw.Path && r.Target != namespace.LeafAtRoot(root, w.fw.Path, r.Source) {
+				continue
+			}
+			if k := w.fw.Path + "\x00" + r.Source; !seen[k] {
+				seen[k] = true
+				out = append(out, projectedWrite{plugin: r.Source, phantom: true,
+					fw: adapter.FileWrite{Path: w.fw.Path, Merge: adapter.MergeReplace}})
+			}
+		}
+	}
+	return out
 }
 
 // resolvePluginCollisions detects every cross-plugin Target collision among
@@ -554,6 +636,17 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 			owners[all[i].plugin] = true
 		}
 		if len(owners) < 2 {
+			continue
+		}
+		// Partial (--only) run colliding with another item's installed file:
+		// the incumbent is never overwritten, so skip/overwrite both skip the
+		// staged write (refuse and namespace behave as in a full hydrate —
+		// namespace prefixes the staged write; the phantom is never published).
+		if slices.ContainsFunc(idxs, func(i int) bool { return all[i].phantom }) &&
+			(d.conflict == conflict.Skip || d.conflict == conflict.Overwrite) {
+			for _, i := range idxs {
+				all[i].skipped = true
+			}
 			continue
 		}
 		switch d.conflict {
@@ -590,7 +683,8 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 	return nil
 }
 
-func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string, result *RenderResult) error {
+func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string,
+	runtimeOwned []FileWrite, partial bool, result *RenderResult) error {
 	rp, ok := ad.(route.RuleProvider)
 	if !ok {
 		return nil
@@ -676,14 +770,19 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 
 	// Resolve — apply d.conflict to every cross-plugin Target collision,
 	// mutating `all` in place (namespacing paths or marking writes skipped).
-	if rerr := d.resolvePluginCollisions(all, adapter.GlobalRoot(d.platformID, toolRoot)); rerr != nil {
+	// A partial run adds the other items' installed Targets as claims.
+	nsRoot := adapter.GlobalRoot(d.platformID, toolRoot)
+	if partial {
+		all = append(all, installedClaims(all, s, nsRoot)...)
+	}
+	if rerr := d.resolvePluginCollisions(all, nsRoot); rerr != nil {
 		return rerr
 	}
 
 	// Pass B — publish surviving writes in collect order.
 	finalClaimed := map[string]string{}
 	for i := range all {
-		if all[i].skipped {
+		if all[i].skipped || all[i].phantom {
 			continue
 		}
 		fw := all[i].fw
@@ -713,7 +812,7 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
 		// a runtime WrittenFiles entry (same Target) already owns; record the
 		// drop. If nothing survives, skip publishing this FileWrite entirely.
-		published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, result.WrittenFiles)
+		published, fwDrops, derr := dropRuntimeOwnedMCP(&fw, runtimeOwned)
 		if derr != nil {
 			return fmt.Errorf("adapter %s runtime-wins drop %s: %w", d.platformID, fw.Path, derr)
 		}
@@ -728,12 +827,10 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 		}
 
 		// Look up the prior projected entry in the PLUGINS bucket (D-07) so an
-		// unchanged re-hydrate hits the publishFile no-op skip.
-		var prior *state.FileEntry
-		if s != nil {
-			prior = findEntry(s.Plugins, fw.Path)
-		}
-		entry, err := d.publishFile(fw, prior, toolRoot)
+		// unchanged re-hydrate hits the publishFile no-op skip. A partial run
+		// only takes this plugin's own row as its prior — another item's row
+		// on the same Target is not ours to overwrite.
+		entry, err := d.publishFile(fw, priorPluginRow(s, fw.Path, plugin, partial), toolRoot)
 		if err != nil {
 			return err
 		}

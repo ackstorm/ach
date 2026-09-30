@@ -36,7 +36,7 @@
 //  5. manifest    — POST /platform/hydrate via manifest.Fetch; schema
 //     mismatch → exit 5.
 //  6. diff        — scope-aware iteration honoring STATE-10
-//     (--include-runtime / --only-runtime) — out-of-scope state slices
+//     (--only-runtime / NoRuntime / --only) — out-of-scope state slices
 //     remain UNTOUCHED.
 //  7. fetch       — STATE-11 unconditional GET of every downloadUrl.
 //     W1 STUB — concrete impl lands in 07-W2.
@@ -69,7 +69,7 @@
 //   - STATE-07 — state.WriteAtomic at step 12.
 //   - STATE-08 — manifest fetch unconditional (STATE-11 sibling).
 //   - STATE-09 — manifest schemaVersion=="v1alpha1" (exit 5).
-//   - STATE-10 — scope filter via --include-runtime / --only-runtime.
+//   - STATE-10 — scope filter via --only-runtime / NoRuntime / --only.
 //   - STATE-11 — GET unconditional; disk-write short-circuit lives in
 //     07-W2 extract path, NOT here.
 //

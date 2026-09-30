@@ -171,6 +171,14 @@ projected (self-heals on `<b>`'s next hydrate).
   they are never recorded in state, so they could not be removed again.
   `env uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
   item's rows) to the same `Sync`, skipping per-platform states without it.
+  Under `--only`, other items' installed replace-files are collision claims
+  (`installedClaims`: raw or namespaced Target) — namespace/refuse act as in a
+  full hydrate, skip/overwrite keep the incumbent; a plugin only takes its OWN
+  row as publish prior; the runtime-wins MCP drop uses the prior state's
+  `Adapter.Files` keys since runtime is not written. An `--only` reinstall
+  whose new version drops/renames a file leaves the old file on disk
+  untracked (same as a non-sync hydrate); run a full `env hydrate --sync` to
+  clean it.
 - `env uninstall` default removes EVERYTHING hydrate wrote
   (`BuildScopedEmpty(prev, !onlyRuntime, onlyRuntime)`); `--only-runtime` keeps
   context.

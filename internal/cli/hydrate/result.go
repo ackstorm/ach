@@ -267,10 +267,11 @@ type AdapterDispatcher interface {
 	// skips them (OnlyRuntime has precedence per spec §6.3).
 	//
 	// includeRuntime gates the DIRECT runtime block (m.Runtime mcp/a2a/
-	// models via RenderRuntime). Derived as `!opts.NoRuntime`: a default
-	// hydrate projects the Environment's direct runtime mcp/a2a AND
-	// plugin-contributed mcps; --no-runtime opts out of the direct-runtime
-	// leg. Plugin mcps and direct runtime mcps are independent axes —
+	// models via RenderRuntime). Derived by commit.includeRuntime
+	// (`!opts.NoRuntime && opts.Only == nil`): a default hydrate projects the
+	// Environment's direct runtime mcp/a2a AND plugin-contributed mcps;
+	// NoRuntime and --only opt out of the direct-runtime leg (the runtime-wins
+	// MCP drop then uses the prior state's runtime keys). Plugin mcps and direct runtime mcps are independent axes —
 	// projectPlugins governs the former, includeRuntime the latter.
 	Render(ctx context.Context, m *manifest.Manifest, s *state.File, achDir, toolRoot string, projectPlugins, includeRuntime bool) (RenderResult, error)
 }

@@ -9,3 +9,7 @@ package hydrate
 // surface as a real dirent — proving the defense-in-depth contract, not
 // just the on-disk attack vector already closed by SAFE-01/02.
 var ValidatePluginName = validatePluginName
+
+// WithPartialRun re-exports withPartialRun so external tests can drive
+// Render as an --only run would.
+var WithPartialRun = withPartialRun
