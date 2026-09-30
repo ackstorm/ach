@@ -58,9 +58,9 @@ import (
 
 // adminConfirmYes is the string literal users type to confirm a
 // destructive admin operation at the interactive y/N prompt. Hoisted
-// to a constant so the two prompt sites (keys revoke + users
-// revoke-keys) share a single source of truth and goconst stays
-// happy.
+// to a constant so the confirmation prompt sites (`keys revoke`,
+// `admin keys revoke`, `admin keys revoke --owner`) share a single
+// source of truth and goconst stays happy.
 const adminConfirmYes = "yes"
 
 // statusAll is the sentinel value for "--status all" / kind "all" that
@@ -78,7 +78,7 @@ const outputJSON = "json"
 // registration helper so the per-subcommand cobra.Command struct
 // stays small (cobra defaults + RunE only) and dupl doesn't trip
 // on the otherwise-identical flag declaration blocks across the
-// three subcommands.
+// admin subcommands.
 type adminCredFlags struct {
 	credFlags
 	Yes bool
@@ -177,9 +177,10 @@ func newAdminCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "admin",
 		Short: "Admin operations (inventory, keys, user budgets and limits, refresh)",
-		Long: `Operator-facing admin surface. Every subcommand requires a pk- whose
-owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + `
-or the equivalent Helm value). Non-allowlisted callers receive
+		Long: `Operator-facing admin surface. Every subcommand requires a signed-in
+session (` + "`" + `ach-cli login` + "`" + `) whose owner email is in the Platform API
+allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + ` or the equivalent Helm value);
+environment keys (ek-) are refused. Non-allowlisted callers receive
 ` + "`403 not_admin`" + ` and the CLI exits 3.
 `,
 		RunE: helpOrUnknownSubcommand,
@@ -545,6 +546,15 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags, output,
 			Msg:  fmt.Sprintf("invalid --status %q: must be active, suspended, revoked, expired, or all", status),
 		}
 	}
+	// Validate --type before any network call, same as --status.
+	switch keyType {
+	case "pk", "ek", "":
+	default:
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("invalid --type %q: must be pk or ek", keyType),
+		}
+	}
 
 	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
@@ -682,7 +692,7 @@ func validateAdminKeyID(keyID string) error {
 }
 
 // ---------------------------------------------------------------------
-// users → revoke-keys
+// users → budget / limits
 // ---------------------------------------------------------------------
 
 func newAdminUsersCmd() *cobra.Command {

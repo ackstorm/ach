@@ -113,9 +113,15 @@ func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"budget":                      nil,
 	}
 	// The caller's user:<email> tag — the ceiling ach-cli whoami prints.
-	// userTagBudget already degrades a failed/absent read to nil (null).
-	if b := d.userTagBudget(ctx, kc.OwnerEmail); b != nil {
-		body["budget"] = map[string]any{"spend": b.Spend, "max_budget": b.MaxBudget, "budget_duration": b.BudgetDuration}
+	// Personal (pk-) callers only: this is the OWNER's account-wide budget,
+	// and an ek- holder must not be able to read it (mirrors /platform/
+	// console/stats, which 401s an ek-). userTagBudget already degrades a
+	// failed/absent read to nil (null); for a non-pk caller it is not even
+	// called, so no /tag/info request is made.
+	if kc.KeyType == keys.PrefixPk {
+		if b := d.userTagBudget(ctx, kc.OwnerEmail); b != nil {
+			body["budget"] = map[string]any{"spend": b.Spend, "max_budget": b.MaxBudget, "budget_duration": b.BudgetDuration}
+		}
 	}
 	if d.DisplayName != nil {
 		body["name"] = d.DisplayName(r)

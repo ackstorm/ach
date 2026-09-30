@@ -287,6 +287,27 @@ func TestPluginCmd_Install_UnknownTarget(t *testing.T) {
 	}
 }
 
+// TestPluginCmd_Install_EmptyTarget_Exit1 verifies that an empty --target
+// value is rejected by parseTargets's own empty-input check (install's
+// separate "at least one --target is required" guard was dead code — it
+// could never fire after parseTargets rejects an empty result — and was
+// removed). --target is a required cobra flag, so omitting it entirely
+// fails earlier at flag-parsing; passing it empty is what actually reaches
+// parseTargets.
+func TestPluginCmd_Install_EmptyTarget_Exit1(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	var buf bytes.Buffer
+	cmd := newPluginCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"install", "p@repo", "--target", "", "--dir", t.TempDir()})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--target is empty") {
+		t.Fatalf("expected the parseTargets empty-target error, got: %v", err)
+	}
+}
+
 // TestParseTargets_CommaAndRepeat: --target values split on commas AND
 // repeat, resolve aliases, and dedupe in order.
 func TestParseTargets_CommaAndRepeat(t *testing.T) {

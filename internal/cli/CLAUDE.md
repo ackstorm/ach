@@ -65,7 +65,9 @@ ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-
 ```
 
 Every network command takes `--profile`, `--key <name|ek-…>`, `--verbose`
-(`registerCredFlags`, cred.go) and `-o table|json` (`registerOutputFlag`).
+(`registerCredFlags`, cred.go). Only the list/read commands also take
+`-o table|json` (`registerOutputFlag`): `env list`, `env status`, `keys list`,
+`admin list` (also `yaml`), `admin keys list`.
 Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
 prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
 `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config `~/.config/ach/config.yaml`

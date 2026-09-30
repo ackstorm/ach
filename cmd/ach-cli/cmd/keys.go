@@ -229,8 +229,6 @@ func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysC
 		_, _ = fmt.Fprintf(stderr, "Key ID: %s (revoke with: ach-cli keys revoke %s)\n", resp.KeyID, resp.KeyID)
 		return nil
 	}
-	_, _ = fmt.Fprintf(stderr, "Saved as %q in profile %q (revoke with: ach-cli keys revoke %s)\n",
-		body.Name, c.ProfileName, body.Name)
 	if c.Profile.Keys == nil {
 		c.Profile.Keys = map[string]config.SavedKey{}
 	}
@@ -239,6 +237,8 @@ func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysC
 		return &exit.CodedError{Code: exit.ConfigFile,
 			Msg: "the key was created but could not be saved: " + err.Error(), Wrapped: err}
 	}
+	_, _ = fmt.Fprintf(stderr, "Saved as %q in profile %q (revoke with: ach-cli keys revoke %s)\n",
+		body.Name, c.ProfileName, body.Name)
 	return nil
 }
 
@@ -426,7 +426,8 @@ func forgetSavedKey(c cred, id string) error {
 		return nil
 	}
 	if err := config.Save(c.Path, c.File); err != nil {
-		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+		return &exit.CodedError{Code: exit.ConfigFile,
+			Msg: "revoked on the server, but the saved copy could not be removed: " + err.Error(), Wrapped: err}
 	}
 	return nil
 }

@@ -75,6 +75,19 @@ func TestAdminKeysList_InvalidStatusFlagErrors(t *testing.T) {
 	}
 }
 
+// TestAdminKeysList_InvalidTypeFlagErrors: invalid --type on `admin keys list`
+// is rejected client-side before any network call, same as --status.
+func TestAdminKeysList_InvalidTypeFlagErrors(t *testing.T) {
+	adminTestEnv(t)
+	_, _, code, err := executeAdmin(t, "", "keys", "list", "--type", "bogus")
+	if code != exit.General {
+		t.Fatalf("exit code = %d; want %d (General)", code, exit.General)
+	}
+	if err == nil || !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error should mention invalid value 'bogus': %v", err)
+	}
+}
+
 // TestAdminList_SingleKind_Table: a single-kind list renders the grouped table.
 func TestAdminList_SingleKind_Table(t *testing.T) {
 	adminTestEnv(t)

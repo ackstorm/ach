@@ -614,7 +614,12 @@ func installedClaims(all []projectedWrite, s *state.File, root string) []project
 // pre-Phase-1 CR-01 fail-fast; conflict.Namespace (default) leaf-prefixes every
 // colliding write; conflict.Skip keeps the earliest-sorted plugin; Overwrite
 // keeps the latest. Plugins were sorted in Pass A so all outcomes are stable.
-func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, toolRoot string) error {
+// The returned warnings are one line per --only collision that
+// --conflict=skip resolved against another item's already-installed file
+// (see the phantomOwner branch below) — the caller surfaces them as an
+// end-of-run stderr warning.
+func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, toolRoot string) ([]string, error) {
+	var warnings []string
 	byTarget := map[string][]int{}
 	for i := range all {
 		if all[i].fw.Merge != adapter.MergeReplace {
@@ -639,15 +644,26 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 			continue
 		}
 		// Partial (--only) run colliding with another item's installed file:
-		// the incumbent is never overwritten, so skip/overwrite both skip the
-		// staged write (refuse and namespace behave as in a full hydrate —
-		// namespace prefixes the staged write; the phantom is never published).
-		if slices.ContainsFunc(idxs, func(i int) bool { return all[i].phantom }) &&
-			(d.conflict == conflict.Skip || d.conflict == conflict.Overwrite) {
-			for _, i := range idxs {
-				all[i].skipped = true
+		// the incumbent is never overwritten. --conflict=skip keeps it and
+		// warns; --conflict=overwrite has nothing staged of its own to prefer
+		// over the installed file, so it refuses outright rather than silently
+		// dropping the write (refuse and namespace behave as in a full hydrate
+		// — namespace prefixes the staged write, the phantom is never
+		// published).
+		if owner, ok := phantomOwner(all, idxs); ok {
+			switch d.conflict {
+			case conflict.Overwrite:
+				return nil, fmt.Errorf(
+					"--conflict=overwrite cannot replace %s installed by plugin %s in an --only run; uninstall it first",
+					t, owner)
+			case conflict.Skip:
+				warnings = append(warnings, fmt.Sprintf(
+					"--conflict=skip: kept %s as installed by plugin %s (--only run)", t, owner))
+				for _, i := range idxs {
+					all[i].skipped = true
+				}
+				continue
 			}
-			continue
 		}
 		switch d.conflict {
 		case conflict.Refuse:
@@ -659,7 +675,7 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 					break
 				}
 			}
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"adapter %s: plugin %q and plugin %q both project to %q — cross-plugin destination collision (flat kind-routing has no namespace to disambiguate; rename or remove one plugin's resource, or pass --conflict=namespace)",
 				d.platformID, first, second, t)
 		case conflict.Namespace:
@@ -680,7 +696,18 @@ func (d *adapterDispatcherImpl) resolvePluginCollisions(all []projectedWrite, to
 			}
 		}
 	}
-	return nil
+	return warnings, nil
+}
+
+// phantomOwner returns the plugin name that already owns the installed
+// (phantom) Target among idxs, if any — see installedClaims.
+func phantomOwner(all []projectedWrite, idxs []int) (string, bool) {
+	for _, i := range idxs {
+		if all[i].phantom {
+			return all[i].plugin, true
+		}
+	}
+	return "", false
 }
 
 func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string,
@@ -775,9 +802,11 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	if partial {
 		all = append(all, installedClaims(all, s, nsRoot)...)
 	}
-	if rerr := d.resolvePluginCollisions(all, nsRoot); rerr != nil {
+	warnings, rerr := d.resolvePluginCollisions(all, nsRoot)
+	if rerr != nil {
 		return rerr
 	}
+	result.ConflictWarnings = append(result.ConflictWarnings, warnings...)
 
 	// Pass B — publish surviving writes in collect order.
 	finalClaimed := map[string]string{}

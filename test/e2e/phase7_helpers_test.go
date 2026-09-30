@@ -348,10 +348,14 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, phase7BinaryPath, args...)
-	// Strip the synthetic-mode env vars the e2e harness exports (E2E_RUN_ENV
-	// sets ACH_BASE_URL): they would flip the CLI into synthetic mode and
-	// ignore the seeded XDG disk-config credential (half-set-erroring when no
-	// ACH_API_KEY is present). These tests authenticate via the seeded config.
+	// Strip ACH_URL/ACH_KEY (the CLI's own synthetic-mode vars, cmd/cred.go)
+	// in case a developer's shell has them set: present, they would flip the
+	// CLI into synthetic mode and ignore the seeded XDG disk-config
+	// credential — or, half-set (only one of the two), get read directly by
+	// resolveCred anyway and silently override part of the seeded config.
+	// E2E_RUN_ENV sets ACH_BASE_URL (and friends) for the suite's own HTTP
+	// helpers — a distinct var the CLI does not read. These tests
+	// authenticate via the seeded config.
 	// ACH_INSECURE=1: the kind+Helm gateway is http://localhost:8080 and the
 	// CLI now refuses plaintext http:// by default (G19, decision B), so the
 	// e2e opt-in is mandatory for the local fixture.

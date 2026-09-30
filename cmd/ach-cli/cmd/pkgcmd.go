@@ -377,9 +377,6 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if len(targets) == 0 {
-				return &exit.CodedError{Code: exit.General, Msg: "install: at least one --target is required"}
-			}
 
 			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {

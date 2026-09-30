@@ -119,7 +119,7 @@ func newHydrateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "hydrate <name>",
+		Use:   "hydrate [env]",
 		Args:  cobra.MaximumNArgs(1),
 		Short: "Materialize workspace artifacts (engine) or stream raw manifest (--raw)",
 		Long: `Download an environment's content (prompts, skills, artifacts) into your

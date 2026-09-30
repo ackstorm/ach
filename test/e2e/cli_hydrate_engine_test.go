@@ -1728,8 +1728,27 @@ func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
 		}
 	}
 	statePath := phase7StatePath(ws, phase7DemoEnvironment, phase7PlatformClaudeCode)
-	if _, err := os.Stat(statePath); err != nil {
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
 		t.Fatalf("state file missing after --only hydrate: %v", err)
+	}
+	var stateDoc struct {
+		Plugins []struct {
+			Target string `json:"target"`
+			Source string `json:"source"`
+		} `json:"plugins"`
+	}
+	if err := json.Unmarshal(stateBytes, &stateDoc); err != nil {
+		t.Fatalf("parse state.json: %v\nbytes=%s", err, stateBytes)
+	}
+	var cavemanTargets []string
+	for _, p := range stateDoc.Plugins {
+		if p.Source == "caveman" {
+			cavemanTargets = append(cavemanTargets, p.Target)
+		}
+	}
+	if len(cavemanTargets) == 0 {
+		t.Fatalf("state.json records no caveman plugin rows:\n%s", stateBytes)
 	}
 
 	if status := run("env", "status", phase7DemoEnvironment); !strings.Contains(status, "caveman") {
@@ -1739,6 +1758,11 @@ func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
 	run("env", "uninstall", phase7DemoEnvironment, "--only", "plugin/caveman", "--dir", ws)
 	if n := countRegularFilesUnder(filepath.Join(ws, ".claude", "agents")); n != 0 {
 		t.Errorf("uninstall --only left %d files under .claude/agents", n)
+	}
+	for _, target := range cavemanTargets {
+		if _, err := os.Stat(filepath.Join(ws, filepath.FromSlash(target))); !os.IsNotExist(err) {
+			t.Errorf("uninstall --only left caveman's recorded file %q on disk: %v", target, err)
+		}
 	}
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Errorf("state file still present after uninstalling the only item: %v", err)

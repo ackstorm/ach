@@ -533,11 +533,13 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 				result.DroppedByKind[k] = appendUniqueSorted(result.DroppedByKind[k], p)
 			}
 		}
+		result.ConflictWarnings = append(result.ConflictWarnings, renderResult.ConflictWarnings...)
 
 		// WIRE-03 / D-12: end-of-hydration stderr warnings (attributed
 		// per-kind + MCP-shadow). Exit code is UNCHANGED — these are
 		// warnings, never errors. Skipped entirely when nothing was dropped.
 		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
+		c.warnConflicts(result.ConflictWarnings)
 	}
 	c.maybeKill(10)
 
@@ -1041,6 +1043,16 @@ func (c *commit) warnDropped(byKind map[string][]string, flat []string) {
 				"warning: platform %s: projected MCP server(s) shadowed by runtime-owned definitions: %s\n",
 				c.opts.Platform, strings.Join(shadow, ", "))
 		}
+	}
+}
+
+// warnConflicts prints one stderr line per --only collision that
+// --conflict=skip resolved by keeping another item's already-installed file
+// untouched (resolvePluginCollisions). Exit code is UNCHANGED — these are
+// warnings, never errors.
+func (c *commit) warnConflicts(lines []string) {
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(c.opts.Stderr, "warning: %s\n", line)
 	}
 }
 

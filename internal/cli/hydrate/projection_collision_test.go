@@ -304,28 +304,65 @@ func TestProjection_Only_CollidesWithInstalledPlugin(t *testing.T) {
 	}
 }
 
-// TestProjection_Only_SkipKeepsInstalledIncumbent: under skip/overwrite an
-// --only run never overwrites another item's installed file.
+// TestProjection_Only_SkipKeepsInstalledIncumbent: under --conflict=skip an
+// --only run keeps another item's installed file untouched and warns; it
+// never fails.
 func TestProjection_Only_SkipKeepsInstalledIncumbent(t *testing.T) {
-	for _, policy := range []conflict.Policy{conflict.Skip, conflict.Overwrite} {
-		withCleanHome(t)
-		achDir, toolRoot := t.TempDir(), t.TempDir()
-		stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
-		_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, policy)
-		full, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
-		if err != nil {
-			t.Fatalf("install: %v", err)
+	withCleanHome(t)
+	achDir, toolRoot := t.TempDir(), t.TempDir()
+	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Skip)
+	full, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	res, err := renderOnlyA(t, achDir, toolRoot, conflict.Skip, installedRows(full))
+	if err != nil {
+		t.Fatalf("--only render: %v", err)
+	}
+	if len(res.ProjectedFiles) != 0 {
+		t.Errorf("ProjectedFiles = %+v; want plug-a skipped", res.ProjectedFiles)
+	}
+	if b, _ := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); string(b) != "# from plug-b\n" {
+		t.Errorf("plug-b's file = %q; want untouched", b)
+	}
+	if len(res.ConflictWarnings) != 1 {
+		t.Fatalf("ConflictWarnings = %v; want exactly one warning naming the file and its owner", res.ConflictWarnings)
+	}
+	for _, want := range []string{".claude/rules/foo.md", "plug-b"} {
+		if !strings.Contains(res.ConflictWarnings[0], want) {
+			t.Errorf("ConflictWarnings[0] = %q; missing %q", res.ConflictWarnings[0], want)
 		}
-		res, err := renderOnlyA(t, achDir, toolRoot, policy, installedRows(full))
-		if err != nil {
-			t.Fatalf("%s: --only render: %v", policy, err)
+	}
+}
+
+// TestProjection_Only_OverwriteRefusesInstalledIncumbent: under
+// --conflict=overwrite an --only run has nothing staged of its own to prefer
+// over another item's installed file, so it refuses outright — nothing is
+// written and the incumbent survives untouched.
+func TestProjection_Only_OverwriteRefusesInstalledIncumbent(t *testing.T) {
+	withCleanHome(t)
+	achDir, toolRoot := t.TempDir(), t.TempDir()
+	stagePluginTree(t, achDir, "plug-b", map[string]string{"rules/foo.md": "# from plug-b\n"})
+	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Overwrite)
+	full, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	_, err = renderOnlyA(t, achDir, toolRoot, conflict.Overwrite, installedRows(full))
+	if err == nil {
+		t.Fatal("--only render with --conflict=overwrite colliding with an installed file: want an error, got nil")
+	}
+	for _, want := range []string{"--conflict=overwrite", ".claude/rules/foo.md", "plug-b", "uninstall it first"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err.Error(), want)
 		}
-		if len(res.ProjectedFiles) != 0 {
-			t.Errorf("%s: ProjectedFiles = %+v; want plug-a skipped", policy, res.ProjectedFiles)
-		}
-		if b, _ := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); string(b) != "# from plug-b\n" {
-			t.Errorf("%s: plug-b's file = %q; want untouched", policy, b)
-		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md")); string(b) != "# from plug-b\n" {
+		t.Errorf("plug-b's file = %q; want untouched", b)
+	}
+	if _, statErr := os.Stat(filepath.Join(toolRoot, ".claude", "rules", "plug-a-foo.md")); statErr == nil {
+		t.Errorf("plug-a's file must not have been written on refusal")
 	}
 }
 

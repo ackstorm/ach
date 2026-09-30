@@ -75,6 +75,14 @@ type Result struct {
 	// no destination for. Drives the attributed end-of-run warning.
 	DroppedByKind map[string][]string
 
+	// ConflictWarnings carries one line per --only collision that
+	// --conflict=skip resolved by keeping another item's already-installed
+	// file untouched (resolvePluginCollisions). Drives an end-of-run stderr
+	// warning naming the file and its owning plugin; --conflict=overwrite
+	// hitting the same collision refuses outright instead (there is nothing
+	// safe to overwrite an installed file with on a partial run).
+	ConflictWarnings []string
+
 	// PlatformID is the adapter id used for this Run — either the
 	// caller's opts.Platform or the autodetected match (ADAPT-02 /
 	// D-06). Surfaced in --verbose stderr; recorded into
@@ -210,6 +218,10 @@ type RenderResult struct {
 	// plugin names that shipped it but whose content the active platform has
 	// no destination for. Drives the attributed end-of-run warning.
 	DroppedByKind map[string][]string
+
+	// ConflictWarnings — see Result.ConflictWarnings. The orchestrator
+	// copies these into Result.ConflictWarnings.
+	ConflictWarnings []string
 }
 
 // Extractor is the safe-tar + auto-claim cascade interface (CLI spec

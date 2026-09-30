@@ -83,11 +83,13 @@ type fakeLL struct {
 	err   error
 	// tag drives the console's budget panel (the caller's user:<email>
 	// tag); tagErr forces the degraded "unknown" branch.
-	tag    *litellm.TagInfoEntry
-	tagErr error
+	tag      *litellm.TagInfoEntry
+	tagErr   error
+	tagCalls int
 }
 
 func (f *fakeLL) TagInfo(_ context.Context, _ string) (*litellm.TagInfoEntry, error) {
+	f.tagCalls++
 	return f.tag, f.tagErr
 }
 
@@ -332,5 +334,28 @@ func TestBootstrap_Budget(t *testing.T) {
 				t.Fatalf("budget = %s; want %s", b, tc.want)
 			}
 		})
+	}
+}
+
+// TestBootstrap_Budget_EkCallerNull: an ek- caller must not read the owner's
+// account-wide budget (mirrors /platform/console/stats, which 401s an ek-
+// outright) — bootstrap itself stays reachable, but "budget" is always null
+// and no /tag/info request is made.
+func TestBootstrap_Budget_EkCallerNull(t *testing.T) {
+	d := testDeps(t)
+	ll := d.LiteLLM.(*fakeLL)
+	ll.tag = &litellm.TagInfoEntry{Spend: 12.4, Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}}
+
+	rec := do(t, d, "/platform/console/bootstrap", ekCtx())
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 {
+		t.Fatalf("code = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if v, ok := got["budget"]; !ok || v != nil {
+		t.Errorf("budget = %v; want null for an ek- caller", v)
+	}
+	if ll.tagCalls != 0 {
+		t.Errorf("TagInfo called %d times; want 0 for an ek- caller", ll.tagCalls)
 	}
 }
