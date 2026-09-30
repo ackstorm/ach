@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,7 @@ import (
 )
 
 // newInventoryTestServer registers a JSON handler per path in bodies and wires
-// the package HTTP-client seam so `ach admin list` reaches the TLS cert.
+// the package HTTP-client seam so `ach-cli admin list` reaches the TLS cert.
 func newInventoryTestServer(t *testing.T, bodies map[string]any) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -56,8 +57,8 @@ func TestAdminList_InvalidOutput(t *testing.T) {
 	if code != exit.General {
 		t.Fatalf("exit code = %d; want %d", code, exit.General)
 	}
-	if err == nil || !strings.Contains(err.Error(), "invalid --output") {
-		t.Errorf("error missing 'invalid --output': %v", err)
+	if err == nil || !strings.Contains(err.Error(), "-o must be one of") {
+		t.Errorf("error missing '-o must be one of': %v", err)
 	}
 }
 
@@ -135,6 +136,9 @@ func TestAdminList_All_JSON(t *testing.T) {
 	} {
 		bodies["/platform/admin/"+k] = envelope()
 	}
+	for _, route := range adminRuntimeRoutes {
+		bodies["/platform/admin/runtime/"+route] = envelope()
+	}
 	srv := newInventoryTestServer(t, bodies)
 	seedAdminConfig(t, srv.URL)
 
@@ -146,8 +150,8 @@ func TestAdminList_All_JSON(t *testing.T) {
 	if e := json.Unmarshal([]byte(stdout), &got); e != nil {
 		t.Fatalf("stdout not valid JSON: %v\n%s", e, stdout)
 	}
-	if len(got) != len(adminListKinds) {
-		t.Errorf("got %d kinds, want %d", len(got), len(adminListKinds))
+	if len(got) != len(adminListKinds)+len(adminRuntimeRoutes) {
+		t.Errorf("got %d kinds, want %d", len(got), len(adminListKinds)+len(adminRuntimeRoutes))
 	}
 	if len(got["plugins"]) != 1 || got["plugins"][0]["name"] != "caveman" {
 		t.Errorf("plugins group wrong: %+v", got["plugins"])
@@ -155,4 +159,117 @@ func TestAdminList_All_JSON(t *testing.T) {
 	if len(got["environments"]) != 1 || got["environments"][0]["sync"] != "Available" {
 		t.Errorf("environments group wrong: %+v", got["environments"])
 	}
+}
+
+// TestAdminList_RuntimeKinds: each runtime kind reads its
+// /platform/admin/runtime/* route and renders the KIND NAME STATUS table.
+func TestAdminList_RuntimeKinds(t *testing.T) {
+	for kind, route := range adminRuntimeRoutes {
+		t.Run(kind, func(t *testing.T) {
+			adminTestEnv(t)
+			srv := newInventoryTestServer(t, map[string]any{
+				"/platform/admin/runtime/" + route: envelope(map[string]any{
+					"name": "item-" + kind, "kind": kind, "status": "active",
+				}),
+			})
+			seedAdminConfig(t, srv.URL)
+			stdout, _, code, err := executeAdmin(t, "", "list", kind)
+			if err != nil || code != exit.OK {
+				t.Fatalf("err=%v code=%d", err, code)
+			}
+			for _, want := range []string{"KIND", "NAME", "STATUS", "item-" + kind} {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout missing %q:\n%s", want, stdout)
+				}
+			}
+		})
+	}
+}
+
+// TestAdminList_RuntimeKind_YAML: -o yaml works for a runtime kind.
+func TestAdminList_RuntimeKind_YAML(t *testing.T) {
+	adminTestEnv(t)
+	srv := newInventoryTestServer(t, map[string]any{
+		"/platform/admin/runtime/models": envelope(map[string]any{
+			"name": "gpt-4o", "kind": "model", "status": "active",
+		}),
+	})
+	seedAdminConfig(t, srv.URL)
+	stdout, _, code, err := executeAdmin(t, "", "list", "models", "-o", "yaml")
+	if err != nil || code != exit.OK {
+		t.Fatalf("err=%v code=%d", err, code)
+	}
+	if !strings.Contains(stdout, "models:") || !strings.Contains(stdout, "name: gpt-4o") {
+		t.Errorf("yaml output:\n%s", stdout)
+	}
+}
+
+// TestAdminList_All_IncludesRuntime: `list all` also fans out over the
+// runtime kinds.
+func TestAdminList_All_IncludesRuntime(t *testing.T) {
+	adminTestEnv(t)
+	bodies := map[string]any{"/platform/environments": envelope()}
+	for _, k := range adminListKinds[1:] {
+		bodies["/platform/admin/"+k] = envelope()
+	}
+	for kind, route := range adminRuntimeRoutes {
+		bodies["/platform/admin/runtime/"+route] = envelope(map[string]any{
+			"name": "item-" + kind, "kind": kind, "status": "active",
+		})
+	}
+	srv := newInventoryTestServer(t, bodies)
+	seedAdminConfig(t, srv.URL)
+	stdout, _, code, err := executeAdmin(t, "", "list", "all")
+	if err != nil || code != exit.OK {
+		t.Fatalf("err=%v code=%d", err, code)
+	}
+	for kind := range adminRuntimeRoutes {
+		if !strings.Contains(stdout, "item-"+kind) {
+			t.Errorf("stdout missing runtime %s:\n%s", kind, stdout)
+		}
+	}
+}
+
+func TestWriteRuntimeTable(t *testing.T) {
+	t.Run("no attributes renders 3-column header", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "model", Name: "gpt-4o", Status: "active"},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "KIND") || strings.Contains(out, "MODE") {
+			t.Fatalf("expected 3-column header, got:\n%s", out)
+		}
+	})
+
+	t.Run("guardrail row renders mode and default-on", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "guardrail", Name: "pii-filter", Status: "active",
+				Attributes: json.RawMessage(`{"mode":["pre_call"],"defaultOn":true}`)},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "pre_call") || !strings.Contains(out, "yes") {
+			t.Fatalf("expected mode/default-on rendered, got:\n%s", out)
+		}
+	})
+
+	t.Run("malformed attributes degrade to dashes", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := writeRuntimeTable(&buf, []runtimeItem{
+			{Kind: "guardrail", Name: "broken", Status: "active",
+				Attributes: json.RawMessage(`not json`)},
+		}); err != nil {
+			t.Fatalf("writeRuntimeTable: %v", err)
+		}
+		lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+		fields := strings.Fields(lines[len(lines)-1])
+		if len(fields) != 5 || fields[3] != "-" || fields[4] != "-" {
+			t.Fatalf("expected MODE/DEFAULT-ON columns = '-', got fields %v from:\n%s", fields, buf.String())
+		}
+	})
 }

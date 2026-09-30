@@ -22,7 +22,7 @@ func executeAllRoot(t *testing.T, args ...string) (string, string, exit.Code, er
 		SilenceUsage:  true,
 	}
 	root.AddCommand(newKeysCmd(), newProfileCmd(), newEnvCmd(), newLocalCmd(),
-		newAdminCmd(), newRuntimeCmd())
+		newAdminCmd())
 	return executeCommand(t, root, args...)
 }
 
@@ -39,8 +39,9 @@ func TestParents_UnknownSubcommand_Exit1(t *testing.T) {
 		{"admin", "frobnicate"},
 		{"admin", "keys", "frobnicate"},
 		{"admin", "users", "frobnicate"},
-		{"runtime", "frobnicate"},
-		{"runtime", "models", "frobnicate"},
+		{"admin", "users", "revoke-keys"},
+		{"runtime"},
+		{"runtime", "models", "list"},
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

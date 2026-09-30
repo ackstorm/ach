@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach admin` is the operator-facing escape hatch for revoking
-// misplaced keys and forcing a content refresh outside the §10.3
-// hourly cycle. Three sub-subcommands (2-level parent-with-children
-// per Pattern P3 for `keys revoke` + `users revoke-keys`; flat leaf
-// for `refresh`):
+// `ach-cli admin` is the operator-facing surface:
 //
-//   - ach admin keys revoke <key-id>             — pkid_… or ekid_…
-//   - ach admin users revoke-keys <email>        — bulk per-user revoke
-//   - ach admin refresh <kind> <name>            — force-refresh CR
+//   - admin list <kind|all>                     — ACH objects + LiteLLM runtime catalog
+//   - admin keys list / revoke <id> / revoke --owner <email>
+//   - admin users budget|limits <email>
+//   - admin refresh <kind> <name>               — force-refresh CR
 //
 // CLI-10: every endpoint exits 3 on `403 not_admin` / `403
 // unauthorized_team` / `401 invalid_key` — exit.MapServerError owns
@@ -46,6 +43,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -171,14 +169,14 @@ type adminRefreshResponse struct {
 	Status string `json:"status,omitempty"`
 }
 
-// newAdminCmd returns a fresh `ach admin` parent with its three
+// newAdminCmd returns a fresh `ach-cli admin` parent with its three
 // children registered. Factory shape (mirrors 06-03/06-04/06-05
 // newXCmd factories) so tests construct a hermetic cobra subtree per
 // t.Run without cross-test global cobra state leaks.
 func newAdminCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "admin",
-		Short: "Admin operations (key revocation, force-refresh) — requires allowlisted pk-",
+		Short: "Admin operations (inventory, keys, user budgets and limits, refresh)",
 		Long: `Operator-facing admin surface. Every subcommand requires a pk- whose
 owner email is in the Platform API allowlist (` + "`" + `ACH_ADMIN_ALLOWLIST` + "`" + `
 or the equivalent Helm value). Non-allowlisted callers receive
@@ -200,7 +198,7 @@ or the equivalent Helm value). Non-allowlisted callers receive
 // ---------------------------------------------------------------------
 
 // adminListKinds is the closed set of inventory kinds, also the fan-out set
-// for `ach admin list all`. Order here is the order `all` renders sections.
+// for `ach-cli admin list all`. Order here is the order `all` renders sections.
 //
 // litellm-connections and external-refs are deliberately excluded: both are
 // operator-internal bookkeeping (the LiteLLM connection config singleton and
@@ -257,17 +255,43 @@ func (e adminEnvItem) toView() render.AdminObjectView {
 	}
 }
 
+// adminRuntimeKinds are the LiteLLM runtime-catalog kinds `admin list`
+// reads from /platform/admin/runtime/<route>, in `all` render order.
+var adminRuntimeKinds = []string{"models", "mcp", "a2a", "teams", "guardrails"}
+
+// adminRuntimeRoutes maps a runtime kind to its route segment.
+var adminRuntimeRoutes = map[string]string{
+	"models":     "models",
+	"mcp":        "mcp-servers",
+	"a2a":        "a2a-agents",
+	"teams":      "teams",
+	"guardrails": "guardrails",
+}
+
+// runtimeItem is one row of a /platform/admin/runtime/* list.
+type runtimeItem struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Status string `json:"status"`
+	// Attributes is kind-specific JSON, present for guardrails only today
+	// (mode, defaultOn).
+	Attributes json.RawMessage `json:"attributes,omitempty"`
+}
+
 func newAdminListCmd() *cobra.Command {
 	f := &adminCredFlags{}
-	var output string
+	var out outputFlag
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List ACH objects (read-only inventory). Usage: ach admin list <kind|all>",
-		Long: `Read-only inventory of ACH-defined objects sourced from the Postgres
-projections (version + projection-derived sync status). Admin-only (pk-).
+		Use:   "list <kind|all>",
+		Short: "List ACH objects and the LiteLLM runtime catalog (read-only)",
+		Long: `Read-only inventory. Admin-only.
 
-kind ∈ {environments, plugins, prompts, artifacts, skills, marketplaces,
-skill-marketplaces, bips} or 'all' to fan out across every kind.
+ACH objects (from the Postgres projections, version + sync status):
+  environments, plugins, prompts, artifacts, skills, marketplaces,
+  skill-marketplaces, bips
+LiteLLM runtime catalog (KIND NAME STATUS):
+  models, mcp, a2a, teams, guardrails
+'all' fans out across every kind.
 
 PLUGINS merges standalone Plugin CRs (SOURCE=plugin) with plugins discovered
 inside marketplaces (SOURCE=marketplace, shown as <name>@<marketplace>).
@@ -282,39 +306,41 @@ SYNC column:
   projected                                  bips
 
 Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
-not content presence. plugins and skills are truly content-gated (bare 'fresh').`,
+not content presence. plugins and skills are truly content-gated (bare 'fresh').
+Guardrails add MODE and DEFAULT-ON columns.`,
+		Example: `  ach-cli admin list plugins
+  ach-cli admin list models -o json
+  ach-cli admin list all -o yaml`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminList(cmd, args[0], output, f)
+			return runAdminList(cmd, args[0], out.v, f)
 		},
 	}
 	// withYes=false — read-only, no confirmation prompt.
 	registerAdminCredFlags(cmd, f, false)
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table|json|yaml")
+	registerOutputFlag(cmd, &out, "table", outputJSON, "yaml")
 	return cmd
 }
 
 func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) error {
-	stderr := cmd.ErrOrStderr()
-	stdout := cmd.OutOrStdout()
 	ctx := cmd.Context()
 
 	kind = strings.TrimSpace(kind)
-	if kind != statusAll && !slices.Contains(adminListKinds, kind) {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: fmt.Sprintf("invalid kind %q; expected one of %s, or 'all'",
-				kind, strings.Join(adminListKinds, ", ")),
-		}
-	}
-	switch output {
-	case "table", outputJSON, "yaml":
+	var objKinds, rtKinds []string
+	switch {
+	case kind == statusAll:
+		objKinds, rtKinds = adminListKinds, adminRuntimeKinds
+	case slices.Contains(adminListKinds, kind):
+		objKinds = []string{kind}
+	case slices.Contains(adminRuntimeKinds, kind):
+		rtKinds = []string{kind}
 	default:
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("invalid --output %q; expected table, json, or yaml", output),
+			Msg: fmt.Sprintf("invalid kind %q; expected one of %s, %s, or 'all'",
+				kind, strings.Join(adminListKinds, ", "), strings.Join(adminRuntimeKinds, ", ")),
 		}
 	}
 
@@ -322,45 +348,65 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	if err != nil {
 		return err
 	}
-	baseURL, bearer := c.BaseURL, c.Bearer
-	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
+	hc := newAPIClient(c.BaseURL, c.Bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 
-	grouped := map[string][]render.AdminObjectView{}
-	if kind == statusAll {
-		results := make([][]render.AdminObjectView, len(adminListKinds))
-		g, gctx := errgroup.WithContext(ctx)
-		for i, k := range adminListKinds {
-			g.Go(func() error {
-				rows, e := fetchAdminKind(gctx, hc, k)
-				if e != nil {
-					return e
-				}
-				results[i] = rows
-				return nil
-			})
-		}
-		if waitErr := g.Wait(); waitErr != nil {
-			return waitErr
-		}
-		for i, k := range adminListKinds {
-			grouped[k] = results[i]
-		}
-	} else {
-		rows, e := fetchAdminKind(ctx, hc, kind)
-		if e != nil {
+	objs := make([][]render.AdminObjectView, len(objKinds))
+	rts := make([][]runtimeItem, len(rtKinds))
+	g, gctx := errgroup.WithContext(ctx)
+	for i, k := range objKinds {
+		g.Go(func() (e error) {
+			objs[i], e = fetchAdminKind(gctx, hc, k)
 			return e
-		}
-		grouped[kind] = rows
+		})
+	}
+	for i, k := range rtKinds {
+		g.Go(func() (e error) {
+			rts[i], e = fetchAll[runtimeItem](gctx, hc, "", func(cur string) string {
+				return withCursor("/platform/admin/runtime/"+adminRuntimeRoutes[k], cur)
+			})
+			return e
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
-	return renderAdminList(stdout, grouped, output)
+	stdout := cmd.OutOrStdout()
+	if output != "table" {
+		grouped := map[string]any{}
+		for i, k := range objKinds {
+			grouped[k] = objs[i]
+		}
+		for i, k := range rtKinds {
+			grouped[k] = rts[i]
+		}
+		return renderAdminList(stdout, grouped, output)
+	}
+	if len(objKinds) > 0 {
+		grouped := map[string][]render.AdminObjectView{}
+		for i, k := range objKinds {
+			grouped[k] = objs[i]
+		}
+		_, _ = io.WriteString(stdout, render.FormatAdminInventory(grouped))
+	}
+	if len(rtKinds) > 0 {
+		if len(objKinds) > 0 {
+			_, _ = io.WriteString(stdout, "\n")
+		}
+		return writeRuntimeTable(stdout, slices.Concat(rts...))
+	}
+	return nil
 }
 
-// fetchAdminKind pages through one kind's endpoint (cursor loop mirroring
-// runEnvKeysList) and returns the accumulated AdminObjectViews. environments
-// is special-cased onto GET /platform/environments + the EnvironmentView map.
+// fetchAdminKind pages through one kind's endpoint and returns the
+// accumulated AdminObjectViews. environments is special-cased onto
+// GET /platform/environments + the EnvironmentView map.
 func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]render.AdminObjectView, error) {
-	pathFor := func(c string) string { return buildAdminListPath(kind, c) }
+	base := "/platform/admin/" + kind
+	if kind == "environments" {
+		base = pathEnvironments
+	}
+	pathFor := func(c string) string { return withCursor(base, c) }
 	if kind == "environments" {
 		items, err := fetchAll[adminEnvItem](ctx, hc, "", pathFor)
 		if err != nil {
@@ -375,41 +421,66 @@ func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]
 	return fetchAll[render.AdminObjectView](ctx, hc, "", pathFor)
 }
 
-// buildAdminListPath returns the endpoint + optional cursor query for a kind.
-func buildAdminListPath(kind, cursor string) string {
-	base := "/platform/admin/" + kind
-	if kind == "environments" {
-		base = pathEnvironments
-	}
+// withCursor appends an optional cursor query to base.
+func withCursor(base, cursor string) string {
 	if cursor == "" {
 		return base
 	}
-	q := url.Values{}
-	q.Set("cursor", cursor)
-	return base + "?" + q.Encode()
+	return base + "?" + url.Values{"cursor": {cursor}}.Encode()
 }
 
-// renderAdminList writes the grouped inventory in the requested format. table
-// goes through the render formatter (Pattern S5 — no inline tabwriter here);
-// json/yaml marshal the map directly so machine consumers get the full DTO.
-func renderAdminList(stdout io.Writer, grouped map[string][]render.AdminObjectView, output string) error {
-	switch output {
-	case outputJSON:
-		b, err := json.MarshalIndent(grouped, "", "  ")
-		if err != nil {
-			return &exit.CodedError{Code: exit.General, Msg: "marshal json: " + err.Error()}
-		}
-		_, _ = stdout.Write(b)
-		_, _ = io.WriteString(stdout, "\n")
-	case "yaml":
-		b, err := yaml.Marshal(grouped)
-		if err != nil {
-			return &exit.CodedError{Code: exit.General, Msg: "marshal yaml: " + err.Error()}
-		}
-		_, _ = stdout.Write(b)
-	default: // table
-		_, _ = io.WriteString(stdout, render.FormatAdminInventory(grouped))
+// guardrailAttrs is the attribute JSON the catalog stores for guardrail rows.
+type guardrailAttrs struct {
+	Mode      []string `json:"mode"`
+	DefaultOn bool     `json:"defaultOn"`
+}
+
+// writeRuntimeTable renders items as KIND / NAME / STATUS, plus MODE and
+// DEFAULT-ON when any row carries guardrail attributes. DEFAULT-ON is the
+// decision-relevant column: a default_on guardrail already runs on every
+// request, so naming it in an Environment changes nothing.
+func writeRuntimeTable(w io.Writer, items []runtimeItem) error {
+	showAttrs := slices.ContainsFunc(items, func(it runtimeItem) bool { return len(it.Attributes) > 0 })
+	tw := tabwriter.NewWriter(w, 2, 0, 2, ' ', 0)
+	if showAttrs {
+		_, _ = fmt.Fprintln(tw, "KIND\tNAME\tSTATUS\tMODE\tDEFAULT-ON")
+	} else {
+		_, _ = fmt.Fprintln(tw, "KIND\tNAME\tSTATUS")
 	}
+	for _, it := range items {
+		if !showAttrs {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", it.Kind, it.Name, it.Status)
+			continue
+		}
+		mode, dflt := "-", "-"
+		if len(it.Attributes) > 0 {
+			var a guardrailAttrs
+			if err := json.Unmarshal(it.Attributes, &a); err == nil {
+				if len(a.Mode) > 0 {
+					mode = strings.Join(a.Mode, ",")
+				}
+				dflt = "no"
+				if a.DefaultOn {
+					dflt = adminConfirmYes
+				}
+			}
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", it.Kind, it.Name, it.Status, mode, dflt)
+	}
+	return tw.Flush()
+}
+
+// renderAdminList writes the grouped inventory as json or yaml, marshalling
+// the map directly so machine consumers get the full DTO.
+func renderAdminList(stdout io.Writer, grouped map[string]any, output string) error {
+	if output == outputJSON {
+		return writeJSON(stdout, grouped)
+	}
+	b, err := yaml.Marshal(grouped)
+	if err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: "marshal yaml: " + err.Error()}
+	}
+	_, _ = stdout.Write(b)
 	return nil
 }
 
@@ -417,10 +488,10 @@ func renderAdminList(stdout io.Writer, grouped map[string][]render.AdminObjectVi
 // keys → revoke
 // ---------------------------------------------------------------------
 
-// newAdminKeysCmd returns the intermediate `ach admin keys` parent
+// newAdminKeysCmd returns the intermediate `ach-cli admin keys` parent
 // with its children `revoke` and `list`. Two-level nesting per Pattern P3
-// because the spec surface is `ach admin keys revoke <key-id>` /
-// `ach admin keys list` — keys is a noun-grouping under admin.
+// because the spec surface is `ach-cli admin keys revoke <key-id>` /
+// `ach-cli admin keys list` — keys is a noun-grouping under admin.
 func newAdminKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "keys",
@@ -432,48 +503,46 @@ func newAdminKeysCmd() *cobra.Command {
 	return parent
 }
 
-// newAdminKeysListCmd returns `ach admin keys list` — paginated listing of
-// ALL pk_ and ek_ keys across owners, optionally filtered by owner email,
-// type, status, or environment. Calls GET /platform/admin/keys.
+// newAdminKeysListCmd returns `admin keys list` — every pk- and ek- across
+// owners, optionally filtered. Calls GET /platform/admin/keys.
 func newAdminKeysListCmd() *cobra.Command {
 	f := &adminCredFlags{}
-	var ownerEmail, keyType, status, environment, cursor string
+	var out outputFlag
+	var owner, keyType, status, environment, cursor string
 	var limit int
 	cmd := &cobra.Command{
 		Use:           "list",
-		Short:         "List all API keys (pk_ and ek_) across owners",
+		Short:         "List every key (pk- and ek-) across owners",
+		Example:       "  ach-cli admin keys list --owner alice@example.com --status suspended",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAdminKeysList(cmd, f, ownerEmail, keyType, status, environment, cursor, limit)
+			return runAdminKeysList(cmd, f, out.v, owner, keyType, status, environment, cursor, limit)
 		},
 	}
-	cmd.Flags().StringVar(&ownerEmail, "owner-email", "", "Filter by owner email")
+	cmd.Flags().StringVar(&owner, "owner", "", "Filter by owner email")
 	cmd.Flags().StringVar(&keyType, "type", "", "Filter by type: pk|ek")
-	cmd.Flags().StringVar(&status, "status", "active", "Filter by status: active|revoked|expired|all")
-	cmd.Flags().StringVar(&environment, "environment", "", "Filter by environment (ek_ only)")
+	cmd.Flags().StringVar(&status, "status", "active", "Filter by status: active|suspended|revoked|expired|all")
+	cmd.Flags().StringVar(&environment, "env", "", "Filter by environment (ek- only)")
 	cmd.Flags().StringVar(&cursor, "cursor", "", "Pagination cursor")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max rows per page")
 	// withYes=false — read-only, no confirmation prompt.
 	registerAdminCredFlags(cmd, f, false)
+	registerOutputFlag(cmd, &out, "table", outputJSON)
 	return cmd
 }
 
-func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
-	ownerEmail, keyType, status, environment, cursor string, limit int) error {
-
-	stdout := cmd.OutOrStdout()
-	stderr := cmd.ErrOrStderr()
+func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags, output,
+	owner, keyType, status, environment, cursor string, limit int) error {
 	ctx := cmd.Context()
 
 	// Validate --status before any network call (mirrors runKeysList).
 	switch status {
-	case "active", "revoked", "expired", statusAll, "":
-		// ok
+	case "active", "suspended", "revoked", "expired", statusAll, "":
 	default:
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("invalid --status %q: must be active, revoked, expired, or all", status),
+			Msg:  fmt.Sprintf("invalid --status %q: must be active, suspended, revoked, expired, or all", status),
 		}
 	}
 
@@ -481,26 +550,23 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 	if err != nil {
 		return err
 	}
-	baseURL, bearer := c.BaseURL, c.Bearer
+	hc := newAPIClient(c.BaseURL, c.Bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 
-	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
-
-	// Paginate until next_cursor empty. Accumulate items.
 	all, err := fetchAll[render.KeyRowView](ctx, hc, cursor, func(c string) string {
-		return buildAdminKeysListPath(ownerEmail, keyType, status, environment, c, limit)
+		return buildAdminKeysListPath(owner, keyType, status, environment, c, limit)
 	})
 	if err != nil {
 		return err
 	}
-
-	// W7: single source of truth via render.FormatKeyList.
-	_, _ = io.WriteString(stdout, render.FormatAdminKeyList(all))
+	if output == outputJSON {
+		return writeJSON(cmd.OutOrStdout(), all)
+	}
+	_, _ = io.WriteString(cmd.OutOrStdout(), render.FormatAdminKeyList(all))
 	return nil
 }
 
 // buildAdminKeysListPath returns GET /platform/admin/keys with optional
-// query parameters. Mirrors buildKeysListPath but adds owner_email and
-// targets the admin endpoint.
+// query parameters.
 func buildAdminKeysListPath(ownerEmail, keyType, status, environment, cursor string, limit int) string {
 	q := url.Values{}
 	if ownerEmail != "" {
@@ -530,38 +596,42 @@ func buildAdminKeysListPath(ownerEmail, keyType, status, environment, cursor str
 
 func newAdminKeysRevokeCmd() *cobra.Command {
 	f := &adminCredFlags{}
-	// SilenceUsage + SilenceErrors per Pattern S5 — cobra would
-	// otherwise echo its Usage block (containing flag descriptions
-	// referencing pk-/ek-) to the SetOut writer on a non-nil RunE
-	// return. cmd/ach/main.go owns the err render via the typed-
-	// error dispatch (Pattern P12).
+	var owner string
 	cmd := &cobra.Command{
-		Use:           "revoke",
-		Short:         "Revoke a key by ID (pkid_… or ekid_…). Usage: ach admin keys revoke <key-id>",
-		Args:          cobra.ExactArgs(1),
+		Use:   "revoke [<key-id> | --owner <email>]",
+		Short: "Revoke one key by id (pkid_… or ekid_…), or every key an owner holds",
+		Example: `  ach-cli admin keys revoke ekid_01H…
+  ach-cli admin keys revoke --owner alice@example.com --yes`,
+		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminKeysRevoke(cmd, args[0], f)
+			switch {
+			case len(args) == 1 && owner != "":
+				return &exit.CodedError{Code: exit.General, Msg: "pass a key id or --owner, not both"}
+			case len(args) == 1:
+				return runAdminKeysRevoke(cmd, args[0], f)
+			case owner != "":
+				return runAdminRevokeOwnerKeys(cmd, owner, f)
+			default:
+				return &exit.CodedError{Code: exit.General, Msg: "pass a key id or --owner <email>"}
+			}
 		},
 	}
+	cmd.Flags().StringVar(&owner, "owner", "", "Revoke every key (pk- and ek-) this email owns")
 	registerAdminCredFlags(cmd, f, true)
 	return cmd
 }
 
 func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) error {
-	stderr := cmd.ErrOrStderr()
-	stdout := cmd.OutOrStdout()
-	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
 
-	// CLI-13: client-side key-id classification BEFORE any HTTP call.
+	// Client-side key-id classification BEFORE any HTTP call.
 	if err := validateAdminKeyID(keyID); err != nil {
 		return err
 	}
-
 	if !f.Yes {
-		if err := adminConfirm(stdin, stderr,
+		if err := adminConfirm(cmd.InOrStdin(), cmd.ErrOrStderr(),
 			fmt.Sprintf("Revoke key %s ? (y/N): ", keyID)); err != nil {
 			return err
 		}
@@ -571,9 +641,7 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 	if err != nil {
 		return err
 	}
-	baseURL, bearer := c.BaseURL, c.Bearer
-
-	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
+	hc := newAPIClient(c.BaseURL, c.Bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 
 	body := struct {
 		KeyID string `json:"key_id"`
@@ -582,7 +650,7 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 	if doErr := hc.Do(ctx, http.MethodPost, "/platform/admin/keys/revoke", body, &resp); doErr != nil {
 		return doErr
 	}
-	_, _ = fmt.Fprintf(stdout, "Revoked %s (status: %s)\n", resp.KeyID, resp.Status)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Revoked %s (status: %s)\n", resp.KeyID, resp.Status)
 	return nil
 }
 
@@ -620,46 +688,36 @@ func validateAdminKeyID(keyID string) error {
 func newAdminUsersCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "users",
-		Short: "Admin user operations",
+		Short: "Set a user's budget or limits",
 		RunE:  helpOrUnknownSubcommand,
 	}
-	parent.AddCommand(newAdminUsersRevokeKeysCmd())
+	parent.AddCommand(newAdminUsersBudgetCmd(), newAdminUsersLimitsCmd())
 	return parent
 }
 
-func newAdminUsersRevokeKeysCmd() *cobra.Command {
-	f := &adminCredFlags{}
-	cmd := &cobra.Command{
-		Use:           "revoke-keys",
-		Short:         "Revoke ALL keys owned by <email>. Usage: ach admin users revoke-keys <email>",
-		Long:          "Bulk-revoke every pk- and ek- owned by the given email. Returns {revoked_count, errors}.",
-		Args:          cobra.ExactArgs(1),
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdminUsersRevokeKeys(cmd, args[0], f)
-		},
+// validateEmail rejects an argument that cannot be an owner email.
+func validateEmail(email string) error {
+	if email == "" || !strings.Contains(email, "@") {
+		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("invalid email %q", email)}
 	}
-	registerAdminCredFlags(cmd, f, true)
-	return cmd
+	return nil
 }
 
-func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags) error {
-	stderr := cmd.ErrOrStderr()
-	stdout := cmd.OutOrStdout()
-	stdin := cmd.InOrStdin()
+// adminUserPath is /platform/admin/users/{email}/{leaf}. The email is
+// path-escaped; the server decodes it with url.PathUnescape.
+func adminUserPath(email, leaf string) string {
+	return "/platform/admin/users/" + url.PathEscape(email) + "/" + leaf
+}
+
+// runAdminRevokeOwnerKeys bulk-revokes every key an owner holds.
+func runAdminRevokeOwnerKeys(cmd *cobra.Command, email string, f *adminCredFlags) error {
 	ctx := cmd.Context()
-
 	email = strings.TrimSpace(email)
-	if email == "" || !strings.Contains(email, "@") {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  fmt.Sprintf("invalid email %q", email),
-		}
+	if err := validateEmail(email); err != nil {
+		return err
 	}
-
 	if !f.Yes {
-		if err := adminConfirm(stdin, stderr,
+		if err := adminConfirm(cmd.InOrStdin(), cmd.ErrOrStderr(),
 			fmt.Sprintf("Revoke ALL keys owned by %s ? (y/N): ", email)); err != nil {
 			return err
 		}
@@ -669,26 +727,91 @@ func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags
 	if err != nil {
 		return err
 	}
-	baseURL, bearer := c.BaseURL, c.Bearer
+	hc := newAPIClient(c.BaseURL, c.Bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 
-	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
-
-	// URL-escape the email so `+` / `@` / `.` survive the wire path
-	// (T-06-08-07 path-injection mitigation). The server-side handler
-	// decodes via url.PathUnescape (see internal/platformapi/admin/
-	// handler.go RevokeUserKeysHandler).
-	escaped := url.PathEscape(email)
-	path := "/platform/admin/users/" + escaped + "/revoke-keys"
-	// Body is empty {} per the spec — the email lives in the URL path.
 	var resp adminUserRevokeResponse
-	if doErr := hc.Do(ctx, http.MethodPost, path, struct{}{}, &resp); doErr != nil {
+	if doErr := hc.Do(ctx, http.MethodPost, adminUserPath(email, "revoke-keys"), struct{}{}, &resp); doErr != nil {
 		return doErr
 	}
+	stdout := cmd.OutOrStdout()
 	_, _ = fmt.Fprintf(stdout, "Revoked %d keys owned by %s\n", resp.RevokedCount, email)
 	for _, e := range resp.Errors {
 		_, _ = fmt.Fprintf(stdout, "  - %s\n", e)
 	}
 	return nil
+}
+
+// adminUserPatch validates email, then PATCHes body onto the user's leaf
+// route and prints done on success (204).
+func adminUserPatch(cmd *cobra.Command, f *adminCredFlags, email, leaf string, body any, done string) error {
+	email = strings.TrimSpace(email)
+	if err := validateEmail(email); err != nil {
+		return err
+	}
+	c, err := resolveCred(cmd.Context(), f.credFlags, synthetic.GateAPI)
+	if err != nil {
+		return err
+	}
+	hc := newAPIClient(c.BaseURL, c.Bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
+	if err := hc.Do(cmd.Context(), http.MethodPatch, adminUserPath(email, leaf), body, nil); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s for %s\n", done, email)
+	return nil
+}
+
+func newAdminUsersBudgetCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	var maxBudget float64
+	var budgetDuration string
+	cmd := &cobra.Command{
+		Use:   "budget <email>",
+		Short: "Set a user's total spend ceiling (all their keys and sessions)",
+		Long: `Set the spend ceiling (USD) that covers everything one user spends: their
+personal session and every key they own. A user who has never signed in is
+created, not refused. A later sign-in never overwrites it.`,
+		Example:       "  ach-cli admin users budget alice@example.com --max-budget 200 --budget-duration 30d",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return adminUserPatch(cmd, f, args[0], "budget",
+				keyBudget{MaxBudget: maxBudget, BudgetDuration: budgetDuration}, "budget set")
+		},
+	}
+	cmd.Flags().Float64Var(&maxBudget, "max-budget", 0, "Spend ceiling, in USD")
+	cmd.Flags().StringVar(&budgetDuration, "budget-duration", "", "Budget reset period, e.g. 30d")
+	_ = cmd.MarkFlagRequired("max-budget")
+	registerAdminCredFlags(cmd, f, false)
+	return cmd
+}
+
+func newAdminUsersLimitsCmd() *cobra.Command {
+	f := &adminCredFlags{}
+	var maxKeys int
+	cmd := &cobra.Command{
+		Use:   "limits <email>",
+		Short: "Set how many keys a user may hold",
+		Long: `Set how many non-revoked keys one user may hold (0 = none). Takes effect on
+their next keys create.`,
+		Example:       "  ach-cli admin users limits alice@example.com --max-keys 10",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if maxKeys < 0 {
+				return &exit.CodedError{Code: exit.General, Msg: "--max-keys must be >= 0"}
+			}
+			body := struct {
+				MaxKeys int `json:"max_keys"`
+			}{maxKeys}
+			return adminUserPatch(cmd, f, args[0], "limits", body, "limits set")
+		},
+	}
+	cmd.Flags().IntVar(&maxKeys, "max-keys", 0, "Maximum non-revoked keys the user may hold")
+	_ = cmd.MarkFlagRequired("max-keys")
+	registerAdminCredFlags(cmd, f, false)
+	return cmd
 }
 
 // ---------------------------------------------------------------------
@@ -698,9 +821,8 @@ func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags
 func newAdminRefreshCmd() *cobra.Command {
 	f := &adminCredFlags{}
 	cmd := &cobra.Command{
-		Use: "refresh",
-		Short: "Force-refresh an external content resource. " +
-			"Usage: ach admin refresh <kind> <name>",
+		Use:   "refresh <kind> <name>",
+		Short: "Force-refresh an external content resource",
 		Long: "kind must be one of {plugin, prompt, artifact, skill, marketplace, " +
 			"skill-marketplace}. No interactive confirmation (idempotent operation).",
 		Args:          cobra.ExactArgs(2),
@@ -773,7 +895,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 // shared helpers
 // ---------------------------------------------------------------------
 
-// Register `ach admin` on the root command. Mirrors the env-keys /
+// Register `ach-cli admin` on the root command. Mirrors the env-keys /
 // login / whoami pattern from 06-03 / 06-05 — each subcommand owns
 // its own init() so cobra registration is local to the file.
 func init() {

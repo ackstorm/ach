@@ -46,7 +46,7 @@ func seedAdminConfig(t *testing.T, baseURL string) string {
 }
 
 // adminTestServer wires httptest.NewTLSServer + the package-level HTTP
-// client seam so `ach admin *` can reach the ephemeral TLS cert.
+// client seam so `ach-cli admin *` can reach the ephemeral TLS cert.
 // Routes:
 //
 //	POST /platform/admin/keys/revoke
@@ -70,6 +70,9 @@ type adminTestServer struct {
 	lastRevokeKeyBody []byte
 	lastRefreshBody   []byte
 	lastUserEmailPath string
+	lastUserSubPath   string
+	lastUserMethod    string
+	lastUserBody      []byte
 	lastAuthHeader    string
 	lastKeysQuery     string
 }
@@ -107,14 +110,21 @@ func newAdminTestServer(t *testing.T) *adminTestServer {
 		_ = json.NewEncoder(w).Encode(body)
 	})
 	mux.HandleFunc("/platform/admin/users/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/platform/admin/users/")
+		srv.lastUserBody, _ = io.ReadAll(r.Body)
+		srv.lastUserMethod = r.Method
+		srv.lastUserSubPath = rest
+		if r.Method == http.MethodPatch {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		// Expected path: /platform/admin/users/{email}/revoke-keys
-		if !strings.HasSuffix(r.URL.Path, "/revoke-keys") {
+		if !strings.HasSuffix(rest, "/revoke-keys") {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		atomic.AddInt32(&srv.revokeUserCalls, 1)
-		srv.lastUserEmailPath = strings.TrimPrefix(r.URL.Path, "/platform/admin/users/")
-		srv.lastUserEmailPath = strings.TrimSuffix(srv.lastUserEmailPath, "/revoke-keys")
+		srv.lastUserEmailPath = strings.TrimSuffix(rest, "/revoke-keys")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(srv.revokeUserStatus)
 		_ = json.NewEncoder(w).Encode(srv.revokeUserBody)
@@ -389,10 +399,10 @@ func TestAdminKeysRevoke_Interactive_Confirmed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------
-// users revoke-keys tests
+// keys revoke --owner tests (bulk per-user revoke)
 // ---------------------------------------------------------------------
 
-// Test 9: admin users revoke-keys 200 — URL-escaped email + rendered count.
+// Test 9: admin keys revoke --owner 200 — URL-escaped email + rendered count.
 func TestAdminUsersRevokeKeys_200(t *testing.T) {
 	adminTestEnv(t)
 	srv := newAdminTestServer(t)
@@ -404,7 +414,7 @@ func TestAdminUsersRevokeKeys_200(t *testing.T) {
 	seedAdminConfig(t, srv.URL)
 
 	stdout, _, code, err := executeAdmin(t, "",
-		"users", "revoke-keys", "test@example.com", "--yes",
+		"keys", "revoke", "--owner", "test@example.com", "--yes",
 	)
 	if err != nil {
 		t.Fatalf("revoke-keys err = %v", err)
@@ -428,7 +438,7 @@ func TestAdminUsersRevokeKeys_200(t *testing.T) {
 	}
 }
 
-// Test 10: admin users revoke-keys 200 with errors list → exit 0, errors rendered.
+// Test 10: admin keys revoke --owner 200 with errors list → exit 0, errors rendered.
 func TestAdminUsersRevokeKeys_PartialErrors(t *testing.T) {
 	adminTestEnv(t)
 	srv := newAdminTestServer(t)
@@ -440,7 +450,7 @@ func TestAdminUsersRevokeKeys_PartialErrors(t *testing.T) {
 	seedAdminConfig(t, srv.URL)
 
 	stdout, _, code, err := executeAdmin(t, "",
-		"users", "revoke-keys", "alice@example.com", "--yes",
+		"keys", "revoke", "--owner", "alice@example.com", "--yes",
 	)
 	if err != nil {
 		t.Fatalf("revoke-keys err = %v", err)
@@ -456,7 +466,7 @@ func TestAdminUsersRevokeKeys_PartialErrors(t *testing.T) {
 	}
 }
 
-// Test 11: admin users revoke-keys 403 → exit 3 (CLI-10).
+// Test 11: admin keys revoke --owner 403 → exit 3 (CLI-10).
 func TestAdminUsersRevokeKeys_403_Exit3(t *testing.T) {
 	adminTestEnv(t)
 	srv := newAdminTestServer(t)
@@ -472,7 +482,7 @@ func TestAdminUsersRevokeKeys_403_Exit3(t *testing.T) {
 	seedAdminConfig(t, srv.URL)
 
 	_, _, code, err := executeAdmin(t, "",
-		"users", "revoke-keys", "test@example.com", "--yes",
+		"keys", "revoke", "--owner", "test@example.com", "--yes",
 	)
 	if err == nil {
 		t.Fatal("expected error on 403 not_admin")
@@ -662,7 +672,7 @@ func TestAdminKeysRevoke_Verbose_RedactsAchKey(t *testing.T) {
 // ---------------------------------------------------------------------
 
 // TestAdminKeys_List_SendsFiltersAndRenders verifies that
-// `ach admin keys list --owner-email a@x --type pk` sends the correct
+// `ach-cli admin keys list --owner a@x --type pk` sends the correct
 // query filters and renders the table output.
 func TestAdminKeys_List_SendsFiltersAndRenders(t *testing.T) {
 	adminTestEnv(t)
@@ -676,7 +686,7 @@ func TestAdminKeys_List_SendsFiltersAndRenders(t *testing.T) {
 	}
 	seedAdminConfig(t, srv.URL)
 
-	out, _, _, err := executeAdmin(t, "", "keys", "list", "--owner-email", "a@x", "--type", "pk")
+	out, _, _, err := executeAdmin(t, "", "keys", "list", "--owner", "a@x", "--type", "pk")
 	if err != nil {
 		t.Fatalf("admin keys list err=%v", err)
 	}
@@ -712,5 +722,108 @@ func TestAdminListKinds_ExcludesOperatorInternalKinds(t *testing.T) {
 		if adminListKinds[i] != k {
 			t.Errorf("adminListKinds[%d] = %q, want %q", i, adminListKinds[i], k)
 		}
+	}
+}
+
+// TestAdminKeysRevoke_IDAndOwner_Exit1: an id and --owner together, or
+// neither, is a usage error before any request.
+func TestAdminKeysRevoke_IDAndOwner_Exit1(t *testing.T) {
+	for name, args := range map[string][]string{
+		"both":    {"keys", "revoke", "pkid_abc", "--owner", "x@y", "--yes"},
+		"neither": {"keys", "revoke", "--yes"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			adminTestEnv(t)
+			srv := newAdminTestServer(t)
+			defer srv.Close()
+			seedAdminConfig(t, srv.URL)
+			_, _, code, err := executeAdmin(t, "", args...)
+			if err == nil || code != exit.General {
+				t.Fatalf("code=%d err=%v; want exit 1", code, err)
+			}
+			if srv.revokeKeyCalls+srv.revokeUserCalls != 0 {
+				t.Errorf("request sent on a usage error")
+			}
+		})
+	}
+}
+
+// TestAdminKeysList_OwnerSuspendedJSON: --owner + --status suspended reach
+// the query and -o json prints the rows as JSON.
+func TestAdminKeysList_OwnerSuspendedJSON(t *testing.T) {
+	adminTestEnv(t)
+	srv := newAdminTestServer(t)
+	defer srv.Close()
+	srv.keysListBody = map[string]any{
+		"items": []map[string]any{
+			{"key_id": "ekid_a", "type": "ek", "owner_email": "x@y", "status": "suspended"},
+		},
+		"next_cursor": "",
+	}
+	seedAdminConfig(t, srv.URL)
+
+	out, _, code, err := executeAdmin(t, "", "keys", "list", "--owner", "x@y", "--status", "suspended", "-o", "json")
+	if err != nil || code != exit.OK {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	q := srv.lastKeysQuery
+	if !strings.Contains(q, "status=suspended") || !strings.Contains(q, "owner_email=x%40y") {
+		t.Errorf("query = %q", srv.lastKeysQuery)
+	}
+	var rows []map[string]any
+	if e := json.Unmarshal([]byte(out), &rows); e != nil || len(rows) != 1 || rows[0]["key_id"] != "ekid_a" {
+		t.Fatalf("json rows = %v (err %v):\n%s", rows, e, out)
+	}
+}
+
+// TestAdminUsersBudget_Patch: `admin users budget` PATCHes the escaped
+// email's budget route with max_budget + budget_duration.
+func TestAdminUsersBudget_Patch(t *testing.T) {
+	adminTestEnv(t)
+	srv := newAdminTestServer(t)
+	defer srv.Close()
+	seedAdminConfig(t, srv.URL)
+
+	out, _, code, err := executeAdmin(t, "", "users", "budget", "a@b", "--max-budget", "200", "--budget-duration", "30d")
+	if err != nil || code != exit.OK {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if srv.lastUserMethod != http.MethodPatch || srv.lastUserSubPath != "a@b/budget" {
+		t.Errorf("request = %s %s", srv.lastUserMethod, srv.lastUserSubPath)
+	}
+	if got := string(srv.lastUserBody); got != `{"max_budget":200,"budget_duration":"30d"}` {
+		t.Errorf("body = %s", got)
+	}
+	if !strings.Contains(out, "budget set for a@b") {
+		t.Errorf("stdout = %q", out)
+	}
+}
+
+// TestAdminUsersLimits_Patch: `admin users limits` PATCHes max_keys; a
+// negative value exits 1 before any request.
+func TestAdminUsersLimits_Patch(t *testing.T) {
+	adminTestEnv(t)
+	srv := newAdminTestServer(t)
+	defer srv.Close()
+	seedAdminConfig(t, srv.URL)
+
+	_, _, code, err := executeAdmin(t, "", "users", "limits", "a@b", "--max-keys", "10")
+	if err != nil || code != exit.OK {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if srv.lastUserMethod != http.MethodPatch || srv.lastUserSubPath != "a@b/limits" {
+		t.Errorf("request = %s %s", srv.lastUserMethod, srv.lastUserSubPath)
+	}
+	if got := string(srv.lastUserBody); got != `{"max_keys":10}` {
+		t.Errorf("body = %s", got)
+	}
+
+	srv.lastUserMethod = ""
+	_, _, code, err = executeAdmin(t, "", "users", "limits", "a@b", "--max-keys", "-1")
+	if err == nil || code != exit.General {
+		t.Fatalf("negative: code=%d err=%v; want exit 1", code, err)
+	}
+	if srv.lastUserMethod != "" {
+		t.Errorf("request sent for a negative --max-keys")
 	}
 }
