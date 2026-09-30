@@ -17,8 +17,11 @@ import (
 // (v1 as is, v2 as provider.use policies); a default, not a lock — the
 // user's own opencode.json overrides it. Anonymous, public data only.
 // OpenCode requires an auth block;
-// the plugin never uses the credential its command yields, so any portable
-// command does.
+// the plugin never uses the credential its command yields. OpenCode spawns it
+// with no shell (cross-spawn), so the command must resolve everywhere: echo is
+// /bin/echo on Linux/macOS, and on Windows cross-spawn runs any non-.exe name
+// through cmd.exe /c, where echo is a builtin. opencode itself is often not on
+// PATH (invoked by absolute path).
 func WellKnownHandler(baseURL, provider, spec string) http.HandlerFunc {
 	base := strings.TrimRight(baseURL, "/")
 	u, err := url.Parse(base)
@@ -26,7 +29,7 @@ func WellKnownHandler(baseURL, provider, spec string) http.HandlerFunc {
 		panic(err) // ACH_BASE_URL is validated at startup
 	}
 	doc, _ := json.Marshal(map[string]any{
-		"auth": map[string]any{"command": []string{"opencode", "--version"}, "env": ""},
+		"auth": map[string]any{"command": []string{"echo", "ok"}, "env": ""},
 		"config": map[string]any{
 			"plugin": []any{[]any{spec, map[string]string{
 				"api": base + "/v1", "platform": u.Scheme + "://" + u.Host, "provider": provider,

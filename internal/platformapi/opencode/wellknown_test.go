@@ -21,7 +21,7 @@ func TestWellKnownHandler_Manifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"auth": map[string]any{"command": []any{"opencode", "--version"}, "env": ""},
+		"auth": map[string]any{"command": []any{"echo", "ok"}, "env": ""},
 		"config": map[string]any{
 			"plugin": []any{[]any{"git+https://x/p.git#v1", map[string]any{
 				"api": "https://ach.test/v1", "platform": "https://ach.test", "provider": "acme",
