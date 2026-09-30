@@ -152,6 +152,29 @@ key-owned deep merges, which co-own safely by design. There is still no
 cross-env reference counting, so `env uninstall <a>` removes a file `<b>` also
 projected (self-heals on `<b>`'s next hydrate).
 
+### Hydrate state invariants — `Sync` keep set + `--only` merge
+
+- **`hydrate.Sync`'s keep set is per CONTRIBUTION, not per Target**
+  (`syncKeep` in `wiring.go`). A prev row survives when the next state still
+  records it: any row on the Target for a whole-file row, the same marker id
+  for a composite row, EVERY key for a deep row (else only the uncovered keys
+  are pruned; the drift gate still hashes the row's recorded key set). Keying
+  on Target alone (before 2026-09-30) skipped a row dropped from a SHARED file,
+  so `hydrate --sync` left a removed plugin's `CLAUDE.md` block / `.mcp.json`
+  keys behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
+  GREW would then prune keys Render just wrote.
+- **`env hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
+  off, extracts just that item, and `composeNextState` MERGES — carries every
+  bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
+  or `<env>-<name>` for a de-collided skill; plus any Source the fresh render
+  carries — the per-run stage holds only that item). Prompts/artifacts are refused:
+  they are never recorded in state, so they could not be removed again.
+  `env uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
+  item's rows) to the same `Sync`, skipping per-platform states without it.
+- `env uninstall` default removes EVERYTHING hydrate wrote
+  (`BuildScopedEmpty(prev, !onlyRuntime, onlyRuntime)`); `--only-runtime` keeps
+  context.
+
 ### Credential safety — the `.gitignore` block (`internal/cli/gitignore`)
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in

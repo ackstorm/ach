@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -86,13 +87,17 @@ func (fakeLease) Release() error { return nil }
 // ExtractResult — useful for "did the orchestrator call me" assertions.
 type fakeExtractor struct {
 	calls  *int
+	names  *[]string // when non-nil, records each extracted Ref.Name
 	result ExtractResult
 	err    error
 }
 
-func (f fakeExtractor) ExtractContent(_ context.Context, _ manifest.ContentRef, _ string, _ *state.File) (ExtractResult, error) {
+func (f fakeExtractor) ExtractContent(_ context.Context, ref manifest.ContentRef, _ string, _ *state.File) (ExtractResult, error) {
 	if f.calls != nil {
 		*f.calls++
+	}
+	if f.names != nil {
+		*f.names = append(*f.names, ref.Name)
 	}
 	if f.err != nil {
 		return ExtractResult{}, f.err
@@ -109,14 +114,18 @@ type fakeAdapterDispatcher struct {
 	result            RenderResult
 	err               error
 	gotProjectPlugins *bool
+	gotIncludeRuntime *bool
 }
 
-func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string, projectPlugins, _ bool) (RenderResult, error) {
+func (f fakeAdapterDispatcher) Render(_ context.Context, _ *manifest.Manifest, _ *state.File, _, _ string, projectPlugins, includeRuntime bool) (RenderResult, error) {
 	if f.calls != nil {
 		*f.calls++
 	}
 	if f.gotProjectPlugins != nil {
 		*f.gotProjectPlugins = projectPlugins
+	}
+	if f.gotIncludeRuntime != nil {
+		*f.gotIncludeRuntime = includeRuntime
 	}
 	if f.err != nil {
 		return RenderResult{}, f.err
@@ -881,7 +890,8 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 
 	// Precondition: by default (runtime-on) step6Diff emits 4 targets
 	// (1 context prompt + 3 runtime) — the scope contract is unchanged.
-	if got := len(c.step6Diff(manifestFn())); got != 4 {
+	if targets, _ := c.step6Diff(manifestFn()); len(targets) != 4 {
+		got := len(targets)
 		t.Fatalf("precondition: step6Diff = %d targets, want 4 (1 context + 3 runtime)", got)
 	}
 
@@ -1278,7 +1288,7 @@ func TestCommit_Step6Diff_OnlyRuntime_SkipsContext(t *testing.T) {
 			Artifacts: []manifest.ContentRef{{ID: "ar1"}},
 		},
 	}
-	targets := c.step6Diff(m)
+	targets, _ := c.step6Diff(m)
 	if len(targets) != 3 {
 		t.Fatalf("OnlyRuntime: got %d targets, want 3 (runtime only): %+v", len(targets), targets)
 	}
@@ -1303,7 +1313,7 @@ func TestCommit_Step6Diff_DefaultScope_ContextAndRuntime(t *testing.T) {
 			Prompts: []manifest.ContentRef{{ID: "p1"}},
 		},
 	}
-	targets := c.step6Diff(m)
+	targets, _ := c.step6Diff(m)
 	if len(targets) != 3 {
 		t.Fatalf("default scope: got %d targets, want 3 (1 prompt + 1 model + 1 mcp)", len(targets))
 	}
@@ -1319,7 +1329,7 @@ func TestCommit_Step6Diff_NoRuntime_ContextOnly(t *testing.T) {
 		Runtime:       &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "m1"}}},
 		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
 	}
-	targets := c.step6Diff(m)
+	targets, _ := c.step6Diff(m)
 	if len(targets) != 1 || targets[0].Kind != "prompt" {
 		t.Fatalf("--no-runtime scope: got %+v, want 1 prompt only", targets)
 	}
@@ -1335,7 +1345,7 @@ func TestCommit_Step6Diff_OnlyRuntime_RuntimeOnly(t *testing.T) {
 		Runtime:       &manifest.RuntimeBlock{MCPServers: []manifest.ContentRef{{ID: "s1"}}},
 		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
 	}
-	targets := c.step6Diff(m)
+	targets, _ := c.step6Diff(m)
 	if len(targets) != 1 || targets[0].Kind != "mcpServer" {
 		t.Fatalf("--only-runtime scope: got %+v, want 1 mcpServer only", targets)
 	}
@@ -1714,5 +1724,189 @@ func TestPersonBearer(t *testing.T) {
 		if got := personBearer(bearer); got != want {
 			t.Errorf("personBearer(%q) = %v, want %v", bearer, got, want)
 		}
+	}
+}
+
+// ---- --only <kind>/<name> ----
+
+// newOnlyCommit wires a commit for an `--only` run: the manifest carries
+// plugins a,b, skill s and one runtime MCP server; every prior state row is
+// staged on disk (toolRoot == wsRoot, as in project scope; RuntimeFiles are
+// achDir-relative) so step 4 keeps it.
+func newOnlyCommit(t *testing.T, it Item, existing *state.File) (*commit, *fakeStateStore, *[]string) {
+	t.Helper()
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.opts.Only = &it
+	wsRoot := filepath.Join(c.achDir, "..")
+	c.toolRoot = wsRoot
+	if existing != nil {
+		runtime := map[string]bool{}
+		for _, e := range existing.RuntimeFiles {
+			runtime[e.Target] = true
+		}
+		for _, e := range state.WalkEntries(existing) {
+			abs := filepath.Join(wsRoot, e.Target)
+			if runtime[e.Target] {
+				abs = filepath.Join(c.achDir, e.Target)
+			}
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(abs, []byte(e.Target), 0o644); err != nil {
+				t.Fatalf("stage %s: %v", e.Target, err)
+			}
+		}
+		store.loadFn = func(string) (*state.File, error) { return existing, nil }
+	}
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{
+			SchemaVersion: "v1alpha1",
+			Environment:   "demo",
+			Runtime:       &manifest.RuntimeBlock{MCPServers: []manifest.ContentRef{{ID: "m1", Endpoint: "/mcp/m1"}}},
+			Context: &manifest.ContextBlock{
+				Plugins: []manifest.ContentRef{{ID: "p-a", Name: "a"}, {ID: "p-b", Name: "b"}},
+				Skills:  []manifest.ContentRef{{ID: "s-s", Name: "s"}},
+			},
+		}, nil
+	}
+	var names []string
+	c.extractor = fakeExtractor{names: &names}
+	return c, store, &names
+}
+
+func row(target, h, source string) state.FileEntry {
+	return state.FileEntry{Target: target, Hash: h, SourceHash: h, Source: source}
+}
+
+func TestCommit_Only_FiltersToOneItemAndNoRuntime(t *testing.T) {
+	prior := &state.File{SchemaVersion: "3", Environment: "demo",
+		RuntimeFiles: []state.FileEntry{row("runtime-claude-code/mcp.json", "xxh3:rt", "")},
+	}
+	c, store, names := newOnlyCommit(t, Item{Kind: kindPlugin, Name: "a"}, prior)
+	var includeRuntime bool
+	c.adapter = fakeAdapterDispatcher{
+		gotIncludeRuntime: &includeRuntime,
+		result:            RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/rules/a.md", Hash: "xxh3:a", Source: "a"}}},
+	}
+
+	res, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("c.run = %v", err)
+	}
+	if len(*names) != 1 || (*names)[0] != "a" {
+		t.Errorf("extracted %v; want only [a]", *names)
+	}
+	if includeRuntime {
+		t.Error("Render got includeRuntime=true; --only must never write runtime")
+	}
+	if res.RuntimeSummary != (RuntimeSummary{}) {
+		t.Errorf("RuntimeSummary = %+v; want zero under --only", res.RuntimeSummary)
+	}
+	if got := store.savedFile.RuntimeFiles; len(got) != 1 || got[0].Target != "runtime-claude-code/mcp.json" ||
+		got[0].Hash != "xxh3:rt" {
+		t.Errorf("RuntimeFiles = %+v; want the prior row carried forward", got)
+	}
+}
+
+func TestCommit_Only_MergesStateInsteadOfReplacing(t *testing.T) {
+	prior := &state.File{SchemaVersion: "3", Environment: "demo",
+		Plugins: []state.FileEntry{row(".claude/rules/b.md", "xxh3:b", "b")},
+		Skills:  []state.FileEntry{row(".claude/skills/s/SKILL.md", "xxh3:s", "s")},
+	}
+	c, store, _ := newOnlyCommit(t, Item{Kind: kindPlugin, Name: "a"}, prior)
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/rules/a.md", Hash: "xxh3:a", Source: "a"}}},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v", err)
+	}
+	got := map[string]bool{}
+	for _, e := range append(store.savedFile.Plugins, store.savedFile.Skills...) {
+		got[e.Source] = true
+	}
+	for _, want := range []string{"a", "b", "s"} {
+		if !got[want] {
+			t.Errorf("state lost %q: plugins=%+v skills=%+v", want, store.savedFile.Plugins, store.savedFile.Skills)
+		}
+	}
+}
+
+func TestCommit_Only_ReinstallReplacesOnlyThatItem(t *testing.T) {
+	rowB := state.FileEntry{Target: ".claude/rules/b.md", Hash: "xxh3:b", SourceHash: "xxh3:b",
+		Merge: "composite", Keys: []string{"b"}, Source: "b"}
+	prior := &state.File{SchemaVersion: "3", Environment: "demo",
+		Plugins: []state.FileEntry{row(".claude/rules/a.md", "xxh3:a-old", "a"), row(".claude/rules/a2.md", "xxh3:a2", "a"), rowB},
+	}
+	c, store, _ := newOnlyCommit(t, Item{Kind: kindPlugin, Name: "a"}, prior)
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/rules/a.md", Hash: "xxh3:a-new", Source: "a"}}},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v", err)
+	}
+	var aRows []state.FileEntry
+	var bRow *state.FileEntry
+	for i, e := range store.savedFile.Plugins {
+		switch e.Source {
+		case "a":
+			aRows = append(aRows, e)
+		case "b":
+			bRow = &store.savedFile.Plugins[i]
+		}
+	}
+	if len(aRows) != 1 || aRows[0].Hash != "xxh3:a-new" {
+		t.Errorf("a rows = %+v; want exactly the fresh a.md row", aRows)
+	}
+	if bRow == nil || !reflect.DeepEqual(*bRow, rowB) {
+		t.Errorf("b row = %+v; want byte-identical %+v", bRow, rowB)
+	}
+}
+
+func TestCommit_Only_ItemNotInManifest(t *testing.T) {
+	c, store, names := newOnlyCommit(t, Item{Kind: kindPlugin, Name: "z"}, nil)
+	c.adapter = fakeAdapterDispatcher{}
+
+	_, err := c.run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `plugin "z" is not in environment "demo"`) {
+		t.Fatalf("err = %v; want not-in-environment error", err)
+	}
+	var ce *exit.CodedError
+	if !errors.As(err, &ce) || ce.Code != exit.General {
+		t.Errorf("err = %#v; want exit.General", err)
+	}
+	if store.saveCount != 0 {
+		t.Errorf("Save called %d times; want 0", store.saveCount)
+	}
+	if len(*names) != 0 {
+		t.Errorf("extracted %v; want nothing", *names)
+	}
+}
+
+// TestCommit_Only_ByIDReplacesTheItemRows picks the item by its manifest id:
+// the prior rows (recorded under the plugin NAME) must still be swapped.
+func TestCommit_Only_ByIDReplacesTheItemRows(t *testing.T) {
+	prior := &state.File{SchemaVersion: "3", Environment: "demo",
+		Plugins: []state.FileEntry{row(".claude/rules/old-a.md", "xxh3:a-old", "a"), row(".claude/rules/b.md", "xxh3:b", "b")},
+	}
+	c, store, names := newOnlyCommit(t, Item{Kind: kindPlugin, Name: "p-a"}, prior)
+	c.adapter = fakeAdapterDispatcher{
+		result: RenderResult{ProjectedFiles: []FileWrite{{Target: ".claude/rules/a.md", Hash: "xxh3:a-new", Source: "a"}}},
+	}
+
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v", err)
+	}
+	if len(*names) != 1 || (*names)[0] != "a" {
+		t.Errorf("extracted %v; want [a]", *names)
+	}
+	targets := make([]string, 0, len(store.savedFile.Plugins))
+	for _, e := range store.savedFile.Plugins {
+		targets = append(targets, e.Target)
+	}
+	if !reflect.DeepEqual(targets, []string{".claude/rules/b.md", ".claude/rules/a.md"}) {
+		t.Errorf("Plugins targets = %v; want b kept, old a replaced by the fresh a", targets)
 	}
 }

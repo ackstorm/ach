@@ -55,7 +55,8 @@ type uninstallInputs struct {
 	global      bool
 	lockTimeout time.Duration
 	onlyRuntime bool
-	output      string // --dir
+	output      string        // --dir
+	only        *hydrate.Item // --only
 }
 
 // newUninstallCmd returns a fresh `ach-cli env uninstall` cobra.Command.
@@ -69,6 +70,7 @@ func newUninstallCmd() *cobra.Command {
 		flagLockTimeout time.Duration
 		flagOnlyRuntime bool
 		flagDir         string
+		flagOnly        string
 	)
 
 	cmd := &cobra.Command{
@@ -77,8 +79,8 @@ func newUninstallCmd() *cobra.Command {
 		Short: "Remove the projected resource set for the active workspace+environment",
 		Long: `Tear down the projected resources ach-cli env hydrate installed for the
 active workspace+environment, reusing the same inverse-merge engine that
-hydrate --sync uses. uninstall removes the WHOLE projection in scope
-(no per-plugin selection, D-25); preview with --dry-run.
+hydrate --sync uses. uninstall removes the WHOLE projection in scope, or
+one plugin/skill with --only; preview with --dry-run.
 
 The positional <name> is the target Environment — REQUIRED, it namespaces
 the <ach-dir> in project and --global scope.
@@ -87,12 +89,28 @@ Scope (mirrors hydrate):
   (default)           Remove EVERYTHING hydrate wrote: context (prompts /
                       plugins / artifacts / skills) AND runtime config.
   --only-runtime      Strip ONLY runtime config (MCP servers / A2A agents).
+  --only <kind>/<name>
+                      Remove just one plugin or skill (plugin/<name> or
+                      skill/<name>) installed from this environment.
 
 Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json,
 CLAUDE.md / GEMINI.md) are inverse-merged: only the engine's keys/marker
 blocks are removed; other contributors' and the user's keys survive.
-User-edited projected files are preserved unless --force (drift-wins).`,
+User-edited projected files are preserved unless --force (drift-wins).
+
+Example:
+  ach-cli env uninstall frontend-dev --only plugin/code-review -g`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var only *hydrate.Item
+			if flagOnly != "" {
+				var err error
+				if only, err = hydrate.ParseItem(flagOnly); err != nil {
+					return &exit.CodedError{Code: exit.General, Msg: err.Error()}
+				}
+				if flagOnlyRuntime {
+					return &exit.CodedError{Code: exit.General, Msg: "--only and --only-runtime are mutually exclusive"}
+				}
+			}
 			return runUninstall(cmd, uninstallInputs{
 				environment: args[0],
 				force:       flagForce,
@@ -101,6 +119,7 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 				lockTimeout: flagLockTimeout,
 				onlyRuntime: flagOnlyRuntime,
 				output:      flagDir,
+				only:        only,
 			})
 		},
 	}
@@ -116,6 +135,8 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 		"Wait up to <d> for the workspace lock instead of failing fast")
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
 		"Strip ONLY runtime config, leaving context in place")
+	cmd.Flags().StringVar(&flagOnly, "only", "",
+		"Remove just one item, plugin/<name> or skill/<name>")
 	cmd.Flags().StringVar(&flagDir, "dir", "",
 		"Workspace root override (default: cwd)")
 
@@ -173,6 +194,9 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		}
 	}
 	if len(statePaths) == 0 {
+		if in.only != nil {
+			return notInstalled(in)
+		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "nothing installed; no state.json found")
 		return nil
 	}
@@ -189,6 +213,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	// → inverse-merge teardown → state cleanup. Shared workspace content (prompts/
 	// artifacts) removed by the first state is a graceful no-op for the rest.
 	var totalPruned, totalPreserved int
+	matched := false
 	for _, sp := range statePaths {
 		prev, lerr := state.Load(sp)
 		if lerr != nil {
@@ -202,6 +227,15 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			continue
 		}
 		scopedEmpty := hydrate.BuildScopedEmpty(prev, !in.onlyRuntime, in.onlyRuntime)
+		if in.only != nil {
+			// --only: survivor = prev minus the item's rows; a platform state
+			// that never installed the item is left alone.
+			var ok bool
+			if scopedEmpty, ok = hydrate.BuildItemRemoved(prev, *in.only); !ok {
+				continue
+			}
+		}
+		matched = true
 		stats, serr := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{
 			Force:  in.force,
 			Stderr: cmd.ErrOrStderr(),
@@ -227,6 +261,10 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		totalPreserved += stats.Preserved
 	}
 
+	if in.only != nil && !matched {
+		return notInstalled(in)
+	}
+
 	// (h) Stats summary.
 	dryRunSuffix := ""
 	if in.dryRun {
@@ -235,6 +273,14 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 		"uninstall: pruned %d, preserved %d%s\n", totalPruned, totalPreserved, dryRunSuffix)
 	return nil
+}
+
+// notInstalled is the --only error for an item absent from every state file.
+func notInstalled(in uninstallInputs) error {
+	return &exit.CodedError{
+		Code: exit.General,
+		Msg:  fmt.Sprintf("%s %q is not installed from environment %q", in.only.Kind, in.only.Name, in.environment),
+	}
 }
 
 // acquireUninstallLock mirrors commit.go:step1Lock: ensure <ach-dir>

@@ -1398,26 +1398,23 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 		toolRoot = achDir
 	}
 
-	// Build the set of Targets present in newFile so we can compute
-	// the to-delete set as set-difference.
-	keep := map[string]struct{}{}
-	if newFile != nil {
-		for _, e := range state.WalkEntries(newFile) {
-			keep[e.Target] = struct{}{}
-		}
-	}
+	// Build what newFile still claims, per Target, so we can compute the
+	// to-delete set as set-difference.
+	keep := newSyncKeep(newFile)
 
-	// Collect deletable entries — those in prev but not in newFile.
+	// Collect deletable entries — those in prev not (fully) claimed by newFile.
 	type del struct {
 		entry state.FileEntry
 		abs   string
+		keys  []string // deep rows: the uncovered keys to prune
 	}
 	prevEntries := walkEntriesTagged(prev)
 	dels := make([]del, 0, len(prevEntries))
 	parentDirs := map[string]struct{}{}
 	for _, te := range prevEntries {
 		e := te.Entry
-		if _, ok := keep[e.Target]; ok {
+		keys, drop := keep.uncovered(e)
+		if !drop {
 			continue
 		}
 		base := achDir
@@ -1425,7 +1422,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 			base = toolRoot
 		}
 		abs := adapter.ResolveDest(base, e.Target)
-		dels = append(dels, del{entry: e, abs: abs})
+		dels = append(dels, del{entry: e, abs: abs, keys: keys})
 		parentDirs[filepath.Dir(abs)] = struct{}{}
 	}
 
@@ -1436,7 +1433,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	})
 
 	for _, d := range dels {
-		preserved, err := syncOne(d.entry, d.abs, opts)
+		preserved, err := syncOne(d.entry, d.keys, d.abs, opts)
 		if err != nil {
 			return stats, err
 		}
@@ -1455,6 +1452,81 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	}
 
 	return stats, nil
+}
+
+// syncKeep is what a next state still claims, per Target: the whole file
+// (a replace row), composite marker blocks by id, and deep keys.
+type syncKeep map[string]*targetClaims
+
+type targetClaims struct {
+	file      bool
+	composite map[string]bool // marker id ("" = generic region)
+	deep      map[string]bool // dotted key
+}
+
+func newSyncKeep(f *state.File) syncKeep {
+	k := syncKeep{}
+	if f == nil {
+		return k
+	}
+	for _, e := range state.WalkEntries(f) {
+		c := k[e.Target]
+		if c == nil {
+			c = &targetClaims{composite: map[string]bool{}, deep: map[string]bool{}}
+			k[e.Target] = c
+		}
+		switch e.Merge {
+		case mergeStrComposite:
+			c.composite[compositeID(e)] = true
+		case mergeStrDeep:
+			for _, key := range e.Keys {
+				c.deep[key] = true
+			}
+		default:
+			c.file = true
+		}
+	}
+	return k
+}
+
+// uncovered reports whether prev row e must be (partly) removed. A row
+// survives when the next state still records its contribution: any row on
+// its Target for a whole-file (replace) row, the same marker block for a
+// composite row, every key for a deep row. Keying on Target alone skipped a
+// row dropped from a SHARED file (two plugins' blocks in one CLAUDE.md or
+// .mcp.json). For a deep row the uncovered keys are returned: a key the
+// next state still claims (e.g. a runtime key set that grew) must never be
+// pruned, since Render has just written it.
+func (k syncKeep) uncovered(e state.FileEntry) (keys []string, drop bool) {
+	c := k[e.Target]
+	if c == nil {
+		return nil, true
+	}
+	if c.file {
+		return nil, false
+	}
+	switch e.Merge {
+	case mergeStrComposite:
+		return nil, !c.composite[compositeID(e)]
+	case mergeStrDeep:
+		for _, key := range e.Keys {
+			if !c.deep[key] {
+				keys = append(keys, key)
+			}
+		}
+		return keys, len(keys) > 0
+	default:
+		return nil, false
+	}
+}
+
+// compositeID is the marker id of a composite row: its plugin name, or ""
+// for a pre-Phase-2 row using the generic region.
+func compositeID(e state.FileEntry) string {
+	if len(e.Keys) > 0 {
+		return e.Keys[0]
+	}
+	return ""
 }
 
 // currentScopedHash recomputes, from the on-disk file, the hash of ONLY
@@ -1507,8 +1579,10 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 
 // syncOne handles a single state entry's removal/inverse-merge.
 // Returns (preserved, err) — preserved=true when drift-wins skipped
-// the work.
-func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
+// the work. For a deep row, pruneKeys (when non-nil) narrows the removal to
+// the keys the next state no longer claims; the drift gate still hashes the
+// row's recorded key set, which is what e.Hash covers.
+func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions) (bool, error) {
 	// Read the on-disk file; absence means already gone — count as
 	// pruned (the engine's bookkeeping treats the entry as removed).
 	info, statErr := os.Stat(abs)
@@ -1543,6 +1617,9 @@ func syncOne(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
 	case mergeStrComposite:
 		return syncComposite(e, abs, opts)
 	case mergeStrDeep:
+		if pruneKeys != nil {
+			e.Keys = pruneKeys
+		}
 		return syncDeep(e, abs, opts)
 	case "", mergeStrReplace:
 		// Replace / unmerged → unlink (would-prune). Preview: classify

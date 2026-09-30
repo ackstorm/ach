@@ -3,7 +3,9 @@
 package hydrate
 
 import (
+	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/conflict"
@@ -50,6 +52,10 @@ type Opts struct {
 	// (engine treats OnlyRuntime as having precedence over NoRuntime
 	// per spec §6.3).
 	OnlyRuntime bool
+
+	// Only hydrates just this item: runtime off, no --sync, state MERGED
+	// into the prior state instead of replacing the Plugins/Skills buckets.
+	Only *Item
 
 	// --- behavior toggles ---
 
@@ -136,4 +142,18 @@ type Opts struct {
 	// second return value; unit tests leave nil to exercise the W1
 	// stub fall-through in commit.run().
 	AdapterDispatcher AdapterDispatcher
+}
+
+// Item names one context item of an Environment: --only <kind>/<name>.
+type Item struct{ Kind, Name string } // Kind: kindPlugin | kindSkill
+
+// ParseItem parses --only: "plugin/<name>" or "skill/<name>". Prompts and
+// artifacts are refused: they are never recorded in state, so an --only
+// install of one could not be removed again.
+func ParseItem(s string) (*Item, error) {
+	kind, name, ok := strings.Cut(s, "/")
+	if !ok || (kind != kindPlugin && kind != kindSkill) || name == "" || strings.Contains(name, "/") {
+		return nil, errors.New("--only must be plugin/<name> or skill/<name>")
+	}
+	return &Item{Kind: kind, Name: name}, nil
 }

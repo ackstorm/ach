@@ -111,6 +111,7 @@ func newHydrateCmd() *cobra.Command {
 		flagTarget        []string
 		flagGlobal        bool
 		flagConflict      string
+		flagOnly          string
 
 		// D-04 hidden flag — surface preserved for the W3-P3 golden-
 		// diff anchor.
@@ -128,6 +129,11 @@ Scope:
   (default)           Project context (prompts / plugins / artifacts /
                       skills) AND runtime (MCP servers / A2A agents).
   --only-runtime      Project ONLY runtime entries (excludes context).
+  --only <kind>/<name>
+                      Install just one plugin or skill (plugin/<name> or
+                      skill/<name>) and merge it into the existing state.
+                      No runtime is written; needs an environment and
+                      cannot be combined with --sync, --only-runtime.
 
 Behavior:
   --sync              Remove files no longer in the environment.
@@ -155,6 +161,9 @@ Credentials:
 The positional <name> is the environment; with a key it is optional (the
 key is already scoped to one environment).
 
+Example:
+  ach-cli env hydrate frontend-dev --only plugin/code-review -g --target claude-code
+
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
   3 not authorized   4 wrong environment for this key   5 state mismatch
@@ -163,6 +172,12 @@ Exit codes:
 			conflict, err := conflict.Parse(flagConflict)
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: err.Error()}
+			}
+			var only *hydrate.Item
+			if flagOnly != "" {
+				if only, err = hydrate.ParseItem(flagOnly); err != nil {
+					return &exit.CodedError{Code: exit.General, Msg: err.Error()}
+				}
 			}
 			env := ""
 			if len(args) > 0 {
@@ -186,6 +201,7 @@ Exit codes:
 				global:        flagGlobal,
 				conflict:      conflict,
 				raw:           flagRaw,
+				only:          only,
 			})
 		},
 	}
@@ -221,6 +237,8 @@ Exit codes:
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	cmd.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
+	cmd.Flags().StringVar(&flagOnly, "only", "",
+		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
 
 	// D-04 hidden: --raw preserves the Phase 6 POST+stream byte-for-byte
 	// contract. Hidden so --help advertises only the engine surface.
@@ -259,6 +277,7 @@ type hydrateInputs struct {
 	platform      []string // --target
 	global        bool
 	conflict      conflict.Policy
+	only          *hydrate.Item // --only
 
 	// D-04 hidden raw flag.
 	raw bool
@@ -363,10 +382,26 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 // assertScopeFlags enforces the flag mutual exclusions:
 //
 //   - --wait + --lock-timeout → exit 1.
+//   - --only + --sync / --only-runtime / --raw, or --only without an
+//     environment → exit 1.
 //
 // The rejection cites the offending flag pair in the error message so
 // the user can pick one and re-run.
 func assertScopeFlags(in hydrateInputs) error {
+	if in.only != nil {
+		for _, c := range []struct {
+			set  bool
+			flag string
+		}{{in.sync, "--sync"}, {in.onlyRuntime, "--only-runtime"}, {in.raw, "--raw"}} {
+			if c.set {
+				return &exit.CodedError{Code: exit.General, Msg: "--only and " + c.flag + " are mutually exclusive"}
+			}
+		}
+		if in.environment == "" && in.envEnvironment == "" {
+			return &exit.CodedError{Code: exit.General,
+				Msg: "--only needs an environment: ach-cli env hydrate <env> --only <kind>/<name>"}
+		}
+	}
 	if in.wait && in.lockTimeout > 0 {
 		return &exit.CodedError{
 			Code: exit.General,
@@ -460,6 +495,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 			Sync:              in.sync,
 			Force:             in.force,
 			Conflict:          in.conflict,
+			Only:              in.only,
 			DryRun:            in.dryRun,
 			AllowSymlinks:     in.allowSymlinks,
 			Output:            in.output,

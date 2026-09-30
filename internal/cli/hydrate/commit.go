@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -401,7 +402,10 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	c.maybeKill(5)
 
 	// Step 6: scope-aware diff.
-	diffTargets := c.step6Diff(m)
+	diffTargets, err := c.step6Diff(m)
+	if err != nil {
+		return result, err
+	}
 	c.maybeKill(6)
 
 	// Steps 7-9: fetch / extract / hash+classify. The W3-05 concrete
@@ -473,7 +477,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// runtime AND plugin-contributed mcps; --no-runtime opts out of the
 	// direct-runtime leg. Hoisted here so both the Render call and the
 	// runtime mirror (step 10b) share one definition.
-	includeRuntime := !c.opts.NoRuntime
+	includeRuntime := c.includeRuntime()
 	var renderResult RenderResult
 	adapterRan := false
 	if c.adapter != nil && !c.opts.DryRun {
@@ -594,8 +598,15 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
+// includeRuntime reports whether this run writes the direct runtime block:
+// on by default, off under NoRuntime and under --only (which (re)installs
+// one item and nothing else).
+func (c *commit) includeRuntime() bool {
+	return !c.opts.NoRuntime && c.opts.Only == nil
+}
+
 func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
-	includeRuntime := !c.opts.NoRuntime
+	includeRuntime := c.includeRuntime()
 	if !includeRuntime || m == nil || m.Runtime == nil {
 		return RuntimeSummary{}
 	}
@@ -937,14 +948,16 @@ func (dt diffTarget) isExtractableContent() bool {
 //   - opts.OnlyRuntime  → runtime only (skip context entirely)
 //   - opts.NoRuntime    → context only (skip runtime entirely)
 //   - default           → runtime + context (runtime-on-by-default)
-func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
+//   - opts.Only         → that one plugin/skill (matched by name or id);
+//     an error when the manifest does not carry it
+func (c *commit) step6Diff(m *manifest.Manifest) ([]diffTarget, error) {
 	var targets []diffTarget
 	if m == nil {
-		return targets
+		return targets, nil
 	}
 
 	includeContext := !c.opts.OnlyRuntime
-	includeRuntime := !c.opts.NoRuntime
+	includeRuntime := c.includeRuntime()
 
 	if includeContext && m.Context != nil {
 		for _, p := range m.Context.Prompts {
@@ -971,7 +984,18 @@ func (c *commit) step6Diff(m *manifest.Manifest) []diffTarget {
 			targets = append(targets, diffTarget{Kind: "a2aAgent", Ref: r})
 		}
 	}
-	return targets
+	if it := c.opts.Only; it != nil {
+		targets = slices.DeleteFunc(targets, func(dt diffTarget) bool {
+			return dt.Kind != it.Kind || (dt.Ref.Name != it.Name && dt.Ref.ID != it.Name)
+		})
+		if len(targets) == 0 {
+			return nil, &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("%s %q is not in environment %q", it.Kind, it.Name, c.opts.Environment),
+			}
+		}
+	}
+	return targets, nil
 }
 
 // warnDropped emits up to two end-of-hydration stderr warnings; exit code is
@@ -1057,6 +1081,27 @@ func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, re
 	}
 	if m != nil && m.Environment != "" && next.Environment == "" {
 		next.Environment = m.Environment
+	}
+
+	// --only MERGES: everything is carried forward (RuntimeFiles and Adapter
+	// included — runtime was not written) and only the item's rows in its
+	// bucket are swapped for the fresh render's. The render holds just this
+	// item (the per-run stage root only has it), so every fresh row of that
+	// bucket is the item's; a prior row is the item's when owns() says so or
+	// it shares a fresh row's Source (an item picked by id, or a skill staged
+	// under its <env>-<name> de-collision prefix).
+	if it := c.opts.Only; it != nil {
+		if !adapterRan {
+			return next
+		}
+		fresh := *it.bucket(&state.File{Plugins: pluginsSectionFromRender(render), Skills: skillsSectionFromRender(render)})
+		b := it.bucket(next)
+		*b = slices.DeleteFunc(slices.Clone(*b), func(e state.FileEntry) bool {
+			return it.owns(e, next.Environment) ||
+				slices.ContainsFunc(fresh, func(f state.FileEntry) bool { return f.Source == e.Source })
+		})
+		*b = append(*b, fresh...)
+		return next
 	}
 
 	// Compose the adapter section from the fresh render. publishRuntimeFile

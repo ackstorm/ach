@@ -236,3 +236,81 @@ func TestUninstall_ForceFlagThreadsThrough(t *testing.T) {
 		t.Fatal("--force must set SyncOptions.Force=true")
 	}
 }
+
+// onlyPrev is a prod state with plugins a, b and skill s.
+func onlyPrev() *state.File {
+	return &state.File{
+		SchemaVersion: "3",
+		Environment:   "demo",
+		Plugins: []state.FileEntry{
+			{Target: "CLAUDE.md", Hash: "ha", Merge: "composite", Keys: []string{"a"}, Source: "a"},
+			{Target: "CLAUDE.md", Hash: "hb", Merge: "composite", Keys: []string{"b"}, Source: "b"},
+		},
+		Skills:       []state.FileEntry{{Target: ".claude/skills/s/SKILL.md", Hash: "hs", Source: "s"}},
+		RuntimeFiles: []state.FileEntry{{Target: "runtime/mcp.json", Hash: "hr"}},
+	}
+}
+
+func TestUninstall_Only_RemovesJustThatItem(t *testing.T) {
+	ws := t.TempDir()
+	statePath := writeState(t, ws, onlyPrev())
+
+	var rec recordedSync
+	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1}, nil)
+
+	_, _, code, err := executeUninstall(t, "--dir", ws, "demo", "--only", "plugin/a")
+	if err != nil || code != exit.OK {
+		t.Fatalf("uninstall --only: code=%d err=%v", code, err)
+	}
+	want, _ := hydrate.BuildItemRemoved(onlyPrev(), hydrate.Item{Kind: "plugin", Name: "a"})
+	if len(rec.scopedEmpty.Plugins) != 1 || rec.scopedEmpty.Plugins[0].Source != "b" ||
+		len(rec.scopedEmpty.Skills) != 1 || len(rec.scopedEmpty.RuntimeFiles) != 1 {
+		t.Fatalf("Sync survivor = %+v; want prev minus a (%+v)", rec.scopedEmpty, want)
+	}
+	got, err := state.Load(statePath)
+	if err != nil || got == nil {
+		t.Fatalf("reload state: %v %v", got, err)
+	}
+	if len(got.Plugins) != 1 || got.Plugins[0].Source != "b" || len(got.Skills) != 1 || got.Skills[0].Source != "s" {
+		t.Fatalf("saved state = plugins %+v skills %+v; want b + s", got.Plugins, got.Skills)
+	}
+}
+
+func TestUninstall_Only_NotInstalled(t *testing.T) {
+	ws := t.TempDir()
+	prev := onlyPrev()
+	prev.Plugins = prev.Plugins[1:] // only b installed
+	writeState(t, ws, prev)
+
+	var rec recordedSync
+	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
+
+	_, _, code, err := executeUninstall(t, "--dir", ws, "demo", "--only", "plugin/a")
+	const want = `plugin "a" is not installed from environment "demo"`
+	if err == nil || code != exit.General || !strings.Contains(err.Error(), want) {
+		t.Fatalf("code=%d err=%v; want exit 1 not-installed", code, err)
+	}
+	if rec.called {
+		t.Fatal("Sync must not run when the item is not installed")
+	}
+}
+
+func TestUninstall_Only_RejectsOnlyRuntimeAndBadItem(t *testing.T) {
+	ws := t.TempDir()
+	writeState(t, ws, onlyPrev())
+	var rec recordedSync
+	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
+
+	for _, args := range [][]string{
+		{"--dir", ws, "demo", "--only", "plugin/a", "--only-runtime"},
+		{"--dir", ws, "demo", "--only", "prompt/a"},
+	} {
+		_, _, code, err := executeUninstall(t, args...)
+		if err == nil || code != exit.General {
+			t.Errorf("%v: code=%d err=%v; want exit 1", args, code, err)
+		}
+	}
+	if rec.called {
+		t.Fatal("Sync must not run on a rejected --only")
+	}
+}

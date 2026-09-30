@@ -75,3 +75,32 @@ func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state
 
 	return out
 }
+
+// BuildItemRemoved returns prev minus the item's rows (plugin: Plugins where
+// Source==name; skill: Skills where Source==name) — the survivor set
+// `env uninstall --only` feeds to Sync. ok=false when no row matched. prev
+// is never mutated.
+func BuildItemRemoved(prev *state.File, it Item) (out *state.File, ok bool) {
+	cp := *prev
+	cp.SchemaVersion = "3"
+	b := it.bucket(&cp)
+	kept := slices.DeleteFunc(slices.Clone(*b), func(e state.FileEntry) bool { return it.owns(e, prev.Environment) })
+	ok = len(kept) != len(*b)
+	*b = kept
+	return &cp, ok
+}
+
+// owns reports whether state row e belongs to the item: its Source is the
+// item's name or — for a skill de-collided across environments (see
+// projectSkills) — "<env>-<name>".
+func (it Item) owns(e state.FileEntry, env string) bool {
+	return e.Source == it.Name || (it.Kind == kindSkill && e.Source == env+"-"+it.Name)
+}
+
+// bucket returns the item's state bucket in f.
+func (it Item) bucket(f *state.File) *[]state.FileEntry {
+	if it.Kind == kindSkill {
+		return &f.Skills
+	}
+	return &f.Plugins
+}

@@ -3,6 +3,7 @@
 package hydrate
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -126,4 +127,58 @@ func TestBuildScopedEmpty(t *testing.T) {
 			t.Fatal("returned RuntimeFiles aliases prev's backing array")
 		}
 	})
+}
+
+func TestParseItem(t *testing.T) {
+	for in, want := range map[string]Item{
+		"plugin/x": {Kind: kindPlugin, Name: "x"},
+		"skill/x":  {Kind: kindSkill, Name: "x"},
+	} {
+		got, err := ParseItem(in)
+		if err != nil || got == nil || *got != want {
+			t.Errorf("ParseItem(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"prompt/x", "plugin/", "/x", "x", "plugin/a/b", ""} {
+		if got, err := ParseItem(in); err == nil || err.Error() != "--only must be plugin/<name> or skill/<name>" {
+			t.Errorf("ParseItem(%q) = %v, %v; want the usage error", in, got, err)
+		}
+	}
+}
+
+func TestBuildItemRemoved(t *testing.T) {
+	prev := &state.File{SchemaVersion: "3", Environment: "demo", Profile: "p",
+		Plugins: []state.FileEntry{
+			{Target: "a1", Source: "a"}, {Target: "b1", Source: "b"}, {Target: "a2", Source: "a"},
+		},
+		Skills:       []state.FileEntry{{Target: "s1", Source: "s"}, {Target: "d1", Source: "demo-a"}},
+		RuntimeFiles: []state.FileEntry{{Target: "r1"}},
+		Adapter:      state.AdapterSection{ID: "claude-code", Files: []state.FileEntry{{Target: "ad1"}}},
+	}
+	before := fmt.Sprintf("%+v", *prev)
+
+	out, ok := BuildItemRemoved(prev, Item{Kind: kindPlugin, Name: "a"})
+	if !ok {
+		t.Fatal("ok = false; want true")
+	}
+	if len(out.Plugins) != 1 || out.Plugins[0].Source != "b" {
+		t.Errorf("Plugins = %+v; want only b", out.Plugins)
+	}
+	if len(out.Skills) != 2 || len(out.RuntimeFiles) != 1 || len(out.Adapter.Files) != 1 ||
+		out.Adapter.ID != "claude-code" || out.Environment != "demo" || out.Profile != "p" {
+		t.Errorf("other buckets not carried: %+v", out)
+	}
+
+	// A cross-environment de-collided skill is recorded as <env>-<name>.
+	out, ok = BuildItemRemoved(prev, Item{Kind: kindSkill, Name: "a"})
+	if !ok || len(out.Skills) != 1 || out.Skills[0].Source != "s" {
+		t.Errorf("skill/a: ok=%v Skills=%+v; want the demo-a row removed", ok, out.Skills)
+	}
+
+	if _, ok := BuildItemRemoved(prev, Item{Kind: kindSkill, Name: "zzz"}); ok {
+		t.Error("absent item: ok = true; want false")
+	}
+	if after := fmt.Sprintf("%+v", *prev); after != before {
+		t.Errorf("prev mutated:\n%s\n%s", before, after)
+	}
 }

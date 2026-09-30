@@ -1203,3 +1203,52 @@ func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
 		t.Errorf("bearer=%q stdout=%q", seen.Bearer, stdout)
 	}
 }
+
+// TestRunHydrate_Only threads --only into Opts.Only and rejects the
+// combinations the brief forbids before any engine run.
+func TestRunHydrate_Only(t *testing.T) {
+	setup := func(t *testing.T) *[]hydrate.Opts {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{URL: mock.server.URL, OAuth: testOAuth()})
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+		var got []hydrate.Opts
+		prev := hydrateRunFn
+		hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+			got = append(got, opts)
+			return hydrate.Result{}, nil
+		}
+		t.Cleanup(func() { hydrateRunFn = prev })
+		return &got
+	}
+
+	t.Run("threads Opts.Only", func(t *testing.T) {
+		got := setup(t)
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--target", "claude-code", "--only", "skill/x")
+		if err != nil || code != exit.OK {
+			t.Fatalf("code=%d err=%v", code, err)
+		}
+		if len(*got) != 1 || (*got)[0].Only == nil || *(*got)[0].Only != (hydrate.Item{Kind: "skill", Name: "x"}) {
+			t.Fatalf("Opts.Only = %+v; want skill/x", *got)
+		}
+	})
+	for name, args := range map[string][]string{
+		"bad item":     {"demo", "--only", "prompt/x"},
+		"sync":         {"demo", "--only", "plugin/x", "--sync"},
+		"only-runtime": {"demo", "--only", "plugin/x", "--only-runtime"},
+		"raw":          {"demo", "--only", "plugin/x", "--raw"},
+		"no env":       {"--only", "plugin/x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := setup(t)
+			_, _, code, err := executeHydrateEngine(t, append(args, "--target", "claude-code")...)
+			if err == nil || code != exit.General {
+				t.Fatalf("code=%d err=%v; want exit 1", code, err)
+			}
+			if len(*got) != 0 {
+				t.Errorf("engine ran; want rejection first")
+			}
+		})
+	}
+}

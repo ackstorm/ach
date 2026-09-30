@@ -997,3 +997,96 @@ func TestRender_NonEmptyRuntime_WritesMcpJson(t *testing.T) {
 		t.Fatalf("env with 1 mcp must write 1 runtime file, got %d", len(res.WrittenFiles))
 	}
 }
+
+// TestSync_SharedTargetRemovesOnlyDroppedRow is the `hydrate --sync` /
+// `uninstall --only` shape on a SHARED file: two plugins own one composite
+// block each in CLAUDE.md; the next state keeps only b's row. a's block must
+// be removed (the Target is still recorded for b, so a Target-only keep set
+// wrongly skipped a) and b's block must stay.
+func TestSync_SharedTargetRemovesOnlyDroppedRow(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	target := filepath.Join(achDir, "CLAUDE.md")
+
+	blockA := merge.CompositeBlock("a", []byte("guidance A\n"))
+	blockB := merge.CompositeBlock("b", []byte("guidance B\n"))
+	if err := os.WriteFile(target, []byte("# notes\n"+string(blockA)+string(blockB)), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	rowA := state.FileEntry{Target: target, Hash: hash.HashBytes(blockA), Merge: "composite", Keys: []string{"a"}, Source: "a"}
+	rowB := state.FileEntry{Target: target, Hash: hash.HashBytes(blockB), Merge: "composite", Keys: []string{"b"}, Source: "b"}
+	prev := &state.File{SchemaVersion: "3", Environment: "demo", Plugins: []state.FileEntry{rowA, rowB}}
+	next := &state.File{SchemaVersion: "3", Environment: "demo", Plugins: []state.FileEntry{rowB}}
+
+	stats, err := hydrate.Sync(prev, next, achDir, achDir, hydrate.SyncOptions{})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(target)
+	if strings.Contains(string(body), "guidance A") {
+		t.Errorf("a's marker block left behind: %s", body)
+	}
+	if !strings.Contains(string(body), "guidance B") || !strings.Contains(string(body), "# notes") {
+		t.Errorf("b's block or user prose lost: %s", body)
+	}
+	if stats.Pruned != 1 {
+		t.Errorf("Pruned = %d; want 1", stats.Pruned)
+	}
+}
+
+// TestSync_SharedDeepTargetPrunesOnlyUncoveredKeys covers the deep (JSON)
+// shape of a shared file: plugin a's mcpServers.a row is dropped and must be
+// subtracted, while a key the next state still records on the same file —
+// b's row, and the runtime row whose key set GREW from [x] to [x, y] — must
+// survive, and the runtime row's dropped key z must go. Deleting a
+// still-claimed key would undo what Render just wrote.
+func TestSync_SharedDeepTargetPrunesOnlyUncoveredKeys(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	target := filepath.Join(achDir, ".mcp.json")
+	doc := `{"mcpServers":{"a":{"url":"http://a"},"b":{"url":"http://b"},` +
+		`"x":{"url":"http://x"},"y":{"url":"http://y"},"z":{"url":"http://z"}}}`
+	if err := os.WriteFile(target, []byte(doc), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	subHash := func(keys ...string) string {
+		t.Helper()
+		m, err := merge.ParseDoc([]byte(doc), false)
+		if err != nil {
+			t.Fatalf("ParseDoc: %v", err)
+		}
+		sub, _ := merge.ExtractByKeys(m, keys)
+		h, err := merge.SubtreeHash(sub)
+		if err != nil {
+			t.Fatalf("SubtreeHash: %v", err)
+		}
+		return h
+	}
+	row := func(key string) state.FileEntry {
+		return state.FileEntry{Target: target, Hash: subHash(key), Merge: "deep", Keys: []string{key}}
+	}
+	prev := &state.File{SchemaVersion: "3", Environment: "demo",
+		Plugins: []state.FileEntry{row("mcpServers.a"), row("mcpServers.b")},
+		RuntimeFiles: []state.FileEntry{{Target: target, Hash: subHash("mcpServers.x", "mcpServers.z"),
+			Merge: "deep", Keys: []string{"mcpServers.x", "mcpServers.z"}}},
+	}
+	next := &state.File{SchemaVersion: "3", Environment: "demo",
+		Plugins:      []state.FileEntry{row("mcpServers.b")},
+		RuntimeFiles: []state.FileEntry{{Target: target, Merge: "deep", Keys: []string{"mcpServers.x", "mcpServers.y"}}},
+	}
+
+	if _, err := hydrate.Sync(prev, next, achDir, achDir, hydrate.SyncOptions{}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(target)
+	for _, k := range []string{`"a"`, `"z"`} {
+		if strings.Contains(string(body), k) {
+			t.Errorf("dropped key %s left behind: %s", k, body)
+		}
+	}
+	for _, k := range []string{`"b"`, `"x"`, `"y"`} {
+		if !strings.Contains(string(body), k) {
+			t.Errorf("still-claimed key %s removed: %s", k, body)
+		}
+	}
+}
