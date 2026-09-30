@@ -215,14 +215,14 @@ func phase7SeedXdgConfig(t *testing.T, baseURL string, creds userCreds) string {
 	return writeCLIConfig(t, baseURL, creds)
 }
 
-// phase7CreateEkKey runs `ach-cli keys create --environment demo
+// phase7CreateEkKey runs `ach-cli keys create demo
 // --name <label>` against the seeded XDG_CONFIG_HOME and returns the
 // minted ek_ plaintext. Used by the sc1_*_ek subtests to exercise the
 // ek_ credential path — pk_-only subtests do NOT call this helper.
 //
 // The minted ek_ is also persisted into the config.yaml under the
 // supplied label (D-07 always-persist), so subsequent `ach-cli hydrate
-// --env-key <label>` invocations resolve it from the same XDG.
+// --key <label>` invocations resolve it from the same XDG.
 //
 // On any non-zero exit or unparseable stdout, the subtest fails fast
 // with the captured stdout + stderr in the error message — no silent
@@ -236,8 +236,7 @@ func phase7CreateEkKey(t *testing.T, xdgHome, label string) string {
 		t.Fatalf("phase7CreateEkKey: label must be non-empty")
 	}
 	stdout, stderr, err := phase7RunAchCli(t, xdgHome,
-		"keys", "create",
-		"--environment", phase7DemoEnvironment,
+		"keys", "create", phase7DemoEnvironment,
 		"--name", label,
 	)
 	code, runErr := phase7StripExitErr(err)
@@ -302,7 +301,7 @@ func phase7DemoEnvironmentReady(t *testing.T) {
 
 // phase7Workspace returns a freshly-allocated workspace root (t.TempDir
 // + an empty .claude/ scaffold). Used by sc1_*_pk subtests as the
-// `--output` flag value: the hydrate engine writes its state.json +
+// `--dir` flag value: the hydrate engine writes its state.json +
 // adapter runtime config under <workspace>/.ach/<env>/ and the adapter
 // outputs (e.g. .claude/.mcp.json) under <workspace>/.claude/.
 //
@@ -348,7 +347,7 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, phase7BinaryPath, phase7ArgsWithRuntime(args)...)
+	cmd := exec.CommandContext(ctx, phase7BinaryPath, args...)
 	// Strip the synthetic-mode env vars the e2e harness exports (E2E_RUN_ENV
 	// sets ACH_BASE_URL): they would flip the CLI into synthetic mode and
 	// ignore the seeded XDG disk-config credential (half-set-erroring when no
@@ -366,31 +365,11 @@ func phase7RunAchCliEnv(t *testing.T, xdgHome string, extraEnv []string, args ..
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
-// phase7ArgsWithRuntime keeps Phase 7 focused on the runtime-aware hydrate
-// contract. Production hydrate defaults to context-only; these tests assert
-// adapter runtime-config merge/drift semantics, so every hydrate invocation
-// goes through --include-runtime unless the caller already supplied it.
-func phase7ArgsWithRuntime(args []string) []string {
-	if len(args) < 2 || args[0] != "env" || args[1] != "hydrate" {
-		return args
-	}
-	for _, arg := range args[2:] {
-		if arg == "--include-runtime" {
-			return args
-		}
-	}
-	out := make([]string, 0, len(args)+1)
-	out = append(out, args[0], args[1], "--include-runtime")
-	out = append(out, args[2:]...)
-	return out
-}
-
 // syntheticModeEnvVars are the env vars that flip the CLI into "synthetic
-// mode" (spec §3.3 / CLI-07): ACH_BASE_URL + a resolved credential. The e2e
-// harness (E2E_RUN_ENV) exports ACH_BASE_URL into the test process, so these
-// are stripped before exec'ing the CLI — the Phase 7 suite authenticates via
-// the seeded XDG disk config, not synthetic mode.
-var syntheticModeEnvVars = []string{"ACH_BASE_URL", "ACH_API_KEY", "ACH_ENV_KEY"}
+// mode" (ACH_URL + ACH_KEY). They are stripped before exec'ing the CLI so
+// a developer's shell never leaks into the suite — it authenticates via the
+// seeded XDG disk config, not synthetic mode.
+var syntheticModeEnvVars = []string{"ACH_URL", "ACH_KEY"}
 
 // cleanEnv returns env with the synthetic-mode vars removed.
 func cleanEnv(env []string) []string {

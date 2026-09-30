@@ -14,8 +14,8 @@ the `ACH_BASE_URL` default and `examples/04-environment-demo.yaml` for
 the `demo` Environment the example uses):
 
 ```bash
-ach-cli login                                  # one-time device-code SSO
-ach-cli env hydrate demo > hydrate.json
+ach-cli login https://ach.local.test           # one-time SSO (browser or device code)
+ach-cli env hydrate demo --raw > hydrate.json
 ```
 
 The `hydrate.json` byte output reproduces `examples/hydrate.json`

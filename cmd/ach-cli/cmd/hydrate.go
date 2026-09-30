@@ -208,7 +208,7 @@ Exit codes:
 
 	// Phase 6 surface flags — preserved.
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
-		"Suppress the pk- credential warning")
+		"Suppress the tip to use an environment key (ek-) instead of your sign-in")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
 		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
 	registerCredFlags(cmd, &flagCred)

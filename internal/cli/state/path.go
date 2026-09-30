@@ -16,7 +16,7 @@ import (
 // without their caches/state colliding:
 //
 //   - Workspace scope (global=false): <workspaceCwd>/.ach/<environment>/state.json.
-//     workspaceCwd is the directory `ach-cli hydrate` was invoked from
+//     workspaceCwd is the directory `ach-cli env hydrate` was invoked from
 //     (the caller resolves it via os.Getwd at the cobra layer); this
 //     function does not call os.Getwd itself so tests can inject any
 //     path without chdir.

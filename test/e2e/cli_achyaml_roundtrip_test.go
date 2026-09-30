@@ -45,8 +45,7 @@ var achRoundTripEnvs = []string{"demo", "env-valid"}
 // so the cwd-relative commands (`env save`, bare `env hydrate`) operate on
 // the temp workspace rather than the e2e package directory. Same env hygiene
 // as phase7RunAchCliEnv (synthetic-mode vars stripped, XDG seeded,
-// ACH_INSECURE=1 for the http:// local gateway) and the same
-// --include-runtime injection for hydrate calls.
+// ACH_INSECURE=1 for the http:// local gateway).
 func runAchCliInDir(t *testing.T, xdgHome, dir string, args ...string) ([]byte, []byte, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -58,7 +57,7 @@ func runAchCliInDir(t *testing.T, xdgHome, dir string, args ...string) ([]byte, 
 	if err != nil {
 		t.Fatalf("runAchCliInDir: resolve binary path %q: %v", phase7BinaryPath, err)
 	}
-	cmd := exec.CommandContext(ctx, bin, phase7ArgsWithRuntime(args)...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdgHome, "ACH_INSECURE=1")
 	var stdout, stderr bytes.Buffer

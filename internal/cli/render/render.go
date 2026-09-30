@@ -75,7 +75,7 @@ type BlockView struct {
 // Endpoint surfaces the per-runtime `endpoint` JSON key emitted by the
 // server's hydrate handler — the W3 contract anchors here: every
 // rendered runtime row exposes this string verbatim so the user can
-// inspect runtime wiring via `ach env describe`. The Name field is a
+// inspect runtime wiring via `ach-cli env describe`. The Name field is a
 // local convenience (the server emits {id, endpoint} only — Name is
 // populated by the caller from the same source as ID when present).
 type RuntimeItem struct {
@@ -88,7 +88,7 @@ type RuntimeItem struct {
 // DownloadURL surfaces the per-context-entry `downloadUrl` JSON key
 // emitted by the server's hydrate handler — the W3 contract anchors
 // here: every rendered context row exposes this string verbatim so
-// the user can inspect content routing via `ach env describe`.
+// the user can inspect content routing via `ach-cli env describe`.
 type ContextItem struct {
 	Name        string `json:"name"`
 	ID          string `json:"id"`
@@ -178,7 +178,7 @@ func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
 	return sb.String()
 }
 
-// FormatEnvList renders the per-env table for `ach env list`. Empty
+// FormatEnvList renders the per-env table for `ach-cli env list`. Empty
 // input → stable "No environments visible" stub.
 func FormatEnvList(envs []EnvView) string {
 	if len(envs) == 0 {

@@ -128,11 +128,11 @@ type projectionDescriptor struct {
 // subtest order in projection_lifecycle_test.go. Kept in one place so a
 // fixture-shape change is a single-table edit.
 //
-// NOTE on coOwnedFile + uninstall scope: uninstall's DEFAULT scope is
-// context-only (prompts/plugins/artifacts). The co-owned MCP files below are
-// written by the RUNTIME leg, so the lifecycle subtests pre-seed a user key,
-// hydrate (ACH lands its keys alongside), then run `uninstall --include-runtime`
-// so the inverse-merge actually touches the co-owned file and we can prove the
+// NOTE on coOwnedFile + uninstall scope: uninstall removes everything hydrate
+// wrote, including the RUNTIME leg's co-owned MCP files below, so the
+// lifecycle subtests pre-seed a user key, hydrate (ACH lands its keys
+// alongside), then run `uninstall` so the inverse-merge actually touches the
+// co-owned file and we can prove the
 // user key survives the subtraction.
 var projectionDescriptors = []projectionDescriptor{
 	{

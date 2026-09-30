@@ -192,12 +192,12 @@ func TestDeviceGrant(t *testing.T) {
 	})
 
 	// The real binary, headless: `login --no-browser` prints the code, we
-	// approve it, the CLI stores the pair and `whoami --verify` works.
+	// approve it, the CLI stores the pair and `whoami` works.
 	t.Run("ach-cli_login_no_browser", func(t *testing.T) {
 		xdg := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, phase6BinaryPath, "login", "--profile", "demo", "--base-url", base, "--no-browser")
+		cmd := exec.CommandContext(ctx, phase6BinaryPath, "login", base, "--profile", "demo", "--no-browser")
 		cmd.Env = append(cleanEnv(os.Environ()), "XDG_CONFIG_HOME="+xdg, "ACH_INSECURE=1")
 		// stdout goes to a file: the process writes while the test reads.
 		outPath := filepath.Join(t.TempDir(), "stdout")
@@ -229,8 +229,8 @@ func TestDeviceGrant(t *testing.T) {
 		if waitErr != nil || !strings.Contains(string(out), `Logged in (profile "demo")`) {
 			t.Fatalf("login exit: %v\nstdout=%s\nstderr=%s", waitErr, out, stderr.String())
 		}
-		out, errb, err := phase6RunAch(t, xdg, "whoami", "--verify")
-		if err != nil || !bytes.Contains(out, []byte("Key: OAuth session")) {
+		out, errb, err := phase6RunAch(t, xdg, "whoami")
+		if err != nil || !regexp.MustCompile(`(?m)^Auth\s+session$`).Match(out) {
 			t.Fatalf("whoami after device login: err=%v\nstdout=%s\nstderr=%s", err, out, errb)
 		}
 	})

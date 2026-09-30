@@ -115,16 +115,16 @@ func testPhase6KeysRevokeConfirmation(t *testing.T) {
 		t.Fatalf("keys create: no ek_ plaintext in stdout:\n%s", stdout)
 	}
 
-	// 2. Find the ekid_ for that label via `keys list --type ek`.
-	listOut, listErr, err := phase6RunAch(t, xdg, "keys", "list", "--type", "ek")
+	// 2. Find the ekid_ for that label via `keys list` (ID is the last column).
+	listOut, listErr, err := phase6RunAch(t, xdg, "keys", "list")
 	if code, runErr := phase6StripExitErr(err); runErr != nil || code != 0 {
 		t.Fatalf("keys list: exit=%d err=%v\nstdout=%s\nstderr=%s", code, runErr, listOut, listErr)
 	}
 	var ekid string
 	for _, ln := range strings.Split(string(listOut), "\n") {
 		if strings.Contains(ln, label) {
-			if f := strings.Fields(ln); len(f) > 0 && strings.HasPrefix(f[0], "ekid_") {
-				ekid = f[0]
+			if f := strings.Fields(ln); len(f) > 0 && strings.HasPrefix(f[len(f)-1], "ekid_") {
+				ekid = f[len(f)-1]
 				break
 			}
 		}
@@ -142,15 +142,15 @@ func testPhase6KeysRevokeConfirmation(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("keys revoke: exit %d (want 0)\nstdout=%s\nstderr=%s", code, revOut, revErr)
 	}
-	if !phase6Contains(revOut, "Revoked "+ekid) {
-		t.Errorf("keys revoke: stdout missing 'Revoked %s' confirmation:\n%s", ekid, revOut)
+	if !phase6Contains(revOut, "("+ekid+")") {
+		t.Errorf("keys revoke: stdout missing the revoked id %s:\n%s", ekid, revOut)
 	}
 }
 
 // testPhase6HydrateAutodetectError asserts that `ach env hydrate` against an
 // EMPTY workspace (no agent adapter present) fails with the friendly
 // "no agent target detected" prompt naming the closed set — rather than a
-// false "multiple agent targets" match or an opaque error. Driving --output at
+// false "multiple agent targets" match or an opaque error. Driving --dir at
 // a fresh empty dir scopes autodetection there (and exercises the same
 // root-relative detection that the #4 $HOME-bleed fix corrected).
 func testPhase6HydrateAutodetectError(t *testing.T) {
@@ -162,7 +162,7 @@ func testPhase6HydrateAutodetectError(t *testing.T) {
 
 	emptyWorkspace := t.TempDir()
 	stdout, stderr, err := phase6RunAch(t, xdg,
-		"env", "hydrate", phase6DemoEnvironment, "--output", emptyWorkspace)
+		"env", "hydrate", phase6DemoEnvironment, "--dir", emptyWorkspace)
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
 		t.Fatalf("env hydrate (autodetect): exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)

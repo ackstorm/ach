@@ -19,10 +19,16 @@ enforcement, if wanted, is the deployer's LiteLLM choice.
 ## `ek_` lifecycle: expiry, suspend, resume, revoke
 
 An `ek_` can optionally be created with an expiration time, and can be
-manually suspended and resumed without losing the credential. This is an
-HTTP API surface for now — `ach-cli keys create` has no `--expires-at` flag
-and there is no `ach-cli keys suspend`/`resume` subcommand yet (CLI support
-is a follow-up); use the routes below directly, or through the web console.
+manually suspended and resumed without losing the credential. From the CLI
+(a key is named by the name it was saved under, or by its `ekid_…`):
+
+```bash
+ach-cli keys create <env> --name ci-bot --expires 90d
+ach-cli keys suspend ci-bot      # ach-cli keys resume ci-bot undoes it
+ach-cli keys revoke ci-bot
+```
+
+The routes behind them, also usable directly or through the web console:
 
 - `POST /platform/keys` accepts an optional `expires_at` (RFC3339, must be in
   the future — a past or malformed value is `400 invalid_argument`). Omitting

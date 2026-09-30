@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package lock implements the advisory single-writer lock required by
-// CLI spec §6.7 step 1 — every `ach-cli hydrate` (and any other writer
+// CLI spec §6.7 step 1 — every `ach-cli env hydrate` (and any other writer
 // to `<ach-dir>/`) acquires `<ach-dir>/lock` before touching the
 // manifest cache, state.json, or workspace bytes. STATE-06 is the
 // originating requirement.

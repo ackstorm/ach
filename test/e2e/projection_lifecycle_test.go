@@ -22,7 +22,7 @@
 //
 //	1. Acquire pk_ + seed XDG (phase7AcquirePk / phase7SeedXdgConfig), wait
 //	   the demo Environment Available, allocate a fresh phase7Workspace.
-//	2. hydrate --environment demo --platform <id> --output <ws>  (CONTEXT-slice
+//	2. env hydrate demo --target <id> --dir <ws>  (CONTEXT-slice
 //	   projection: NOT --only-runtime, so plugin projection runs). Assert exit 0.
 //	3. assertProjectedNativeDirs — projected resources in native dirs, NOT at
 //	   verbatim source paths (SC2).
@@ -30,7 +30,7 @@
 //	   kind (caveman ships none of their drop kinds).
 //	5. assertStateRecordsPlugins — state.json v2 Plugins[] records the targets.
 //	6. Pre-seed the adapter's co-owned deep-merge file with a USER key, re-run
-//	   hydrate (ACH keys land alongside), then `uninstall --include-runtime`.
+//	   hydrate (ACH keys land alongside), then `uninstall`.
 //	7. After removal: assertCoOwnedUserKeyPreserved (user key survives) AND
 //	   assertFileOwnedResourcesGone (the projected native-dir files are gone).
 //
@@ -91,7 +91,7 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", d.platformID,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -114,13 +114,11 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 	statePath := phase7StatePath(output, phase7DemoEnvironment, d.platformID)
 	assertStateRecordsPlugins(t, statePath, d)
 
-	// (6) uninstall --include-runtime: tears down context (projected plugin
+	// (6) uninstall (removes everything hydrate wrote): tears down context (projected plugin
 	// resources) AND runtime (co-owned MCP file inverse-merge).
 	stdoutU, stderrU, errU := phase7RunAchCli(t, xdg,
 		"env", "uninstall", phase7DemoEnvironment,
-		"--target", d.platformID,
-		"--include-runtime",
-		"--output", output,
+		"--dir", output,
 	)
 	codeU, runErrU := phase7StripExitErr(errU)
 	if runErrU != nil {

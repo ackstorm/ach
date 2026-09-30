@@ -38,8 +38,8 @@ ACH — Agent Capability Hub. Multi-service Kubernetes control plane for
 declarative agent configuration management: operator + platform API + forwarder
 + content service + CLI. The long-running services ship as a **single Go binary**
 (`ach`) with cobra subcommands selected at process start; the user-facing CLI
-ships as a **separate `ach-cli` binary** (login/logout/whoami/config/env/
-keys/admin/runtime; hydrate/status/uninstall live under `env`; plus the serverless
+ships as a **separate `ach-cli` binary** (login/logout/whoami/token/profile/env/
+keys/admin; hydrate/status/uninstall/fetch live under `env`; plus the serverless
 local package manager `local repo`/`local plugin`/`local skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
@@ -160,9 +160,20 @@ convenience**, not a co-equal mode.
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA, D-26); no LiteLLM path outside the ACH families is reachable through ACH (D-18) — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. Also reads the `achagents` projection (**`ACH_DB_URL` required — refuses to start without it**) and serves `/agents/{ns}/{service}/…` to per-agent Services (`{service}` = the Service name, e.g. `achagent-gh`; the tail after it is forwarded verbatim — webhook, a2a, whatever the harness serves) — **only agents that opt in via `spec.expose.gateway=true` are in the route set** (`exposed` projection column); still no auth/no header rewrite; the `ach-agent` harness verifies HMAC on its webhook route |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
-User CLI = separate `ach-cli` binary (NOT in the service image): `login`/
-`logout`/`whoami`/`config`/`env`/`keys`/`admin`/`runtime` (workspace verbs
-`hydrate`/`status`/`save`/`uninstall` live under `env`, e.g. `ach-cli env hydrate`).
+User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
+`logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local` (workspace verbs
+`hydrate`/`status`/`save`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
+`env hydrate|uninstall <env> --only plugin/<name>` (or `skill/<name>`) touches one item;
+`--dir`/`-g` pick the root, `--target a,b` the tools). `keys` = the caller's own
+`ek-` keys (`create <env>`/`list`/`revoke`/`suspend`/`resume`/`budget`, by saved
+name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
+(`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;
+`admin keys revoke --owner <email>`. Every network command takes `--profile`,
+`--key <name|ek-…>`, `--verbose`, `-o table|json`. Env vars: `ACH_PROFILE`,
+`ACH_KEY`, `ACH_URL` (login prefill), `ACH_URL`+`ACH_KEY` = synthetic mode (no
+config file), `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config profiles
+hold `url`/`key`/`keys: {name: {id, key}}`/`oauth`; a pre-redesign file
+(`pk:`/`ek:`) fails with a delete-and-re-login hint (no migration).
 `env save` writes a committed `ach.yaml` (env names + targets) so a teammate's
 bare `ach-cli env hydrate` reproduces the workspace. Bare `ach-cli env hydrate`
 (no `<name>`, no `ACH_ENVIRONMENT`) reads that `ach.yaml` and hydrates each
@@ -170,7 +181,7 @@ listed Environment best-effort (exit ≠0 if any fails).
 Plus the **serverless local package manager** under `ach-cli local` — `repo` (register a GitHub/git
 marketplace or direct plugin/skill source), `plugin` and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs
-via `--target`, no Environment/CRD ceremony). `env` is the governed remote
+via `--target`, `--dir`/`-g`, no Environment/CRD ceremony). `env` is the governed remote
 object; `repo`/`plugin`/`skill` are the local-first quick path.
 
 Critical paths:
@@ -448,8 +459,9 @@ unchanged. ✅ Use absolute paths; verify with `pwd && git remote -v` (expect
 `ackstorm/ach`).
 
 ### ❌ Editor save vs `ach-cli env hydrate` runtime-config — user edit silently lost
-`ach-cli env hydrate` reads the adapter runtime-config file (`.claude/settings.json`,
-`.gemini/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`),
+`ach-cli env hydrate` reads the adapter runtime-config file (`.mcp.json`,
+`.claude/settings.json`, `.gemini/settings.json`, `.codex/config.toml`,
+`.opencode/opencode.json`),
 deep-merges ACH's keys, and atomic-renames the result back. The `<achDir>/lock`
 flock excludes other ach-cli processes — NOT other tools. A concurrent editor
 save (auto-format on file change, manual write) between hydrate's read and
@@ -457,7 +469,8 @@ hydrate's rename overwrites the merge with the user's pre-merge edit; on the
 NEXT hydrate ACH re-merges its keys back in, so the engine self-heals — but the
 user's edit made during the hydrate window is silently lost.
 
-✅ Avoid saving the runtime-config files while `ach-cli env hydrate` is running. If
+✅ Avoid saving the runtime-config files while `ach-cli env hydrate` (or `env
+uninstall`) is running. If
 you need to edit the config concurrently, run hydrate to completion first
 (`echo $?` == 0), THEN edit. There's no telemetry for the race; the user-visible
 symptom is "my edit reverted." Documented as a known v1 trade-off (security

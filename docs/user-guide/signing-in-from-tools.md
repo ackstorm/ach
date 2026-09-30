@@ -5,11 +5,11 @@ your organisation's SSO (Dex) and hold a short-lived access token (1 h)
 that works for **model calls** and **MCP servers** through ACH. Every
 refresh goes back to your SSO: an account disabled there stops working at
 the next refresh (within the hour), exactly like any other SSO-backed
-tool. Agents and CI keep the persistent `pk_` / `ek_` keys; this page
-is for a person at a keyboard.
+tool. Agents and CI use environment keys (`ek-…`, `ach-cli keys create`);
+this page is for a person at a keyboard.
 
 ```bash
-ach-cli login                 # browser → SSO → "Signed in to ACH"
+ach-cli login <url>           # browser → SSO → "Signed in to ACH"
 ach-cli token                 # prints ONE line: a fresh access token
 ach-cli env hydrate <env>     # writes the tools' configs (no credential inside — see below)
 ```
@@ -98,7 +98,8 @@ refresh_interval_ms = 300000
 any extra output); every diagnostic goes to stderr. On an OAuth profile it
 refreshes automatically when the stored token is within 6 minutes of expiry,
 under a file lock so Claude Code and Codex firing it together spend one
-refresh, not two; on a `pk_` profile it prints the `pk_`.
+refresh, not two; on a key profile (`ach-cli profile add … --key ek-…`) it
+prints that key.
 
 ## What a token can reach
 

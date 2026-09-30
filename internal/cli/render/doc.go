@@ -15,8 +15,8 @@
 // Lean wire-shape DTOs (EnvView, KeyRowView, HydrateView, RuntimeItem,
 // ContextItem) live here so render does NOT pull internal/platformapi
 // (which transitively imports k8s.io/* + chi). The CLI binary stays
-// thin — render is consumed by `ach config show`, `ach env list`,
-// `ach env describe`, `ach keys list` (06-05; `ach env-keys list` is a back-compat alias), and
+// thin — render is consumed by `ach-cli profile show`, `ach-cli env list`,
+// `ach-cli env describe`, `ach-cli keys list`, and
 // `ach admin keys list` (06-08).
 //
 // W3 wire-shape contract: HydrateView.RuntimeItem.Endpoint surfaces

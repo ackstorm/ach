@@ -391,7 +391,7 @@ The guardrail does not exist on the proxy. LiteLLM accepts unknown
 guardrail names and silently never runs them, so ACH refuses to mint
 new `ek_` keys (`POST /platform/keys` → 503 `not_ready`) rather than
 hand out a key believing it is protected. Check
-`ach-cli runtime guardrails list` for the exact name.
+`ach-cli admin list guardrails` for the exact name.
 
 **Scope of that barrier:** it blocks NEW key minting only. Existing
 `ek_` keys keep serving unprotected, hydrate still returns the
@@ -399,7 +399,7 @@ manifest, and the forwarder still proxies — none of those read
 Environment conditions. Fix the name; there is no revocation path for
 a typo.
 
-A guardrail listed with `defaultOn: true` in `ach-cli runtime guardrails`
+A guardrail listed with `defaultOn: true` in `ach-cli admin list guardrails`
 (or `GET /platform/admin/runtime/guardrails`) already runs on every
 request — naming it in an Environment changes nothing.
 
@@ -575,7 +575,7 @@ the same `.claude/` (each surgically tracked + independently uninstallable via
 
 A pre-namespacing flat `<cwd>/.ach/state.json` is auto-migrated into
 `.ach/<env>/` on the next hydrate (a one-line stderr `notice:`). `ach-cli env status`
-with no `--environment` (project scope) enumerates ALL `.ach/<env>/` so a
+with no `<env>` argument (project scope) enumerates ALL `.ach/<env>/` so a
 multi-env project lists every installed set.
 
 `.ach/<env>/runtime/{mcp,a2a,model}.json` are credential-free snapshots of the
@@ -590,29 +590,32 @@ hub they live on. Bare `env hydrate` resolves the hub from your **active
 profile**. If your active profile points at a different hub than the one where
 those Environments live, the names won't resolve and you get a per-env
 `FAIL: … not found` in the summary (best-effort: other envs still hydrate).
-Fix: point your active profile at the right hub (`ach-cli config use <profile>`
+Fix: point your active profile at the right hub (`ach-cli profile use <profile>`
 or `ach-cli login` against the correct hub), then re-run `ach-cli env hydrate`.
 
-### ❌ `ach-cli login` fails `synthetic mode is half-set` after `export ACH_BASE_URL=…` ✅ use ACH_PLATFORM_URL to pre-fill the URL prompt
-`ACH_BASE_URL` is NOT a login-URL prefill — it is the **synthetic/headless mode
-switch** (CLI spec §3.3). Set it WITH a credential (`ACH_API_KEY` or
-`--api-key`) and the CLI runs server-mediated commands off env vars, no disk
-config — but `login` is REFUSED in synthetic mode regardless. Set it ALONE (URL,
-no credential) and you hit the half-set hard-error before any command runs:
+### ❌ `ach-cli login` fails `not available in synthetic mode` ✅ unset ACH_KEY (ACH_URL alone is the login prefill)
+`ACH_URL` + `ACH_KEY` set TOGETHER is **synthetic/headless mode**: the CLI runs
+server-mediated commands off env vars, no config file — and `login`, `logout`,
+`token`, `profile …`, `--profile` and a saved-name `--key` are refused:
 ```
-synthetic mode is half-set: ACH_BASE_URL is set but no credential resolved …
+this command is not available in synthetic mode (ACH_URL + ACH_KEY are set: no config file is used)
 ```
-To pre-fill the interactive `ach login` URL prompt, use **`ACH_PLATFORM_URL`** —
-a login-only convenience (precedence: `--base-url` flag → `ACH_PLATFORM_URL` env
-→ prompt). The two are deliberately distinct vars:
+`ACH_URL` ALONE only pre-fills the `ach-cli login` URL prompt (precedence: the
+positional `login <url>` → `ACH_URL` → prompt).
 
-| Var | Job | Effect on `login` |
-|-----|-----|-------------------|
-| `ACH_PLATFORM_URL` | pre-fill the login URL prompt | prompt suggests the URL; profile saved to disk |
-| `ACH_BASE_URL` (+ `ACH_API_KEY`) | synthetic/headless mode (no disk config) | REFUSED (`not available in synthetic mode`) |
-| `ACH_BASE_URL` alone | — (misconfiguration) | half-set hard error, exit 1 |
+| Vars | Job | Effect on `login` |
+|------|-----|-------------------|
+| `ACH_URL` | pre-fill the login URL | prompt suggests the URL; profile saved to disk |
+| `ACH_URL` + `ACH_KEY` | synthetic/headless mode (no disk config) | REFUSED, exit 1 |
 
-Fix: `unset ACH_BASE_URL; export ACH_PLATFORM_URL=https://hub.example.com; ach-cli login`.
+Fix: `unset ACH_KEY; ach-cli login https://hub.example.com`.
+
+### ❌ Every ach-cli command fails `uses a removed field (pk/ek)` ✅ delete the config and log in again
+The config file changed shape (profiles now hold `key:` and `keys: {name: {id,
+key}}`); an older `~/.config/ach/config.yaml` with `pk:`/`ek:` is refused, with
+no migration: `rm ~/.config/ach/config.yaml && ach-cli login <url>`. Saved `ek-`
+keys in the old file still work server-side — re-save one with
+`ach-cli profile add <name> --url <url> --key ek-…`, or revoke it.
 
 ### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
 ```bash
@@ -743,7 +746,7 @@ missing grant at every step up to that point.
 Confirm the name exists before hunting grants (needs an admin credential):
 
 ```bash
-ach-cli runtime mcp list
+ach-cli admin list mcp
 ```
 
 ### ❌ MCP client refuses: "Protected resource `<X>` does not match expected `<Y>`"

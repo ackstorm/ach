@@ -131,7 +131,7 @@ func InsecureFromEnv() bool {
 // ok; http:// is ErrInsecureURL unless allowInsecure is set; any other scheme
 // is ErrInvalidURLScheme regardless of allowInsecure (a bad scheme is never
 // "excused" by the insecure opt-in). The rawURL is echoed in the message here
-// because callers pass a user-supplied --base-url; validateProfiles wraps this
+// because callers pass a user-supplied login URL; validateProfiles wraps this
 // to name the profile instead (a stored URL can carry secrets).
 func ValidateSecureURL(rawURL string, allowInsecure bool) error {
 	switch {

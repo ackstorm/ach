@@ -1,6 +1,6 @@
 ---
 name: genai-api
-description: Work with this organization's GenAI API gateway (ACH). Use when the user wants to see, enable, sign in to or troubleshoot an MCP server; install or sign in to ach-cli; list Environments; create, list or revoke an environment key (ek_) for an agent, CI job or script; or set up Claude Code or Codex against the gateway.
+description: Work with this organization's GenAI API gateway (ACH). Use when the user wants to see, enable, sign in to or troubleshoot an MCP server; install or sign in to ach-cli; list Environments; create, list or revoke an environment key (ek-) for an agent, CI job or script; or set up Claude Code or Codex against the gateway.
 ---
 
 # GenAI API (ACH)
@@ -62,7 +62,7 @@ Install: download the archive for the user's OS and CPU from
 on the `PATH`. Then sign in, same single sign-on:
 
 ```bash
-ach-cli login --base-url {{base}}      # add --no-browser on a remote/headless host
+ach-cli login {{base}}      # add --no-browser on a remote/headless host
 ach-cli whoami
 ```
 
@@ -73,17 +73,18 @@ ach-cli env list
 ach-cli env describe <environment>
 ```
 
-## Environment keys (ek_)
+## Environment keys (ek-)
 
-An `ek_` key lets a non-interactive consumer (an agent, a CI job, a script) use ACH
+An `ek-` key lets a non-interactive consumer (an agent, a CI job, a script) use ACH
 within ONE Environment, without the user's identity. Tell the user to run these in
 their own terminal:
 
 ```bash
-ach-cli keys create <environment>              # shown once, saved to ~/.config/ach/config.yaml
-ach-cli keys create <environment> --no-save    # for CI / a secrets manager: stdout only
+ach-cli keys create <environment> --name <name>   # shown once, saved in your profile as <name>
+ach-cli keys create <environment> --no-save       # for CI / a secrets manager: stdout only
 ach-cli keys list
-ach-cli keys revoke <ekid_…>
+ach-cli keys suspend <name>                        # pause it; keys resume <name> undoes it
+ach-cli keys revoke <name>                         # for good (a saved name or an ekid_…)
 ```
 
 Store the key in the consumer's secret store. It is sent as the `x-ach-key` header
@@ -92,6 +93,8 @@ Store the key in the consumer's secret store. It is sent as the `x-ach-key` head
 ## Other tools
 
 For Claude Code or Codex in a project, `ach-cli env hydrate <environment> --target
-claude-code` (or `codex`) writes that tool's config from the Environment. Do not run
-it for OpenCode: this OpenCode is already configured by ACH, and hydrate would write
-entries that override it.
+claude-code` (or `codex`) writes that tool's config from the Environment. Install one
+plugin or skill only with `ach-cli env hydrate <environment> --only plugin/<name>` (or
+`skill/<name>`); `ach-cli env uninstall <environment> --only plugin/<name>` removes it.
+Do not run hydrate for OpenCode: this OpenCode is already configured by ACH, and
+hydrate would write entries that override it.

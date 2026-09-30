@@ -7,7 +7,7 @@
 //
 // Boundary discipline per 07-CONTEXT.md D-09 + Claude's Discretion:
 // this package is strict POST + decode + version-assert only. NO
-// scope-filter logic — `--include-runtime` / `--only-runtime` belong
+// scope-filter logic — `--only-runtime` belongs
 // to the hydrate orchestrator (07-W1-06) which calls Fetch once per
 // `hydrate.Run` invocation (commit-sequence step 5).
 //

@@ -150,7 +150,7 @@ curl -sS -o /dev/null -w 'api/health %{http_code}\n' https://api.${GENAI_BASE_DO
 
 curl -fsS https://ach.${GENAI_BASE_DOMAIN}/.well-known/oauth-authorization-server | jq .issuer
 curl -fsS https://ach.${GENAI_BASE_DOMAIN}/.well-known/oauth-protected-resource   | jq .resource
-ach-cli login --url https://ach.${GENAI_BASE_DOMAIN} && ach-cli whoami
+ach-cli login https://ach.${GENAI_BASE_DOMAIN} && ach-cli whoami
 ach-cli env hydrate <an existing Environment>
 kubectl -n ach get environments.ach.ackstorm.ai
 

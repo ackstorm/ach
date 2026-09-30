@@ -24,7 +24,7 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase4_promotion_helpers_test.go`    | `forceRefreshAndAssert`, BIP finalizer probes, fixture-server bring-up, DB-count helpers     |
 | `phase5_invariants_test.go`           | Phase 05 SCs (content-service sendfile path, env-cache observability, hydrate URL surface)                            |
 | `phase5_helpers_test.go`              | Phase 05 helpers (port-forward, kubectl exec into pods, strace seam)                                                  |
-| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — OAuth profile staged on disk + whoami --verify + env list + keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
+| `cli_login_hydrate_test.go`           | Phase 06 CLI umbrella `TestPhase6CLI` — OAuth profile staged on disk + whoami + env list + keys create + hydrate byte-for-byte vs `examples/hydrate.json` (normalized) |
 | `phase6_helpers_test.go`              | Phase 06 helpers (`phase6SuiteGuard`, `phase6WriteTempConfig`, `phase6NormalizeHydrate`, `phase6RunAch`)                |
 | `oauth_login_helpers_test.go`         | `oauthLogin` (loopback ceremony → token pair, the user's credential everywhere) + `writeCLIConfig` (stages an OAuth profile) |
 | `device_grant_test.go`                | RFC 8628 device grant end to end: AS endpoints, the verification page, the real `ach-cli login --no-browser`            |
@@ -71,8 +71,8 @@ legitimately changes (e.g. a new field lands), re-capture it:
 ```bash
 make cluster-up
 make build-all
-./bin/ach-cli login                                          # one-time SSO
-./bin/ach-cli hydrate --environment demo > examples/hydrate.json
+./bin/ach-cli login http://ach.e2e.local:8080 --insecure     # one-time SSO
+./bin/ach-cli env hydrate demo --raw > examples/hydrate.json
 git add examples/hydrate.json
 git commit -m "test(e2e): refresh hydrate golden (<reason>)"
 ```

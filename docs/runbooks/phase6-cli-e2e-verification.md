@@ -33,7 +33,7 @@ docker info >/dev/null      # expect no error
 
 **Why human:** both binaries compile inside CI, but a runtime smoke confirms
 the cobra trees are fully wired AND that the user CLI / service-mode split
-landed (the 8 user subcommands live on `ach-cli`; the 5 service modes on
+landed (the user subcommands live on `ach-cli`; the 5 service modes on
 `ach`). `make build` writes both `bin/ach` and `bin/ach-cli`.
 
 ```bash
@@ -46,14 +46,15 @@ echo "EXIT=$?"
 **Expected:** `./bin/ach-cli --help` exits `0` and lists every one of:
 
 ```
-  login         Authenticate against the platform-api
-  logout        Revoke local session
-  whoami        Show current identity
-  config        Inspect / mutate local config
-  env           List + switch environments
-  keys          List pk_ + ek_ keys (TYPE column); create / revoke environment keys (env-keys is a back-compat alias). `keys list` defaults to `--status active` — revoked keys are hidden; pass `--status all` (or revoked/expired) to include them. `--type pk|ek` filters by key type.
-  hydrate       Materialize workspace artifacts
-  admin         Admin subcommands (keys revoke, users revoke-keys, refresh)
+  admin         Admin operations (inventory, keys, user budgets and limits, refresh)
+  env           Inspect environments visible to the active credential
+  keys          Manage your environment keys (ek-…)
+  local         Local, ungoverned developer package path (repo/plugin/skill)
+  login         Sign in to a Hub (browser on this machine, or a code from any browser)
+  logout        Sign out of the active profile (saved keys are kept)
+  profile       Manage your profiles (~/.config/ach/config.yaml)
+  token         Print the active profile's token, or its key (credential helper)
+  whoami        Show who you are signed in as, your budget and your key allowance
 ```
 
 AND `./bin/ach --help` lists only the 5 service modes:

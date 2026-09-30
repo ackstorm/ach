@@ -223,8 +223,8 @@ spec:
                       references/litellm-permission-model.md §11.
 
                       GLOBAL default_on guardrails are NOT gated and run on every request with
-                      no licence and no ACH configuration — check `ach-cli runtime guardrails
-                      list` before adding a name here, because naming a default_on guardrail
+                      no licence and no ACH configuration — check `ach-cli admin list
+                      guardrails` before adding a name here, because naming a default_on guardrail
                       changes nothing except your exposure to the gate above.
 
                       WHICH traffic is each guardrail's own business, not ACH's: a guardrail
@@ -232,7 +232,7 @@ spec:
                       pre_call/post_call guardrail inspects LLM completions and does NOT run on
                       /mcp traffic — that needs a guardrail configured with pre_mcp_call or
                       during_mcp_call. Listing a name here is therefore not a blanket promise
-                      of coverage; `ach-cli runtime guardrails` prints each one's MODE.
+                      of coverage; `ach-cli admin list guardrails` prints each one's MODE.
 
                       This axis INVERTS the semantics of its siblings: models, mcpServers and
                       a2aAgents are additive grants, a guardrail is a constraint. ACH attaches

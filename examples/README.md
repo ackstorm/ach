@@ -48,15 +48,14 @@ make cluster-up
 #    the insecure opt-in (it refuses http:// by default — localhost included).
 make build-all
 export ACH_INSECURE=1                                      # or pass --insecure per command
-./bin/ach-cli login                                        # OAuth: browser here, or a code from any browser
-./bin/ach-cli env hydrate demo > hydrate.json              # POST /platform/hydrate
+./bin/ach-cli login http://localhost:8080                  # OAuth: browser here, or a code from any browser
+./bin/ach-cli env hydrate demo --raw > hydrate.json        # POST /platform/hydrate, body verbatim
 ```
 
-> **Tip — pre-fill the login URL:** `ach login` prompts for the Hub URL
-> interactively. Export `ACH_PLATFORM_URL=https://ach.example` to pre-fill it
-> (precedence: `--base-url` flag → `ACH_PLATFORM_URL` env → prompt).
-> `ACH_PLATFORM_URL` is a login-only convenience — distinct from `ACH_BASE_URL`
-> (the synthetic-mode trigger); it does NOT enable synthetic mode.
+> **Tip — pre-fill the login URL:** `ach-cli login` without a URL prompts for
+> it. Export `ACH_URL=https://ach.example` to pre-fill it (precedence: the
+> positional `login <url>` → `ACH_URL` → prompt). `ACH_URL` alone never enables
+> synthetic mode — that needs `ACH_KEY` too.
 
 The `hydrate.json` output should match `examples/hydrate.json` byte-for-byte
 against the standard kind+Helm fixture cluster (the base URL is baked into the
@@ -88,66 +87,67 @@ gotcha + remediation steps.
 
 ## Headless agent / CI (no browser)
 
-`ach login` needs a browser for SSO. On an agent or CI runner, seed the
-profile from a credential you already minted instead:
+`ach-cli login` needs a browser for SSO (or `--no-browser` for a code you
+confirm from any browser). On an agent or CI runner, use an environment key
+you already minted instead:
 
 ```bash
-# 1. (on a human machine) mint a service key scoped to an environment:
-ach keys create prod --name ci-bot      # prints ek_... (env is positional; --name optional, defaults to env)
+# 1. (on a human machine) mint a key scoped to one environment:
+ach-cli keys create prod --name ci-bot --no-save   # prints ek-... once
 
-# 2. (on the agent) register a profile from that ek_ — no SSO:
-ach config add --profile prod --url https://ach.example --api-key ek_...
-
-# multi-environment: seed several ek_ under labels in one profile:
-ach config add --profile svc --url https://ach.example --api-key pk_... \
-  --env-key prod=ek_AAA --env-key stg=ek_BBB
-ach env hydrate prod --env-key prod
-ach env hydrate stg  --env-key stg
+# 2. (on the agent) register a profile from that key — no SSO:
+ach-cli profile add prod --url https://ach.example --key ek-...
+ach-cli env hydrate prod
 
 # or skip disk config entirely (secrets stay in env, ideal for CI):
-export ACH_BASE_URL=https://ach.example
-export ACH_API_KEY=ek_...
-ach env hydrate prod   # repeat per env, no --api-key
+export ACH_URL=https://ach.example
+export ACH_KEY=ek-...
+ach-cli env hydrate prod
 ```
+
+On your own machine, `keys create` saves the key in your profile under its
+name, and `--key <name>` (or `ACH_KEY=<name>`) picks it for one command:
+`ach-cli env hydrate stg --key stg-bot`.
 
 ## Rotating / cleaning up your own keys
 
-`login` mints a fresh `pk_` each time, so personal keys accumulate. You can
-revoke your OWN keys (no admin needed) and bulk-prune the stale ones:
+Your environment keys are yours to manage (no admin needed), by saved name or
+by `ekid_…`:
 
 ```bash
-ach keys list --type pk                 # see your personal keys (newest first)
-ach keys revoke pkid_01kt6fe0...        # revoke one (your own pk_ or ek_)
-ach keys prune --dry-run                # preview: keeps the newest, lists the rest
-ach keys prune --yes                    # revoke all but the newest pk_ (active key is auto-skipped)
+ach-cli keys list                        # NAME ENVIRONMENT STATUS EXPIRES ID
+ach-cli keys suspend ci-bot              # pause it; keys resume ci-bot undoes it
+ach-cli keys budget ci-bot --max-budget 20 --budget-duration 30d
+ach-cli keys revoke ci-bot               # for good; also drops the saved copy
 ```
 
-Revoking the key your current session authenticates with is refused unless you
-pass `--force` (then re-login). `prune` never force-revokes, so your active key
-is always preserved.
-
-Note: an `ek_` is scoped to ONE Environment; a `pk_` (from `ach login`)
-spans every environment you can access but expires on a 7-day sliding
-window. For long-lived agents prefer per-environment `ek_`.
+Note: a key is scoped to ONE Environment; your sign-in session (`ach-cli
+login`) spans every environment you can access. For long-lived agents use a key.
 
 ## Admin: read-only object inventory
 
-`ach admin list` gives an allowlisted admin a kubectl-free inventory of every
+`ach-cli admin list` gives an allowlisted admin a kubectl-free inventory of every
 ACH-defined object, sourced from the Postgres projections (the SoT read path) —
-version + sync status, no live cluster cross-check. Requires a `pk-` whose owner
-email is in the Platform API allowlist; a non-allowlisted caller gets
-`403 not_admin` (exit 3).
+version + sync status, no live cluster cross-check — plus the LiteLLM runtime
+catalog. The caller's email must be in the Platform API allowlist; anyone else
+gets `403 not_admin` (exit 3).
 
 ```bash
-ach admin list plugins                 # one kind
-ach admin list all                     # fan out across every kind (concurrent)
-ach admin list all -o json             # machine-readable (also: -o yaml)
+ach-cli admin list plugins             # one kind
+ach-cli admin list models              # the LiteLLM runtime catalog (KIND NAME STATUS)
+ach-cli admin list all                 # fan out across every kind (concurrent)
+ach-cli admin list all -o json         # machine-readable (also: -o yaml)
 ```
 
-Kinds: `environments`, `plugins`, `prompts`, `artifacts`, `marketplaces`,
-`bips`, `litellm-connections`, `external-refs`, or `all`.
+Kinds: `environments`, `plugins`, `prompts`, `artifacts`, `skills`,
+`marketplaces`, `skill-marketplaces`, `bips`, `models`, `mcp`, `a2a`, `teams`,
+`guardrails`, or `all`.
 
-Example (`ach admin list all`, trimmed):
+Other admin verbs: `admin keys list [--owner e]`, `admin keys revoke <id>` /
+`--owner <email>`, `admin users budget <email> --max-budget X`, `admin users
+limits <email> --max-keys N`, `admin refresh <kind> <name>`.
+
+Example (`ach-cli admin list all`, trimmed):
 
 ```text
 ENVIRONMENTS (2)
@@ -176,7 +176,7 @@ greeting  ach        844      fresh*  2m   -
 | `projected` | bips, litellm-connections | row is projected from its CR (presence only) |
 
 The inventory reads the stored projection only — to force a re-sync use
-`ach admin refresh <kind> <name>`.
+`ach-cli admin refresh <kind> <name>`.
 
 ## Local package manager (serverless — no Environment/CRD)
 
@@ -190,23 +190,24 @@ registry under `~/.config/ach/local/` (tokens in a separate `0600`
 ```bash
 # Register a source — capabilities (plugin-marketplace / skill-marketplace /
 # direct plugin / direct skill) are auto-detected at add time.
-ach-cli repo add github:anthropics/skills --name skills          # skill-marketplace
-ach-cli repo add github:ackstorm/claude-plugins --name ackstorm  # plugin-marketplace
-ach-cli repo add git:https://git.example.com/x/y.git --name gl --token "$TOK" --auth oauth2
-ach-cli repo list                       # NAME · KIND · SOURCE · AUTH · PROVIDES
+ach-cli local repo add github:anthropics/skills --name skills          # skill-marketplace
+ach-cli local repo add github:ackstorm/claude-plugins --name ackstorm  # plugin-marketplace
+ach-cli local repo add git:https://git.example.com/x/y.git --name gl --token "$TOK" --auth oauth2
+ach-cli local repo list                 # NAME · KIND · SOURCE · AUTH · PROVIDES
 
 # Install by <name@repo> into one or more --target adapters (repo suffix is
-# mandatory). --global writes to $HOME; default is the project (cwd).
-ach-cli plugin install feature-dev@ackstorm --target claude,opencode
-ach-cli skill  install pdf@skills --target claude --global
-ach-cli plugin list                     # installed items (from installed.json)
-ach-cli plugin update                   # re-resolve all (or <name@repo>…)
-ach-cli skill  uninstall pdf@skills     # inverse-merges co-owned files (settings.json / CLAUDE.md)
+# mandatory). -g writes to $HOME; default is the project (cwd, or --dir).
+ach-cli local plugin install feature-dev@ackstorm --target claude-code,opencode
+ach-cli local skill  install pdf@skills --target claude-code -g
+ach-cli local plugin list               # installed items (from installed.json)
+ach-cli local plugin update             # re-resolve all (or <name@repo>…)
+ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (settings.json / CLAUDE.md)
 ```
 
 Notes:
-- `--target` values map to adapter ids (`claude`→claude-code, `codex`, `gemini`,
-  `opencode`). MCP/`AGENTS.md` contributions deep-/composite-merge into the
+- `--target` takes adapter ids (`claude-code`, `codex`, `gemini-cli`,
+  `opencode`, `pimono`) or their aliases (`claude`, `gemini`, `pi`), comma-separated
+  or repeated — the same vocabulary as `env hydrate --target`. MCP/`AGENTS.md` contributions deep-/composite-merge into the
   tool's native config and are inverse-merged on uninstall (other plugins' and
   your own keys survive).
 - `--path` is the **skills-marketplace root hint** only (e.g. `skills` for an

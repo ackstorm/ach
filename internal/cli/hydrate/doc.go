@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package hydrate is the engine-side 14-step commit-sequence orchestrator
-// behind `ach-cli hydrate` (CLI spec §6.7). It composes the W1 atomic
+// behind `ach-cli env hydrate` (CLI spec §6.7). It composes the W1 atomic
 // boundary primitives (state + lock + manifest + hash) into a single
 // fail-fast pipeline that materializes a workspace from the
 // platform-api's POST /platform/hydrate response.

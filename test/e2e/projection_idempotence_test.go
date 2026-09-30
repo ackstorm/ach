@@ -20,7 +20,7 @@
 //
 //	1. Acquire pk_ + seed XDG, wait the demo Environment Available, allocate a
 //	   fresh phase7Workspace.
-//	2. First `hydrate --environment demo --platform <id> --output <ws>`; assert
+//	2. First `env hydrate demo --target <id> --dir <ws>`; assert
 //	   exit 0. snapshotProjectedFiles → before; sha256(state.json) → stateBefore.
 //	3. Second hydrate, identical inputs + SAME workspace; assert exit 0 — the
 //	   auto-claim over the byte-matching pre-existing owned files (NOT a drift
@@ -92,7 +92,7 @@ func runProjectionIdempotence(t *testing.T, d projectionDescriptor) {
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", d.platformID,
-		"--output", output,
+		"--dir", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
 	if runErr1 != nil {
@@ -130,7 +130,7 @@ func runProjectionIdempotence(t *testing.T, d projectionDescriptor) {
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", d.platformID,
-		"--output", output,
+		"--dir", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)
 	if runErr2 != nil {

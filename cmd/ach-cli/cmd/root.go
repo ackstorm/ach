@@ -11,23 +11,8 @@ import (
 var Version = "dev"
 
 var rootCmd = &cobra.Command{
-	Use:   "ach-cli",
-	Short: "ACH CLI — operator/developer client for the ACH control plane",
-	Long: `ach-cli is the user-facing client for the ACH (Agent Capability Hub)
-control plane. Subcommands:
-
-  login        Sign in to a Hub
-  logout       Sign out (saved keys are kept)
-  whoami       Show who you are, your budget and key allowance
-  token        Print your token (credential helper)
-  profile      Manage your profiles
-  env          Inspect environments; hydrate/status/uninstall workspace
-  keys         Manage your environment keys (create/list/revoke/suspend/resume/budget)
-  admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
-  local        Local, ungoverned package path (repo/plugin/skill)
-
-For service-mode commands (operator, platform-api, forwarder,
-content-service, migrate), use the 'ach' binary instead.`,
+	Use:     "ach-cli",
+	Short:   "ACH CLI — operator/developer client for the ACH control plane",
 	Version: Version,
 	// main.go renders errors via exit.DispatchAndRender (the single §9.3
 	// renderer). Silence cobra's own error + usage dump so failures

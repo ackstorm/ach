@@ -4,7 +4,7 @@
 // manual battery exercised but pkgcmd_test.go does not:
 //
 //   - Group C: multi-target INSTALL in ONE command (comma-separated --target).
-//   - Group D: `repo update` + `plugin update` SHA-drift full flow with --dest.
+//   - Group D: `repo update` + `plugin update` SHA-drift full flow with --dir.
 //   - Group E: `--global` install scope ($HOME), incl. opencode's $HOME remap.
 //
 // All fixtures are local git file:// repos built with `git init` — no network,
@@ -247,7 +247,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 
 // TestPluginCmd_Update_SHADrift exercises the full update path against a NON-bare
 // working repo: install v1, mutate+commit v2 (changed file + new file), refresh
-// the repo via `repo update`, then `plugin update --dest`. Asserts the repo
+// the repo via `repo update`, then `plugin update --dir`. Asserts the repo
 // update reports a SHA change, the new file appears, the changed file content is
 // updated, and installed.json's resolvedSHA changed.
 func TestPluginCmd_Update_SHADrift(t *testing.T) {
@@ -331,7 +331,7 @@ func TestPluginCmd_Update_SHADrift(t *testing.T) {
 		}
 	}
 
-	// --- plugin update --dest: re-resolve + cleanup + re-project ---
+	// --- plugin update --dir: re-resolve + cleanup + re-project ---
 	{
 		var buf bytes.Buffer
 		cmd := newPluginCmd()
@@ -395,7 +395,7 @@ func pinConfigDirEnv(t *testing.T) {
 	}
 }
 
-// TestPluginCmd_Install_Global_Claude verifies that `--global` (no --dest)
+// TestPluginCmd_Install_Global_Claude verifies that `--global` (no --dir)
 // installs under $HOME for claude-code.
 func TestPluginCmd_Install_Global_Claude(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {

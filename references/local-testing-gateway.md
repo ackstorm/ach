@@ -113,7 +113,7 @@ without a prompt. Two ways, both in the e2e suite:
 By hand, with the real binary against the kept cluster:
 
 ```bash
-ACH_INSECURE=1 ./bin/ach-cli login --profile demo --base-url http://ach.e2e.local:8080 --no-browser
+ACH_INSECURE=1 ./bin/ach-cli login http://ach.e2e.local:8080 --profile demo --no-browser
 # open the printed URL, press Confirm (the Dex mock signs in), the CLI finishes
 ACH_INSECURE=1 ./bin/ach-cli token | xargs -I{} curl -H "Authorization: Bearer {}" http://ach.e2e.local:8080/v1/models
 ```

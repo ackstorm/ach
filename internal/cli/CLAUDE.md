@@ -39,24 +39,50 @@ Boundary regression test: `go list -deps ./cmd/ach-cli` must show no
 
 ## Command surface
 
-Four noun groups. `--target` is the platform selector everywhere.
+Four noun groups. `--target` is the platform selector everywhere: a
+StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
+`env hydrate` and `local`, ids + aliases from `adapter.Lookup`.
 
 ```
+# session + profiles
+ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
+ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
+
 # governed remote object (CR-defined, server-mediated)
-ach-cli login | logout | whoami | config | admin | keys
-ach-cli config add | list | show | use | remove | rename | rm-ek
-ach-cli env list | describe <name> | hydrate <name> --target … [--global] | status | uninstall <name>
+ach-cli env list [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
+ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run]
+ach-cli env status [env] [-g] [--files] [-o] | save | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
+ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
+ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
+ach-cli admin keys list [--owner e] [--type pk|ek] [--status …] | revoke <id> | revoke --owner <email>
+ach-cli admin users budget <email> --max-budget X | limits <email> --max-keys N | admin refresh <kind> <name>
 
 # local-first serverless package manager (no k8s, no CRD)
-ach-cli repo   add <source> --name <n> [--token] [--auth bearer|oauth2] [--path] | list | remove | update
-ach-cli plugin list [--repo] | install <name@repo>… --target … [--global] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
-ach-cli skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
+ach-cli local repo   add <source> --name <n> [--token] [--auth bearer|oauth2] [--path] | list | remove | update
+ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [--dir d] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
+ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
 ```
 
-`config rm-ek <label>` drops a stale local ek_ label after a server-side revoke (revoke-by-ekid can't auto-match the label). `keys list` shows the caller's own pk_ AND ek_ keys (TYPE column); defaults to `--status active` — revoked AND expired keys are hidden; use `--status all` (also `revoked`/`expired`) to include them. STATUS is derived server-side (`db.ListKeys`), not read off the column: nothing ever writes `status='expired'`, so an expired pk_ used to list as `active`. There is deliberately NO expiry-date column — a pk_'s window slides on use, so any date shown would be stale on arrival; ek_ keys are perpetual and never `expired`. `--type pk|ek` filters by key type. `keys create <environment>` issues an ek_ (environment is POSITIONAL; `--name` optional, defaults to the env name) — pk_ keys are still not user-creatable (they come from `login`). But you CAN revoke your OWN keys: `keys revoke <pkid_…>` self-revokes a personal key caller-scoped (server `DELETE /platform/keys/{id}`, owner==caller, NOT admin-gated; `--force` to revoke the key authenticating the current session), `keys revoke <ekid_…>` revokes an env key. `keys prune` bulk-revokes old pk_ keys (keeps the newest `--keep N`, default 1; `--dry-run`/`--yes`; the active key is auto-skipped via the server's 409 active-key guard, never force-revoked).
+Every network command takes `--profile`, `--key <name|ek-…>`, `--verbose`
+(`registerCredFlags`, cred.go) and `-o table|json` (`registerOutputFlag`).
+Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
+prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
+`ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config `~/.config/ach/config.yaml`
+profiles carry `url`, `key` (a machine profile's ek-), `keys: {name: {id, key}}`
+(saved by `keys create`) and `oauth`; an old file with `pk:`/`ek:` fails to load
+with a "delete and re-login" hint (no migration).
 
-`env*` = the governed path (platform-api → Dex → hydrate). `repo`/`plugin`/
-`skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,repo,plugin,skill}.go`
+`keys list` shows the caller's own ek- keys only (`NAME ENVIRONMENT STATUS
+EXPIRES ID`), `--status active` by default (`suspended|expired|invalid|revoked|all`).
+`keys revoke|suspend|resume|budget` take a saved name or an `ekid_…`; revoke
+also deletes the saved copy. Personal (pk-) keys are not a user concept: they
+come from `login` and only `admin keys` sees them. `TestHelp_Vocabulary`
+(help_jargon_test.go) fails the build if pk-/pk_/pkid_/ek_ appear in help
+outside `admin`, or an example says `ach <cmd>` instead of `ach-cli`.
+
+`env*` = the governed path (platform-api → Dex → hydrate). `local repo`/`plugin`/
+`skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,local,repo,plugin,skill}.go`
 (parents) + `pkgcmd.go` (shared install/uninstall/update/outdated RunE for plugin+skill).
 
 **Read-only verbs (mirror the governed path's preview/drift affordances):**
@@ -240,7 +266,7 @@ bearer is a PERSON credential (OAuth JWS or `pk-`; `commit.renderContext` →
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
-refresh) or the profile's `pk_`; never an `ek_`.
+refresh) or, for a machine profile, its `key`.
 
 ### Global-scope root resolution (`--global`)
 

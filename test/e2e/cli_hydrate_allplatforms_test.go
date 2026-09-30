@@ -51,7 +51,7 @@ import (
 
 // allPlatformExpect is the per-adapter projection contract this suite
 // asserts. Paths are workspace-relative (joined under the hydrate
-// --output dir). Source-of-truth for the destinations is each adapter's
+// --dir dir). Source-of-truth for the destinations is each adapter's
 // ProjectionRules() in internal/cli/adapter/<sub>/<sub>.go, cross-checked
 // empirically against the demo fixture (caveman plugin) on 2026-06-02.
 type allPlatformExpect struct {
@@ -158,7 +158,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			stdout, stderr, err := phase7RunAchCli(t, xdg,
 				"env", "hydrate", phase7DemoEnvironment,
 				"--target", pe.id,
-				"--output", output,
+				"--dir", output,
 			)
 			code, runErr := phase7StripExitErr(err)
 			if runErr != nil {
@@ -182,7 +182,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	}
 
 	// ek_ credential path: prove `keys create` mints an ek_ and that
-	// `hydrate --env-key <label>` projects with it. --environment is required
+	// `hydrate --key <label>` projects with it. --environment is required
 	// (D1: engine state is namespaced by environment) even for ek_. One
 	// platform is enough to exercise the credential branch.
 	t.Run("ek_path_claude_code", func(t *testing.T) {
@@ -198,8 +198,8 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"env", "hydrate", phase7DemoEnvironment,
 			"--target", "claude-code",
-			"--env-key", "allplatforms-ek",
-			"--output", output,
+			"--key", "allplatforms-ek",
+			"--dir", output,
 		)
 		code, runErr := phase7StripExitErr(err)
 		if runErr != nil {
@@ -220,11 +220,11 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		}
 	})
 
-	// --include-runtime regression guard: runtime kinds (model/mcp/a2a) carry
+	// Runtime regression guard (runtime is always written): runtime kinds (model/mcp/a2a) carry
 	// an {id,endpoint}, not extractable content. The engine previously fed them
 	// to ExtractContent and crashed with "extract content (model): content
 	// name: empty". The fix gates extraction to context kinds; this asserts
-	// --include-runtime exits 0 and still projects context + runtime config.
+	// a default hydrate exits 0 and still projects context + runtime config.
 	t.Run("include_runtime_no_crash", func(t *testing.T) {
 		phase7SuiteGuard(t)
 		output := t.TempDir()
@@ -232,8 +232,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"env", "hydrate", phase7DemoEnvironment,
 			"--target", "claude-code",
-			"--include-runtime",
-			"--output", output,
+			"--dir", output,
 		)
 		code, runErr := phase7StripExitErr(err)
 		if runErr != nil {

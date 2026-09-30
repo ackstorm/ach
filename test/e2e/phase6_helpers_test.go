@@ -21,7 +21,7 @@
 // The suite does NOT shell out to `ach login` (the device-code flow
 // requires a real Dex round-trip + interactive browser open). Instead,
 // the test writes a synthetic config file under a temp XDG_CONFIG_HOME
-// directory with `default: demo` + `deployments.demo.{url,pk}` populated
+// directory with `default: demo` + `profiles.demo.{url,oauth}` populated
 // from ACH_E2E_PHASE6_PK + ACH_E2E_PHASE6_BASE_URL when supplied, or
 // from the standard gateway URL plus a self-minted pk_ otherwise.
 //

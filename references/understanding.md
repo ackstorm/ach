@@ -365,7 +365,8 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   `schemaVersion:"v1alpha1"`, runtime+context ALWAYS present (`[]` never
   null), no plaintext ever. Terminating envs still hydrate.
 - Admin (SSO allowlist, ek → `401 invalid_key_type`, non-listed →
-  `403 not_admin` BEFORE validation): keys revoke/list, users revoke-keys,
+  `403 not_admin` BEFORE validation): keys revoke/list, users/{email}/revoke-keys,
+  `PATCH /platform/admin/users/{email}/limits` (`max_keys`),
   `PATCH /platform/admin/users/{email}/budget` (one person's `user:<email>`
   tag ceiling; survives later logins — the chart default is seeded only onto
   a tag with no budget),
@@ -418,7 +419,7 @@ marker-block (covers credential-bearing files) → cleanup.
   / `composite` (marker-bounded markdown). MergeDeep files written 0600
   (credential-bearing), others 0644.
 - **Adapters** (closed set, init-registered, case-fold+alias lookup):
-  claudecode (canonical pass-through → `.claude/` + root `.mcp.json` +
+  claude-code (canonical pass-through → `.claude/` + root `.mcp.json` +
   CLAUDE.md), codex (TOML `.codex/config.toml`, `tools:`→`allowed_tools:`),
   gemini (`.gemini/settings.json`), opencode (`.opencode/opencode.json`),
   pimono (`.pi/`). Under `--global` each adapter's paths resolve through its
@@ -441,31 +442,35 @@ marker-block (covers credential-bearing files) → cleanup.
   2 drift · 3 auth · 4 env-mismatch · 5 schema-mismatch · 6 network/503 ·
   7 collision-refuse (auto-claim differing bytes) · 8 config file.
   `MapServerError` is the single HTTP→code chokepoint.
-- **In-flight change (2026-07-19, uncommitted)**: flip runtime projection ON
-  by default (`--no-runtime` opt-out, `--include-runtime` deprecated alias),
-  models become an informative summary line. Plan:
-  `docs/plans/2026-07-19-hydrate-runtime-on-by-default-plan.md`.
+- Runtime projection is ALWAYS on (the CLI never sets `NoRuntime`;
+  `--include-runtime` was removed); `--only-runtime` writes runtime alone,
+  `--only plugin|skill/<name>` writes one item and never runtime. Models are
+  an informative summary line.
 
 ## 9. CLI command tree (ach-cli)
 
-`login` (OAuth: loopback or device grant) · `logout` · `whoami [--verify]` (pk→env list,
-ek→hydrate probe) · `config add/list/show/use/remove/rename/rm-ek`
+`login [url]` (OAuth: loopback or device grant) · `logout` (keeps saved keys) ·
+`whoami` (always remote: `GET /platform/console/bootstrap` → user, budget, key
+allowance) · `token` · `profile list/show/use/add/rename/remove`
 (multi-profile `~/.config/ach/config.yaml`, 0600/0700, https-only unless
-`--insecure`/`ACH_INSECURE` — G19) · `env list/describe/hydrate/status/save/uninstall`
-· `keys create/list/revoke/prune` (create auto-saves ek into profile unless
-`--no-save`; prune keeps newest pk, never force-revokes active) ·
-`admin keys/users/refresh/list` (exit 3 on not_admin) ·
-`runtime models/mcp/a2a/teams/catalog` · `content fetch` ·
-`local repo add/list/remove/update` + `local plugin|skill install/uninstall/update/outdated/list`.
+`--insecure`/`ACH_INSECURE` — G19) · `env list/describe/hydrate/status/save/uninstall/fetch`
+(`hydrate|uninstall --only plugin|skill/<name>`, `--dir`, `-g`, `--target a,b`) ·
+`keys create/list/revoke/suspend/resume/budget` (the caller's own ek- keys;
+create saves `{id, key}` under `keys.<name>` unless `--no-save`) ·
+`admin list <kind>` (objects + `models|mcp|a2a|teams|guardrails`) ·
+`admin keys list/revoke [--owner]` · `admin users budget|limits` ·
+`admin refresh` (exit 3 on not_admin) ·
+`local repo add/list/remove/update` + `local plugin|skill install/uninstall/update/outdated/list` (`--dir`, `-g`).
 
-Credential precedence: synthetic (`ACH_BASE_URL`+`ACH_API_KEY`) → `--api-key`
-→ `--env-key label` → `ACH_API_KEY` → `ACH_ENV_KEY` → profile pk. Profile:
-`--profile` → `ACH_PROFILE` → `default:` → sole entry.
+Credential precedence (`resolveCred`, cmd/ach-cli/cmd/cred.go): `--key` →
+`ACH_KEY` → the profile's own credential (OAuth access token, else its `key`).
+A key value is raw when it starts `ek-`, else a name saved under the
+profile's `keys:`. Profile: `--profile` → `ACH_PROFILE` → `default:` → sole entry.
 
-**Synthetic mode**: `ACH_BASE_URL` + credential = headless/no-disk-config;
-half-set (URL alone) = hard error; login/logout/config/`--profile`/`--env-key`
-refused; profile label `(env)`. `ACH_PLATFORM_URL` is the login-prompt
-prefill — a DIFFERENT var, does not trigger synthetic.
+**Synthetic mode**: `ACH_URL` + `ACH_KEY` = headless/no-disk-config; a raw
+`--key ek-…` overrides `ACH_KEY`; login/logout/token/profile/`--profile`/a
+saved-name `--key` refused; profile label `(env)`. `ACH_URL` alone is only the
+login prefill.
 
 **Local package manager** (serverless, no hub): `repo add github:owner/repo`
 / `git:url` → ls-remote + tarball → 4-lens capability detect

@@ -191,7 +191,7 @@ func testPhase7BaselineNoOp(t *testing.T) {
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
 	if runErr1 != nil {
@@ -214,7 +214,7 @@ func testPhase7BaselineNoOp(t *testing.T) {
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)
 	if runErr2 != nil {
@@ -262,7 +262,7 @@ func testPhase7Sc5SkillProjection(t *testing.T) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -363,7 +363,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", platformID,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -377,7 +377,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 // phase7Sc1RunEk drives a single sc1_*_ek subtest. The ek_ is minted
 // via `ach-cli keys create` against the seeded XDG; per CLI-04 the
 // ek_ binds the environment, so the hydrate call omits --environment
-// and passes --env-key <label>.
+// and passes --key <label>.
 func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -394,9 +394,9 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	// environment), including the ek_ credential path.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
-		"--env-key", label,
+		"--key", label,
 		"--target", platformID,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -470,7 +470,7 @@ func testPhase7Sc1ClaudeCodeSurgicalPreserve(t *testing.T) {
 
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
-		"--target", phase7PlatformClaudeCode, "--output", output,
+		"--target", phase7PlatformClaudeCode, "--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -569,7 +569,7 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeSeed, runErrSeed := phase7StripExitErr(errSeed)
 	if runErrSeed != nil {
@@ -592,7 +592,7 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 		[]string{phase7SigkillEnvVar + "=11"},
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeKill, _ := phase7StripExitErr(errKill)
 	// SIGKILL-killed processes report ExitCode() == -1 via Go's
@@ -649,7 +649,7 @@ func testPhase7Sc2SigkillRecovery(t *testing.T) {
 	stdoutResume, stderrResume, errResume := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeResume, runErrResume := phase7StripExitErr(errResume)
 	if runErrResume != nil {
@@ -705,7 +705,7 @@ func testPhase7Sc3DriftNoOp(t *testing.T) {
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code1, _ := phase7StripExitErr(err1)
 	if code1 != 0 {
@@ -724,7 +724,7 @@ func testPhase7Sc3DriftNoOp(t *testing.T) {
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code2, _ := phase7StripExitErr(err2)
 	if code2 != 0 {
@@ -772,7 +772,7 @@ func testPhase7Sc3DriftUpstreamOnly(t *testing.T) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, _ := phase7StripExitErr(err)
 	if code != 0 {
@@ -803,7 +803,7 @@ func testPhase7Sc3DriftLocalEditPreserve(t *testing.T) {
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
 	if codeSeed != 0 {
@@ -823,7 +823,7 @@ func testPhase7Sc3DriftLocalEditPreserve(t *testing.T) {
 	stdoutDrift, stderrDrift, errDrift := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeDrift, _ := phase7StripExitErr(errDrift)
 	if codeDrift != 2 {
@@ -859,7 +859,7 @@ func testPhase7Sc3DriftConflictPreserve(t *testing.T) {
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
 	if codeSeed != 0 {
@@ -885,7 +885,7 @@ func testPhase7Sc3DriftConflictPreserve(t *testing.T) {
 	stdoutDrift, stderrDrift, errDrift := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeDrift, _ := phase7StripExitErr(errDrift)
 	if codeDrift != 2 {
@@ -917,7 +917,7 @@ func testPhase7Sc3DriftForceOverrides(t *testing.T) {
 	stdoutSeed, stderrSeed, errSeed := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	codeSeed, _ := phase7StripExitErr(errSeed)
 	if codeSeed != 0 {
@@ -938,7 +938,7 @@ func testPhase7Sc3DriftForceOverrides(t *testing.T) {
 	stdoutForce, stderrForce, errForce := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 		"--force",
 	)
 	codeForce, _ := phase7StripExitErr(errForce)
@@ -1107,7 +1107,7 @@ func phase7AssertMaliciousFixtureRejected(t *testing.T, fixturePath string) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -1196,7 +1196,7 @@ func testPhase7Sc4SafeExtractBomb(t *testing.T) {
 		},
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -1279,7 +1279,7 @@ func testPhase7Sc4AutoClaimMatch(t *testing.T) {
 	stdoutPre, stderrPre, errPre := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", prerun,
+		"--dir", prerun,
 	)
 	codePre, _ := phase7StripExitErr(errPre)
 	if codePre != 0 {
@@ -1304,7 +1304,7 @@ func testPhase7Sc4AutoClaimMatch(t *testing.T) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, _ := phase7StripExitErr(err)
 	if code != 0 {
@@ -1388,7 +1388,7 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code, runErr := phase7StripExitErr(err)
 	if runErr != nil {
@@ -1408,7 +1408,7 @@ func testPhase7Sc4AutoClaimDiffer(t *testing.T) {
 	stdoutForce, stderrForce, errForce := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 		"--force",
 	)
 	codeForce, _ := phase7StripExitErr(errForce)
@@ -1474,7 +1474,7 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	stdout1, stderr1, err1 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code1, runErr1 := phase7StripExitErr(err1)
 	if runErr1 != nil {
@@ -1624,7 +1624,7 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	stdout2, stderr2, err2 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 	)
 	code2, runErr2 := phase7StripExitErr(err2)
 	if runErr2 != nil {
@@ -1658,7 +1658,7 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	stdout3, stderr3, err3 := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
 		"--target", phase7PlatformClaudeCode,
-		"--output", output,
+		"--dir", output,
 		"--force",
 	)
 	code3, runErr3 := phase7StripExitErr(err3)
@@ -1692,5 +1692,55 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 		t.Errorf("sc4 autoclaim rotate: force overwrite produced mode %o (want %o) — "+
 			"W5-02 CR-01 mitigation regressed on the rotate/force path.",
 			got, 0o600)
+	}
+}
+
+// TestHydrateOnly_InstallThenUninstallOnePlugin: `env hydrate --only
+// plugin/caveman` writes that plugin's files and nothing else (no other
+// plugin/skill, no runtime config), `env status` lists it, and `env
+// uninstall --only plugin/caveman` removes it again — the state file goes
+// with it, since caveman was the only thing recorded.
+func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
+	phase7SuiteGuard(t)
+	creds := phase7AcquirePk(t)
+	xdg := phase7SeedXdgConfig(t, phase7BaseURL(), creds)
+	phase7DemoEnvironmentReady(t)
+	ws := phase7Workspace(t)
+
+	run := func(args ...string) string {
+		t.Helper()
+		stdout, stderr, err := runAchCliInDir(t, xdg, ws, args...)
+		code, runErr := phase7StripExitErr(err)
+		if runErr != nil || code != 0 {
+			t.Fatalf("%v: exit=%d err=%v\nstdout=%s\nstderr=%s", args, code, runErr, stdout, stderr)
+		}
+		return string(stdout)
+	}
+
+	run("env", "hydrate", phase7DemoEnvironment, "--only", "plugin/caveman",
+		"--target", phase7PlatformClaudeCode, "--dir", ws)
+	if n := countRegularFilesUnder(filepath.Join(ws, ".claude", "agents")); n == 0 {
+		t.Fatalf("--only plugin/caveman: no caveman agents under .claude/agents")
+	}
+	for _, rel := range []string{".claude/skills/pdf", ".claude/skills/docx", ".mcp.json"} {
+		if _, err := os.Stat(filepath.Join(ws, rel)); err == nil {
+			t.Errorf("--only plugin/caveman also wrote %s", rel)
+		}
+	}
+	statePath := phase7StatePath(ws, phase7DemoEnvironment, phase7PlatformClaudeCode)
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("state file missing after --only hydrate: %v", err)
+	}
+
+	if status := run("env", "status", phase7DemoEnvironment); !strings.Contains(status, "caveman") {
+		t.Errorf("env status does not list caveman:\n%s", status)
+	}
+
+	run("env", "uninstall", phase7DemoEnvironment, "--only", "plugin/caveman", "--dir", ws)
+	if n := countRegularFilesUnder(filepath.Join(ws, ".claude", "agents")); n != 0 {
+		t.Errorf("uninstall --only left %d files under .claude/agents", n)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("state file still present after uninstalling the only item: %v", err)
 	}
 }

@@ -39,6 +39,7 @@ package e2e
 import (
 	"bytes"
 	"os"
+	"regexp"
 	"testing"
 )
 
@@ -90,7 +91,7 @@ func testPhase6Login(t *testing.T) {
 		"(default=demo, url=%s)", xdg, baseURL)
 }
 
-// testPhase6WhoamiVerifyPk asserts `ach whoami --verify` exits 0
+// testPhase6WhoamiVerifyPk asserts `ach-cli whoami` exits 0
 // against the live cluster's platform-api when handed a pk_. Per D-13
 // + spec §5.3: pk_ → `GET /platform/environments?limit=1`.
 //
@@ -105,29 +106,29 @@ func testPhase6WhoamiVerifyPk(t *testing.T) {
 	baseURL := phase6PlatformAPIURL(t)
 	xdg := phase6WriteTempConfig(t, baseURL, creds)
 
-	stdout, stderr, err := phase6RunAch(t, xdg, "whoami", "--verify")
+	stdout, stderr, err := phase6RunAch(t, xdg, "whoami")
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
-		t.Fatalf("ach whoami --verify: exec error: %v\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach-cli whoami: exec error: %v\nstdout=%s\nstderr=%s",
 			runErr, stdout, stderr)
 	}
 	if code != 0 {
-		t.Fatalf("ach whoami --verify: exit %d (want 0)\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach-cli whoami: exit %d (want 0)\nstdout=%s\nstderr=%s",
 			code, stdout, stderr)
 	}
 	// Identity block must surface the deployment name + the session type.
 	if !phase6Contains(stdout, "demo") {
-		t.Errorf("ach whoami --verify: stdout missing deployment 'demo'; got=%s", stdout)
+		t.Errorf("ach-cli whoami: stdout missing deployment 'demo'; got=%s", stdout)
 	}
-	if !phase6Contains(stdout, "Key: OAuth session") {
-		t.Errorf("ach whoami --verify: stdout missing the OAuth session line; got=%s", stdout)
+	if !regexp.MustCompile(`(?m)^Auth\s+session$`).Match(stdout) {
+		t.Errorf("ach-cli whoami: stdout missing the OAuth session line; got=%s", stdout)
 	}
 	// No token leak per OBS-02 / Pattern S5.
 	if bytes.Contains(stdout, []byte(pk)) {
-		t.Errorf("ach whoami --verify: raw pk_ leaked to stdout (CLI-04 no-leak)")
+		t.Errorf("ach-cli whoami: raw pk_ leaked to stdout (CLI-04 no-leak)")
 	}
 	if bytes.Contains(stderr, []byte(pk)) {
-		t.Errorf("ach whoami --verify: raw pk_ leaked to stderr (CLI-04 no-leak)")
+		t.Errorf("ach-cli whoami: raw pk_ leaked to stderr (CLI-04 no-leak)")
 	}
 }
 
@@ -156,21 +157,21 @@ func testPhase6EnvList(t *testing.T) {
 	}
 }
 
-// testPhase6EnvKeysCreate asserts `ach keys create --environment
+// testPhase6EnvKeysCreate asserts `ach-cli keys create
 // demo --name e2e-test-key` exits 0 and stdout includes a freshly-minted
 // ek_ plaintext (the one-time return per CLI-04 / D-07).
 //
 // The minted ek_ is captured for documentation in subsequent runs but
 // is NOT subsequently exercised against the cluster — the W2 ek_
-// asymmetric-verify path is covered by whoami's --env-key flag in
+// asymmetric-verify path is covered by whoami --key in
 // production; folding that here would require either a second `ach
-// whoami --env-key` invocation (which reads the ek from the same XDG
+// whoami --key` invocation (which reads the ek from the same XDG
 // config the previous step wrote to) or careful subtest-ordering, and
 // either would only re-prove the W2 unit-test coverage.
 //
 // The persistence side-effect (D-07 always-persist) means the ek_ is
 // now in the temp XDG_CONFIG_HOME's config.yaml under
-// `deployments.demo.ek.e2e-test-key` — useful for cleanup/inspection
+// `profiles.demo.keys.e2e-test-key` — useful for cleanup/inspection
 // when running with -keep or under a manual XDG export.
 func testPhase6EnvKeysCreate(t *testing.T) {
 	t.Helper()
@@ -180,8 +181,7 @@ func testPhase6EnvKeysCreate(t *testing.T) {
 	xdg := phase6WriteTempConfig(t, baseURL, pk)
 
 	stdout, stderr, err := phase6RunAch(t, xdg,
-		"keys", "create",
-		"--environment", phase6DemoEnvironment,
+		"keys", "create", phase6DemoEnvironment,
 		"--name", "e2e-test-key",
 	)
 	code, runErr := phase6StripExitErr(err)

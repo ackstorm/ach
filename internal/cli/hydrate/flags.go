@@ -105,7 +105,7 @@ type Opts struct {
 	// --- transport bag ---
 
 	// BaseURL is the platform-api root the manifest fetcher targets.
-	// Caller layer resolves from ACH_BASE_URL or config (D-11).
+	// Caller layer resolves from ACH_URL or config (D-11).
 	BaseURL string
 
 	// Bearer is the resolved credential (pk-<…> or ek-<…>) for the

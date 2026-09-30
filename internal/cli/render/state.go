@@ -11,7 +11,7 @@ import (
 )
 
 // StateEntryView is the per-row shape rendered by FormatStateList +
-// FormatStateListJSON for `ach-cli list` (LIFE-03 / D-31). It is a lean,
+// FormatStateListJSON for `ach-cli env status` (LIFE-03 / D-31). It is a lean,
 // plain-data local view — the cmd layer (cmd/ach-cli/cmd/list.go) builds
 // these by walking the state.File buckets, deriving Kind from the owning
 // bucket (state.FileEntry carries no kind field) and Environment from
@@ -92,7 +92,7 @@ func FormatStateList(entries []StateEntryView, detailed bool) string {
 }
 
 // FormatStateListJSON emits the machine-readable inventory for
-// `ach-cli list --json`. Output is deterministic: entries are sorted by
+// `ach-cli env status -o json`. Output is deterministic: entries are sorted by
 // (Kind, Target, Environment) before marshalling so two calls with the
 // same logical set produce byte-identical output regardless of the
 // caller's iteration order. Empty/nil input marshals to "[]\n" (a stable
