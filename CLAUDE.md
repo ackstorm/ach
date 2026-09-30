@@ -27,6 +27,7 @@ that revealed it.
 | Release pipeline (`release.yml`, goreleaser, bump) | `references/release-pipeline.md` |
 | Repo layout / synced-fixture set | `references/repo-layout.md` |
 | **Service/domain** failure mode | `references/troubleshooting.md` |
+| `ach-cli` command, flag or output change | `internal/platformapi/opencode/skill/SKILL.md` (the `genai-api` skill users' agents follow — a stale command there is a broken instruction); also re-check it before EVERY `make release-cut` (`references/release-pipeline.md`) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Architecture/contract shift that invalidates the whole-system brief | `references/understanding.md` |
