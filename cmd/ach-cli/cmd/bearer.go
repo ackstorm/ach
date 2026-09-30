@@ -12,14 +12,12 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// profileBearer returns the profile's own credential: the pk_ from a
-// device-code login, or a current OAuth access token (refreshed — and the
-// rotated pair persisted to path — when it is near expiry). "" when the
-// profile has neither. Every command that falls back to "the profile's
-// key" routes through here so an OAuth profile works everywhere a pk_ does.
+// profileBearer returns the profile's own credential: a current OAuth
+// access token (refreshed — and the rotated pair persisted to path — when
+// it is near expiry), else the profile's Key. "" when it has neither.
 func profileBearer(ctx context.Context, file *config.File, path string, dep *config.Profile) (string, error) {
 	if dep.OAuth == nil {
-		return dep.PK, nil
+		return dep.Key, nil
 	}
 	tok, updated, err := (&oauthlogin.Client{BaseURL: dep.URL}).CurrentAccessToken(ctx, dep.OAuth)
 	if err != nil {

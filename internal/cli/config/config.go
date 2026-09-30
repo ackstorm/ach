@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package config owns ~/.config/ach/config.yaml — the CLI's local
-// trust artifact (Hub §15.4) authorized to hold pk_/ek_ plaintext on
-// disk at mode 0600. The schema is CLI spec §3.2 verbatim:
+// trust artifact, authorized to hold ek-… plaintext and OAuth tokens on
+// disk at mode 0600:
 //
 //	default: <name>
 //	profiles:
 //	  <name>:
 //	    url:  https://...
-//	    pk:   pk_...
-//	    ek:
-//	      <local-label>: ek_...
+//	    key:  ek-...            # machine profile credential (profile add)
+//	    keys:                   # keys created with `keys create`, by name
+//	      <name>: {id: ekid_..., key: ek-...}
+//	    oauth: {...}            # ach-cli login
 //
 // Discipline (mirrors internal/cachefs and internal/credhash):
 //
@@ -29,9 +30,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -47,17 +50,25 @@ type File struct {
 }
 
 // Profile is one named entry under `profiles:` — a URL plus the
-// optional pk_/ek_ map or OAuth block. `url:` is the only required field.
+// profile's own credential (OAuth block or Key) and the saved keys.
+// `url:` is the only required field.
 type Profile struct {
-	URL   string            `yaml:"url"`
-	PK    string            `yaml:"pk,omitempty"`
-	EK    map[string]string `yaml:"ek,omitempty"`
-	OAuth *OAuthCreds       `yaml:"oauth,omitempty"`
+	URL   string              `yaml:"url"`
+	Key   string              `yaml:"key,omitempty"`  // machine profile credential (ek-…), from `profile add`
+	Keys  map[string]SavedKey `yaml:"keys,omitempty"` // keys created with `keys create`, by name
+	OAuth *OAuthCreds         `yaml:"oauth,omitempty"`
 }
 
-// OAuthCreds is what `ach-cli login` (OAuth mode) stores: the DCR client id
-// (registered once per profile) and the current token pair. PK stays empty
-// on an OAuth profile — the access token is the credential.
+// SavedKey is one key created with `keys create`: the id lets
+// `keys revoke <name>` reach the server, the plaintext is the credential.
+type SavedKey struct {
+	ID  string `yaml:"id"`  // ekid_…
+	Key string `yaml:"key"` // ek-… plaintext
+}
+
+// OAuthCreds is what `ach-cli login` stores: the DCR client id
+// (registered once per profile) and the current token pair. Key stays
+// empty on an OAuth profile — the access token is the credential.
 type OAuthCreds struct {
 	ClientID     string    `yaml:"client_id"`
 	AccessToken  string    `yaml:"access_token"`
@@ -191,12 +202,42 @@ func LoadWithInsecure(path string, warn func(format string, args ...any), allowI
 	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
 	dec.KnownFields(true)
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
+		if hint := removedFieldHint(raw); hint != nil {
+			return nil, hint
+		}
 		return nil, fmt.Errorf("%w: %v", ErrConfigParse, err)
 	}
 	if err := validateProfiles(&f, allowInsecure); err != nil {
 		return nil, err
 	}
 	return &f, nil
+}
+
+// removedFieldHint names the first profile still carrying the pre-redesign
+// `pk:`/`ek:` fields. There is no migration: the file is re-created by a
+// fresh login.
+func removedFieldHint(raw []byte) error {
+	var loose struct {
+		Profiles map[string]map[string]any `yaml:"profiles"`
+	}
+	if yaml.Unmarshal(raw, &loose) != nil {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(loose.Profiles)) {
+		p := loose.Profiles[name]
+		if _, pk := p["pk"]; pk {
+			return removedField(name)
+		}
+		if _, ek := p["ek"]; ek {
+			return removedField(name)
+		}
+	}
+	return nil
+}
+
+func removedField(profile string) error {
+	return fmt.Errorf("%w: profile %q uses a removed field (pk/ek); delete ~/.config/ach/config.yaml and run ach-cli login",
+		ErrConfigParse, profile)
 }
 
 // Save writes the file to `path` atomically: encode to a sibling
@@ -255,8 +296,8 @@ func SaveInsecure(path string, f *File, allowInsecure bool) error {
 	return nil
 }
 
-// Mask returns the display form of a pk-/ek- plaintext — used by
-// `ach config show` (D-05). Shape: "<prefix>-****<last-4>". Returns
+// Mask returns the display form of an ek-… plaintext — used by
+// `profile show` and `whoami`. Shape: "<prefix>-****<last-4>". Returns
 // "<masked>" when the input is shorter than 8 chars or contains no
 // hyphen (defensive: never emit ambiguous fragments).
 //

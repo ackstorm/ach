@@ -25,7 +25,6 @@
 // JSON tags on these structs match the server's HydrateResponse field
 // names so trivial json.Decoder round-trips work without re-mapping.
 //
-// W7 sharing contract: FormatKeyList is the single source of truth for
-// the keys list table — both 06-05 `ach keys list` and 06-08
-// `ach admin keys list` call this function, NOT inline tabwriter code.
+// Key tables: FormatKeyList (`keys list`, the caller's ek- keys) and
+// FormatAdminKeyList (`admin keys list`, with TYPE/OWNER) live in ek.go.
 package render

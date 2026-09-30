@@ -72,10 +72,10 @@ func oauthASForTest(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func TestLogin_OAuthDefault_WritesOAuthBlockAndNoPK(t *testing.T) {
+func TestLogin_OAuthDefault_WritesOAuthBlockAndNoKey(t *testing.T) {
 	dir := loginTestEnv(t)
 	as := oauthASForTest(t)
-	_, stderr, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", as.URL)
+	_, stderr, code, err := executeLogin(t, "", as.URL, "--profile", "prod")
 	if err != nil {
 		t.Fatalf("code=%v err=%v stderr=%s", code, err, stderr)
 	}
@@ -84,7 +84,7 @@ func TestLogin_OAuthDefault_WritesOAuthBlockAndNoPK(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := file.Profiles["prod"]
-	if p == nil || p.PK != "" || p.OAuth == nil || p.OAuth.AccessToken != "a.b.c" ||
+	if p == nil || p.Key != "" || p.OAuth == nil || p.OAuth.AccessToken != "a.b.c" ||
 		p.OAuth.ClientID != "oc_test" || p.OAuth.RefreshToken != "r1" {
 		t.Fatalf("profile: %+v oauth=%+v", p, p.OAuth)
 	}
@@ -157,24 +157,33 @@ func TestToken_ConcurrentHelpersRefreshOnce(t *testing.T) {
 	}
 }
 
-func TestToken_PKProfilePrintsPK(t *testing.T) {
+func TestToken_KeyProfilePrintsKey(t *testing.T) {
 	dir := loginTestEnv(t)
 	path := filepath.Join(dir, "ach", "config.yaml")
 	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
-		URL: "https://ach.example.com", PK: "pk_abc",
+		URL: "https://ach.example.com", Key: testEK,
 	}}}); err != nil {
 		t.Fatal(err)
 	}
 	stdout, _, _, err := executeCommand(t, newTokenCmd())
-	if err != nil || stdout != "pk_abc\n" {
+	if err != nil || stdout != testEK+"\n" {
 		t.Fatalf("stdout=%q err=%v", stdout, err)
 	}
 	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
-		URL: "https://ach.example.com", EK: map[string]string{"prod": "ek_x"},
+		URL: "https://ach.example.com", Keys: map[string]config.SavedKey{"prod": {ID: "ekid_1", Key: testEK}},
 	}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, _, err := executeCommand(t, newTokenCmd()); err == nil {
-		t.Fatal("ek_-only profile must not print a credential")
+		t.Fatal("a profile with only saved keys must not print a credential")
+	}
+}
+
+func TestToken_SyntheticModeExit1(t *testing.T) {
+	loginTestEnv(t)
+	t.Setenv("ACH_URL", "https://synth.example")
+	t.Setenv("ACH_KEY", testEK)
+	if _, _, code, err := executeCommand(t, newTokenCmd()); err == nil || code != 1 {
+		t.Fatalf("code=%d err=%v; want exit 1", code, err)
 	}
 }

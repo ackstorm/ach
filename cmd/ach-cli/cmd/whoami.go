@@ -1,32 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach whoami` is the read-only identity command. Default invocation
-// inspects ~/.config/ach/config.yaml only — no HTTP call. With
-// --verify it performs an asymmetric remote check per CLI spec §5.3 /
-// D-13:
-//
-//   - pk- → GET /platform/environments?limit=1
-//   - ek- → POST /platform/hydrate {} with Accept-Encoding: gzip
-//
-// Exit codes per D-14: 0 on 2xx, 3 on 401, 6 on network failure. The
-// pk- vs ek- branch uses internal/keys.ClassifyBearer for prefix
-// classification (already shipped Phase 3).
-//
-// Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) is supported
-// transparently in W1 — the bearer comes from env via ClassifyBearer
-// and the same asymmetric verify branches apply. Full mutex
-// enforcement on --api-key/--env-key/ACH_API_KEY/ACH_ENV_KEY lands in
-// W3-P1 (06-07) via the synthetic.GuardCommand extension.
-
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
-	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -37,247 +18,100 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
-// whoamiHTTPClient is a test-only seam: when non-nil it replaces the
-// default *http.Client inside the httpclient.Client built by whoami.
-// Tests targeting an httptest.NewTLSServer set this to the test
-// server's TLS-trusting Client so verify can reach the ephemeral cert.
+// unavailable is printed for a field the Hub could not report.
+const unavailable = "unavailable"
+
+// whoamiHTTPClient is the test seam for the whoami HTTP transport.
 var whoamiHTTPClient *http.Client
 
-// newWhoamiCmd returns a fresh `ach whoami` cobra.Command.
-func newWhoamiCmd() *cobra.Command {
-	var (
-		flagVerify  bool
-		flagVerbose bool
-		flagProfile string
-		flagAPIKey  string
-		flagEnvKey  string
-	)
+// bootstrapView is the part of GET /platform/console/bootstrap whoami prints.
+type bootstrapView struct {
+	Email    string `json:"email"`
+	KeysUsed *int   `json:"keys_used"`
+	MaxKeys  *int   `json:"max_keys"`
+	Budget   *struct {
+		Spend          float64  `json:"spend"`
+		MaxBudget      *float64 `json:"max_budget"`
+		BudgetDuration *string  `json:"budget_duration"`
+	} `json:"budget"`
+}
 
+func newWhoamiCmd() *cobra.Command {
+	var f credFlags
 	cmd := &cobra.Command{
 		Use:   "whoami",
-		Short: "Print the active identity (no remote check unless --verify)",
-		Long: `Print the identity block for the active profile.
+		Short: "Show who you are signed in as, your budget and your key allowance",
+		Long: `Ask the Hub who the active credential belongs to and print:
 
-Default (no --verify) reads ~/.config/ach/config.yaml and prints:
-  Profile:  <name>
-  URL:         <url>
-  Key:         <prefix>_****<last-4>
-  (no remote check)
+  Profile  the profile used
+  URL      the Hub
+  User     your email
+  Auth     session (OAuth login) or key ek-****abcd (--key / ACH_KEY / a key profile)
+  Budget   spend / ceiling for your whole account
+  Keys     keys held / keys allowed
 
-With --verify, performs a remote check against the platform API:
-  pk-  → GET  /platform/environments?limit=1
-  ek-  → POST /platform/hydrate {}  (Accept-Encoding: gzip; body discarded)
-
-Exit codes:
-  0  success
-  3  401 invalid_key / 403 not_admin
-  6  network failure
-`,
+Exit codes: 0 success, 3 not authorized, 6 network error.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return doWhoami(cmd, flagVerify, flagVerbose, flagProfile, flagAPIKey, flagEnvKey)
+			return doWhoami(cmd, f)
 		},
 	}
-
-	cmd.Flags().BoolVar(&flagVerify, "verify", false, "Probe the server with the resolved key")
-	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag (synthetic-mode path)")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
-
+	registerCredFlags(cmd, &f)
 	return cmd
 }
 
-// doWhoami is the RunE body.
-func doWhoami(cmd *cobra.Command, verify, verbose bool, profile, apiKey, envKey string) error {
-	stdout := cmd.OutOrStdout()
-	stderr := cmd.ErrOrStderr()
-
-	// CLI-07 synthetic gate (allowed-in-synthetic; rejects half-set,
-	// --profile, --env-key) — runs BEFORE resolveActiveBearer so
-	// the centralized half-set message wins over any disk-config
-	// disposition.
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateWhoami,
-		APIKeyFlag:  apiKey,
-		EnvKeyFlag:  envKey,
-		ProfileFlag: profile,
-	}); err != nil {
-		return err
-	}
-
-	// Resolve the active profile + bearer credential.
-	name, dep, bearer, err := resolveActiveBearer(profile, apiKey, envKey)
+func doWhoami(cmd *cobra.Command, f credFlags) error {
+	c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
-
-	identity := formatIdentityBlock(name, dep, bearer)
-	if !verify {
-		_, _ = fmt.Fprint(stdout, identity, "(no remote check)\n")
-		return nil
+	hc := newAPIClient(c.BaseURL, c.Bearer, whoamiHTTPClient, f.Verbose, cmd.ErrOrStderr())
+	var b bootstrapView
+	if err := hc.Do(cmd.Context(), http.MethodGet, "/platform/console/bootstrap", nil, &b); err != nil {
+		return mapVerifyError(err)
 	}
-
-	// --verify: classify pk- vs ek- and call the right endpoint.
-	prefix, classifyErr := classifyBearer(bearer)
-	if classifyErr != nil {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  fmt.Sprintf("classify bearer: %v", classifyErr),
-		}
-	}
-
-	hc := newAPIClient(dep.URL, bearer, whoamiHTTPClient, verbose, stderr)
-
-	ctx := cmd.Context()
-	switch prefix {
-	case keys.PrefixPk:
-		if doErr := hc.Do(ctx, http.MethodGet, "/platform/environments?limit=1", nil, nil); doErr != nil {
-			return mapVerifyError(doErr)
-		}
-	case keys.PrefixEk:
-		// Set Accept-Encoding: gzip (CLI-11) via the foundation
-		// ExtraHeaders field (06-01 contract — no inline httpclient
-		// extension here). DoRaw is used so we can discard the body
-		// after status check per CLI-11.
-		hc.ExtraHeaders = http.Header{"Accept-Encoding": {"gzip"}}
-		resp, doErr := hc.DoRaw(ctx, http.MethodPost, "/platform/hydrate", struct{}{})
-		if doErr != nil {
-			return mapVerifyError(doErr)
-		}
-		// CLI-11: body is discarded after status check.
-		_ = resp.Body.Close()
-	default:
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  fmt.Sprintf("unknown bearer prefix %q", prefix),
-		}
-	}
-
-	_, _ = fmt.Fprint(stdout, identity, "Verified: yes\n")
+	writeWhoami(cmd.OutOrStdout(), c, b)
 	return nil
 }
 
-// resolveActiveBearer applies the CLI-08 precedence for the profile
-// + a minimal bearer resolution chain (W1 scope; full mutex
-// enforcement lands in W3-P1):
-//
-//  1. Synthetic mode (ACH_BASE_URL + ACH_API_KEY) — use the env pk-
-//     directly; profile-flag/env REJECTED with exit 1.
-//  2. --api-key flag — use it as the bearer, profile for URL only.
-//  3. --env-key flag — resolve against profiles.<active>.ek.<label>.
-//  4. ACH_API_KEY env — same as --api-key.
-//  5. ACH_ENV_KEY env — same as --env-key.
-//  6. default — profile's pk: from config.
-//
-// Returns the resolved profile NAME (for the identity block),
-// *Profile (URL + optional EK map), bearer plaintext.
-func resolveActiveBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, *config.Profile, string, error) {
-	envBaseURL := os.Getenv("ACH_BASE_URL")
-	envAPIKey := os.Getenv("ACH_API_KEY")
-	envEnvKey := os.Getenv("ACH_ENV_KEY")
-	envProfile := os.Getenv("ACH_PROFILE")
-
-	// Synthetic-mode bearer synthesis. The synthetic.GuardCommand call
-	// in doWhoami already rejected --profile / --env-key / half-set
-	// for this code path; here we just synthesize a one-off Profile
-	// from the env bearer + URL. The label "(env)" matches
-	// synthetic.SyntheticProfileLabel (Phase 7 consumes that const
-	// directly when writing state.json).
-	if envBaseURL != "" && envAPIKey != "" {
-		dep := &config.Profile{URL: envBaseURL}
-		return synthetic.SyntheticProfileLabel, dep, envAPIKey, nil
+func writeWhoami(w io.Writer, c cred, b bootstrapView) {
+	auth := "session"
+	if !keys.LooksLikeJWS(c.Bearer) {
+		auth = "key " + config.Mask(c.Bearer)
 	}
-
-	// Disk-config path: load + resolve active.
-	configPath, err := config.Path()
-	if err != nil {
-		return "", nil, "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-	}
-	file, err := config.Load(configPath)
-	if err != nil {
-		return "", nil, "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-	}
-	if file == nil {
-		return "", nil, "", &exit.CodedError{
-			Code: exit.General,
-			Msg:  "no profile configured; run `ach login` (CLI-08)",
-		}
-	}
-	name, dep, err := config.ResolveActive(file, flagProfile, envProfile)
-	if err != nil {
-		return "", nil, "", &exit.CodedError{
-			Code: exit.General,
-			Msg:  fmt.Sprintf("%v; run `ach login`", err),
-		}
-	}
-
-	// Bearer resolution.
-	switch {
-	case flagAPIKey != "":
-		return name, dep, flagAPIKey, nil
-	case flagEnvKey != "":
-		ek, ok := dep.EK[flagEnvKey]
-		if !ok {
-			return "", nil, "", &exit.CodedError{
-				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q not found in profiles.%s.ek", flagEnvKey, name),
+	budget := unavailable
+	if b.Budget != nil {
+		budget = fmt.Sprintf("%.2f USD (no ceiling)", b.Budget.Spend)
+		if b.Budget.MaxBudget != nil {
+			budget = fmt.Sprintf("%.2f / %.2f USD", b.Budget.Spend, *b.Budget.MaxBudget)
+			if b.Budget.BudgetDuration != nil {
+				budget += " (" + *b.Budget.BudgetDuration + ")"
 			}
 		}
-		return name, dep, ek, nil
-	case envAPIKey != "":
-		return name, dep, envAPIKey, nil
-	case envEnvKey != "":
-		ek, ok := dep.EK[envEnvKey]
-		if !ok {
-			return "", nil, "", &exit.CodedError{
-				Code: exit.General,
-				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in profiles.%s.ek", envEnvKey, name),
-			}
-		}
-		return name, dep, ek, nil
 	}
-	if bearer, err := profileBearer(context.Background(), file, configPath, dep); err != nil {
-		return "", nil, "", err
-	} else if bearer != "" {
-		return name, dep, bearer, nil
+	keyCount := unavailable
+	if b.KeysUsed != nil && b.MaxKeys != nil {
+		keyCount = fmt.Sprintf("%d / %d", *b.KeysUsed, *b.MaxKeys)
 	}
-	return "", nil, "", &exit.CodedError{
-		Code: exit.General,
-		Msg:  fmt.Sprintf("no bearer for profile %q; run `ach login`", name),
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, row := range [][2]string{
+		{"Profile", c.ProfileName}, {"URL", c.BaseURL}, {"User", b.Email},
+		{"Auth", auth}, {"Budget", budget}, {"Keys", keyCount},
+	} {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", row[0], row[1])
 	}
+	_ = tw.Flush()
 }
 
-// formatIdentityBlock renders the four-line identity header used by
-// both the no-net default AND --verify (the latter appends "Verified: yes").
-func formatIdentityBlock(name string, dep *config.Profile, bearer string) string {
-	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Profile: %s\n", name)
-	_, _ = fmt.Fprintf(&sb, "URL: %s\n", dep.URL)
-	if dep.OAuth != nil {
-		// A JWT has no pk-/ek- prefix to mask around; naming the session
-		// type says everything the user needs and echoes nothing.
-		_, _ = fmt.Fprintln(&sb, "Key: OAuth session")
-	} else {
-		_, _ = fmt.Fprintf(&sb, "Key: %s\n", config.Mask(bearer))
-	}
-	return sb.String()
-}
-
-// mapVerifyError converts a *httpclient.ServerError (decoded §15.5
-// envelope) OR a transport error into the right exit code per D-14.
+// mapVerifyError passes a decoded server error through (main maps it to
+// its exit code) and turns anything else — a transport failure — into
+// exit 6.
 func mapVerifyError(err error) error {
-	// *httpclient.ServerError → main.go's errors.As branch maps via
-	// exit.MapServerError, so just return the error as-is.
 	var sErr *httpclient.ServerError
 	if errors.As(err, &sErr) {
 		return err
 	}
-	// Anything else is a transport / network failure → exit 6.
-	return &exit.CodedError{
-		Code:    exit.Network,
-		Msg:     err.Error(),
-		Wrapped: err,
-	}
+	return &exit.CodedError{Code: exit.Network, Msg: err.Error(), Wrapped: err}
 }
 
 func init() {

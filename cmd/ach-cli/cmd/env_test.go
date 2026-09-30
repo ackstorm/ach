@@ -19,13 +19,7 @@ import (
 // synthetic-mode env vars so each subtest runs hermetically.
 func envTestEnv(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("ACH_BASE_URL", "")
-	t.Setenv("ACH_API_KEY", "")
-	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_PROFILE", "")
-	return dir
+	return credTestEnv(t)
 }
 
 // seedEnvConfig writes a config.yaml with one profile under the
@@ -101,7 +95,7 @@ func TestEnv_List_SinglePage(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -152,7 +146,7 @@ func TestEnv_List_Pagination(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -189,7 +183,7 @@ func TestEnv_List_LimitFlag(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -218,7 +212,7 @@ func TestEnv_List_401_Exit3(t *testing.T) {
 	defer ts.Close()
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -294,7 +288,7 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -342,7 +336,7 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -411,7 +405,7 @@ func TestEnv_Describe_PaginatedFind(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -455,7 +449,7 @@ func TestEnv_Describe_MetadataOnly(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -498,7 +492,7 @@ func TestEnv_Describe_NotFound(t *testing.T) {
 
 	seedEnvConfig(t, dir, "prod", &config.Profile{
 		URL: ts.URL,
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
+		Key: testEK,
 	})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
@@ -557,8 +551,8 @@ func TestEnv_SyntheticMode_Allowed(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("ACH_BASE_URL", ts.URL)
-	t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
+	t.Setenv("ACH_URL", ts.URL)
+	t.Setenv("ACH_KEY", testEK)
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
 
 	_, _, code, err := executeEnv(t, "list")

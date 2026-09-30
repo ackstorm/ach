@@ -12,11 +12,8 @@
 //               the hydrate call exits 0 with `(unavailable)` markers
 //               (CLI-12 graceful admin fallback).
 //
-// Synthetic-mode posture: env list + describe are READ-ONLY and work
-// in synthetic mode — the profile resolution falls back to
-// (ACH_BASE_URL, ACH_API_KEY) via the same resolveActiveBearer path
-// used by whoami. NO synthetic-mode short-circuit here (config/login/
-// logout/env-keys-create are the gated commands).
+// Both are read-only and work in synthetic mode (ACH_URL + ACH_KEY)
+// through resolveCred.
 
 package cmd
 
@@ -25,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -49,6 +45,9 @@ var envHTTPClient *http.Client
 // internal/platformapi/environments handler). Surfaced as a constant
 // so the flag definition and the env-side default agree.
 const defaultEnvListLimit = 100
+
+// pathEnvironments is the environments list endpoint.
+const pathEnvironments = "/platform/environments"
 
 // newEnvCmd returns a fresh `ach env` parent cobra.Command with
 // the 2 children registered.
@@ -78,29 +77,15 @@ describe gracefully degrades on 403 unauthorized_team — printing
 // newEnvListCmd returns the `ach env list` leaf.
 func newEnvListCmd() *cobra.Command {
 	var (
-		flagLimit   int
-		flagVerbose bool
-		flagProfile string
-		flagAPIKey  string
-		flagEnvKey  string
+		flagLimit int
+		f         credFlags
 	)
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List environments visible to the active credential",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
-			// half-set, --profile, --env-key) — runs BEFORE the
-			// credential resolution so half-set wins over disk errors.
-			if err := synthetic.GuardCommand(synthetic.Params{
-				Gate:        synthetic.GateEnvList,
-				APIKeyFlag:  flagAPIKey,
-				EnvKeyFlag:  flagEnvKey,
-				ProfileFlag: flagProfile,
-			}); err != nil {
-				return err
-			}
-			hc, err := buildEnvHTTPClient(flagProfile, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
+			hc, err := buildEnvHTTPClient(cmd, f)
 			if err != nil {
 				return err
 			}
@@ -113,10 +98,7 @@ func newEnvListCmd() *cobra.Command {
 		},
 	}
 	c.Flags().IntVar(&flagLimit, "limit", defaultEnvListLimit, "Per-page limit (server cap is 500)")
-	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
+	registerCredFlags(c, &f)
 	return c
 }
 
@@ -124,10 +106,7 @@ func newEnvListCmd() *cobra.Command {
 func newEnvDescribeCmd() *cobra.Command {
 	var (
 		flagMetadataOnly bool
-		flagVerbose      bool
-		flagProfile      string
-		flagAPIKey       string
-		flagEnvKey       string
+		f                credFlags
 	)
 	c := &cobra.Command{
 		Use:   "describe <name>",
@@ -142,18 +121,8 @@ func newEnvDescribeCmd() *cobra.Command {
 						"  Run 'ach env list' to see available environments.",
 				}
 			}
-			// CLI-07 synthetic gate (allowed-in-synthetic; rejects
-			// half-set, --profile, --env-key).
-			if err := synthetic.GuardCommand(synthetic.Params{
-				Gate:        synthetic.GateEnvDescribe,
-				APIKeyFlag:  flagAPIKey,
-				EnvKeyFlag:  flagEnvKey,
-				ProfileFlag: flagProfile,
-			}); err != nil {
-				return err
-			}
 			name := args[0]
-			hc, err := buildEnvHTTPClient(flagProfile, flagAPIKey, flagEnvKey, flagVerbose, cmd.ErrOrStderr())
+			hc, err := buildEnvHTTPClient(cmd, f)
 			if err != nil {
 				return err
 			}
@@ -184,26 +153,18 @@ func newEnvDescribeCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&flagMetadataOnly, "metadata-only", false,
 		"Skip the /platform/hydrate call (faster, env metadata only)")
-	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
-	c.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
-	c.Flags().StringVar(&flagAPIKey, "api-key", "", "Override pk- from flag")
-	c.Flags().StringVar(&flagEnvKey, "env-key", "", "ek- label resolved against profiles.<active>.ek.<label>")
+	registerCredFlags(c, &f)
 	return c
 }
 
-// buildEnvHTTPClient resolves the active profile + bearer via the
-// shared resolveActiveBearer helper from whoami.go, then constructs
-// an httpclient.Client wired to envHTTPClient (test-seam aware).
-func buildEnvHTTPClient(
-	flagProfile, flagAPIKey, flagEnvKey string,
-	verbose bool,
-	stderr io.Writer,
-) (*httpclient.Client, error) {
-	_, dep, bearer, err := resolveActiveBearer(flagProfile, flagAPIKey, flagEnvKey)
+// buildEnvHTTPClient resolves the credential and builds the client wired
+// to envHTTPClient (test-seam aware).
+func buildEnvHTTPClient(cmd *cobra.Command, f credFlags) (*httpclient.Client, error) {
+	c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
 	if err != nil {
 		return nil, err
 	}
-	return newAPIClient(dep.URL, bearer, envHTTPClient, verbose, stderr), nil
+	return newAPIClient(c.BaseURL, c.Bearer, envHTTPClient, f.Verbose, cmd.ErrOrStderr()), nil
 }
 
 // paginateEnvironments calls GET /platform/environments repeatedly,
@@ -223,7 +184,7 @@ func buildEnvListPath(limit int, cursor string) string {
 	if cursor != "" {
 		v.Set("cursor", cursor)
 	}
-	return "/platform/environments?" + v.Encode()
+	return pathEnvironments + "?" + v.Encode()
 }
 
 // findEnvironmentByName paginates /platform/environments looking for

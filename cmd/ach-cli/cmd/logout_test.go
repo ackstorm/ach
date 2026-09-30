@@ -33,55 +33,43 @@ func executeLogout(t *testing.T, args ...string) (string, string, exit.Code, err
 	return outBuf.String(), errBuf.String(), exit.General, err
 }
 
-// TestLogout_WipesPK_PreservesURL is Test 9: ach logout removes pk
-// from active profile, leaves URL + EK map intact, preserves
-// default.
-func TestLogout_WipesPK_PreservesURL(t *testing.T) {
-	dir := whoamiTestEnv(t) // reuse synthetic-clean env helper
-	path := seedConfig(t, dir, "prod", &config.Profile{
-		URL: "https://hub.example",
-		PK:  "pk_aaaaaaaaaaaaaaaaaaaaaawxyz",
-		EK:  map[string]string{"demo": "ek_aaaaaaaaaaaaaaaaaaaaafghij"},
-	})
+// TestLogout_ClearsSessionAndKey_KeepsSavedKeys: logout clears OAuth and
+// Key, keeps URL, default and the saved keys.
+func TestLogout_ClearsSessionAndKey_KeepsSavedKeys(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	p := oauthProfile("https://hub.example")
+	p.Key = testEK
+	p.Keys = map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: testEKSaved}}
+	path := seedConfig(t, dir, "prod", p)
 
 	stdout, _, code, err := executeLogout(t)
-	if err != nil {
-		t.Fatalf("logout: %v", err)
+	if err != nil || code != exit.OK {
+		t.Fatalf("logout: code=%d err=%v", code, err)
 	}
-	if code != exit.OK {
-		t.Errorf("code = %d; want 0", code)
-	}
-
 	f, err := config.Load(path)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if f.Default != "prod" {
-		t.Errorf("default = %q; want prod (preserved)", f.Default)
+		t.Fatal(err)
 	}
 	dep := f.Profiles["prod"]
-	if dep == nil {
-		t.Fatal("profiles.prod removed (should only wipe pk)")
+	if f.Default != "prod" || dep == nil || dep.URL != "https://hub.example" {
+		t.Fatalf("profile/URL/default must be kept: %+v", f)
 	}
-	if dep.URL != "https://hub.example" {
-		t.Errorf("url wiped: %q", dep.URL)
+	if dep.OAuth != nil || dep.Key != "" {
+		t.Errorf("OAuth=%v Key=%q; want both cleared", dep.OAuth, dep.Key)
 	}
-	if dep.PK != "" {
-		t.Errorf("pk = %q; want empty (D-06)", dep.PK)
+	if dep.Keys["laptop"] != (config.SavedKey{ID: "ekid_1", Key: testEKSaved}) {
+		t.Errorf("saved keys clobbered: %+v", dep.Keys)
 	}
-	if dep.EK["demo"] != "ek_aaaaaaaaaaaaaaaaaaaaafghij" {
-		t.Errorf("ek map clobbered: %+v", dep.EK)
-	}
-	if !strings.Contains(stdout, "prod") {
-		t.Errorf("stdout missing profile name; got: %s", stdout)
+	if !strings.Contains(stdout, `Signed out of "prod" (saved keys kept; revoke them with keys revoke)`) {
+		t.Errorf("stdout = %q", stdout)
 	}
 }
 
 // TestLogout_SyntheticMode_Exit1 is Test 10: synthetic mode → exit 1.
 func TestLogout_SyntheticMode_Exit1(t *testing.T) {
 	whoamiTestEnv(t)
-	t.Setenv("ACH_BASE_URL", "https://synth.example")
-	t.Setenv("ACH_API_KEY", "pk_synthetic_test_key_aaaaaaaaaa")
+	t.Setenv("ACH_URL", "https://synth.example")
+	t.Setenv("ACH_KEY", testEK)
 
 	_, _, code, err := executeLogout(t)
 	if err == nil {

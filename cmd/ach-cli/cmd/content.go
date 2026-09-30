@@ -32,12 +32,9 @@ var contentFetchKinds = map[string]struct{}{
 
 // contentFetchFlags carries the credential + output flags for `content fetch`.
 type contentFetchFlags struct {
-	Profile     string
-	APIKey      string
-	EnvKey      string
+	credFlags
 	Environment string
 	Output      string
-	Verbose     bool
 }
 
 // newContentCmd returns the `content` parent with its `fetch` child.
@@ -75,12 +72,9 @@ the x-ach-environment header); an ek- bearer is already Environment-bound.`,
 			return runContentFetch(cmd, args[0], args[1], f)
 		},
 	}
-	cmd.Flags().StringVar(&f.Profile, "profile", "", "Profile name (default: active profile)")
-	cmd.Flags().StringVar(&f.APIKey, "api-key", "", "pk- bearer (overrides profile/env)")
-	cmd.Flags().StringVar(&f.EnvKey, "env-key", "", "ek- bearer (overrides profile/env)")
+	registerCredFlags(cmd, &f.credFlags)
 	cmd.Flags().StringVar(&f.Environment, "environment", "", "Target Environment (required for a pk- bearer)")
 	cmd.Flags().StringVarP(&f.Output, "output", "o", "", "Write to this file instead of stdout")
-	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Dump request headers to stderr (x-ach-key redacted)")
 	return cmd
 }
 
@@ -97,21 +91,11 @@ func runContentFetch(cmd *cobra.Command, kind, name string, f *contentFetchFlags
 		return &exit.CodedError{Code: exit.General, Msg: "name is required"}
 	}
 
-	// CLI-07 synthetic gate — content fetch is a pk-/ek- read, allowed in
-	// synthetic mode (same disposition as hydrate).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateHydrate,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
-	baseURL, bearer, err := resolveEnvKeysBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 

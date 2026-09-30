@@ -27,11 +27,8 @@
 // exit 1 — the user-facing CLI deliberately does NOT surface them in
 // v1alpha1.
 //
-// Synthetic mode (CLI-07): admin works normally — admin endpoints
-// accept pk- only, and a synthetic pk- + allowlisted email behaves
-// identically to a config-loaded pk-. The synthetic.GuardCommand
-// call uses GateAdmin to gate --profile / --env-key / half-set
-// per the cross-gate rules (see 06-07 SUMMARY for the matrix).
+// Credentials: every child resolves through resolveCred (--profile /
+// --key / synthetic mode).
 //
 // Pattern S5 (no plaintext through logs): the API key flows ONLY
 // into httpclient.Client.APIKey; verbose-mode header dumps redact
@@ -85,11 +82,8 @@ const outputJSON = "json"
 // on the otherwise-identical flag declaration blocks across the
 // three subcommands.
 type adminCredFlags struct {
-	Yes     bool
-	Profile string
-	APIKey  string
-	EnvKey  string
-	Verbose bool
+	credFlags
+	Yes bool
 }
 
 // registerAdminCredFlags wires the standard credential-set flags on
@@ -100,11 +94,7 @@ func registerAdminCredFlags(cmd *cobra.Command, f *adminCredFlags, withYes bool)
 	if withYes {
 		cmd.Flags().BoolVar(&f.Yes, "yes", false, "Bypass interactive confirmation")
 	}
-	cmd.Flags().StringVar(&f.Profile, "profile", "", "Override profile selection")
-	cmd.Flags().StringVar(&f.APIKey, "api-key", "", "Override pk- from flag")
-	cmd.Flags().StringVar(&f.EnvKey, "env-key", "", "Override with stored ek- label")
-	cmd.Flags().BoolVar(&f.Verbose, "verbose", false,
-		"Dump request headers to stderr (x-ach-key redacted)")
+	registerCredFlags(cmd, &f.credFlags)
 }
 
 // adminConfirm prompts on the given writer (typically stderr) and
@@ -311,16 +301,6 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 	stdout := cmd.OutOrStdout()
 	ctx := cmd.Context()
 
-	// CLI-07 synthetic gate (admin allowed in synthetic).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
 	kind = strings.TrimSpace(kind)
 	if kind != statusAll && !slices.Contains(adminListKinds, kind) {
 		return &exit.CodedError{
@@ -338,10 +318,11 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 		}
 	}
 
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
 	grouped := map[string][]render.AdminObjectView{}
@@ -398,7 +379,7 @@ func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]
 func buildAdminListPath(kind, cursor string) string {
 	base := "/platform/admin/" + kind
 	if kind == "environments" {
-		base = "/platform/environments"
+		base = pathEnvironments
 	}
 	if cursor == "" {
 		return base
@@ -496,20 +477,11 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 		}
 	}
 
-	// CLI-07 synthetic gate (admin allowed in synthetic).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
@@ -522,7 +494,7 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags,
 	}
 
 	// W7: single source of truth via render.FormatKeyList.
-	_, _ = io.WriteString(stdout, render.FormatKeyList(all))
+	_, _ = io.WriteString(stdout, render.FormatAdminKeyList(all))
 	return nil
 }
 
@@ -583,17 +555,6 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
 
-	// CLI-07 synthetic gate (admin allowed in synthetic; --profile /
-	// --env-key / half-set still rejected per the cross-gate rules).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
 	// CLI-13: client-side key-id classification BEFORE any HTTP call.
 	if err := validateAdminKeyID(keyID); err != nil {
 		return err
@@ -606,10 +567,11 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 		}
 	}
 
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
@@ -688,16 +650,6 @@ func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags
 	stdin := cmd.InOrStdin()
 	ctx := cmd.Context()
 
-	// CLI-07 synthetic gate (admin allowed in synthetic).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
 	email = strings.TrimSpace(email)
 	if email == "" || !strings.Contains(email, "@") {
 		return &exit.CodedError{
@@ -713,10 +665,11 @@ func runAdminUsersRevokeKeys(cmd *cobra.Command, email string, f *adminCredFlags
 		}
 	}
 
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
@@ -767,16 +720,6 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 	stdout := cmd.OutOrStdout()
 	ctx := cmd.Context()
 
-	// CLI-07 synthetic gate (admin allowed in synthetic).
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-
 	// D-CONTEXT W3b: closed-set client-side validation. Even though the
 	// server-side ForceRefreshHandler supports additional kinds (e.g.
 	// pluginmarketplace) that v1alpha1 doesn't expose on the CLI, the
@@ -806,10 +749,11 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 		}
 	}
 
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, stderr)
 
@@ -828,28 +772,6 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 // ---------------------------------------------------------------------
 // shared helpers
 // ---------------------------------------------------------------------
-
-// resolveAdminBearer is a thin alias for resolveEnvKeysBearer
-// (06-05). The precedence + sentinel-error shape is identical
-// because admin shares env-keys' credential surface verbatim:
-// synthetic → --api-key → --env-key → ACH_API_KEY → ACH_ENV_KEY →
-// disk dep.PK. Pattern S5: bearer flows ONLY into
-// httpclient.Client.APIKey; never into a print/log call.
-//
-// We accept --env-key here for compositional parity even though
-// admin endpoints reject ek- at the server side (AdminOnly
-// middleware in internal/platformapi/admin/mount.go) — the server
-// emits a clear `invalid_key_type` outcome and the CLI maps it to
-// exit 3 via MapServerError, which is the correct user experience
-// (the user is told they used the wrong key type).
-//
-// Aliasing rather than duplicating avoids drift and satisfies dupl
-// without hoisting the whole resolver into a new `internal/cli/`
-// package for two callers. When a third caller appears (Phase 7?)
-// the natural next step is to lift this into `internal/cli/cred/`.
-func resolveAdminBearer(flagProfile, flagAPIKey, flagEnvKey string) (string, string, error) {
-	return resolveEnvKeysBearer(flagProfile, flagAPIKey, flagEnvKey)
-}
 
 // Register `ach admin` on the root command. Mirrors the env-keys /
 // login / whoami pattern from 06-03 / 06-05 — each subcommand owns

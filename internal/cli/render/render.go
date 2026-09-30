@@ -38,8 +38,7 @@ type EnvView struct {
 	Conditions  []ConditionView `json:"conditions,omitempty"`
 }
 
-// KeyRowView + FormatKeyList live in ek.go — single source of truth
-// for key row shape and table formatter (pk_ + ek_, with TYPE column).
+// KeyRowView + the key tables live in ek.go.
 
 // HydrateView is the lean local copy of the server's HydrateResponse
 // that render needs to format a describe block. Defined here (NOT
@@ -96,13 +95,23 @@ type ContextItem struct {
 	DownloadURL string `json:"downloadUrl"`
 }
 
-// FormatConfigList returns the deterministic multi-line table for
-// `ach config list`. Rows are sorted alphabetically by profile name.
-// The leading CURRENT column carries "*" on the default (active-when-
-// unspecified) profile — kubectl `config get-contexts` idiom — and is
-// blank otherwise. The PK column is "yes"/"no" (presence flag, never
-// plaintext); the EK column is the count of entries in the ek map.
-func FormatConfigList(f *config.File) string {
+// profileAuth is the AUTH cell for a profile: session (OAuth login), key
+// (a machine profile's Key) or none.
+func profileAuth(dep *config.Profile) string {
+	switch {
+	case dep.OAuth != nil:
+		return "session"
+	case dep.Key != "":
+		return "key"
+	default:
+		return "none"
+	}
+}
+
+// FormatProfileList renders `profile list`: CURRENT (* on the default),
+// NAME, URL, AUTH (session|key|none) and KEYS (saved key count), sorted by
+// name.
+func FormatProfileList(f *config.File) string {
 	if f == nil || len(f.Profiles) == 0 {
 		return "No profiles configured\n"
 	}
@@ -114,71 +123,57 @@ func FormatConfigList(f *config.File) string {
 
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tPK\tEK")
+	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH\tKEYS")
 	for _, name := range names {
 		dep := f.Profiles[name]
+		if dep == nil {
+			dep = &config.Profile{}
+		}
 		current := ""
 		if name == f.Default {
 			current = "*"
 		}
-		pkPresent := "no"
-		if dep != nil && dep.PK != "" {
-			pkPresent = "yes"
-		}
-		ekCount := 0
-		if dep != nil {
-			ekCount = len(dep.EK)
-		}
-		url := ""
-		if dep != nil {
-			url = dep.URL
-		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, url, pkPresent, ekCount)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, dep.URL, profileAuth(dep), len(dep.Keys))
 	}
 	_ = tw.Flush()
 	return sb.String()
 }
 
-// FormatConfigShow returns the block for `ach config show [profile]`.
-// When reveal=false (default), the PK and every EK value pass through
-// config.Mask so only the "<prefix>-****<last-4>" tail is rendered;
-// when reveal=true (D-05 opt-in unmask), the values flow through
-// verbatim. The unmask is scoped to ONE named profile per
-// invocation (the caller picks; this function trusts its input).
-func FormatConfigShow(name string, dep *config.Profile, reveal bool) string {
+// FormatProfileShow renders `profile show`: URL, Auth and every saved key
+// as `name  ek-****abcd  (ekid_…)`. Key plaintext is masked unless reveal.
+func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
+	mask := func(s string) string {
+		if reveal {
+			return s
+		}
+		return config.Mask(s)
+	}
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Profile: %s\n", name)
-	if dep == nil {
-		_, _ = fmt.Fprintln(&sb, "URL: (missing)")
-		return sb.String()
+	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintf(tw, "Profile\t%s\n", name)
+	_, _ = fmt.Fprintf(tw, "URL\t%s\n", dep.URL)
+	auth := profileAuth(dep)
+	if auth == "key" {
+		auth += " " + mask(dep.Key)
 	}
-	_, _ = fmt.Fprintf(&sb, "URL: %s\n", dep.URL)
-	pk := dep.PK
-	if pk != "" {
-		if !reveal {
-			pk = config.Mask(pk)
-		}
-		_, _ = fmt.Fprintf(&sb, "PK: %s\n", pk)
-	} else {
-		_, _ = fmt.Fprintln(&sb, "PK: (none)")
+	_, _ = fmt.Fprintf(tw, "Auth\t%s\n", auth)
+	if len(dep.Keys) == 0 {
+		_, _ = fmt.Fprintln(tw, "Keys\t(none)")
 	}
-	if len(dep.EK) > 0 {
-		_, _ = fmt.Fprintln(&sb, "EK:")
-		// Deterministic label order.
-		labels := make([]string, 0, len(dep.EK))
-		for label := range dep.EK {
-			labels = append(labels, label)
+	_ = tw.Flush()
+	if len(dep.Keys) > 0 {
+		_, _ = fmt.Fprintln(&sb, "Keys")
+		kw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+		names := make([]string, 0, len(dep.Keys))
+		for n := range dep.Keys {
+			names = append(names, n)
 		}
-		sort.Strings(labels)
-		for _, label := range labels {
-			val := dep.EK[label]
-			if !reveal {
-				val = config.Mask(val)
-			}
-			_, _ = fmt.Fprintf(&sb, "  %s: %s\n", label, val)
+		sort.Strings(names)
+		for _, n := range names {
+			k := dep.Keys[n]
+			_, _ = fmt.Fprintf(kw, "  %s\t%s\t(%s)\n", n, mask(k.Key), k.ID)
 		}
-	} else {
-		_, _ = fmt.Fprintln(&sb, "EK: (none)")
+		_ = kw.Flush()
 	}
 	return sb.String()
 }

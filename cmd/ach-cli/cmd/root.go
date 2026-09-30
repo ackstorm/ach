@@ -16,12 +16,13 @@ var rootCmd = &cobra.Command{
 	Long: `ach-cli is the user-facing client for the ACH (Agent Capability Hub)
 control plane. Subcommands:
 
-  login        Authenticate against the platform-api
-  logout       Revoke local session
-  whoami       Show current identity
-  config       Inspect / mutate local config
+  login        Sign in to a Hub
+  logout       Sign out (saved keys are kept)
+  whoami       Show who you are, your budget and key allowance
+  token        Print your token (credential helper)
+  profile      Manage your profiles
   env          Inspect environments; hydrate/status/uninstall workspace
-  keys         Manage your API keys (create/list/revoke/prune)
+  keys         Manage your environment keys (create/list/revoke/suspend/resume/budget)
   admin        Admin subcommands (keys revoke, users revoke-keys, refresh)
   local        Local, ungoverned package path (repo/plugin/skill)
 

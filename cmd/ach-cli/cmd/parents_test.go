@@ -21,7 +21,7 @@ func executeAllRoot(t *testing.T, args ...string) (string, string, exit.Code, er
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	root.AddCommand(newKeysCmd(), newConfigCmd(), newEnvCmd(), newLocalCmd(),
+	root.AddCommand(newKeysCmd(), newProfileCmd(), newEnvCmd(), newLocalCmd(),
 		newAdminCmd(), newContentCmd(), newRuntimeCmd())
 	return executeCommand(t, root, args...)
 }
@@ -31,7 +31,7 @@ func executeAllRoot(t *testing.T, args ...string) (string, string, exit.Code, er
 func TestParents_UnknownSubcommand_Exit1(t *testing.T) {
 	cases := [][]string{
 		{"keys", "frobnicate"},
-		{"config", "frobnicate"},
+		{"profile", "frobnicate"},
 		{"env", "frobnicate"},
 		{"local", "frobnicate"},
 		{"local", "repo", "frobnicate"},

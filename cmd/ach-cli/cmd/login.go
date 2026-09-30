@@ -6,8 +6,7 @@
 // stores the access + refresh token pair; `ach-cli token` prints a fresh
 // access token. No key material is ever printed.
 //
-// Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run with
-// exit 1; internal/cli/synthetic enforces, login asserts.
+// Synthetic mode (ACH_URL + ACH_KEY both set) refuses to run with exit 1.
 
 package cmd
 
@@ -40,14 +39,14 @@ var profileNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 func newLoginCmd() *cobra.Command {
 	var (
 		flagProfile    string
-		flagBaseURL    string
 		flagNoBrowser  bool
 		flagNoWarnings bool
 		flagInsecure   bool
 	)
 
 	cmd := &cobra.Command{
-		Use:   "login",
+		Use:   "login [url]",
+		Args:  cobra.MaximumNArgs(1),
 		Short: "Sign in to a Hub (browser on this machine, or a code from any browser)",
 		Long: `Sign in to an ACH Hub.
 
@@ -65,32 +64,27 @@ Either way the profile stores a short-lived access token + refresh token;
 ` + "`ach-cli token`" + ` prints a fresh access token for tools' credential
 helpers. Nothing key-shaped is printed.
 
-Interactive prompts (skipped when --profile / --base-url are set):
+Interactive prompts (skipped when --profile / the URL are given):
   Profile name  DNS-1123 label, e.g. "prod" (suggests "default" on first login)
   URL           https://hub.example.com (http:// needs --insecure / ACH_INSECURE)
 
-The URL prompt is also pre-filled from ACH_PLATFORM_URL when set
-(precedence: --base-url flag → ACH_PLATFORM_URL env → prompt).
-ACH_PLATFORM_URL is a login-only convenience, distinct from ACH_BASE_URL
-(which activates synthetic mode) — it never enables synthetic mode.
+The URL is the positional argument, else ACH_URL, else the prompt.
+Saved keys (keys create) are kept when you log in again.
 
-Synthetic mode (ACH_BASE_URL + ACH_API_KEY both set) refuses to run
-with exit 1.
-
-Flags:
-  --profile <name>   Skip the profile-name prompt
-  --base-url <url>   Skip the URL prompt (http:// or https://)
-  --no-browser       Skip the menu: show the code and wait (option 2)
-  --no-warnings      Suppress config-file file-mode warnings to stderr
-  --insecure         Allow a plaintext http:// Hub URL
+With ACH_URL and ACH_KEY both set (synthetic mode) login exits 1.
 `,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd, flagProfile, flagBaseURL, flagNoBrowser, flagNoWarnings, flagInsecure)
+		Example: `  ach-cli login https://hub.example.com
+  ach-cli login https://hub.example.com --profile prod --no-browser`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			url := ""
+			if len(args) == 1 {
+				url = args[0]
+			}
+			return runLogin(cmd, flagProfile, url, flagNoBrowser, flagNoWarnings, flagInsecure)
 		},
 	}
 
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Profile name to write (DNS-1123 label)")
-	cmd.Flags().StringVar(&flagBaseURL, "base-url", "", "Hub URL (http:// or https://)")
 	cmd.Flags().BoolVar(&flagNoBrowser, "no-browser", false,
 		"Show a code to enter in a browser on another device; do not open a browser here")
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false, "Suppress file-mode warnings to stderr")
@@ -105,13 +99,8 @@ Flags:
 func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings, insecure bool) error {
 	ctx := cmd.Context()
 
-	// Step 1 — synthetic-mode gate. GateLogin denies under synthetic; the
-	// same call also rejects half-set (ACH_BASE_URL set without credential)
-	// before any request fires.
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateLogin,
-		ProfileFlag: profile,
-	}); err != nil {
+	// Step 1 — synthetic-mode gate: login needs the config file.
+	if err := synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateSession}); err != nil {
 		return err
 	}
 
@@ -193,11 +182,11 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
 	}
 
-	// Step 6 — save. Only the profile's own credential changes; any EK map
-	// on it is kept.
+	// Step 6 — save. Only the profile's own credential changes; the saved
+	// keys on it are kept.
 	dep := &config.Profile{URL: url, OAuth: creds}
 	if existing != nil {
-		dep.EK = existing.EK
+		dep.Keys = existing.Keys
 	}
 	file.Profiles[name] = dep
 	if file.Default == "" {
@@ -294,22 +283,15 @@ func scanLine(prompt string, stdin io.Reader, stdout io.Writer) (string, error) 
 	return "", s.Err()
 }
 
-// resolveBaseURL returns the flag value when set; otherwise pre-fills
-// from ACH_PLATFORM_URL; otherwise prompts. Precedence: --base-url flag →
-// ACH_PLATFORM_URL env → interactive prompt. ACH_PLATFORM_URL is a
-// login-only convenience and is NOT the synthetic-mode trigger
-// (ACH_BASE_URL); it never enables synthetic mode. Accepts http:// or
-// https://; rejects any other scheme. http:// is allowed for
-// local/internal hubs — runLogin emits a plaintext-transport warning
-// when the resolved URL is http://.
-func resolveBaseURL(flagVal string, stdin io.Reader, stdout io.Writer) (string, error) {
-	url := strings.TrimSpace(flagVal)
+// resolveBaseURL returns the positional URL when given; otherwise ACH_URL;
+// otherwise prompts. Accepts http:// or https://; rejects any other scheme
+// (runLogin then gates http:// on --insecure / ACH_INSECURE).
+func resolveBaseURL(argVal string, stdin io.Reader, stdout io.Writer) (string, error) {
+	url := strings.TrimSpace(argVal)
 	if url == "" {
-		// Env pre-fill: ACH_PLATFORM_URL is a login-only convenience,
-		// distinct from ACH_BASE_URL (the synthetic-mode trigger).
-		if env := strings.TrimSpace(os.Getenv("ACH_PLATFORM_URL")); env != "" {
+		if env := strings.TrimSpace(os.Getenv("ACH_URL")); env != "" {
 			url = env
-			_, _ = fmt.Fprintf(stdout, "URL: %s (read from env:ACH_PLATFORM_URL)\n", url)
+			_, _ = fmt.Fprintf(stdout, "URL: %s (read from env:ACH_URL)\n", url)
 		}
 	}
 	if url == "" {

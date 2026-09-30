@@ -71,9 +71,8 @@ func loginTestEnv(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("ACH_BASE_URL", "")
-	t.Setenv("ACH_API_KEY", "")
-	t.Setenv("ACH_ENV_KEY", "")
+	t.Setenv("ACH_URL", "")
+	t.Setenv("ACH_KEY", "")
 	t.Setenv("ACH_PROFILE", "")
 	t.Setenv("ACH_INSECURE", "1")
 	originalOpener := oauthlogin.Opener
@@ -130,7 +129,7 @@ func TestLogin_DeviceGrant_WritesOAuthProfile(t *testing.T) {
 	loginTestEnv(t)
 	ts := newLoginTestServer(t, "a.b.c")
 
-	stdout, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser")
+	stdout, _, code, err := executeLogin(t, "", "--profile", "prod", ts.URL, "--no-browser")
 	if err != nil || code != exit.OK {
 		t.Fatalf("login: err=%v code=%d", err, code)
 	}
@@ -143,7 +142,7 @@ func TestLogin_DeviceGrant_WritesOAuthProfile(t *testing.T) {
 	f := loadConfig(t)
 	dep := f.Profiles["prod"]
 	if dep == nil || dep.URL != ts.URL || dep.OAuth == nil || dep.OAuth.AccessToken != "a.b.c" ||
-		dep.OAuth.ClientID != "oc_test" || dep.PK != "" {
+		dep.OAuth.ClientID != "oc_test" || dep.Key != "" {
 		t.Fatalf("profile: %+v", dep)
 	}
 	if f.Default != "prod" {
@@ -155,26 +154,26 @@ func TestLogin_DeviceGrant_WritesOAuthProfile(t *testing.T) {
 	}
 }
 
-// TestLogin_SecondLogin_ReusesClientAndKeepsEK: the cached DCR client id is
-// reused on the same Hub and the profile's EK map survives a re-login.
-func TestLogin_SecondLogin_ReusesClientAndKeepsEK(t *testing.T) {
+// TestLogin_SecondLogin_ReusesClientAndKeepsKeys: the cached DCR client id is
+// reused on the same Hub and the profile's saved keys survive a re-login.
+func TestLogin_SecondLogin_ReusesClientAndKeepsKeys(t *testing.T) {
 	loginTestEnv(t)
 	ts := newLoginTestServer(t, "one")
-	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", ts.URL, "--no-browser"); err != nil {
 		t.Fatal(err)
 	}
 	path, _ := config.Path()
 	f := loadConfig(t)
-	f.Profiles["prod"].EK = map[string]string{"demo": "ek_keep"}
+	f.Profiles["prod"].Keys = map[string]config.SavedKey{"demo": {ID: "ekid_keep", Key: testEK}}
 	if err := config.Save(path, f); err != nil {
 		t.Fatal(err)
 	}
 	ts.accessToken = "two"
-	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", ts.URL, "--no-browser"); err != nil {
 		t.Fatal(err)
 	}
 	dep := loadConfig(t).Profiles["prod"]
-	if dep.OAuth.AccessToken != "two" || dep.EK["demo"] != "ek_keep" {
+	if dep.OAuth.AccessToken != "two" || dep.Keys["demo"].ID != "ekid_keep" {
 		t.Fatalf("profile after re-login: %+v", dep)
 	}
 	if atomic.LoadInt32(&ts.registrations) != 1 {
@@ -184,7 +183,7 @@ func TestLogin_SecondLogin_ReusesClientAndKeepsEK(t *testing.T) {
 
 func TestLogin_RejectInvalidScheme(t *testing.T) {
 	loginTestEnv(t)
-	_, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", "ftp://insecure", "--no-browser")
+	_, _, code, err := executeLogin(t, "", "--profile", "prod", "ftp://insecure", "--no-browser")
 	if err == nil || code != exit.General || !strings.Contains(err.Error(), "http:// or https://") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -193,12 +192,12 @@ func TestLogin_RejectInvalidScheme(t *testing.T) {
 func TestLogin_RefusesHTTP_ByDefault(t *testing.T) {
 	loginTestEnv(t)
 	t.Setenv("ACH_INSECURE", "")
-	_, _, code, err := executeLogin(t, "", "--profile", "dev", "--base-url", "http://localhost:8080", "--no-browser")
+	_, _, code, err := executeLogin(t, "", "--profile", "dev", "http://localhost:8080", "--no-browser")
 	if code != exit.General || err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
 	// --insecure passes the gate (the URL is then simply unreachable).
-	_, _, _, err = executeLogin(t, "", "--profile", "dev", "--base-url", "http://127.0.0.1:1",
+	_, _, _, err = executeLogin(t, "", "--profile", "dev", "http://127.0.0.1:1",
 		"--no-browser", "--insecure")
 	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
 		t.Fatalf("--insecure should pass the URL gate, got %v", err)
@@ -207,9 +206,9 @@ func TestLogin_RefusesHTTP_ByDefault(t *testing.T) {
 
 func TestLogin_SyntheticModeRejected(t *testing.T) {
 	loginTestEnv(t)
-	t.Setenv("ACH_BASE_URL", "https://synth.example")
-	t.Setenv("ACH_API_KEY", "pk_synthetic_test_key_aaaaaaaaaa")
-	_, _, code, err := executeLogin(t, "", "--profile", "prod", "--base-url", "https://hub.test", "--no-browser")
+	t.Setenv("ACH_URL", "https://synth.example")
+	t.Setenv("ACH_KEY", testEK)
+	_, _, code, err := executeLogin(t, "", "--profile", "prod", "https://hub.test", "--no-browser")
 	if err == nil || code != exit.General || !strings.Contains(err.Error(), "synthetic") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -226,7 +225,7 @@ func TestLogin_AutoSetsDefault_KeepsOtherProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	ts := newLoginTestServer(t, "x")
-	if _, _, _, err := executeLogin(t, "", "--profile", "prod", "--base-url", ts.URL, "--no-browser"); err != nil {
+	if _, _, _, err := executeLogin(t, "", "--profile", "prod", ts.URL, "--no-browser"); err != nil {
 		t.Fatal(err)
 	}
 	f := loadConfig(t)
@@ -236,89 +235,75 @@ func TestLogin_AutoSetsDefault_KeepsOtherProfiles(t *testing.T) {
 }
 
 // failReader fails the test if resolveBaseURL reads stdin — used to
-// assert the flag / ACH_PLATFORM_URL pre-fill paths skip the interactive
-// prompt entirely.
+// assert the positional / ACH_URL paths skip the interactive prompt.
 type failReader struct{ t *testing.T }
 
 func (r failReader) Read([]byte) (int, error) {
-	r.t.Error("resolveBaseURL read stdin but flag/ACH_PLATFORM_URL should have satisfied it")
+	r.t.Error("resolveBaseURL read stdin but the positional URL / ACH_URL should have satisfied it")
 	return 0, errors.New("stdin must not be read")
 }
 
-// TestResolveBaseURL_EnvPrefill covers the ACH_PLATFORM_URL pre-fill
-// precedence: --base-url flag → ACH_PLATFORM_URL env → interactive
-// prompt. ACH_PLATFORM_URL is a login-only convenience and is distinct
-// from ACH_BASE_URL (the synthetic-mode trigger) — it never enables
-// synthetic mode.
-func TestResolveBaseURL_EnvPrefill(t *testing.T) {
-	t.Run("flag wins over env", func(t *testing.T) {
-		t.Setenv("ACH_PLATFORM_URL", "https://env.example")
-		got, err := resolveBaseURL("https://flag.example", failReader{t}, &bytes.Buffer{})
-		if err != nil {
-			t.Fatalf("err = %v", err)
-		}
-		if got != "https://flag.example" {
-			t.Errorf("url = %q; want flag value (flag beats env)", got)
+// TestResolveBaseURL_Precedence: positional URL → ACH_URL → prompt.
+func TestResolveBaseURL_Precedence(t *testing.T) {
+	t.Run("positional wins over env", func(t *testing.T) {
+		t.Setenv("ACH_URL", "https://env.example")
+		got, err := resolveBaseURL("https://arg.example", failReader{t}, &bytes.Buffer{})
+		if err != nil || got != "https://arg.example" {
+			t.Fatalf("url=%q err=%v", got, err)
 		}
 	})
-
-	t.Run("env pre-fills when flag empty, no prompt read", func(t *testing.T) {
-		t.Setenv("ACH_PLATFORM_URL", "https://env.example")
+	t.Run("ACH_URL pre-fills, no prompt read", func(t *testing.T) {
+		t.Setenv("ACH_URL", "https://env.example")
 		var out bytes.Buffer
 		got, err := resolveBaseURL("", failReader{t}, &out)
-		if err != nil {
-			t.Fatalf("err = %v", err)
-		}
-		if got != "https://env.example" {
-			t.Errorf("url = %q; want env value", got)
-		}
-		if !strings.Contains(out.String(), "read from env:ACH_PLATFORM_URL") {
-			t.Errorf("stdout missing ACH_PLATFORM_URL echo; got %q", out.String())
+		if err != nil || got != "https://env.example" || !strings.Contains(out.String(), "read from env:ACH_URL") {
+			t.Fatalf("url=%q err=%v out=%q", got, err, out.String())
 		}
 	})
-
-	t.Run("falls through to prompt when flag and env empty", func(t *testing.T) {
-		t.Setenv("ACH_PLATFORM_URL", "")
-		in := strings.NewReader("https://prompt.example\n")
-		got, err := resolveBaseURL("", in, &bytes.Buffer{})
-		if err != nil {
-			t.Fatalf("err = %v", err)
-		}
-		if got != "https://prompt.example" {
-			t.Errorf("url = %q; want prompt value", got)
+	t.Run("prompt when both empty", func(t *testing.T) {
+		t.Setenv("ACH_URL", "")
+		got, err := resolveBaseURL("", strings.NewReader("https://prompt.example\n"), &bytes.Buffer{})
+		if err != nil || got != "https://prompt.example" {
+			t.Fatalf("url=%q err=%v", got, err)
 		}
 	})
-
-	t.Run("env non-http value rejected", func(t *testing.T) {
-		t.Setenv("ACH_PLATFORM_URL", "ftp://env.example")
+	t.Run("non-http scheme rejected", func(t *testing.T) {
+		t.Setenv("ACH_URL", "ftp://env.example")
 		_, err := resolveBaseURL("", failReader{t}, &bytes.Buffer{})
 		if err == nil || !strings.Contains(err.Error(), "http:// or https://") {
-			t.Fatalf("err = %v; want scheme rejection", err)
-		}
-	})
-
-	t.Run("env http value accepted (plaintext warns at runLogin)", func(t *testing.T) {
-		t.Setenv("ACH_PLATFORM_URL", "http://env.example")
-		got, err := resolveBaseURL("", failReader{t}, &bytes.Buffer{})
-		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
-		if got != "http://env.example" {
-			t.Errorf("url = %q; want http env value preserved", got)
-		}
 	})
+}
+
+// TestLogin_URLPositionalAndRemovedFlags: `login <url>` works and the old
+// --base-url flag is gone.
+func TestLogin_URLPositionalAndRemovedFlags(t *testing.T) {
+	loginTestEnv(t)
+	ts := newLoginTestServer(t, "x")
+	t.Setenv("ACH_URL", "https://ignored.example")
+	if _, _, _, err := executeLogin(t, "", ts.URL, "--profile", "prod", "--no-browser"); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadConfig(t).Profiles["prod"].URL; got != ts.URL {
+		t.Fatalf("url = %q; want the positional URL", got)
+	}
+	_, _, _, err := executeLogin(t, "", "--base-url", ts.URL)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("--base-url: err = %v; want unknown flag", err)
+	}
 }
 
 // TestLogin_InteractivePrompt covers the profile-name prompt: a first login
 // suggests "default" (Enter accepts it); with a "default" on disk there is
-// no suggestion and an empty name is rejected; a typed name wins. --base-url
-// skips the URL prompt and --no-browser skips the menu, so stdin feeds the
+// no suggestion and an empty name is rejected; a typed name wins. The URL
+// argument skips the URL prompt and --no-browser skips the menu, so stdin feeds the
 // profile prompt alone.
 func TestLogin_InteractivePrompt(t *testing.T) {
 	t.Run("empty accepts the suggested default", func(t *testing.T) {
 		loginTestEnv(t)
 		ts := newLoginTestServer(t, "x")
-		stdout, _, code, err := executeLogin(t, "\n", "--base-url", ts.URL, "--no-browser")
+		stdout, _, code, err := executeLogin(t, "\n", ts.URL, "--no-browser")
 		if err != nil || code != exit.OK || !strings.Contains(stdout, "Profile name [default]: ") {
 			t.Fatalf("err=%v code=%d stdout=%q", err, code, stdout)
 		}
@@ -333,23 +318,23 @@ func TestLogin_InteractivePrompt(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := config.Save(path, &config.File{Default: "default",
-			Profiles: map[string]*config.Profile{"default": {URL: "https://existing.example", PK: "pk-keep"}}}); err != nil {
+			Profiles: map[string]*config.Profile{"default": {URL: "https://existing.example", Key: testEK}}}); err != nil {
 			t.Fatal(err)
 		}
 		ts := newLoginTestServer(t, "x")
-		stdout, _, code, err := executeLogin(t, "\n", "--base-url", ts.URL, "--no-browser")
+		stdout, _, code, err := executeLogin(t, "\n", ts.URL, "--no-browser")
 		if err == nil || code != exit.General || strings.Contains(stdout, "[default]") ||
 			!strings.Contains(stdout, "Profile name: ") {
 			t.Fatalf("err=%v code=%d stdout=%q", err, code, stdout)
 		}
-		if loadConfig(t).Profiles["default"].PK != "pk-keep" {
+		if loadConfig(t).Profiles["default"].Key != testEK {
 			t.Fatal("existing default profile was clobbered")
 		}
 	})
 	t.Run("typed name overrides the suggestion", func(t *testing.T) {
 		loginTestEnv(t)
 		ts := newLoginTestServer(t, "x")
-		if _, _, code, err := executeLogin(t, "prod\n", "--base-url", ts.URL, "--no-browser"); err != nil || code != exit.OK {
+		if _, _, code, err := executeLogin(t, "prod\n", ts.URL, "--no-browser"); err != nil || code != exit.OK {
 			t.Fatalf("err=%v code=%d", err, code)
 		}
 		if f := loadConfig(t); f.Profiles["prod"] == nil || f.Profiles["default"] != nil || f.Default != "prod" {

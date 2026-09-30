@@ -7,7 +7,7 @@
 // This file (`ek.go`) lands the key lifecycle subset consumed by W2-P5
 // `ach env-keys list` and W3-P2 `ach admin keys list` (per 06-04 W7 —
 // single source of truth, no inline duplication). The broader render
-// surface (FormatConfigList / FormatConfigShow / FormatEnvList /
+// surface (FormatProfileList / FormatProfileShow / FormatEnvList /
 // FormatEnvDescribe) lands via 06-04 in `render.go`
 // alongside this file — both files contribute to the same `render`
 // package without a merge conflict because they own disjoint symbols.
@@ -40,12 +40,41 @@ type KeyRowView struct {
 	CreatedAt   string  `json:"created_at"`
 	LastUsedAt  *string `json:"last_used_at,omitempty"`
 	RevokedAt   *string `json:"revoked_at,omitempty"`
+	ExpiresAt   *string `json:"expires_at,omitempty"`
 }
 
 // emDash is the em dash placeholder for empty optional cells (U+2014).
 const emDash = "—"
 
-// FormatKeyList renders rows as a deterministic tab-aligned table.
+// FormatKeyList renders `keys list`: NAME, ENVIRONMENT, STATUS, EXPIRES
+// ("never" when unset), ID — newest first. Empty input → "No keys found".
+func FormatKeyList(rows []KeyRowView) string {
+	if len(rows) == 0 {
+		return "No keys found\n"
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt > rows[j].CreatedAt })
+	var b strings.Builder
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NAME\tENVIRONMENT\tSTATUS\tEXPIRES\tID")
+	for _, r := range rows {
+		expires := "never"
+		if r.ExpiresAt != nil && *r.ExpiresAt != "" {
+			expires = *r.ExpiresAt
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", orDash(r.Name), orDash(r.Environment), r.Status, expires, r.KeyID)
+	}
+	_ = tw.Flush()
+	return b.String()
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return emDash
+	}
+	return s
+}
+
+// FormatAdminKeyList renders `admin keys list` rows as a deterministic tab-aligned table.
 // Column order: KEY-ID, TYPE, OWNER, ENVIRONMENT, NAME, STATUS, CREATED.
 // Rows are sorted by CreatedAt descending (newest first), pk and ek mixed —
 // the TYPE column distinguishes them. CreatedAt values are RFC3339/ISO form;
@@ -56,14 +85,7 @@ const emDash = "—"
 // Environment and Name.
 //
 // Empty input returns a single line: "No keys found".
-//
-// Consumed by:
-//   - cmd/ach-cli/cmd/env_keys.go (envKeysListCmd) — W2-P5 / 06-05.
-//   - cmd/ach-cli/cmd/admin.go (adminKeysListCmd) — W3-P2 / 06-08.
-//
-// Per 06-04 Task 1 W7 spec: this formatter is the single source of
-// truth — neither caller embeds an inline tabwriter.
-func FormatKeyList(rows []KeyRowView) string {
+func FormatAdminKeyList(rows []KeyRowView) string {
 	if len(rows) == 0 {
 		return "No keys found\n"
 	}

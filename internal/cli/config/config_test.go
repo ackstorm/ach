@@ -439,3 +439,44 @@ func TestProfile_OAuthRoundTrips(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestLoad_NewShapeRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	in := &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
+		URL:   "https://ach.test",
+		Key:   "ek-machine",
+		Keys:  map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: "ek-laptop"}},
+		OAuth: &config.OAuthCreds{ClientID: "oc_1", AccessToken: "a.b.c"},
+	}}}
+	if err := config.Save(path, in); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	for _, want := range []string{"key: ek-machine", "keys:", "id: ekid_1"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("saved yaml missing %q:\n%s", want, raw)
+		}
+	}
+	out, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := out.Profiles["p"]
+	if p.Key != "ek-machine" || p.Keys["laptop"] != (config.SavedKey{ID: "ekid_1", Key: "ek-laptop"}) || p.OAuth == nil || p.OAuth.ClientID != "oc_1" {
+		t.Fatalf("round trip mismatch: %+v", p)
+	}
+}
+
+func TestLoad_RemovedFieldHint(t *testing.T) {
+	for _, field := range []string{"pk: pk-x", "ek:\n      a: ek-x"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		body := "profiles:\n  p:\n    url: https://ach.test\n    " + field + "\n"
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := config.Load(path)
+		if err == nil || !strings.Contains(err.Error(), `profile "p" uses a removed field (pk/ek)`) || !strings.Contains(err.Error(), "ach-cli login") {
+			t.Errorf("%q: err = %v; want the removed-field hint", field, err)
+		}
+	}
+}

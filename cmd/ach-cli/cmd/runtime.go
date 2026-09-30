@@ -12,7 +12,7 @@
 //   - ach-cli runtime catalog         → GET /platform/admin/runtime/catalog
 //
 // Each command accepts -o table|json and the standard admin credential
-// flags (--profile, --api-key, --env-key, --verbose). All endpoints
+// flags (--profile, --key, --verbose). All endpoints
 // require an admin-allowlisted pk- (same auth surface as `ach admin`).
 
 package cmd
@@ -123,18 +123,11 @@ func newRuntimeCatalogCmd() *cobra.Command {
 
 // runRuntimeList fetches path (a single-kind endpoint) and renders the result.
 func runRuntimeList(ctx context.Context, cmd *cobra.Command, path, output string, f *adminCredFlags) error {
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 	var resp runtimeListResp
 	if err := hc.Do(ctx, http.MethodGet, path, nil, &resp); err != nil {
@@ -148,18 +141,11 @@ func runRuntimeList(ctx context.Context, cmd *cobra.Command, path, output string
 
 // runRuntimeCatalog fetches /platform/admin/runtime/catalog and renders all kinds.
 func runRuntimeCatalog(ctx context.Context, cmd *cobra.Command, output string, f *adminCredFlags) error {
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateAdmin,
-		APIKeyFlag:  f.APIKey,
-		EnvKeyFlag:  f.EnvKey,
-		ProfileFlag: f.Profile,
-	}); err != nil {
-		return err
-	}
-	baseURL, bearer, err := resolveAdminBearer(f.Profile, f.APIKey, f.EnvKey)
+	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 	hc := newAPIClient(baseURL, bearer, adminHTTPClient, f.Verbose, cmd.ErrOrStderr())
 	var resp runtimeCatalogResp
 	if err := hc.Do(ctx, http.MethodGet, "/platform/admin/runtime/catalog", nil, &resp); err != nil {

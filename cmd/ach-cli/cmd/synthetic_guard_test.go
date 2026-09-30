@@ -1,19 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Cross-cutting tests for the 06-07 synthetic-mode enforcement
-// refactor. Each subcommand previously carried its own ad-hoc inline
-// `if os.Getenv("ACH_BASE_URL") != "" && ...` check; this file proves
-// the centralized internal/cli/synthetic.GuardCommand fires the same
-// way (or stronger) for the cases that weren't previously covered:
-//
-//   - --profile rejection in synthetic on every subcommand
-//   - --env-key rejection in synthetic on hydrate/whoami/env list/
-//     env-describe/env-keys list/env-keys revoke
-//   - half-set (ACH_BASE_URL set, NO credential) rejection on every
-//     subcommand
-//
-// The original per-subcommand tests stay green (login/logout/config/
-// env-keys-create synthetic-rejection); these are the gap-fillers.
+// Synthetic mode (ACH_URL + ACH_KEY) across the command tree: every
+// network command refuses --profile and a --key name; every session /
+// profile command refuses outright.
 
 package cmd
 
@@ -24,224 +13,71 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// TestSyntheticGuard_ProfileFlagRejected covers every subcommand
-// that accepts --profile AND is in the synthetic.GuardCommand
-// allow-set (the disposition under synthetic must be "allowed except
-// for --profile / --env-key / half-set"). The deny-set
-// (login/logout/config) is tested separately via the per-subcommand
-// SyntheticMode_Exit1 tests already in place — those commands reject
-// regardless of --profile because the gate denies first.
+func synthTestEnv(t *testing.T) {
+	t.Helper()
+	credTestEnv(t)
+	t.Setenv("ACH_URL", "https://hub.test")
+	t.Setenv("ACH_KEY", testEK)
+}
+
+// networkCommands are one invocation per network command family.
+var networkCommands = map[string][]string{
+	"whoami":        {"whoami"},
+	"env list":      {"env", "list"},
+	"env describe":  {"env", "describe", "demo"},
+	"env hydrate":   {"env", "hydrate", "demo", "--no-warnings"},
+	"keys create":   {"keys", "create", "demo", "--no-save"},
+	"keys list":     {"keys", "list"},
+	"keys revoke":   {"keys", "revoke", "ekid_abc", "--yes"},
+	"admin list":    {"admin", "list", "plugins"},
+	"content fetch": {"content", "fetch", "prompt", "p"},
+}
+
+func runSynthRoot(t *testing.T, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	root := newRootCmdForTest()
+	root.AddCommand(newWhoamiCmd(), newEnvCmd(), newAdminCmd(), newContentCmd(), newLoginCmd(),
+		newLogoutCmd(), newTokenCmd(), newProfileCmd())
+	return executeCommand(t, root, args...)
+}
+
 func TestSyntheticGuard_ProfileFlagRejected(t *testing.T) {
-	cases := []struct {
-		name string
-		run  func(t *testing.T) (string, string, exit.Code, error)
-	}{
-		{
-			name: "whoami",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeWhoami(t, "--profile", "prod")
-			},
-		},
-		{
-			name: "hydrate",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeHydrate(t, "--profile", "prod",
-					"demo", "--no-warnings")
-			},
-		},
-		{
-			name: "env-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "list", "--profile", "prod")
-			},
-		},
-		{
-			name: "env-describe",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "describe", "demo", "--profile", "prod")
-			},
-		},
-		{
-			name: "env-keys-create",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "create",
-					"--environment", "demo", "--name", "x",
-					"--no-save", "--profile", "prod")
-			},
-		},
-		{
-			name: "env-keys-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "list", "--profile", "prod")
-			},
-		},
-		{
-			name: "env-keys-revoke",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "revoke", "ekid_abc",
-					"--yes", "--profile", "prod")
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			whoamiTestEnv(t) // resets XDG + clears ACH_*.
-			t.Setenv("ACH_BASE_URL", "https://hub.test")
-			t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
-
-			_, _, code, err := tc.run(t)
-			if err == nil {
-				t.Fatalf("%s: expected --profile rejection in synthetic; got nil err", tc.name)
-			}
-			if code != exit.General {
-				t.Errorf("%s: code = %d; want 1", tc.name, code)
-			}
-			if !strings.Contains(err.Error(), "--profile") {
-				t.Errorf("%s: err missing '--profile' hint: %q", tc.name, err.Error())
+	for name, args := range networkCommands {
+		t.Run(name, func(t *testing.T) {
+			synthTestEnv(t)
+			_, _, code, err := runSynthRoot(t, append(args, "--profile", "prod")...)
+			if err == nil || code != exit.General || !strings.Contains(err.Error(), "--profile") {
+				t.Fatalf("code=%d err=%v; want exit 1 naming --profile", code, err)
 			}
 		})
 	}
 }
 
-// TestSyntheticGuard_EnvKeyFlagRejected covers every read-side
-// subcommand that accepts --env-key. Synthetic + --env-key must exit 1
-// (ek_ requires the config registry — CLI-09 / spec §3.3).
-func TestSyntheticGuard_EnvKeyFlagRejected(t *testing.T) {
-	cases := []struct {
-		name string
-		run  func(t *testing.T) (string, string, exit.Code, error)
-	}{
-		{
-			name: "whoami",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeWhoami(t, "--env-key", "local-laptop")
-			},
-		},
-		{
-			name: "hydrate",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeHydrate(t, "--env-key", "local-laptop",
-					"demo", "--no-warnings")
-			},
-		},
-		{
-			name: "env-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "list", "--env-key", "local-laptop")
-			},
-		},
-		{
-			name: "env-describe",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "describe", "demo", "--env-key", "local-laptop")
-			},
-		},
-		{
-			name: "env-keys-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "list", "--env-key", "local-laptop")
-			},
-		},
-		{
-			name: "env-keys-revoke",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "revoke", "ekid_abc",
-					"--yes", "--env-key", "local-laptop")
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			whoamiTestEnv(t)
-			t.Setenv("ACH_BASE_URL", "https://hub.test")
-			t.Setenv("ACH_API_KEY", "pk_aaaaaaaaaaaaaaaaaaaaaawxyz")
-
-			_, _, code, err := tc.run(t)
-			if err == nil {
-				t.Fatalf("%s: expected --env-key rejection in synthetic; got nil err", tc.name)
-			}
-			if code != exit.General {
-				t.Errorf("%s: code = %d; want 1", tc.name, code)
-			}
-			if !strings.Contains(err.Error(), "--env-key") {
-				t.Errorf("%s: err missing '--env-key' hint: %q", tc.name, err.Error())
+func TestSyntheticGuard_KeyNameRejected(t *testing.T) {
+	for name, args := range networkCommands {
+		t.Run(name, func(t *testing.T) {
+			synthTestEnv(t)
+			_, _, code, err := runSynthRoot(t, append(args, "--key", "laptop")...)
+			if err == nil || code != exit.General || !strings.Contains(err.Error(), "saved key name needs a profile") {
+				t.Fatalf("code=%d err=%v; want exit 1 for a key name", code, err)
 			}
 		})
 	}
 }
 
-// TestSyntheticGuard_HalfSetRejected covers every subcommand under
-// the half-set condition (ACH_BASE_URL set, NO credential resolves).
-// Every subcommand must exit 1 with the half-set message — no silent
-// fallback to bare-mode disk config (T-06-07-01).
-func TestSyntheticGuard_HalfSetRejected(t *testing.T) {
-	cases := []struct {
-		name string
-		run  func(t *testing.T) (string, string, exit.Code, error)
-	}{
-		{
-			name: "login",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeLogin(t, "", "--profile", "prod",
-					"--base-url", "https://hub.test", "--no-browser")
-			},
-		},
-		{
-			name: "logout",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeLogout(t)
-			},
-		},
-		{
-			name: "config-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeConfig(t, "list")
-			},
-		},
-		{
-			name: "whoami",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeWhoami(t)
-			},
-		},
-		{
-			name: "hydrate",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeHydrate(t, "demo", "--no-warnings")
-			},
-		},
-		{
-			name: "env-list",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeEnv(t, "list")
-			},
-		},
-		{
-			name: "env-keys-create",
-			run: func(t *testing.T) (string, string, exit.Code, error) {
-				return executeKeys(t, "", "create",
-					"--environment", "demo", "--name", "x", "--no-save")
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			whoamiTestEnv(t)
-			// Half-set: only ACH_BASE_URL set, ACH_API_KEY left blank.
-			t.Setenv("ACH_BASE_URL", "https://hub.test")
-
-			_, _, code, err := tc.run(t)
-			if err == nil {
-				t.Fatalf("%s: expected half-set rejection; got nil err", tc.name)
-			}
-			if code != exit.General {
-				t.Errorf("%s: code = %d; want 1", tc.name, code)
-			}
-			if !strings.Contains(err.Error(), "half-set") {
-				t.Errorf("%s: err missing 'half-set' hint: %q", tc.name, err.Error())
+func TestSyntheticGuard_SessionCommandsRefused(t *testing.T) {
+	for _, args := range [][]string{
+		{"login", "https://hub.test"}, {"logout"}, {"token"},
+		{"profile", "list"}, {"profile", "show"}, {"profile", "use", "p"},
+		{"profile", "add", "ci", "--url", "https://h", "--key", testEK},
+		{"profile", "rename", "a", "b"}, {"profile", "remove", "p", "--force"},
+		{"keys", "create", "demo"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			synthTestEnv(t)
+			_, _, code, err := runSynthRoot(t, args...)
+			if err == nil || code != exit.General || !strings.Contains(err.Error(), "synthetic mode") {
+				t.Fatalf("code=%d err=%v; want exit 1 (synthetic mode)", code, err)
 			}
 		})
 	}

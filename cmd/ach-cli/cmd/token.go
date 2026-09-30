@@ -13,7 +13,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/lock"
-	"github.com/ackstorm/ach/internal/cli/oauthlogin"
+	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // tokenLockTimeout bounds the wait for a concurrent helper. Claude Code and
@@ -26,15 +26,18 @@ const tokenLockTimeout = 30 * time.Second
 // `[model_providers.*].auth.command`, opencode `.well-known/opencode`.
 // An OAuth profile prints its access token (refreshed under a file lock —
 // the AS rotates refresh tokens, so two concurrent refreshes would spend
-// one and strand the other); a pk_ profile prints the pk_. Every
+// one and strand the other); a key profile prints its Key. Every
 // diagnostic goes to stderr.
 func newTokenCmd() *cobra.Command {
 	var flagProfile string
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Print a valid credential for the active profile (credential helper)",
+		Short: "Print the active profile's token, or its key (credential helper)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateSession}); err != nil {
+				return err
+			}
 			path, err := config.Path()
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
@@ -62,20 +65,9 @@ func newTokenCmd() *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("%v; run `ach-cli login`", err), Wrapped: err}
 			}
-			tok := prof.PK
-			if prof.OAuth != nil {
-				client := &oauthlogin.Client{BaseURL: prof.URL}
-				var updated *config.OAuthCreds
-				tok, updated, err = client.CurrentAccessToken(cmd.Context(), prof.OAuth)
-				if err != nil {
-					return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("token: %v; run `ach-cli login`", err), Wrapped: err}
-				}
-				if updated != nil {
-					prof.OAuth = updated
-					if err := config.Save(path, file); err != nil {
-						return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-					}
-				}
+			tok, err := profileBearer(cmd.Context(), file, path, prof)
+			if err != nil {
+				return err
 			}
 			if tok == "" {
 				return &exit.CodedError{
@@ -86,7 +78,7 @@ func newTokenCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&flagProfile, "profile", "", "Override profile selection")
+	cmd.Flags().StringVar(&flagProfile, "profile", "", "Use this profile instead of the active one")
 	return cmd
 }
 

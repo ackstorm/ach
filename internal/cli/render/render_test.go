@@ -9,115 +9,56 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 )
 
-// TestFormatConfigList_Empty asserts the empty-config branch returns
-// a stable "No profiles configured" string (consumed verbatim by
-// `ach config list` when the registry has zero profiles).
-func TestFormatConfigList_Empty(t *testing.T) {
-	got := FormatConfigList(&config.File{})
-	if !strings.Contains(got, "No profiles configured") {
-		t.Errorf("FormatConfigList(empty) = %q; want substring 'No profiles configured'", got)
-	}
-}
+const (
+	testEK1 = "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAabcd"
+	testEK2 = "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234"
+)
 
-// TestFormatConfigList_TwoProfiles asserts the table renders both
-// rows in alphabetical order with the default row marked.
-func TestFormatConfigList_TwoProfiles(t *testing.T) {
-	f := &config.File{
-		Default: "prod",
-		Profiles: map[string]*config.Profile{
-			"prod": {URL: "https://prod.example", PK: "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
-				EK: map[string]string{"a": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAabcd", "b": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAefgh"}},
-			"stg": {URL: "https://stg.example"},
-		},
+func TestFormatProfileList(t *testing.T) {
+	if got := FormatProfileList(&config.File{}); !strings.Contains(got, "No profiles configured") {
+		t.Errorf("empty: %q", got)
 	}
-	got := FormatConfigList(f)
-	if !strings.Contains(got, "prod") {
-		t.Errorf("missing 'prod' row; got: %s", got)
+	got := FormatProfileList(&config.File{Default: "prod", Profiles: map[string]*config.Profile{
+		"ci":   {URL: "https://ci.example", Key: testEK1},
+		"none": {URL: "https://n.example"},
+		"prod": {URL: "https://prod.example", OAuth: &config.OAuthCreds{AccessToken: "a.b.c"},
+			Keys: map[string]config.SavedKey{"a": {ID: "ekid_a", Key: testEK1}, "b": {ID: "ekid_b", Key: testEK2}}},
+	}})
+	want := []string{
+		"CURRENT NAME URL AUTH KEYS",
+		"ci https://ci.example key 0",
+		"none https://n.example none 0",
+		"* prod https://prod.example session 2",
 	}
-	if !strings.Contains(got, "stg") {
-		t.Errorf("missing 'stg' row; got: %s", got)
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if len(lines) != len(want) {
+		t.Fatalf("got:\n%s", got)
 	}
-	// CURRENT column header + "*" marker on the default (prod) row.
-	if !strings.Contains(got, "CURRENT") {
-		t.Errorf("missing CURRENT column header; got: %s", got)
-	}
-	var prodMarked bool
-	for _, line := range strings.Split(got, "\n") {
-		if strings.Contains(line, "prod") && strings.HasPrefix(strings.TrimSpace(line), "*") {
-			prodMarked = true
-		}
-		if strings.Contains(line, "stg") && strings.HasPrefix(strings.TrimSpace(line), "*") {
-			t.Errorf("non-default 'stg' row should not carry '*'; got line: %q", line)
+	for i, w := range want {
+		if l := strings.Join(strings.Fields(lines[i]), " "); l != w {
+			t.Errorf("line %d = %q; want %q", i, l, w)
 		}
 	}
-	if !prodMarked {
-		t.Errorf("default 'prod' row missing '*' marker; got: %s", got)
-	}
-	// Alphabetical order: prod before stg.
-	if idxProd, idxStg := strings.Index(got, "prod"), strings.Index(got, "stg"); idxProd > idxStg {
-		t.Errorf("row order: prod (%d) should come before stg (%d); got: %s", idxProd, idxStg, got)
-	}
-	// PK column = "yes" when PK present.
-	if !strings.Contains(got, "yes") {
-		t.Errorf("missing 'yes' for prod PK column; got: %s", got)
-	}
-	// EK count column = "2" for prod.
-	if !strings.Contains(got, "2") {
-		t.Errorf("missing EK count 2 for prod; got: %s", got)
-	}
 }
 
-// TestFormatConfigShow_Masked asserts reveal=false hides the full pk-
-// plaintext from the rendered block.
-func TestFormatConfigShow_Masked(t *testing.T) {
-	dep := &config.Profile{
-		URL: "https://hub.example",
-		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
-		EK: map[string]string{
-			"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
-		},
+func TestFormatProfileShow(t *testing.T) {
+	dep := &config.Profile{URL: "https://hub.example", Key: testEK1,
+		Keys: map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: testEK2}}}
+	got := FormatProfileShow("ci", dep, false)
+	for _, w := range []string{"Profile  ci", "URL      https://hub.example", "Auth     key ek-****abcd", "laptop  ek-****1234  (ekid_1)"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
 	}
-	got := FormatConfigShow("prod", dep, false)
-	if strings.Contains(got, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
-		t.Errorf("CLI-04 leak: full pk- plaintext visible without --reveal; got: %s", got)
+	if strings.Contains(got, testEK1) || strings.Contains(got, testEK2) {
+		t.Errorf("plaintext leaked without reveal:\n%s", got)
 	}
-	if strings.Contains(got, "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234") {
-		t.Errorf("CLI-04 leak: full ek- plaintext visible without --reveal; got: %s", got)
+	rev := FormatProfileShow("ci", dep, true)
+	if !strings.Contains(rev, testEK1) || !strings.Contains(rev, testEK2) {
+		t.Errorf("reveal must print the keys in full:\n%s", rev)
 	}
-	if !strings.Contains(got, "pk-****wxyz") {
-		t.Errorf("missing masked pk tail 'pk-****wxyz'; got: %s", got)
-	}
-	if !strings.Contains(got, "ek-****1234") {
-		t.Errorf("missing masked ek tail 'ek-****1234'; got: %s", got)
-	}
-	if !strings.Contains(got, "Profile: prod") {
-		t.Errorf("missing 'Profile: prod' header; got: %s", got)
-	}
-	if !strings.Contains(got, "URL: https://hub.example") {
-		t.Errorf("missing URL line; got: %s", got)
-	}
-	// EK label visible (just the label, not the value).
-	if !strings.Contains(got, "demo") {
-		t.Errorf("missing EK label 'demo'; got: %s", got)
-	}
-}
-
-// TestFormatConfigShow_Revealed asserts reveal=true emits the full
-// pk-/ek- plaintext for the named profile only (D-05).
-func TestFormatConfigShow_Revealed(t *testing.T) {
-	dep := &config.Profile{
-		URL: "https://hub.example",
-		PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz",
-		EK: map[string]string{
-			"demo": "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234",
-		},
-	}
-	got := FormatConfigShow("prod", dep, true)
-	if !strings.Contains(got, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwxyz") {
-		t.Errorf("--reveal: pk plaintext missing from rendered block; got: %s", got)
-	}
-	if !strings.Contains(got, "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234") {
-		t.Errorf("--reveal: ek plaintext missing from rendered block; got: %s", got)
+	if s := FormatProfileShow("p", &config.Profile{URL: "https://x", OAuth: &config.OAuthCreds{}}, false); !strings.Contains(s, "Auth     session") || !strings.Contains(s, "(none)") {
+		t.Errorf("oauth profile:\n%s", s)
 	}
 }
 
@@ -231,12 +172,12 @@ func TestFormatEnvDescribe_Unavailable(t *testing.T) {
 // TestFormatKeyList asserts the table renders with the expected
 // columns + deterministic ordering by KeyID ascending (per W7 — both
 // 06-05 env-keys list AND 06-08 admin keys list consume this).
-func TestFormatKeyList(t *testing.T) {
+func TestFormatAdminKeyList(t *testing.T) {
 	rows := []KeyRowView{
 		{KeyID: "ekid_b", Type: "ek", OwnerEmail: "b@x", Environment: "demo", Name: "b-key", CreatedAt: "2026-05-01T00:00:00Z"},
 		{KeyID: "ekid_a", Type: "ek", OwnerEmail: "a@x", Environment: "demo", Name: "a-key", CreatedAt: "2026-05-02T00:00:00Z"},
 	}
-	got := FormatKeyList(rows)
+	got := FormatAdminKeyList(rows)
 	// Header.
 	for _, want := range []string{"KEY-ID", "TYPE", "OWNER", "ENVIRONMENT", "NAME", "CREATED"} {
 		if !strings.Contains(got, want) {

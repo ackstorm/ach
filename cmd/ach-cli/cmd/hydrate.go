@@ -30,9 +30,7 @@
 //     on the --raw path it is emitted AFTER successful output so it does
 //     not bury the streamed bytes; the engine path folds the same guidance
 //     into the summary Tips footer. Suppressed by --no-warnings in both.
-//   - D-11: mutex credential sources (--api-key, --env-key,
-//     ACH_API_KEY, ACH_ENV_KEY). Explicit closed list — adding a new
-//     source requires editing assertMutexCreds.
+//   - Credentials come from resolveCred (--profile / --key / ACH_KEY).
 //   - D-12: <name> positional argument REQUIRED for pk-; OPTIONAL for ek-.
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
@@ -45,7 +43,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -99,11 +96,8 @@ func newHydrateCmd() *cobra.Command {
 	var (
 		// Phase 6 surface — preserved.
 		flagNoWarnings bool
-		flagVerbose    bool
 		flagInsecure   bool
-		flagAPIKey     string
-		flagEnvKey     string
-		flagProfile    string
+		flagCred       credFlags
 
 		// Phase 7 engine flags (D-03).
 		flagIncludeRuntime bool
@@ -154,14 +148,13 @@ Location:
                       opencode / pimono (comma-separated for several).
                       Omitted: autodetected from the workspace.
 
-Credentials (pick one; more than one is an error):
-  --api-key <pk-|ek->   Use this key directly.
-  --env-key <label>     Use a saved ek- from the active profile.
-  ACH_API_KEY / ACH_ENV_KEY   Environment-variable equivalents.
-  Otherwise the active profile's pk- (from ach login) is used.
+Credentials:
+  --key <name|ek-…>   A key saved in the profile, or a raw ek-… key
+                      (ACH_KEY is the same). Otherwise the profile's own
+                      session (ach-cli login) is used.
 
-The positional <name> is the environment. It is required with a pk- key;
-with an ek- key it is optional (the key is already environment-scoped).
+The positional <name> is the environment; with a key it is optional (the
+key is already scoped to one environment).
 
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
@@ -179,11 +172,9 @@ Exit codes:
 			return runHydrate(cmd, hydrateInputs{
 				environment:    env,
 				noWarnings:     flagNoWarnings,
-				verbose:        flagVerbose,
+				verbose:        flagCred.Verbose,
 				insecure:       flagInsecure,
-				flagAPIKey:     flagAPIKey,
-				flagEnvKey:     flagEnvKey,
-				flagProfile:    flagProfile,
+				cred:           flagCred,
 				includeRuntime: flagIncludeRuntime,
 				onlyRuntime:    flagOnlyRuntime,
 				sync:           flagSync,
@@ -204,16 +195,9 @@ Exit codes:
 	// Phase 6 surface flags — preserved.
 	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
 		"Suppress the pk- credential warning")
-	cmd.Flags().BoolVar(&flagVerbose, "verbose", false,
-		"Dump redacted request headers to stderr")
 	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
 		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
-	cmd.Flags().StringVar(&flagAPIKey, "api-key", "",
-		"Override credential (pk-… or ek-… raw plaintext)")
-	cmd.Flags().StringVar(&flagEnvKey, "env-key", "",
-		"ek- label resolved against profiles.<active>.ek.<label>")
-	cmd.Flags().StringVar(&flagProfile, "profile", "",
-		"Override profile selection")
+	registerCredFlags(cmd, &flagCred)
 
 	// Phase 7 engine flags (D-03).
 	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
@@ -256,14 +240,6 @@ Exit codes:
 	return cmd
 }
 
-// hydrateCredSource is the closed-enum list of credential sources used
-// by the D-11 mutex check. Adding a new source requires editing this
-// list (visible in code review). NO flag-aliasing, NO env-prefix scan.
-type hydrateCredSource struct {
-	name  string
-	value string
-}
-
 // hydrateInputs is the resolved flag + env snapshot used by every step
 // of runHydrate. Centralizing the read-once-via-os.Getenv discipline
 // here keeps the flow function flat (low cyclomatic complexity) and
@@ -273,9 +249,7 @@ type hydrateInputs struct {
 	noWarnings  bool
 	verbose     bool
 	insecure    bool
-	flagAPIKey  string
-	flagEnvKey  string
-	flagProfile string
+	cred        credFlags
 
 	// Phase 7 engine fields (D-03).
 	includeRuntime bool
@@ -294,10 +268,6 @@ type hydrateInputs struct {
 	// D-04 hidden raw flag.
 	raw bool
 
-	envAPIKey      string
-	envEnvKey      string
-	envBaseURL     string
-	envProfile     string
 	envEnvironment string
 	envPlatform    string
 }
@@ -305,7 +275,7 @@ type hydrateInputs struct {
 // runHydrate is the RunE body. Flow:
 //
 //  1. Read env-var snapshot into the inputs struct.
-//  2. D-11 mutex gate + synthetic.GuardCommand (BEFORE any I/O).
+//  2. (credential sources are resolved by resolveCred in step 4).
 //  3. assertScopeFlags — mutual exclusion of --include-runtime /
 //     --only-runtime and --wait / --lock-timeout.
 //  4. Resolve credential (synthetic OR config-disk path).
@@ -316,26 +286,8 @@ type hydrateInputs struct {
 //  8. Emit the pk- warning after successful output so it does not bury the
 //     hydrate summary.
 func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
-	in.envAPIKey = os.Getenv("ACH_API_KEY")
-	in.envEnvKey = os.Getenv("ACH_ENV_KEY")
-	in.envBaseURL = os.Getenv("ACH_BASE_URL")
-	in.envProfile = os.Getenv("ACH_PROFILE")
 	in.envEnvironment = os.Getenv("ACH_ENVIRONMENT")
 	in.envPlatform = os.Getenv("ACH_PLATFORM")
-
-	// D-11 mutex BEFORE any I/O.
-	if err := assertMutexCreds(in.flagAPIKey, in.flagEnvKey, in.envAPIKey, in.envEnvKey); err != nil {
-		return err
-	}
-	// CLI-07 synthetic gate.
-	if err := synthetic.GuardCommand(synthetic.Params{
-		Gate:        synthetic.GateHydrate,
-		APIKeyFlag:  in.flagAPIKey,
-		EnvKeyFlag:  in.flagEnvKey,
-		ProfileFlag: in.flagProfile,
-	}); err != nil {
-		return err
-	}
 
 	// Phase 7 scope-flag mutual exclusion: --include-runtime + --only-runtime,
 	// and --wait + --lock-timeout. Both dispatch modes run this.
@@ -352,10 +304,12 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		return err
 	}
 
-	baseURL, bearer, err := resolveBearer(in)
+	in.cred.Insecure = in.insecure
+	c, err := resolveCred(cmd.Context(), in.cred, synthetic.GateAPI)
 	if err != nil {
 		return err
 	}
+	baseURL, bearer := c.BaseURL, c.Bearer
 
 	// D-12: pk- classification + <name> positional argument gate.
 	prefix, classifyErr := classifyBearer(bearer)
@@ -1044,91 +998,6 @@ func resolvePlatformList(raw string) ([]string, error) {
 	return out, nil
 }
 
-// resolveBearer returns (baseURL, bearer) for the request, dispatching
-// between synthetic mode (env-only) and config-disk mode. The disk
-// path applies CLI-08 precedence (--profile / ACH_PROFILE /
-// default / sole-entry) then the bearer-source switch.
-func resolveBearer(in hydrateInputs) (string, string, error) {
-	if in.envBaseURL != "" && (in.envAPIKey != "" || in.flagAPIKey != "") {
-		bearer := in.flagAPIKey
-		if bearer == "" {
-			bearer = in.envAPIKey
-		}
-		return in.envBaseURL, bearer, nil
-	}
-	configPath, err := config.Path()
-	if err != nil {
-		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-	}
-	// G19: honor the --insecure flag (OR ACH_INSECURE env) when reading the
-	// profile, so a localhost http:// profile loads under an explicit opt-in.
-	file, err := config.LoadWithInsecure(configPath, nil, in.insecure || config.InsecureFromEnv())
-	if err != nil {
-		return "", "", &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-	}
-	if file == nil {
-		return "", "", &exit.CodedError{
-			Code: exit.General,
-			Msg:  "no profile configured; run `ach login` or set ACH_API_KEY + ACH_BASE_URL (CLI-08)",
-		}
-	}
-	name, dep, err := config.ResolveActive(file, in.flagProfile, in.envProfile)
-	if err != nil {
-		return "", "", &exit.CodedError{
-			Code:    exit.General,
-			Msg:     fmt.Sprintf("%v; run `ach login`", err),
-			Wrapped: err,
-		}
-	}
-	bearer, err := pickBearer(in, name, dep)
-	if err != nil {
-		return "", "", err
-	}
-	if bearer == "" {
-		if bearer, err = profileBearer(context.Background(), file, configPath, dep); err != nil {
-			return "", "", err
-		}
-	}
-	if bearer == "" {
-		return "", "", &exit.CodedError{
-			Code: exit.General,
-			Msg:  "no credential resolved; run `ach login` or set ACH_API_KEY",
-		}
-	}
-	return dep.URL, bearer, nil
-}
-
-// pickBearer applies the bearer-source switch under the disk-config
-// branch. Mutex was already asserted upstream, so at most one of the
-// four sources is non-empty.
-func pickBearer(in hydrateInputs, name string, dep *config.Profile) (string, error) {
-	switch {
-	case in.flagAPIKey != "":
-		return in.flagAPIKey, nil
-	case in.flagEnvKey != "":
-		ek, ok := dep.EK[in.flagEnvKey]
-		if !ok {
-			return "", &exit.CodedError{
-				Code: exit.General,
-				Msg:  fmt.Sprintf("--env-key %q not found in profiles.%s.ek", in.flagEnvKey, name),
-			}
-		}
-		return ek, nil
-	case in.envAPIKey != "":
-		return in.envAPIKey, nil
-	case in.envEnvKey != "":
-		ek, ok := dep.EK[in.envEnvKey]
-		if !ok {
-			return "", &exit.CodedError{
-				Code: exit.General,
-				Msg:  fmt.Sprintf("ACH_ENV_KEY %q not found in profiles.%s.ek", in.envEnvKey, name),
-			}
-		}
-		return ek, nil
-	}
-	return "", nil // the profile's own credential: resolveBearer → profileBearer
-}
-
 // runHydrateRaw is the Phase 6 surface-only POST+stream body extracted
 // verbatim. Preserved as the --raw dispatch target so the W3-P3 e2e
 // golden-diff anchor (`examples/hydrate.json`) keeps passing
@@ -1156,32 +1025,6 @@ func runHydrateRaw(cmd *cobra.Command, baseURL, bearer, effectiveEnv string, ver
 			Code:    exit.Network,
 			Msg:     fmt.Sprintf("stream response body: %v", err),
 			Wrapped: err,
-		}
-	}
-	return nil
-}
-
-// assertMutexCreds implements the D-11 closed-list mutex check. The
-// four sources are EXPLICITLY enumerated — no flag-aliasing, no
-// env-prefix scan. Adding a new credential source requires editing
-// this list (visible in code review per T-06-06-01).
-func assertMutexCreds(flagAPIKey, flagEnvKey, envAPIKey, envEnvKey string) error {
-	sources := []hydrateCredSource{
-		{name: "--api-key", value: flagAPIKey},
-		{name: "--env-key", value: flagEnvKey},
-		{name: "ACH_API_KEY", value: envAPIKey},
-		{name: "ACH_ENV_KEY", value: envEnvKey},
-	}
-	var set []string
-	for _, s := range sources {
-		if s.value != "" {
-			set = append(set, s.name)
-		}
-	}
-	if len(set) > 1 {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  fmt.Sprintf("conflicting credential sources: %s (D-11 / CLI-09)", strings.Join(set, ", ")),
 		}
 	}
 	return nil

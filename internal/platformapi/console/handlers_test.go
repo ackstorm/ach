@@ -297,3 +297,40 @@ func TestBootstrapReportsDisplayName(t *testing.T) {
 		t.Fatalf("%d %v", rec.Code, got)
 	}
 }
+
+// TestBootstrap_Budget: bootstrap reports the caller's user:<email> tag budget
+// (the ceiling ach-cli whoami prints); a failed or absent read is null, never
+// an HTTP error.
+func TestBootstrap_Budget(t *testing.T) {
+	cases := []struct {
+		name   string
+		tag    *litellm.TagInfoEntry
+		tagErr error
+		want   string
+	}{
+		{"with ceiling", &litellm.TagInfoEntry{Spend: 12.4, Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}}, nil,
+			`{"budget_duration":"30d","max_budget":100,"spend":12.4}`},
+		{"no ceiling", &litellm.TagInfoEntry{Spend: 12.4}, nil, `{"budget_duration":null,"max_budget":null,"spend":12.4}`},
+		{"read error", nil, errors.New("boom"), `null`},
+		{"tag absent", nil, nil, `null`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := testDeps(t)
+			d.LiteLLM.(*fakeLL).tag, d.LiteLLM.(*fakeLL).tagErr = tc.tag, tc.tagErr
+			rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+			var got map[string]json.RawMessage
+			_ = json.Unmarshal(rec.Body.Bytes(), &got)
+			raw, ok := got["budget"]
+			if rec.Code != 200 || !ok {
+				t.Fatalf("%d %s", rec.Code, rec.Body.String())
+			}
+			var norm any
+			_ = json.Unmarshal(raw, &norm)
+			b, _ := json.Marshal(norm)
+			if string(b) != tc.want {
+				t.Fatalf("budget = %s; want %s", b, tc.want)
+			}
+		})
+	}
+}

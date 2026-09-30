@@ -11,10 +11,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// validPkBearer is a syntactically-correct pk- bearer (pk- + 64 base64url
-// chars) so keys.ClassifyBearer returns PrefixPk and the x-ach-environment
-// header path is exercised.
-const validPkBearer = "pk-" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+// validEkBearer is a well-formed ek- key (ek- + 64 base64url chars).
 const validEkBearer = "ek-" + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 // contentTestServer captures the last request for assertions.
@@ -49,20 +46,28 @@ func newContentTestServer(t *testing.T) *contentTestServer {
 }
 
 // synthEnv points the CLI at the stub server in synthetic mode with the given
-// bearer (no disk config consulted).
-func synthEnv(t *testing.T, url, bearer string) {
+// key (no disk config consulted).
+func synthEnv(t *testing.T, url, key string) {
 	t.Helper()
-	t.Setenv("ACH_BASE_URL", url)
-	t.Setenv("ACH_API_KEY", bearer)
-	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_PROFILE", "")
+	credTestEnv(t)
+	t.Setenv("ACH_URL", url)
+	t.Setenv("ACH_KEY", key)
 }
 
-// TestContentFetch_PkWritesBytesAndHeaders — a pk- bearer with --environment
+// sessionEnv points the CLI at the stub server through an OAuth profile
+// (the session token is a personal credential, like a pk-).
+func sessionEnv(t *testing.T, url string) {
+	t.Helper()
+	credTestEnv(t)
+	t.Setenv("ACH_INSECURE", "1")
+	seedProfile(t, "p", oauthProfile(url))
+}
+
+// TestContentFetch_SessionWritesBytesAndHeaders — a session with --environment
 // streams the raw body to stdout and sends x-ach-key + x-ach-environment.
-func TestContentFetch_PkWritesBytesAndHeaders(t *testing.T) {
+func TestContentFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	srv := newContentTestServer(t)
-	synthEnv(t, srv.URL, validPkBearer)
+	sessionEnv(t, srv.URL)
 
 	stdout, _, code, err := executeCommand(t, newContentCmd(),
 		"fetch", "prompt", "foo", "--environment", "prod")
@@ -78,7 +83,7 @@ func TestContentFetch_PkWritesBytesAndHeaders(t *testing.T) {
 	if srv.lastPath != "/content/prompt/foo" {
 		t.Errorf("path = %q; want /content/prompt/foo", srv.lastPath)
 	}
-	if srv.lastKey != validPkBearer {
+	if srv.lastKey != "h.p.s" {
 		t.Errorf("x-ach-key = %q; want the bearer", srv.lastKey)
 	}
 	if srv.lastEnv != "prod" {
@@ -86,11 +91,11 @@ func TestContentFetch_PkWritesBytesAndHeaders(t *testing.T) {
 	}
 }
 
-// TestContentFetch_PkRequiresEnvironment — a pk- bearer without --environment
+// TestContentFetch_SessionRequiresEnvironment — a session without --environment
 // is rejected before any HTTP call.
-func TestContentFetch_PkRequiresEnvironment(t *testing.T) {
+func TestContentFetch_SessionRequiresEnvironment(t *testing.T) {
 	srv := newContentTestServer(t)
-	synthEnv(t, srv.URL, validPkBearer)
+	sessionEnv(t, srv.URL)
 
 	_, _, code, err := executeCommand(t, newContentCmd(), "fetch", "prompt", "foo")
 	if err == nil {

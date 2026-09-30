@@ -1,55 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package synthetic centralizes the CLI-07 + spec §3.3 enforcement of
-// "synthetic mode" (ACH_BASE_URL + a resolved credential) across every
-// `ach` subcommand.
+// Package synthetic enforces "synthetic mode": ACH_URL + ACH_KEY both set,
+// so ach-cli runs without a config file (CI, containers). The Hub URL comes
+// from ACH_URL and the credential from ACH_KEY (a raw ek-…), or from a raw
+// --key ek-… that overrides it. Once active:
 //
-// Synthetic mode lets CI / container environments run ach without a
-// disk-resident ~/.config/ach/config.yaml by sourcing the Hub URL from
-// ACH_BASE_URL and the bearer from ACH_API_KEY (or the equivalent
-// --api-key flag). Once active, four invariants hold:
+//   - login, logout, token and every profile command exit 1 (there is no
+//     config file to read or write).
+//   - keys create exits 1 unless --no-save (nowhere to save the key).
+//   - --profile / ACH_PROFILE exit 1 (there is no profile to pick).
+//   - --key <name> exits 1 (a saved name needs a profile to look it up in).
 //
-//   - `ach login`, `ach logout`, `ach config *` are unavailable
-//     (config-mutating; no disk registry to mutate). Exit 1.
-//   - `ach keys create` requires --no-save (D-08). Exit 1 without.
-//     (`ach env-keys create` is a back-compat alias for `ach keys create`.)
-//   - --profile / ACH_PROFILE are rejected on every subcommand
-//     (the profile-resolution chain bypasses disk entirely; the
-//     conceptual profile is named "(env)"). Exit 1.
-//   - --env-key / ACH_ENV_KEY are rejected on every read-side command
-//     (hydrate, whoami, env list/describe, keys list/revoke) —
-//     ek_ labels can only be dereferenced against the on-disk EK map,
-//     which synthetic mode has no access to (CLI-09). Exit 1.
-//
-// Half-set mode (ACH_BASE_URL set but NO credential resolves) is a
-// distinct error state — exit 1 with the half-set message — so a user
-// who set only one of the two env vars never falls back to bare-mode
-// disk-config silently. See CLI-07 / T-06-07-01.
-//
-// The package exports:
-//
-//   - SyntheticProfileLabel = "(env)" — the constant the Phase 7
-//     state.json writer records as the profile name when synthetic
-//     mode is active. Surfaced here so callers across phases agree on
-//     the literal string.
-//   - Gate (typed int) + GateLogin/GateLogout/GateConfig/
-//     GateEnvKeysCreate/GateHydrate/GateWhoami/GateEnvList/
-//     GateEnvDescribe/GateEnvKeysList/GateEnvKeysRevoke/GateAdmin —
-//     closed-enum tags that subcommands pass to GuardCommand to declare
-//     their disposition under synthetic mode.
-//   - Params — the resolved flag-value bag a caller passes alongside
-//     its Gate. Env vars are read via Getenv (default os.Getenv;
-//     overridable in tests).
-//   - IsActive(Params) bool — pure predicate.
-//   - IsHalfSet(Params) bool — pure predicate.
-//   - GuardCommand(Params) error — composite check. Returns
-//     *exit.CodedError when the invocation must be rejected; nil when
-//     it is OK to proceed.
-//
-// Spec / requirement anchors:
-//   - spec/ach_cli_spec_v20260515_FINALv4.md §3.3 (synthetic mode
-//     definitive contract).
-//   - .planning/REQUIREMENTS.md CLI-07 / CLI-08 / CLI-09.
-//   - 06-CONTEXT.md D-07 (keys-create/env-keys-create always-persist), D-08
-//     (synthetic --no-save mandate), D-11 (mutex credentials).
+// ACH_URL alone is not synthetic mode: it only pre-fills the login URL.
 package synthetic

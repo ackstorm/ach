@@ -21,18 +21,12 @@ import (
 // synthetic-mode env-var so each test runs hermetically.
 func adminTestEnv(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("ACH_BASE_URL", "")
-	t.Setenv("ACH_API_KEY", "")
-	t.Setenv("ACH_ENV_KEY", "")
-	t.Setenv("ACH_PROFILE", "")
-	return dir
+	return credTestEnv(t)
 }
 
 // seedAdminConfig writes a minimal config.yaml inside XDG_CONFIG_HOME
-// with one active profile named "prod" carrying a pk_ that simulates
-// an allowlisted admin pk_.
+// with one active profile named "prod" signed in with an OAuth session
+// (an allowlisted admin).
 func seedAdminConfig(t *testing.T, baseURL string) string {
 	t.Helper()
 	cfgPath, err := config.Path()
@@ -42,10 +36,7 @@ func seedAdminConfig(t *testing.T, baseURL string) string {
 	f := &config.File{
 		Default: "prod",
 		Profiles: map[string]*config.Profile{
-			"prod": {
-				URL: baseURL,
-				PK:  "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnxyz",
-			},
+			"prod": oauthProfile(baseURL),
 		},
 	}
 	if err := config.Save(cfgPath, f); err != nil {
@@ -660,12 +651,9 @@ func TestAdminKeysRevoke_Verbose_RedactsAchKey(t *testing.T) {
 	if code != exit.OK {
 		t.Fatalf("exit code = %d; want 0", code)
 	}
-	// Verbose should dump x-ach-key with a redacted pk-*** value.
-	if !strings.Contains(stderr, "pk-***") {
-		t.Errorf("expected stderr to contain 'pk-***' (redacted header); got:\n%s", stderr)
-	}
-	if strings.Contains(stderr, "pk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnxyz") {
-		t.Errorf("CLI-04/T-06-08-02 leak: unredacted pk- in stderr; got:\n%s", stderr)
+	// Verbose should dump x-ach-key redacted, never the session token.
+	if !strings.Contains(stderr, "X-Ach-Key: redacted") || strings.Contains(stderr, "h.p.s") {
+		t.Errorf("expected a redacted X-Ach-Key and no token in stderr; got:\n%s", stderr)
 	}
 }
 
