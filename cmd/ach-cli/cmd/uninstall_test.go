@@ -88,19 +88,16 @@ func TestUninstall_DryRunWritesNothing(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1, Preserved: 0}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws, "prod", "--dry-run")
+	stdout, _, code, err := executeUninstall(t, "--dir", ws, "prod", "--dry-run")
 	if err != nil || code != exit.OK {
 		t.Fatalf("dry-run uninstall: code=%d err=%v", code, err)
 	}
 	if !rec.called {
 		t.Fatal("Sync seam was not invoked")
 	}
-	// Default (context-only) scope: scopedEmpty retains runtime, empties context.
-	if len(rec.scopedEmpty.Plugins) != 0 {
-		t.Fatalf("default scope must empty context Plugins, got %d", len(rec.scopedEmpty.Plugins))
-	}
-	if len(rec.scopedEmpty.RuntimeFiles) != 1 {
-		t.Fatalf("default scope must retain RuntimeFiles, got %d", len(rec.scopedEmpty.RuntimeFiles))
+	// Default scope removes everything hydrate wrote: runtime AND context.
+	if n := len(state.WalkEntries(rec.scopedEmpty)); n != 0 {
+		t.Fatalf("default scope must empty every bucket, got %d rows", n)
 	}
 	// prev passed through verbatim.
 	if rec.prev == nil || len(rec.prev.Plugins) != 1 {
@@ -125,7 +122,7 @@ func TestUninstall_MissingStateExitsZero(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	stdout, _, code, err := executeUninstall(t, "--output", ws, "prod")
+	stdout, _, code, err := executeUninstall(t, "--dir", ws, "prod")
 	if err != nil {
 		t.Fatalf("missing-state uninstall returned error: %v", err)
 	}
@@ -140,24 +137,18 @@ func TestUninstall_MissingStateExitsZero(t *testing.T) {
 	}
 }
 
-func TestUninstall_ScopeFlagMutualExclusion(t *testing.T) {
-	ws := t.TempDir()
-
-	var rec recordedSync
-	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
-
-	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--include-runtime", "--only-runtime")
-	if err == nil {
-		t.Fatal("expected mutual-exclusion error, got nil")
+func TestUninstall_RemovedFlags(t *testing.T) {
+	c := newUninstallCmd()
+	for _, name := range []string{"include-runtime", "target", "output"} {
+		if c.Flags().Lookup(name) != nil {
+			t.Errorf("--%s must be removed from env uninstall", name)
+		}
 	}
-	if code != exit.General {
-		t.Fatalf("mutual-exclusion code=%d, want General(1)", code)
+	if f := c.Flags().ShorthandLookup("g"); f == nil || f.Name != "global" {
+		t.Errorf("-g must be the shorthand for --global, got %v", f)
 	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("error message = %q, want 'mutually exclusive'", err.Error())
-	}
-	if rec.called {
-		t.Fatal("Sync must not be invoked when scope flags conflict")
+	if c.Flags().Lookup("dir") == nil {
+		t.Error("--dir must be registered")
 	}
 }
 
@@ -174,7 +165,8 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 2}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--include-runtime")
+	// Default scope = full teardown (symmetric with hydrate).
+	_, _, code, err := executeUninstall(t, "--dir", ws, "prod")
 	if err != nil || code != exit.OK {
 		t.Fatalf("full teardown: code=%d err=%v", code, err)
 	}
@@ -204,12 +196,12 @@ func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 1}, nil)
 
-	// Default scope: removes context, retains runtime.
-	_, _, code, err := executeUninstall(t, "--output", ws, "prod")
+	// --only-runtime: removes runtime, retains context.
+	_, _, code, err := executeUninstall(t, "--dir", ws, "prod", "--only-runtime")
 	if err != nil || code != exit.OK {
 		t.Fatalf("scoped uninstall: code=%d err=%v", code, err)
 	}
-	// state.json still present and now holds only the survivor (runtime) rows.
+	// state.json still present and now holds only the survivor (context) rows.
 	got, err := state.Load(statePath)
 	if err != nil {
 		t.Fatalf("reload state: %v", err)
@@ -217,11 +209,11 @@ func TestUninstall_ScopedRewritesStateRetainingSurvivors(t *testing.T) {
 	if got == nil {
 		t.Fatal("scoped uninstall must retain state.json")
 	}
-	if len(got.Plugins) != 0 {
-		t.Fatalf("context rows must be dropped from state, got %d", len(got.Plugins))
+	if len(got.Plugins) != 1 {
+		t.Fatalf("context survivor rows must be retained in state, got %d", len(got.Plugins))
 	}
-	if len(got.RuntimeFiles) != 1 {
-		t.Fatalf("runtime survivor rows must be retained in state, got %d", len(got.RuntimeFiles))
+	if len(got.RuntimeFiles) != 0 {
+		t.Fatalf("runtime rows must be dropped from state, got %d", len(got.RuntimeFiles))
 	}
 }
 
@@ -236,7 +228,7 @@ func TestUninstall_ForceFlagThreadsThrough(t *testing.T) {
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
 
-	_, _, code, err := executeUninstall(t, "--output", ws, "prod", "--force")
+	_, _, code, err := executeUninstall(t, "--dir", ws, "prod", "--force")
 	if err != nil || code != exit.OK {
 		t.Fatalf("force uninstall: code=%d err=%v", code, err)
 	}

@@ -8,11 +8,11 @@
 // each entry's Kind from its owning bucket (state.FileEntry carries no
 // kind field) and Environment from File.Environment, then renders a
 // KIND / TARGET / ENVIRONMENT table by default or machine JSON under
-// --json. The plugin inventory is a FLAT list over Plugins[] (D-25 — no
+// -o json. The plugin inventory is a FLAT list over Plugins[] (D-25 — no
 // per-plugin grouping, no owner tag).
 //
 // Empty/missing state.json yields the stable empty-state output
-// ("No resources installed" for the table, "[]" for --json) and exit 0 —
+// ("No resources installed" for the table, "[]" for -o json) and exit 0 —
 // list never writes, never mutates, and never panics on a fresh workspace
 // (state.Load returns (nil,nil) on a missing file).
 
@@ -50,14 +50,12 @@ func resolveListWorkspaceCwd() (string, error) {
 // the buckets into []render.StateEntryView, and delegates rendering.
 func newEnvStatusCmd() *cobra.Command {
 	var (
-		flagJSON        bool
-		flagGlobal      bool
-		flagTarget      string
-		flagEnvironment string
-		flagFiles       bool
+		out        outputFlag
+		flagGlobal bool
+		flagFiles  bool
 	)
 	c := &cobra.Command{
-		Use:   "status",
+		Use:   "status [env]",
 		Short: "Show installed/projected resources from state.json",
 		Long: `Show the installed/projected resources recorded in state.json.
 
@@ -65,13 +63,22 @@ env status is a STATIC read of the workspace (or global) state.json — no
 network call, no re-derivation, no drift detection. By default it prints
 one row per resource (KIND, NAME, FILES count, ENVIRONMENT), grouping a
 resource's files together. Use --files (-f) to list every projected file
-with its on-disk TARGET path, or --json for machine-readable output.
+with its on-disk TARGET path, or -o json for machine-readable output.
+
+Without [env] (project scope) it lists every hydrated environment; -g
+(global scope) requires [env].
 
 An empty or missing state.json prints "No resources installed" (or an
-empty JSON array under --json) and exits 0.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_ = flagTarget // reserved for future platform-scope resolution (D-31 scope axis)
+empty JSON array under -o json) and exits 0.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			env := ""
+			if len(args) > 0 {
+				env = args[0]
+			}
+			if flagGlobal && env == "" {
+				return &exit.CodedError{Code: exit.General, Msg: "an environment is required with -g"}
+			}
 
 			cwd, err := resolveListWorkspaceCwd()
 			if err != nil {
@@ -83,12 +90,11 @@ empty JSON array under --json) and exits 0.`,
 			}
 
 			// Per-environment namespacing (spec §8.1): in project scope with no
-			// --environment, enumerate EVERY .ach/<env>/state.json so a multi-env
-			// project lists all its installed sets. A specific --environment (or
-			// any --global run, which always requires --environment) resolves a
-			// single state file.
+			// [env], enumerate EVERY .ach/<env>/state.json so a multi-env
+			// project lists all its installed sets. A specific [env] (always
+			// present under -g) resolves a single environment.
 			var files []*state.File
-			if flagEnvironment == "" && !flagGlobal {
+			if env == "" {
 				all, lerr := loadAllWorkspaceStates(cwd)
 				if lerr != nil {
 					return &exit.CodedError{
@@ -101,7 +107,7 @@ empty JSON array under --json) and exits 0.`,
 			} else {
 				// One env may now hold several per-platform state-<platform>.json
 				// files (+ a legacy state.json) — enumerate and show them all.
-				paths, err := state.ListStatePaths(cwd, flagEnvironment, flagGlobal)
+				paths, err := state.ListStatePaths(cwd, env, flagGlobal)
 				if err != nil {
 					return &exit.CodedError{
 						Code:    exit.ConfigFile,
@@ -129,8 +135,8 @@ empty JSON array under --json) and exits 0.`,
 				entries = append(entries, buildStateEntryViews(f)...)
 			}
 
-			if flagJSON {
-				out, jerr := render.FormatStateListJSON(entries)
+			if out.v == outputJSON {
+				js, jerr := render.FormatStateListJSON(entries)
 				if jerr != nil {
 					return &exit.CodedError{
 						Code:    exit.General,
@@ -138,7 +144,7 @@ empty JSON array under --json) and exits 0.`,
 						Wrapped: jerr,
 					}
 				}
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+				_, _ = fmt.Fprint(cmd.OutOrStdout(), js)
 				return nil
 			}
 
@@ -146,11 +152,8 @@ empty JSON array under --json) and exits 0.`,
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&flagJSON, "json", false, "Machine-readable JSON output")
+	registerOutputFlag(c, &out, "table", "json")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Use $HOME/.ach/<env> scope instead of cwd/.ach")
-	c.Flags().StringVar(&flagEnvironment, "environment", "",
-		"Environment name (REQUIRED with --global; omit in project scope to list ALL envs)")
-	c.Flags().StringVar(&flagTarget, "target", "", "Override platform scope resolution")
 	c.Flags().BoolVarP(&flagFiles, "files", "f", false, "List every projected file instead of a per-resource summary")
 	return c
 }

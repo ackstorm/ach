@@ -5,6 +5,8 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,14 +65,13 @@ func sessionEnv(t *testing.T, url string) {
 	seedProfile(t, "p", oauthProfile(url))
 }
 
-// TestContentFetch_SessionWritesBytesAndHeaders — a session with --environment
-// streams the raw body to stdout and sends x-ach-key + x-ach-environment.
-func TestContentFetch_SessionWritesBytesAndHeaders(t *testing.T) {
+// TestEnvFetch_SessionWritesBytesAndHeaders — a session streams the raw body
+// to stdout and sends x-ach-key + x-ach-environment.
+func TestEnvFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	srv := newContentTestServer(t)
 	sessionEnv(t, srv.URL)
 
-	stdout, _, code, err := executeCommand(t, newContentCmd(),
-		"fetch", "prompt", "foo", "--environment", "prod")
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prod", "prompt", "foo")
 	if err != nil {
 		t.Fatalf("fetch err = %v", err)
 	}
@@ -91,15 +92,40 @@ func TestContentFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	}
 }
 
-// TestContentFetch_SessionRequiresEnvironment — a session without --environment
-// is rejected before any HTTP call.
-func TestContentFetch_SessionRequiresEnvironment(t *testing.T) {
+// TestEnvFetch_FileFlag_EkSendsEnvironment — `env fetch demo plugin foo --file x`
+// writes the body to x and sends x-ach-environment: demo even for an ek- key.
+func TestEnvFetch_FileFlag_EkSendsEnvironment(t *testing.T) {
+	srv := newContentTestServer(t)
+	synthEnv(t, srv.URL, validEkBearer)
+	out := filepath.Join(t.TempDir(), "x")
+
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "demo", "plugin", "foo", "--file", out)
+	if err != nil || code != exit.OK {
+		t.Fatalf("fetch: code=%d err=%v", code, err)
+	}
+	if srv.lastPath != "/content/plugin/foo" {
+		t.Errorf("path = %q; want /content/plugin/foo", srv.lastPath)
+	}
+	if srv.lastEnv != "demo" {
+		t.Errorf("x-ach-environment = %q; want demo", srv.lastEnv)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q; want empty with --file", stdout)
+	}
+	if b, _ := os.ReadFile(out); string(b) != "RAW-PROMPT-BYTES" {
+		t.Errorf("--file content = %q; want raw body", b)
+	}
+}
+
+// TestEnvFetch_RequiresEnvironment — the Environment is positional and
+// required: two args are a usage error before any HTTP call.
+func TestEnvFetch_RequiresEnvironment(t *testing.T) {
 	srv := newContentTestServer(t)
 	sessionEnv(t, srv.URL)
 
-	_, _, code, err := executeCommand(t, newContentCmd(), "fetch", "prompt", "foo")
+	_, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prompt", "foo")
 	if err == nil {
-		t.Fatal("expected error for pk- without --environment")
+		t.Fatal("expected error without <env>")
 	}
 	if code != exit.General {
 		t.Errorf("exit code = %d; want %d", code, exit.General)
@@ -109,36 +135,15 @@ func TestContentFetch_SessionRequiresEnvironment(t *testing.T) {
 	}
 }
 
-// TestContentFetch_EkOmitsEnvironmentHeader — an ek- bearer needs no
-// --environment and sends no x-ach-environment header.
-func TestContentFetch_EkOmitsEnvironmentHeader(t *testing.T) {
-	srv := newContentTestServer(t)
-	synthEnv(t, srv.URL, validEkBearer)
-
-	_, _, code, err := executeCommand(t, newContentCmd(), "fetch", "skill", "bar")
-	if err != nil {
-		t.Fatalf("fetch err = %v", err)
-	}
-	if code != exit.OK {
-		t.Fatalf("exit code = %d; want 0", code)
-	}
-	if srv.lastEnv != "" {
-		t.Errorf("x-ach-environment = %q; want empty for ek-", srv.lastEnv)
-	}
-	if srv.lastPath != "/content/skill/bar" {
-		t.Errorf("path = %q; want /content/skill/bar", srv.lastPath)
-	}
-}
-
-// TestContentFetch_NotFound — a 404 surfaces a non-zero exit and does not
+// TestEnvFetch_NotFound — a 404 surfaces a non-zero exit and does not
 // write the artifact body to stdout.
-func TestContentFetch_NotFound(t *testing.T) {
+func TestEnvFetch_NotFound(t *testing.T) {
 	srv := newContentTestServer(t)
 	srv.status = http.StatusNotFound
 	srv.errBody = `{"error":{"code":"content_not_found","message":"no such artifact"},"request_id":"req_x"}`
 	synthEnv(t, srv.URL, validEkBearer)
 
-	stdout, _, code, err := executeCommand(t, newContentCmd(), "fetch", "prompt", "missing")
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "demo", "prompt", "missing")
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}
@@ -150,12 +155,12 @@ func TestContentFetch_NotFound(t *testing.T) {
 	}
 }
 
-// TestContentFetch_InvalidKind — an unsupported kind is rejected before HTTP.
-func TestContentFetch_InvalidKind(t *testing.T) {
+// TestEnvFetch_InvalidKind — an unsupported kind is rejected before HTTP.
+func TestEnvFetch_InvalidKind(t *testing.T) {
 	srv := newContentTestServer(t)
 	synthEnv(t, srv.URL, validEkBearer)
 
-	_, _, code, err := executeCommand(t, newContentCmd(), "fetch", "team", "foo")
+	_, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "demo", "team", "foo")
 	if err == nil {
 		t.Fatal("expected error for invalid kind")
 	}

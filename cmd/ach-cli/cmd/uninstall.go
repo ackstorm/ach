@@ -6,20 +6,19 @@
 // deletion path.
 //
 // Flow:
-//  1. Reject the --include-runtime + --only-runtime clash (D-26).
-//  2. Resolve the <ach-dir>/state.json scope exactly as the hydrate
+//  1. Resolve the <ach-dir>/state.json scope exactly as the hydrate
 //     orchestrator does (state.ResolvePath; achDir=dir(statePath);
 //     toolRoot=workspaceCwd, $HOME under --global).
-//  3. Load prev state. Missing → "nothing installed", exit 0.
-//  4. Acquire the <ach-dir>/lock flock (fail-fast, or timeout under
+//  2. Load prev state. Missing → "nothing installed", exit 0.
+//  3. Acquire the <ach-dir>/lock flock (fail-fast, or timeout under
 //     --lock-timeout), mirroring commit.go:step1Lock. Serializes against
 //     concurrent ach-cli mutation (T-04-06).
-//  5. Build the scope-filtered survivor File (hydrate.BuildScopedEmpty)
+//  4. Build the scope-filtered survivor File (hydrate.BuildScopedEmpty)
 //     and feed it to Sync as the set-difference target. Sync owns the
 //     entire inverse model: deepest-first delete, deep-key subtraction,
 //     composite marker removal, and the drift-wins gate that preserves
 //     user-edited co-owned files unless --force (T-04-02/T-04-03).
-//  6. State cleanup (D-28): --dry-run writes nothing; a full teardown
+//  5. State cleanup (D-28): --dry-run writes nothing; a full teardown
 //     removes state.json; a scoped uninstall rewrites it via the atomic
 //     state.Save to retain the un-removed rows (T-04-04).
 //
@@ -50,15 +49,13 @@ var uninstallSyncFn = hydrate.Sync
 // uninstallInputs is the resolved-flag snapshot the RunE body consumes,
 // keeping the flow flat (low cyclomatic complexity).
 type uninstallInputs struct {
-	environment    string
-	force          bool
-	dryRun         bool
-	global         bool
-	platform       string
-	lockTimeout    time.Duration
-	includeRuntime bool
-	onlyRuntime    bool
-	output         string
+	environment string
+	force       bool
+	dryRun      bool
+	global      bool
+	lockTimeout time.Duration
+	onlyRuntime bool
+	output      string // --dir
 }
 
 // newUninstallCmd returns a fresh `ach-cli env uninstall` cobra.Command.
@@ -66,14 +63,12 @@ type uninstallInputs struct {
 // isolated tree per t.Run.
 func newUninstallCmd() *cobra.Command {
 	var (
-		flagForce          bool
-		flagDryRun         bool
-		flagGlobal         bool
-		flagTarget         string
-		flagLockTimeout    time.Duration
-		flagIncludeRuntime bool
-		flagOnlyRuntime    bool
-		flagOutput         string
+		flagForce       bool
+		flagDryRun      bool
+		flagGlobal      bool
+		flagLockTimeout time.Duration
+		flagOnlyRuntime bool
+		flagDir         string
 	)
 
 	cmd := &cobra.Command{
@@ -88,12 +83,10 @@ hydrate --sync uses. uninstall removes the WHOLE projection in scope
 The positional <name> is the target Environment — REQUIRED, it namespaces
 the <ach-dir> in project and --global scope.
 
-Scope (mirrors hydrate, D-26):
-  (default)           Remove context resources only (prompts / plugins /
-                      artifacts), leaving runtime config in place.
-  --include-runtime   Also strip runtime config (models / mcpServers).
-  --only-runtime      Strip ONLY runtime config (mutually exclusive with
-                      --include-runtime).
+Scope (mirrors hydrate):
+  (default)           Remove EVERYTHING hydrate wrote: context (prompts /
+                      plugins / artifacts / skills) AND runtime config.
+  --only-runtime      Strip ONLY runtime config (MCP servers / A2A agents).
 
 Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json,
 CLAUDE.md / GEMINI.md) are inverse-merged: only the engine's keys/marker
@@ -101,35 +94,29 @@ blocks are removed; other contributors' and the user's keys survive.
 User-edited projected files are preserved unless --force (drift-wins).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUninstall(cmd, uninstallInputs{
-				environment:    args[0],
-				force:          flagForce,
-				dryRun:         flagDryRun,
-				global:         flagGlobal,
-				platform:       flagTarget,
-				lockTimeout:    flagLockTimeout,
-				includeRuntime: flagIncludeRuntime,
-				onlyRuntime:    flagOnlyRuntime,
-				output:         flagOutput,
+				environment: args[0],
+				force:       flagForce,
+				dryRun:      flagDryRun,
+				global:      flagGlobal,
+				lockTimeout: flagLockTimeout,
+				onlyRuntime: flagOnlyRuntime,
+				output:      flagDir,
 			})
 		},
 	}
 
-	// Reused hydrate flags (D-29) plus the D-26 scope pair.
+	// Reused hydrate flags (D-29) plus the --only-runtime scope.
 	cmd.Flags().BoolVar(&flagForce, "force", false,
 		"Bypass drift refusal — remove user-edited projected files too")
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,
 		"Print planned removals but write nothing to disk")
-	cmd.Flags().BoolVar(&flagGlobal, "global", false,
+	cmd.Flags().BoolVarP(&flagGlobal, "global", "g", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
-	cmd.Flags().StringVar(&flagTarget, "target", "",
-		"Override platform autodetection (claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
 	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
 		"Wait up to <d> for the workspace lock instead of failing fast")
-	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
-		"Also strip runtime config (models / mcpServers) alongside context")
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
-		"Strip ONLY runtime config (mutually exclusive with --include-runtime)")
-	cmd.Flags().StringVar(&flagOutput, "output", "",
+		"Strip ONLY runtime config, leaving context in place")
+	cmd.Flags().StringVar(&flagDir, "dir", "",
 		"Workspace root override (default: cwd)")
 
 	return cmd
@@ -139,14 +126,6 @@ User-edited projected files are preserved unless --force (drift-wins).`,
 // lock / state-cleanup orchestration only — all removal logic lives in
 // hydrate.Sync.
 func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
-	// (a) D-26 scope-flag mutual exclusion.
-	if in.includeRuntime && in.onlyRuntime {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "--include-runtime and --only-runtime are mutually exclusive",
-		}
-	}
-
 	// (b) Resolve scope exactly as commit.go:newCommit.
 	workspaceCwd := in.output
 	if workspaceCwd == "" && !in.global {
@@ -222,7 +201,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		if prev == nil {
 			continue
 		}
-		scopedEmpty := hydrate.BuildScopedEmpty(prev, in.includeRuntime, in.onlyRuntime)
+		scopedEmpty := hydrate.BuildScopedEmpty(prev, !in.onlyRuntime, in.onlyRuntime)
 		stats, serr := uninstallSyncFn(prev, scopedEmpty, achDir, toolRoot, hydrate.SyncOptions{
 			Force:  in.force,
 			Stderr: cmd.ErrOrStderr(),

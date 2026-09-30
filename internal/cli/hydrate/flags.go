@@ -40,23 +40,15 @@ type Opts struct {
 
 	// --- scope filters (STATE-10) ---
 
-	// IncludeRuntime is DEPRECATED and unread by the engine as of the
-	// runtime-on-by-default flip: runtime (mcp/a2a) is wired by default.
-	// Retained only until the cobra layer stops constructing it (removed in
-	// the same change that drops the hidden --include-runtime alias).
-	// Deprecated: runtime is on by default; use NoRuntime to opt out.
-	IncludeRuntime bool
-
 	// NoRuntime opts OUT of the default runtime wiring: context is still
 	// reconciled, but the Environment's direct mcp/a2a endpoints are NOT
 	// written to the adapter runtime-config (no credential lands on disk).
 	// Mutually exclusive with OnlyRuntime (caller layer enforces).
 	NoRuntime bool
 
-	// OnlyRuntime restricts the diff to runtime entries only.
-	// Mutually exclusive with the default context-only mode and
-	// with IncludeRuntime (caller layer enforces; engine treats
-	// OnlyRuntime as having precedence per spec §6.3).
+	// OnlyRuntime restricts the diff to runtime entries only
+	// (engine treats OnlyRuntime as having precedence over NoRuntime
+	// per spec §6.3).
 	OnlyRuntime bool
 
 	// --- behavior toggles ---

@@ -22,21 +22,21 @@ func synthTestEnv(t *testing.T) {
 
 // networkCommands are one invocation per network command family.
 var networkCommands = map[string][]string{
-	"whoami":        {"whoami"},
-	"env list":      {"env", "list"},
-	"env describe":  {"env", "describe", "demo"},
-	"env hydrate":   {"env", "hydrate", "demo", "--no-warnings"},
-	"keys create":   {"keys", "create", "demo", "--no-save"},
-	"keys list":     {"keys", "list"},
-	"keys revoke":   {"keys", "revoke", "ekid_abc", "--yes"},
-	"admin list":    {"admin", "list", "plugins"},
-	"content fetch": {"content", "fetch", "prompt", "p"},
+	"whoami":       {"whoami"},
+	"env list":     {"env", "list"},
+	"env describe": {"env", "describe", "demo"},
+	"env hydrate":  {"env", "hydrate", "demo", "--no-warnings"},
+	"keys create":  {"keys", "create", "demo", "--no-save"},
+	"keys list":    {"keys", "list"},
+	"keys revoke":  {"keys", "revoke", "ekid_abc", "--yes"},
+	"admin list":   {"admin", "list", "plugins"},
+	"env fetch":    {"env", "fetch", "demo", "prompt", "p"},
 }
 
 func runSynthRoot(t *testing.T, args ...string) (string, string, exit.Code, error) {
 	t.Helper()
 	root := newRootCmdForTest()
-	root.AddCommand(newWhoamiCmd(), newEnvCmd(), newAdminCmd(), newContentCmd(), newLoginCmd(),
+	root.AddCommand(newWhoamiCmd(), newEnvCmd(), newAdminCmd(), newLoginCmd(),
 		newLogoutCmd(), newTokenCmd(), newProfileCmd())
 	return executeCommand(t, root, args...)
 }

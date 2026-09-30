@@ -114,7 +114,7 @@ func TestList_MissingState(t *testing.T) {
 	}
 }
 
-// TestList_JSON asserts --json emits valid JSON the test can unmarshal
+// TestList_JSON asserts -o json emits valid JSON the test can unmarshal
 // back to the entry set, with the correct derived kinds + targets.
 func TestList_JSON(t *testing.T) {
 	body := `{
@@ -130,20 +130,20 @@ func TestList_JSON(t *testing.T) {
   ]
 }`
 	dir := writeListState(t, body)
-	out, code, err := executeList(t, dir, "--json")
+	out, code, err := executeList(t, dir, "-o", "json")
 	if err != nil {
-		t.Fatalf("list --json: unexpected error: %v", err)
+		t.Fatalf("status -o json: unexpected error: %v", err)
 	}
 	if code != exit.OK {
-		t.Fatalf("list --json: want exit OK, got %d", code)
+		t.Fatalf("status -o json: want exit OK, got %d", code)
 	}
 
 	var decoded []render.StateEntryView
 	if uerr := json.Unmarshal([]byte(out), &decoded); uerr != nil {
-		t.Fatalf("list --json: output not valid JSON: %v\n%s", uerr, out)
+		t.Fatalf("status -o json: output not valid JSON: %v\n%s", uerr, out)
 	}
 	if len(decoded) != 3 {
-		t.Fatalf("list --json: want 3 entries, got %d:\n%s", len(decoded), out)
+		t.Fatalf("status -o json: want 3 entries, got %d:\n%s", len(decoded), out)
 	}
 
 	byTarget := map[string]string{}
@@ -190,5 +190,50 @@ func TestList_OutToBuffer(t *testing.T) {
 	}
 	if !strings.Contains(outBuf.String(), ".claude/prompts/x.md") {
 		t.Fatalf("output did not go to injected buffer; got:\n%s", outBuf.String())
+	}
+}
+
+// TestStatus_PositionalEnvJSON asserts `env status demo -o json` reads only
+// demo's state (the old `--environment demo --json` output).
+func TestStatus_PositionalEnvJSON(t *testing.T) {
+	dir := writeListState(t, `{"schemaVersion":"3","environment":"demo",
+  "plugins":[{"target":".claude/plugins/a","hash":"xxh3:1","sourceHash":"xxh3:1"}]}`)
+	other := filepath.Join(dir, ".ach", "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "state.json"), []byte(`{"schemaVersion":"3","environment":"other",
+  "plugins":[{"target":".claude/plugins/z","hash":"xxh3:9","sourceHash":"xxh3:9"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code, err := executeList(t, dir, "demo", "-o", "json")
+	if err != nil || code != exit.OK {
+		t.Fatalf("status demo -o json: code=%d err=%v", code, err)
+	}
+	var decoded []render.StateEntryView
+	if uerr := json.Unmarshal([]byte(out), &decoded); uerr != nil {
+		t.Fatalf("not JSON: %v\n%s", uerr, out)
+	}
+	if len(decoded) != 1 || decoded[0].Target != ".claude/plugins/a" || decoded[0].Environment != "demo" {
+		t.Fatalf("want only demo's row, got %+v", decoded)
+	}
+}
+
+// TestStatus_GlobalRequiresEnv asserts `env status -g` without an env exits 1.
+func TestStatus_GlobalRequiresEnv(t *testing.T) {
+	_, code, err := executeList(t, t.TempDir(), "-g")
+	if err == nil || code != exit.General || !strings.Contains(err.Error(), "an environment is required with -g") {
+		t.Fatalf("code=%d err=%v; want exit 1 'an environment is required with -g'", code, err)
+	}
+}
+
+// TestStatus_RemovedFlags asserts --json, --environment and --target are gone.
+func TestStatus_RemovedFlags(t *testing.T) {
+	c := newEnvStatusCmd()
+	for _, name := range []string{"json", "environment", "target"} {
+		if c.Flags().Lookup(name) != nil {
+			t.Errorf("--%s must be removed from env status", name)
+		}
 	}
 }

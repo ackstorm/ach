@@ -7,9 +7,9 @@
 //     internal/cli/hydrate.Run(ctx, Opts) 14-step commit sequence:
 //     workspace lock, state.json v2 + drift, manifest fetch, safe
 //     extract + auto-claim cascade, adapter dispatch, atomic state
-//     write. Engine flags exposed: --include-runtime / --only-runtime
-//     / --sync / --force / --dry-run / --wait / --lock-timeout / --output
-//     / --allow-symlinks / --target / --global.
+//     write. Engine flags exposed: --only-runtime / --sync / --force /
+//     --dry-run / --wait / --lock-timeout / --dir / --allow-symlinks /
+//     --target / --global.
 //
 //   - --raw (hidden) — preserves the Phase 6 surface-only POST+stream
 //     contract so the W3-P3 e2e golden-diff anchor (`examples/hydrate
@@ -100,18 +100,17 @@ func newHydrateCmd() *cobra.Command {
 		flagCred       credFlags
 
 		// Phase 7 engine flags (D-03).
-		flagIncludeRuntime bool
-		flagOnlyRuntime    bool
-		flagSync           bool
-		flagForce          bool
-		flagDryRun         bool
-		flagWait           bool
-		flagLockTimeout    time.Duration
-		flagOutput         string
-		flagAllowSymlinks  bool
-		flagTarget         string
-		flagGlobal         bool
-		flagConflict       string
+		flagOnlyRuntime   bool
+		flagSync          bool
+		flagForce         bool
+		flagDryRun        bool
+		flagWait          bool
+		flagLockTimeout   time.Duration
+		flagDir           string
+		flagAllowSymlinks bool
+		flagTarget        []string
+		flagGlobal        bool
+		flagConflict      string
 
 		// D-04 hidden flag — surface preserved for the W3-P3 golden-
 		// diff anchor.
@@ -126,10 +125,9 @@ func newHydrateCmd() *cobra.Command {
 agent tool's config directory, and wire up its runtime (models / MCP / A2A).
 
 Scope:
-  --include-runtime   Also project the environment's runtime entries
-                      (models / mcpServers / a2aAgents), not just context.
+  (default)           Project context (prompts / plugins / artifacts /
+                      skills) AND runtime (MCP servers / A2A agents).
   --only-runtime      Project ONLY runtime entries (excludes context).
-                      Default: context only (prompts / artifacts / skills).
 
 Behavior:
   --sync              Remove files no longer in the environment.
@@ -142,11 +140,12 @@ Locking:
   --lock-timeout <d>  Wait up to <d> (e.g. 30s, 5m). Conflicts with --wait.
 
 Location:
-  --output <dir>      Workspace root (default: current directory).
-  --global            Hydrate under $HOME/.ach/<env> instead of ./.ach.
+  --dir <dir>         Workspace root (default: current directory).
+  -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
   --target <id[,id…]> Agent target(s): claude-code / codex / gemini-cli /
-                      opencode / pimono (comma-separated for several).
-                      Omitted: autodetected from the workspace.
+                      opencode / pimono (comma-separated or repeated;
+                      ACH_TARGET is the same). Omitted: autodetected from
+                      the workspace.
 
 Credentials:
   --key <name|ek-…>   A key saved in the profile, or a raw ek-… key
@@ -170,24 +169,23 @@ Exit codes:
 				env = args[0]
 			}
 			return runHydrate(cmd, hydrateInputs{
-				environment:    env,
-				noWarnings:     flagNoWarnings,
-				verbose:        flagCred.Verbose,
-				insecure:       flagInsecure,
-				cred:           flagCred,
-				includeRuntime: flagIncludeRuntime,
-				onlyRuntime:    flagOnlyRuntime,
-				sync:           flagSync,
-				force:          flagForce,
-				dryRun:         flagDryRun,
-				wait:           flagWait,
-				lockTimeout:    flagLockTimeout,
-				output:         flagOutput,
-				allowSymlinks:  flagAllowSymlinks,
-				platform:       flagTarget,
-				global:         flagGlobal,
-				conflict:       conflict,
-				raw:            flagRaw,
+				environment:   env,
+				noWarnings:    flagNoWarnings,
+				verbose:       flagCred.Verbose,
+				insecure:      flagInsecure,
+				cred:          flagCred,
+				onlyRuntime:   flagOnlyRuntime,
+				sync:          flagSync,
+				force:         flagForce,
+				dryRun:        flagDryRun,
+				wait:          flagWait,
+				lockTimeout:   flagLockTimeout,
+				output:        flagDir,
+				allowSymlinks: flagAllowSymlinks,
+				platform:      flagTarget,
+				global:        flagGlobal,
+				conflict:      conflict,
+				raw:           flagRaw,
 			})
 		},
 	}
@@ -200,10 +198,8 @@ Exit codes:
 	registerCredFlags(cmd, &flagCred)
 
 	// Phase 7 engine flags (D-03).
-	cmd.Flags().BoolVar(&flagIncludeRuntime, "include-runtime", false,
-		"Reconcile direct runtime entries (mcp/a2a/models); plugin MCPs always project via context")
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
-		"Reconcile ONLY runtime entries (mutually exclusive with --include-runtime)")
+		"Reconcile ONLY runtime entries (skip context)")
 	cmd.Flags().BoolVar(&flagSync, "sync", false,
 		"Delete state entries no longer in the environment (deepest-first)")
 	cmd.Flags().BoolVar(&flagForce, "force", false,
@@ -214,14 +210,14 @@ Exit codes:
 		"Block indefinitely on workspace lock contention")
 	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
 		"Wait up to <d> for workspace lock (mutually exclusive with --wait)")
-	cmd.Flags().StringVar(&flagOutput, "output", "",
+	cmd.Flags().StringVar(&flagDir, "dir", "",
 		"Workspace root override (default: cwd)")
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Permit symlinks in downloaded archives (unsafe)")
-	cmd.Flags().StringVar(&flagTarget, "target", "",
-		"Override platform autodetection; comma-separated for several targets, e.g. codex,opencode "+
+	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
+		"Override platform autodetection; comma-separated or repeated for several targets, e.g. codex,opencode "+
 			"(claude-code / codex / gemini-cli / opencode / pimono + case-folded aliases)")
-	cmd.Flags().BoolVar(&flagGlobal, "global", false,
+	cmd.Flags().BoolVarP(&flagGlobal, "global", "g", false,
 		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	cmd.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
@@ -252,32 +248,30 @@ type hydrateInputs struct {
 	cred        credFlags
 
 	// Phase 7 engine fields (D-03).
-	includeRuntime bool
-	onlyRuntime    bool
-	sync           bool
-	force          bool
-	dryRun         bool
-	wait           bool
-	lockTimeout    time.Duration
-	output         string
-	allowSymlinks  bool
-	platform       string
-	global         bool
-	conflict       conflict.Policy
+	onlyRuntime   bool
+	sync          bool
+	force         bool
+	dryRun        bool
+	wait          bool
+	lockTimeout   time.Duration
+	output        string // --dir
+	allowSymlinks bool
+	platform      []string // --target
+	global        bool
+	conflict      conflict.Policy
 
 	// D-04 hidden raw flag.
 	raw bool
 
 	envEnvironment string
-	envPlatform    string
+	envTarget      string
 }
 
 // runHydrate is the RunE body. Flow:
 //
 //  1. Read env-var snapshot into the inputs struct.
 //  2. (credential sources are resolved by resolveCred in step 4).
-//  3. assertScopeFlags — mutual exclusion of --include-runtime /
-//     --only-runtime and --wait / --lock-timeout.
+//  3. assertScopeFlags — mutual exclusion of --wait / --lock-timeout.
 //  4. Resolve credential (synthetic OR config-disk path).
 //  5. D-12 pk-/<name> positional argument gate.
 //  6. plaintext-transport warning if http://.
@@ -287,14 +281,14 @@ type hydrateInputs struct {
 //     hydrate summary.
 func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	in.envEnvironment = os.Getenv("ACH_ENVIRONMENT")
-	in.envPlatform = os.Getenv("ACH_PLATFORM")
+	in.envTarget = os.Getenv("ACH_TARGET")
 
-	// Phase 7 scope-flag mutual exclusion: --include-runtime + --only-runtime,
-	// and --wait + --lock-timeout. Both dispatch modes run this.
+	// Phase 7 flag mutual exclusion: --wait + --lock-timeout. Both dispatch
+	// modes run this.
 	//
-	// NOT covered: --raw + engine flags. A --raw + --include-runtime combo is
-	// incoherent (no runtime in the raw response surface), but it is NOT
-	// rejected — runHydrateRaw takes no includeRuntime param, so the flag is
+	// NOT covered: --raw + engine flags. A --raw + --only-runtime combo is
+	// incoherent (no projection on the raw response surface), but it is NOT
+	// rejected — runHydrateRaw takes no scope param, so the flag is
 	// silently ignored on the raw path. Deliberate (#85): --raw is hidden
 	// (MarkHidden, D-04) and exists only as the frozen Phase 6 byte-for-byte
 	// golden-diff anchor; the only callers are e2e tests, none of which pass an
@@ -339,8 +333,8 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 		}
 	}
 
-	// G19: refuse a plaintext http:// Hub URL (from profile, --base-url, or
-	// ACH_BASE_URL) unless the user opted into insecure transport (--insecure
+	// G19: refuse a plaintext http:// Hub URL (from the profile or ACH_URL)
+	// unless the user opted into insecure transport (--insecure
 	// flag OR ACH_INSECURE env). localhost is NOT exempt (decision B). This
 	// runs BEFORE any engine call so no credential leaves over plaintext.
 	if err := config.ValidateSecureURL(baseURL, in.insecure || config.InsecureFromEnv()); err != nil {
@@ -366,20 +360,13 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	return runErr
 }
 
-// assertScopeFlags enforces the spec §6.3 scope-flag mutual exclusions:
+// assertScopeFlags enforces the flag mutual exclusions:
 //
-//   - --include-runtime + --only-runtime  → exit 1.
-//   - --wait + --lock-timeout             → exit 1.
+//   - --wait + --lock-timeout → exit 1.
 //
-// Both rejections cite the offending flag pair in the error message so
+// The rejection cites the offending flag pair in the error message so
 // the user can pick one and re-run.
 func assertScopeFlags(in hydrateInputs) error {
-	if in.includeRuntime && in.onlyRuntime {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg:  "--include-runtime and --only-runtime are mutually exclusive",
-		}
-	}
 	if in.wait && in.lockTimeout > 0 {
 		return &exit.CodedError{
 			Code: exit.General,
@@ -392,7 +379,7 @@ func assertScopeFlags(in hydrateInputs) error {
 // runHydrateEngine builds the hydrate.Opts struct and dispatches to
 // hydrateRunFn (= hydrate.Run by default). Platform resolution:
 //   - --target set → hydrate.ResolvePlatform(value) → canonical id.
-//   - ACH_PLATFORM set → hydrate.ResolvePlatform(value) → canonical id.
+//   - ACH_TARGET set → hydrate.ResolvePlatform(value) → canonical id.
 //   - else → hydrate.Autodetect against cwd (workspace) OR
 //     os.UserHomeDir() (global).
 //
@@ -469,7 +456,6 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 			Environment:       effectiveEnv,
 			Platform:          platformID,
 			Global:            in.global,
-			IncludeRuntime:    in.includeRuntime,
 			OnlyRuntime:       in.onlyRuntime,
 			Sync:              in.sync,
 			Force:             in.force,
@@ -541,10 +527,10 @@ func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer st
 	results := make([]envResult, 0, len(m.Environments))
 	for _, e := range m.Environments {
 		perEnv := in
-		// Target precedence: --target flag and ACH_PLATFORM both override the
+		// Target precedence: --target flag and ACH_TARGET both override the
 		// manifest entry; the entry only fills in when neither is set.
-		if perEnv.platform == "" && perEnv.envPlatform == "" && len(e.Targets) > 0 {
-			perEnv.platform = strings.Join(e.Targets, ",")
+		if len(perEnv.platform) == 0 && perEnv.envTarget == "" && len(e.Targets) > 0 {
+			perEnv.platform = e.Targets
 		}
 		runErr := runHydrateEngine(cmd, perEnv, baseURL, bearer, e.Name)
 		results = append(results, envResult{name: e.Name, err: runErr})
@@ -705,7 +691,7 @@ func compactSegments(r hydrate.Result) []string {
 // layer from the resolved inputs so summaryFromResult stays a pure renderer.
 type summaryMeta struct {
 	global     bool              // --global → home-root scope
-	output     string            // --output dir ("" when unset)
+	output     string            // --dir ("" when unset)
 	keyPrefix  keys.BearerPrefix // pk-/ek- classification of the bearer
 	oauth      bool              // the bearer is an OAuth access token (rendered configs carry no credential)
 	noWarnings bool              // --no-warnings → drop the Tips footer
@@ -922,18 +908,18 @@ func countNoun(n int, singular, plural string) string {
 }
 
 // resolvePlatformsOrAutodetect dispatches platform resolution per
-// D-06: explicit --target > ACH_PLATFORM env > autodetect cwd
-// (workspace) > autodetect $HOME (global). Explicit --target / ACH_PLATFORM
+// D-06: explicit --target > ACH_TARGET env > autodetect cwd
+// (workspace) > autodetect $HOME (global). Explicit --target / ACH_TARGET
 // accept a comma-separated list (mirroring local `plugin install --target
 // a,b`), so this returns one-or-more canonical platform ids; autodetect
 // always yields exactly one. Returns a typed CodedError on autodetect
 // ambiguity / unknown id.
 func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string, error) {
-	if in.platform != "" {
-		return resolvePlatformList(in.platform)
+	if len(in.platform) > 0 {
+		return resolvePlatformList(strings.Join(in.platform, ","))
 	}
-	if in.envPlatform != "" {
-		return resolvePlatformList(in.envPlatform)
+	if in.envTarget != "" {
+		return resolvePlatformList(in.envTarget)
 	}
 
 	root := in.output
@@ -967,7 +953,7 @@ func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string,
 	return []string{id}, nil
 }
 
-// resolvePlatformList parses an explicit --target / ACH_PLATFORM value into a
+// resolvePlatformList parses an explicit --target / ACH_TARGET value into a
 // deduped, order-preserving list of canonical platform ids. The value may be
 // comma-separated (e.g. "codex,opencode"); each part is resolved via
 // hydrate.ResolvePlatform (alias-aware), and an unknown part surfaces its

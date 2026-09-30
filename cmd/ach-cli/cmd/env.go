@@ -70,6 +70,7 @@ describe gracefully degrades on 403 unauthorized_team — printing
 		newEnvStatusCmd(),
 		newEnvSaveCmd(),
 		newUninstallCmd(),
+		newEnvFetchCmd(),
 	)
 	return parent
 }
@@ -79,6 +80,7 @@ func newEnvListCmd() *cobra.Command {
 	var (
 		flagLimit int
 		f         credFlags
+		out       outputFlag
 	)
 	c := &cobra.Command{
 		Use:   "list",
@@ -93,12 +95,16 @@ func newEnvListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if out.v == outputJSON {
+				return writeJSON(cmd.OutOrStdout(), items)
+			}
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatEnvList(items))
 			return nil
 		},
 	}
 	c.Flags().IntVar(&flagLimit, "limit", defaultEnvListLimit, "Per-page limit (server cap is 500)")
 	registerCredFlags(c, &f)
+	registerOutputFlag(c, &out, "table", "json")
 	return c
 }
 
@@ -117,8 +123,8 @@ func newEnvDescribeCmd() *cobra.Command {
 			if len(args) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg: "missing environment.\n  Usage: ach env describe <name>\n" +
-						"  Run 'ach env list' to see available environments.",
+					Msg: "missing environment.\n  Usage: ach-cli env describe <name>\n" +
+						"  Run 'ach-cli env list' to see available environments.",
 				}
 			}
 			name := args[0]

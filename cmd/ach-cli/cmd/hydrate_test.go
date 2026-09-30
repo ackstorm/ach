@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -43,10 +44,10 @@ const canonicalHydrateJSON = `{"schemaVersion":"v1alpha1","environment":"demo",`
 // the production main-entry typed-error mapping.
 //
 // Note: as of 07-W3-05 the cobra layer ALSO accepts engine flags
-// (--include-runtime / --only-runtime / --sync / --force / --dry-run
-// / --wait / --lock-timeout / --output / --allow-symlinks / --target
-// / --global). The existing Phase 6 tests below were authored against
-// the surface-only --raw path; we prepend "--raw" here so the legacy
+// (--only-runtime / --sync / --force / --dry-run / --wait /
+// --lock-timeout / --dir / --allow-symlinks / --target / --global).
+// The existing Phase 6 tests below were authored against the surface-only
+// --raw path; we prepend "--raw" here so the legacy
 // suite exercises the Phase 6 POST+stream byte-for-byte contract
 // (D-04). New engine tests use executeHydrateEngine which does NOT
 // prepend --raw.
@@ -470,16 +471,13 @@ func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
 // Phase 7 W3-05 engine-path tests
 // ============================================================================
 
-// TestNewHydrateCmd_FlagsRegistered asserts every Phase 7 engine flag
-// the D-03 refactor adds is registered on the cobra.Command — the
-// engine surface is the new user-facing default.
+// TestNewHydrateCmd_FlagsRegistered pins the env hydrate flag surface.
 func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
 	cmd := newHydrateCmd()
 	wantFlags := []string{
-		"include-runtime", "only-runtime", "sync", "force", "dry-run",
-		"wait", "lock-timeout", "output", "allow-symlinks", "target",
-		"global", "raw",
-		// Phase 6 surface preserved (sans --environment, now positional).
+		"only-runtime", "sync", "force", "dry-run",
+		"wait", "lock-timeout", "dir", "allow-symlinks", "target",
+		"global", "raw", "conflict", "insecure",
 		"no-warnings", "verbose", "key", "profile",
 	}
 	for _, name := range wantFlags {
@@ -487,6 +485,85 @@ func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
 			t.Errorf("flag --%s not registered", name)
 		}
 	}
+	for _, name := range []string{"output", "include-runtime", "api-key", "env-key"} {
+		if cmd.Flags().Lookup(name) != nil {
+			t.Errorf("flag --%s must be removed", name)
+		}
+	}
+	if f := cmd.Flags().ShorthandLookup("g"); f == nil || f.Name != "global" {
+		t.Errorf("-g must be the shorthand for --global, got %v", f)
+	}
+	if got := cmd.Flags().Lookup("target").Value.Type(); got != "stringSlice" {
+		t.Errorf("--target type = %q; want stringSlice", got)
+	}
+}
+
+// captureHydratePlatforms swaps hydrateRunFn for a recorder and returns the
+// slice the recorder appends each Opts.Platform to.
+func captureHydratePlatforms(t *testing.T) *[]string {
+	t.Helper()
+	var got []string
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		got = append(got, opts.Platform)
+		return hydrate.Result{}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+	return &got
+}
+
+// TestRunHydrate_TargetSliceAndEnv asserts --target is a string slice
+// (comma OR repeat), ACH_TARGET is honoured, and ACH_PLATFORM is ignored.
+func TestRunHydrate_TargetSliceAndEnv(t *testing.T) {
+	setup := func(t *testing.T) *[]string {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		withCleanHomeEngine(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{URL: mock.server.URL, OAuth: testOAuth()})
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+		return captureHydratePlatforms(t)
+	}
+	want := []string{"codex", "opencode"}
+	for name, args := range map[string][]string{
+		"repeat": {"--target", "codex", "--target", "opencode"},
+		"comma":  {"--target", "codex,opencode"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := setup(t)
+			_, _, code, err := executeHydrateEngine(t, append([]string{"demo", "--no-warnings"}, args...)...)
+			if err != nil || code != exit.OK {
+				t.Fatalf("code=%d err=%v", code, err)
+			}
+			if !slices.Equal(*got, want) {
+				t.Errorf("platforms = %v; want %v", *got, want)
+			}
+		})
+	}
+	t.Run("ACH_TARGET honoured", func(t *testing.T) {
+		got := setup(t)
+		t.Setenv("ACH_TARGET", "codex")
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--dir", t.TempDir())
+		if err != nil || code != exit.OK {
+			t.Fatalf("code=%d err=%v", code, err)
+		}
+		if !slices.Equal(*got, []string{"codex"}) {
+			t.Errorf("platforms = %v; want [codex]", *got)
+		}
+	})
+	t.Run("ACH_PLATFORM ignored", func(t *testing.T) {
+		got := setup(t)
+		t.Setenv("ACH_PLATFORM", "codex")
+		// An empty --dir has no agent markers: with ACH_PLATFORM ignored,
+		// autodetect finds nothing and fails.
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--dir", t.TempDir())
+		if err == nil || code != exit.General || !strings.Contains(err.Error(), "no agent target detected") {
+			t.Fatalf("code=%d err=%v; want autodetect failure", code, err)
+		}
+		if len(*got) != 0 {
+			t.Errorf("engine ran for %v; want no run", *got)
+		}
+	})
 }
 
 // TestNewHydrateCmd_RawFlag_Hidden asserts the --raw flag is registered
@@ -577,7 +654,7 @@ func TestRunHydrate_EngineDispatch(t *testing.T) {
 
 	// --output overrides cwd → autodetect against the seeded root.
 	_, _, code, err := executeHydrateEngine(t,
-		"demo", "--no-warnings", "--output", root)
+		"demo", "--no-warnings", "--dir", root)
 	if err != nil {
 		t.Fatalf("hydrate engine: %v", err)
 	}
@@ -656,15 +733,15 @@ func TestRunHydrate_ScopeTip(t *testing.T) {
 		}
 	})
 
-	t.Run("--output drops scope tip", func(t *testing.T) {
+	t.Run("--dir drops scope tip", func(t *testing.T) {
 		setup(t)
 		out := t.TempDir()
-		stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--output", out)
+		stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code", "--dir", out)
 		if err != nil {
 			t.Fatalf("hydrate engine: %v", err)
 		}
 		if strings.Contains(stdout, scopeTip) {
-			t.Errorf("stdout leaked scope tip under --output: %q", stdout)
+			t.Errorf("stdout leaked scope tip under --dir: %q", stdout)
 		}
 	})
 
@@ -682,34 +759,6 @@ func TestRunHydrate_ScopeTip(t *testing.T) {
 			t.Errorf("stdout dropped scope facts under --no-warnings: %q", stdout)
 		}
 	})
-}
-
-// TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive asserts the
-// scope-flag conflict surfaces as exit 1 BEFORE any HTTP call.
-func TestRunHydrate_IncludeAndOnlyRuntime_MutuallyExclusive(t *testing.T) {
-	dir := whoamiTestEnv(t)
-	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
-	seedConfig(t, dir, "prod", &config.Profile{
-		URL:   mock.server.URL,
-		OAuth: testOAuth(),
-	})
-	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
-
-	_, _, code, err := executeHydrateEngine(t,
-		"--include-runtime", "--only-runtime",
-		"demo", "--no-warnings")
-	if err == nil {
-		t.Fatal("expected scope-flag conflict error")
-	}
-	if code != exit.General {
-		t.Errorf("code = %d; want 1", code)
-	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("err missing 'mutually exclusive': %q", err.Error())
-	}
-	if got := atomic.LoadInt32(mock.calls); got != 0 {
-		t.Errorf("HTTP calls = %d; want 0 (client-side gate)", got)
-	}
 }
 
 // TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive asserts the

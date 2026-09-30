@@ -111,6 +111,36 @@ func TestEnv_List_SinglePage(t *testing.T) {
 	}
 }
 
+// TestEnv_List_JSON asserts -o json prints the item array as JSON.
+func TestEnv_List_JSON(t *testing.T) {
+	dir := envTestEnv(t)
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"name": "a"}, {"name": "b"}}, "next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+	seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "list", "-o", "json")
+	if err != nil || code != exit.OK {
+		t.Fatalf("env list -o json: code=%d err=%v", code, err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0]["name"] != "a" || got[1]["name"] != "b" {
+		t.Errorf("got %v; want items a, b", got)
+	}
+
+	if _, _, code, err := executeEnv(t, "list", "-o", "yaml"); err == nil || code != exit.General {
+		t.Errorf("-o yaml: code=%d err=%v; want exit 1", code, err)
+	}
+}
+
 // TestEnv_List_Pagination asserts the client follows next_cursor
 // across multiple HTTP requests until exhausted.
 func TestEnv_List_Pagination(t *testing.T) {
@@ -516,7 +546,7 @@ func TestEnvDescribe_NoArg_Friendly(t *testing.T) {
 	if err == nil || code != exit.General {
 		t.Fatalf("want exit 1 for missing env name; got code=%d err=%v", code, err)
 	}
-	if !strings.Contains(err.Error(), "ach env describe <name>") {
+	if !strings.Contains(err.Error(), "ach-cli env describe <name>") {
 		t.Errorf("want usage hint; got %q", err.Error())
 	}
 }
