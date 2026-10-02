@@ -208,13 +208,13 @@ func authorizeURL(clientID string, over map[string]string) string {
 
 func withFakeDex(f *asFixture, email string) *asFixture {
 	f.deps.DexLogin = func(state, _ string) string { return "http://dex.test/auth?state=" + state }
-	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, string, error) {
+	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, []string, string, error) {
 		if code != "dexcode" {
-			return "", "", "", errors.New("bad code")
+			return "", "", nil, "", errors.New("bad code")
 		}
-		return email, "Test User", "dex-rt-0", nil
+		return email, "Test User", nil, "dex-rt-0", nil
 	}
-	f.deps.Provision = func(_ context.Context, _ string) (string, error) { return "litellm-user-1", nil }
+	f.deps.Provision = func(_ context.Context, _ string, _ []string) (string, error) { return "litellm-user-1", nil }
 	f.mount()
 	return f
 }
@@ -677,7 +677,7 @@ func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
 // one at its next refresh and gets logged out.
 func TestASCallback_KeepsTheDexTokenWhenProvisioningFails(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
-	f.deps.Provision = func(context.Context, string) (string, error) { return "", errors.New("litellm down") }
+	f.deps.Provision = func(context.Context, string, []string) (string, error) { return "", errors.New("litellm down") }
 	f.mount()
 	_ = f.store.Put(context.Background(), dexRefreshKind, "u@x.com", "dex-rt-dead", time.Minute)
 	cid := registerClient(t, f)

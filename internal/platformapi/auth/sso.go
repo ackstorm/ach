@@ -47,6 +47,9 @@ type Deps struct {
 	// object (a user-object budget is not enforced; measured 2026-09-22).
 	UserBudget *litellm.TagBudget
 
+	// Teams is the login team enrolment (chart: platformApi.teams).
+	Teams TeamPolicy
+
 	// Pool is the Postgres connection pool (pk_ rows, consent BIP lookup).
 	Pool *pgxpool.Pool
 
@@ -123,8 +126,9 @@ func (deps Deps) callbackNow() time.Time {
 // DB-05 (verbatim, never normalized); name (the `profile` scope) is display
 // only — the console header — and may be empty.
 type idTokenClaims struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
+	Email  string   `json:"email"`
+	Name   string   `json:"name"`
+	Groups []string `json:"groups"` // Dex `groups` scope; feeds platformApi.teams.sso
 }
 
 // pkExpiryWindow is the sliding-window TTL for newly minted pk_ rows.
@@ -142,38 +146,70 @@ func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Ho
 // idempotent LiteLLM user provisioning:
 //
 //   - UserInfoByEmail(email) → if "not found" (litellm.ErrNotFound OR
-//     error string carries "404"), call UserNew(email, teams=["default"])
-//     followed by TeamMemberAdd("default", user_id, "user").
+//     error string carries "404"), call UserNew(email, teams=<default aliases>)
+//     followed by TeamMemberAdd(<default team>, user_id, "user") for each.
 //   - Otherwise, the user exists — but per BLK-05 sub-point 3 + D-25 we
-//     STILL call TeamMemberAdd("default", user_id, "user") to maintain
+//     STILL call TeamMemberAdd on every default team to maintain
 //     idempotency against out-of-band Team-membership revocation.
 //     Duplicate-add 4xx from LiteLLM is swallowed (interpreted as
 //     "membership already present" — desired state).
 //
+// Both branches then enrol the user in the extra teams the chart maps to
+// their email and to the Dex `groups` claim (enrollExtraTeams — best-effort,
+// additive).
+//
 // Returns the resolved LiteLLM user_id on success. Failure cases are
 // classified by classifyProvisionError into one of:
-//   - audit.OutcomeDefaultTeamMissing (TeamMemberAdd error after
-//     successful or skipped UserNew — Hub §17 / API-02 fail-loud)
+//   - audit.OutcomeDefaultTeamMissing (a default team is absent, or
+//     TeamMemberAdd errored after successful or skipped UserNew — Hub §17 /
+//     API-02 fail-loud)
 //   - audit.OutcomeLitellmUnreachable (UserNew or UserInfoByEmail error
 //     other than "not found")
 //   - audit.OutcomeInternalError (genuinely unexpected)
-func provisionUser(ctx context.Context, deps Deps, email string) (string, error) {
-	// Resolve the LiteLLM-side team_id for the "default" alias up front.
+func provisionUser(ctx context.Context, deps Deps, email string, groups []string) (string, error) {
+	// Resolve each default team's LiteLLM team_id by alias up front.
 	// LiteLLM team_id is a UUID auto-assigned at team creation; ACH must
 	// look it up by alias rather than hard-coding the literal string
-	// "default" (which only happens to work when the deployer pre-seeds
-	// LiteLLM with team_id="default", a brittle setup quirk).
-	defaultTeams, ltErr := deps.LiteLLM.ListTeamsByAlias(ctx, "default")
-	if ltErr != nil {
-		return "", &provisionErr{kind: provisionKindLitellm, err: ltErr}
-	}
-	if len(defaultTeams) == 0 {
-		return "", &provisionErr{
-			kind: provisionKindDefaultTeamMissing,
-			err:  errors.New("LiteLLM has no team with alias 'default'"),
+	// (which only happens to work when the deployer pre-seeds LiteLLM with
+	// team_id=<alias>, a brittle setup quirk).
+	defaultTeamIDs := make([]string, 0, len(deps.Teams.Default))
+	for _, alias := range deps.Teams.Default {
+		teams, ltErr := deps.LiteLLM.ListTeamsByAlias(ctx, alias)
+		if ltErr != nil {
+			return "", &provisionErr{kind: provisionKindLitellm, err: ltErr}
 		}
+		if len(teams) == 0 {
+			return "", &provisionErr{
+				kind: provisionKindDefaultTeamMissing,
+				err:  fmt.Errorf("LiteLLM has no team with alias %q", alias),
+			}
+		}
+		defaultTeamIDs = append(defaultTeamIDs, teams[0].TeamID)
 	}
-	defaultTeamID := defaultTeams[0].TeamID
+
+	// enrolDefaults adds the user to every default team. Any 400 is the
+	// duplicate-add outcome (desired state): on the existing-user branch it
+	// is the steady state of every login after the first, so getting its
+	// classification wrong breaks login for everyone EXCEPT new users, and
+	// the retry loop is unwinnable. We never parse LiteLLM's prose for it:
+	// the 4xx wrapper drops the body anyway (§9.1), and the wording has
+	// moved across versions. The other conceivable 400 — an unknown team_id —
+	// cannot reach here, because every alias resolved above. A 404 or a
+	// transport error surfaces as default_team_missing.
+	enrolDefaults := func(userID, branch string) error {
+		for _, teamID := range defaultTeamIDs {
+			if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, teamID, userID, "user"); tmaErr != nil {
+				if !litellm.IsHTTPBadRequest(tmaErr) {
+					deps.Logger.Warn("sso.callback: TeamMemberAdd failed",
+						"err", tmaErr, "user_id", userID, "branch", branch)
+					return &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
+				}
+				deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
+					"user_id", userID, "branch", branch)
+			}
+		}
+		return nil
+	}
 
 	user, err := deps.LiteLLM.UserInfoByEmail(ctx, email)
 	if err != nil {
@@ -182,7 +218,7 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 			created, createErr := deps.LiteLLM.UserNew(ctx, &litellm.UserNewRequest{
 				UserEmail:     email,
 				UserID:        email, // deterministic LiteLLM user_id = email (not a random UUID)
-				Teams:         []string{"default"},
+				Teams:         deps.Teams.Default,
 				AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; pk_ is minted via /key/generate
 			})
 			if createErr != nil {
@@ -198,17 +234,12 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 			}
 			// TeamMemberAdd: D-04 step 5 mandates this. LiteLLM v1.83
 			// already enrolls the user in `teams:[…]` during UserNew, so
-			// this call typically hits a 400 "already added" — swallow
-			// that case (desired state). Other errors (genuine
-			// team-missing, transport) still surface as
-			// default_team_missing per Hub §17 / API-02.
-			if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, created.UserID, "user"); tmaErr != nil {
-				if !litellm.IsHTTPBadRequest(tmaErr) {
-					return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
-				}
-				deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
-					"user_id", created.UserID, "branch", "first-time")
+			// this call typically hits a 400 "already added" — swallowed
+			// (desired state).
+			if err := enrolDefaults(created.UserID, "first-time"); err != nil {
+				return "", err
 			}
+			enrollExtraTeams(ctx, deps, created.UserID, email, groups)
 			if budgetErr := upsertUserBudgetTag(ctx, deps, email); budgetErr != nil {
 				return "", budgetErr
 			}
@@ -218,28 +249,13 @@ func provisionUser(ctx context.Context, deps Deps, email string) (string, error)
 		return "", &provisionErr{kind: provisionKindLitellm, err: err}
 	}
 
-	// Existing-user branch. Per BLK-05 sub-point 3 + D-25, ALWAYS call
-	// TeamMemberAdd to be idempotent against out-of-band team-membership
-	// revocation. Duplicate-add is the steady-state outcome here — every
-	// login after the first — so getting its classification wrong breaks
-	// login for everyone EXCEPT new users, and the retry loop is
-	// unwinnable (the member is still a member next time).
-	//
-	// Any 400 is that outcome. We never parse LiteLLM's prose for it: the
-	// 4xx wrapper drops the body anyway (§9.1), and the wording has moved
-	// across versions. The other conceivable 400 here — an unknown team_id
-	// — cannot reach this branch, because ListTeamsByAlias resolved the
-	// team above and already returned default_team_missing if it was gone.
-	// A 404 or a transport error still surfaces as default_team_missing.
-	if tmaErr := deps.LiteLLM.TeamMemberAdd(ctx, defaultTeamID, user.UserID, "user"); tmaErr != nil {
-		if !litellm.IsHTTPBadRequest(tmaErr) {
-			deps.Logger.Warn("sso.callback: TeamMemberAdd on existing-user path failed",
-				"err", tmaErr, "user_id", user.UserID)
-			return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: tmaErr}
-		}
-		deps.Logger.Info("sso.callback: TeamMemberAdd duplicate-add swallowed",
-			"user_id", user.UserID, "branch", "existing-user")
+	// Existing-user branch. Per BLK-05 sub-point 3 + D-25, ALWAYS enrol in the
+	// default teams to be idempotent against out-of-band team-membership
+	// revocation.
+	if err := enrolDefaults(user.UserID, "existing-user"); err != nil {
+		return "", err
 	}
+	enrollExtraTeams(ctx, deps, user.UserID, email, groups)
 	if budgetErr := upsertUserBudgetTag(ctx, deps, email); budgetErr != nil {
 		return "", budgetErr
 	}
