@@ -49,6 +49,9 @@ type Deps struct {
 	// onto the "user:<email>" tag at provision time. nil = no default.
 	UserBudget *litellm.TagBudget
 
+	// Teams is the login team enrolment (chart: platformApi.teams).
+	Teams auth.TeamPolicy
+
 	// DefaultMaxKeys is the chart-wide ek_ ceiling for users without an
 	// explicit user_limits row. Zero is deny-by-default.
 	DefaultMaxKeys int
@@ -161,6 +164,7 @@ func New(deps Deps) http.Handler {
 		OAuth2Cfg:        deps.OAuth2Cfg,
 		LiteLLM:          deps.LiteLLM,
 		UserBudget:       deps.UserBudget,
+		Teams:            deps.Teams,
 		Pool:             deps.Pool,
 		Pepper:           deps.Pepper,
 		KeyEncryptionKey: deps.KeyEncryptionKey,

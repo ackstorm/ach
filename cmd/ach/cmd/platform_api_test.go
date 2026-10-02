@@ -3,8 +3,11 @@
 package cmd
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/platformapi/auth"
 )
 
 // setRequiredPlatformAPIEnv seeds all env vars required by
@@ -25,6 +28,7 @@ func setRequiredPlatformAPIEnv(t *testing.T) {
 	t.Setenv("ACH_REDIS_ADDR", "localhost:6379")
 	t.Setenv("POD_NAMESPACE", "ach")
 	t.Setenv("ACH_JWT_SECRET_DIR", "/etc/ach/jwt")
+	t.Setenv("ACH_TEAMS_DEFAULT", `["default"]`)
 }
 
 // TestValidatePlatformAPIConfig_RedisDB exercises the cmd-layer fix:
@@ -106,5 +110,46 @@ func TestValidatePlatformAPIConfig_ConsoleChatURL(t *testing.T) {
 		if _, err := validatePlatformAPIConfig(); err == nil {
 			t.Errorf("ACH_CONSOLE_CHAT_URL=%q: want error", bad)
 		}
+	}
+}
+
+// TestValidatePlatformAPIConfig_Teams — platformApi.teams reaches the AS as
+// three JSON env vars; keys are lower-cased (matching is case-insensitive) and
+// at least one default team is mandatory.
+func TestValidatePlatformAPIConfig_Teams(t *testing.T) {
+	t.Run("all three, keys lower-cased", func(t *testing.T) {
+		setRequiredPlatformAPIEnv(t)
+		t.Setenv("ACH_TEAMS_DEFAULT", `["default","base"]`)
+		t.Setenv("ACH_TEAMS_USER", `{"Pepe@X.com":["run"]}`)
+		t.Setenv("ACH_TEAMS_SSO", `{"Ops@X.com":["run","ops"]}`)
+		cfg, err := validatePlatformAPIConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := auth.TeamPolicy{
+			Default:    []string{"default", "base"},
+			ByUser:     map[string][]string{"pepe@x.com": {"run"}},
+			BySSOGroup: map[string][]string{"ops@x.com": {"run", "ops"}},
+		}
+		if !reflect.DeepEqual(cfg.Teams, want) {
+			t.Fatalf("Teams = %+v, want %+v", cfg.Teams, want)
+		}
+	})
+	for name, env := range map[string]map[string]string{
+		"empty default":    {"ACH_TEAMS_DEFAULT": `[]`},
+		"unset default":    {"ACH_TEAMS_DEFAULT": ``},
+		"malformed user":   {"ACH_TEAMS_USER": `{"a":`},
+		"malformed sso":    {"ACH_TEAMS_SSO": `["x"]`},
+		"malformed default": {"ACH_TEAMS_DEFAULT": `default`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setRequiredPlatformAPIEnv(t)
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+			if _, err := validatePlatformAPIConfig(); err == nil || !strings.Contains(err.Error(), "ACH_TEAMS_") {
+				t.Fatalf("err = %v, want an ACH_TEAMS_* error", err)
+			}
+		})
 	}
 }

@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -98,6 +99,9 @@ type platformAPIConfig struct {
 	// + ACH_USER_BUDGET_DURATION, chart platformApi.userDefaults). nil =
 	// unset = users are uncapped.
 	UserBudget *litellm.TagBudget
+	// Teams is the login team enrolment (ACH_TEAMS_DEFAULT / ACH_TEAMS_USER /
+	// ACH_TEAMS_SSO, chart platformApi.teams).
+	Teams auth.TeamPolicy
 	// DefaultMaxKeys is the chart-wide fallback ek_ ceiling. Zero is
 	// deny-by-default; explicit per-user allowances live in Postgres.
 	DefaultMaxKeys int
@@ -193,6 +197,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
 		return nil, err
 	}
+	if cfg.Teams, err = teamPolicyFromEnv(); err != nil {
+		return nil, err
+	}
 	if raw := os.Getenv("ACH_USER_MAX_BUDGET"); raw != "" {
 		maxBudget, perr := strconv.ParseFloat(raw, 64)
 		if perr != nil {
@@ -268,6 +275,39 @@ func (p *platformAPIProcessDeps) close() {
 }
 
 //nolint:gocyclo // single bootstrap function intentionally linear
+// teamPolicyFromEnv reads the login team enrolment. ACH_TEAMS_DEFAULT is a
+// JSON list and must name at least one team: every user belongs to a default
+// team, so an install without one is misconfigured. ACH_TEAMS_USER and
+// ACH_TEAMS_SSO are JSON maps (email / Dex group -> team aliases), optional;
+// keys are lower-cased because matching is case-insensitive.
+func teamPolicyFromEnv() (auth.TeamPolicy, error) {
+	var p auth.TeamPolicy
+	if err := json.Unmarshal([]byte(os.Getenv("ACH_TEAMS_DEFAULT")), &p.Default); err != nil {
+		return p, fmt.Errorf("ACH_TEAMS_DEFAULT: want a JSON list of team aliases: %w", err)
+	}
+	if len(p.Default) == 0 {
+		return p, errors.New("ACH_TEAMS_DEFAULT: at least one default team required")
+	}
+	for _, v := range []struct {
+		env string
+		dst *map[string][]string
+	}{{"ACH_TEAMS_USER", &p.ByUser}, {"ACH_TEAMS_SSO", &p.BySSOGroup}} {
+		raw := os.Getenv(v.env)
+		if raw == "" {
+			continue
+		}
+		var m map[string][]string
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			return p, fmt.Errorf("%s: want a JSON map of key to team aliases: %w", v.env, err)
+		}
+		*v.dst = make(map[string][]string, len(m))
+		for k, teams := range m {
+			(*v.dst)[strings.ToLower(k)] = teams
+		}
+	}
+	return p, nil
+}
+
 func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *slog.Logger) (*platformAPIProcessDeps, error) {
 	out := &platformAPIProcessDeps{}
 
@@ -325,7 +365,9 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		// offline_access: Dex hands ACH a refresh token, and every ACH
 		// refresh asks Dex (and through it the IdP) again — a user disabled
 		// at the IdP is out at the next refresh, not 30 days later.
-		Scopes: []string{oidc.ScopeOpenID, "email", "profile", oidc.ScopeOfflineAccess},
+		// groups: the Dex `groups` claim feeds platformApi.teams.sso. Dex only
+		// emits it when the upstream connector supplies groups.
+		Scopes: []string{oidc.ScopeOpenID, "email", "profile", oidc.ScopeOfflineAccess, "groups"},
 	}
 	idTokenVerifier := oidcProvider.Verifier(&oidc.Config{ClientID: cfg.DexClientID})
 
@@ -397,6 +439,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Namespace:         cfg.Namespace,
 		InsecureCookie:    cfg.InsecureCookie,
 		UserBudget:        cfg.UserBudget,
+		Teams:             cfg.Teams,
 		DefaultMaxKeys:    cfg.DefaultMaxKeys,
 		ConsoleChatURL:    cfg.ConsoleChatURL,
 		Metrics:           platformAPICollectors,

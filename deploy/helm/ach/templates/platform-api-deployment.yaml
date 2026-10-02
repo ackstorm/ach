@@ -104,6 +104,12 @@ spec:
               value: {{ .Values.platformApi.headers | toJson | quote }}
             - name: ACH_JWT_SECRET_DIR
               value: /etc/ach/jwt
+            - name: ACH_TEAMS_DEFAULT
+              value: {{ .Values.platformApi.teams.default | toJson | quote }}
+            - name: ACH_TEAMS_USER
+              value: {{ .Values.platformApi.teams.users | default dict | toJson | quote }}
+            - name: ACH_TEAMS_SSO
+              value: {{ .Values.platformApi.teams.sso | default dict | toJson | quote }}
             - name: ACH_USER_MAX_KEYS
               value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
             {{- with (.Values.platformApi.console).chatUrl }}

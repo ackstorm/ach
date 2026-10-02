@@ -144,6 +144,20 @@ platformApi:
     # maxKeys is the number of non-revoked ek_ keys one person may hold.
     # 0 means deny-by-default; an admin grants an explicit allowance.
     maxKeys: 0
+  # teams: LiteLLM teams (by alias) the USER — never a key — joins at every
+  # interactive login (browser or console). LiteLLM is the source of truth;
+  # ACH never creates these teams.
+  #   default: mandatory for everyone; a missing one fails the login.
+  #   users / sso: best-effort and additive — a team that does not exist yet is
+  #     skipped and retried at the next login; removing a mapping never
+  #     detaches anyone.
+  #   sso keys are Dex `groups` claim values (the upstream connector must emit
+  #     them). Matching is case-insensitive.
+  # Access to an Environment follows at that Environment's next reconcile.
+  teams:
+    default: [default]
+    users: {}   # { alice@example.com: [dream, run] }
+    sso: {}     # { projects@example.com: [run] }
   # console: settings for the web console served at /.
   console:
     # chatUrl is the hosted chat UI the console's Chat button (and the How-to
