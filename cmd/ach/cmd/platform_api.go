@@ -274,7 +274,6 @@ func (p *platformAPIProcessDeps) close() {
 	}
 }
 
-//nolint:gocyclo // single bootstrap function intentionally linear
 // teamPolicyFromEnv reads the login team enrolment. ACH_TEAMS_DEFAULT is a
 // JSON list and must name at least one team: every user belongs to a default
 // team, so an install without one is misconfigured. ACH_TEAMS_USER and
@@ -308,6 +307,7 @@ func teamPolicyFromEnv() (auth.TeamPolicy, error) {
 	return p, nil
 }
 
+//nolint:gocyclo // single bootstrap function intentionally linear
 func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *slog.Logger) (*platformAPIProcessDeps, error) {
 	out := &platformAPIProcessDeps{}
 

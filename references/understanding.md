@@ -348,7 +348,7 @@ AccessLog (never logs x-ach-key) → ContentTypeJSON → Authn.
   clients, RFC 8628 device grant for headless hosts; one Dex leg,
   `as-callback`, per-pending `__Host-ach_oauth_*` binding cookie hardened
   iff `ACH_BASE_URL` is https; Valkey holds the transient state).
-  Every login: `provisionUser` → LiteLLM UserNew + `default` Team add, NO
+  Every login: `provisionUser` → LiteLLM UserNew + default-team add(s) + the best-effort `platformApi.teams` user/SSO-group teams (absent team skipped, retried next login), NO
   max_budget; the token endpoint keeps one `purpose='oauth'` pk_ row per user. Missing default team → `500 default_team_missing`, fail-loud,
   self-heals via operator team bootstrap.
 - Keys: `POST /platform/keys` (ek create, §8.2 8-step: env exists + not

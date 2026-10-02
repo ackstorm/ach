@@ -136,10 +136,10 @@ func TestValidatePlatformAPIConfig_Teams(t *testing.T) {
 		}
 	})
 	for name, env := range map[string]map[string]string{
-		"empty default":    {"ACH_TEAMS_DEFAULT": `[]`},
-		"unset default":    {"ACH_TEAMS_DEFAULT": ``},
-		"malformed user":   {"ACH_TEAMS_USER": `{"a":`},
-		"malformed sso":    {"ACH_TEAMS_SSO": `["x"]`},
+		"empty default":     {"ACH_TEAMS_DEFAULT": `[]`},
+		"unset default":     {"ACH_TEAMS_DEFAULT": ``},
+		"malformed user":    {"ACH_TEAMS_USER": `{"a":`},
+		"malformed sso":     {"ACH_TEAMS_SSO": `["x"]`},
 		"malformed default": {"ACH_TEAMS_DEFAULT": `default`},
 	} {
 		t.Run(name, func(t *testing.T) {

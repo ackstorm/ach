@@ -1033,6 +1033,20 @@ login. WHY: ACH does NOT lazily create the default team in the SSO path — that
 a fail-loud signal (`auth/doc.go`) — but the operator's proactive bootstrap closes
 the gap once the control plane converges. The 500 is transient, not a dead-end.
 
+### ❌ A user in an SSO group / `platformApi.teams.users` does not get the team's Environment
+Check in order. (1) `login: team does not exist; skipped team=<alias>` in the
+platform-api log → LiteLLM has no team with that alias (LiteLLM is the source of
+truth; ACH never creates `users`/`sso` teams) — create it, the NEXT login joins
+the user. (2) No mapping fires for an SSO group → the ID token has no `groups`
+claim: the Dex upstream connector must emit it (Google needs the groups config,
+Azure the groups claim); ACH already requests the `groups` scope. Keys match
+case-insensitively, but the value must otherwise equal the claim. (3) Joined but
+no access yet → the operator attaches the user's shell team at the Environment's
+next reconcile (same fail-closed delay as a brand-new shell). Removing a mapping
+never detaches the user; remove them from the LiteLLM team by hand.
+`ACH_TEAMS_DEFAULT: at least one default team required` at start → set
+`platformApi.teams.default`.
+
 ### ❌ OAuth consent does not complete for an MCP backend
 The authorization flow returns `502` after the broker callback, or the broker
 is never reached. Check the winning MCP `BackendIdentityPolicy`: both

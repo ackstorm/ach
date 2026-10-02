@@ -160,6 +160,19 @@ convenience**, not a co-equal mode.
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA, D-26); no LiteLLM path outside the ACH families is reachable through ACH (D-18) — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. Also reads the `achagents` projection (**`ACH_DB_URL` required — refuses to start without it**) and serves `/agents/{ns}/{service}/…` to per-agent Services (`{service}` = the Service name, e.g. `achagent-gh`; the tail after it is forwarded verbatim — webhook, a2a, whatever the harness serves) — **only agents that opt in via `spec.expose.gateway=true` are in the route set** (`exposed` projection column); still no auth/no header rewrite; the `ach-agent` harness verifies HMAC on its webhook route |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 
+Login team enrolment (`platformApi.teams` → `ACH_TEAMS_DEFAULT`/`_USER`/`_SSO`, JSON):
+at every interactive login (`as-callback` — CLI loopback, device grant, console;
+never token refresh) `provisionUser` adds the USER (never a key) to LiteLLM teams
+by alias. `default` teams (chart default `[default]`, ≥1 required at start) are
+mandatory — a missing one fails the login (`default_team_missing`; the operator self-bootstraps only the alias `default`, any other default team must already exist). `users`
+(email → teams) and `sso` (Dex `groups` claim value → teams; the Dex scope
+`groups` is requested, the upstream connector must emit it) are best-effort and
+additive: a team absent from LiteLLM is skipped (log `login: team does not
+exist`) and retried at the next login, a LiteLLM error never blocks the login, a
+removed mapping never detaches. LiteLLM is the source of truth — ACH never
+creates these teams. Keys match case-insensitively. Access to an Environment
+follows at its next reconcile (the operator attaches the user's shell team).
+
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
 `logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local` (workspace verbs
 `hydrate`/`status`/`save`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
@@ -188,7 +201,7 @@ object; `repo`/`plugin`/`skill` are the local-first quick path.
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
-- `ach-cli login` → platform-api OAuth AS (loopback code+PKCE, or RFC 8628 device grant from any browser) → Dex → `provisionUser` (LiteLLM) → `/token`: 1h JWT + refresh, one `purpose='oauth'` `pk_` row per user
+- `ach-cli login` → platform-api OAuth AS (loopback code+PKCE, or RFC 8628 device grant from any browser) → Dex → `provisionUser` (LiteLLM; default/user/SSO-group teams) → `/token`: 1h JWT + refresh, one `purpose='oauth'` `pk_` row per user
 - `ach-cli env hydrate` → platform-api `/platform/hydrate` → content-service sidecar → workspace
 - Environment reconcile → resolve refs against LiteLLM → `POST /v1/access_group`; `Available=True` = `ExecutionResourcesResolved` + `AccessGroupSynced`
 - Environment reconcile → deny-all shell team `ach-env-<name>` (sentinels: `models=["no-default-models"]` — LiteLLM's own value, which it filters out of `/v1/models`; an invented sentinel leaked into every member's catalog as a phantom model (§5), `agents=["00000000-0000-0000-0000-000000000000"]`) → joined into the access group's `assigned_team_ids` alongside `spec.authorizedTeams`; `ach-cli keys create` mints the `ek_` into that team, which is the only reliable ceiling on a key. A `pk_` is capped symmetrically by a per-user deny-all shell `ach-user-<email>`: platform-api provisions the shell + sets it as the key's `team_id` (+ matching key `duration`) at the first OAuth token issue; the **operator is the sole writer of `assigned_team_ids`** and, on every Environment reconcile, attaches the shell of each entitled member (live `GET /team/info` membership, `user_id == email`) — so one `pk_` reaches the union of the user's entitlements, fail-closed until the next reconcile for a brand-new shell
