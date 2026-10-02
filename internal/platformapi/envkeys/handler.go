@@ -89,10 +89,13 @@ type redisOps interface {
 //     "<namespace>/<email>" via middleware.ActorFromCtx.
 type Deps struct {
 	LiteLLM litellm.Client
-	DB      dbOps
-	Store   envStore
-	Redis   redisOps
-	Pepper  []byte
+	// DefaultTeams are the team aliases a LiteLLM user absent from LiteLLM is
+	// created into (chart: platformApi.teams.default).
+	DefaultTeams []string
+	DB           dbOps
+	Store        envStore
+	Redis        redisOps
+	Pepper       []byte
 	// KeyEncryptionKey is the 32-byte AES-256 DEK sourced from
 	// ACH_KEY_ENCRYPTION_KEY (G3) — used to keycrypt.Seal the LiteLLM
 	// virtual-key material before INSERT so it is never persisted in
@@ -158,12 +161,6 @@ const (
 	statusExpired   = "expired"
 	statusInvalid   = "invalid"
 )
-
-// defaultTeam is the LiteLLM Team alias every first-SSO user gets
-// enrolled into per Hub §17 (deployer concern). When LiteLLM rejects
-// the TeamMemberAdd because the default Team does not exist, the
-// handler emits OutcomeDefaultTeamMissing.
-const defaultTeam = "default"
 
 // CreateHandler returns the §8.2 8-step ek_ create handler.
 //
@@ -429,11 +426,17 @@ func (cr *createReq) provisionUser() (userID string, handled bool) {
 		return "", true
 	}
 	if userInfo == nil {
-		// First-time user — create + enroll in default team.
+		// First-time user — create + enroll in the default teams
+		// (platformApi.teams.default, resolved by alias).
+		teamIDs, err := litellm.ResolveTeamIDs(cr.ctx, cr.deps.LiteLLM, cr.deps.DefaultTeams)
+		if err != nil {
+			cr.emitLitellmError(err, "envkeys.create: default team lookup failed")
+			return "", true
+		}
 		newInfo, err := cr.deps.LiteLLM.UserNew(cr.ctx, &litellm.UserNewRequest{
 			UserEmail:     cr.keyCtx.OwnerEmail,
 			UserID:        cr.keyCtx.OwnerEmail, // deterministic user_id = email (not a random UUID)
-			Teams:         []string{defaultTeam},
+			Teams:         teamIDs,
 			AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; ek_ is minted via /key/generate
 		})
 		if err != nil {
@@ -449,12 +452,14 @@ func (cr *createReq) provisionUser() (userID string, handled bool) {
 			newInfo = &litellm.UserInfo{UserID: cr.keyCtx.OwnerEmail, UserEmail: cr.keyCtx.OwnerEmail}
 		}
 		userInfo = newInfo
-		if err := cr.deps.LiteLLM.TeamMemberAdd(cr.ctx, defaultTeam, userInfo.UserID, "user"); err != nil {
-			// LiteLLM returns 4xx on duplicate add — caller swallows.
-			// Other errors are transient (logged but not fatal: the
-			// next call will retry the enrollment).
-			cr.deps.Logger.Warn("envkeys.create: TeamMemberAdd error (likely duplicate or transient)",
-				"team", defaultTeam, "user", userInfo.UserID, "err", err)
+		for _, teamID := range teamIDs {
+			if err := cr.deps.LiteLLM.TeamMemberAdd(cr.ctx, teamID, userInfo.UserID, "user"); err != nil {
+				// LiteLLM returns 4xx on duplicate add — caller swallows.
+				// Other errors are transient (logged but not fatal: the
+				// next call will retry the enrollment).
+				cr.deps.Logger.Warn("envkeys.create: TeamMemberAdd error (likely duplicate or transient)",
+					"team_id", teamID, "user", userInfo.UserID, "err", err)
+			}
 		}
 	}
 	return userInfo.UserID, false

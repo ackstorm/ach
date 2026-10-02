@@ -172,19 +172,12 @@ func provisionUser(ctx context.Context, deps Deps, email string, groups []string
 	// look it up by alias rather than hard-coding the literal string
 	// (which only happens to work when the deployer pre-seeds LiteLLM with
 	// team_id=<alias>, a brittle setup quirk).
-	defaultTeamIDs := make([]string, 0, len(deps.Teams.Default))
-	for _, alias := range deps.Teams.Default {
-		teams, ltErr := deps.LiteLLM.ListTeamsByAlias(ctx, alias)
-		if ltErr != nil {
-			return "", &provisionErr{kind: provisionKindLitellm, err: ltErr}
+	defaultTeamIDs, ltErr := litellm.ResolveTeamIDs(ctx, deps.LiteLLM, deps.Teams.Default)
+	if ltErr != nil {
+		if errors.Is(ltErr, litellm.ErrNotFound) {
+			return "", &provisionErr{kind: provisionKindDefaultTeamMissing, err: ltErr}
 		}
-		if len(teams) == 0 {
-			return "", &provisionErr{
-				kind: provisionKindDefaultTeamMissing,
-				err:  fmt.Errorf("LiteLLM has no team with alias %q", alias),
-			}
-		}
-		defaultTeamIDs = append(defaultTeamIDs, teams[0].TeamID)
+		return "", &provisionErr{kind: provisionKindLitellm, err: ltErr}
 	}
 
 	// enrolDefaults adds the user to every default team. Any 400 is the

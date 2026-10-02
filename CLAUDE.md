@@ -201,7 +201,7 @@ mandatory — a missing one fails the login (`default_team_missing`; the operato
 additive: a team absent from LiteLLM is skipped (log `login: team does not
 exist`) and retried at the next login, a LiteLLM error never blocks the login, a
 removed mapping never detaches. LiteLLM is the source of truth — ACH never
-creates these teams. Keys match case-insensitively. Access to an Environment
+creates these teams. The `ek_`-create fallback that provisions a user LiteLLM does not know uses the same default list. Keys match case-insensitively. Access to an Environment
 follows at its next reconcile (the operator attaches the user's shell team).
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/

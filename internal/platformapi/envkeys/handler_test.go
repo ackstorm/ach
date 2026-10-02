@@ -497,6 +497,10 @@ func (c *firstTimeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEn
 	}, nil
 }
 
+func (c *firstTimeLiteLLM) ListTeamsByAlias(_ context.Context, alias string) ([]litellm.TeamListEntry, error) {
+	return []litellm.TeamListEntry{{TeamID: "team-uuid-" + alias, TeamAlias: alias}}, nil
+}
+
 func (c *firstTimeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
 	c.lastUserNewReq = req
 	if c.userNewErr != nil {
@@ -531,6 +535,7 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
 		DefaultMaxKeys:   10,
+		DefaultTeams:     []string{"default"},
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)
@@ -555,6 +560,9 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 	}
 	if r.UserID != "user@example.com" {
 		t.Errorf("UserNew user_id: got %q, want %q (deterministic email id)", r.UserID, "user@example.com")
+	}
+	if len(r.Teams) != 1 || r.Teams[0] != "team-uuid-default" {
+		t.Errorf("UserNew teams: got %v, want the resolved team id [team-uuid-default]", r.Teams)
 	}
 	if r.AutoCreateKey == nil || *r.AutoCreateKey != false {
 		t.Errorf("UserNew auto_create_key: got %v, want explicit false", r.AutoCreateKey)
@@ -592,6 +600,7 @@ func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace:        "ach",
 		DefaultMaxKeys:   10,
+		DefaultTeams:     []string{"default"},
 	}
 
 	body := strings.NewReader(`{"environment":"prod","name":"my-key"}`)

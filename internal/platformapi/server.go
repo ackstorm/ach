@@ -252,6 +252,7 @@ func New(deps Deps) http.Handler {
 			Namespace:        deps.Namespace,
 			Issuer:           deps.BaseURL,
 			DefaultMaxKeys:   deps.DefaultMaxKeys,
+			DefaultTeams:     deps.Teams.Default,
 		}
 		envkeys.MountKeys(r, envkeysDeps)
 
