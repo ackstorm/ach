@@ -52,6 +52,15 @@ func TestProvisionUser_ExtraTeams(t *testing.T) {
 			t.Fatalf("adds = %v", flm.rec.teamMemberAdds)
 		}
 	})
+	t.Run("first login creates the user with the resolved team IDs, not aliases", func(t *testing.T) {
+		flm := teamsFake("default")
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := flm.rec.lastUserNewReq.Teams; !reflect.DeepEqual(got, []string{"id-default"}) {
+			t.Fatalf("UserNew teams = %v, want [id-default]", got)
+		}
+	})
 	t.Run("next login picks the team up once it exists", func(t *testing.T) {
 		flm := teamsFake("default", "ops", "dream")
 		flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {

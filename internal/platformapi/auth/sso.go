@@ -146,7 +146,7 @@ func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Ho
 // idempotent LiteLLM user provisioning:
 //
 //   - UserInfoByEmail(email) → if "not found" (litellm.ErrNotFound OR
-//     error string carries "404"), call UserNew(email, teams=<default aliases>)
+//     error string carries "404"), call UserNew(email, teams=<default team ids>)
 //     followed by TeamMemberAdd(<default team>, user_id, "user") for each.
 //   - Otherwise, the user exists — but per BLK-05 sub-point 3 + D-25 we
 //     STILL call TeamMemberAdd on every default team to maintain
@@ -218,7 +218,7 @@ func provisionUser(ctx context.Context, deps Deps, email string, groups []string
 			created, createErr := deps.LiteLLM.UserNew(ctx, &litellm.UserNewRequest{
 				UserEmail:     email,
 				UserID:        email, // deterministic LiteLLM user_id = email (not a random UUID)
-				Teams:         deps.Teams.Default,
+				Teams:         defaultTeamIDs,
 				AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; pk_ is minted via /key/generate
 			})
 			if createErr != nil {
