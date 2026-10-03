@@ -163,3 +163,13 @@ still on the old shape is rejected or blocked, not silently translated:
   kubernetes-sigs/agent-sandbox cluster prerequisite before `reconcile_ach`, but no
   stage-06 fixture exercises it any more — the chart surface is preserved
   independently of workspace-v1 runtime readiness (`helm-render-check.sh` topology 6).
+
+## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
+
+Optional DNS-1123 label (max 63). Set: control StatefulSet (and the podTemplate re-pin), the
+per-agent RoleBinding subject, and rendered `infrastructure.control.serviceAccount` all use that
+pre-existing SA in the agent's namespace; the operator does not create/own/delete it and skips
+`ach-harness-<uid>`. Role/RoleBinding names stay `ach-harness-<uid>`. Unset: unchanged output
+(same `configVersion`). Switching a profile back and forth leaves orphaned `ach-harness-<uid>`
+SAs (owner-ref GC only on ACHAgent delete); the operator never deletes them. Execution SA/RBAC
+unchanged. Helper: `agentrender.ControlServiceAccountName`.

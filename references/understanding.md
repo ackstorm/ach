@@ -185,7 +185,11 @@ parity checklist: `references/adding-a-cr-kind.md`.
   Harness's own namespaced Role/RoleBinding (`ach-harness-<uid>`, same name as its
   ServiceAccount) grants exactly the verbs it needs to create/manage per-Workspace
   StatefulSets/Services/Pods — no Secret/RBAC CRUD, TokenReview, pod exec, or cross-
-  namespace grant; the execution ServiceAccount is never bound to anything. A pre-existing
+  namespace grant; the execution ServiceAccount is never bound to anything. `AgentProfile.spec.controlServiceAccountName` (optional) makes the control pods run as one
+  pre-existing, externally managed ServiceAccount (e.g. for EKS Pod Identity, which has no wildcards)
+  instead of `ach-harness-<uid>`: the operator then skips creating it, the per-agent Role/RoleBinding
+  keep their names and bind that SA, and an `ach-harness-<uid>` SA orphaned by a profile switch is
+  not deleted. A pre-existing
   ACHAgent's old Deployment and any agent-sandbox `SandboxTemplate`/`SandboxWarmPool` it
   owned are pruned once, right after its new control StatefulSet successfully applies — see
   `references/achagent.md`. Global Storage (`runtime.storage.s3`, operator Helm values) is

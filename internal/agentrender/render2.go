@@ -161,19 +161,27 @@ type WSInfrastructureBlock struct {
 // controlEndpoint.
 const controlPort = 8081
 
+// ControlServiceAccountName is the effective control (Harness) ServiceAccount: the profile's
+// stable controlServiceAccountName when set, else the per-agent ach-harness-<uid>.
+func ControlServiceAccountName(agentUID string, p *achv1alpha1.AgentProfile) string {
+	if p.Spec.ControlServiceAccountName != "" {
+		return p.Spec.ControlServiceAccountName
+	}
+	return "ach-harness-" + agentUID
+}
+
 // RenderInfrastructureV1 resolves infrastructure{control,execution}. agentUID is the
 // ACHAgent's canonical lowercase UUID (metadata.uid); namespace is the ACHAgent's
-// namespace. execSpec is AgentProfileSpec.Execution (required by CRD CEL — see
+// namespace; controlSA is the effective control ServiceAccount (ControlServiceAccountName). execSpec is AgentProfileSpec.Execution (required by CRD CEL — see
 // api/ach/v1alpha1). Contract §11 scope reset: the control pod's broker and client TLS
 // configuration are excluded, not deferred — D2 reuses the existing signed mini-harness
 // bearer and HMAC facade authentication instead, so this mapping always succeeds once
 // execSpec is present.
-func RenderInfrastructureV1(agentUID, namespace string, execSpec *achv1alpha1.ExecutionInfraSpec) (WSInfrastructureBlock, error) {
+func RenderInfrastructureV1(agentUID, namespace, controlSA string, execSpec *achv1alpha1.ExecutionInfraSpec) (WSInfrastructureBlock, error) {
 	if execSpec == nil {
 		return WSInfrastructureBlock{}, fmt.Errorf("spec.execution is required")
 	}
 	uid32 := stripDashes(agentUID)
-	controlSA := "ach-harness-" + agentUID
 	executionSA := "ach-execution-" + agentUID
 	controlHost := "ach-control-" + agentUID + "." + namespace + ".svc"
 	controlEndpoint := fmt.Sprintf("http://%s:%d", controlHost, controlPort)
@@ -340,7 +348,7 @@ func Render2(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL 
 	if err != nil {
 		return WSConfig{}, err
 	}
-	infra, err := RenderInfrastructureV1(string(a.UID), a.Namespace, &p.Spec.Execution)
+	infra, err := RenderInfrastructureV1(string(a.UID), a.Namespace, ControlServiceAccountName(string(a.UID), &p), &p.Spec.Execution)
 	if err != nil {
 		return WSConfig{}, err
 	}
