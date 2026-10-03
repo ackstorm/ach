@@ -116,15 +116,15 @@ if [[ -f "${WORKSPACE}/.git" ]]; then
     fi
 fi
 
-# internal/agentrender/schema_test.go reads ach-agent's frozen agent-config-v1
-# schema at ../../../ach-agent/... — i.e. /ach-agent once /workspace is the repo
+# internal/agentrender/schema_test.go reads ach-runtime's frozen agent-config-v1
+# schema at ../../../ach-runtime/... — i.e. /ach-runtime once /workspace is the repo
 # root. Without this mount that path does not exist in the container, the test
 # skips on the ReadFile error, and TestSchema_NoDrift silently never compares
 # anything (the host has no Go, so every route to it goes through here).
 # Read-only: the container must never write to the sibling repo.
-SIBLING_ACH_AGENT_MOUNT=()
-if [[ -d "$(dirname "${WORKSPACE}")/ach-agent" ]]; then
-    SIBLING_ACH_AGENT_MOUNT=(-v "$(cd "$(dirname "${WORKSPACE}")/ach-agent" && pwd):/ach-agent:ro")
+SIBLING_ACH_RUNTIME_MOUNT=()
+if [[ -d "$(dirname "${WORKSPACE}")/ach-runtime" ]]; then
+    SIBLING_ACH_RUNTIME_MOUNT=(-v "$(cd "$(dirname "${WORKSPACE}")/ach-runtime" && pwd):/ach-runtime:ro")
 fi
 
 # Default command: drop into bash if no args.
@@ -140,7 +140,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     --network=host \
     -v "${WORKSPACE}:/workspace" \
     "${WORKTREE_GIT_MOUNT[@]}" \
-    "${SIBLING_ACH_AGENT_MOUNT[@]}" \
+    "${SIBLING_ACH_RUNTIME_MOUNT[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e ACH_IN_DEVTOOLS=1 \
     -e DELETE_ON_FAILURE="${DELETE_ON_FAILURE:-0}" \

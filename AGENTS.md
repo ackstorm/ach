@@ -224,7 +224,7 @@ independent collections.)
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
 | Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/developer-guide/jwt-forwarder.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
-| `AgentProfile`/`ACHAgent` rendering, placement, e2e | `references/achagent.md` first, then if touching the wire contract itself: `../ach-agent/docs/schemas/ach-workspace-contract-v1.md` — prose half, contract §11 (workspace-v1; superseded the earlier `operator-contract.md`/agent-config-v1 rev **v3**) — plus `ach-workspace-config-v1.schema.json` beside it, authoritative for field names/types/defaults. **Neither repo may change it unilaterally:** ach-agent regenerates (`make schema`), then re-vendor `internal/agentrender/testdata/ach-workspace-config-v1.schema.json` in the SAME change — `TestWorkspaceV1Schema_NoDrift` enforces it. No stable published URL yet — pin to a commit/tag Root has accepted, never WIP |
+| `AgentProfile`/`ACHAgent` rendering, placement, e2e | `references/achagent.md` first, then if touching the wire contract itself: `../ach-runtime/docs/schemas/ach-workspace-contract-v1.md` — prose half, contract §11 (workspace-v1; superseded the earlier `operator-contract.md`/agent-config-v1 rev **v3**) — plus `ach-workspace-config-v1.schema.json` beside it, authoritative for field names/types/defaults. **Neither repo may change it unilaterally:** ach-agent regenerates (`make schema`), then re-vendor `internal/agentrender/testdata/ach-workspace-config-v1.schema.json` in the SAME change — `TestWorkspaceV1Schema_NoDrift` enforces it. No stable published URL yet — pin to a commit/tag Root has accepted, never WIP |
 
 ## CI gating
 
@@ -277,16 +277,16 @@ make shell                       # interactive shell in the devtools container
 ./scripts/dev.sh go build ./...  # raw go, when no make target fits
 ```
 
-`scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
-`/ach-agent` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
-`ach-workspace-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+`scripts/dev.sh` also bind-mounts a sibling `../ach-runtime` checkout read-only at
+`/ach-runtime` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
+`ach-workspace-config-v1` schema at `../../../ach-runtime/...`, and without the mount that
 path is absent in the container, so the test skipped on the ReadFile error and
 the contract guard silently compared NOTHING (it had never once run). No sibling
 checkout ⇒ it still skips, by design.
 
-`scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
-`/ach-agent` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
-`ach-workspace-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+`scripts/dev.sh` also bind-mounts a sibling `../ach-runtime` checkout read-only at
+`/ach-runtime` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
+`ach-workspace-config-v1` schema at `../../../ach-runtime/...`, and without the mount that
 path is absent in the container, so the test skipped on the ReadFile error and
 the contract guard silently compared NOTHING (it had never once run). No sibling
 checkout ⇒ it still skips, by design.
