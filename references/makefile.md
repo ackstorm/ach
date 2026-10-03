@@ -217,7 +217,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `qa-lint` | A | golangci-lint full sweep. |
 | `qa-lint-fix` | A | golangci-lint with `--fix`. |
 | `qa-lint-config` | A | Verify golangci-lint config. |
-| `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs BASE_REF. |
+| `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs the merge-base with BASE_REF — committed, uncommitted and untracked `*.go` (usable mid-edit, before any commit). |
 | `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 14). |
 | `qa-fuzz-short` | A | Go fuzz targets, 60s budget each. |
 | `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (local-only, on demand). |
@@ -241,7 +241,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `release-bump VERSION=X.Y.Z` | B | Bump version across manifests (used by release.yml). |
-| `release-cut VERSION=X.Y.Z` | B | Empty `chore(release)` commit + pre-push + push to main. |
+| `release-cut VERSION=X.Y.Z` | B | Empty `chore(release)` commit + full pre-push (`PREPUSH_FULL=1`, never the fast lane) + push to main. |
 
 ### Docs (`docs-`)
 | Target | Ctx | Description |
@@ -252,7 +252,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-push` | 16-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. |
+| `pre-push` | 17-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. Fast lane when no Go-toolchain input changed (gates 12/14/16 skipped, 15 scoped to owning packages); `PREPUSH_FULL=1` forces all; branch-deletion pushes skip every gate. |
 | `verify` | `qa-security` + `pre-push` — full gate bundle. |
 | `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 

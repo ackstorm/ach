@@ -15,6 +15,13 @@
 #  16. helm chart mirror drift (crd-sources/ — helm-sync-check)
 #  17. make test-ui (console tsc + vitest; skipped when ui/ is unchanged vs origin/main)
 #
+# Fast lane: when origin/main..HEAD touches no Go-toolchain input (*.go,
+# go.mod/go.sum, api/, config/crd/, crd-sources/, Makefile, .golangci*,
+# Dockerfile.devtools, hack/), gates 12/14/16 are skipped and 15 runs only the
+# packages owning a changed file (an embedded page.html still gets its
+# package's tests). PREPUSH_FULL=1 forces every gate (release-cut sets it).
+# A push that only deletes remote branches exits 0 before any gate.
+#
 # Soft checks (warnings only):
 #   6. internal hostnames / private IPv4 in tracked files
 #   7. ackstorm.com emails outside LICENSE/NOTICE/AUTHORS
@@ -29,6 +36,17 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "not inside a git repo" >&2; exit 1;
 }
 cd "$REPO_ROOT"
+
+# Git runs the hook as `pre-push <remote> <url>` and writes one
+# "<local ref> <local sha> <remote ref> <remote sha>" line per ref on stdin;
+# a deletion has an all-zero local sha. Nothing is published by a deletion.
+if [[ $# -ge 2 ]]; then
+  PUSH_LINES=$(cat)
+  if [[ -n $PUSH_LINES ]] && ! grep -qvE '^[^ ]+ 0+ ' <<<"$PUSH_LINES"; then
+    echo "pre-push: branch deletion only — no gates to run."
+    exit 0
+  fi
+fi
 
 # PUSH_HEAD is what's actually being pushed. Captured before any directory
 # switch below so it names the real commit regardless of which branch ends
@@ -246,8 +264,29 @@ else
   printf '%s\n' "$DIRTY" | head -20
 fi
 
+# --- fast lane: does this push touch the Go toolchain at all? ---
+GO_INPUTS='\.go$|(^|/)go\.(mod|sum)$|^api/|^config/crd/|^deploy/helm/ach/crd-sources/|^Makefile$|^\.golangci|^Dockerfile\.devtools$|^hack/'
+FAST_LANE=0
+if [[ ${PREPUSH_FULL:-0} != 1 ]] && CHANGED_FILES=$(git diff --name-only origin/main..HEAD 2>/dev/null) \
+  && ! grep -qE "$GO_INPUTS" <<<"$CHANGED_FILES"; then
+  FAST_LANE=1
+  # Package owning each changed file: nearest ancestor dir holding *.go
+  # (testdata/ and embedded assets belong to their parent package).
+  FAST_PKGS=$(while IFS= read -r f; do
+    d=$(dirname "$f")
+    while [[ $d != . ]]; do
+      if compgen -G "$d/*.go" >/dev/null; then echo "./$d"; break; fi
+      d=$(dirname "$d")
+    done
+  done <<<"$CHANGED_FILES" | grep -vE '^\./(internal/controller|test/e2e)' | sort -u)
+  printf '\n%sFast lane: no Go-toolchain input changed vs origin/main — gates 12/14/16 skipped, 15 scoped.%s\n' "$BLU" "$RST"
+fi
+
 # --- 12. go mod tidy drift ---
 hdr "12. go mod tidy drift"
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+else
 # Snapshot go.mod / go.sum BEFORE tidy so we can restore them on drift —
 # pre-push must not mutate the working tree. Use cp (not bash $(cat) +
 # printf '%s') because the latter strips trailing newlines, which then
@@ -297,6 +336,7 @@ else
   fail "go mod tidy (test/e2e/mcp-echo) exited non-zero (see /tmp/gomod-tidy-mcp-echo.txt)"
   sed -n '1,20p' /tmp/gomod-tidy-mcp-echo.txt
 fi
+fi
 
 # --- 13. license-header SPDX gate (HRD-10) ---
 hdr "13. license-header SPDX gate (HRD-10)"
@@ -326,7 +366,9 @@ fi
 # this gate is the local lint authority before a push leaves the host.
 # Runs in the devtools container.
 hdr "14. golangci-lint full sweep"
-if [[ -x scripts/dev.sh ]]; then
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+elif [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make qa-lint >/tmp/pre-push-lint.log 2>&1; then
     ok "golangci-lint clean"
   else
@@ -340,7 +382,16 @@ fi
 # Catches the simplest class of breakage that CI would otherwise flag.
 # Runs via devtools container; ~5-10s warm.
 hdr "15. unit tests"
-if [[ -x scripts/dev.sh ]]; then
+if (( FAST_LANE )) && [[ -z $FAST_PKGS ]]; then
+  ok "fast lane — no Go package owns a changed file, skipped"
+elif (( FAST_LANE )) && [[ -x scripts/dev.sh ]]; then
+  # shellcheck disable=SC2086 # word-split the package list on purpose
+  if ./scripts/dev.sh go test -race -count=1 $FAST_PKGS >/tmp/pre-push-unit.log 2>&1; then
+    ok "fast lane — unit tests clean for: $(tr '\n' ' ' <<<"$FAST_PKGS")"
+  else
+    fail "unit tests failed — see /tmp/pre-push-unit.log"
+  fi
+elif [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make test-unit >/tmp/pre-push-unit.log 2>&1; then
     ok "make test-unit clean"
   else
@@ -359,7 +410,9 @@ fi
 # while the operator binary expects the new one — a `helm upgrade` then silently
 # drops/refuses the new field (issue #44).
 hdr "16. helm chart mirror drift (crd-sources/)"
-if [[ -x scripts/dev.sh ]]; then
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+elif [[ -x scripts/dev.sh ]]; then
   if ./scripts/dev.sh make helm-sync-check >/tmp/pre-push-helm-sync.log 2>&1; then
     ok "chart CRDs in sync with config/crd/bases"
   else
