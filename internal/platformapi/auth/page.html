@@ -47,7 +47,7 @@
   header { height: 56px; flex: none; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 14px; }
   header svg { width: 18px; height: 18px; }
 
-  .stage { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+  .stage { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 12vh 24px 48px; }
   main { width: 100%; max-width: 480px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
 
   .top { padding: 32px 32px 24px; border-bottom: 1px solid var(--border); }
@@ -55,11 +55,9 @@
   .top .brand svg { width: 26px; height: 26px; }
   h1 { margin-top: 16px; font-size: 24px; font-weight: 600; line-height: 1.25; }
   .sub { margin-top: 16px; font-size: 14px; line-height: 1.6; color: var(--text-secondary); }
-  .cmd { margin-top: 20px; display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; white-space: nowrap; overflow: hidden; color: var(--text-secondary); }
-  .cmd .ps { color: var(--text-tertiary); user-select: none; }
-  .cmd .verb { color: var(--primary); }
-  .cursor { display: inline-block; width: 0.5em; height: 1.05em; background: var(--primary); animation: blink 1s step-end infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
+  .term { margin-top: 20px; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text-secondary); background: var(--surface-inset); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow-wrap: anywhere; }
+  .term .ps { color: var(--text-tertiary); user-select: none; }
+  .term .verb, .term .out { color: var(--primary); }
 
   .mid { padding: 28px 32px; display: grid; gap: 16px; }
   label { font-family: var(--mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); }
@@ -83,7 +81,7 @@
   .foot { display: flex; align-items: center; gap: 16px; padding: 20px 32px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
   .foot .lock { display: inline-flex; align-items: center; gap: 8px; }
   .foot .lock svg { width: 15px; height: 15px; fill: none; stroke: var(--text-secondary); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .status { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--primary); font-weight: 600; letter-spacing: 0.1em; }
+  .status { margin-left: auto; flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; color: var(--primary); font-weight: 600; letter-spacing: 0.1em; }
   .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .4; } }
 
@@ -103,13 +101,16 @@
       <div class="top">
         <span class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>ACH</span>
         <h1>{{.Title}}</h1>
-        <p class="sub">{{.Sub}}</p>
-        <div class="cmd" aria-hidden="true"><span class="ps">$</span><span><span class="verb">sign-in</span> {{.Cmd}}</span><span class="cursor"></span></div>
+        {{- with .Sub}}
+        <p class="sub">{{.}}</p>
+        {{- end}}
+        {{- if .Cmd}}
+        <div class="term"><span class="ps">$</span> <span class="verb">{{.Cmd}}</span> {{.Args}}<br><span class="out">{{.Out}}</span>{{with .Problem}} <span role="alert">{{.}}</span>{{end}}</div>
+        {{- end}}
       </div>
 
-      {{- if or .Form .Problem}}
+      {{- if .Form}}
       <div class="mid">
-        {{- if .Form}}
         <form method="post" style="display:grid;gap:16px">
           <div>
             <label for="user_code">Code shown in your terminal</label>
@@ -117,9 +118,8 @@
           </div>
           <button type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>Confirm and continue with SSO</button>
         </form>
-        {{- end}}
-        {{- if .Problem}}
-        <div class="problem" role="alert">{{.Problem}}</div>
+        {{- with .Problem}}
+        <div class="problem" role="alert">{{.}}</div>
         {{- end}}
       </div>
       {{- end}}
