@@ -4281,6 +4281,12 @@ everything else here is profile-only infrastructure an agent cannot override.</p
 <td></td>
 </tr>
 <tr>
+<td><code>controlServiceAccountName</code> <em>string</em></td>
+<td>ControlServiceAccountName, when set, is an existing ServiceAccount that the control<br />(Harness) pods of every ACHAgent using this profile run as, instead of the per-agent<br />ach-harness-<uid>. The operator does not create, own or delete it: it must already<br />exist in the agent's namespace (e.g. one bound to a cloud identity such as EKS Pod<br />Identity, which has no wildcards). Each agent still gets its own Role/RoleBinding,<br />bound to this ServiceAccount. Empty keeps the per-agent ach-harness-<uid>.</td>
+<td></td>
+<td>MaxLength: 63 <br />Pattern: <code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?$</code> <br /></td>
+</tr>
+<tr>
 <td><code>resources</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core">ResourceRequirements</a></em></td>
 <td></td>
 <td></td>
