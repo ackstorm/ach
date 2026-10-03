@@ -86,7 +86,9 @@ type fixture struct {
 	seen  string // key the handler asked AsUser for
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { return newFixtureWith(t, "", "") }
+
+func newFixtureWith(t *testing.T, defModel, defSmall string) *fixture {
 	t.Helper()
 	sealed, err := keycrypt.Seal(kek, []byte(userKey))
 	if err != nil {
@@ -115,7 +117,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	mr := miniredis.RunT(t)
 	f.h, f.caps = newConfigHandler(ConfigDeps{
-		BaseURL: "https://ach.test/", Provider: "acme",
+		BaseURL: "https://ach.test/", Provider: "acme", DefaultModel: defModel, DefaultSmall: defSmall,
 		Verify: func(tok string) (string, error) {
 			if tok == goodTok {
 				return userEmail, nil
@@ -183,7 +185,7 @@ func TestConfig_OK(t *testing.T) {
 	}
 	cfg := m["config"].(map[string]any)
 	for k := range cfg {
-		if k != "provider" && k != "mcp" {
+		if k != "provider" && k != "mcp" && k != "model" && k != "small_model" {
 			t.Fatalf("unexpected config key %q", k)
 		}
 	}
@@ -309,5 +311,25 @@ func TestConfig_NoForbiddenKeys(t *testing.T) {
 		if strings.Contains(s, bad) {
 			t.Fatalf("body carries %q", bad)
 		}
+	}
+}
+
+func TestConfig_DefaultModels(t *testing.T) {
+	for _, c := range []struct {
+		name, model, small string
+		wantModel, wantSm  any
+	}{
+		{"unset", "", "", nil, nil},
+		{"both visible", "ackstorm.smart", "gemini.flash", "acme/ackstorm.smart", "acme/gemini.flash"},
+		{"hidden", "nope", "ackstorm.smart", nil, "acme/ackstorm.smart"},
+		{"non-chat", "text-embedding", "a2a/finops-advisor", nil, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, m := newFixtureWith(t, c.model, c.small).get(t, "Bearer "+goodTok)
+			cfg := m["config"].(map[string]any)
+			if cfg["model"] != c.wantModel || cfg["small_model"] != c.wantSm {
+				t.Fatalf("model=%v small_model=%v", cfg["model"], cfg["small_model"])
+			}
+		})
 	}
 }

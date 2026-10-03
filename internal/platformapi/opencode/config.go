@@ -61,6 +61,8 @@ type AdminCatalog interface {
 type ConfigDeps struct {
 	BaseURL          string
 	Provider         string                                       // provider id + display name (genai.providerName)
+	DefaultModel     string                                       // bare model name → config.model when the user sees it (empty = off)
+	DefaultSmall     string                                       // same, for config.small_model
 	Verify           func(token string) (email string, err error) // local JWT check, no I/O
 	Resolver         keystore.Resolver
 	KeyEncryptionKey []byte
@@ -148,7 +150,7 @@ func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 		if mErr != nil { // the models still stand on their own: serve them without MCP
 			d.Logger.Warn("opencode config: MCP list failed", "user", email, "err", mErr)
 		}
-		b := body(&email, buildConfig(base, d.Provider, groups, mcps, deps, aliases), []any{skill}, "ok", false)
+		b := body(&email, buildConfig(base, d.Provider, d.DefaultModel, d.DefaultSmall, groups, mcps, deps, aliases), []any{skill}, "ok", false)
 		if err := d.Store.Put(ctx, cacheKind, email, b, cacheTTL); err != nil {
 			d.Logger.Warn("opencode config: cache write failed", "user", email, "err", err)
 		}
@@ -162,7 +164,7 @@ func bearer(r *http.Request) (string, bool) {
 	return tok, strings.EqualFold(scheme, "bearer") && tok != ""
 }
 
-func buildConfig(base, provider string, groups []litellm.ModelGroupInfo, mcps []litellm.MCPServerEntry,
+func buildConfig(base, provider, defModel, defSmall string, groups []litellm.ModelGroupInfo, mcps []litellm.MCPServerEntry,
 	deps map[string]litellm.ModelCaps, aliases map[string]string) map[string]any {
 	models := map[string]any{}
 	for _, g := range groups {
@@ -195,6 +197,13 @@ func buildConfig(base, provider string, groups []litellm.ModelGroupInfo, mcps []
 			"name": provider, "npm": "@ai-sdk/openai-compatible",
 			"options": map[string]any{"baseURL": base + "/v1"}, "models": models,
 		}}
+	}
+	// Defaults only when the user's own list holds the model; otherwise OpenCode
+	// picks the first one. The user's opencode.json overrides both.
+	for key, name := range map[string]string{"model": defModel, "small_model": defSmall} {
+		if _, ok := models[name]; ok && name != "" {
+			config[key] = provider + "/" + name
+		}
 	}
 	if len(servers) > 0 {
 		config["mcp"] = servers

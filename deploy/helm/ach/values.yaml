@@ -327,6 +327,12 @@ genai:
   # and v2) via /.well-known/opencode: an npm or git spec. Git at the repo
   # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
   opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.0"
+  # Optional default models (bare names, no provider prefix) for GenAI clients;
+  # /clients/opencode/config uses them today: emitted as config.model /
+  # config.small_model only when the user's own model list holds that name.
+  # Empty = off.
+  defaultModel: ""
+  defaultSmallModel: ""
 
 # openwork: the OpenWork organization server ("Den") served by platform-api
 # at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den

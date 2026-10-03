@@ -128,6 +128,14 @@ spec:
               value: {{ .Values.genai.providerName | quote }}
             - name: ACH_OPENCODE_PLUGIN_SPEC
               value: {{ .Values.genai.opencodePluginSpec | quote }}
+            {{- with .Values.genai.defaultModel }}
+            - name: ACH_GENAI_DEFAULT_MODEL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.genai.defaultSmallModel }}
+            - name: ACH_GENAI_DEFAULT_SMALL_MODEL
+              value: {{ . | quote }}
+            {{- end }}
             - name: ACH_OPENWORK_ENABLED
               value: {{ .Values.openwork.enabled | quote }}
             {{- if .Values.openwork.enabled }}

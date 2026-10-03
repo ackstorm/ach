@@ -1215,6 +1215,15 @@ Check it from outside the browser:
 — `status` other than `Available` with `sync: "True"` is the condition this
 entry describes, and keys can be created.
 
+### ❌ OpenCode picks the wrong default model / ignores `genai.defaultModel`
+
+`/clients/opencode/config` sets `config.model` / `config.small_model` (`<provider>/<name>`)
+only when the bare name from `ACH_GENAI_DEFAULT_MODEL` / `ACH_GENAI_DEFAULT_SMALL_MODEL` is a
+**chat** model in the caller's OWN LiteLLM list. A hidden, misspelt, embedding or `a2a/` name
+is silently omitted and OpenCode takes the first model. Check `curl -H "Authorization: Bearer
+<token>" https://<ach>/clients/opencode/config | jq '.config|{model,small_model}, (.provider[]|.models|keys)'`.
+A model/small_model the user set in their own opencode.json always wins.
+
 ### ❌ OpenCode v2: no `ackstorm` models and `opencode mcp list` empty after `opencode auth login`
 
 Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
