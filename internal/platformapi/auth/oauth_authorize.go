@@ -116,7 +116,10 @@ func clientRedirect(w http.ResponseWriter, r *http.Request, redirectURI string, 
 }
 
 func htmlError(w http.ResponseWriter, status int, msg string) {
-	renderPage(w, status, page{Label: "FAILED", Cmd: "--sso", Title: "Authorization failed", Sub: "Nothing was granted.",
+	if msg == "" {
+		msg = "internal error"
+	}
+	renderPage(w, status, page{Label: "FAILED", Cmd: "sign-in", Args: "--sso", Out: "error:", Title: "Authorization failed",
 		Problem: msg, Error: true, Footer: "no credential was issued"})
 }
 
@@ -126,10 +129,12 @@ var pageHTML string
 var pageTmpl = template.Must(template.New("page").Parse(pageHTML))
 
 // page is one browser page of the AS (page.html); html/template escapes every
-// field. Label is the footer status word, Cmd the decorative command line.
+// field. Label is the footer status word; Cmd+Args+Out the decorative
+// terminal transcript (Problem is appended to Out; without Cmd it is shown
+// under the Form).
 type page struct {
-	Label, Cmd, Title, Sub, Code, Problem, Footer string
-	Form, Error                                   bool
+	Label, Cmd, Args, Out, Title, Sub, Code, Problem, Footer string
+	Form, Error                                              bool
 }
 
 func renderPage(w http.ResponseWriter, status int, p page) {

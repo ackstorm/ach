@@ -216,12 +216,12 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 	_ = d.Store.Del(r.Context(), "device_user", rec.UserCode)
 	d.Auth.Logger.Info("oauth: device authorization "+status, "client_id", rec.ClientID)
 	if status == deviceStatusApproved {
-		renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "--device", Title: "Signed in to ACH",
-			Sub: "Return to your terminal — you can close this tab.", Footer: "your terminal picks up the session on its own"})
+		renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "ach-cli login", Args: "--no-browser", Out: "✓ approved",
+			Title: "Signed in to ACH", Sub: "Return to your terminal — you can close this tab.", Footer: "you can close this tab"})
 		return
 	}
-	renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "--device", Title: "Sign-in cancelled",
-		Sub: "Nothing was granted. You can close this tab.", Error: true, Footer: "no credential was issued"})
+	renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "ach-cli login", Args: "--no-browser", Out: "✗ cancelled",
+		Title: "Sign-in cancelled", Sub: "Nothing was granted. You can close this tab.", Error: true, Footer: "no credential was issued"})
 }
 
 // deviceToken is the /token branch for grant_type=…:device_code.
@@ -259,7 +259,7 @@ func (d OAuthDeps) deviceToken(w http.ResponseWriter, r *http.Request, clientID 
 }
 
 func renderDevicePage(w http.ResponseWriter, code, problem string) {
-	renderPage(w, http.StatusOK, page{Label: "READY", Cmd: "--device", Title: "Sign in to ACH",
+	renderPage(w, http.StatusOK, page{Label: "READY", Title: "Sign in to ACH",
 		Sub: "Confirm this is the code shown in your terminal, then continue.", Form: true, Code: code,
-		Problem: problem, Footer: fmt.Sprintf("the code expires %d minutes after your terminal shows it", int(deviceTTL.Minutes()))})
+		Problem: problem, Footer: fmt.Sprintf("the code expires in %d minutes", int(deviceTTL.Minutes()))})
 }
