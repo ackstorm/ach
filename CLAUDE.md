@@ -285,7 +285,8 @@ independent collections.)
 2026-07-17 (unused). Their `make` targets still work; they are now **local-only,
 on demand**. Run `make e2e-full` locally before merging any change touching
 `internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
-`deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop". There is **no
+`deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop" (presentation-only
+changes are exempt, see there). There is **no
 automated backstop on `main`**: nothing catches an e2e regression except a
 human running the suite. Docs-only PRs
 (paths-ignore `**/*.md`, `docs/**`, `references/**`, `FIX*.txt`, `LICENSE`,
@@ -441,7 +442,12 @@ before a push leaves the host:
 - `pre-push` (full): **17 numbered gates, 11 of them hard** (failure blocks the
   push); 6 are informational warnings. lint + unit live INSIDE them (gates 14 +
   15; console tests are gate 17, skipped when `ui/` is unchanged vs
-  `origin/main`), so the full lint + unit sweep always fires before a push.
+  `origin/main`). **Fast lane**: when `origin/main..HEAD` touches no Go-toolchain
+  input (`*.go`, `go.mod`/`go.sum`, `api/`, `config/crd/`, `crd-sources/`,
+  `Makefile`, `.golangci*`, `Dockerfile.devtools`, `hack/`), gates 12/14/16 are
+  skipped and 15 runs only the packages owning a changed file (~40s vs ~3m);
+  `PREPUSH_FULL=1` forces the full sweep, and `make release-cut` always sets it.
+  A push that only deletes remote branches runs no gate.
 
 The 11 hard gates: gitleaks (1, `origin/main..HEAD`; allowlist
 `.gitleaks.toml`) · large files >2 MB (2) · sensitive patterns (`.env`,
@@ -623,7 +629,9 @@ make cluster-down && make e2e-full            # clean-room start; cluster kept a
 
 Never push a change touching `internal/controller|platformapi|forwarder|
 contentservice/`, `api/v1alpha1/`, `deploy/helm/ach/`, or `test/e2e/` without
-confirming E2E green.
+confirming E2E green. **Exempt — presentation-only changes** (HTML/CSS
+templates, copy text, `ui/`): no behavior or contract moves, so the package's
+unit tests + lint + a rendered-page check are the gate, not a ~15 min e2e.
 
 Kept-cluster tests see prior runs' history (each e2e process mints its own
 `demo-ek`; spend rows accumulate). Assert deltas from a baseline captured

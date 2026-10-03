@@ -303,7 +303,7 @@ _qa-lint-config: golangci-lint
 	$(GOLANGCI_LINT) config verify
 
 .PHONY: qa-lint-changed
-qa-lint-changed: ## Lint packages touched vs BASE_REF (default origin/main), incl. untracked *.go.
+qa-lint-changed: ## Lint packages touched vs BASE_REF (default origin/main): committed, uncommitted and untracked *.go.
 	$(call container_target,_qa-lint-changed)
 _qa-lint-changed: golangci-lint
 	@BASE=$${BASE_REF:-origin/main}; \
@@ -312,7 +312,7 @@ _qa-lint-changed: golangci-lint
 		git rev-parse --verify "$$BASE" >/dev/null 2>&1 || { \
 			echo "ERROR: neither origin/main nor main exists; pass BASE_REF=<ref>" >&2; exit 1; }; \
 	fi; \
-	CHANGED=$$( { git diff --name-only "$$BASE...HEAD" -- '*.go'; \
+	CHANGED=$$( { git diff --name-only "$$(git merge-base "$$BASE" HEAD)" -- '*.go'; \
 		git ls-files --others --exclude-standard -- '*.go'; } \
 		| xargs -r -n1 dirname | sort -u | sed 's|^|./|; s|$$|/...|'); \
 	if [ -z "$$CHANGED" ]; then \
@@ -390,7 +390,7 @@ release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-pu
 	@local=$$(git rev-parse HEAD); remote=$$(git rev-parse origin/main); \
 	test "$$local" = "$$remote" || (echo "ERROR: local main differs from origin/main; rebase or pull first" >&2; exit 1)
 	git commit --allow-empty -m "chore(release): v$(VERSION)"
-	$(MAKE) pre-push
+	PREPUSH_FULL=1 $(MAKE) pre-push
 	git push origin main
 	@echo ""
 	@echo "release.yml is now running. Watch with:"
