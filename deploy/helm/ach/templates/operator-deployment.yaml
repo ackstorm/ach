@@ -127,6 +127,23 @@ spec:
             - name: ACH_LITELLM_CONNECTION_SECRET_KEY
               value: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
             {{- end }}
+            # Global Storage backend (root D1) — real configuration, not a health signal.
+            # Unset bucket (the default) means ValidateRuntimeStorage fails closed only for
+            # an ACHAgent whose resolved config actually requires persistence/artifacts;
+            # an all-disabled agent is unaffected.
+            - name: ACH_STORAGE_S3_BUCKET
+              value: {{ .Values.runtime.storage.s3.bucket | quote }}
+            - name: ACH_STORAGE_S3_REGION
+              value: {{ .Values.runtime.storage.s3.region | quote }}
+            - name: ACH_STORAGE_S3_ENDPOINT_URL
+              value: {{ .Values.runtime.storage.s3.endpointUrl | quote }}
+            - name: ACH_STORAGE_S3_PREFIX
+              value: {{ .Values.runtime.storage.s3.prefix | default "ach" | quote }}
+            {{- if .Values.runtime.storage.s3.credentialsSecretName }}
+            # Literal Secret NAME only — never a credential value in this chart or env.
+            - name: ACH_STORAGE_S3_CREDENTIALS_SECRET
+              value: {{ .Values.runtime.storage.s3.credentialsSecretName | quote }}
+            {{- end }}
             # ACH_CREDENTIAL_HASH_PEPPER — required by the operator
             # (pepperenv.Load); sourced from the security block, do NOT also
             # set it in extraEnv (duplicate env entry). The DEK is not used by

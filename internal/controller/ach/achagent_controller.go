@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package ach — ACHAgentReconciler renders an ACHAgent (+ its AgentProfile) into the
-// agent-config-v1 ConfigMap and a single-replica Deployment. The ach-agent harness
-// self-hydrates against ACH at boot, so this reconciler owns NO init container and derives
-// WorkloadReady from pod.status (probe-backed) only.
+// workspace-v1 ConfigMap and a single-replica control StatefulSet (contract §11), plus the
+// execution identity/bootstrap scaffolding (ServiceAccount + bootstrap.json ConfigMap) ahead
+// of the Workspace CR (deferred to v0.1.1). The ach-agent harness self-hydrates against ACH
+// at boot, so this reconciler owns NO init container and derives WorkloadReady from
+// pod.status (probe-backed) only.
 package ach
 
 import (
@@ -16,17 +18,15 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -44,6 +44,8 @@ import (
 	achdb "github.com/ackstorm/ach/internal/db"
 )
 
+const achAgentOwnerKind = "ACHAgent"
+
 const (
 	condReady                  = "Ready"
 	condProfileResolved        = "ProfileResolved"
@@ -58,15 +60,33 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=achagents,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=achagents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=agentprofiles,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// statefulsets/scale: delegated to the per-agent Harness Role (buildWorkspaceRole) below —
+// the operator must itself hold any verb it grants there (RBAC escalation prevention), so
+// this is granted here too even though the operator's own reconcile loop never scales a
+// StatefulSet directly.
+// +kubebuilder:rbac:groups=apps,resources=statefulsets/scale,verbs=get;update;patch
+// Deployments: read+delete only, for the one-time cutover cleanup of a pre-workspace-v1
+// agent's old operator-owned Deployment (pruneLegacyDeployment) — this reconciler never
+// creates/updates a Deployment again (control workloads are StatefulSets).
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// identity/channel/runtime-storage-credential Secrets are read-only. The sole write is create
+// for the UID-owned legacy workspace key Secret; existing keys are never updated or deleted.
+// No Secret verbs are ever granted to the Harness or execution ServiceAccounts.
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups=extensions.agents.x-k8s.io,resources=sandboxtemplates;sandboxwarmpools,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// pods delete: delegated to the per-agent Harness Role below, same escalation-prevention
+// reasoning as statefulsets/scale.
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
+// buildWorkspaceRoleBinding, achagent_workload.go) — namespaced, not cluster-wide. No
+// blanket bind/escalate grant: the operator only ever creates these two fixed, UID-named
+// objects with the fixed rule set above.
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // ACHAgentReconciler reconciles ACHAgent objects. APIReader is the UNCACHED client used for
 // Secret content reads (so Secret bodies are never cached in this shared binary).
@@ -94,8 +114,12 @@ type ACHAgentReconciler struct {
 	// errors) because it has no ACH to hydrate against.
 	DefaultAchBaseURL string
 
-	// sandboxCRDs is set in SetupWithManager: the agent-sandbox kinds are served.
-	sandboxCRDs bool
+	// RuntimeStorageOptions is the operator/chart-level global Storage backend config (root
+	// D1), sourced from operator env/Helm (cmd/ach/cmd/operator.go) — never per-agent. An
+	// empty Bucket means the backend is unconfigured: ValidateRuntimeStorage fails closed
+	// (StorageUnavailable condition) only for an ACHAgent whose resolved config actually
+	// requires persistence/artifacts; an all-disabled agent is unaffected.
+	RuntimeStorageOptions agentrender.RuntimeStorageOptions
 }
 
 //nolint:gocyclo // Single linear resolve→render→apply→status flow; splitting scatters status ordering.
@@ -129,71 +153,85 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	setCond(&conds, condProfileResolved, metav1.ConditionTrue, "ProfileFound", "", agent.Generation)
 
-	// 2. Identity Secret + key (APIReader — uncached).
+	// 2. Identity Secret + key (APIReader — uncached). Object-level CEL on ACHAgentSpec
+	// requires spec.ach.identity on any NEWLY admitted object, but a CR stored before that
+	// CEL rule was added is never retroactively validated — dereferencing Ach/Identity
+	// without this guard panics the reconciler on such a stored legacy-shape object
+	// (Important review finding 10). Surface it as an ordinary unresolved condition instead.
+	if agent.Spec.Ach == nil || agent.Spec.Ach.Identity == nil {
+		setCond(&conds, condIdentityResolved, metav1.ConditionFalse, "IdentityMissing", "spec.ach.identity is required — this object predates admission validation and must be updated", agent.Generation)
+		return r.finish(ctx, &agent, conds)
+	}
 	var ekSecret corev1.Secret
-	if err := r.APIReader.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: agent.Spec.Identity.SecretRef.Name}, &ekSecret); err != nil {
+	identity := agent.Spec.Ach.Identity
+	if err := r.APIReader.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: identity.SecretRef.Name}, &ekSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			setCond(&conds, condIdentityResolved, metav1.ConditionFalse, "IdentitySecretNotFound", fmt.Sprintf("identity secret %q not found", agent.Spec.Identity.SecretRef.Name), agent.Generation)
+			setCond(&conds, condIdentityResolved, metav1.ConditionFalse, "IdentitySecretNotFound", fmt.Sprintf("identity secret %q not found", identity.SecretRef.Name), agent.Generation)
 			return r.finish(ctx, &agent, conds)
 		}
 		return ctrl.Result{}, fmt.Errorf("get identity secret: %w", err)
 	}
-	if _, ok := ekSecret.Data[agent.Spec.Identity.SecretRef.Key]; !ok {
-		setCond(&conds, condIdentityResolved, metav1.ConditionFalse, "IdentityKeyMissing", fmt.Sprintf("secret %q has no key %q", agent.Spec.Identity.SecretRef.Name, agent.Spec.Identity.SecretRef.Key), agent.Generation)
+	if _, ok := ekSecret.Data[identity.SecretRef.Key]; !ok {
+		setCond(&conds, condIdentityResolved, metav1.ConditionFalse, "IdentityKeyMissing", fmt.Sprintf("secret %q has no key %q", identity.SecretRef.Name, identity.SecretRef.Key), agent.Generation)
 		return r.finish(ctx, &agent, conds)
 	}
 	setCond(&conds, condIdentityResolved, metav1.ConditionTrue, "IdentityFound", "", agent.Generation)
 
-	// 3. Channel Secrets + keys.
+	// 3. Render (workspace-v1).
+	cfg, err := agentrender.Render2(profile, agent, r.DefaultAchBaseURL)
+	if err != nil {
+		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "RenderFailed", err.Error(), agent.Generation)
+		return r.finish(ctx, &agent, conds)
+	}
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("marshal config: %w", err)
+	}
+
+	// 4. Global runtime Storage: required configuration only, never cloud reachability (root
+	// D1). All-disabled policies skip this dependency entirely (RuntimeRequiresStorage false).
+	requiresStorage := agentrender.RuntimeRequiresStorage(cfg)
+	if err := agentrender.ValidateRuntimeStorage(cfg, r.RuntimeStorageOptions); err != nil {
+		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "StorageUnavailable", err.Error(), agent.Generation)
+		return r.finish(ctx, &agent, conds)
+	}
+
+	// 5. Channel Secrets + keys, merged with the global storage credential Secret's required
+	// keys when this agent's resolved config actually requires storage (Task2 D1 amendment).
 	refSecrets := agentrender.ReferencedSecrets(profile, agent)
-	if failReason, failMsg := r.checkChannelSecrets(ctx, agent.Namespace, refSecrets); failReason != "" {
+	checkSecrets, hashSecretsMap := refSecrets, refSecrets
+	if requiresStorage && r.RuntimeStorageOptions.CredentialsSecretName != "" {
+		checkSecrets = mergeSecretKeys(refSecrets, r.RuntimeStorageOptions.CredentialsSecretName, requiredStorageCredentialKeys)
+		hashSecretsMap = mergeSecretKeys(refSecrets, r.RuntimeStorageOptions.CredentialsSecretName, allStorageCredentialKeys)
+	}
+	if failReason, failMsg := r.checkChannelSecrets(ctx, agent.Namespace, checkSecrets); failReason != "" {
 		setCond(&conds, condChannelSecretsResolved, metav1.ConditionFalse, failReason, failMsg, agent.Generation)
 		return r.finish(ctx, &agent, conds)
 	}
 	setCond(&conds, condChannelSecretsResolved, metav1.ConditionTrue, "ChannelSecretsFound", "", agent.Generation)
 
-	// 3b. Sandboxed placement: prerequisites, then the per-agent key K (create-once Secret).
-	sandboxed := agentrender.SandboxedPlacement(profile, agent)
-	var sandboxKey string
-	if sandboxed && profile.Spec.Sandbox != nil {
-		reason, msg, err := r.checkSandboxPrereqs(ctx, &agent, &profile)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if reason != "" {
-			setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, reason, msg, agent.Generation)
-			res, err := r.finish(ctx, &agent, conds)
-			if reason == reasonSandboxSAMissing && err == nil {
-				res.RequeueAfter = 15 * time.Second // the shared SA is not watched; poll until the chart creates it
-			}
-			return res, err
-		}
-		if sandboxKey, err = r.ensureSandboxKey(ctx, &agent); err != nil {
-			return ctrl.Result{}, fmt.Errorf("sandbox key: %w", err)
-		}
-	}
-
-	// 4. Render.
-	cfg, err := agentrender.Render(profile, agent, r.DefaultAchBaseURL)
-	if err != nil {
-		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "RenderFailed", err.Error(), agent.Generation)
+	// The private workspace key is created only after render and authored Secret checks pass.
+	// Errors are deliberately sanitized so the key can never appear in status or logs.
+	if err := r.ensureWorkspaceKey(ctx, &agent); err != nil {
+		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "WorkspaceKeyUnavailable", "workspace key Secret is unavailable or invalid", agent.Generation)
 		return r.finish(ctx, &agent, conds)
 	}
-	configJSON, err := agentrender.Marshal(cfg)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("marshal config: %w", err)
-	}
+	hashSecretsMap = mergeSecretKeys(hashSecretsMap, workspaceKeySecretName(string(agent.UID)), []string{workspaceKeyDataKey})
 
-	// 5. Env (once) + salted secret hash + config hash.
+	// 6. Env (once, with the private storage env merged in when required) + salted secret
+	// hash + config hash.
 	env := buildAgentEnv(&agent, &profile, r.DefaultAchBaseURL)
-	if sandboxed {
-		env = append(env, sandboxKeyEnv(&agent))
+	env = overrideEnv(env, []corev1.EnvVar{{Name: "ACH_SANDBOX_KEY", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: workspaceKeySecretName(string(agent.UID))}, Key: workspaceKeyDataKey,
+	}}}})
+	if requiresStorage {
+		env = overrideEnv(env, agentrender.RuntimeStorageEnv(r.RuntimeStorageOptions))
 	}
 	envJSON, err := json.Marshal(env)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("marshal env: %w", err)
 	}
-	secretHash, err := r.hashSecrets(ctx, &agent, refSecrets)
+	secretHash, err := r.hashSecrets(ctx, &agent, hashSecretsMap)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("hash secrets: %w", err)
 	}
@@ -202,41 +240,69 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		podTemplateJSON = profile.Spec.PodTemplate.Raw
 	}
 	resolvedImage := agentrender.ResolveImage(agent.Spec.Image, profile.Spec.Achagent.Image)
-	hashPlacement := resolvePlacement(&agent, &profile)
-	if sandboxed {
-		// K rotation (Secret deleted by hand) must roll the harness; salted like secretHash.
-		mac := hmac.New(sha256.New, []byte(agent.UID))
-		mac.Write([]byte(sandboxKey))
-		hashPlacement += ":" + hex.EncodeToString(mac.Sum(nil))[:16]
-	}
-	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash, hashPlacement)
+	configHash := computeConfigHash(configJSON, envJSON, podTemplateJSON, resolvedImage, secretHash)
 
-	// buildDeployment currently fails only on the podTemplate overlay, so mapping every error to
+	// buildStatefulSet currently fails only on the podTemplate overlay, so mapping every error to
 	// reason PodTemplateInvalid is correct today — revisit if the builder gains other error paths.
 	// Built (and validated) before any child is applied, so a bad overlay leaves nothing applied
-	// this pass — no ConfigMap/ServiceAccount/PVC mutation while the Deployment stays untouched.
-	dep, err := buildDeployment(&agent, &profile, configHash, env)
+	// this pass — no ConfigMap/ServiceAccount/PVC mutation while the StatefulSet stays untouched.
+	sts, err := buildStatefulSet(&agent, &profile, configHash, env)
 	if err != nil {
 		setCond(&conds, condWorkloadApplied, metav1.ConditionFalse, "PodTemplateInvalid", err.Error(), agent.Generation)
 		return r.finish(ctx, &agent, conds)
 	}
+	bootstrapCM, err := buildExecutionBootstrapConfigMap(&agent, cfg.Infrastructure)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("build execution bootstrap configmap: %w", err)
+	}
 
-	// 6. Apply children.
+	// 7. Apply children.
 	if err := r.apply(ctx, &agent, buildConfigMap(&agent, configJSON)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "ConfigMap", err)
 	}
-	if err := r.apply(ctx, &agent, buildServiceAccount(&agent)); err != nil {
+	if err := r.apply(ctx, &agent, buildControlServiceAccount(&agent)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "ServiceAccount", err)
+	}
+	if err := r.apply(ctx, &agent, buildExecutionServiceAccount(&agent)); err != nil {
+		return r.applyFail(ctx, &agent, conds, "ServiceAccount", err)
+	}
+	if err := r.apply(ctx, &agent, buildControlService(&agent)); err != nil {
+		return r.applyFail(ctx, &agent, conds, "Service", err)
+	}
+	if err := r.apply(ctx, &agent, bootstrapCM); err != nil {
+		return r.applyFail(ctx, &agent, conds, "ConfigMap", err)
 	}
 	if profile.Spec.Persistence != nil && profile.Spec.Persistence.Enabled {
 		if err := r.applyPVC(ctx, &agent, &profile); err != nil {
 			return r.applyFail(ctx, &agent, conds, "PVC", err)
 		}
 	}
-	if err := r.apply(ctx, &agent, dep); err != nil {
-		return r.applyFail(ctx, &agent, conds, "Deployment", err)
+	// Workspace creator Role/RoleBinding (contract §11 creator contract) — applied before the
+	// control StatefulSet so the Harness can create its first Workspace as soon as it starts.
+	if err := r.apply(ctx, &agent, buildWorkspaceRole(&agent)); err != nil {
+		return r.applyFail(ctx, &agent, conds, "Role", err)
 	}
-	if wantsService(&agent, &profile) {
+	if err := r.apply(ctx, &agent, buildWorkspaceRoleBinding(&agent)); err != nil {
+		return r.applyFail(ctx, &agent, conds, "RoleBinding", err)
+	}
+	if err := r.apply(ctx, &agent, sts); err != nil {
+		return r.applyFail(ctx, &agent, conds, "StatefulSet", err)
+	}
+	// Cutover cleanup: a pre-workspace-v1 agent's old operator-owned Deployment is never
+	// garbage-collected on its own (owner-ref GC only fires on ACHAgent delete, and the
+	// agent's owner never goes away during a cutover) — prune it explicitly, same
+	// convergence pattern as the Service/NetworkPolicy opt-out below, only AFTER the new
+	// control StatefulSet is confirmed applied so the cutover never has a workload gap.
+	if err := r.pruneLegacyDeployment(ctx, &agent); err != nil {
+		return r.applyFail(ctx, &agent, conds, "LegacyDeployment", err)
+	}
+	// Same cutover cleanup for a pre-workspace-v1 sandboxed agent's agent-sandbox
+	// SandboxWarmPool/SandboxTemplate — only this new cleanup file knows those GVKs; this
+	// reconciler never creates, watches, or reads agent-sandbox objects again.
+	if err := r.pruneLegacySandbox(ctx, &agent); err != nil {
+		return r.applyFail(ctx, &agent, conds, "LegacySandbox", err)
+	}
+	if needsService(&agent) {
 		if err := r.apply(ctx, &agent, buildService(&agent, &profile)); err != nil {
 			return r.applyFail(ctx, &agent, conds, "Service", err)
 		}
@@ -254,16 +320,46 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// GC only fires on ACHAgent delete, not when the owner stops desiring the child.
 		return r.applyFail(ctx, &agent, conds, "NetworkPolicy", err)
 	}
-	if err := r.applySandbox(ctx, &agent, &profile, sandboxKey); err != nil {
-		return r.applyFail(ctx, &agent, conds, "Sandbox", err)
-	}
 	setCond(&conds, condWorkloadApplied, metav1.ConditionTrue, "WorkloadApplied", "", agent.Generation)
 
-	// 7. WorkloadReady from pod.status (probe-backed).
+	// 8. WorkloadReady from pod.status (probe-backed).
 	r.deriveWorkloadReady(ctx, &agent, configHash, &conds)
 
-	// 8. Ready is aggregated in finish() every pass.
+	// 9. Ready is aggregated in finish() every pass.
 	return r.finish(ctx, &agent, conds)
+}
+
+// requiredStorageCredentialKeys/allStorageCredentialKeys are the AWS SecretKeyRef key names
+// RuntimeStorageEnv wires into the global credentials Secret: the first two are required
+// (merged into the checkChannelSecrets gate), the third (session token) is optional and
+// merged only into the rollout-hash input, so its own add/change/removal still rolls the pod
+// without ever being treated as a missing-key failure (Task2 D1 amendment, Step 6).
+var (
+	requiredStorageCredentialKeys = []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}
+	allStorageCredentialKeys      = []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}
+)
+
+// mergeSecretKeys returns a copy of base with keys appended under secretName (deduplicating
+// against any keys the same Secret already carries for another role — e.g. a channel secret
+// reused as the storage credential Secret).
+func mergeSecretKeys(base map[string][]string, secretName string, keys []string) map[string][]string {
+	out := make(map[string][]string, len(base)+1)
+	for k, v := range base {
+		out[k] = v
+	}
+	have := map[string]struct{}{}
+	for _, k := range out[secretName] {
+		have[k] = struct{}{}
+	}
+	merged := append([]string(nil), out[secretName]...)
+	for _, k := range keys {
+		if _, ok := have[k]; !ok {
+			merged = append(merged, k)
+			have[k] = struct{}{}
+		}
+	}
+	out[secretName] = merged
+	return out
 }
 
 func (r *ACHAgentReconciler) checkChannelSecrets(ctx context.Context, ns string, refSecrets map[string][]string) (reason, msg string) {
@@ -301,6 +397,33 @@ func (r *ACHAgentReconciler) apply(ctx context.Context, owner *achv1alpha1.ACHAg
 // so convergence needs an explicit delete. Idempotent — NotFound is a no-op.
 func (r *ACHAgentReconciler) prune(ctx context.Context, obj client.Object) error {
 	if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// pruneLegacyDeployment deletes the pre-workspace-v1 operator-owned Deployment at the legacy
+// name (agentResourceName — the same name the new ConfigMap/Service/NetworkPolicy still use),
+// if one exists AND is controller-owned by this exact ACHAgent. A same-named Deployment with
+// no owner, a foreign owner, or a different ACHAgent UID (e.g. a stale prior agent that
+// reused the name) is left untouched — this must never delete by name alone (task-4-review.md
+// finding 2). Idempotent — NotFound is a no-op, so this is cheap to call on every reconcile
+// rather than tracked as one-time migration state. The UID delete precondition guards against
+// collecting a replacement object created between the Get and the Delete.
+func (r *ACHAgentReconciler) pruneLegacyDeployment(ctx context.Context, a *achv1alpha1.ACHAgent) error {
+	var dep appsv1.Deployment
+	key := types.NamespacedName{Namespace: a.Namespace, Name: agentResourceName(a.Name)}
+	if err := r.Get(ctx, key, &dep); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	owner := metav1.GetControllerOf(&dep)
+	if owner == nil || owner.APIVersion != achv1alpha1.GroupVersion.String() || owner.Kind != achAgentOwnerKind || owner.Name != a.Name || owner.UID != a.UID {
+		return nil
+	}
+	if err := r.Delete(ctx, &dep, client.Preconditions{UID: &dep.UID}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -377,7 +500,7 @@ func (r *ACHAgentReconciler) hashSecrets(ctx context.Context, a *achv1alpha1.ACH
 		}
 		want[name][key] = struct{}{}
 	}
-	add(a.Spec.Identity.SecretRef.Name, a.Spec.Identity.SecretRef.Key)
+	add(a.Spec.Ach.Identity.SecretRef.Name, a.Spec.Ach.Identity.SecretRef.Key)
 	for name, keys := range refSecrets {
 		for _, k := range keys {
 			add(name, k)
@@ -468,27 +591,23 @@ func allTrue(conds []metav1.Condition, condTypes ...string) bool {
 }
 
 func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.sandboxCRDs = sandboxCRDsServed(mgr.GetRESTMapper())
-	b := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&achv1alpha1.ACHAgent{}).
-		Owns(&appsv1.Deployment{}).
+		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&networkingv1.NetworkPolicy{}).
-		Owns(&corev1.Secret{}, builder.OnlyMetadata).
+		// The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
+		// buildWorkspaceRoleBinding, achagent_workload.go) — an Owns() source so a hand-edit
+		// re-enqueues the owning ACHAgent, same as every other owned child.
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Watches(&achv1alpha1.AgentProfile{}, handler.EnqueueRequestsFromMapFunc(r.agentsForProfile)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.agentsForSecret), builder.OnlyMetadata).
-		Named("achagent")
-	if r.sandboxCRDs {
-		for _, gvk := range []schema.GroupVersionKind{sandboxTemplateGVK, sandboxWarmPoolGVK} {
-			u := &unstructured.Unstructured{}
-			u.SetGroupVersionKind(gvk)
-			b = b.Owns(u)
-		}
-	}
-	return b.Complete(r)
+		Named("achagent").
+		Complete(r)
 }
 
 func (r *ACHAgentReconciler) agentsForProfile(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -505,6 +624,12 @@ func (r *ACHAgentReconciler) agentsForProfile(ctx context.Context, obj client.Ob
 	return reqs
 }
 
+// agentsForSecret enqueues every ACHAgent that references a changed Secret: by identity, by
+// an AgentProfile/ACHAgent channel reference, or — only when the Secret is the operator's
+// configured global storage credentials Secret AND the agent's successfully resolved Render2
+// config actually requires storage — the shared namespace-local credential Secret (Task2 D1
+// amendment, Step 6). The Render2 call here is best-effort: a transient render error simply
+// does not count as a match, it never blocks the identity/channel matches above.
 func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
 	var list achv1alpha1.ACHAgentList
 	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
@@ -518,12 +643,18 @@ func (r *ACHAgentReconciler) agentsForSecret(ctx context.Context, obj client.Obj
 		}
 	}
 	name := obj.GetName()
+	isGlobalStorageCredSecret := r.RuntimeStorageOptions.CredentialsSecretName != "" && name == r.RuntimeStorageOptions.CredentialsSecretName
 	var reqs []reconcile.Request
 	for i := range list.Items {
 		a := &list.Items[i]
-		hit := a.Spec.Identity.SecretRef.Name == name
+		hit := name == workspaceKeySecretName(string(a.UID)) || (a.Spec.Ach != nil && a.Spec.Ach.Identity != nil && a.Spec.Ach.Identity.SecretRef.Name == name)
 		if !hit {
 			if _, ok := agentrender.ReferencedSecrets(profiles[a.Spec.ProfileRef.Name], *a)[name]; ok {
+				hit = true
+			}
+		}
+		if !hit && isGlobalStorageCredSecret {
+			if cfg, err := agentrender.Render2(profiles[a.Spec.ProfileRef.Name], *a, r.DefaultAchBaseURL); err == nil && agentrender.RuntimeRequiresStorage(cfg) {
 				hit = true
 			}
 		}

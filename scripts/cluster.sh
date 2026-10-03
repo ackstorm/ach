@@ -441,9 +441,13 @@ reconcile_litellm() {
 }
 
 install_agent_sandbox() {
-  # kubernetes-sigs/agent-sandbox, a cluster prerequisite of the sandboxed placement. Installed
-  # BEFORE the operator so it sees the CRDs at start (it checks once). Keep the tag in step with
-  # test/crds/agent-sandbox/ and the gitops install.
+  # kubernetes-sigs/agent-sandbox, the optional external chart prerequisite
+  # (deploy/helm/ach/templates/agent-sandbox-rbac.yaml, agentSandbox.enabled) — preserved
+  # standalone infrastructure, uncoupled from the workspace-v1 ACHAgent render/control
+  # path (which never creates, watches, or depends on it; only the legacy
+  # pruneLegacySandbox cleanup knows its GVKs). Installed BEFORE the operator so any
+  # future use sees the CRDs at start. Keep the tag in step with test/crds/agent-sandbox/
+  # and the gitops install.
   echo "[cluster.sh] installing agent-sandbox ${AGENT_SANDBOX_VERSION}..."
   kubectl apply --server-side -f "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${AGENT_SANDBOX_VERSION}/sandbox-with-extensions.yaml"
   kubectl -n agent-sandbox-system rollout status deploy/agent-sandbox-controller --timeout=300s
@@ -825,50 +829,49 @@ verify_all() {
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
-  # Stage 06 agent-runtime — operator OUTPUT gate. WorkloadApplied=True (NOT
-  # WorkloadReady: the ach-agent image is not loaded into kind, so the pod never
-  # goes Ready — see the 06-agent DEFERRED note). Then assert the rendered
-  # config.json is schema-shaped and the ek arrives as a secretKeyRef, never
-  # inline.
+  # Stage 06 agent-runtime — operator OUTPUT gate (contract §11 workspace-v1 control
+  # StatefulSet — one Channels+Harness control pod per ACHAgent, no standalone/
+  # distributed placement in 0.1.0). WorkloadApplied=True (NOT WorkloadReady). PREREQUISITE:
+  # both e2e-profile/e2e-profile-pvc control/execution images reference the
+  # ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.0 candidate references (not yet
+  # published releases) — Root must kind-load both images into the cluster before this
+  # stage applies/syncs, or WorkloadReady never flips (image pull failure in a running
+  # pod, not a render/schema failure). Assert the rendered config.json is workspace-v1-shaped, the identity
+  # secret arrives via secretKeyRef under the exact alias name the config promises, the
+  # control StatefulSet carries that same injection plus fsGroup 10001, and the Harness has
+  # its own creator RoleBinding (ach-harness-<uid>).
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent
   kubectl -n ach-system get configmap achagent-e2e-agent \
     -o jsonpath='{.data.config\.json}' \
-    | jq -e '.schemaVersion=="1" and .capability.type=="ach"' >/dev/null
-  kubectl -n ach-system get deploy achagent-e2e-agent \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_TOKEN")].valueFrom.secretKeyRef.name}' \
+    | jq -e '.schemaVersion=="workspace-v1" and .ach.identity.env=="ACH_SECRET_IDENTITY"' >/dev/null
+  local e2e_agent_uid e2e_agent_pvc_uid uid
+  e2e_agent_uid=$(kubectl -n ach-system get achagent e2e-agent -o jsonpath='{.metadata.uid}')
+  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_uid}" \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_SECRET_IDENTITY")].valueFrom.secretKeyRef.name}' \
     | grep -q .
-  # Standalone stays the single `agent` container.
-  kubectl -n ach-system get deploy achagent-e2e-agent \
-    -o jsonpath='{.spec.template.spec.containers[*].name}' \
-    | grep -qx 'agent'
-  # Persistent standalone: whole PVC at the mountPath, single container.
+  # Single `agent` container on the ephemeral control StatefulSet too — same shape
+  # assertion the persistent one below already carries, retargeted here from the
+  # retired standalone/distributed smoke check so an added container still fails this
+  # gate (ach-task6-review.md M2).
+  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_uid}" -o json \
+    | jq -e '[.spec.template.spec.containers[].name] == ["agent"]' >/dev/null
+  kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_uid}" \
+    -o jsonpath='{.subjects[0].name} {.roleRef.name}' \
+    | grep -qx "ach-harness-${e2e_agent_uid} ach-harness-${e2e_agent_uid}"
+  # Persistent standalone: whole operator-managed control-pod PVC at the mountPath,
+  # single `agent` container (same name as before — only the workload kind changed).
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
-  kubectl -n ach-system get deploy achagent-e2e-agent-pvc -o json \
+  e2e_agent_pvc_uid=$(kubectl -n ach-system get achagent e2e-agent-pvc -o jsonpath='{.metadata.uid}')
+  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_pvc_uid}" -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]
              and any(.spec.template.spec.volumes[]; .persistentVolumeClaim != null)' >/dev/null
-  # The pod pins uid/gid/fsGroup 10001 — a fresh root-owned cloud
-  # PVC is unwritable by the image uid without it (ach-agent finding 2026-09-15).
-  for a in e2e-agent e2e-agent-pvc; do
-    kubectl -n ach-system get deploy "achagent-${a}" \
+  # Every control pod pins uid/gid/fsGroup 10001 — a fresh root-owned cloud PVC is
+  # unwritable by the image uid without it (ach-agent finding 2026-09-15).
+  for uid in "${e2e_agent_uid}" "${e2e_agent_pvc_uid}"; do
+    kubectl -n ach-system get statefulset "ach-control-${uid}" \
       -o jsonpath='{.spec.template.spec.securityContext.runAsUser} {.spec.template.spec.securityContext.fsGroup}' \
       | grep -qx '10001 10001'
   done
-  # Sandboxed placement (runc — kind has no gVisor). The pinned e2e image predates sandbox mode, so
-  # the harness pod never goes Ready; the gate is the operator's OUTPUT: template + pool + key
-  # Secret + Service, and NO harness secret in the warm sandbox pod (the S3/K/egress invariant).
-  kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-sbx
-  kubectl -n ach-system get sandboxtemplate.extensions.agents.x-k8s.io achagent-e2e-agent-sbx >/dev/null
-  kubectl -n ach-system get sandboxwarmpool.extensions.agents.x-k8s.io achagent-e2e-agent-sbx >/dev/null
-  kubectl -n ach-system get secret achagent-e2e-agent-sbx-sandbox-key >/dev/null
-  kubectl -n ach-system get svc achagent-e2e-agent-sbx -o json \
-    | jq -e '[.spec.ports[].name] | index("gateway") != null' >/dev/null
-  kubectl -n ach-system get deploy achagent-e2e-agent-sbx -o json \
-    | jq -e '.spec.template.spec.serviceAccountName == "ach-sandboxed-agent"' >/dev/null
-  # The warm pool creates pods whether or not they become Ready.
-  timeout 120 bash -c 'until kubectl -n ach-system get pods -l ach.ackstorm.ai/role=sandbox -o name | grep -q .; do sleep 3; done' \
-    || { echo "[cluster.sh] no warm sandbox pod appeared" >&2; return 1; }
-  kubectl -n ach-system get pods -l ach.ackstorm.ai/role=sandbox -o json \
-    | jq -e '[.items[].spec.containers[].env[]?.name] | all(. != "ACH_SANDBOX_KEY" and (startswith("ACH_SECRET_") | not) and . != "ACH_TOKEN")' >/dev/null
   echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }
 

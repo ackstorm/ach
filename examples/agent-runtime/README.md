@@ -2,23 +2,30 @@
 
 Two CRDs run an ACH agent as a Kubernetes workload:
 
-- **`AgentProfile`** — reusable infra (resources, persistence, networkPolicy,
-  podTemplate) plus agent-overridable defaults under `spec.achagent` (image,
-  ach, model, engine knobs, limits, health port, cost source). One profile is shared by many
-  agents; an `ACHAgent` may override any `spec.achagent` field flat on its own
-  spec (per-field deep merge — a set agent field wins, an omitted one inherits
-  the profile's). `spec.podTemplate` is an optional raw strategic-merge overlay
-  over the rendered pod template (containers merge by name `agent`; the
-  operator re-pins its selector label and config-hash annotation; everything
-  else is the author's responsibility).
-- **`ACHAgent`** — an agent instance. References a profile, supplies its ACH
-  identity (`ek_`), the target Hub Environment, an optional persona prompt, and
-  one or more inbound channels (webhook / webhook-script / cron / queue / a2a).
+- **`AgentProfile`** — reusable infra (resources, persistence — the operator's own
+  ephemeral control-pod volume, distinct from the Harness-level `workspace.persistence`
+  backend below —, networkPolicy, podTemplate) plus agent-overridable defaults under
+  `spec.achagent` (image, `ach` baseUrl/environment/capability defaults, model, engine
+  knobs, limits, health, workspace, artifacts) and the required `spec.execution` block
+  (contract §11 execution-role infra — image/resources/ephemeralStorage/scheduling for the
+  per-Workspace execution pod the Harness creates). One profile is shared by many agents;
+  an `ACHAgent` may override any `spec.achagent` field inline on its own spec (per-field
+  deep merge — a set agent field wins, an omitted one inherits the profile's; nested blocks
+  like `workspace`/`artifacts` merge recursively per leaf field, never as a wholesale
+  replace). `spec.podTemplate` is an optional raw strategic-merge overlay over the rendered
+  pod template (the control container is named `agent`; the operator re-pins its selector
+  label and config-hash annotation; everything else is the author's responsibility).
+- **`ACHAgent`** — an agent instance. References a profile, supplies its own
+  `ach.identity` (`ek_`, never a profile default), the target Hub Environment
+  (`ach.environment`, documentation-only), an optional persona prompt, and one or more
+  inbound channels (webhook / webhook-script / cron / queue / a2a).
 
 Both resources accept Pod-native `spec.env`. Entries merge by name and the
 `ACHAgent` entry wins atomically. `engine.forwardEnv` sends selected names to the
 agent engine; `channels[].handoff.forwardEnv` independently sends selected names
-only to that channel's handoff script. Unknown names are ignored and remain unset.
+only to that channel's handoff script. A `forwardEnv` name absent from the merged
+`spec.env` is an authoring error — the render fails (`engine.forwardEnv: "<name>" is not
+set in spec.env`), it does not silently skip the name and leave it unset.
 
 `channels[].handoff` is a generic configuration-owned shell hook. The operator
 and harness do not clone, cache, lock, or delete repositories on its behalf. It
@@ -35,13 +42,18 @@ turn (fail-closed); `sessionSuspend` runs every time the session's engine stops
 (idle, shutdown, sandbox suspend), before any HOME archive (best-effort, may run
 many times).
 
-The operator collapses the two into a single `agent-config-v1` config, writes it
-to a ConfigMap (`config.json`), and applies a single-replica Deployment that
-mounts it at `/etc/ach-agent/config.json`. The `ach-agent` harness
-**self-hydrates** against ACH at boot — there is no init container and no CLI
-step.
+The operator collapses the two into the workspace-v1 wire config (`schemaVersion:
+"workspace-v1"`), writes it to a ConfigMap (`achagent-<name>`, key `config.json`), and
+applies a single-replica control StatefulSet (`ach-control-<uid>`, one `agent` container —
+Channels+Harness) that mounts it at `/etc/ach-runtime/config.json`. The harness
+**self-hydrates** against ACH at boot — there is no init container and no CLI step. It then
+creates one standard zero/one-replica execution StatefulSet per non-migrable Workspace
+directly, using `spec.execution` (image/resources/ephemeralStorage/scheduling) — a real,
+consumed creator path in v0.1.0; only the declarative Workspace CR for hand-managing those
+objects yourself is deferred to v0.1.1. There is no `standalone`/`distributed` placement
+knob any more: one control container per agent.
 
-The pod runs as uid/gid/fsGroup 10001 (the image uid), so a fresh PVC — root-owned
+The control pod runs as uid/gid/fsGroup 10001 (the image uid), so a fresh PVC — root-owned
 0755 on cloud provisioners such as EBS — is writable without a `podTemplate` overlay.
 
 ## Prerequisites — Secrets you create yourself
@@ -50,17 +62,17 @@ The operator never mints credentials; it only references Secrets in the same
 namespace.
 
 ```bash
-# 1. The ACH ek_ the agent authenticates with (injected as ACH_TOKEN).
+# 1. The ACH ek_ the agent authenticates with (injected as ACH_SECRET_IDENTITY).
 kubectl -n engineering create secret generic ops-ek \
-  --from-literal=ek=<ek_...>
+  --from-literal="ek=<YOUR_EK>"
 
 # 2. Per-channel secrets referenced by webhook/a2a auth (this example's webhook).
 kubectl -n engineering create secret generic gitlab-webhook \
-  --from-literal=secret=<gitlab-webhook-token>
+  --from-literal="secret=<YOUR_GITLAB_WEBHOOK_SECRET>"
 
 # 3. Read-only token used by the GitLab channel's handoff clone.
 kubectl -n engineering create secret generic gitlab-clone \
-  --from-literal=token=<gitlab-read-token>
+  --from-literal="token=<YOUR_GITLAB_READ_TOKEN>"
 
 # 4. NOT needed for agent-memory.yaml as shipped: it uses memory auth type=ach,
 #    where the harness sends its own ek_ and ACH resolves the principal. Only the
@@ -69,10 +81,18 @@ kubectl -n engineering create secret generic gitlab-clone \
 #    depends on `auth.header`: a JWT for the default `Authorization`, or whatever
 #    the platform provider's resolver names for e.g. `x-litellm-api-key`.
 # kubectl -n engineering create secret generic ach-memory-key \
-#   --from-literal=token=<ach-memory-token>
+#   --from-literal="token=<YOUR_ACH_MEMORY_TOKEN>"
 ```
 
 ## Apply
+
+`profile.yaml`'s `achagent.image`/`execution.image` ship as conspicuous
+`REPLACE_WITH_PUBLISHED_CONTROL_IMAGE` / `REPLACE_WITH_PUBLISHED_EXECUTION_IMAGE`
+markers — no real control/execution image is published yet. Substitute real
+version-tagged references **before** applying this profile: the execution marker
+carries no tag, which the operator's wire schema rejects outright, so the ACHAgent
+never reaches `WorkloadApplied=True` as shipped (`RenderFailed`) — this is a render/
+schema failure, not merely a later image-pull failure once a pod exists.
 
 ```bash
 kubectl apply -f profile.yaml
@@ -95,7 +115,7 @@ self-hydrates, **`Ready=False` with `WorkloadReady=PodNotReady` usually means
 hydration failed** — check the pod logs and the `/readyz` probe:
 
 ```bash
-kubectl -n engineering logs deploy/achagent-gitlab-reviewer
+kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer -c agent --tail=100
 ```
 
 ## Notes
@@ -107,17 +127,26 @@ kubectl -n engineering logs deploy/achagent-gitlab-reviewer
 - The webhook/a2a **Service is ClusterIP only**. Front it with the platform
   Ingress/gateway — the operator creates no Ingress.
 - Reserved `ACH_*` env vars cannot be set via either resource's `spec.env`; the
-  operator owns that namespace (the ek arrives via `identity.secretRef` as
-  `ACH_TOKEN`).
+  operator owns that namespace (the ek arrives via `ach.identity.secretRef` as
+  `ACH_SECRET_IDENTITY`).
 
-## Hardening the agent pod
+## Hardening the control pod
 
-The agent container runs opencode, which has a shell tool. Two knobs bound what that shell can
-reach. Both live on the `AgentProfile` (reusable infra), not on the `ACHAgent`.
+`spec.podTemplate`/`spec.networkPolicy` (both on the `AgentProfile`) only ever bound the
+**control** StatefulSet (`ach-control-<uid>`, one `agent` container — Channels+Harness).
+That container holds the agent's private credentials (`ACH_SECRET_IDENTITY`, channel
+secrets) but does **not** run opencode or any shell tool. opencode — and the shell tool —
+run in the separate per-Workspace **execution** pod the Harness creates directly from
+`spec.execution` (image/resources/ephemeralStorage/scheduling/tolerations/nodeSelector).
+There is currently no `podTemplate`/`networkPolicy`-equivalent overlay for that execution
+pod: the two knobs below harden the control pod's own process and its own egress (API
+calls to ACH, Postgres/Redis if dialled directly), not opencode's shell.
 
-### Sandboxed runtime (`runtimeClassName`)
+### Sandboxed control pod (`runtimeClassName`)
 
-No dedicated field — `spec.podTemplate` is a raw strategic-merge overlay, so set it directly:
+No dedicated field — `spec.podTemplate` is a raw strategic-merge overlay, so set it directly.
+This puts the **control** pod (the Channels+Harness process holding `ACH_SECRET_IDENTITY` and
+channel secrets) behind a gVisor/Kata boundary, not opencode:
 
 ```yaml
 spec:
@@ -129,11 +158,14 @@ spec:
 The RuntimeClass must already exist in the cluster. An unknown name means the pod will not run;
 this surfaces as `WorkloadReady=False` on the ACHAgent.
 
-### Egress allowlist (`networkPolicy`)
+### Control-pod egress allowlist (`networkPolicy`)
 
-The harness fronts every model and MCP call through a localhost proxy that injects the `ek_`, but
-that proxy is *cooperative* — opencode's shell tool can reach anything the pod's network reaches.
-`spec.networkPolicy` makes the boundary enforced instead of assumed.
+This bounds only what the **control** pod itself dials directly (the Harness process, not
+opencode): the ACH API, any approved model/MCP facade it executes upstream requests for with
+its own private credentials, and — if the agent uses them — redis and the memory backend
+below. opencode's own direct model/MCP/A2A traffic still runs in the separate execution pod,
+which has no `networkPolicy`-equivalent knob today; this allowlist does not reach that direct
+traffic either way.
 
 ```yaml
 spec:
@@ -153,9 +185,12 @@ spec:
 
 - **Omitted** → no policy, unrestricted egress (the default, unchanged from before this feature).
 - **`networkPolicy: {}`** → deny-all egress except DNS. On an enforcing CNI this also cuts off
-  `ACH_BASE_URL` — every model and MCP call fails — while the pod stays `Ready` (kubelet probes
-  don't check egress), so `{}` can look healthy while doing nothing. It's trivially recoverable
-  though: dropping the block prunes the policy immediately, no pod restart needed.
+  `ACH_BASE_URL` and any configured facade peer — hydration and every control-pod-routed
+  model/MCP call fail — while opencode's own direct model/MCP/A2A traffic in the execution
+  pod, outside this policy's reach, is unaffected, and the pod stays `Ready` either way
+  (kubelet probes don't check egress), so `{}` can look healthy while doing nothing. It's
+  trivially recoverable though: dropping the block prunes the policy immediately, no pod
+  restart needed.
 - The operator always prepends a DNS rule (UDP+TCP port 53, any destination). Without it a
   default-deny policy breaks name resolution, and the failure looks like a DNS bug rather than a
   policy denial. Consequence: DNS-tunnel exfiltration is not covered by this policy.
@@ -164,16 +199,18 @@ spec:
 - Rules are **declared, not derived**. NetworkPolicy has no FQDN peer type and `ach.baseUrl` is a
   URL, so the operator cannot compute the ACH peer for you. Use a `podSelector` +
   `namespaceSelector` for in-cluster ACH, or an `ipBlock` CIDR for an external endpoint.
-- **Declare every peer the harness dials directly, not just ACH.** The localhost proxy covers
-  model/MCP/A2A egress via `ACH_BASE_URL`, but the harness also dials some endpoints straight
-  from the pod:
+- **Declare every peer the control pod dials directly, not just ACH.** Beyond the ACH API
+  itself, the Harness also dials some endpoints straight from the control pod:
   - **redis**, if any `channels[].type: queue`, or if the stats sink (`ACH_STATS_REDIS_URL`) is
     configured
   - the **memory backend**, if `memory.achMemory.endpoint` is set
-  Miss one and it won't error — memory and stats are fail-open by design, so the agent just
-  degrades silently (no session recall, no metrics) instead of failing loudly.
-  A2A peers need no rule of their own: they arrive from hydration and are dialled through
-  `ACH_BASE_URL` like model and MCP traffic.
+  - any **approved model/MCP facade** endpoint the Harness is configured to dial upstream
+    itself, with its own private credentials — declare its actual configured peer, not an
+    assumed one
+  Miss the redis or memory peer and it won't error — both are fail-open by design, so the
+  agent just degrades silently (no session recall, no metrics) instead of failing loudly.
+  Execution's own direct model/MCP/A2A traffic — opencode's own calls, not routed through an
+  approved facade — is dialled from the execution pod, outside this policy's reach either way.
 - **`networkPolicy` lives on the shared `AgentProfile`, but `memory`/`channels` live on the
   `ACHAgent`.** A profile shared by several agents needs the *union* of all their peers, which
   over-grants egress to agents that don't need every peer.

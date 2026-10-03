@@ -1,9 +1,10 @@
-# Same as e2e-profile but with persistence ON (kind's default `standard`
-# local-path StorageClass): the persistent-standalone shape ach-agent found
-# unwritable in EKS on v0.8.11 (fresh root-owned EBS PVC, pod had no fsGroup).
-# kind hands out 0777 hostPath dirs, so this fixture cannot reproduce that
-# failure; the gate is the rendered fsGroup (stage 07) + WorkloadReady=True +
-# a write under the mountPath as uid 10001 (TestAgentRuntimeReady).
+# Same as e2e-profile but with the operator's own CONTROL-POD PVC ON (kind's default
+# `standard` local-path StorageClass) — spec.persistence below, an ephemeral-infra
+# knob unrelated to the Harness/Storage workspace.persistence policy (D1): the
+# persistent-standalone shape ach-agent found unwritable in EKS on v0.8.11 (fresh
+# root-owned EBS PVC, pod had no fsGroup). kind hands out 0777 hostPath dirs, so this
+# fixture cannot reproduce that failure; the gate is the rendered fsGroup (stage 07) +
+# WorkloadReady=True + a write under the mountPath as uid 10001 (TestAgentRuntimeReady).
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: AgentProfile
 metadata:
@@ -14,9 +15,45 @@ spec:
     enabled: true
     size: 1Gi
   achagent:
-    image: ghcr.io/ackstorm/ach-agent:v0.16.5@sha256:9ef89f09eed0b33ceb77cb7a35f90dadd3141d10a864460674cf5f5d429f45ec
+    image: ghcr.io/ackstorm/ach-runtime-control:0.1.0
     ach:
       baseUrl: http://ach-gateway.ach-system.svc
     model:
       name: demo-model
       type: openai
+    engine:
+      compaction:
+        auto: true
+        keep:
+          tokens: 8000
+        buffer: 20000
+    limits:
+      maxActiveWorkspaces: 4
+      maxConcurrentInvocations: 4
+      maxConcurrentScripts: 2
+      maxInvocationSeconds: 900
+      maxQueuedTotal: 100
+      idempotencyWindowSeconds: 3600
+      maxSteps: 30
+    # Harness/Storage workspace.persistence stays disabled (D1) — distinct from
+    # spec.persistence above (the operator's own control-pod PVC, always available).
+    workspace:
+      idleTimeoutSeconds: 600
+      shutdownTimeoutSeconds: 300
+      maxConcurrentSessions: 1
+      persistence:
+        enabled: false
+        retentionDays: 90
+      session:
+        idleTimeoutSeconds: 300
+        persistence:
+          enabled: false
+          retentionDays: 90
+    artifacts:
+      enabled: false
+      maxArtifactBytes: 104857600
+      retentionDays: 90
+  execution:
+    image: ghcr.io/ackstorm/ach-runtime-execution:0.1.0
+    ephemeralStorage: 1Gi
+    terminationGracePeriodSeconds: 330

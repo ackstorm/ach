@@ -24,6 +24,7 @@ rules:
   resources:
   - pods
   verbs:
+  - delete
   - get
   - list
   - watch
@@ -110,18 +111,14 @@ rules:
   resources:
   - deployments
   verbs:
-  - create
   - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
-  - extensions.agents.x-k8s.io
+  - apps
   resources:
-  - sandboxtemplates
-  - sandboxwarmpools
+  - statefulsets
   verbs:
   - create
   - delete
@@ -131,9 +128,38 @@ rules:
   - update
   - watch
 - apiGroups:
+  - apps
+  resources:
+  - statefulsets/scale
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - extensions.agents.x-k8s.io
+  resources:
+  - sandboxtemplates
+  - sandboxwarmpools
+  verbs:
+  - delete
+  - get
+- apiGroups:
   - networking.k8s.io
   resources:
   - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
   verbs:
   - create
   - delete

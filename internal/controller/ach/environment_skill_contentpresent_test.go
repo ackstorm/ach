@@ -10,6 +10,14 @@
 // Reuses setupPluginContentPresentDB + buildPluginTestReconciler from
 // environment_plugin_contentpresent_test.go (same package). Skipped unless
 // Docker is available.
+//
+// The suite reconciler (DB=nil) also reconciles this Environment and writes
+// ExecutionResourcesResolved=True with no content gate, racing this test's
+// own status write. TestEnvSkillContentPresent_NotSynced captures the
+// DB-wired reconciler's own successful status Update via
+// capturingEnvStatusClient (defined in environment_plugin_contentpresent_test.go),
+// so it observes that write directly instead of re-Getting a status the
+// suite reconciler may have since overwritten.
 
 package ach
 
@@ -85,14 +93,16 @@ func TestEnvSkillContentPresent_NotSynced(t *testing.T) {
 	}
 
 	r := buildPluginTestReconciler(t, ns, pool)
+	spy, written := capturingEnvStatusClient(t)
+	r.Client = spy
 	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cr)}
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatalf("Reconcile error: %v", err)
 	}
 
-	var final achv1alpha1.Environment
-	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &final); err != nil {
-		t.Fatalf("re-Get Environment: %v", err)
+	final := written()
+	if final == nil {
+		t.Fatal("DB-wired reconciler issued no successful status update")
 	}
 
 	var errCond *metav1.Condition

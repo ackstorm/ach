@@ -21,6 +21,7 @@ that revealed it.
 | Change | Update |
 |--------|--------|
 | CRD field / condition / default | `docs/api-reference/` (`make gen-crd-ref-docs`) + `examples/` |
+| `AgentProfile` / `ACHAgent` rendering or workspace-v1 contract | `references/achagent.md` |
 | New/renamed `make` target or default behavior | table here + `references/makefile.md` |
 | New `wait-*` / blessed pattern / polling rule | "Waiting for state" table |
 | Pre-push gate / govulncheck ack / SPDX rule | "Publication" + `references/security/...` |
@@ -118,55 +119,21 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
 `Skill`, `SkillMarketplace`, `Prompt`, `Artifact`, `LiteLLMConnection`,
 `BackendIdentityPolicy`, `AgentProfile`, `ACHAgent` (`api/` is authoritative —
 NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
-`ek_`/`pk_` keys and teams are platform-api/DB objects). **`AgentProfile` (reusable infra + defaults) + `ACHAgent`
-(an agent instance)** render into the single `agent-config-v1` config the
-`ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a
-`config.json` ConfigMap + a single-replica Deployment (probes, inbound
-channel-auth secrets injected as `ACH_SECRET_*` env vars via `secretKeyRef` —
-never file-mounted, keeping secret material off the pod filesystem and the
-harness contract simple (NOT an isolation boundary: same-uid reads
-`/proc/<pid>/environ` either way) — salted
-config-hash roll; optional profile spec.podTemplate raw overlay
-strategic-merged over the pod template — pass-through, selector label +
-config-hash re-pinned) — the harness **self-hydrates**
-against ACH at boot (no init container, no CLI), so operator status derives from
-probe-backed `pod.status` only.
-`ACHAgent.spec.egress` (agent-only) renders a `config.json` `egress` block + harness-only
-`ACH_SECRET_EGRESS_<i>` env (secretKeyRef, list order); the operator mirrors NO harness validation —
-the harness rejects bad origins/placeholders/`forwardEnv` collisions at load (pod fails readiness).
-`placement` (`standalone` (CRD default) | `sandboxed`; `ACHAgent.spec.placement ??
-AgentProfile.spec.achagent.placement`, agent wins; operator-only, never in config.json)
-picks the pod topology; standalone is the single `agent` container. Placement is a config-hash
-input. **`sandboxed`**: the harness stays in the Deployment and each session's engine runs in an
-agent-sandbox pod (kubernetes-sigs v1.0.x, cluster prerequisite; the operator checks the CRDs once
-at start — absent ⇒ `WorkloadApplied=False/SandboxCRDsMissing`). Needs the profile's `spec.sandbox`
-(bucket, runtimeClassName e.g. gvisor, warmPoolReplicas, …) + persistence, else RenderFailed. The
-operator renders `config.json` `sandbox` (`warmPool`/`gatewayHost` = `achagent-<name>`), an
-unstructured `SandboxTemplate` + `SandboxWarmPool` named `achagent-<name>` (template: engine
-container `--role engine`, no SA token, `networkPolicyManagement: Unmanaged`, env = only
-`engine.forwardEnv` + mcpServers env refs, plus the PUBLIC `ACH_SANDBOX_VERIFY_KEY` derived from K),
-always the Service (+ ports 8095 gateway, 8096 egress when `spec.egress`), and runs the harness as the
-shared SA `ach-sandboxed-agent` (chart `agentSandbox.enabled`: SA + sandboxclaims Role; Pod Identity
-binds S3 to that SA name; missing ⇒ `SandboxServiceAccountMissing`, requeued every 15s). K =
-Secret `achagent-<name>-sandbox-key` (`key`, 64 hex): created once by the operator (first Secret it
-writes), never rotated (delete by hand ⇒ harness rolls), harness env `ACH_SANDBOX_KEY` only.
-`ACH_SANDBOX_KEY`, `ACH_SECRET_*` and the ek never enter the template (`TestSandboxTemplate_NoHarnessSecrets`).
-No NetworkPolicy: trust is derived tokens only. Needs ach-agent >= v0.18.0-rc1. The pod pins uid/gid/fsGroup 10001 (image uid): without fsGroup a fresh root-owned cloud
-PVC (EBS) was unwritable on a persistent pod (ach-agent finding 2026-09-15; kind's
-local-path dirs are 0777 and never show it). The profile's `spec.achagent` block (image/ach/model/engine/limits/health/cost/placement) holds
-the agent-overridable defaults; an ACHAgent sets the same fields flat on its
-spec (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
-(`agentrender.Resolve{Image,Model,Engine,Limits,Health,Cost,Placement}` + `ResolveAchBaseURL`):
-a set agent field wins, an omitted one inherits the profile's. Slices/maps/
-nested blocks (`engine.forwardEnv`, `model.params`, `model.thinking`,
-`engine.pi`, `cost`) are atomic — present on the agent ⇒ replace as a whole. Everything
-else on the profile is profile-only infrastructure an agent cannot override:
-`imagePullSecrets`, `resources`, `extraEnv`, `nodeSelector`, `tolerations`,
-`persistence`, `networkPolicy`, `terminationGracePeriodSeconds`, `podTemplate`.
-`ach.baseUrl` resolves `ACHAgent.spec.ach ?? AgentProfile.spec.achagent.ach ??
-operator ACH_BASE_URL` (empty everywhere ⇒ Render blocks the agent); `health`
-is resolved ONCE via `agentrender.ResolveHealth` so the config health block,
-Service targetPort, and container probes never drift.
+`ek_`/`pk_` keys and teams are platform-api/DB objects). **`AgentProfile` (reusable infra
++ defaults) + `ACHAgent` (an agent instance)** render via `agentrender.Render2` into the
+single **workspace-v1** wire config (`schemaVersion: "workspace-v1"`, contract §11) the
+`ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a `config.json`
+ConfigMap + a single-replica, single-container **control StatefulSet**
+(`ach-control-<uid>`) that self-hydrates against ACH at boot (no init container, no CLI),
+plus the execution identity/bootstrap scaffolding the Harness running IN that control pod
+uses to create real per-Workspace execution StatefulSets directly (the declarative
+`Workspace` CR for hand-managing them yourself is deferred to v0.1.1). There is no
+`standalone`/`distributed`/`sandboxed` placement knob any more, and `ACHAgent.spec.egress`
+is retired — both ACHAgent-only features were replaced, not adapted; a pre-existing
+ACHAgent's old Deployment and any agent-sandbox `SandboxTemplate`/`SandboxWarmPool` it
+owned are pruned once, right after its new control StatefulSet applies. Full rendering,
+merge-resolution and e2e detail → **`references/achagent.md`** (MANDATORY before touching
+`internal/agentrender/`, `achagent_*.go`, or the stage-06 fixtures).
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
 content-service, migrate); `gateway` is an **optional, logic-free packaging
@@ -254,6 +221,7 @@ independent collections.)
 | Fresh session / whole-system comprehension ("understand the project") | `references/understanding.md` (complete mental model — replaces re-exploring the repo) |
 | Any `make` command / command organization | `references/makefile.md` (command list + 3-context model) |
 | Repo layout / synced fixtures / examples | `references/repo-layout.md` + `verify_all` in `scripts/cluster.sh` |
+| `internal/agentrender/`, `achagent_*.go`, stage-06 agent fixtures | `references/achagent.md` (rendering, placement, e2e evidence) |
 | Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
 | Release tooling / goreleaser / docs site | `references/release-pipeline.md` + `.goreleaser.yml` + `release.yml` |
 | Debugging a service/domain failure     | `references/troubleshooting.md`          |
@@ -271,7 +239,7 @@ independent collections.)
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
 | Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/developer-guide/jwt-forwarder.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
 | Changing the OpenCode auth plugin | Never here: change `github.com/ackstorm/opencode-oidc-provider`, tag it, then bump `genai.opencodePluginSpec` in `deploy/helm/ach/values.yaml` |
-| Changing what `AgentProfile`+`ACHAgent` render into (`agent-config-v1`) | `../ach-agent/docs/schemas/operator-contract.md` — prose half, pins contract rev **v3** (was `CONTRACT_v3.md` until 2026-07-27) — plus `agent-config-v1.schema.json` beside it, authoritative for field names/types/defaults. **Neither repo may change it unilaterally:** ach-agent regenerates (`make schema`), then re-vendor `internal/agentrender/testdata/agent-config-v1.schema.json` in the SAME change — `TestSchema_NoDrift` enforces it. Published: `https://ackstorm.github.io/ach-agent/stable/schemas/agent-config-v1.schema.json` |
+| `AgentProfile`/`ACHAgent` rendering, placement, e2e | `references/achagent.md` first, then if touching the wire contract itself: `../ach-agent/docs/schemas/ach-workspace-contract-v1.md` — prose half, contract §11 (workspace-v1; superseded the earlier `operator-contract.md`/agent-config-v1 rev **v3**) — plus `ach-workspace-config-v1.schema.json` beside it, authoritative for field names/types/defaults. **Neither repo may change it unilaterally:** ach-agent regenerates (`make schema`), then re-vendor `internal/agentrender/testdata/ach-workspace-config-v1.schema.json` in the SAME change — `TestWorkspaceV1Schema_NoDrift` enforces it. No stable published URL yet — pin to a commit/tag Root has accepted, never WIP |
 
 ## CI gating
 
@@ -325,15 +293,15 @@ make shell                       # interactive shell in the devtools container
 ```
 
 `scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
-`/ach-agent` when one exists — `TestSchema_NoDrift` reads the frozen
-`agent-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+`/ach-agent` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
+`ach-workspace-config-v1` schema at `../../../ach-agent/...`, and without the mount that
 path is absent in the container, so the test skipped on the ReadFile error and
 the contract guard silently compared NOTHING (it had never once run). No sibling
 checkout ⇒ it still skips, by design.
 
 `scripts/dev.sh` also bind-mounts a sibling `../ach-agent` checkout read-only at
-`/ach-agent` when one exists — `TestSchema_NoDrift` reads the frozen
-`agent-config-v1` schema at `../../../ach-agent/...`, and without the mount that
+`/ach-agent` when one exists — `TestWorkspaceV1Schema_NoDrift` reads the frozen
+`ach-workspace-config-v1` schema at `../../../ach-agent/...`, and without the mount that
 path is absent in the container, so the test skipped on the ReadFile error and
 the contract guard silently compared NOTHING (it had never once run). No sibling
 checkout ⇒ it still skips, by design.
@@ -528,14 +496,16 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 ## Repository-specific patterns
 
-- **ACHAgent placement**: `agentrender.ResolvePlacement` (agent ?? profile ?? `standalone`). The e2e
-  stage 06 ships THREE shapes: `e2e-agent` (standalone, ephemeral) + `e2e-agent-pvc` (standalone on
-  the persistent `e2e-profile-pvc`) + `e2e-agent-sbx` (sandboxed on runc; gate = operator output:
-  template/pool/key/Service + no harness secret in the warm pod; agent-sandbox installed by
-  `cluster.sh`), image `v0.16.5` pinned by digest, model `demo-model`. Two
-  evidence tracks: `scripts/cluster.sh` gates the rendered shape (`WorkloadApplied`, uid/fsGroup
-  10001 on both); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`, swaps it into
-  `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid 10001. Pods can hydrate because the e2e origin is
+- **ACHAgent rendering/placement (workspace-v1)**: see `references/achagent.md` for the full
+  contract. The e2e stage 06 ships TWO shapes: `e2e-agent` (ephemeral) + `e2e-agent-pvc` (on
+  the persistent `e2e-profile-pvc`) — both control/execution images now reference the
+  `ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.0` candidates (unpublished; Root
+  kind-loads them into the cluster before stage 06 applies). Two evidence tracks: `scripts/cluster.sh
+  verify_all` gates the rendered shape (`WorkloadApplied`, uid/fsGroup 10001
+  on both control StatefulSets); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`,
+  swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid
+  10001 — `phase6RequireRealRuntimeImages` only skips if a profile reverts to a
+  `REPLACE_WITH_PUBLISHED_*` marker. Pods can hydrate because the e2e origin is
   `http://ach.e2e.local:8080` on BOTH sides (devtools `--add-host` → 127.0.0.1; CoreDNS
   rewrite → `ach-local-gateway:8080`) — never `localhost:8080`, which a pod resolves to
   itself.

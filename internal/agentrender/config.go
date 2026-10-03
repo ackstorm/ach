@@ -1,36 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package agentrender collapses an AgentProfile + ACHAgent into the single
-// agent-config-v1 config the ach-agent harness self-boots from. Pure: no API
-// calls, no side effects. Output struct JSON tags MUST match
-// ../ach-agent/docs/schemas/agent-config-v1.schema.json (validated by schema_test.go).
+// Package agentrender collapses an AgentProfile + ACHAgent into the workspace-v1 WSConfig
+// (render2.go's Render2) the ach-agent harness self-boots from. Pure: no API calls, no side
+// effects. This file holds the Block types Render2/workspace-v1 share with each other —
+// output JSON tags MUST match the vendored
+// testdata/ach-workspace-config-v1.schema.json (validated by schema_test.go).
 package agentrender
-
-// AgentConfig is the top-level rendered config (schema $id agent-config-v1).
-type AgentConfig struct {
-	SchemaVersion string          `json:"schemaVersion"`
-	Agent         AgentBlock      `json:"agent"`
-	Model         ModelBlock      `json:"model"`
-	Capability    CapabilityBlock `json:"capability"`
-	Engine        *EngineBlock    `json:"engine,omitempty"`
-	Prompt        *PromptBlock    `json:"prompt,omitempty"`
-	Memory        *MemoryBlock    `json:"memory,omitempty"`
-	Limits        *LimitsBlock    `json:"limits,omitempty"`
-	Persistence   *PersistBlock   `json:"persistence,omitempty"`
-	Health        *HealthBlock    `json:"health,omitempty"`
-	Cost          *CostBlock      `json:"cost,omitempty"`
-	Hooks         *HooksBlock     `json:"hooks,omitempty"`
-	Channels      []ChannelBlock  `json:"channels,omitempty"`
-	Egress        *EgressBlock    `json:"egress,omitempty"`
-	Sandbox       *SandboxBlock   `json:"sandbox,omitempty"`
-	// McpServers is the harness-managed MCP server map keyed by name (schema
-	// $defs/McpServerConfig). The operator renders spec.mcpServers[] list → map.
-	McpServers map[string]McpServerBlock `json:"mcpServers,omitempty"`
-}
-
-type AgentBlock struct {
-	Name string `json:"name"`
-}
 
 type ModelBlock struct {
 	Name     string         `json:"name"`
@@ -44,57 +19,6 @@ type ModelBlock struct {
 type ThinkingBlock struct {
 	Enabled bool   `json:"enabled"`
 	Effort  string `json:"effort,omitempty"`
-}
-
-type CapabilityBlock struct {
-	Type   string       `json:"type"` // always "ach"
-	Ach    AchBlock     `json:"ach"`
-	Filter *FilterBlock `json:"filter,omitempty"`
-}
-
-type AchBlock struct {
-	BaseURL     string `json:"baseUrl,omitempty"`
-	Environment string `json:"environment,omitempty"`
-}
-
-type FilterBlock struct {
-	Exclude *ExcludeBlock `json:"exclude,omitempty"`
-}
-
-type ExcludeBlock struct {
-	Tools      []string `json:"tools,omitempty"`
-	McpServers []string `json:"mcpServers,omitempty"`
-	Skills     []string `json:"skills,omitempty"`
-}
-
-type EngineBlock struct {
-	Home                  string   `json:"home,omitempty"`
-	WorkDir               string   `json:"workDir,omitempty"`
-	ForwardEnv            []string `json:"forwardEnv,omitempty"`
-	IdleTTLSeconds        *int64   `json:"idleTtlSeconds,omitempty"`
-	StartupTimeoutSeconds *int64   `json:"startupTimeoutSeconds,omitempty"`
-	MaxToolCalls          *int64   `json:"maxToolCalls,omitempty"`
-	Type                  string   `json:"type,omitempty"`
-	Pi                    *PiBlock `json:"pi,omitempty"`
-}
-
-type PiBlock struct {
-	BinaryPath     string `json:"binaryPath,omitempty"`
-	McpAdapterPath string `json:"mcpAdapterPath,omitempty"`
-}
-
-// McpServerBlock is one rendered mcpServers[<name>] entry (schema $defs/McpServerConfig,
-// a type-discriminated union). Exactly the fields for Type are set; omitempty drops the
-// rest so each entry matches exactly one union branch.
-type McpServerBlock struct {
-	Type string `json:"type"`
-	// local (passthrough stdio subprocess):
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"`
-	// remote (passthrough direct connect):
-	URL     string            `json:"url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type PromptBlock struct {
@@ -142,45 +66,6 @@ type CodememBlock struct {
 	Project string `json:"project,omitempty"`
 }
 
-type LimitsBlock struct {
-	MaxConcurrentInvocations *int64 `json:"maxConcurrentInvocations,omitempty"`
-	MaxInvocationSeconds     *int64 `json:"maxInvocationSeconds,omitempty"`
-	MaxQueuedTotal           *int64 `json:"maxQueuedTotal,omitempty"`
-	IdempotencyWindowSeconds *int64 `json:"idempotencyWindowSeconds,omitempty"`
-	MaxSteps                 *int64 `json:"maxSteps,omitempty"`
-	TerminalOutputRetries    *int64 `json:"terminalOutputRetries,omitempty"`
-}
-
-type PersistBlock struct {
-	Enabled   bool   `json:"enabled"`
-	MountPath string `json:"mountPath,omitempty"`
-}
-
-type HealthBlock struct {
-	Host string `json:"host,omitempty"`
-	Port int32  `json:"port,omitempty"`
-}
-
-// CostBlock is the rendered cost.source selector (schema $defs/CostBlock).
-type CostBlock struct {
-	Source string `json:"source,omitempty"`
-}
-
-type ChannelBlock struct {
-	Name        string        `json:"name"`
-	Type        string        `json:"type"`
-	Source      string        `json:"source,omitempty"`
-	Concurrency *int64        `json:"concurrency,omitempty"`
-	Session     *SessionBlock `json:"session,omitempty"`
-	Prompt      string        `json:"prompt,omitempty"`
-	Webhook     *WebhookBlock `json:"webhook,omitempty"`
-	Cron        *CronBlock    `json:"cron,omitempty"`
-	Queue       *QueueBlock   `json:"queue,omitempty"`
-	A2A         *A2ABlock     `json:"a2a,omitempty"`
-	Handoff     *HandoffBlock `json:"handoff,omitempty"`
-	Script      *PrepareBlock `json:"script,omitempty"`
-}
-
 // PrepareBlock is the rendered per-invocation workspace hook (channels[].handoff,
 // channels[].script). SecretEnv carries env NAMES only; the values reach the harness
 // process through secretKeyRef env injection (see ChannelSecretEnv).
@@ -189,52 +74,6 @@ type PrepareBlock struct {
 	Env            map[string]string            `json:"env,omitempty"`
 	SecretEnv      map[string]SecretSourceBlock `json:"secretEnv,omitempty"`
 	TimeoutSeconds *int64                       `json:"timeoutSeconds,omitempty"`
-}
-
-// HandoffBlock is the rendered channels[].handoff (schema $defs/HandoffBlock) — PrepareBlock
-// fields plus scope (event|session, harness default event when omitted).
-type HandoffBlock struct {
-	Script         string                       `json:"script"`
-	Env            map[string]string            `json:"env,omitempty"`
-	SecretEnv      map[string]SecretSourceBlock `json:"secretEnv,omitempty"`
-	TimeoutSeconds *int64                       `json:"timeoutSeconds,omitempty"`
-	Scope          string                       `json:"scope,omitempty"`
-}
-
-// HookBlock is the rendered agent-level session hook (schema $defs/HookBlock,
-// hooks.sessionStart / hooks.sessionSuspend). Verbatim — no env resolution: hooks get only
-// engine.forwardEnv, already rendered on the engine block.
-type HookBlock struct {
-	Script         string `json:"script"`
-	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
-}
-
-// HooksBlock is the rendered top-level hooks (schema $defs/HooksBlock).
-type HooksBlock struct {
-	SessionStart   *HookBlock `json:"sessionStart,omitempty"`
-	SessionSuspend *HookBlock `json:"sessionSuspend,omitempty"`
-}
-
-// SessionBlock is the rendered channels[].session (schema $defs/SessionBlock).
-// Key is emitted only for type==custom (empty otherwise → omitempty drops it).
-type SessionBlock struct {
-	Type      string `json:"type,omitempty"`
-	Key       string `json:"key,omitempty"`
-	MaxTokens *int64 `json:"maxTokens,omitempty"`
-	Overflow  string `json:"overflow,omitempty"`
-}
-
-type WebhookBlock struct {
-	Auth         WebhookAuthBlock `json:"auth"`
-	GitlabEvents []string         `json:"gitlabEvents,omitempty"`
-	BotUsername  *string          `json:"botUsername,omitempty"`
-	TriggerUsers []string         `json:"triggerUsers,omitempty"`
-}
-
-type WebhookAuthBlock struct {
-	Type   string             `json:"type"`
-	Header string             `json:"header,omitempty"`
-	Secret *SecretSourceBlock `json:"secret,omitempty"`
 }
 
 // SecretSourceBlock is an inbound-auth secret source (schema SecretSource). The
@@ -249,38 +88,4 @@ type SecretSourceBlock struct {
 type CronBlock struct {
 	Schedule string `json:"schedule"`
 	Timezone string `json:"timezone,omitempty"`
-}
-
-type QueueBlock struct {
-	Type    string `json:"type"` // always "redis"
-	Key     string `json:"key"`
-	AckMode string `json:"ackMode"` // always "onComplete"
-}
-
-type A2ABlock struct {
-	Mode string       `json:"mode"` // always "async"
-	Auth A2AAuthBlock `json:"auth"`
-}
-
-type A2AAuthBlock struct {
-	Header string             `json:"header,omitempty"`
-	Secret *SecretSourceBlock `json:"secret,omitempty"`
-}
-
-// EgressBlock is the harness credential-injection proxy config (schema EgressBlock).
-type EgressBlock struct {
-	Services []EgressServiceBlock `json:"services"`
-}
-
-type EgressServiceBlock struct {
-	Name   string          `json:"name"`
-	Origin string          `json:"origin"`
-	Auth   EgressAuthBlock `json:"auth"`
-}
-
-type EgressAuthBlock struct {
-	Header         string            `json:"header"`
-	Prefix         string            `json:"prefix,omitempty"`
-	Secret         SecretSourceBlock `json:"secret"`
-	PlaceholderEnv string            `json:"placeholderEnv,omitempty"`
 }

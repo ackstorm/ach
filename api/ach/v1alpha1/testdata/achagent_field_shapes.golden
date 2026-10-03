@@ -4,16 +4,25 @@ metadata	object
 spec	object
 spec.ach	object
 spec.ach.baseUrl	string
-spec.capability	object
-spec.capability.environment	string
-spec.capability.filter	object
-spec.capability.filter.exclude	object
-spec.capability.filter.exclude.mcpServers	array
-spec.capability.filter.exclude.mcpServers[]	string
-spec.capability.filter.exclude.skills	array
-spec.capability.filter.exclude.skills[]	string
-spec.capability.filter.exclude.tools	array
-spec.capability.filter.exclude.tools[]	string
+spec.ach.capability	object
+spec.ach.capability.environment	string
+spec.ach.capability.filter	object
+spec.ach.capability.filter.exclude	object
+spec.ach.capability.filter.exclude.mcpServers	array
+spec.ach.capability.filter.exclude.mcpServers[]	string
+spec.ach.capability.filter.exclude.skills	array
+spec.ach.capability.filter.exclude.skills[]	string
+spec.ach.capability.filter.exclude.tools	array
+spec.ach.capability.filter.exclude.tools[]	string
+spec.ach.environment	string
+spec.ach.identity	object
+spec.ach.identity.secretRef	object
+spec.ach.identity.secretRef.key	string
+spec.ach.identity.secretRef.name	string
+spec.artifacts	object
+spec.artifacts.enabled	boolean
+spec.artifacts.maxArtifactBytes	integer
+spec.artifacts.retentionDays	integer
 spec.channels	array
 spec.channels[]	object
 spec.channels[].a2a	object
@@ -27,6 +36,7 @@ spec.channels[].cron	object
 spec.channels[].cron.schedule	string
 spec.channels[].cron.timezone	string
 spec.channels[].handoff	object
+spec.channels[].handoff.destination	string
 spec.channels[].handoff.forwardEnv	array
 spec.channels[].handoff.forwardEnv[]	string
 spec.channels[].handoff.scope	string enum[event,session]
@@ -36,16 +46,14 @@ spec.channels[].name	string
 spec.channels[].prompt	string
 spec.channels[].queue	object
 spec.channels[].queue.key	string
+spec.channels[].routing	object
+spec.channels[].routing.sessionKey	string
+spec.channels[].routing.workspaceKey	string
 spec.channels[].script	object
 spec.channels[].script.forwardEnv	array
 spec.channels[].script.forwardEnv[]	string
 spec.channels[].script.script	string
 spec.channels[].script.timeoutSeconds	integer
-spec.channels[].session	object
-spec.channels[].session.key	string
-spec.channels[].session.maxTokens	integer
-spec.channels[].session.overflow	string enum[compact,rotate]
-spec.channels[].session.type	string enum[auto,custom,none]
 spec.channels[].source	string enum[generic,github,gitlab]
 spec.channels[].type	string enum[a2a,cron,queue,webhook,webhook-script]
 spec.channels[].webhook	object
@@ -58,34 +66,18 @@ spec.channels[].webhook.auth.type	string enum[gitlab_token,header_token,hmac,non
 spec.channels[].webhook.botUsername	string
 spec.channels[].webhook.gitlabEvents	array
 spec.channels[].webhook.gitlabEvents[]	string enum[issue,merge_request,note,project_create,project_rename,project_transfer,project_update,push,repository_update]
+spec.channels[].webhook.mergeRequestsOnly	boolean
 spec.channels[].webhook.triggerUsers	array
 spec.channels[].webhook.triggerUsers[]	string
-spec.cost	object
-spec.cost.source	string
-spec.egress	object
-spec.egress.services	array
-spec.egress.services[]	object
-spec.egress.services[].auth	object
-spec.egress.services[].auth.header	string
-spec.egress.services[].auth.placeholderEnv	string
-spec.egress.services[].auth.prefix	string
-spec.egress.services[].auth.secretKeyRef	object
-spec.egress.services[].auth.secretKeyRef.key	string
-spec.egress.services[].auth.secretKeyRef.name	string
-spec.egress.services[].name	string
-spec.egress.services[].origin	string
 spec.engine	object
+spec.engine.compaction	object
+spec.engine.compaction.auto	boolean
+spec.engine.compaction.buffer	integer
+spec.engine.compaction.keep	object
+spec.engine.compaction.keep.tokens	integer
 spec.engine.forwardEnv	array
 spec.engine.forwardEnv[]	string
-spec.engine.home	string
-spec.engine.idleTtlSeconds	integer
-spec.engine.maxToolCalls	integer
-spec.engine.pi	object
-spec.engine.pi.binaryPath	string
-spec.engine.pi.mcpAdapterPath	string
 spec.engine.startupTimeoutSeconds	integer
-spec.engine.type	string
-spec.engine.workDir	string
 spec.env	array
 spec.env[]	object
 spec.env[].name	string
@@ -118,24 +110,24 @@ spec.health	object
 spec.health.host	string
 spec.health.port	integer
 spec.hooks	object
+spec.hooks.sessionRestore	object
+spec.hooks.sessionRestore.script	string
+spec.hooks.sessionRestore.timeoutSeconds	integer
 spec.hooks.sessionStart	object
 spec.hooks.sessionStart.script	string
 spec.hooks.sessionStart.timeoutSeconds	integer
 spec.hooks.sessionSuspend	object
 spec.hooks.sessionSuspend.script	string
 spec.hooks.sessionSuspend.timeoutSeconds	integer
-spec.identity	object
-spec.identity.secretRef	object
-spec.identity.secretRef.key	string
-spec.identity.secretRef.name	string
 spec.image	string
 spec.limits	object
 spec.limits.idempotencyWindowSeconds	integer
+spec.limits.maxActiveWorkspaces	integer
 spec.limits.maxConcurrentInvocations	integer
+spec.limits.maxConcurrentScripts	integer
 spec.limits.maxInvocationSeconds	integer
 spec.limits.maxQueuedTotal	integer
 spec.limits.maxSteps	integer
-spec.limits.terminalOutputRetries	integer
 spec.mcpServers	array
 spec.mcpServers[]	object
 spec.mcpServers[].local	object
@@ -171,7 +163,6 @@ spec.model.thinking	object
 spec.model.thinking.effort	string
 spec.model.thinking.enabled	boolean
 spec.model.type	string enum[anthropic,gemini,openai]
-spec.placement	string enum[sandboxed,standalone]
 spec.profileRef	object
 spec.profileRef.name	string
 spec.prompt	object
@@ -182,6 +173,18 @@ spec.prompt.system.achFile	string
 spec.prompt.system.file	string
 spec.prompt.system.text	string
 spec.prompt.system.type	string enum[ach,file,text]
+spec.workspace	object
+spec.workspace.idleTimeoutSeconds	integer
+spec.workspace.maxConcurrentSessions	integer
+spec.workspace.persistence	object
+spec.workspace.persistence.enabled	boolean
+spec.workspace.persistence.retentionDays	integer
+spec.workspace.session	object
+spec.workspace.session.idleTimeoutSeconds	integer
+spec.workspace.session.persistence	object
+spec.workspace.session.persistence.enabled	boolean
+spec.workspace.session.persistence.retentionDays	integer
+spec.workspace.shutdownTimeoutSeconds	integer
 status	object
 status.conditions	array
 status.conditions[]	object

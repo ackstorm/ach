@@ -23,13 +23,58 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
+
+// testExecutionSpec/testWorkspaceSpec/testArtifactsSpec/testEngineSpec/testLimitsSpec
+// satisfy the workspace-v1 CRD's required blocks (AgentProfileSpec.Execution,
+// achagent.workspace, achagent.artifacts, achagent.engine.compaction, achagent.limits) AND
+// Render2's stricter "every field required on the resolved value" check (RenderLimitsV1/
+// RenderWorkspaceV1/RenderArtifactsV1/RenderEngineV1) — admission (CEL) only checks block
+// presence, but a reconcile that must reach WorkloadApplied=True needs the full value.
+// Values are irrelevant to the behavior most of these tests exercise.
+func testExecutionSpec() achv1alpha1.ExecutionInfraSpec {
+	return achv1alpha1.ExecutionInfraSpec{Image: "registry.test/exec:0.1.0", EphemeralStorage: "1Gi"}
+}
+func testLimitsSpec(maxSteps int64) *achv1alpha1.LimitsSpec {
+	return &achv1alpha1.LimitsSpec{
+		MaxActiveWorkspaces: ptrInt64(4), MaxConcurrentInvocations: ptrInt64(4),
+		MaxInvocationSeconds: ptrInt64(900), MaxQueuedTotal: ptrInt64(100), IdempotencyWindowSeconds: ptrInt64(3600),
+		MaxSteps: ptrInt64(maxSteps),
+	}
+}
+func testWorkspaceSpec() *achv1alpha1.WorkspaceSpec {
+	return &achv1alpha1.WorkspaceSpec{
+		IdleTimeoutSeconds: ptrInt64(600), ShutdownTimeoutSeconds: ptrInt64(300), MaxConcurrentSessions: ptrInt64(1),
+		Persistence: &achv1alpha1.WorkspacePersistenceSpec{Enabled: boolPtr(false), RetentionDays: ptrInt64(90)},
+		Session: &achv1alpha1.WorkspaceSessionSpec{
+			IdleTimeoutSeconds: ptrInt64(300),
+			Persistence:        &achv1alpha1.WorkspacePersistenceSpec{Enabled: boolPtr(false), RetentionDays: ptrInt64(90)},
+		},
+	}
+}
+func testArtifactsSpec() *achv1alpha1.ArtifactsSpec {
+	return &achv1alpha1.ArtifactsSpec{Enabled: boolPtr(false), MaxArtifactBytes: ptrInt64(104857600), RetentionDays: ptrInt64(90)}
+}
+func testEngineSpec() *achv1alpha1.EngineSpec {
+	return &achv1alpha1.EngineSpec{
+		Compaction: &achv1alpha1.CompactionSpec{Auto: boolPtr(true), Keep: &achv1alpha1.CompactionKeepSpec{Tokens: ptrInt64(8000)}, Buffer: ptrInt64(20000)},
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+// envtestIdentity is the test-fixture ach block: required identity, optional environment.
+func envtestIdentity(secretName, environment string) *achv1alpha1.AchSpec {
+	return &achv1alpha1.AchSpec{
+		Environment: &environment,
+		Identity:    &achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: secretName, Key: "ek"}},
+	}
+}
 
 func mustApply(t *testing.T, ctx context.Context, obj client.Object) {
 	t.Helper()
@@ -38,10 +83,27 @@ func mustApply(t *testing.T, ctx context.Context, obj client.Object) {
 	}
 }
 
+// getControlStatefulSet fetches the named ACHAgent to learn its apiserver-assigned UID, then
+// gets the control StatefulSet by its contract name (ach-control-<uid>) — NOT
+// agentResourceName(name): the control StatefulSet is UID-named per §11, unlike the
+// ConfigMap/Service/NetworkPolicy children, which still use the legacy name-based scheme.
+func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) appsv1.StatefulSet {
+	t.Helper()
+	var a achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentName}, &a); err != nil {
+		t.Fatalf("get achagent %q: %v", agentName, err)
+	}
+	var sts appsv1.StatefulSet
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: controlServiceName(string(a.UID))}, &sts); err != nil {
+		t.Fatalf("get control statefulset for %q: %v", agentName, err)
+	}
+	return sts
+}
+
 // waitAgentCond polls the named ACHAgent until condType reaches want (or ~10s).
 func waitAgentCond(t *testing.T, ctx context.Context, name, condType string, want metav1.ConditionStatus) {
 	t.Helper()
-	var last metav1.ConditionStatus = "<none>"
+	var last *metav1.Condition
 	ok := Eventually(func() bool {
 		var a achv1alpha1.ACHAgent
 		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: name}, &a); err != nil {
@@ -51,11 +113,14 @@ func waitAgentCond(t *testing.T, ctx context.Context, name, condType string, wan
 		if c == nil {
 			return false
 		}
-		last = c.Status
+		last = c
 		return c.Status == want
 	}, 10*time.Second, 200*time.Millisecond)
 	if !ok {
-		t.Fatalf("ACHAgent %q condition %q = %v, want %v", name, condType, last, want)
+		if last == nil {
+			t.Fatalf("ACHAgent %q condition %q = <none>, want %v", name, condType, want)
+		}
+		t.Fatalf("ACHAgent %q condition %q = %v (reason=%s msg=%q), want %v", name, condType, last.Status, last.Reason, last.Message, want)
 	}
 }
 
@@ -73,12 +138,13 @@ func assertConfigMapValid(t *testing.T, ctx context.Context, cmName string) {
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
 		t.Fatalf("config.json is not valid JSON: %v", err)
 	}
-	if m["schemaVersion"] != "1" {
-		t.Errorf("config.json schemaVersion = %v, want \"1\"", m["schemaVersion"])
+	if m["schemaVersion"] != "workspace-v1" {
+		t.Errorf("config.json schemaVersion = %v, want \"workspace-v1\"", m["schemaVersion"])
 	}
-	capBlock, _ := m["capability"].(map[string]any)
-	if capBlock["type"] != "ach" {
-		t.Errorf("config.json capability.type = %v, want \"ach\"", capBlock["type"])
+	achBlock, _ := m["ach"].(map[string]any)
+	identity, _ := achBlock["identity"].(map[string]any)
+	if identity["env"] == "" || identity["env"] == nil {
+		t.Errorf("config.json ach.identity.env missing: %v", achBlock)
 	}
 }
 
@@ -87,10 +153,9 @@ func TestACHAgent_MissingProfile_ProfileResolvedFalse(t *testing.T) {
 	agent := &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-no-profile", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-ghost"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-ghost"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek", "e")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	}
 	if err := k8sClient.Create(ctx, agent); err != nil {
@@ -103,33 +168,99 @@ func TestACHAgent_MissingProfile_ProfileResolvedFalse(t *testing.T) {
 func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-happy", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-happy", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-happy", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-happy", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-happy"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-happy", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-happy"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-happy", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	// No kubelet in envtest → WorkloadReady stays False; WorkloadApplied must go True.
 	waitAgentCond(t, ctx, "aa-happy", condWorkloadApplied, metav1.ConditionTrue)
 	assertConfigMapValid(t, ctx, agentResourceName("aa-happy"))
+	var agent achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-happy"}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	var keySecret corev1.Secret
+	keyName := workspaceKeySecretName(string(agent.UID))
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: keyName}, &keySecret); err != nil {
+		t.Fatalf("get created workspace key Secret: %v", err)
+	}
+	if !metav1.IsControlledBy(&keySecret, &agent) || len(keySecret.Data[workspaceKeyDataKey]) != 64 {
+		t.Fatalf("workspace key Secret owner/data invalid: owners=%+v key length=%d", keySecret.OwnerReferences, len(keySecret.Data[workspaceKeyDataKey]))
+	}
+	sts := getControlStatefulSet(t, ctx, "aa-happy")
+	oldPodHash := sts.Spec.Template.Annotations[configHashAnnotation]
+	var keyEnvCount int
+	for _, e := range sts.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "ACH_SANDBOX_KEY" {
+			keyEnvCount++
+			if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil || e.ValueFrom.SecretKeyRef.Name != keyName || e.ValueFrom.SecretKeyRef.Key != workspaceKeyDataKey {
+				t.Fatalf("control ACH_SANDBOX_KEY = %+v, want SecretKeyRef %s/key", e, keyName)
+			}
+		}
+		if strings.HasPrefix(e.Name, "ACH_STORAGE_") {
+			t.Errorf("disabled backend unexpectedly added %s to the control env", e.Name)
+		}
+	}
+	if keyEnvCount != 1 {
+		t.Fatalf("control ACH_SANDBOX_KEY entries = %d, want exactly one", keyEnvCount)
+	}
+	var config corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-happy")}, &config); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(config.Data[configFileName], string(keySecret.Data[workspaceKeyDataKey])) {
+		t.Fatal("private workspace key leaked into config.json")
+	}
+	var before map[string]any
+	if err := json.Unmarshal([]byte(config.Data[configFileName]), &before); err != nil {
+		t.Fatal(err)
+	}
+	oldConfigVersion := before["configVersion"]
+	var bootstrap corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: executionServiceAccountName(string(agent.UID))}, &bootstrap); err != nil {
+		t.Fatalf("get execution bootstrap ConfigMap: %v", err)
+	}
+	if strings.Contains(bootstrap.Data[bootstrapFileName], string(keySecret.Data[workspaceKeyDataKey])) || strings.Contains(bootstrap.Data[bootstrapFileName], "ACH_SANDBOX_KEY") {
+		t.Fatal("private workspace key or its env name leaked into execution bootstrap ConfigMap")
+	}
+	keySecret.Data[workspaceKeyDataKey] = []byte("operator-supplied-key-rotation")
+	if err := k8sClient.Update(ctx, &keySecret); err != nil {
+		t.Fatalf("update workspace key Secret: %v", err)
+	}
+	if !Eventually(func() bool {
+		updated := getControlStatefulSet(t, ctx, "aa-happy")
+		return updated.Spec.Template.Annotations[configHashAnnotation] != oldPodHash
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatal("workspace key Secret change did not roll the control pod")
+	}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-happy")}, &config); err != nil {
+		t.Fatal(err)
+	}
+	var after map[string]any
+	if err := json.Unmarshal([]byte(config.Data[configFileName]), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after["configVersion"] != oldConfigVersion {
+		t.Errorf("configVersion changed with private key: before=%v after=%v", oldConfigVersion, after["configVersion"])
+	}
 }
 
 func TestACHAgent_ProfileDeletedAfterApplied_ReadyFlipsFalse(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-regress", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-regress", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}}
+	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-regress", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}}
 	mustApply(t, ctx, prof)
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-regress", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-regress"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-regress", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-regress"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-regress", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-regress", condWorkloadApplied, metav1.ConditionTrue)
@@ -141,34 +272,36 @@ func TestACHAgent_ProfileDeletedAfterApplied_ReadyFlipsFalse(t *testing.T) {
 	waitAgentCond(t, ctx, "aa-regress", condReady, metav1.ConditionFalse)
 }
 
-func TestACHAgent_SessionCustomRequiresKey(t *testing.T) {
+// TestACHAgent_RoutingRequiresNonEmptyKeys: routing.workspaceKey/sessionKey are optional
+// and independent, but a PRESENT one must be non-empty (contract §2).
+func TestACHAgent_RoutingRequiresNonEmptyKeys(t *testing.T) {
 	ctx := context.Background()
-	base := func(name string, sess *achv1alpha1.SessionSpec) *achv1alpha1.ACHAgent {
+	base := func(name string, routing *achv1alpha1.RoutingSpec) *achv1alpha1.ACHAgent {
 		return &achv1alpha1.ACHAgent{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
 			Spec: achv1alpha1.ACHAgentSpec{
-				ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
-				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
-				Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
+				ProfileRef:    achv1alpha1.LocalObjectRef{Name: "p"},
+				AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("ek", "e")},
 				Channels: []achv1alpha1.ChannelSpec{{
-					Name: "c", Type: "cron", Session: sess,
+					Name: "c", Type: "cron", Routing: routing,
 					Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
 				}},
 			},
 		}
 	}
+	empty := ""
 	key := "{{ payload.thread }}"
-	// custom without key → rejected
-	if err := k8sClient.Create(ctx, base("aa-sess-nokey", &achv1alpha1.SessionSpec{Type: "custom"})); err == nil {
-		t.Fatal("expected rejection: type=custom requires key")
+	// present but empty workspaceKey → rejected
+	if err := k8sClient.Create(ctx, base("aa-routing-empty", &achv1alpha1.RoutingSpec{WorkspaceKey: &empty})); err == nil {
+		t.Fatal("expected rejection: routing.workspaceKey must be non-empty when set")
 	}
-	// none WITH key → rejected
-	if err := k8sClient.Create(ctx, base("aa-sess-badkey", &achv1alpha1.SessionSpec{Type: "none", Key: &key})); err == nil {
-		t.Fatal("expected rejection: key forbidden unless type=custom")
+	// omitted routing → accepted
+	if err := k8sClient.Create(ctx, base("aa-routing-omitted", nil)); err != nil {
+		t.Fatalf("omitted routing must be accepted: %v", err)
 	}
-	// custom WITH key → accepted
-	if err := k8sClient.Create(ctx, base("aa-sess-ok", &achv1alpha1.SessionSpec{Type: "custom", Key: &key})); err != nil {
-		t.Fatalf("custom+key must be accepted: %v", err)
+	// present non-empty sessionKey only → accepted (independent overrides)
+	if err := k8sClient.Create(ctx, base("aa-routing-sessiononly", &achv1alpha1.RoutingSpec{SessionKey: &key})); err != nil {
+		t.Fatalf("sessionKey-only override must be accepted: %v", err)
 	}
 }
 
@@ -180,27 +313,25 @@ func TestACHAgent_PodTemplateOverlay_MergesIntoDeployment(t *testing.T) {
 		Spec: achv1alpha1.AgentProfileSpec{
 			Achagent: achv1alpha1.AgentDefaults{
 				Image: "img:test",
-				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				Ach:   &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10),
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
 			},
+			Execution:   testExecutionSpec(),
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"securityContext":{"fsGroup":1000,"fsGroupChangePolicy":"OnRootMismatch"}}}`)},
 		},
 	})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-pt", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-pt"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-pt", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-pt"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-pt", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-pt", condWorkloadApplied, metav1.ConditionTrue)
 
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-pt")}, &dep); err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
+	dep := getControlStatefulSet(t, ctx, "aa-pt")
 	sc := dep.Spec.Template.Spec.SecurityContext
 	if sc == nil || sc.FSGroup == nil || *sc.FSGroup != 1000 {
 		t.Fatalf("pod securityContext = %+v, want fsGroup 1000 merged", sc)
@@ -222,27 +353,25 @@ func TestACHAgent_PodTemplateOverlay_SetsRuntimeClassName(t *testing.T) {
 		Spec: achv1alpha1.AgentProfileSpec{
 			Achagent: achv1alpha1.AgentDefaults{
 				Image: "img:test",
-				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				Ach:   &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10),
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
 			},
+			Execution:   testExecutionSpec(),
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"runtimeClassName":"gvisor"}}`)},
 		},
 	})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-rc", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-rc"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-rc", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-rc"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-rc", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-rc", condWorkloadApplied, metav1.ConditionTrue)
 
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-rc")}, &dep); err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
+	dep := getControlStatefulSet(t, ctx, "aa-rc")
 	rc := dep.Spec.Template.Spec.RuntimeClassName
 	if rc == nil || *rc != "gvisor" {
 		t.Fatalf("runtimeClassName = %v, want \"gvisor\" (CRD pruning or overlay filtering regressed)", rc)
@@ -260,9 +389,11 @@ func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 		Spec: achv1alpha1.AgentProfileSpec{
 			Achagent: achv1alpha1.AgentDefaults{
 				Image: "img:test",
-				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				Ach:   &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10),
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
 			},
+			Execution: testExecutionSpec(),
 			// valid JSON (the API server accepts it) but a strategic-merge type mismatch
 			PodTemplate: &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"containers":{"not":"a-list"}}}`)},
 		},
@@ -270,10 +401,9 @@ func TestACHAgent_PodTemplateInvalid_WorkloadAppliedFalse(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-ptbad", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-ptbad"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-ptbad", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-ptbad"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-ptbad", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-ptbad", condWorkloadApplied, metav1.ConditionFalse)
@@ -295,11 +425,10 @@ func TestACHAgent_ExposeGatewayRequiresService(t *testing.T) {
 		return &achv1alpha1.ACHAgent{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
 			Spec: achv1alpha1.ACHAgentSpec{
-				ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
-				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
-				Capability: achv1alpha1.CapabilitySpec{Environment: "e"},
-				Expose:     expose,
-				Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+				ProfileRef:    achv1alpha1.LocalObjectRef{Name: "p"},
+				AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("ek", "e")},
+				Expose:        expose,
+				Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 			},
 		}
 	}
@@ -317,7 +446,7 @@ func TestACHAgent_ExposeGatewayRequiresService(t *testing.T) {
 func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-exp", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-exp", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-exp", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
 
 	webhookCh := func() achv1alpha1.ChannelSpec {
 		return achv1alpha1.ChannelSpec{
@@ -330,11 +459,10 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-exp-pub", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-exp", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Expose:     &achv1alpha1.ExposeSpec{Service: true, Gateway: true},
-			Channels:   []achv1alpha1.ChannelSpec{webhookCh()},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-exp", "prod")},
+			Expose:        &achv1alpha1.ExposeSpec{Service: true, Gateway: true},
+			Channels:      []achv1alpha1.ChannelSpec{webhookCh()},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-exp-pub", condWorkloadApplied, metav1.ConditionTrue)
@@ -355,10 +483,9 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-exp-priv", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-exp", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{webhookCh()},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-exp"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-exp", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{webhookCh()},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-exp-priv", condWorkloadApplied, metav1.ConditionTrue)
@@ -383,16 +510,15 @@ func TestACHAgent_ExposeService_CreatesServiceAndGatewayURL(t *testing.T) {
 func TestACHAgent_ExposeServiceDisabled_PrunesService(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-prune", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-prune", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-prune", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
 
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prune", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-prune"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-prune", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Expose:     &achv1alpha1.ExposeSpec{Service: true},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook", Source: "github", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-prune"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-prune", "prod")},
+			Expose:        &achv1alpha1.ExposeSpec{Service: true},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook", Source: "github", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-prune", condWorkloadApplied, metav1.ConditionTrue)
@@ -428,15 +554,14 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-mem", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "hs-admin", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("bearer")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-mem", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-mem", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
 
 	memAgent := func(name, secretName string) *achv1alpha1.ACHAgent {
 		return &achv1alpha1.ACHAgent{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
 			Spec: achv1alpha1.ACHAgentSpec{
-				ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-mem"},
-				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-mem", Key: "ek"}},
-				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
+				ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-mem"},
+				AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-mem", "prod")},
 				Memory: &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
 					Endpoint: "http://ach-memory.ach.svc:8000/mcp/",
 					Auth:     &achv1alpha1.AchMemoryAuthSpec{Type: "bearer", SecretRef: &achv1alpha1.SecretKeyRef{Name: secretName, Key: "token"}},
@@ -464,10 +589,7 @@ func TestACHAgent_MemoryAuth_WiresConfigAndSecretKeyRef(t *testing.T) {
 		t.Errorf("config memory.achMemory.auth.env = %v, want ACH_SECRET_MEMORY_AUTH", auth["env"])
 	}
 
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-mem")}, &dep); err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
+	dep := getControlStatefulSet(t, ctx, "aa-mem")
 	var found bool
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		if e.Name != "ACH_SECRET_MEMORY_AUTH" {
@@ -496,7 +618,8 @@ func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-env", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}},
+			Achagent:  achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()},
+			Execution: testExecutionSpec(),
 			Env: []corev1.EnvVar{
 				{Name: "GITLAB_BASE_URL", Value: "https://git.example.com"},
 				{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "aa-clone-env"}, Key: "token"}}},
@@ -507,22 +630,47 @@ func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-env", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-env"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-env", Key: "ek"}},
-			Env:        []corev1.EnvVar{{Name: "SHARED", Value: "agent"}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-env"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-env", "")},
+			Env:           []corev1.EnvVar{{Name: "SHARED", Value: "agent"}},
 			Channels: []achv1alpha1.ChannelSpec{{
 				Name: "review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}}},
+				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_BASE_URL", "GITLAB_TOKEN", "MISSING"}}, Destination: "handoff"},
 			}},
 		},
 	})
-	waitAgentCond(t, ctx, "aa-env", condWorkloadApplied, metav1.ConditionTrue)
+	// Negative control: MISSING is not in the merged environment, so the channel's
+	// forwardEnv rejects it and the controller must fail closed with RenderFailed.
+	var lastCond *metav1.Condition
+	if !Eventually(func() bool {
+		var a achv1alpha1.ACHAgent
+		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-env"}, &a); err != nil {
+			return false
+		}
+		c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied)
+		if c == nil {
+			return false
+		}
+		lastCond = c
+		return c.Status == metav1.ConditionFalse
+	}, 10*time.Second, 200*time.Millisecond) {
+		t.Fatalf("ACHAgent %q condition %q = <none>, want False/RenderFailed", "aa-env", condWorkloadApplied)
+	}
+	if lastCond.Reason != "RenderFailed" || !strings.Contains(lastCond.Message, "MISSING") {
+		t.Fatalf("ACHAgent %q condition %q = %+v, want reason RenderFailed identifying MISSING", "aa-env", condWorkloadApplied, lastCond)
+	}
 
-	key := types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-env")}
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, key, &dep); err != nil {
+	var toFix achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-env"}, &toFix); err != nil {
 		t.Fatal(err)
 	}
+	toFix.Spec.Channels[0].Handoff.ForwardEnv = []string{"GITLAB_BASE_URL", "GITLAB_TOKEN"}
+	if err := k8sClient.Update(ctx, &toFix); err != nil {
+		t.Fatal(err)
+	}
+	waitAgentCond(t, ctx, "aa-env", condWorkloadApplied, metav1.ConditionTrue)
+
+	dep := getControlStatefulSet(t, ctx, "aa-env")
 	wantEnv := map[string]string{"GITLAB_BASE_URL": "https://git.example.com", "SHARED": "agent"}
 	wantSecrets := map[string]bool{"GITLAB_TOKEN": false, "ACH_SECRET_REVIEW_HANDOFF_GITLAB_TOKEN": false}
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
@@ -546,7 +694,7 @@ func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 	}
 
 	var cm corev1.ConfigMap
-	if err := k8sClient.Get(ctx, key, &cm); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-env")}, &cm); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(cm.Data[configFileName], `"one"`) {
@@ -563,11 +711,9 @@ func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 	if handoff["secretEnv"].(map[string]any)["GITLAB_TOKEN"].(map[string]any)["env"] != "ACH_SECRET_REVIEW_HANDOFF_GITLAB_TOKEN" {
 		t.Fatalf("handoff secret aliases = %v", handoff["secretEnv"])
 	}
-	if _, ok := handoff["env"].(map[string]any)["MISSING"]; ok {
-		t.Fatal("unknown forwardEnv name must remain unset")
-	}
 
 	oldHash := dep.Spec.Template.Annotations[configHashAnnotation]
+	stsKey := types.NamespacedName{Namespace: dep.Namespace, Name: dep.Name}
 	var secret corev1.Secret
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-clone-env"}, &secret); err != nil {
 		t.Fatal(err)
@@ -577,12 +723,12 @@ func TestACHAgent_EnvInheritanceHandoffAndSecretRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !Eventually(func() bool {
-		if err := k8sClient.Get(ctx, key, &dep); err != nil {
+		if err := k8sClient.Get(ctx, stsKey, &dep); err != nil {
 			return false
 		}
 		return dep.Spec.Template.Annotations[configHashAnnotation] != oldHash
 	}, 10*time.Second, 200*time.Millisecond) {
-		t.Fatal("profile env Secret rotation did not roll the Deployment hash")
+		t.Fatal("profile env Secret rotation did not roll the StatefulSet hash")
 	}
 }
 
@@ -591,16 +737,14 @@ func TestACHAgent_WebhookScriptRejectsHandoff(t *testing.T) {
 	agent := &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "webhook-script-with-handoff", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "unused"},
-			Identity: achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{
-				Name: "unused", Key: "ek",
-			}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "unused"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("unused", "")},
 			Channels: []achv1alpha1.ChannelSpec{{
 				Name:    "register",
 				Type:    "webhook-script",
 				Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}},
 				Script:  &achv1alpha1.PrepareSpec{Script: "true"},
-				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true"}},
+				Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true"}, Destination: "handoff"},
 			}},
 		},
 	}
@@ -616,7 +760,7 @@ func TestACHAgent_EnvAdmissionRejectsReservedAndUnsupportedSources(t *testing.T)
 	profile := &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-env-invalid", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{
-			Achagent: achv1alpha1.AgentDefaults{Image: "img:test"},
+			Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Limits: &achv1alpha1.LimitsSpec{MaxSteps: ptrInt64(10)}},
 			Env:      []corev1.EnvVar{{Name: "FROM_CONFIGMAP", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "cm"}, Key: "key"}}}},
 		},
 	}
@@ -631,7 +775,7 @@ func TestACHAgent_EnvAdmissionRejectsReservedAndUnsupportedSources(t *testing.T)
 
 	agent := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
 		"profileRef": map[string]any{"name": "p"},
-		"identity":   map[string]any{"secretRef": map[string]any{"name": "ek", "key": "ek"}},
+		"ach":        map[string]any{"identity": map[string]any{"secretRef": map[string]any{"name": "ek", "key": "ek"}}},
 		"env":        []any{map[string]any{"name": "ACH_TOKEN", "value": "leak"}},
 		"channels":   []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}},
 	}}}
@@ -640,6 +784,130 @@ func TestACHAgent_EnvAdmissionRejectsReservedAndUnsupportedSources(t *testing.T)
 	agent.SetName("aa-env-reserved")
 	if err := k8sClient.Create(ctx, agent); err == nil {
 		t.Fatal("reserved ACH_* env must be rejected")
+	}
+}
+
+// TestACHAgent_PartialEngineForwardEnv_EmptyOverrideClearsInheritance is the real CR
+// admission counterpart of TestWorkspaceV1_PartialOverrides's "empty forwardEnv selection
+// clears inherited exposure" case: a typed Go struct would DROP an explicit
+// `ForwardEnv: []string{}` on send (the json tag carries `omitempty`, which treats an empty
+// slice the same as absent), silently losing the override's presence. Unstructured input
+// sends the literal `"forwardEnv": []` the apiserver stores, proving the LIVE CR — not just
+// the in-memory Go value — retains the distinction that engine.go's ResolveEngine (unit-
+// tested in TestWorkspaceV1_PartialOverrides) relies on.
+//
+// Object-only limitation: this cannot yet assert the merge result reaches a rendered
+// ConfigMap — every full reconcile currently fails WorkloadApplied at RenderInfrastructureV1
+// (the pre-existing, pre-Task-3 broker/TLS wire shape vs. the already-reset vendored schema;
+// confirmed against the baseline TestACHAgent_HappyPath_AppliesConfigMapAndDeployment, which
+// fails the same way with no CR involved in this task's changes). That cutover is Task 4's
+// scope (plan: "full-root fixtures await Task 4") — the merge behavior itself is proven at
+// the resolve/render-function boundary by TestWorkspaceV1_PartialOverrides.
+func TestACHAgent_PartialEngineForwardEnv_EmptyOverrideClearsInheritance(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-fe", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-fe", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model:     &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				Engine:    &achv1alpha1.EngineSpec{ForwardEnv: []string{"HTTPS_PROXY"}, Compaction: testEngineSpec().Compaction},
+				Limits:    testLimitsSpec(10),
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(),
+			},
+			Execution: testExecutionSpec(),
+			Env:       []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: "http://proxy:8080"}},
+		},
+	})
+
+	agent := &unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{
+		"profileRef": map[string]any{"name": "aa-prof-fe"},
+		"ach":        map[string]any{"identity": map[string]any{"secretRef": map[string]any{"name": "aa-ek-fe", "key": "ek"}}},
+		"engine":     map[string]any{"forwardEnv": []any{}},
+		"channels":   []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}},
+	}}}
+	agent.SetGroupVersionKind(achv1alpha1.GroupVersion.WithKind("ACHAgent"))
+	agent.SetNamespace(WatchNamespace)
+	agent.SetName("aa-fe-empty")
+	if err := k8sClient.Create(ctx, agent); err != nil {
+		t.Fatalf("create agent with explicit empty forwardEnv: %v", err)
+	}
+
+	var stored achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-fe-empty"}, &stored); err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	if stored.Spec.Engine == nil || stored.Spec.Engine.ForwardEnv == nil || len(stored.Spec.Engine.ForwardEnv) != 0 {
+		t.Fatalf("spec.engine.forwardEnv = %#v, want a present (non-nil) empty slice, not omitted/inherited", stored.Spec.Engine)
+	}
+}
+
+// TestACHAgent_PartialLimitsOverride_MissingEffectiveMaxStepsBlocksWorkload: admission only
+// checks that spec.achagent.limits is PRESENT (object-level CEL), not that every field is
+// set — maxSteps stays a real requirement, enforced on the EFFECTIVE (resolved) value at
+// reconcile time (RenderLimitsV1), same as the other wire-required policy blocks. Asserts
+// the specific failure reason names the limits gap, not the unrelated pre-existing
+// infrastructure RenderFailed every reconcile currently also hits (see the note on
+// TestACHAgent_PartialEngineForwardEnv_EmptyOverrideClearsInheritance) — RenderLimitsV1 runs
+// and fails BEFORE Render2 ever reaches RenderInfrastructureV1, so this is not masked by it.
+func TestACHAgent_PartialLimitsOverride_MissingEffectiveMaxStepsBlocksWorkload(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-ms", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	incompleteLimits := testLimitsSpec(1)
+	incompleteLimits.MaxSteps = nil
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-ms", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: incompleteLimits,
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
+			},
+			Execution: testExecutionSpec(),
+		},
+	})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-ms", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-ms"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-ms", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-ms", condWorkloadApplied, metav1.ConditionFalse)
+
+	var a achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-ms"}, &a); err != nil {
+		t.Fatalf("get achagent: %v", err)
+	}
+	c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied)
+	if c == nil || !strings.Contains(c.Message, "maxSteps") {
+		t.Fatalf("WorkloadApplied = %+v, want a message naming the missing effective limits.maxSteps (not masked by an unrelated failure)", c)
+	}
+}
+
+// TestACHAgent_PartialLimits_NonpositiveInvocationSecondsRejectedAtAdmission: bounded
+// invocation time is a real requirement (contract §3) enforced structurally — a nonpositive
+// maxInvocationSeconds is rejected by the apiserver's OpenAPI schema (Minimum=1), before CEL
+// or the controller ever see it.
+func TestACHAgent_PartialLimits_NonpositiveInvocationSecondsRejectedAtAdmission(t *testing.T) {
+	ctx := context.Background()
+	zeroSeconds := testLimitsSpec(10)
+	zeroSeconds.MaxInvocationSeconds = ptrInt64(0)
+	profile := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-zerosec", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent: achv1alpha1.AgentDefaults{
+				Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: zeroSeconds,
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
+			},
+			Execution: testExecutionSpec(),
+		},
+	}
+	if err := k8sClient.Create(ctx, profile); err == nil {
+		t.Fatal("expected rejection: limits.maxInvocationSeconds must be >= 1")
 	}
 }
 
@@ -655,9 +923,11 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 		Spec: achv1alpha1.AgentProfileSpec{
 			Achagent: achv1alpha1.AgentDefaults{
 				Image: "img:test",
-				Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
+				Ach:   &achv1alpha1.AchSpec{BaseURL: "https://ach"},
+				Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10),
+				Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec(),
 			},
+			Execution: testExecutionSpec(),
 			NetworkPolicy: &achv1alpha1.NetworkPolicySpec{
 				Egress: []networkingv1.NetworkPolicyEgressRule{{
 					To:    []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/8"}}},
@@ -669,10 +939,9 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-np", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-np"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-np", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-np"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-np", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
 	})
 	waitAgentCond(t, ctx, "aa-np", condWorkloadApplied, metav1.ConditionTrue)
@@ -715,19 +984,20 @@ func TestACHAgent_NetworkPolicy_RendersAndPrunes(t *testing.T) {
 	}
 }
 
-// TestACHAgent_CapabilityOptional proves spec.capability is optional at the API
+// TestACHAgent_CapabilityOptional proves spec.ach.capability is optional at the API
 // server: a manifest that omits the key entirely still applies and reconciles.
-// The typed client cannot express this — CapabilitySpec is a non-pointer struct,
-// so it always serializes as `capability: {}`; only unstructured omits the key.
 func TestACHAgent_CapabilityOptional(t *testing.T) {
 	ctx := context.Background()
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-nocap", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nocap", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nocap", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
 
-	agent := func(name string, spec map[string]any) *unstructured.Unstructured {
-		spec["profileRef"] = map[string]any{"name": "aa-prof-nocap"}
-		spec["identity"] = map[string]any{"secretRef": map[string]any{"name": "aa-ek-nocap", "key": "ek"}}
-		spec["channels"] = []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}}
+	agent := func(name string, ach map[string]any) *unstructured.Unstructured {
+		ach["identity"] = map[string]any{"secretRef": map[string]any{"name": "aa-ek-nocap", "key": "ek"}}
+		spec := map[string]any{
+			"profileRef": map[string]any{"name": "aa-prof-nocap"},
+			"ach":        ach,
+			"channels":   []any{map[string]any{"name": "c", "type": "cron", "cron": map[string]any{"schedule": "* * * * *"}}},
+		}
 		u := &unstructured.Unstructured{Object: map[string]any{"spec": spec}}
 		u.SetGroupVersionKind(achv1alpha1.GroupVersion.WithKind("ACHAgent"))
 		u.SetNamespace(WatchNamespace)
@@ -754,7 +1024,7 @@ func TestAgentProfile_CEL_AchagentImageRequired(t *testing.T) {
 	ctx := context.Background()
 	bad := &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-noimg", Namespace: WatchNamespace},
-		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}},
+		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: &achv1alpha1.LimitsSpec{MaxSteps: ptrInt64(10)}}},
 	}
 	if err := k8sClient.Create(ctx, bad); err == nil {
 		t.Fatal("expected rejection: empty spec.achagent.image (achagent: {})")
@@ -769,226 +1039,74 @@ func TestAgentProfile_CEL_AchagentImageRequired(t *testing.T) {
 	}
 	good := &achv1alpha1.AgentProfile{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-img-ok", Namespace: WatchNamespace},
-		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test"}},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent:  achv1alpha1.AgentDefaults{Image: "img:test", Limits: &achv1alpha1.LimitsSpec{MaxSteps: ptrInt64(10)}, Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()},
+			Execution: testExecutionSpec(),
+		},
 	}
 	if err := k8sClient.Create(ctx, good); err != nil {
 		t.Fatalf("valid profile rejected: %v", err)
 	}
 }
 
-// Both CRDs must accept cost and the apiserver must not prune it, so the rendered
-// ConfigMap carries the agent's value over the profile's.
-func TestACHAgent_CostOverride_AgentWinsInRenderedConfig(t *testing.T) {
+// CEL: spec.achagent.limits is required on AgentProfile — the only place a profile
+// is guaranteed to carry a positive limits.maxSteps (contract §3).
+func TestAgentProfile_CEL_AchagentLimitsRequired(t *testing.T) {
 	ctx := context.Background()
-	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-cost", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{
-		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-cost", Namespace: WatchNamespace},
+	bad := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-nolimits", Namespace: WatchNamespace},
+		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test"}},
+	}
+	if err := k8sClient.Create(ctx, bad); err == nil {
+		t.Fatal("expected rejection: spec.achagent.limits omitted")
+	}
+	zero := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-zerosteps", Namespace: WatchNamespace},
+		Spec:       achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Limits: &achv1alpha1.LimitsSpec{}}},
+	}
+	if err := k8sClient.Create(ctx, zero); err == nil {
+		t.Fatal("expected rejection: limits.maxSteps must be positive (Minimum=1), got the zero value")
+	}
+	good := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-limits-ok", Namespace: WatchNamespace},
+		Spec: achv1alpha1.AgentProfileSpec{
+			Achagent:  achv1alpha1.AgentDefaults{Image: "img:test", Limits: &achv1alpha1.LimitsSpec{MaxSteps: ptrInt64(30)}, Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()},
+			Execution: testExecutionSpec(),
+		},
+	}
+	if err := k8sClient.Create(ctx, good); err != nil {
+		t.Fatalf("valid profile rejected: %v", err)
+	}
+}
+
+// CEL: spec.achagent.ach.identity is forbidden on a profile — a credential is never
+// a shared implicit default (contract §5).
+func TestAgentProfile_CEL_AchIdentityForbidden(t *testing.T) {
+	ctx := context.Background()
+	bad := &achv1alpha1.AgentProfile{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-identityleak", Namespace: WatchNamespace},
 		Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{
-			Image: "img:test",
-			Ach:   &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
-			Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
-			Cost:  &achv1alpha1.CostSpec{Source: "litellm_usage"},
+			Image: "img:test", Limits: &achv1alpha1.LimitsSpec{MaxSteps: ptrInt64(10)},
+			Ach: &achv1alpha1.AchSpec{BaseURL: "u", Identity: &achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}}},
 		}},
-	})
-	mustApply(t, ctx, &achv1alpha1.ACHAgent{
-		ObjectMeta: metav1.ObjectMeta{Name: "aa-cost", Namespace: WatchNamespace},
-		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-cost"},
-			Identity:      achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-cost", Key: "ek"}},
-			Capability:    achv1alpha1.CapabilitySpec{Environment: "prod"},
-			AgentDefaults: achv1alpha1.AgentDefaults{Cost: &achv1alpha1.CostSpec{Source: "none"}},
-			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
-		},
-	})
-	waitAgentCond(t, ctx, "aa-cost", condWorkloadApplied, metav1.ConditionTrue)
-
-	// The profile round-trip proves the apiserver kept spec.achagent.cost.
-	var prof achv1alpha1.AgentProfile
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-prof-cost"}, &prof); err != nil {
-		t.Fatalf("get profile: %v", err)
 	}
-	if prof.Spec.Achagent.Cost == nil || prof.Spec.Achagent.Cost.Source != "litellm_usage" {
-		t.Fatalf("profile cost pruned by the apiserver: %+v", prof.Spec.Achagent.Cost)
-	}
-
-	var cm corev1.ConfigMap
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-cost")}, &cm); err != nil {
-		t.Fatalf("get configmap: %v", err)
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
-		t.Fatalf("config.json invalid: %v", err)
-	}
-	cost, _ := cfg["cost"].(map[string]any)
-	if cost == nil || cost["source"] != "none" {
-		t.Fatalf("config cost = %v, want source none (agent overrides profile)", cfg["cost"])
+	if err := k8sClient.Create(ctx, bad); err == nil {
+		t.Fatal("expected rejection: spec.achagent.ach.identity is forbidden on a profile")
 	}
 }
 
-func TestACHAgent_Egress_WiresConfigAndHarnessEnv(t *testing.T) {
+// CEL: spec.ach.identity is required on an ACHAgent — the credential is the agent's
+// own, never inherited.
+func TestACHAgent_CEL_AchIdentityRequired(t *testing.T) {
 	ctx := context.Background()
-	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-egr", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-egr", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}}}})
-
-	egrAgent := func(name, header string) *achv1alpha1.ACHAgent {
-		return &achv1alpha1.ACHAgent{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
-			Spec: achv1alpha1.ACHAgentSpec{
-				ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-egr"},
-				Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-egr", Key: "ek"}},
-				Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-				Egress: &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{{
-					Name: "github", Origin: "https://api.github.com",
-					Auth: achv1alpha1.EgressAuth{Header: header, Prefix: "Bearer ", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "aa-gh", Key: "token"}},
-				}}},
-				Channels: []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
-			},
-		}
-	}
-
-	// Secret missing → not resolved; adding it → applied with config + harness env.
-	mustApply(t, ctx, egrAgent("aa-egr", "Authorization"))
-	waitAgentCond(t, ctx, "aa-egr", condChannelSecretsResolved, metav1.ConditionFalse)
-	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-gh", Namespace: WatchNamespace}, Data: map[string][]byte{"token": []byte("ghp_x")}})
-	waitAgentCond(t, ctx, "aa-egr", condWorkloadApplied, metav1.ConditionTrue)
-
-	var cm corev1.ConfigMap
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-egr")}, &cm); err != nil {
-		t.Fatalf("get configmap: %v", err)
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
-		t.Fatalf("config.json invalid: %v", err)
-	}
-	svc := cfg["egress"].(map[string]any)["services"].([]any)[0].(map[string]any)
-	if env := svc["auth"].(map[string]any)["secret"].(map[string]any)["env"]; env != "ACH_SECRET_EGRESS_0" {
-		t.Errorf("config egress secret.env = %v, want ACH_SECRET_EGRESS_0", env)
-	}
-
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentResourceName("aa-egr")}, &dep); err != nil {
-		t.Fatalf("get deployment: %v", err)
-	}
-	var found bool
-	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
-		if e.Name == "ACH_SECRET_EGRESS_0" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil &&
-			e.ValueFrom.SecretKeyRef.Name == "aa-gh" && e.ValueFrom.SecretKeyRef.Key == "token" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("deployment missing ACH_SECRET_EGRESS_0 secretKeyRef aa-gh/token")
-	}
-}
-
-// TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes drives the sandboxed placement end to end:
-// missing shared SA blocks apply, then key Secret (create-once), SandboxTemplate, SandboxWarmPool and
-// Service appear; flipping to standalone removes template + pool.
-func TestACHAgent_Sandboxed_RendersTemplatePoolKeyAndPrunes(t *testing.T) {
-	ctx := context.Background()
-	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-sbx", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
-	warm := int32(2)
-	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-sbx", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{
-		Achagent:    achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Placement: achv1alpha1.PlacementSandboxed},
-		Persistence: &achv1alpha1.PersistenceSpec{Enabled: true, Size: "1Gi", MountPath: "/var/lib/ach-agent"},
-		Sandbox:     &achv1alpha1.SandboxSpec{ServiceAccountName: "ach-sandboxed-agent", WarmPoolReplicas: &warm, Sessions: achv1alpha1.SandboxSessionsSpec{Bucket: "b"}},
-	}})
-	mustApply(t, ctx, &achv1alpha1.ACHAgent{
-		ObjectMeta: metav1.ObjectMeta{Name: "aa-sbx", Namespace: WatchNamespace},
+	bad := &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-noidentity", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
-			ProfileRef: achv1alpha1.LocalObjectRef{Name: "aa-prof-sbx"},
-			Identity:   achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "aa-ek-sbx", Key: "ek"}},
-			Capability: achv1alpha1.CapabilitySpec{Environment: "prod"},
-			Channels:   []achv1alpha1.ChannelSpec{{Name: "gh", Type: "webhook", Source: "github", Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "none"}}}},
+			ProfileRef: achv1alpha1.LocalObjectRef{Name: "p"},
+			Channels:   []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
 		},
-	})
-	waitAgentCond(t, ctx, "aa-sbx", condWorkloadApplied, metav1.ConditionFalse)
-	var a achv1alpha1.ACHAgent
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
-		t.Fatal(err)
 	}
-	if c := apimeta.FindStatusCondition(a.Status.Conditions, condWorkloadApplied); c == nil || c.Reason != reasonSandboxSAMissing {
-		t.Fatalf("want SandboxServiceAccountMissing, got %+v", c)
-	}
-
-	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-sandboxed-agent", Namespace: WatchNamespace}})
-	// The shared SA is not watched (production polls via RequeueAfter); nudge instead of waiting 15s.
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
-		t.Fatal(err)
-	}
-	a.Annotations = map[string]string{"nudge": "1"}
-	if err := k8sClient.Update(ctx, &a); err != nil {
-		t.Fatal(err)
-	}
-	waitAgentCond(t, ctx, "aa-sbx", condWorkloadApplied, metav1.ConditionTrue)
-
-	get := func(gvk schema.GroupVersionKind) *unstructured.Unstructured {
-		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(gvk)
-		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, u); err != nil {
-			t.Fatalf("get %s: %v", gvk.Kind, err)
-		}
-		return u
-	}
-	tmpl, pool := get(sandboxTemplateGVK), get(sandboxWarmPoolGVK)
-	if n, _, _ := unstructured.NestedInt64(pool.Object, "spec", "replicas"); n != 2 {
-		t.Errorf("warm pool replicas = %d, want 2", n)
-	}
-	if n, _, _ := unstructured.NestedString(pool.Object, "spec", "sandboxTemplateRef", "name"); n != "achagent-aa-sbx" {
-		t.Errorf("sandboxTemplateRef.name = %q", n)
-	}
-	if v, _, _ := unstructured.NestedString(tmpl.Object, "spec", "networkPolicyManagement"); v != "Unmanaged" {
-		t.Errorf("networkPolicyManagement = %q", v)
-	}
-
-	var dep appsv1.Deployment
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, &dep); err != nil {
-		t.Fatal(err)
-	}
-	var skRef *corev1.SecretKeySelector
-	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
-		if e.Name == "ACH_SANDBOX_KEY" && e.ValueFrom != nil {
-			skRef = e.ValueFrom.SecretKeyRef
-		}
-	}
-	if skRef == nil || skRef.Name != "achagent-aa-sbx-sandbox-key" || skRef.Key != "key" {
-		t.Errorf("harness ACH_SANDBOX_KEY secretKeyRef = %+v", skRef)
-	}
-	if raw, _ := json.Marshal(tmpl.Object); strings.Contains(string(raw), "ACH_SANDBOX_KEY") {
-		t.Errorf("SandboxTemplate must not carry ACH_SANDBOX_KEY: %s", raw)
-	}
-
-	keyKey := types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx-sandbox-key"}
-	var k1 corev1.Secret
-	if err := k8sClient.Get(ctx, keyKey, &k1); err != nil || len(k1.Data["key"]) != 64 {
-		t.Fatalf("sandbox key secret: err=%v len=%d", err, len(k1.Data["key"]))
-	}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, &corev1.Service{}); err != nil {
-		t.Errorf("sandboxed agent must always have a Service: %v", err)
-	}
-	cm := &corev1.ConfigMap{}
-	_ = k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, cm)
-	if !strings.Contains(cm.Data["config.json"], `"warmPool":"achagent-aa-sbx"`) {
-		t.Errorf("config.json lacks sandbox block: %s", cm.Data["config.json"])
-	}
-
-	// Never rotated: another reconcile keeps the same bytes.
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-sbx"}, &a); err != nil {
-		t.Fatal(err)
-	}
-	a.Spec.Placement = achv1alpha1.PlacementStandalone
-	if err := k8sClient.Update(ctx, &a); err != nil {
-		t.Fatal(err)
-	}
-	if !Eventually(func() bool {
-		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(sandboxTemplateGVK)
-		return apierrors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "achagent-aa-sbx"}, u))
-	}, 10*time.Second, 200*time.Millisecond) {
-		t.Fatal("SandboxTemplate must be pruned after flipping to standalone")
-	}
-	var k2 corev1.Secret
-	if err := k8sClient.Get(ctx, keyKey, &k2); err != nil || string(k2.Data["key"]) != string(k1.Data["key"]) {
-		t.Errorf("key must survive unchanged (err=%v)", err)
+	if err := k8sClient.Create(ctx, bad); err == nil {
+		t.Fatal("expected rejection: spec.ach.identity is required")
 	}
 }

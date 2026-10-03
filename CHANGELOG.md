@@ -5,23 +5,31 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Removed
-- **BREAKING:** `placement: distributed` is removed from `AgentProfile`/`ACHAgent`. The CRD
-  enum is now `standalone`, so an object that still sets `distributed` is rejected on apply.
-  Live clusters had none.
+- **BREAKING:** `AgentProfile`/`ACHAgent` placement (`standalone`/`distributed`/`sandboxed`,
+  including `AgentProfile.spec.sandbox` and the per-agent `SandboxTemplate`/`SandboxWarmPool`)
+  and `ACHAgent.spec.egress` are retired — workspace-v1 (contract §11) is the only renderer
+  contract now, with no placement knob and no compatibility adapter. Old top-level `identity`,
+  `channels[].session` (`none`/`auto`/`custom`), and `engine.type`/`pi`/`home`/`workDir`/
+  `idleTtlSeconds`/`maxToolCalls` are gone: migrate manifests to nested `spec.ach.identity`
+  (now required — a stored object that predates this still sets only the old top-level field
+  and blocks with condition `IdentityResolved=False/IdentityMissing` until its manifest is
+  updated), the adapter's implicit Workspace/Session defaults with optional
+  `channels[].routing.{workspaceKey,sessionKey}` template overrides (no mandatory invented
+  templates), and the single pinned OpenCode v2 engine (tool-call counting now via
+  `limits.maxSteps`). Update the existing object's manifest in place; the operator preserves
+  its name/namespace/UID and never recreates it. Old per-agent sandbox-key Secrets and harness
+  session snapshots are left untouched — neither converted nor deleted.
 
 ### Added
-- `sandboxed` placement: the harness keeps its Deployment and each session's engine runs in an
-  agent-sandbox pod (`SandboxTemplate` + `SandboxWarmPool` per agent, gVisor via
-  `AgentProfile.spec.sandbox.runtimeClassName`, session HOME archived to S3). New profile block
-  `spec.sandbox`; chart `agentSandbox.enabled` creates the shared harness SA + sandboxclaims Role.
-  The operator now **creates** one Secret per sandboxed agent (`<agent>-sandbox-key`, never rotated;
-  first Secret it writes into agent namespaces) and needs RBAC on the agent-sandbox kinds. Requires
-  agent-sandbox v1.0.x installed and ach-agent >= v0.18.0-rc1. No NetworkPolicy is rendered.
-- `ACHAgent.spec.egress`: the harness injects upstream credentials for declared https
-  origins (`auth.secretKeyRef` → harness-only `ACH_SECRET_EGRESS_<i>` + `config.json`
-  `egress`). Requires an ach-agent image with egress support (>= v0.17.0 rejects the
-  block on older ones); the profile must not forward `HTTPS_PROXY`/`SSL_CERT_FILE`.
-  Validation of origins/placeholders/forwardEnv collisions is the harness's, at load.
+- Workspace-v1 control/execution split: the operator renders and applies a single-replica
+  **control StatefulSet** (`ach-control-<uid>`, Channels+Harness only, public probe port 8080,
+  private control Service port 8081) that self-hydrates at boot; the Harness running inside it
+  creates real per-Workspace **execution StatefulSets directly** (0.1.0 — a declarative
+  `Workspace` CR for hand-managing those objects yourself is deferred to 0.1.1), bootstrapped
+  from a minimal public ConfigMap `ach-execution-<uid>` (`bootstrapVersion`, agent
+  name/namespace/UID, `controlEndpoint`/`facadeEndpoint` only — no private model/env/
+  credentials). Runtime storage (`runtime.storage.s3`) is operator-global, never a per-agent
+  setting.
 - Unified console: platform-api serves the React console at `/`, with in-process
   console sessions over the OAuth AS, `ek_` suspend/resume and optional expiry,
   and user-scoped stats/latency.
@@ -39,7 +47,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   forwarding, generated schema, and renderer support for deterministic no-model webhooks.
 - `ACHAgent.spec.channels[].handoff`: a credentialed harness script (same shape as the
   old `prepare`, plus `scope: event|session`) that runs in an empty `$ACH_HANDOFF_DIR`
-  and whose output wholesale-replaces the session workspace's `handoff/` directory.
+  and whose output wholesale-replaces its required `destination` path inside the
+  session's Workspace (`channels[].handoff.destination` — no fixed `handoff/` directory).
   `scope: event` (default) runs it every invocation — the handoff always starts from an
   empty directory, so a script must clone/fetch from scratch each time; `scope: session`
   runs it only when a new session is created. Generated secret aliases move from

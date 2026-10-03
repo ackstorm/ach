@@ -44,6 +44,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/connection"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -54,6 +55,14 @@ import (
 // Tests that create CRs outside this namespace MUST observe that the
 // reconciler never sees them (no finalizer added; no status touched).
 const WatchNamespace = "ach-system"
+
+// testRuntimeStorageOptions is the fake global Storage backend every ACHAgent reconcile test
+// in this suite runs against — a fully-configured bucket so a test that opts an agent into
+// persistence/artifacts sees WorkloadApplied reach True, with no real S3/SeaweedFS backend
+// and no actual SDK call (ValidateRuntimeStorage checks configuration only).
+func testRuntimeStorageOptions() agentrender.RuntimeStorageOptions {
+	return agentrender.RuntimeStorageOptions{Bucket: "test-bucket", Prefix: "ach"}
+}
 
 // Test-global state shared across the suite's test files
 // (cel_admission_test.go, <kind>_finalizer_test.go). TestMain populates;
@@ -218,9 +227,8 @@ func setupAndRun(m *testing.M) int {
 	// internal/controller/ach/.
 	_, thisFile, _, _ := runtime.Caller(0)
 	crdDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "config", "crd", "bases")
-	sandboxCRDDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "test", "crds", "agent-sandbox")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{crdDir, sandboxCRDDir},
+		CRDDirectoryPaths:     []string{crdDir},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -408,9 +416,10 @@ func setupAndRun(m *testing.M) int {
 		return 1
 	}
 	if err := (&ACHAgentReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
+		Client:                mgr.GetClient(),
+		APIReader:             mgr.GetAPIReader(),
+		Scheme:                mgr.GetScheme(),
+		RuntimeStorageOptions: testRuntimeStorageOptions(),
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(ACHAgent): %v\n", err)
 		return 1

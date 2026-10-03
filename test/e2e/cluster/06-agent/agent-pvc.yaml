@@ -8,17 +8,15 @@ metadata:
 spec:
   profileRef:
     name: e2e-profile-pvc
-  identity:
-    secretRef:
-      name: e2e-agent-ek
-      key: ek
-  capability:
+  ach:
+    identity:
+      secretRef:
+        name: e2e-agent-ek
+        key: ek
     environment: demo
   channels:
     - name: daily
       type: cron
-      session:
-        type: none
       cron:
         schedule: "0 8 * * 1-5"
       prompt: "Scan for CVEs."

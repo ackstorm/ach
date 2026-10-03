@@ -4,13 +4,12 @@ package ach
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -19,17 +18,25 @@ import (
 
 func mkEnv(name, val string) []corev1.EnvVar { return []corev1.EnvVar{{Name: name, Value: val}} }
 
+// achIdentity is the test-fixture ach block: required identity, optional baseUrl/environment.
+func achIdentity(baseURL, environment string) *achv1alpha1.AchSpec {
+	return &achv1alpha1.AchSpec{
+		BaseURL: baseURL, Environment: &environment,
+		Identity: &achv1alpha1.IdentitySpec{SecretRef: achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}},
+	}
+}
+
 func TestComputeConfigHash_ChangesWithInputs(t *testing.T) {
-	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone)
+	base := computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec1")
 	if len(base) != 16 {
 		t.Fatalf("hash len = %d", len(base))
 	}
 	for name, h := range map[string]string{
-		"config":      computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone),
-		"env":         computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), nil, "img:1", "sec1", achv1alpha1.PlacementStandalone),
-		"podTemplate": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), []byte(`{"spec":{}}`), "img:1", "sec1", achv1alpha1.PlacementStandalone),
-		"image":       computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:2", "sec1", achv1alpha1.PlacementStandalone),
-		"secret":      computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec2", achv1alpha1.PlacementStandalone),
+		"config":      computeConfigHash([]byte(`{"a":2}`), []byte(`[]`), nil, "img:1", "sec1"),
+		"env":         computeConfigHash([]byte(`{"a":1}`), []byte(`[{}]`), nil, "img:1", "sec1"),
+		"podTemplate": computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), []byte(`{"spec":{}}`), "img:1", "sec1"),
+		"image":       computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:2", "sec1"),
+		"secret":      computeConfigHash([]byte(`{"a":1}`), []byte(`[]`), nil, "img:1", "sec2"),
 	} {
 		if h == base {
 			t.Errorf("%s change did not alter hash", name)
@@ -40,23 +47,23 @@ func TestComputeConfigHash_ChangesWithInputs(t *testing.T) {
 func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
-	a.Spec.Capability.Environment = "prod"
+	a.Spec.Ach = achIdentity("", "prod")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
-	p.Spec.Env = mkEnv("HTTPS_PROXY", "http://p")
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
+	p.Spec.Env = mkEnv("CUSTOM_VAR", "http://p")
 
 	env := buildAgentEnv(a, p, "")
 
 	var token, base, extra, reserved bool
 	for _, e := range env {
 		switch e.Name {
-		case "ACH_TOKEN":
+		case agentrender.AchIdentityAliasEnv:
 			token = e.Value == "" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil && e.ValueFrom.SecretKeyRef.Name == "demo-ek"
 		case "ACH_BASE_URL":
 			base = e.Value == "https://ach"
-		case "HTTPS_PROXY":
+		case "CUSTOM_VAR":
 			extra = true
 		}
 		if e.Name == "ACH_BASE_URL" && e.Value != "https://ach" {
@@ -64,7 +71,7 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 		}
 	}
 	if !token {
-		t.Error("ACH_TOKEN must be a secretKeyRef to demo-ek")
+		t.Errorf("%s must be a secretKeyRef to demo-ek", agentrender.AchIdentityAliasEnv)
 	}
 	if !base || !extra || reserved {
 		t.Errorf("env assembly wrong: base=%v extra=%v reservedHijack=%v", base, extra, reserved)
@@ -76,7 +83,7 @@ func TestBuildAgentEnv_EkSecretRefAndReservedFilter(t *testing.T) {
 func TestBuildAgentEnv_BaseURLResolution(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name = "d"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
 	p := &achv1alpha1.AgentProfile{} // no profile baseUrl
 
 	get := func(env []corev1.EnvVar) string {
@@ -90,62 +97,67 @@ func TestBuildAgentEnv_BaseURLResolution(t *testing.T) {
 	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://env" {
 		t.Errorf("ACH_BASE_URL = %q, want operator default", v)
 	}
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://profile"}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://profile"}
 	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://profile" {
 		t.Errorf("ACH_BASE_URL = %q, want profile over default", v)
 	}
-	a.Spec.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://agent"}
+	a.Spec.Ach.BaseURL = "https://agent"
 	if v := get(buildAgentEnv(a, p, "https://env")); v != "https://agent" {
 		t.Errorf("ACH_BASE_URL = %q, want agent override", v)
 	}
 }
 
-// TestHealthOverride_ConfigProbeServiceAgree is the drift guard: an ACHAgent
-// health override must move the config health block, the probe port, the Service
-// targetPort, and the containerPort together — all resolved via the one shared
-// agentrender.ResolveHealth, so they can never disagree.
-func TestHealthOverride_ConfigProbeServiceAgree(t *testing.T) {
+// TestControlPort_FixedRegardlessOfLegacyHealthOverride is the Important review finding 7
+// regression: workspace-v1 fixes control HTTP at 8080 (Render2 has no health block at all);
+// the legacy agent-config-v1 health.host/port CRD knob is compatibility-only now and must be
+// completely ignored by the real k8s objects this controller builds — the probe port, the
+// Service targetPort, and the containerPort must all stay 8080 even when an agent/profile
+// sets a health override.
+func TestControlPort_FixedRegardlessOfLegacyHealthOverride(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
-	a.Spec.Capability.Environment = "e"
+	a.Spec.Ach = achIdentity("", "e")
 	a.Spec.Model = &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
-	a.Spec.Health = &achv1alpha1.HealthSpec{Port: 9137} // agent override
+	a.Spec.Health = &achv1alpha1.HealthSpec{Port: 9137} // legacy override — must be ignored
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
-	p.Spec.Achagent.Health = &achv1alpha1.HealthSpec{Port: 8000} // profile default, must lose
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Health = &achv1alpha1.HealthSpec{Port: 8000} // legacy override — must be ignored
 
-	const want = int32(9137)
-	cfg, err := agentrender.Render(*p, *a, "")
-	if err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	if cfg.Health.Port != want {
-		t.Errorf("config health.port = %d, want %d", cfg.Health.Port, want)
-	}
-	if got := resolveHealthPort(a, p); got != want {
-		t.Errorf("probe port = %d, want %d", got, want)
-	}
+	const want = int32(8080)
 	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != want {
-		t.Errorf("service targetPort = %d, want %d", tp, want)
+		t.Errorf("service targetPort = %d, want fixed %d", tp, want)
 	}
-	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	dep, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
-		t.Fatalf("buildDeployment: %v", err)
+		t.Fatalf("buildStatefulSet: %v", err)
 	}
-	if cp := dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort; cp != want {
-		t.Errorf("containerPort = %d, want %d", cp, want)
+	c := dep.Spec.Template.Spec.Containers[0]
+	if cp := c.Ports[0].ContainerPort; cp != want {
+		t.Errorf("containerPort = %d, want fixed %d", cp, want)
+	}
+	if c.StartupProbe.HTTPGet.Port.IntVal != want || c.ReadinessProbe.HTTPGet.Port.IntVal != want || c.LivenessProbe.HTTPGet.Port.IntVal != want {
+		t.Errorf("probes must all target the fixed port %d", want)
+	}
+	// Important review finding 7: an explicit control launch command, not an unverified
+	// arbitrary image entrypoint.
+	wantCmd := []string{"python", "-m", "ach_runtime", "control", "--config", "/etc/ach-runtime/config.json"}
+	if len(c.Command) != len(wantCmd) {
+		t.Fatalf("command = %v, want %v", c.Command, wantCmd)
+	}
+	for i := range wantCmd {
+		if c.Command[i] != wantCmd[i] {
+			t.Fatalf("command = %v, want %v", c.Command, wantCmd)
+		}
 	}
 }
 
 func TestBuildAgentEnv_RejectsReservedEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name = "d"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("u", "")
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "u"}
 	p.Spec.Env = mkEnv("ACH_TOKEN", "ek_LEAK") // reserved — must be dropped
 	for _, e := range buildAgentEnv(a, p, "") {
 		if e.Name == "ACH_TOKEN" && e.Value == "ek_LEAK" {
@@ -156,7 +168,7 @@ func TestBuildAgentEnv_RejectsReservedEnv(t *testing.T) {
 
 func TestBuildAgentEnv_AgentOverridesProfileEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
 	a.Spec.Env = mkEnv("SHARED", "agent")
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Env = append(mkEnv("PROFILE", "p"), mkEnv("SHARED", "profile")...)
@@ -173,15 +185,16 @@ func TestBuildAgentEnv_AgentOverridesProfileEnv(t *testing.T) {
 func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "ghcr.io/ackstorm/ach-agent:latest"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
 
 	env := buildAgentEnv(a, p, "")
-	dep, err := buildDeployment(a, p, "cfghash", env)
+	dep, err := buildStatefulSet(a, p, "cfghash", env)
 	if err != nil {
-		t.Fatalf("buildDeployment: %v", err)
+		t.Fatalf("buildStatefulSet: %v", err)
 	}
 
 	if *dep.Spec.Replicas != 1 {
@@ -200,20 +213,23 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 	if c.StartupProbe == nil {
 		t.Error("startupProbe missing")
 	}
-	// Named health port (8000) — the PodMonitor scrapes /metrics on it BY NAME,
-	// so a rename here silently breaks agent metrics collection.
+	// Named control port (fixed 8080, workspace-v1 contract §11) — the PodMonitor scrapes
+	// /metrics on it BY NAME, so a rename here silently breaks agent metrics collection.
 	var hp *corev1.ContainerPort
 	for i := range c.Ports {
 		if c.Ports[i].Name == "health" {
 			hp = &c.Ports[i]
 		}
 	}
-	if hp == nil || hp.ContainerPort != 8000 {
-		t.Errorf("container must declare named health port 8000, got %+v", c.Ports)
+	if hp == nil || hp.ContainerPort != 8080 {
+		t.Errorf("container must declare named control port 8080, got %+v", c.Ports)
 	}
+	// config.json is served by the directory mount at /etc/ach-runtime (alongside ca.crt),
+	// not a SubPath file mount (Important review finding 9: "implement the specified
+	// directory projection").
 	found := false
 	for _, mnt := range c.VolumeMounts {
-		if mnt.MountPath == "/etc/ach-agent/config.json" && mnt.SubPath == "config.json" {
+		if mnt.MountPath == "/etc/ach-runtime" && mnt.SubPath == "" {
 			found = true
 		}
 	}
@@ -228,14 +244,15 @@ func TestBuildDeployment_MountsConfigProbesAndHash(t *testing.T) {
 func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "webhook",
 		Webhook: &achv1alpha1.WebhookSpec{Auth: achv1alpha1.WebhookAuthSpec{Type: "gitlab_token", SecretRef: &achv1alpha1.SecretKeyRef{Name: "gl-hook", Key: "secret"}}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
 
 	// Auth secret must be a secretKeyRef env var, never an inline value.
 	var found bool
@@ -254,9 +271,9 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 	}
 
 	// And it must NOT be mounted as a file (fsGroup exists for the PVC, not for secrets).
-	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	dep, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
-		t.Fatalf("buildDeployment: %v", err)
+		t.Fatalf("buildStatefulSet: %v", err)
 	}
 	for _, v := range dep.Spec.Template.Spec.Volumes {
 		if v.Secret != nil {
@@ -267,13 +284,14 @@ func TestBuildAgentEnv_ChannelSecretInjectedAsEnv(t *testing.T) {
 
 func TestBuildAgentEnv_HandoffSecretGetsGeneratedAlias(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Env = []corev1.EnvVar{{Name: "GITLAB_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 		LocalObjectReference: corev1.LocalObjectReference{Name: "gl-clone"}, Key: "token",
 	}}}}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{
 		Name: "gitlab-mr-review", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"},
-		Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}}},
+		Handoff: &achv1alpha1.HandoffSpec{PrepareSpec: achv1alpha1.PrepareSpec{Script: "true", ForwardEnv: []string{"GITLAB_TOKEN"}}, Destination: "handoff"},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 
@@ -301,7 +319,8 @@ func TestBuildAgentEnv_HandoffSecretGetsGeneratedAlias(t *testing.T) {
 func TestBuildAgentEnv_PodNamespaceFromDownwardAPI(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
 
@@ -321,14 +340,15 @@ func TestBuildAgentEnv_PodNamespaceFromDownwardAPI(t *testing.T) {
 func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
+	a.Spec.Ach.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
 	a.Spec.Memory = &achv1alpha1.MemorySpec{Type: "ach-memory", AchMemory: &achv1alpha1.AchMemorySpec{
 		Endpoint: "http://ach-memory.ach.svc:8000/mcp/", Auth: &achv1alpha1.AchMemoryAuthSpec{Type: "bearer", SecretRef: &achv1alpha1.SecretKeyRef{Name: "hs-admin", Key: "token"}},
 	}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
 
 	// The ach-memory user key rides in env (secretKeyRef), never inline, never a file.
 	var found bool
@@ -358,7 +378,7 @@ func TestBuildAgentEnv_MemoryAuthInjectedAsEnv(t *testing.T) {
 func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+	a.Spec.Ach = achIdentity("", "")
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "img:1"
 	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
@@ -369,9 +389,9 @@ func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
 		}
 	}`)}
 
-	dep, err := buildDeployment(a, p, "hash1", mkEnv("A", "1"))
+	dep, err := buildStatefulSet(a, p, "hash1", mkEnv("A", "1"))
 	if err != nil {
-		t.Fatalf("buildDeployment: %v", err)
+		t.Fatalf("buildStatefulSet: %v", err)
 	}
 	tmpl := dep.Spec.Template
 	sc := tmpl.Spec.SecurityContext
@@ -392,13 +412,127 @@ func TestBuildDeployment_PodTemplateOverlay(t *testing.T) {
 		t.Error("operator env/mounts/probes lost in container merge")
 	}
 	if tmpl.Labels[agentLabelKey] != "demo" {
-		t.Errorf("selector label = %q, want re-pinned %q (immutable Deployment selector)", tmpl.Labels[agentLabelKey], "demo")
+		t.Errorf("selector label = %q, want re-pinned %q (immutable StatefulSet selector)", tmpl.Labels[agentLabelKey], "demo")
 	}
 	if tmpl.Labels["team"] != "x" {
 		t.Error("user label dropped")
 	}
 	if tmpl.Annotations[configHashAnnotation] != "hash1" {
 		t.Error("config-hash annotation not re-pinned after merge")
+	}
+}
+
+// TestBuildStatefulSet_PodTemplateOverlay_CannotRemoveReservedInfra is the October 1 TLS
+// ruling's "fixed infra mounts cannot be replaced by profile overlays" gate: a profile
+// podTemplate overlay must never be able to DELETE the config volume or its container mount
+// via a strategic-merge $patch:delete directive.
+func TestBuildStatefulSet_PodTemplateOverlay_CannotRemoveReservedInfra(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	a.Spec.Ach = achIdentity("", "")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img"
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
+		"spec": {
+			"volumes": [
+				{"name": "ach-agent-config", "$patch": "delete"}
+			],
+			"containers": [{"name": "agent", "volumeMounts": [
+				{"mountPath": "/etc/ach-runtime", "$patch": "delete"}
+			]}]
+		}
+	}`)}
+
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := sts.Spec.Template.Spec
+	for _, name := range []string{configVolumeName} {
+		found := false
+		for _, v := range ps.Volumes {
+			if v.Name == name {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("overlay deleted reserved volume %q and it was not re-pinned", name)
+		}
+	}
+	wantPaths := []string{configMountDir}
+	for _, wantPath := range wantPaths {
+		found := false
+		for _, m := range ps.Containers[0].VolumeMounts {
+			if m.MountPath == wantPath {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("overlay deleted the mount at reserved path %q and it was not re-pinned", wantPath)
+		}
+	}
+}
+
+// TestBuildStatefulSet_PodTemplateOverlay_CannotRedirectReservedVolumeSource covers the
+// "collision" half: an overlay that keeps a reserved volume's NAME but attacks its SOURCE
+// (a different backing ConfigMap) must not survive the merge.
+func TestBuildStatefulSet_PodTemplateOverlay_CannotRedirectReservedVolumeSource(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	a.Spec.Ach = achIdentity("", "")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img"
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
+		"spec": {
+			"volumes": [
+				{"name": "ach-agent-config", "configMap": {"name": "attacker-controlled-configmap"}}
+			]
+		}
+	}`)}
+
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := sts.Spec.Template.Spec
+	wantConfigMap := agentResourceName(a.Name)
+	for _, v := range ps.Volumes {
+		if v.Name == configVolumeName {
+			if v.ConfigMap == nil || v.ConfigMap.Name != wantConfigMap {
+				t.Errorf("overlay redirected the config volume to %+v, want ConfigMap.Name %q", v.ConfigMap, wantConfigMap)
+			}
+		}
+	}
+}
+
+// TestBuildStatefulSet_PodTemplateOverlay_CannotChangeControlIdentity: the control SA name
+// and AutomountServiceAccountToken=true are part of the same closed invariant — an overlay
+// must not be able to run the control pod under a different identity or disable the ordinary
+// API automount the creator cutover requires.
+func TestBuildStatefulSet_PodTemplateOverlay_CannotChangeControlIdentity(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	a.Spec.Ach = achIdentity("", "")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img"
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
+		"spec": {"serviceAccountName": "attacker-sa", "automountServiceAccountToken": false}
+	}`)}
+
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := sts.Spec.Template.Spec
+	wantSA := "ach-harness-" + string(a.UID)
+	if ps.ServiceAccountName != wantSA {
+		t.Errorf("overlay changed serviceAccountName to %q, want re-pinned %q", ps.ServiceAccountName, wantSA)
+	}
+	if ps.AutomountServiceAccountToken == nil || !*ps.AutomountServiceAccountToken {
+		t.Error("overlay disabled automountServiceAccountToken; must stay re-pinned true")
 	}
 }
 
@@ -409,11 +543,11 @@ func TestBuildDeployment_PodTemplateOverlayInvalid(t *testing.T) {
 	} {
 		a := &achv1alpha1.ACHAgent{}
 		a.Name = "demo"
-		a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
+		a.Spec.Ach = achIdentity("", "")
 		p := &achv1alpha1.AgentProfile{}
 		p.Spec.Achagent.Image = "img"
 		p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(raw)}
-		if _, err := buildDeployment(a, p, "h", nil); err == nil {
+		if _, err := buildStatefulSet(a, p, "h", nil); err == nil {
 			t.Errorf("%s: invalid podTemplate overlay must error", name)
 		}
 	}
@@ -503,259 +637,199 @@ func TestBuildNetworkPolicy_ProfileRulesAppendedAfterDNS(t *testing.T) {
 	}
 }
 
-// TestBuildDeployment_AgentImageAndEngineOverride: profile engine forwardEnv +
-// type opencode; agent type pi + image override. The container image must be the
-// agent's, the startup budget must come from the RESOLVED engine, and the
-// rendered engine must inherit the profile's forwardEnv while taking the
-// agent's type (per-field deep merge).
+// TestBuildDeployment_AgentImageAndEngineOverride: profile engine forwardEnv; agent
+// startupTimeoutSeconds + image override. The container image must be the agent's,
+// the startup budget must come from the RESOLVED engine, and the rendered engine
+// must inherit the profile's forwardEnv (per-field deep merge).
 func TestBuildDeployment_AgentImageAndEngineOverride(t *testing.T) {
 	st := int64(600)
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "ek", Key: "ek"}
-	a.Spec.Capability.Environment = "e"
+	a.Spec.Ach = achIdentity("", "e")
 	a.Spec.Channels = []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}}
-	a.Spec.AgentDefaults = achv1alpha1.AgentDefaults{
-		Image:  "img:agent",
-		Engine: &achv1alpha1.EngineSpec{Type: "pi", Pi: &achv1alpha1.PiEngineSpec{BinaryPath: "pi"}},
-	}
+	a.Spec.AgentDefaults.Image = "img:agent"
+	a.Spec.AgentDefaults.Engine = &achv1alpha1.EngineSpec{StartupTimeoutSeconds: ptrInt64(45)}
+	a.Spec.Env = []corev1.EnvVar{{Name: "OPENCODE_ENABLE_EXA", Value: "true"}}
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent = achv1alpha1.AgentDefaults{
 		Image:  "img:profile",
-		Ach:    &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"},
+		Ach:    &achv1alpha1.AchSpec{BaseURL: "https://ach"},
 		Model:  &achv1alpha1.ModelSpec{Name: "m", Type: "openai"},
-		Engine: &achv1alpha1.EngineSpec{Type: "opencode", ForwardEnv: []string{"HTTPS_PROXY"}, StartupTimeoutSeconds: &st},
+		Engine: &achv1alpha1.EngineSpec{ForwardEnv: []string{"OPENCODE_ENABLE_EXA"}, StartupTimeoutSeconds: &st},
 	}
 
-	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	dep, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
-		t.Fatalf("buildDeployment: %v", err)
+		t.Fatalf("buildStatefulSet: %v", err)
 	}
 	c := dep.Spec.Template.Spec.Containers[0]
 	if c.Image != "img:agent" {
 		t.Errorf("container image = %q, want agent override img:agent", c.Image)
 	}
-	if got := c.StartupProbe.FailureThreshold; got != int32(600/5)+1 {
-		t.Errorf("startup FailureThreshold = %d, want %d (from resolved engine startupTimeoutSeconds)", got, int32(600/5)+1)
+	if got := c.StartupProbe.FailureThreshold; got != int32(45/5)+1 {
+		t.Errorf("startup FailureThreshold = %d, want %d (from resolved engine startupTimeoutSeconds)", got, int32(45/5)+1)
 	}
 
-	cfg, err := agentrender.Render(*p, *a, "")
-	if err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	if cfg.Engine == nil || cfg.Engine.Type != "pi" {
-		t.Errorf("rendered engine type = %+v, want agent's pi", cfg.Engine)
-	}
-	if len(cfg.Engine.ForwardEnv) != 1 || cfg.Engine.ForwardEnv[0] != "HTTPS_PROXY" {
-		t.Errorf("rendered engine forwardEnv = %v, want inherited [HTTPS_PROXY]", cfg.Engine.ForwardEnv)
+	eng := agentrender.ResolveEngine(a.Spec.Engine, p.Spec.Achagent.Engine)
+	if eng == nil || len(eng.ForwardEnv) != 1 || eng.ForwardEnv[0] != "OPENCODE_ENABLE_EXA" {
+		t.Errorf("resolved engine forwardEnv = %+v, want inherited [OPENCODE_ENABLE_EXA]", eng)
 	}
 }
 
-// workloadFixture is a profile with persistence toggled by the caller.
-func workloadFixture(persistent bool) (*achv1alpha1.ACHAgent, *achv1alpha1.AgentProfile) {
+func TestBuildDeployment_Shape(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
-	a.Spec.Capability.Environment = "prod"
-	a.Spec.Env = []corev1.EnvVar{
-		{Name: "DEBUG", Value: "1"},
-		{Name: "GH_TOKEN", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: "gh"}, Key: "token"}}},
-		{Name: "NOT_FORWARDED", Value: "x"},
-	}
-	a.Spec.Engine = &achv1alpha1.EngineSpec{ForwardEnv: []string{"DEBUG", "GH_TOKEN", "MISSING", "ACH_TOKEN"}}
+	a.Spec.Ach = achIdentity("", "prod")
 	p := &achv1alpha1.AgentProfile{}
 	p.Spec.Achagent.Image = "ghcr.io/ackstorm/ach-agent:role"
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
-	if persistent {
-		p.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, Size: "1Gi", MountPath: "/var/lib/ach-agent"}
-	}
-	return a, p
-}
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
+	p.Spec.Persistence = &achv1alpha1.PersistenceSpec{Enabled: true, Size: "1Gi", MountPath: "/var/lib/ach-agent"}
 
-func TestComputeConfigHash_PlacementIsAnInput(t *testing.T) {
-	base := computeConfigHash([]byte(`{}`), []byte(`[]`), nil, "img", "sec", achv1alpha1.PlacementStandalone)
-	if computeConfigHash([]byte(`{}`), []byte(`[]`), nil, "img", "sec", "other") == base {
-		t.Fatal("placement change did not alter hash")
-	}
-}
-
-func TestResolvePlacement_AgentOverridesProfileDefaultsStandalone(t *testing.T) {
-	a, p := &achv1alpha1.ACHAgent{}, &achv1alpha1.AgentProfile{}
-	if got := resolvePlacement(a, p); got != achv1alpha1.PlacementStandalone {
-		t.Fatalf("unset ⇒ standalone, got %q", got)
-	}
-	p.Spec.Achagent.Placement = "other"
-	if got := resolvePlacement(a, p); got != "other" {
-		t.Fatalf("profile value must apply when agent is unset, got %q", got)
-	}
-	a.Spec.Placement = achv1alpha1.PlacementStandalone
-	if got := resolvePlacement(a, p); got != achv1alpha1.PlacementStandalone {
-		t.Fatalf("agent value must win, got %q", got)
-	}
-}
-
-func TestBuildDeployment_StandaloneUnchanged(t *testing.T) {
-	a, p := workloadFixture(true)
-	dep, err := buildDeployment(a, p, "h", buildAgentEnv(a, p, ""))
+	dep, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ps := dep.Spec.Template.Spec
 	if len(ps.Containers) != 1 || ps.Containers[0].Name != agentContainerName || ps.Containers[0].Args != nil {
-		t.Fatalf("standalone must render the single %q container with no args: %+v", agentContainerName, ps.Containers)
+		t.Fatalf("must render the single %q container with no args: %+v", agentContainerName, ps.Containers)
 	}
-	if ps.Containers[0].StartupProbe.HTTPGet == nil || ps.Containers[0].StartupProbe.HTTPGet.Port.IntVal != 8000 {
-		t.Error("standalone probes must stay HTTP on the configured health port (default 8000)")
+	if ps.Containers[0].StartupProbe.HTTPGet == nil || ps.Containers[0].StartupProbe.HTTPGet.Port.IntVal != 8080 {
+		t.Error("probes must stay HTTP on the fixed control port 8080 (workspace-v1 contract §11)")
 	}
-	// fsGroup on standalone too: a fresh root-owned cloud PVC is otherwise
-	// unwritable by uid 10001 (ach-agent finding, 2026-09-15).
+	// fsGroup: a fresh root-owned cloud PVC is otherwise unwritable by uid 10001
+	// (ach-agent finding, 2026-09-15).
 	for name, got := range map[string]*int64{"runAsUser": ps.SecurityContext.RunAsUser, "runAsGroup": ps.SecurityContext.RunAsGroup, "fsGroup": ps.SecurityContext.FSGroup} {
 		if got == nil || *got != agentUID {
-			t.Errorf("standalone pod %s = %v, want %d", name, got, agentUID)
+			t.Errorf("pod %s = %v, want %d", name, got, agentUID)
 		}
 	}
 	if ps.EnableServiceLinks != nil {
-		t.Error("standalone must leave enableServiceLinks unset (rendering unchanged)")
+		t.Error("enableServiceLinks must stay unset")
 	}
-	if got := ps.Containers[0].VolumeMounts[1]; got.MountPath != "/var/lib/ach-agent" || got.SubPath != "" {
-		t.Errorf("standalone PVC mount must stay the whole base dir, got %+v", got)
+	var pvcMnt *corev1.VolumeMount
+	for i := range ps.Containers[0].VolumeMounts {
+		if ps.Containers[0].VolumeMounts[i].Name == pvcVolumeName {
+			pvcMnt = &ps.Containers[0].VolumeMounts[i]
+		}
 	}
-	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != 8000 {
-		t.Errorf("standalone Service targetPort must stay the health port (default 8000), got %d", tp)
+	if got := pvcMnt; got == nil || got.MountPath != "/var/lib/ach-agent" || got.SubPath != "" {
+		t.Errorf("PVC mount must stay the whole base dir, got %+v", got)
+	}
+	if tp := buildService(a, p).Spec.Ports[0].TargetPort.IntVal; tp != 8080 {
+		t.Errorf("Service targetPort must stay the fixed control port 8080, got %d", tp)
 	}
 }
 
-func TestBuildAgentEnv_EgressSecretsInjectedAsEnv(t *testing.T) {
+func ptrInt64(v int64) *int64 { return &v }
+
+// buildTestControlSTS is the shared fixture for the control-pod naming/volume regression
+// tests below — split out of one over-complex test into several focused ones.
+func buildTestControlSTS(t *testing.T) (*appsv1.StatefulSet, *achv1alpha1.ACHAgent) {
+	t.Helper()
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
-	a.Spec.Identity.SecretRef = achv1alpha1.SecretKeyRef{Name: "demo-ek", Key: "ek"}
-	a.Spec.Egress = &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{
-		{Name: "github", Origin: "https://api.github.com", Auth: achv1alpha1.EgressAuth{
-			Header: "Authorization", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "gh", Key: "token"}}},
-	}}
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	a.Spec.Ach = achIdentity("", "")
 	p := &achv1alpha1.AgentProfile{}
-	p.Spec.Achagent.Ach = &achv1alpha1.AchEndpointSpec{BaseURL: "https://ach"}
+	p.Spec.Achagent.Image = "img"
 
-	var found bool
-	for _, e := range buildAgentEnv(a, p, "") {
-		if e.Name != "ACH_SECRET_EGRESS_0" {
-			continue
-		}
-		found = true
-		if e.Value != "" || e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
-			e.ValueFrom.SecretKeyRef.Name != "gh" || e.ValueFrom.SecretKeyRef.Key != "token" {
-			t.Errorf("egress secret env must be a secretKeyRef to gh/token, got %+v", e)
-		}
-	}
-	if !found {
-		t.Error("ACH_SECRET_EGRESS_0 missing from harness env")
-	}
-}
-
-func sandboxedFixture() (*achv1alpha1.ACHAgent, *achv1alpha1.AgentProfile) {
-	a, p := workloadFixture(true)
-	a.Spec.Placement = achv1alpha1.PlacementSandboxed
-	a.Spec.Egress = &achv1alpha1.EgressSpec{Services: []achv1alpha1.EgressService{{
-		Name: "gh", Origin: "https://api.github.com",
-		Auth: achv1alpha1.EgressAuth{Header: "Authorization", SecretKeyRef: achv1alpha1.SecretKeyRef{Name: "gh-egress", Key: "token"}}}}}
-	p.Spec.Sandbox = &achv1alpha1.SandboxSpec{ServiceAccountName: "ach-sandboxed-agent", RuntimeClassName: "gvisor",
-		Sessions: achv1alpha1.SandboxSessionsSpec{Bucket: "b"}}
-	return a, p
-}
-
-func TestBuildService_SandboxedPortsAndAlwaysRendered(t *testing.T) {
-	a, p := sandboxedFixture()
-	if !wantsService(a, p) || needsService(a) {
-		t.Fatal("sandboxed must always want a Service without opting into expose")
-	}
-	got := map[string]int32{}
-	for _, sp := range buildService(a, p).Spec.Ports {
-		got[sp.Name] = sp.Port
-	}
-	if got["http"] != 8080 || got["gateway"] != 8095 || got["egress"] != 8096 {
-		t.Errorf("ports = %v", got)
-	}
-	a.Spec.Egress = nil
-	if len(buildService(a, p).Spec.Ports) != 2 {
-		t.Errorf("no egress: want http+gateway only, got %v", buildService(a, p).Spec.Ports)
-	}
-}
-
-func TestBuildDeployment_SandboxedUsesSharedSAAndMountsToken(t *testing.T) {
-	a, p := sandboxedFixture()
-	dep, err := buildDeployment(a, p, "h", append(buildAgentEnv(a, p, ""), sandboxKeyEnv(a)))
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := dep.Spec.Template.Spec
-	if ps.ServiceAccountName != "ach-sandboxed-agent" || ps.AutomountServiceAccountToken == nil || !*ps.AutomountServiceAccountToken {
-		t.Errorf("SA=%q automount=%v", ps.ServiceAccountName, ps.AutomountServiceAccountToken)
+	return sts, a
+}
+
+// TestBuildStatefulSet_ControlNaming is the contract §11 regression guard found by root's
+// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<uid>
+// (matching ServiceName, not the legacy achagent-<name> scheme other children keep).
+func TestBuildStatefulSet_ControlNaming(t *testing.T) {
+	sts, a := buildTestControlSTS(t)
+	wantName := "ach-control-" + string(a.UID)
+	if sts.Name != wantName {
+		t.Errorf("StatefulSet name = %q, want %q (contract §11)", sts.Name, wantName)
+	}
+	if sts.Spec.ServiceName != wantName {
+		t.Errorf("StatefulSet.ServiceName = %q, want %q (must match metadata.name)", sts.Spec.ServiceName, wantName)
 	}
 }
 
-func TestSandboxTemplate_PodLabelsDoNotMatchHarnessSelector(t *testing.T) {
-	a, p := sandboxedFixture()
-	u := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
-	labels, _, _ := unstructured.NestedStringMap(u.Object, "spec", "podTemplate", "metadata", "labels")
-	for k, v := range agentSelectorLabels(a.Name) {
-		if labels[k] == v {
-			t.Errorf("template pod carries harness selector label %s=%s", k, v)
+// TestBuildStatefulSet_ConfigMount: the control pod must mount the config ConfigMap as a
+// single read-only directory at configMountDir (contract §11 scope reset — no broker-token
+// or leaf-TLS volumes exist any more) and must automount its ordinary ServiceAccount token
+// (contract §11 creator cutover: the Harness needs it to use the workspace-creator grant).
+func TestBuildStatefulSet_ConfigMount(t *testing.T) {
+	sts, _ := buildTestControlSTS(t)
+	ps := sts.Spec.Template.Spec
+	if ps.AutomountServiceAccountToken == nil || !*ps.AutomountServiceAccountToken {
+		t.Fatal("control pod must automount its ServiceAccount token")
+	}
+	var mnt *corev1.VolumeMount
+	for i := range ps.Containers[0].VolumeMounts {
+		if ps.Containers[0].VolumeMounts[i].Name == configVolumeName {
+			mnt = &ps.Containers[0].VolumeMounts[i]
 		}
+	}
+	if mnt == nil || mnt.MountPath != configMountDir || !mnt.ReadOnly || mnt.SubPath != "" {
+		t.Errorf("config directory mount = %+v, want MountPath %q read-only, no SubPath", mnt, configMountDir)
 	}
 }
 
-// A warm sandbox is unconfigured until claimed: its probe must not wait for configuration.
-func TestSandboxTemplate_ProbesPreConfigureHealth(t *testing.T) {
-	a, p := sandboxedFixture()
-	c := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
-	containers, _, _ := unstructured.NestedSlice(c.Object, "spec", "podTemplate", "spec", "containers")
-	for _, probe := range []string{"readinessProbe", "livenessProbe"} {
-		get, _, _ := unstructured.NestedMap(containers[0].(map[string]any), probe, "httpGet")
-		if get["path"] != "/execution/v1/health" || get["port"] != int64(8082) {
-			t.Errorf("%s httpGet = %v", probe, get)
-		}
+// TestBuildExecutionBootstrapConfigMap_StrictShape pins bootstrap.json to the exact shape
+// ../ach-agent/tests/config/fixtures/bootstrap.json and the contract doc require: bootstrapVersion
+// MUST be "workspace-v1" (root-flagged regression — this repo previously emitted the wrong
+// literal "v1", confirmed incompatible with the accepted Python BootstrapConfig), agent
+// identity and control/facade endpoints, copied verbatim from the already-rendered
+// infrastructure.execution block (never recomputed). Contract §11 scope reset: no auth
+// block and no ca.crt — D2 owns authenticated application calls, out of this task's scope.
+func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	infra := agentrender.WSInfrastructureBlock{
+		Execution: agentrender.WSExecutionInfraBlock{
+			ControlEndpoint: "http://ach-control-" + string(a.UID) + ".ns.svc:8081",
+			FacadeEndpoint:  "http://ach-control-" + string(a.UID) + ".ns.svc:8081/facades",
+		},
 	}
-}
 
-// The engine creates HOME on configure; without a writable mount it cannot, and every claim 503s.
-func TestSandboxTemplate_WritableHome(t *testing.T) {
-	a, p := sandboxedFixture()
-	raw, _ := json.Marshal(buildSandboxTemplate(a, p, strings.Repeat("0", 64)).Object)
-	for _, want := range []string{`"mountPath":"/home/agent","name":"home"`, `"emptyDir":{},"name":"home"`} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("template missing %s: %s", want, raw)
-		}
+	cm, err := buildExecutionBootstrapConfigMap(a, infra)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
+	if cm.Name != "ach-execution-"+string(a.UID) {
+		t.Errorf("bootstrap ConfigMap name = %q, want ach-execution-<uid>", cm.Name)
+	}
+	raw, ok := cm.Data[bootstrapFileName]
+	if !ok {
+		t.Fatalf("no %q key in bootstrap ConfigMap data: %v", bootstrapFileName, cm.Data)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("bootstrap.json invalid JSON: %v", err)
+	}
 
-func TestSandboxWarmPool_Recreate(t *testing.T) {
-	a, p := sandboxedFixture()
-	if v, _, _ := unstructured.NestedString(buildSandboxWarmPool(a, p).Object, "spec", "updateStrategy", "type"); v != "Recreate" {
-		t.Errorf("updateStrategy.type = %q", v)
+	if got["bootstrapVersion"] != "workspace-v1" {
+		t.Errorf("bootstrapVersion = %v, want \"workspace-v1\"", got["bootstrapVersion"])
 	}
-}
-
-// The security invariant: nothing the harness holds may reach the sandbox template.
-func TestSandboxTemplate_NoHarnessSecrets(t *testing.T) {
-	a, p := sandboxedFixture()
-	p.Spec.Env = []corev1.EnvVar{{Name: "HTTPS_PROXY", Value: "http://x"}, {Name: "X_MCP", Value: "x"}, {Name: "Y_MCP", Value: "y"}}
-	a.Spec.MCPServers = []achv1alpha1.McpServerSpec{
-		{Name: "loc", Type: "local", Local: &achv1alpha1.LocalMcpSpec{Command: "x", Env: []string{"X_MCP"}}},
-		{Name: "rem", Type: "remote", Remote: &achv1alpha1.RemoteMcpSpec{URL: "https://m", Headers: map[string]string{"Authorization": "Bearer ${env:Y_MCP}"}}},
+	agentBlock, _ := got["agent"].(map[string]any)
+	if agentBlock["name"] != "demo" || agentBlock["namespace"] != "ns" || agentBlock["uid"] != string(a.UID) {
+		t.Errorf("agent = %v", agentBlock)
 	}
-	a.Spec.Engine.ForwardEnv = append(a.Spec.Engine.ForwardEnv, "ACH_SANDBOX_KEY", "ACH_SECRET_EGRESS_0", "HTTPS_PROXY", "SSL_CERT_FILE")
-	a.Spec.Identity.SecretRef.Name = "demo-ek"
-	u := buildSandboxTemplate(a, p, strings.Repeat("0", 64))
-	raw, _ := json.Marshal(u.Object)
-	for _, bad := range []string{"ACH_SANDBOX_KEY", "ACH_SECRET_", "ACH_TOKEN", "ACH_API_KEY", "demo-ek", "gh-egress", "sandbox-key", "envFrom", "HTTPS_PROXY", "SSL_CERT_FILE", `"secret"`} {
-		if strings.Contains(string(raw), bad) {
-			t.Errorf("template contains %q: %s", bad, raw)
+	if got["controlEndpoint"] != infra.Execution.ControlEndpoint {
+		t.Errorf("controlEndpoint = %v, want %v", got["controlEndpoint"], infra.Execution.ControlEndpoint)
+	}
+	if got["facadeEndpoint"] != infra.Execution.FacadeEndpoint {
+		t.Errorf("facadeEndpoint = %v, want %v", got["facadeEndpoint"], infra.Execution.FacadeEndpoint)
+	}
+	// No model/prompts/engine.env/configVersion — bootstrap is a separate, strict,
+	// secret-free document, not a PublicConfig fragment (contract §11).
+	for _, forbidden := range []string{"model", "prompts", "engine", "configVersion", "auth"} {
+		if _, present := got[forbidden]; present {
+			t.Errorf("bootstrap.json must not carry %q", forbidden)
 		}
 	}
-	for _, want := range []string{"ACH_SANDBOX_VERIFY_KEY", "lZLI1hcEx9ydNM7EoaQ213ri9oNsmILvrFE6AB2YO94", `"networkPolicyManagement":"Unmanaged"`, `"runtimeClassName":"gvisor"`, "GH_TOKEN", "X_MCP", "Y_MCP", `"automountServiceAccountToken":false`} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("template missing %q: %s", want, raw)
-		}
+	if _, present := cm.Data["ca.crt"]; present {
+		t.Fatal("bootstrap ConfigMap must never carry ca.crt (contract §11 scope reset)")
 	}
 }

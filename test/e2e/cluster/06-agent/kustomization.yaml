@@ -1,23 +1,31 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only
-# ACHAgent (standalone, ephemeral) + the same standalone agent on a
-# persistent profile (profile-pvc.yaml + agent-pvc.yaml, PVC-backed) + a sandboxed
-# agent (profile-sbx.yaml + agent-sbx.yaml, runc on kind, operator-output gate only) + their
-# shared ek Secret. Applied after the CRDs (stage 02) exist. Order
-# within the stage does not matter — the operator re-reconciles on the profile
-# and secret watches until both resolve.
+# Stage 06 — a minimal agent-runtime fixture: an AgentProfile + a cron-only ACHAgent
+# (ephemeral) + the same agent on a persistent profile (profile-pvc.yaml +
+# agent-pvc.yaml — the operator's own control-pod PVC, unrelated to the Harness/
+# Storage workspace.persistence policy) + their shared ek Secret. Applied after the
+# CRDs (stage 02) exist. Order within the stage does not matter — the operator
+# re-reconciles on the profile and secret watches until both resolve.
+#
+# The distributed-placement fixture (agent-dist.yaml) and TestAgentRuntimeReady's
+# placement-flip/distributed-isolation subtests were retired with
+# standalone/distributed placement itself (contract §11 scope reset, 0.1.0: one
+# Channels+Harness control pod per ACHAgent — no three-role pod shape).
 #
 # Two evidence tracks, kept separate on purpose (ach-agent handoff 2026-09-15):
-#   - rendering shape: scripts/cluster.sh stage 07 gates WorkloadApplied=True,
-#     a schema-valid config.json, the ACH_TOKEN secretKeyRef, and the
-#     standalone container shape — no image needed.
-#   - runtime readiness: test/e2e/agent_runtime_ready_test.go mints a real ek
-#     for the demo Environment at test time, swaps it into e2e-agent-ek, and
-#     requires WorkloadReady=True on both agents (hydration + native config +
-#     directory prep completed in the pod), then checks that the persistent
-#     standalone pod can write under its PVC as uid 10001.
+#   - rendering shape: scripts/cluster.sh stage 06 gates WorkloadApplied=True, a
+#     schema-valid config.json, the ACH_SECRET_IDENTITY secretKeyRef, the control
+#     StatefulSet's fsGroup, and the Harness's own creator RoleBinding. Both profiles
+#     now reference the ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.0 candidate
+#     references (not yet published releases) — Root kind-loads both images into the
+#     cluster before stage 06 applies/syncs; without the load, WorkloadReady never
+#     flips (image pull failure in a running pod, not a render/schema failure).
+#   - runtime readiness: test/e2e/agent_runtime_ready_test.go mints a real ek for
+#     the demo Environment at test time, swaps it into e2e-agent-ek, and (once Root
+#     kind-loads the 0.1.0 candidate control/execution images) requires WorkloadReady=True on both
+#     agents (hydration + native config + directory prep completed in the pod),
+#     then checks the persistent standalone pod can write under its PVC as uid 10001.
 # The committed ek value is a placeholder; nothing bypasses hydration.
 resources:
   - ek-secret.yaml
@@ -25,5 +33,3 @@ resources:
   - agent.yaml
   - profile-pvc.yaml
   - agent-pvc.yaml
-  - profile-sbx.yaml
-  - agent-sbx.yaml
