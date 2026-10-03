@@ -29,6 +29,7 @@ for the object the operator reconciles in e2e, look there.
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
 | `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
 | `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
+| `agent-runtime/`                      | `AgentProfile` + `ACHAgent`                | A running-agent example (workspace-v1 control/execution split, contract §11) — webhook/cron channels, handoff, memory. See `agent-runtime/README.md`. |
 
 ## End-to-end demo
 

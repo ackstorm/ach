@@ -1,5 +1,5 @@
 # Prereq: create the ek secret, e.g.
-#   kubectl -n engineering create secret generic ops-ek --from-literal=ek=<ek_...>
+#   kubectl -n engineering create secret generic ops-ek --from-literal="ek=<ek_...>"
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: ACHAgent
 metadata:
@@ -7,8 +7,17 @@ metadata:
   namespace: engineering
 spec:
   profileRef: { name: standard }
-  identity:
-    secretRef: { name: ops-ek, key: ek }
+  # ach.identity is required and is always the agent's own — never a shared profile
+  # default (contract §5: a profile is forbidden from setting ach.identity at all).
+  ach:
+    identity:
+      secretRef: { name: ops-ek, key: ek }
+    environment: engineering-prod
+    capability:
+      filter:
+        exclude:
+          skills: [send-email]
+          mcpServers: [dangerous-admin]
   # Agent env merges over profile env by name. The full agent entry wins.
   env:
     - name: GITLAB_TOKEN
@@ -16,18 +25,9 @@ spec:
         secretKeyRef: { name: gitlab-clone, key: token }
     - name: GITLAB_BASE_URL
       value: https://gitlab.example.com
-  capability:
-    environment: engineering-prod
-    filter:
-      exclude:
-        skills: [send-email]
-        mcpServers: [dangerous-admin]
   # Any spec.achagent default from the profile can be overridden per-agent (deep
   # merge: a set field wins, an omitted field inherits the profile's), e.g.:
-  # image: ghcr.io/ackstorm/ach-agent:next
-  # engine:
-  #   type: pi
-  # cost: { source: none }
+  # image: REPLACE_WITH_PUBLISHED_CONTROL_IMAGE
   prompt:
     system: { type: text, text: "You are a senior code reviewer for the platform team." }
     compose: append
@@ -40,20 +40,6 @@ spec:
   expose:
     service: true
     gateway: true
-  # Egress credential injection (needs an ach-agent image with egress support): the engine
-  # calls the origin with no credential and the harness proxy adds the header. The secret is
-  # bound into the harness only. The profile must NOT forward HTTPS_PROXY / SSL_CERT_FILE
-  # (the harness manages them; profile.yaml forwards them today, so use a separate profile
-  # or an agent-level engine.forwardEnv override).
-  # egress:
-  #   services:
-  #     - name: github
-  #       origin: https://api.github.com
-  #       auth:
-  #         header: Authorization
-  #         prefix: "Bearer "
-  #         secretKeyRef: { name: github-token, key: token }
-  #         placeholderEnv: GH_TOKEN
   channels:
     - name: gitlab-mr-review
       type: webhook
@@ -71,6 +57,9 @@ spec:
         # the empty $ACH_HANDOFF_DIR each time (a handoff always starts empty, so
         # there is no existing tree to fetch into). Use scope: session to run this
         # only when a new session is created instead.
+        # destination (required): the relative Workspace path this handoff's output
+        # replaces wholesale (contract §6).
+        destination: handoff
         script: |
           AUTH=$(printf 'oauth2:%s' "$GITLAB_TOKEN" | base64 -w0)
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
@@ -99,10 +88,9 @@ spec:
         timeoutSeconds: 120
     - name: daily-security
       type: cron
-      # session is a block since v0.6.3 (was a bare string `session: none`).
-      # type: auto|none|custom; key required iff type=custom; +maxTokens/overflow.
-      session:
-        type: none
+      # routing is optional; omit for the adapter's default session identity (for
+      # cron, one new conversation per tick — contract §2). Override independently:
+      # routing: { sessionKey: "main" }  # continuity across ticks
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Scan main for new CVEs; open an issue if any are critical."
   # Agent-level session hooks, run inside the mini-harness with only
@@ -129,8 +117,8 @@ spec:
     #     env: [SOME_VAR]
     # remote — opencode CONNECTS directly to a remote MCP endpoint. headers values are
     # ${env:NAME} refs (never secret values); wire the env via profile/agent spec.env.
-    # SECURITY: the co-resident agent can read the resolved header — front via ACH
-    # hydrate instead if that matters.
+    # SECURITY: opencode itself (running in the execution pod) can read the resolved
+    # header value — front via ACH hydrate instead if that matters.
     # - name: other
     #   type: remote
     #   remote:

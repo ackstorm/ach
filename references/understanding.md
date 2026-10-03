@@ -151,36 +151,60 @@ parity checklist: `references/adding-a-cr-kind.md`.
   endpoint + master-key SecretRef. Operator probes, `EnsureDefaultTeam`
   (idempotent — LiteLLM assigns UUID team_id).
 - **agent fleet**: `AgentProfile` (infra template: resources,
-  extraEnv (ACH_* CEL-forbidden), persistence PVC (Retain/Delete), egress-only
-  default-deny `networkPolicy` opt-in (DNS rule + declared peers), raw
-  `podTemplate` strategic-merge overlay — pass-through by design, selector +
-  config-hash re-pinned after merge; `achagent.placement` standalone|sandboxed, agent-overridable; see CLAUDE.md "ACHAgent placement") + `ACHAgent` (instance: `identity.secretRef`
-  ek_ → `ACH_TOKEN` env via secretKeyRef — never file-mounted, explicitly NOT
-  an isolation boundary (same-uid reads /proc/pid/environ); channels
-  webhook (gitlab/github/generic auth, botUsername loop-guard, triggerUsers
-  allowlist) / cron / queue / a2a; session spec (none/auto/custom + compact/
-  rotate overflow); memory ach-memory (project slug NEVER templated from
-  payload — cross-tenant risk; empty ⇒ harness derives {POD_NAMESPACE}-{agent
-  .name}, so the Deployment carries POD_NAMESPACE via the downward API) /
-  codemem; harness MCP servers local (stdio passthrough, ACH_*/ek stripped from env
-  fwd) / remote (headers = ${env:NAME} refs; co-resident same-uid CAN read —
-  front via ACH if unacceptable); channel `handoff` (scope event|session) replaces
-  the old prepare/cleanup pair — a credentialed harness script run in an empty dir,
-  its output wholesale-replacing the session workspace's handoff/; agent-level
-  `spec.hooks.{sessionStart,sessionSuspend}` run inside the mini-harness with only
-  engine.forwardEnv; `expose.service` + `expose.gateway` both
-  default false, gateway requires service). Operator renders `agent-config-v1`
-  ConfigMap + single-replica Deployment (`internal/agentrender`, JSON tags
-  schema-locked); salted config-hash roll; harness **self-hydrates** at boot —
-  no init container; status from probes. Profile defaults under `spec.achagent`
-  (image, ach, model, engine, limits, health, cost) deep-merge per-field with the
-  agent's flat overrides (set agent field wins; `engine.forwardEnv`/`model.params`/
-  `model.thinking`/`engine.pi`/`cost` atomic). Profile-only infra (not overridable):
-  imagePullSecrets, resources, extraEnv, nodeSelector, tolerations, persistence,
-  networkPolicy, terminationGracePeriodSeconds, podTemplate. `ach.baseUrl` = agent ?? profile
-  ?? operator ACH_BASE_URL (empty blocks); `health` resolved ONCE
-  (`ResolveHealth`) for config + Service targetPort + probes. `status.gatewayURL` host from
-  `ACH_PUBLIC_BASE_URL` ?? `ACH_BASE_URL`, else path-only.
+  extraEnv (ACH_* CEL-forbidden), persistence PVC (Retain/Delete) — the operator's OWN
+  persistent control-pod volume, unrelated to the Harness/Storage `workspace.persistence`
+  policy below —, egress-only default-deny `networkPolicy` opt-in (DNS rule + declared
+  peers), raw `podTemplate` strategic-merge overlay — pass-through by design, selector +
+  config-hash re-pinned after merge; `spec.execution` (contract §11 execution-role infra:
+  image/resources/ephemeralStorage/scheduling for the per-Workspace execution pod the
+  Harness creates directly) + `ACHAgent` (instance: nested `ach.identity.secretRef` ek_ →
+  `ACH_SECRET_IDENTITY` env via secretKeyRef — never file-mounted, explicitly NOT an
+  isolation boundary (same-uid reads /proc/pid/environ); `ach.environment`/`ach.capability`
+  share the profile's `achagent.ach` defaults per-field, identity never does (profile-level
+  CEL forbids it); channels webhook (gitlab/github/generic auth, botUsername loop-guard,
+  triggerUsers allowlist) / cron / queue / a2a; per-channel optional `routing`
+  (workspaceKey/sessionKey {{ }} templates the Harness renders, never the operator) replaces
+  the old session none/auto/custom spec; memory ach-memory (project slug NEVER templated
+  from payload — cross-tenant risk; empty ⇒ harness derives {POD_NAMESPACE}-{agent.name}, so
+  the control pod carries POD_NAMESPACE via the downward API) / codemem; harness MCP servers
+  local (stdio passthrough, ACH_*/ek stripped from env fwd) / remote (headers =
+  ${env:NAME} refs; co-resident same-uid CAN read — front via ACH if unacceptable); channel
+  `handoff` (scope event|session) replaces the old prepare/cleanup pair — a credentialed
+  harness script run in an empty dir, its output wholesale-replacing the session workspace's
+  handoff/; agent-level `spec.hooks.{sessionStart,sessionSuspend}` run inside the
+  mini-harness with only engine.forwardEnv; `expose.service` + `expose.gateway` both default
+  false, gateway requires service). One Channels+Harness control container per ACHAgent —
+  no standalone/distributed/sandboxed placement, no Jobs, no Workspace CR in 0.1.0 (CR/
+  controller deferred to 0.1.1; the execution identity/bootstrap resources the Harness
+  consumes to create per-Workspace execution StatefulSets directly are NOT deferred).
+  Operator renders the workspace-v1 wire config (`internal/agentrender`,
+  Render2/RenderInfrastructureV1, JSON tags schema-locked) plus the single-replica control
+  StatefulSet (contract §11, name `ach-control-<uid>`) the harness **self-hydrates** at
+  boot — no init container; status from probes, fixed control port, no `health` knob any
+  more (compatibility-only CRD field, read by nothing that builds real k8s objects). The
+  Harness's own namespaced Role/RoleBinding (`ach-harness-<uid>`, same name as its
+  ServiceAccount) grants exactly the verbs it needs to create/manage per-Workspace
+  StatefulSets/Services/Pods — no Secret/RBAC CRUD, TokenReview, pod exec, or cross-
+  namespace grant; the execution ServiceAccount is never bound to anything. A pre-existing
+  ACHAgent's old Deployment and any agent-sandbox `SandboxTemplate`/`SandboxWarmPool` it
+  owned are pruned once, right after its new control StatefulSet successfully applies — see
+  `references/achagent.md`. Global Storage (`runtime.storage.s3`, operator Helm values) is
+  injected into the control pod's private env only when a resolved config actually requires
+  it (workspace/session persistence or artifacts): a bucket is REQUIRED configuration (empty
+  ⇒ `StorageUnavailable`, config-only check, never a cloud probe), an optional
+  namespace-local credentials Secret supplies the AWS key/secret (required) and
+  session-token (always present, optional key) env SecretKeyRefs — never per-ACHAgent, never
+  per-AgentProfile, never in the rendered wire config. Profile defaults under
+  `spec.achagent` (image, ach, model, engine, limits, health, workspace, artifacts)
+  deep-merge per-field with the agent's flat overrides (set agent field wins;
+  `engine.forwardEnv`/`model.params`/`model.thinking` atomic; `workspace.persistence`/
+  `workspace.session`/`artifacts` merge recursively per field — an agent overriding just
+  one leaf, e.g. `workspace.persistence.enabled`, still inherits every untouched sibling
+  from the profile, never a wholesale sub-block replace). Profile-only infra (not
+  overridable): imagePullSecrets, resources, extraEnv, nodeSelector, tolerations,
+  persistence, networkPolicy, terminationGracePeriodSeconds, podTemplate, `spec.execution`.
+  `ach.baseUrl` = agent ?? profile ?? operator ACH_BASE_URL (empty blocks).
+  `status.gatewayURL` host from `ACH_PUBLIC_BASE_URL` ?? `ACH_BASE_URL`, else path-only.
 
 Not CRDs (common confusion): pk_/ek_ (platform-api/DB objects), teams
 (LiteLLM + runtime catalog), gateway route set (`achagents` projection).

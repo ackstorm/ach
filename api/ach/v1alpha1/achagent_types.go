@@ -7,7 +7,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// IdentitySpec carries the ACH ek_ (config: injected as ACH_TOKEN env via secretKeyRef).
+// IdentitySpec carries the ACH ek_ (config: injected as ACH_SECRET_IDENTITY env via
+// secretKeyRef — the alias name ach.identity.env names in the rendered config).
 type IdentitySpec struct {
 	// SecretRef points at a Secret holding the ek_ (create it yourself, e.g. `ach-cli keys create`).
 	// +kubebuilder:validation:Required
@@ -215,6 +216,10 @@ type WebhookSpec struct {
 	// GitLab source only; ignored for github/generic.
 	// +optional
 	TriggerUsers []string `json:"triggerUsers,omitempty"`
+	// MergeRequestsOnly discards GitLab issues and notes not on a merge request before
+	// admission (contract §2). gitlab source only; ignored for github/generic.
+	// +optional
+	MergeRequestsOnly *bool `json:"mergeRequestsOnly,omitempty"`
 }
 
 // CronSpec configures a cron channel (config: channels[].cron).
@@ -247,35 +252,22 @@ type A2ASpec struct {
 	Auth A2AAuthSpec `json:"auth"`
 }
 
-// SessionSpec selects which opencode conversation a channel turn reuses and
-// bounds its growth (config: channels[].session). type is the discriminator;
-// key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
-// block lets the harness apply its own default (type: none). This changes only
-// which session a turn reuses — the router lane key (event.session_key) is
-// unaffected.
-// +kubebuilder:validation:XValidation:rule="self.type != 'custom' ? !has(self.key) : (has(self.key) && size(self.key) > 0)",message="session.key is required (non-empty) iff type is custom, forbidden otherwise"
-type SessionSpec struct {
-	// none: fresh session per event, deleted post-turn. auto: reuse the
-	// channel-derived session_key. custom: reuse the session named by key.
+// RoutingSpec overrides the Harness's default Workspace/Session identity for a channel
+// (config: channels[].routing, contract §2). Both fields are optional and independent: an
+// omitted one keeps the adapter's default. A present one is a non-empty {{ }} template
+// string (event.*, payload.*) the Harness renders — the operator never interprets or
+// renders it; an invalid render is rejected by the Harness with no fallback. MinLength (an
+// OpenAPI structural keyword, not CEL) enforces non-empty cheaply — only present values are
+// checked, so the field stays genuinely optional.
+type RoutingSpec struct {
+	// WorkspaceKey overrides the adapter's default Workspace identity template.
 	// +optional
-	// +kubebuilder:default=none
-	// +kubebuilder:validation:Enum=auto;none;custom
-	Type string `json:"type,omitempty"`
-	// Key is the {{ }} session template (payload.* / internal.*). REQUIRED iff
-	// type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN.
+	// +kubebuilder:validation:MinLength=1
+	WorkspaceKey *string `json:"workspaceKey,omitempty"`
+	// SessionKey overrides the adapter's default Session identity template.
 	// +optional
-	Key *string `json:"key,omitempty"`
-	// MaxTokens caps growth: once the previous turn's input_tokens exceed it,
-	// apply overflow (auto/custom only; ignored for none).
-	// +optional
-	// +kubebuilder:validation:Minimum=1
-	MaxTokens *int64 `json:"maxTokens,omitempty"`
-	// Overflow: compact summarizes the session in place; rotate starts a fresh
-	// session and deletes the old one.
-	// +optional
-	// +kubebuilder:default=compact
-	// +kubebuilder:validation:Enum=compact;rotate
-	Overflow string `json:"overflow,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	SessionKey *string `json:"sessionKey,omitempty"`
 }
 
 // PrepareSpec configures a static /bin/sh program used by prepare, cleanup, and the
@@ -314,6 +306,13 @@ type HandoffSpec struct {
 	// +kubebuilder:default=event
 	// +optional
 	Scope string `json:"scope,omitempty"`
+	// Destination is the relative path inside the Workspace the handoff's output replaces
+	// (contract §6). Required, non-empty. Path-escape rejection (no .. segments, no leading
+	// /) happens at runtime (Harness) — a CEL equivalent here is prohibitively expensive
+	// against the per-channel listType=map cost multiplier.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Destination string `json:"destination"`
 }
 
 // ChannelSpec is one inbound channel (config: channels[]).
@@ -335,8 +334,10 @@ type ChannelSpec struct {
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	Concurrency *int64 `json:"concurrency,omitempty"`
+	// Routing overrides the Harness's default Workspace/Session identity for this
+	// channel (contract §2). Omit for the adapter's default.
 	// +optional
-	Session *SessionSpec `json:"session,omitempty"`
+	Routing *RoutingSpec `json:"routing,omitempty"`
 	// +optional
 	Prompt string `json:"prompt,omitempty"`
 	// +optional
@@ -443,6 +444,11 @@ type HooksSpec struct {
 	// Failure fails the invocation.
 	// +optional
 	SessionStart *HookSpec `json:"sessionStart,omitempty"`
+	// SessionRestore runs once each time a session is restored from a snapshot (contract §6).
+	// Failure fails the invocation. Never runs alongside SessionStart for the same session —
+	// Start is create-only, Restore is restore-only.
+	// +optional
+	SessionRestore *HookSpec `json:"sessionRestore,omitempty"`
 	// SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox
 	// suspend), before any HOME archive. May run many times per session. Best-effort.
 	// +optional
@@ -450,14 +456,15 @@ type HooksSpec struct {
 }
 
 // ACHAgentSpec defines the desired state of an agent instance.
+// +kubebuilder:validation:XValidation:rule="has(self.ach) && has(self.ach.identity)",message="spec.ach.identity is required"
 type ACHAgentSpec struct {
 	// +kubebuilder:validation:Required
 	ProfileRef LocalObjectRef `json:"profileRef"`
-	// +kubebuilder:validation:Required
-	Identity IdentitySpec `json:"identity"`
 	// AgentDefaults are the inline per-agent overrides of the profile's
 	// spec.achagent defaults (image/ach/model/engine/limits/health). Per-field
 	// deep merge: a set field here wins, an omitted one inherits the profile's.
+	// ach.identity is required here (object-level CEL): the credential is the
+	// agent's own, never an implicit shared profile default (contract §5).
 	AgentDefaults `json:",inline"`
 	// Env are pod-level environment variables merged over AgentProfile.spec.env by name.
 	// An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are
@@ -469,12 +476,6 @@ type ACHAgentSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || (has(e.valueFrom.secretKeyRef) && !has(e.valueFrom.configMapKeyRef) && !has(e.valueFrom.fieldRef) && !has(e.valueFrom.resourceFieldRef) && !has(e.valueFrom.fileKeyRef)))",message="env valueFrom supports only secretKeyRef"
 	// +kubebuilder:validation:XValidation:rule="self.all(e, !has(e.valueFrom) || !has(e.value) || e.value == '')",message="env value and valueFrom are mutually exclusive"
 	Env []corev1.EnvVar `json:"env,omitempty"`
-	// Capability is optional: both of its fields are optional, so the block
-	// validates nothing on its own. Render always emits a capability block
-	// (the harness schema requires one) — capability.ach.baseUrl comes from
-	// agentrender.ResolveAchBaseURL, never from here.
-	// +optional
-	Capability CapabilitySpec `json:"capability,omitempty"`
 	// +optional
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional
@@ -498,52 +499,6 @@ type ACHAgentSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	MCPServers []McpServerSpec `json:"mcpServers,omitempty"`
-	// Egress makes the harness inject upstream credentials on the engine's behalf: the engine
-	// calls a declared origin with no credential (or a non-secret placeholder) and the
-	// harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only
-	// (not profile-inheritable). Needs an ach-agent image with egress support.
-	// +optional
-	Egress *EgressSpec `json:"egress,omitempty"`
-}
-
-// EgressSpec lists the upstream services whose credentials the harness injects.
-type EgressSpec struct {
-	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=32
-	// +listType=map
-	// +listMapKey=name
-	Services []EgressService `json:"services"`
-}
-
-// EgressService is one upstream origin and the credential the harness adds to it.
-type EgressService struct {
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`
-	Name string `json:"name"`
-	// Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.
-	// The harness validates it fully at load.
-	// +kubebuilder:validation:Pattern=`^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$`
-	Origin string     `json:"origin"`
-	Auth   EgressAuth `json:"auth"`
-}
-
-// EgressAuth is the header the proxy sets and where its value comes from.
-type EgressAuth struct {
-	// Header the proxy sets (RFC 9110 field-name token).
-	// +kubebuilder:validation:Pattern="^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
-	// +kubebuilder:validation:MaxLength=64
-	Header string `json:"header"`
-	// Prefix is prepended to the secret value, e.g. "Bearer ".
-	// +kubebuilder:validation:MaxLength=64
-	// +kubebuilder:validation:Pattern=`^[^\r\n\x00]*$`
-	// +optional
-	Prefix string `json:"prefix,omitempty"`
-	// SecretKeyRef holds the credential (same namespace). Bound only into the harness container.
-	SecretKeyRef SecretKeyRef `json:"secretKeyRef"`
-	// PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that
-	// refuse to start without a token still run.
-	// +kubebuilder:validation:Pattern=`^[A-Za-z_][A-Za-z0-9_]*$`
-	// +optional
-	PlaceholderEnv string `json:"placeholderEnv,omitempty"`
 }
 
 // ACHAgentStatus is the observed state.

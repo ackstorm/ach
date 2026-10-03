@@ -12,9 +12,9 @@ metadata:
   namespace: engineering
 spec:
   profileRef: { name: standard }
-  identity:
-    secretRef: { name: ops-ek, key: ek }
-  capability:
+  ach:
+    identity:
+      secretRef: { name: ops-ek, key: ek }
     environment: engineering-prod
   memory:
     type: ach-memory
@@ -81,6 +81,5 @@ spec:
   channels:
     - name: daily-consolidate
       type: cron
-      session: { type: none }
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Review recent merges against what you remember of the architecture and conventions."

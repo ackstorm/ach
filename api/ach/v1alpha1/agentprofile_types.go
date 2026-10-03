@@ -16,22 +16,47 @@ type LocalObjectRef struct {
 	Name string `json:"name"`
 }
 
-// AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-// BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+// AchSpec is the ACH platform block (config: ach{baseUrl,environment,identity,capability},
+// contract §5). It is the SAME type used by both AgentProfile.spec.achagent.ach (shared
+// defaults: baseUrl/environment/capability) and ACHAgent's inline AgentDefaults override
+// (adds the required identity credential) — per-field deep merge via ResolveAch, exactly
+// like model/engine/limits. identity is never a shared profile default: AgentProfile forbids
+// setting it (object-level CEL on AgentProfileSpec); ACHAgentSpec requires it.
+//
+// BaseURL resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
 // operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
-type AchEndpointSpec struct {
+type AchSpec struct {
 	// +optional
 	BaseURL string `json:"baseUrl,omitempty"`
+	// Environment is the ACH Hub Environment name, for documentation/intent only — see
+	// CapabilitySpec.Environment's original doc: the ek already scopes the environment
+	// server-side and the harness reads the hydrated environment, never this field. A
+	// POINTER (unlike most other optional strings here): AgentProfile.spec.achagent.ach may
+	// set a shared default (ResolveAch), and an agent needs to be able to override it with an
+	// explicit empty string — indistinguishable from "unset" on a plain omitempty string.
+	// +optional
+	Environment *string `json:"environment,omitempty"`
+	// Identity carries the ACH ek_ (injected as ACH_TOKEN env via secretKeyRef). Required
+	// on the agent (ACHAgentSpec object-level CEL); forbidden on the profile (AgentProfileSpec
+	// object-level CEL) — a credential is never an implicit shared profile default.
+	// +optional
+	Identity *IdentitySpec `json:"identity,omitempty"`
+	// +optional
+	Capability *CapabilitySpec `json:"capability,omitempty"`
 }
 
 // ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
+// Name/Type are optional authoring fields (a profile or an agent may supply either
+// alone via per-field merge, ResolveModel) — Render2 requires the EFFECTIVE
+// (post-merge) name/type to be nonempty; this is a wire-completeness check, not a
+// CRD-level requirement, since either field may legitimately come from the sibling.
 type ModelSpec struct {
-	// +kubebuilder:validation:Required
+	// +optional
 	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-	// +kubebuilder:validation:Required
+	Name string `json:"name,omitempty"`
+	// +optional
 	// +kubebuilder:validation:Enum=openai;gemini;anthropic
-	Type string `json:"type"`
+	Type string `json:"type,omitempty"`
 	// Params is an open, unvalidated dict splatted to the model client.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
@@ -54,7 +79,7 @@ type AgentDefaults struct {
 	// +optional
 	Image string `json:"image,omitempty"`
 	// +optional
-	Ach *AchEndpointSpec `json:"ach,omitempty"`
+	Ach *AchSpec `json:"ach,omitempty"`
 	// +optional
 	Model *ModelSpec `json:"model,omitempty"`
 	// +optional
@@ -63,15 +88,12 @@ type AgentDefaults struct {
 	Limits *LimitsSpec `json:"limits,omitempty"`
 	// +optional
 	Health *HealthSpec `json:"health,omitempty"`
+	// Workspace is the Harness Workspace/session lifecycle policy (contract §3/§7).
 	// +optional
-	Cost *CostSpec `json:"cost,omitempty"`
-	// Placement selects the pod topology; resolves ACHAgent.spec.placement ??
-	// AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
-	// value cannot shadow the profile's). standalone renders one `agent` container
-	// exactly as before. Operator-only: never rendered into config.json.
+	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
+	// Artifacts is the Harness Artifacts policy (contract §8).
 	// +optional
-	// +kubebuilder:validation:Enum=standalone;sandboxed
-	Placement string `json:"placement,omitempty"`
+	Artifacts *ArtifactsSpec `json:"artifacts,omitempty"`
 }
 
 // ThinkingSpec is the normalized reasoning intent each engine translates for itself
@@ -84,49 +106,67 @@ type ThinkingSpec struct {
 }
 
 // EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
-// (the harness defaults them).
+// (the harness defaults them). home/workDir/idleTtlSeconds/maxToolCalls/type/pi were retired
+// for workspace-v1 (contract §10): one engine (OpenCode v2), no placements/binaries/paths to
+// select, and tool-call counting is replaced by limits.maxSteps.
 type EngineSpec struct {
-	// +optional
-	Home string `json:"home,omitempty"`
-	// +optional
-	WorkDir string `json:"workDir,omitempty"`
+	// ForwardEnv selects literal-valued names from the merged env to the engine subprocess
+	// (contract §5). Only literal values are permitted — a name resolving to a secretKeyRef,
+	// a reserved name or a name absent from the merged env is a configuration error
+	// (agentrender.Render), not a silent drop.
 	// +optional
 	ForwardEnv []string `json:"forwardEnv,omitempty"`
 	// +optional
-	// +kubebuilder:validation:Minimum=0
-	IdleTTLSeconds *int64 `json:"idleTtlSeconds,omitempty"`
-	// +optional
 	// +kubebuilder:validation:Minimum=1
 	StartupTimeoutSeconds *int64 `json:"startupTimeoutSeconds,omitempty"`
+	// Compaction configures OpenCode's native context compaction (contract §4). Replaces the
+	// retired session.maxTokens/overflow knobs.
+	// +optional
+	Compaction *CompactionSpec `json:"compaction,omitempty"`
+}
+
+// CompactionSpec configures OpenCode's native context compaction (config:
+// engine.compaction). Fields stay POINTERS so an agent can override one of
+// auto/keep/buffer without restating the others (per-field merge, ResolveCompaction) —
+// the wire schema requires all three unconditionally wherever compaction is rendered, but
+// that completeness is enforced on the RESOLVED (post-merge) result (RenderEngineV1,
+// profile-level required-block CEL below), never by forcing the type itself to be
+// all-or-nothing. Explicit false/0 must stay distinguishable from "agent didn't touch this
+// field" — a non-pointer bool/int64 cannot express that.
+type CompactionSpec struct {
+	// +optional
+	Auto *bool `json:"auto,omitempty"`
+	// Keep is resolved as one atomic sub-block (its only field, tokens, has no independent
+	// meaning to override alone) — same convention as Persistence/Session below.
+	// +optional
+	Keep *CompactionKeepSpec `json:"keep,omitempty"`
 	// +optional
 	// +kubebuilder:validation:Minimum=0
-	MaxToolCalls *int64 `json:"maxToolCalls,omitempty"`
-	// Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
-	// hard-fails on an unknown value. Omitted → harness default (opencode).
-	// +optional
-	Type string `json:"type,omitempty"`
-	// Pi configures the Pi engine; consulted only when Type == "pi".
-	// +optional
-	Pi *PiEngineSpec `json:"pi,omitempty"`
+	Buffer *int64 `json:"buffer,omitempty"`
 }
 
-// PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*) — executable
-// knobs ONLY (model identity and thinking intent live in ModelSpec). All fields are
-// optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH;
-// the vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter). The
-// v0.8.1-only model and thinking-level fields were removed for ach-agent v0.9.0.
-type PiEngineSpec struct {
+// CompactionKeepSpec is engine.compaction.keep.
+type CompactionKeepSpec struct {
 	// +optional
-	BinaryPath string `json:"binaryPath,omitempty"`
-	// +optional
-	McpAdapterPath string `json:"mcpAdapterPath,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	Tokens *int64 `json:"tokens,omitempty"`
 }
 
-// LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
+// LimitsSpec bounds invocations (config: limits.*, contract §3). Fields stay POINTERS
+// (except MaxSteps, below) so an agent can override one limit without restating the rest —
+// per-field merge via ResolveLimits. The wire schema requires every field but
+// maxConcurrentScripts unconditionally, but that completeness is checked on the RESOLVED
+// result (RenderLimitsV1), not by forcing the type non-pointer.
 type LimitsSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
+	MaxActiveWorkspaces *int64 `json:"maxActiveWorkspaces,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
 	MaxConcurrentInvocations *int64 `json:"maxConcurrentInvocations,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxConcurrentScripts *int64 `json:"maxConcurrentScripts,omitempty"`
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	MaxInvocationSeconds *int64 `json:"maxInvocationSeconds,omitempty"`
@@ -136,16 +176,22 @@ type LimitsSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	IdempotencyWindowSeconds *int64 `json:"idempotencyWindowSeconds,omitempty"`
+	// MaxSteps bounds OpenCode steps per invocation (contract §3: no unlimited value). A
+	// POINTER like every other field here, so an agent can override one limit (e.g. just
+	// maxSteps, or everything EXCEPT maxSteps) without being forced to restate the rest of
+	// the block just to satisfy a non-pointer required field — completeness of the full
+	// resolved limits block is still enforced, but at RenderLimitsV1 (the merged result),
+	// not by forcing every partial override to carry every field.
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	MaxSteps *int64 `json:"maxSteps,omitempty"`
-	// +optional
-	// +kubebuilder:validation:Minimum=0
-	TerminalOutputRetries *int64 `json:"terminalOutputRetries,omitempty"`
 }
 
-// HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
-// targetPort and the container probes. Harness default port is 8080.
+// HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+// placement it drives the Service targetPort and the container probes. In distributed
+// placement it is NOT used by the operator: the Service targets channels on 8080 and every
+// role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+// bound by ach-agent. Harness default port is 8080.
 type HealthSpec struct {
 	// +optional
 	Host string `json:"host,omitempty"`
@@ -155,15 +201,77 @@ type HealthSpec struct {
 	Port int32 `json:"port,omitempty"`
 }
 
-// CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
-// Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
-// hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
-// litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
-// litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
-// ach-agent image >= v0.10.0.
-type CostSpec struct {
+// WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+// workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+// policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+// control/execution-pod active-volume infrastructure.
+// WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+// workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+// policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+// control/execution-pod active-volume infrastructure. Both fields are required: the wire
+// schema requires retentionDays unconditionally, even when enabled=false.
+// Both Enabled and RetentionDays are pointers so an agent can override either one alone
+// (ResolvePersistence per-field merge) without restating the other just to satisfy a
+// non-pointer required field — e.g. `persistence: {enabled: false}` must inherit the
+// profile's retentionDays, not null it out. Completeness of the resolved block (both
+// fields set) is enforced at RenderWorkspaceV1/RenderArtifactsV1 time, same as every other
+// policy block.
+type WorkspacePersistenceSpec struct {
 	// +optional
-	Source string `json:"source,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	RetentionDays *int64 `json:"retentionDays,omitempty"`
+}
+
+// WorkspaceSessionSpec is workspace.session (contract §7). Pointer fields: per-field merge.
+type WorkspaceSessionSpec struct {
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	IdleTimeoutSeconds *int64 `json:"idleTimeoutSeconds,omitempty"`
+	// Persistence is resolved as one atomic sub-block (same convention as
+	// CompactionSpec.Keep): its two fields are only meaningful together.
+	// +optional
+	Persistence *WorkspacePersistenceSpec `json:"persistence,omitempty"`
+}
+
+// WorkspaceSpec is the Harness Workspace lifecycle policy (config: workspace.*, contract
+// §3/§7). Pointer fields (except where noted) so an agent can override one setting without
+// restating the rest — per-field merge via ResolveWorkspace. Completeness of the wire-
+// required fields is checked on the RESOLVED result (RenderWorkspaceV1), not by forcing the
+// type non-pointer.
+type WorkspaceSpec struct {
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	IdleTimeoutSeconds *int64 `json:"idleTimeoutSeconds,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	ShutdownTimeoutSeconds *int64 `json:"shutdownTimeoutSeconds,omitempty"`
+	// MaxConcurrentSessions bounds sessions executing work simultaneously in a Workspace.
+	// A handoff with a shared destination requires this to be 1 (contract §6).
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxConcurrentSessions *int64 `json:"maxConcurrentSessions,omitempty"`
+	// +optional
+	Persistence *WorkspacePersistenceSpec `json:"persistence,omitempty"`
+	// +optional
+	Session *WorkspaceSessionSpec `json:"session,omitempty"`
+}
+
+// ArtifactsSpec is the Harness Artifacts policy (config: artifacts.*, contract §8). Enabled
+// is a pointer, same rationale as WorkspacePersistenceSpec.Enabled: an agent overriding just
+// maxArtifactBytes/retentionDays must not be forced to also restate enabled. All three merge
+// per-field (ResolveArtifacts); completeness of the resolved block is enforced at
+// RenderArtifactsV1.
+type ArtifactsSpec struct {
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	MaxArtifactBytes *int64 `json:"maxArtifactBytes,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	RetentionDays *int64 `json:"retentionDays,omitempty"`
 }
 
 // PersistenceSpec configures PVC-backed durable state (config: persistence{enabled,mountPath}).
@@ -208,56 +316,11 @@ type NetworkPolicySpec struct {
 	Egress []networkingv1.NetworkPolicyEgressRule `json:"egress,omitempty"`
 }
 
-// Placement values for AgentDefaults.Placement.
-const (
-	// PlacementStandalone runs the whole ach-agent in ONE container (the pre-placement
-	// rendering, unchanged).
-	PlacementStandalone = "standalone"
-	// PlacementSandboxed keeps the harness in the Deployment and runs each session's engine
-	// in an agent-sandbox pod (kubernetes-sigs/agent-sandbox, a cluster prerequisite). Needs
-	// the profile's spec.sandbox and persistence. No NetworkPolicy is rendered.
-	PlacementSandboxed = "sandboxed"
-)
-
-// SandboxSpec configures the sandboxed placement: each session's engine runs in an
-// agent-sandbox pod (kubernetes-sigs/agent-sandbox v1.0.x, a cluster prerequisite).
-type SandboxSpec struct {
-	// RuntimeClassName for sandbox pods, e.g. gvisor. Empty = the cluster default runtime.
-	// +optional
-	RuntimeClassName string `json:"runtimeClassName,omitempty"`
-	// WarmPoolReplicas is the number of pre-started sandboxes.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:default=1
-	// +optional
-	WarmPoolReplicas *int32 `json:"warmPoolReplicas,omitempty"`
-	// IdleSeconds before an idle sandbox archives its HOME and is released. Unset = harness default.
-	// +kubebuilder:validation:Minimum=0
-	// +optional
-	IdleSeconds *int64 `json:"idleSeconds,omitempty"`
-	// Resources for the sandbox container.
-	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-	// ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the
-	// sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled).
-	// +kubebuilder:default=ach-sandboxed-agent
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-	// Sessions is where session HOME archives are stored.
-	Sessions SandboxSessionsSpec `json:"sessions"`
-}
-
-// SandboxSessionsSpec is the S3 archive location (harness-side; the sandbox never sees it).
-type SandboxSessionsSpec struct {
-	// +kubebuilder:validation:MinLength=1
-	Bucket string `json:"bucket"`
-	// +optional
-	MaxArchiveBytes *int64 `json:"maxArchiveBytes,omitempty"`
-}
-
 // AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-// (image/ach/model/engine/limits/health/cost) live under the named achagent block and
-// deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+// (image/ach/model/engine/limits/health/workspace/artifacts) live under the named achagent
+// block and deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
 // everything else here is profile-only infrastructure an agent cannot override.
+// +kubebuilder:validation:XValidation:rule="!has(self.achagent.ach) || !has(self.achagent.ach.identity)",message="spec.achagent.ach.identity is forbidden on a profile — a credential is never a shared implicit default (contract §5)"
 type AgentProfileSpec struct {
 	// Achagent holds the agent-overridable defaults. image is required here
 	// (object-level CEL); the other fields are optional defaults.
@@ -285,10 +348,6 @@ type AgentProfileSpec struct {
 	Persistence *PersistenceSpec `json:"persistence,omitempty"`
 	// NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
 	// Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
-	// Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;
-	// an agent that picks sandboxed over a profile without it fails to render).
-	// +optional
-	Sandbox *SandboxSpec `json:"sandbox,omitempty"`
 	// +optional
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 	// +optional
@@ -296,7 +355,7 @@ type AgentProfileSpec struct {
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 	// PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
 	// template (containers/env/volumes merge by name — the operator renders container "agent"
-	// — scalars user-wins). Pass-through by design
+	// (standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design
 	// (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
 	// everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
 	// (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
@@ -305,6 +364,38 @@ type AgentProfileSpec struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	PodTemplate *apiextensionsv1.JSON `json:"podTemplate,omitempty"`
+	// Execution is the contract §11 execution-role infrastructure (the mini-harness pod
+	// Harness creates per Workspace): image, resources, ephemeral storage and scheduling for
+	// THAT role, distinct from achagent.image/spec.resources above, which remain the
+	// CONTROL pod's (Channels+Harness) settings. Root ruling 2026-10-01: a profile-only
+	// section, not a new CR/WorkspaceProfile kind.
+	// +kubebuilder:validation:Required
+	Execution ExecutionInfraSpec `json:"execution"`
+}
+
+// ExecutionInfraSpec is AgentProfileSpec.Execution (config: infrastructure.execution,
+// contract §11). image and ephemeralStorage are required — no operator-wide default
+// (root ruling: explicit required effective policy, not a guessed renderer default).
+type ExecutionInfraSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// EphemeralStorage is a Kubernetes resource.Quantity string (e.g. "2Gi") for the
+	// execution pod's ephemeral-storage resource request/limit.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	EphemeralStorage string `json:"ephemeralStorage"`
+	// +optional
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 }
 
 // AgentProfileStatus is minimal — profiles are read by ACHAgent; they have no side effects.
@@ -320,6 +411,12 @@ type AgentProfileStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="AgentProfile name must be <= 50 chars (operator derives <=63-char child names)"
 // +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image) > 0",message="spec.achagent.image is required (nonempty)"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.limits)",message="spec.achagent.limits is required — it is the only place a profile is guaranteed to set limits.maxSteps, which contract §3 requires on every agent (positive, never unlimited)"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.engine) && has(self.spec.achagent.engine.compaction)",message="spec.achagent.engine.compaction is required — the wire schema requires it unconditionally and no harness default is published"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.workspace)",message="spec.achagent.workspace is required — the wire schema requires every workspace.* field unconditionally"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.achagent) && has(self.spec.achagent.artifacts)",message="spec.achagent.artifacts is required — the wire schema requires every artifacts.* field unconditionally"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.execution) && has(self.spec.execution.image) && size(self.spec.execution.image) > 0",message="spec.execution.image is required (nonempty)"
+// +kubebuilder:validation:XValidation:rule="has(self.spec.execution) && has(self.spec.execution.ephemeralStorage) && size(self.spec.execution.ephemeralStorage) > 0",message="spec.execution.ephemeralStorage is required (nonempty)"
 
 // AgentProfile is the reusable infra + defaults for a class of agents.
 type AgentProfile struct {

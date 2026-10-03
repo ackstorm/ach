@@ -22,112 +22,11 @@ const (
 	channelTypeA2A           = "a2a"
 )
 
-// Health-server defaults. The operator OWNS the probe port: it always pins
-// health.host/port in the rendered config so the harness binds exactly what the
-// Deployment probes — never falling back to the harness's own default (which
-// would silently drift). Kept in this package (the config-contract owner) so the
-// controller's probe port and the config agree by construction.
-const (
-	DefaultHealthHost = "0.0.0.0"
-	DefaultHealthPort = int32(8000)
-)
-
-// Render collapses profile + agent into an AgentConfig. Agent fields override profile
-// defaults (model, limits, ach.baseUrl, health). Errors only on structurally impossible
-// states (defense in depth behind admission CEL).
-func Render(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL string) (AgentConfig, error) {
-	model := ResolveModel(a.Spec.Model, p.Spec.Achagent.Model)
-	if model == nil {
-		return AgentConfig{}, fmt.Errorf("no model: set ACHAgent.spec.model or AgentProfile.spec.achagent.model")
-	}
-	if ResolveImage(a.Spec.Image, p.Spec.Achagent.Image) == "" {
-		return AgentConfig{}, fmt.Errorf("no image: set ACHAgent.spec.image or AgentProfile.spec.achagent.image")
-	}
-	baseURL := ResolveAchBaseURL(a.Spec.Ach, p.Spec.Achagent.Ach, defaultBaseURL)
-	if baseURL == "" {
-		return AgentConfig{}, fmt.Errorf("no ACH base URL: set ACHAgent.spec.ach.baseUrl, AgentProfile.spec.achagent.ach.baseUrl, or operator ACH_BASE_URL")
-	}
-	aliases := make(map[string]struct{})
-	for _, ref := range ChannelSecretEnv(p, a) {
-		if _, found := aliases[ref.EnvName]; found {
-			return AgentConfig{}, fmt.Errorf("duplicate generated channel secret env alias %q", ref.EnvName)
-		}
-		aliases[ref.EnvName] = struct{}{}
-	}
-	params, err := decodeParams(model.Params)
-	if err != nil {
-		return AgentConfig{}, fmt.Errorf("model.params: %w", err)
-	}
-	var thinking *ThinkingBlock
-	if model.Thinking != nil {
-		thinking = &ThinkingBlock{Enabled: model.Thinking.Enabled, Effort: model.Thinking.Effort}
-	}
-
-	cfg := AgentConfig{
-		SchemaVersion: "1",
-		Agent:         AgentBlock{Name: a.Name},
-		Model:         ModelBlock{Name: model.Name, Type: model.Type, Params: params, Thinking: thinking},
-		Capability: CapabilityBlock{
-			Type:   promptSystemTypeAch,
-			Ach:    AchBlock{BaseURL: baseURL, Environment: a.Spec.Capability.Environment},
-			Filter: renderFilter(a.Spec.Capability.Filter),
-		},
-		Engine:      renderEngine(ResolveEngine(a.Spec.Engine, p.Spec.Achagent.Engine)),
-		Prompt:      renderPrompt(a.Spec.Prompt),
-		Memory:      renderMemory(a.Spec.Memory),
-		Limits:      renderLimits(ResolveLimits(a.Spec.Limits, p.Spec.Achagent.Limits)),
-		Persistence: renderPersistence(p.Spec.Persistence),
-		Health:      renderHealth(a.Spec.Health, p.Spec.Achagent.Health),
-		Cost:        renderCost(ResolveCost(a.Spec.Cost, p.Spec.Achagent.Cost)),
-		Hooks:       renderHooks(a.Spec.Hooks),
-	}
-	resolvedEnv := ResolveEnv(a.Spec.Env, p.Spec.Env)
-	for i := range a.Spec.Channels {
-		cfg.Channels = append(cfg.Channels, renderChannel(&a.Spec.Channels[i], resolvedEnv))
-	}
-	cfg.McpServers = renderMcpServers(a.Spec.MCPServers)
-	cfg.Egress = renderEgress(a.Spec.Egress)
-	if cfg.Sandbox, err = renderSandbox(p, a); err != nil {
-		return AgentConfig{}, err
-	}
-	return cfg, nil
-}
-
-// renderMcpServers turns the spec.mcpServers[] list into the config map keyed by name.
-// local.env is sanitized (ACH_*/ek_ stripped, same
-// rule as engine.forwardEnv); remote.headers pass through verbatim as ${env:NAME} refs.
-func renderMcpServers(servers []achv1alpha1.McpServerSpec) map[string]McpServerBlock {
-	if len(servers) == 0 {
-		return nil
-	}
-	out := make(map[string]McpServerBlock, len(servers))
-	for i := range servers {
-		s := &servers[i]
-		b := McpServerBlock{Type: s.Type}
-		switch s.Type {
-		case "local":
-			if s.Local != nil {
-				b.Command = s.Local.Command
-				b.Args = s.Local.Args
-				b.Env = sanitizeForwardEnv(s.Local.Env)
-			}
-		case "remote":
-			if s.Remote != nil {
-				b.URL = s.Remote.URL
-				b.Headers = s.Remote.Headers
-			}
-		}
-		out[s.Name] = b
-	}
-	return out
-}
-
-// Marshal serializes an AgentConfig (Go struct field order is stable).
-func Marshal(cfg AgentConfig) ([]byte, error) { return json.Marshal(cfg) }
-
 // memoryAuthSecretEnvName is the fixed env var carrying the memory-backend auth
-// secret. In the ACH_SECRET_ namespace so sanitizeForwardEnv strips it from
-// engine.forwardEnv for free; collision-free vs ACH_SECRET_<CH>_<TYPE> (TYPE is never HINDSIGHT).
+// secret. In the ACH_SECRET_ namespace, so validateEngineForwardEnv rejects it as a
+// runtime-owned reserved name if an agent tries to forward it via engine.forwardEnv
+// (sanitizeForwardEnv, which used to strip it automatically, is removed); collision-free
+// vs ACH_SECRET_<CH>_<TYPE> (TYPE is never HINDSIGHT).
 // memory.achMemory.auth arms. Textually identical to the prompt system type
 // "ach" (promptSystemTypeAch) but a different domain — kept separate on purpose.
 const (
@@ -261,62 +160,98 @@ func MemorySecretEnv(a achv1alpha1.ACHAgent) *ChannelSecretEnvRef {
 	return &ChannelSecretEnvRef{EnvName: memoryAuthSecretEnvName, SecretName: m.AchMemory.Auth.SecretRef.Name, Key: m.AchMemory.Auth.SecretRef.Key}
 }
 
+// decodeParams decodes the CR-supplied raw model.params bytes with ordinary encoding/json
+// object decoding — a duplicate key resolves to its last value, matching the Python
+// producer's ordinary json.loads. The shared numeric profile (contract §5) is enforced once,
+// later, when ComputeConfigVersion hashes the fully-resolved wire object this map becomes
+// part of.
 func decodeParams(raw *apiextensionsv1.JSON) (map[string]any, error) {
 	if raw == nil || len(raw.Raw) == 0 {
 		return nil, nil
 	}
 	var m map[string]any
 	if err := json.Unmarshal(raw.Raw, &m); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("model.params: %w", err)
 	}
 	return m, nil
 }
 
-func renderFilter(f *achv1alpha1.FilterSpec) *FilterBlock {
-	if f == nil || f.Exclude == nil {
-		return nil
+// ResolveAch deep-merges the agent's Ach block over the profile's shared ach defaults
+// (AgentProfileSpec.Achagent.Ach: "shared defaults: baseUrl/environment/capability" per
+// AgentDefaults' doc comment). Identity is NEVER taken from the profile — object-level CEL
+// on AgentProfileSpec already forbids a profile from setting it, and this merge preserves
+// that: the result always carries the AGENT's own Identity (nil when the agent itself has
+// none, never backfilled from profile). BaseURL is resolved separately by
+// ResolveAchBaseURL (which also consults the operator default) and is not part of this
+// merge. Environment/Capability merge per field: the agent's value wins when explicitly
+// set (Environment is a *string so an explicit empty string can clear an inherited
+// non-empty value — distinct from "the agent didn't touch this field"), else the result
+// inherits the profile's.
+func ResolveAch(agent, profile *achv1alpha1.AchSpec) *achv1alpha1.AchSpec {
+	if agent == nil {
+		return profile
 	}
-	e := f.Exclude
-	if len(e.Tools) == 0 && len(e.McpServers) == 0 && len(e.Skills) == 0 {
-		return nil
+	if profile == nil {
+		return agent
 	}
-	return &FilterBlock{Exclude: &ExcludeBlock{Tools: e.Tools, McpServers: e.McpServers, Skills: e.Skills}}
+	out := *agent
+	if agent.Environment == nil {
+		out.Environment = profile.Environment
+	}
+	if agent.Capability == nil {
+		out.Capability = profile.Capability
+	}
+	return &out
 }
 
-func renderEngine(e *achv1alpha1.EngineSpec) *EngineBlock {
-	if e == nil {
-		return nil
-	}
-	b := &EngineBlock{
-		Home: e.Home, WorkDir: e.WorkDir, ForwardEnv: sanitizeForwardEnv(e.ForwardEnv),
-		IdleTTLSeconds: e.IdleTTLSeconds, StartupTimeoutSeconds: e.StartupTimeoutSeconds,
-		MaxToolCalls: e.MaxToolCalls, Type: e.Type,
-	}
-	if e.Pi != nil {
-		b.Pi = &PiBlock{BinaryPath: e.Pi.BinaryPath, McpAdapterPath: e.Pi.McpAdapterPath}
-	}
-	return b
+// reservedForwardEnvNames/reservedForwardEnvPrefixes mirror, name-for-name, the final
+// corrected vendored schema policy (testdata/ach-workspace-config-v1.schema.json,
+// EngineBlock.properties.env.propertyNames, ach-agent commits 3da2c6e/ceee54d): only names
+// the runtime concretely owns — HOME, the five pinned OPENCODE_* bootstrap vars, and the
+// ACH_/XDG_/OPENCODE_CONFIG prefixes. Root's binding correction rejected both an earlier
+// broad schema-parity expansion (AWS/Azure/GCP/TLS/loader/proxy denylist) and the
+// then-current vendored schema that still had it: a generic cloud-credential, TLS, loader,
+// or proxy variable is now explicitly ALLOWED via forwardEnv — an operator's deliberate
+// choice, not something this renderer blocks on the runtime's behalf. "No automatic
+// inheritance" is enforced upstream (only literal values already present in the merged env
+// can ever be selected; never a secretKeyRef), not by guessing sensitive names.
+// render_test.go's TestReservedForwardEnvDenylist_MatchesVendoredSchema cross-checks both
+// lists against the schema file so they cannot silently drift apart again.
+var reservedForwardEnvNames = map[string]struct{}{
+	"HOME":         {},
+	"OPENCODE_BIN": {}, "OPENCODE_DISABLE_MODELS_FETCH": {}, "OPENCODE_DISABLE_PROJECT_CONFIG": {},
+	"OPENCODE_MODELS_URL": {}, "OPENCODE_SERVER_PASSWORD": {},
 }
 
-// sanitizeForwardEnv drops any ACH_*-named var from the harness→engine forward
-// allowlist. The operator owns the ACH_* namespace, incl. the ACH_SECRET_*
-// inbound-auth env vars; the harness hard-fails at boot if a secret env name
-// appears in forwardEnv, so this keeps them out defensively.
-func sanitizeForwardEnv(in []string) []string {
-	if len(in) == 0 {
+var reservedForwardEnvPrefixes = []string{"ACH_", "XDG_", "OPENCODE_CONFIG"}
+
+// validateEngineForwardEnv enforces contract §5: engine.forwardEnv selects ONLY literal
+// values already present in the merged env — never a secretKeyRef source, never a reserved
+// name/prefix, never a name absent from the merge. A violation is a configuration error, not
+// a silent drop.
+func validateEngineForwardEnv(e *achv1alpha1.EngineSpec, resolvedEnv []corev1.EnvVar) error {
+	if e == nil || len(e.ForwardEnv) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(in))
-	for _, n := range in {
-		if strings.HasPrefix(n, "ACH_") {
-			continue
+	env := indexEnv(resolvedEnv)
+	for _, name := range e.ForwardEnv {
+		for _, prefix := range reservedForwardEnvPrefixes {
+			if strings.HasPrefix(name, prefix) {
+				return fmt.Errorf("engine.forwardEnv: %q is reserved (%s* namespace)", name, prefix)
+			}
 		}
-		out = append(out, n)
+		if _, reserved := reservedForwardEnvNames[name]; reserved {
+			return fmt.Errorf("engine.forwardEnv: %q is reserved", name)
+		}
+		e, ok := env[name]
+		if !ok {
+			return fmt.Errorf("engine.forwardEnv: %q is not set in spec.env", name)
+		}
+		if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			return fmt.Errorf("engine.forwardEnv: %q is a secretKeyRef — only literal values may be forwarded to the engine (contract §5)", name)
+		}
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
+	return nil
 }
 
 func renderPrompt(p *achv1alpha1.AgentPromptSpec) *PromptBlock {
@@ -368,73 +303,8 @@ func renderMemory(m *achv1alpha1.MemorySpec) *MemoryBlock {
 	return out
 }
 
-func renderLimits(l *achv1alpha1.LimitsSpec) *LimitsBlock {
-	if l == nil {
-		return nil
-	}
-	return &LimitsBlock{MaxConcurrentInvocations: l.MaxConcurrentInvocations, MaxInvocationSeconds: l.MaxInvocationSeconds, MaxQueuedTotal: l.MaxQueuedTotal, IdempotencyWindowSeconds: l.IdempotencyWindowSeconds, MaxSteps: l.MaxSteps, TerminalOutputRetries: l.TerminalOutputRetries}
-}
-
-func renderPersistence(p *achv1alpha1.PersistenceSpec) *PersistBlock {
-	if p == nil {
-		return nil
-	}
-	pb := &PersistBlock{Enabled: p.Enabled}
-	if p.Enabled {
-		pb.MountPath = p.MountPath
-	}
-	return pb
-}
-
-// renderHealth ALWAYS emits a health block so the config pins the port the
-// operator probes (no reliance on the harness default). Resolution is shared with
-// the controller's probe/Service port via ResolveHealth, so config and probes agree
-// by construction.
-func renderHealth(agent, profile *achv1alpha1.HealthSpec) *HealthBlock {
-	host, port := ResolveHealth(agent, profile)
-	return &HealthBlock{Host: host, Port: port}
-}
-
-// renderCost emits the block ONLY when the resolved source is non-empty, so an operator
-// upgrade alone changes no rendered config and no config hash.
-func renderCost(c *achv1alpha1.CostSpec) *CostBlock {
-	if c == nil || c.Source == "" {
-		return nil
-	}
-	return &CostBlock{Source: c.Source}
-}
-
-// renderSessionHook emits an agent-level hook verbatim — no env resolution, since hooks
-// carry no forwardEnv of their own (only engine.forwardEnv, already on the engine block).
-func renderSessionHook(h *achv1alpha1.HookSpec) *HookBlock {
-	if h == nil {
-		return nil
-	}
-	return &HookBlock{Script: h.Script, TimeoutSeconds: h.TimeoutSeconds}
-}
-
-func renderHooks(h *achv1alpha1.HooksSpec) *HooksBlock {
-	if h == nil {
-		return nil
-	}
-	return &HooksBlock{SessionStart: renderSessionHook(h.SessionStart), SessionSuspend: renderSessionHook(h.SessionSuspend)}
-}
-
-// ResolvePlacement is the pod-topology resolution: agent wins when set, else the
-// profile's spec.achagent.placement, else standalone. Consumed by the workload builder
-// only — Render never emits it (config.json has no placement field).
-func ResolvePlacement(agent, profile string) string {
-	switch {
-	case agent != "":
-		return agent
-	case profile != "":
-		return profile
-	}
-	return achv1alpha1.PlacementStandalone
-}
-
 // ResolveImage is the per-agent image resolution: agent wins when set, else the
-// profile's spec.achagent.image. Empty result blocks the agent (Render errors).
+// profile's spec.achagent.image. Empty result blocks the agent (Render2 errors).
 func ResolveImage(agent, profile string) string {
 	if agent != "" {
 		return agent
@@ -470,9 +340,10 @@ func ResolveModel(agent, profile *achv1alpha1.ModelSpec) *achv1alpha1.ModelSpec 
 	return &out
 }
 
-// ResolveEngine deep-merges the agent engine over the profile engine per field.
-// ForwardEnv and Pi are atomic (replace as a whole when present on the agent).
-// Result may alias profile memory — read-only.
+// ResolveEngine deep-merges the agent engine over the profile engine per field. ForwardEnv
+// is atomic (replace as a whole when present on the agent); Compaction merges per-field via
+// ResolveCompaction, so an agent can flip e.g. just compaction.buffer. Result may alias
+// profile memory — read-only.
 func ResolveEngine(agent, profile *achv1alpha1.EngineSpec) *achv1alpha1.EngineSpec {
 	if agent == nil {
 		return profile
@@ -481,35 +352,45 @@ func ResolveEngine(agent, profile *achv1alpha1.EngineSpec) *achv1alpha1.EngineSp
 		return agent
 	}
 	out := *profile
-	if agent.Home != "" {
-		out.Home = agent.Home
-	}
-	if agent.WorkDir != "" {
-		out.WorkDir = agent.WorkDir
-	}
 	if agent.ForwardEnv != nil {
 		out.ForwardEnv = agent.ForwardEnv
-	}
-	if agent.IdleTTLSeconds != nil {
-		out.IdleTTLSeconds = agent.IdleTTLSeconds
 	}
 	if agent.StartupTimeoutSeconds != nil {
 		out.StartupTimeoutSeconds = agent.StartupTimeoutSeconds
 	}
-	if agent.MaxToolCalls != nil {
-		out.MaxToolCalls = agent.MaxToolCalls
+	out.Compaction = ResolveCompaction(agent.Compaction, profile.Compaction)
+	return &out
+}
+
+// ResolveCompaction deep-merges per field; Keep is one atomic sub-block (its only field,
+// tokens, has no independent meaning to override alone).
+func ResolveCompaction(agent, profile *achv1alpha1.CompactionSpec) *achv1alpha1.CompactionSpec {
+	if agent == nil {
+		return profile
 	}
-	if agent.Type != "" {
-		out.Type = agent.Type
+	if profile == nil {
+		return agent
 	}
-	if agent.Pi != nil {
-		out.Pi = agent.Pi
+	out := *profile
+	if agent.Auto != nil {
+		out.Auto = agent.Auto
+	}
+	if agent.Keep != nil {
+		out.Keep = agent.Keep
+	}
+	if agent.Buffer != nil {
+		out.Buffer = agent.Buffer
 	}
 	return &out
 }
 
-// ResolveLimits deep-merges the agent limits over the profile limits per field.
-// Result may alias profile memory — read-only.
+// ResolveLimits deep-merges the agent limits over the profile limits per field, so an agent
+// can override one limit (e.g. maxSteps) without restating the rest. MaxSteps is the one
+// required-non-pointer field (a deliberate, separately-blessed exception): the agent's
+// value wins whenever it is non-zero, since admission guarantees a present limits block
+// always carries a positive maxSteps — a zero on the agent side means "the agent's Limits
+// literal didn't set it", not an explicit override. Result may alias profile memory —
+// read-only.
 func ResolveLimits(agent, profile *achv1alpha1.LimitsSpec) *achv1alpha1.LimitsSpec {
 	if agent == nil {
 		return profile
@@ -518,8 +399,14 @@ func ResolveLimits(agent, profile *achv1alpha1.LimitsSpec) *achv1alpha1.LimitsSp
 		return agent
 	}
 	out := *profile
+	if agent.MaxActiveWorkspaces != nil {
+		out.MaxActiveWorkspaces = agent.MaxActiveWorkspaces
+	}
 	if agent.MaxConcurrentInvocations != nil {
 		out.MaxConcurrentInvocations = agent.MaxConcurrentInvocations
+	}
+	if agent.MaxConcurrentScripts != nil {
+		out.MaxConcurrentScripts = agent.MaxConcurrentScripts
 	}
 	if agent.MaxInvocationSeconds != nil {
 		out.MaxInvocationSeconds = agent.MaxInvocationSeconds
@@ -533,53 +420,100 @@ func ResolveLimits(agent, profile *achv1alpha1.LimitsSpec) *achv1alpha1.LimitsSp
 	if agent.MaxSteps != nil {
 		out.MaxSteps = agent.MaxSteps
 	}
-	if agent.TerminalOutputRetries != nil {
-		out.TerminalOutputRetries = agent.TerminalOutputRetries
+	return &out
+}
+
+// ResolvePersistence deep-merges per field: an agent overriding just Enabled must not lose
+// the profile's RetentionDays (and vice versa) — the wholesale sub-block swap this replaces
+// was exactly the Important review finding ("workspace.persistence: {enabled: false} loses
+// inherited retentionDays").
+func ResolvePersistence(agent, profile *achv1alpha1.WorkspacePersistenceSpec) *achv1alpha1.WorkspacePersistenceSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.Enabled != nil {
+		out.Enabled = agent.Enabled
+	}
+	if agent.RetentionDays != nil {
+		out.RetentionDays = agent.RetentionDays
 	}
 	return &out
 }
 
-// ResolveHealth is the SINGLE health host/port resolution: per-field deep merge
-// (agent field wins, else profile, else DefaultHealthHost/Port). The controller
-// MUST use this for the Service targetPort and container probes so they never
-// drift from the rendered config health block.
-func ResolveHealth(agent, profile *achv1alpha1.HealthSpec) (host string, port int32) {
-	host, port = DefaultHealthHost, DefaultHealthPort
-	if profile != nil {
-		if profile.Host != "" {
-			host = profile.Host
-		}
-		if profile.Port != 0 {
-			port = profile.Port
-		}
+// ResolveSession deep-merges workspace.session per field; Persistence resolves recursively
+// via ResolvePersistence (same rationale: `session: {idleTimeoutSeconds: 0}` must not lose
+// the profile's session.persistence).
+func ResolveSession(agent, profile *achv1alpha1.WorkspaceSessionSpec) *achv1alpha1.WorkspaceSessionSpec {
+	if agent == nil {
+		return profile
 	}
-	if agent != nil {
-		if agent.Host != "" {
-			host = agent.Host
-		}
-		if agent.Port != 0 {
-			port = agent.Port
-		}
-	}
-	return host, port
-}
-
-// ResolveCost resolves the cost block. ATOMIC BLOCK: a block present on the agent replaces
-// the profile's wholly, matching the "nested blocks are atomic" rule on AgentDefaults. With
-// a single field this is indistinguishable from a per-field merge; ADDING A SECOND FIELD TO
-// CostSpec REQUIRES CONVERTING THIS TO A PER-FIELD MERGE AND UPDATING THE DOCS.
-func ResolveCost(agent, profile *achv1alpha1.CostSpec) *achv1alpha1.CostSpec {
-	if agent != nil {
+	if profile == nil {
 		return agent
 	}
-	return profile
+	out := *profile
+	if agent.IdleTimeoutSeconds != nil {
+		out.IdleTimeoutSeconds = agent.IdleTimeoutSeconds
+	}
+	out.Persistence = ResolvePersistence(agent.Persistence, profile.Persistence)
+	return &out
 }
 
-// ResolveAchBaseURL is the SINGLE ACH base-URL resolution: ACHAgent.spec.ach ??
-// AgentProfile.spec.achagent.ach ?? operator default (ACH_BASE_URL). Empty
-// result => the agent has no ACH to hydrate against and Render blocks it. Used
+// ResolveWorkspace deep-merges per field, including the nested Persistence/Session
+// sub-blocks (ResolvePersistence/ResolveSession) — NOT a wholesale sub-block swap, so a
+// partial agent override of one leaf field inherits every sibling field from the profile.
+func ResolveWorkspace(agent, profile *achv1alpha1.WorkspaceSpec) *achv1alpha1.WorkspaceSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.IdleTimeoutSeconds != nil {
+		out.IdleTimeoutSeconds = agent.IdleTimeoutSeconds
+	}
+	if agent.ShutdownTimeoutSeconds != nil {
+		out.ShutdownTimeoutSeconds = agent.ShutdownTimeoutSeconds
+	}
+	if agent.MaxConcurrentSessions != nil {
+		out.MaxConcurrentSessions = agent.MaxConcurrentSessions
+	}
+	out.Persistence = ResolvePersistence(agent.Persistence, profile.Persistence)
+	out.Session = ResolveSession(agent.Session, profile.Session)
+	return &out
+}
+
+// ResolveArtifacts deep-merges per field, Enabled included (now a pointer): an agent
+// overriding just MaxArtifactBytes/RetentionDays must not lose the profile's Enabled.
+func ResolveArtifacts(agent, profile *achv1alpha1.ArtifactsSpec) *achv1alpha1.ArtifactsSpec {
+	if agent == nil {
+		return profile
+	}
+	if profile == nil {
+		return agent
+	}
+	out := *profile
+	if agent.Enabled != nil {
+		out.Enabled = agent.Enabled
+	}
+	if agent.MaxArtifactBytes != nil {
+		out.MaxArtifactBytes = agent.MaxArtifactBytes
+	}
+	if agent.RetentionDays != nil {
+		out.RetentionDays = agent.RetentionDays
+	}
+	return &out
+}
+
+// ResolveAchBaseURL is the SINGLE ACH base-URL resolution: ACHAgent.spec.ach.baseUrl ??
+// AgentProfile.spec.achagent.ach.baseUrl ?? operator default (ACH_BASE_URL). Empty
+// result => the agent has no ACH to hydrate against and Render2 blocks it. Used
 // for both the config capability.ach.baseUrl and the container ACH_BASE_URL env.
-func ResolveAchBaseURL(agentAch, profileAch *achv1alpha1.AchEndpointSpec, envDefault string) string {
+func ResolveAchBaseURL(agentAch, profileAch *achv1alpha1.AchSpec, envDefault string) string {
 	if agentAch != nil && agentAch.BaseURL != "" {
 		return agentAch.BaseURL
 	}
@@ -587,81 +521,6 @@ func ResolveAchBaseURL(agentAch, profileAch *achv1alpha1.AchEndpointSpec, envDef
 		return profileAch.BaseURL
 	}
 	return envDefault
-}
-
-func renderSession(s *achv1alpha1.SessionSpec) *SessionBlock {
-	if s == nil {
-		return nil
-	}
-	sb := &SessionBlock{Type: s.Type, MaxTokens: s.MaxTokens, Overflow: s.Overflow}
-	if s.Key != nil {
-		sb.Key = *s.Key
-	}
-	return sb
-}
-
-// renderHook emits a channel hook. secretEnv becomes {VAR: {env: NAME}} — the NAME the
-// operator injects via secretKeyRef in the PodSpec; the credential value never touches
-// the ConfigMap.
-func renderHook(ch *achv1alpha1.ChannelSpec, hook *achv1alpha1.PrepareSpec, resolvedEnv []corev1.EnvVar, phase string) *PrepareBlock {
-	if hook == nil {
-		return nil
-	}
-	out := &PrepareBlock{Script: hook.Script, TimeoutSeconds: hook.TimeoutSeconds}
-	env := indexEnv(resolvedEnv)
-	for _, name := range hook.ForwardEnv {
-		e, ok := env[name]
-		if !ok {
-			continue
-		}
-		if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
-			if out.SecretEnv == nil {
-				out.SecretEnv = map[string]SecretSourceBlock{}
-			}
-			out.SecretEnv[name] = SecretSourceBlock{Env: hookSecretEnvName(ch, phase, name)}
-		} else {
-			if out.Env == nil {
-				out.Env = map[string]string{}
-			}
-			out.Env[name] = e.Value
-		}
-	}
-	return out
-}
-
-func renderHandoff(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) *HandoffBlock {
-	if ch.Handoff == nil {
-		return nil
-	}
-	hook := renderHook(ch, &ch.Handoff.PrepareSpec, resolvedEnv, "HANDOFF")
-	return &HandoffBlock{Script: hook.Script, Env: hook.Env, SecretEnv: hook.SecretEnv, TimeoutSeconds: hook.TimeoutSeconds, Scope: ch.Handoff.Scope}
-}
-
-func renderChannel(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) ChannelBlock {
-	cb := ChannelBlock{Name: ch.Name, Type: ch.Type, Source: ch.Source, Concurrency: ch.Concurrency, Session: renderSession(ch.Session), Prompt: ch.Prompt, Handoff: renderHandoff(ch, resolvedEnv), Script: renderHook(ch, ch.Script, resolvedEnv, "SCRIPT")}
-	switch ch.Type {
-	case channelTypeWebhook, channelTypeWebhookScript:
-		if ch.Webhook != nil {
-			w := &WebhookBlock{Auth: WebhookAuthBlock{Type: ch.Webhook.Auth.Type, Header: ch.Webhook.Auth.Header}, GitlabEvents: ch.Webhook.GitlabEvents, BotUsername: ch.Webhook.BotUsername, TriggerUsers: ch.Webhook.TriggerUsers}
-			if ch.Webhook.Auth.SecretRef != nil {
-				w.Auth.Secret = &SecretSourceBlock{Env: channelSecretEnvName(ch)}
-			}
-			cb.Webhook = w
-		}
-	case "cron":
-		if ch.Cron != nil {
-			cb.Cron = &CronBlock{Schedule: ch.Cron.Schedule, Timezone: ch.Cron.Timezone}
-		}
-	case "queue":
-		if ch.Queue != nil {
-			cb.Queue = &QueueBlock{Type: "redis", Key: ch.Queue.Key, AckMode: "onComplete"}
-		}
-	case channelTypeA2A:
-		if ch.A2A != nil {
-			cb.A2A = &A2ABlock{Mode: "async", Auth: A2AAuthBlock{Header: ch.A2A.Auth.Header, Secret: &SecretSourceBlock{Env: channelSecretEnvName(ch)}}}
-		}
-	}
-	return cb
 }
 
 // ReferencedSecrets returns env/channel-secret NAME → sorted KEYS for key checks,
@@ -693,9 +552,6 @@ func ReferencedSecrets(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent) map[s
 		}
 	}
 	if ref := MemorySecretEnv(a); ref != nil {
-		add(ref.SecretName, ref.Key)
-	}
-	for _, ref := range EgressSecretEnv(a) {
 		add(ref.SecretName, ref.Key)
 	}
 	out := make(map[string][]string, len(set))

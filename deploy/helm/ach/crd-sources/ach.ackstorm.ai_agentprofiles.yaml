@@ -50,8 +50,8 @@ spec:
           spec:
             description: |-
               AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-              (image/ach/model/engine/limits/health/cost) live under the named achagent block and
-              deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+              (image/ach/model/engine/limits/health/workspace/artifacts) live under the named achagent
+              block and deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
               everything else here is profile-only infrastructure an agent cannot override.
             properties:
               achagent:
@@ -61,69 +61,151 @@ spec:
                 properties:
                   ach:
                     description: |-
-                      AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-                      BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+                      AchSpec is the ACH platform block (config: ach{baseUrl,environment,identity,capability},
+                      contract §5). It is the SAME type used by both AgentProfile.spec.achagent.ach (shared
+                      defaults: baseUrl/environment/capability) and ACHAgent's inline AgentDefaults override
+                      (adds the required identity credential) — per-field deep merge via ResolveAch, exactly
+                      like model/engine/limits. identity is never a shared profile default: AgentProfile forbids
+                      setting it (object-level CEL on AgentProfileSpec); ACHAgentSpec requires it.
+
+                      BaseURL resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
                       operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
                     properties:
                       baseUrl:
                         type: string
-                    type: object
-                  cost:
-                    description: |-
-                      CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
-                      Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
-                      hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
-                      litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
-                      litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
-                      ach-agent image >= v0.10.0.
-                    properties:
-                      source:
+                      capability:
+                        description: 'CapabilitySpec is the per-agent capability block
+                          (config: capability{type:ach,ach.environment,filter}).'
+                        properties:
+                          environment:
+                            description: |-
+                              Environment is the ACH Hub Environment name, for documentation/intent only.
+                              The ek already scopes the environment server-side, and the harness reads the
+                              hydrated environment (manifest.environment) — NOT this field. Optional: omit
+                              to let the ek decide; when set it is rendered but never authoritative.
+                            type: string
+                          filter:
+                            description: FilterSpec wraps the exclude gate.
+                            properties:
+                              exclude:
+                                description: 'ExcludeSpec is the governance gate ABOVE
+                                  the model (config: capability.filter.exclude).'
+                                properties:
+                                  mcpServers:
+                                    items:
+                                      type: string
+                                    type: array
+                                  skills:
+                                    items:
+                                      type: string
+                                    type: array
+                                  tools:
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                            type: object
+                        type: object
+                      environment:
+                        description: |-
+                          Environment is the ACH Hub Environment name, for documentation/intent only — see
+                          CapabilitySpec.Environment's original doc: the ek already scopes the environment
+                          server-side and the harness reads the hydrated environment, never this field. A
+                          POINTER (unlike most other optional strings here): AgentProfile.spec.achagent.ach may
+                          set a shared default (ResolveAch), and an agent needs to be able to override it with an
+                          explicit empty string — indistinguishable from "unset" on a plain omitempty string.
                         type: string
+                      identity:
+                        description: |-
+                          Identity carries the ACH ek_ (injected as ACH_TOKEN env via secretKeyRef). Required
+                          on the agent (ACHAgentSpec object-level CEL); forbidden on the profile (AgentProfileSpec
+                          object-level CEL) — a credential is never an implicit shared profile default.
+                        properties:
+                          secretRef:
+                            description: SecretRef points at a Secret holding the
+                              ek_ (create it yourself, e.g. `ach-cli keys create`).
+                            properties:
+                              key:
+                                description: Key is the data key inside the Secret.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name is the Kubernetes Secret name.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                    type: object
+                  artifacts:
+                    description: Artifacts is the Harness Artifacts policy (contract
+                      §8).
+                    properties:
+                      enabled:
+                        type: boolean
+                      maxArtifactBytes:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      retentionDays:
+                        format: int64
+                        minimum: 1
+                        type: integer
                     type: object
                   engine:
                     description: |-
                       EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
-                      (the harness defaults them).
+                      (the harness defaults them). home/workDir/idleTtlSeconds/maxToolCalls/type/pi were retired
+                      for workspace-v1 (contract §10): one engine (OpenCode v2), no placements/binaries/paths to
+                      select, and tool-call counting is replaced by limits.maxSteps.
                     properties:
+                      compaction:
+                        description: |-
+                          Compaction configures OpenCode's native context compaction (contract §4). Replaces the
+                          retired session.maxTokens/overflow knobs.
+                        properties:
+                          auto:
+                            type: boolean
+                          buffer:
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          keep:
+                            description: |-
+                              Keep is resolved as one atomic sub-block (its only field, tokens, has no independent
+                              meaning to override alone) — same convention as Persistence/Session below.
+                            properties:
+                              tokens:
+                                format: int64
+                                minimum: 0
+                                type: integer
+                            type: object
+                        type: object
                       forwardEnv:
+                        description: |-
+                          ForwardEnv selects literal-valued names from the merged env to the engine subprocess
+                          (contract §5). Only literal values are permitted — a name resolving to a secretKeyRef,
+                          a reserved name or a name absent from the merged env is a configuration error
+                          (agentrender.Render), not a silent drop.
                         items:
                           type: string
                         type: array
-                      home:
-                        type: string
-                      idleTtlSeconds:
-                        format: int64
-                        minimum: 0
-                        type: integer
-                      maxToolCalls:
-                        format: int64
-                        minimum: 0
-                        type: integer
-                      pi:
-                        description: Pi configures the Pi engine; consulted only when
-                          Type == "pi".
-                        properties:
-                          binaryPath:
-                            type: string
-                          mcpAdapterPath:
-                            type: string
-                        type: object
                       startupTimeoutSeconds:
                         format: int64
                         minimum: 1
                         type: integer
-                      type:
-                        description: |-
-                          Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
-                          hard-fails on an unknown value. Omitted → harness default (opencode).
-                        type: string
-                      workDir:
-                        type: string
                     type: object
                   health:
                     description: |-
-                      HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
-                      targetPort and the container probes. Harness default port is 8080.
+                      HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+                      placement it drives the Service targetPort and the container probes. In distributed
+                      placement it is NOT used by the operator: the Service targets channels on 8080 and every
+                      role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+                      bound by ach-agent. Harness default port is 8080.
                     properties:
                       host:
                         type: string
@@ -136,14 +218,26 @@ spec:
                   image:
                     type: string
                   limits:
-                    description: 'LimitsSpec bounds invocations (config: limits.*).
-                      Unset → harness default.'
+                    description: |-
+                      LimitsSpec bounds invocations (config: limits.*, contract §3). Fields stay POINTERS
+                      (except MaxSteps, below) so an agent can override one limit without restating the rest —
+                      per-field merge via ResolveLimits. The wire schema requires every field but
+                      maxConcurrentScripts unconditionally, but that completeness is checked on the RESOLVED
+                      result (RenderLimitsV1), not by forcing the type non-pointer.
                     properties:
                       idempotencyWindowSeconds:
                         format: int64
                         minimum: 1
                         type: integer
+                      maxActiveWorkspaces:
+                        format: int64
+                        minimum: 1
+                        type: integer
                       maxConcurrentInvocations:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      maxConcurrentScripts:
                         format: int64
                         minimum: 1
                         type: integer
@@ -156,17 +250,24 @@ spec:
                         minimum: 1
                         type: integer
                       maxSteps:
+                        description: |-
+                          MaxSteps bounds OpenCode steps per invocation (contract §3: no unlimited value). A
+                          POINTER like every other field here, so an agent can override one limit (e.g. just
+                          maxSteps, or everything EXCEPT maxSteps) without being forced to restate the rest of
+                          the block just to satisfy a non-pointer required field — completeness of the full
+                          resolved limits block is still enforced, but at RenderLimitsV1 (the merged result),
+                          not by forcing every partial override to carry every field.
                         format: int64
                         minimum: 1
                         type: integer
-                      terminalOutputRetries:
-                        format: int64
-                        minimum: 0
-                        type: integer
                     type: object
                   model:
-                    description: 'ModelSpec selects the ACH-served model (config:
-                      model{name,type,params,thinking}).'
+                    description: |-
+                      ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
+                      Name/Type are optional authoring fields (a profile or an agent may supply either
+                      alone via per-field merge, ResolveModel) — Render2 requires the EFFECTIVE
+                      (post-merge) name/type to be nonempty; this is a wire-completeness check, not a
+                      CRD-level requirement, since either field may legitimately come from the sibling.
                     properties:
                       name:
                         minLength: 1
@@ -192,20 +293,73 @@ spec:
                         - gemini
                         - anthropic
                         type: string
-                    required:
-                    - name
-                    - type
                     type: object
-                  placement:
-                    description: |-
-                      Placement selects the pod topology; resolves ACHAgent.spec.placement ??
-                      AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
-                      value cannot shadow the profile's). standalone renders one `agent` container
-                      exactly as before. Operator-only: never rendered into config.json.
-                    enum:
-                    - standalone
-                    - sandboxed
-                    type: string
+                  workspace:
+                    description: Workspace is the Harness Workspace/session lifecycle
+                      policy (contract §3/§7).
+                    properties:
+                      idleTimeoutSeconds:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      maxConcurrentSessions:
+                        description: |-
+                          MaxConcurrentSessions bounds sessions executing work simultaneously in a Workspace.
+                          A handoff with a shared destination requires this to be 1 (contract §6).
+                        format: int64
+                        minimum: 1
+                        type: integer
+                      persistence:
+                        description: |-
+                          WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+                          workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+                          policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+                          control/execution-pod active-volume infrastructure.
+                          WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+                          workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+                          policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+                          control/execution-pod active-volume infrastructure. Both fields are required: the wire
+                          schema requires retentionDays unconditionally, even when enabled=false.
+                          Both Enabled and RetentionDays are pointers so an agent can override either one alone
+                          (ResolvePersistence per-field merge) without restating the other just to satisfy a
+                          non-pointer required field — e.g. `persistence: {enabled: false}` must inherit the
+                          profile's retentionDays, not null it out. Completeness of the resolved block (both
+                          fields set) is enforced at RenderWorkspaceV1/RenderArtifactsV1 time, same as every other
+                          policy block.
+                        properties:
+                          enabled:
+                            type: boolean
+                          retentionDays:
+                            format: int64
+                            minimum: 1
+                            type: integer
+                        type: object
+                      session:
+                        description: 'WorkspaceSessionSpec is workspace.session (contract
+                          §7). Pointer fields: per-field merge.'
+                        properties:
+                          idleTimeoutSeconds:
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          persistence:
+                            description: |-
+                              Persistence is resolved as one atomic sub-block (same convention as
+                              CompactionSpec.Keep): its two fields are only meaningful together.
+                            properties:
+                              enabled:
+                                type: boolean
+                              retentionDays:
+                                format: int64
+                                minimum: 1
+                                type: integer
+                            type: object
+                        type: object
+                      shutdownTimeoutSeconds:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                    type: object
                 type: object
               env:
                 description: |-
@@ -380,6 +534,152 @@ spec:
                 - message: env value and valueFrom are mutually exclusive
                   rule: self.all(e, !has(e.valueFrom) || !has(e.value) || e.value
                     == '')
+              execution:
+                description: |-
+                  Execution is the contract §11 execution-role infrastructure (the mini-harness pod
+                  Harness creates per Workspace): image, resources, ephemeral storage and scheduling for
+                  THAT role, distinct from achagent.image/spec.resources above, which remain the
+                  CONTROL pod's (Channels+Harness) settings. Root ruling 2026-10-01: a profile-only
+                  section, not a new CR/WorkspaceProfile kind.
+                properties:
+                  ephemeralStorage:
+                    description: |-
+                      EphemeralStorage is a Kubernetes resource.Quantity string (e.g. "2Gi") for the
+                      execution pod's ephemeral-storage resource request/limit.
+                    minLength: 1
+                    type: string
+                  image:
+                    minLength: 1
+                    type: string
+                  imagePullSecrets:
+                    items:
+                      description: |-
+                        LocalObjectReference contains enough information to let you locate the
+                        referenced object inside the same namespace.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    type: array
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  resources:
+                    description: ResourceRequirements describes the compute resource
+                      requirements.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  terminationGracePeriodSeconds:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  tolerations:
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    type: array
+                required:
+                - ephemeralStorage
+                - image
+                type: object
               imagePullSecrets:
                 items:
                   description: |-
@@ -400,20 +700,8 @@ spec:
                 type: array
               networkPolicy:
                 description: |-
-                  NetworkPolicySpec renders a default-deny EGRESS NetworkPolicy selecting the agent pod.
-                  Presence is the opt-in: an omitted block means no policy at all (the agent keeps
-                  unrestricted egress — the pre-feature behaviour). An empty block (`networkPolicy: {}`)
-                  is deny-all-except-DNS.
-
-                  Egress-only by design: policyTypes never includes Ingress, so expose.service /
-                  gateway→agent routing is untouched.
-
-                  Rules are DECLARED here, not derived from ach.baseUrl: upstream NetworkPolicy has no
-                  FQDN peer type and ACH_BASE_URL is a URL, so the operator cannot translate the ACH
-                  endpoint into a peer portably. Declare the forwarder/gateway peer yourself — an
-                  in-cluster podSelector+namespaceSelector, or an ipBlock CIDR for an external endpoint.
-                  The operator contributes what only it knows: the pod selector (operator-owned labels),
-                  the DNS rule, and lifecycle (created/pruned/GC'd with the agent).
+                  NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
+                  Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
                 properties:
                   egress:
                     description: |-
@@ -645,7 +933,7 @@ spec:
                 description: |-
                   PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod
                   template (containers/env/volumes merge by name — the operator renders container "agent"
-                  — scalars user-wins). Pass-through by design
+                  (standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design
                   (ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.
                   everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False
                   (PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the
@@ -711,109 +999,6 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
-              sandbox:
-                description: |-
-                  NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.
-                  Omitted → no policy (unrestricted egress). See NetworkPolicySpec.
-                  Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;
-                  an agent that picks sandboxed over a profile without it fails to render).
-                properties:
-                  idleSeconds:
-                    description: IdleSeconds before an idle sandbox archives its HOME
-                      and is released. Unset = harness default.
-                    format: int64
-                    minimum: 0
-                    type: integer
-                  resources:
-                    description: Resources for the sandbox container.
-                    properties:
-                      claims:
-                        description: |-
-                          Claims lists the names of resources, defined in spec.resourceClaims,
-                          that are used by this container.
-
-                          This field depends on the
-                          DynamicResourceAllocation feature gate.
-
-                          This field is immutable. It can only be set for containers.
-                        items:
-                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                          properties:
-                            name:
-                              description: |-
-                                Name must match the name of one entry in pod.spec.resourceClaims of
-                                the Pod where this field is used. It makes that resource available
-                                inside a container.
-                              type: string
-                            request:
-                              description: |-
-                                Request is the name chosen for a request in the referenced claim.
-                                If empty, everything from the claim is made available, otherwise
-                                only the result of this request.
-                              type: string
-                          required:
-                          - name
-                          type: object
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - name
-                        x-kubernetes-list-type: map
-                      limits:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: |-
-                          Limits describes the maximum amount of compute resources allowed.
-                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                        type: object
-                      requests:
-                        additionalProperties:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
-                        description: |-
-                          Requests describes the minimum amount of compute resources required.
-                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                        type: object
-                    type: object
-                  runtimeClassName:
-                    description: RuntimeClassName for sandbox pods, e.g. gvisor. Empty
-                      = the cluster default runtime.
-                    type: string
-                  serviceAccountName:
-                    default: ach-sandboxed-agent
-                    description: |-
-                      ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the
-                      sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled).
-                    type: string
-                  sessions:
-                    description: Sessions is where session HOME archives are stored.
-                    properties:
-                      bucket:
-                        minLength: 1
-                        type: string
-                      maxArchiveBytes:
-                        format: int64
-                        type: integer
-                    required:
-                    - bucket
-                    type: object
-                  warmPoolReplicas:
-                    default: 1
-                    description: WarmPoolReplicas is the number of pre-started sandboxes.
-                    format: int32
-                    minimum: 0
-                    type: integer
-                required:
-                - sessions
-                type: object
               terminationGracePeriodSeconds:
                 format: int64
                 minimum: 0
@@ -859,7 +1044,12 @@ spec:
                 type: array
             required:
             - achagent
+            - execution
             type: object
+            x-kubernetes-validations:
+            - message: spec.achagent.ach.identity is forbidden on a profile — a credential
+                is never a shared implicit default (contract §5)
+              rule: '!has(self.achagent.ach) || !has(self.achagent.ach.identity)'
           status:
             description: AgentProfileStatus is minimal — profiles are read by ACHAgent;
               they have no side effects.
@@ -876,6 +1066,25 @@ spec:
         - message: spec.achagent.image is required (nonempty)
           rule: has(self.spec.achagent) && has(self.spec.achagent.image) && size(self.spec.achagent.image)
             > 0
+        - message: spec.achagent.limits is required — it is the only place a profile
+            is guaranteed to set limits.maxSteps, which contract §3 requires on every
+            agent (positive, never unlimited)
+          rule: has(self.spec.achagent) && has(self.spec.achagent.limits)
+        - message: spec.achagent.engine.compaction is required — the wire schema requires
+            it unconditionally and no harness default is published
+          rule: has(self.spec.achagent) && has(self.spec.achagent.engine) && has(self.spec.achagent.engine.compaction)
+        - message: spec.achagent.workspace is required — the wire schema requires
+            every workspace.* field unconditionally
+          rule: has(self.spec.achagent) && has(self.spec.achagent.workspace)
+        - message: spec.achagent.artifacts is required — the wire schema requires
+            every artifacts.* field unconditionally
+          rule: has(self.spec.achagent) && has(self.spec.achagent.artifacts)
+        - message: spec.execution.image is required (nonempty)
+          rule: has(self.spec.execution) && has(self.spec.execution.image) && size(self.spec.execution.image)
+            > 0
+        - message: spec.execution.ephemeralStorage is required (nonempty)
+          rule: has(self.spec.execution) && has(self.spec.execution.ephemeralStorage)
+            && size(self.spec.execution.ephemeralStorage) > 0
     served: true
     storage: true
     subresources:

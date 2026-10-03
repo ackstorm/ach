@@ -1,8 +1,9 @@
-# Minimal AgentProfile — no persistence (ephemeral base /tmp/ach-agent), no
-# health override (harness default 8000). Image is pulled from ghcr and must
-# implement the HTTP role-port probes (>= v0.16.5: workspace at base/home/workspace; pinned by digest): TestAgentRuntimeReady
-# requires all stage-06 agents to reach WorkloadReady=True. Model must be one
-# the demo Environment hydrates (demo-model), or the harness exits at boot.
+# Minimal AgentProfile — no persistence (ephemeral). health is accepted but not
+# currently consumed by the operator/renderer (compatibility-only), so this fixture
+# omits it rather than imply it still matters. Control and execution images are the
+# 0.1.0 runtime candidates; until they are published, Root kind-loads them into the
+# cluster before stage 06 (TestAgentRuntimeReady boots them). Model must be one the
+# demo Environment hydrates (demo-model), or the harness exits at boot.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: AgentProfile
 metadata:
@@ -10,9 +11,48 @@ metadata:
   namespace: ach-system
 spec:
   achagent:
-    image: ghcr.io/ackstorm/ach-agent:v0.16.5@sha256:9ef89f09eed0b33ceb77cb7a35f90dadd3141d10a864460674cf5f5d429f45ec
+    image: ghcr.io/ackstorm/ach-runtime-control:0.1.0
     ach:
       baseUrl: http://ach-gateway.ach-system.svc
     model:
       name: demo-model
       type: openai
+    engine:
+      compaction:
+        auto: true
+        keep:
+          tokens: 8000
+        buffer: 20000
+    # Every field is required on the resolved value (workspace-v1, no harness default).
+    limits:
+      maxActiveWorkspaces: 4
+      maxConcurrentInvocations: 4
+      maxConcurrentScripts: 2
+      maxInvocationSeconds: 900
+      maxQueuedTotal: 100
+      idempotencyWindowSeconds: 3600
+      maxSteps: 30
+    # persistence/artifacts stay disabled so this fixture needs no global Storage
+    # backend (D1); profile-pvc.yaml next door exercises the operator's own ephemeral
+    # control-pod PVC instead, which is unrelated to this Harness/Storage policy.
+    workspace:
+      idleTimeoutSeconds: 600
+      shutdownTimeoutSeconds: 300
+      maxConcurrentSessions: 1
+      persistence:
+        enabled: false
+        retentionDays: 90
+      session:
+        idleTimeoutSeconds: 300
+        persistence:
+          enabled: false
+          retentionDays: 90
+    artifacts:
+      enabled: false
+      maxArtifactBytes: 104857600
+      retentionDays: 90
+  execution:
+    image: ghcr.io/ackstorm/ach-runtime-execution:0.1.0
+    ephemeralStorage: 1Gi
+    # workspace.shutdownTimeoutSeconds (300, above) plus a cancellation margin.
+    terminationGracePeriodSeconds: 330

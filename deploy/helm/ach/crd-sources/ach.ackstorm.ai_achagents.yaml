@@ -58,48 +58,99 @@ spec:
             properties:
               ach:
                 description: |-
-                  AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-                  BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+                  AchSpec is the ACH platform block (config: ach{baseUrl,environment,identity,capability},
+                  contract §5). It is the SAME type used by both AgentProfile.spec.achagent.ach (shared
+                  defaults: baseUrl/environment/capability) and ACHAgent's inline AgentDefaults override
+                  (adds the required identity credential) — per-field deep merge via ResolveAch, exactly
+                  like model/engine/limits. identity is never a shared profile default: AgentProfile forbids
+                  setting it (object-level CEL on AgentProfileSpec); ACHAgentSpec requires it.
+
+                  BaseURL resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
                   operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
                 properties:
                   baseUrl:
                     type: string
-                type: object
-              capability:
-                description: |-
-                  Capability is optional: both of its fields are optional, so the block
-                  validates nothing on its own. Render always emits a capability block
-                  (the harness schema requires one) — capability.ach.baseUrl comes from
-                  agentrender.ResolveAchBaseURL, never from here.
-                properties:
-                  environment:
-                    description: |-
-                      Environment is the ACH Hub Environment name, for documentation/intent only.
-                      The ek already scopes the environment server-side, and the harness reads the
-                      hydrated environment (manifest.environment) — NOT this field. Optional: omit
-                      to let the ek decide; when set it is rendered but never authoritative.
-                    type: string
-                  filter:
-                    description: FilterSpec wraps the exclude gate.
+                  capability:
+                    description: 'CapabilitySpec is the per-agent capability block
+                      (config: capability{type:ach,ach.environment,filter}).'
                     properties:
-                      exclude:
-                        description: 'ExcludeSpec is the governance gate ABOVE the
-                          model (config: capability.filter.exclude).'
+                      environment:
+                        description: |-
+                          Environment is the ACH Hub Environment name, for documentation/intent only.
+                          The ek already scopes the environment server-side, and the harness reads the
+                          hydrated environment (manifest.environment) — NOT this field. Optional: omit
+                          to let the ek decide; when set it is rendered but never authoritative.
+                        type: string
+                      filter:
+                        description: FilterSpec wraps the exclude gate.
                         properties:
-                          mcpServers:
-                            items:
-                              type: string
-                            type: array
-                          skills:
-                            items:
-                              type: string
-                            type: array
-                          tools:
-                            items:
-                              type: string
-                            type: array
+                          exclude:
+                            description: 'ExcludeSpec is the governance gate ABOVE
+                              the model (config: capability.filter.exclude).'
+                            properties:
+                              mcpServers:
+                                items:
+                                  type: string
+                                type: array
+                              skills:
+                                items:
+                                  type: string
+                                type: array
+                              tools:
+                                items:
+                                  type: string
+                                type: array
+                            type: object
                         type: object
                     type: object
+                  environment:
+                    description: |-
+                      Environment is the ACH Hub Environment name, for documentation/intent only — see
+                      CapabilitySpec.Environment's original doc: the ek already scopes the environment
+                      server-side and the harness reads the hydrated environment, never this field. A
+                      POINTER (unlike most other optional strings here): AgentProfile.spec.achagent.ach may
+                      set a shared default (ResolveAch), and an agent needs to be able to override it with an
+                      explicit empty string — indistinguishable from "unset" on a plain omitempty string.
+                    type: string
+                  identity:
+                    description: |-
+                      Identity carries the ACH ek_ (injected as ACH_TOKEN env via secretKeyRef). Required
+                      on the agent (ACHAgentSpec object-level CEL); forbidden on the profile (AgentProfileSpec
+                      object-level CEL) — a credential is never an implicit shared profile default.
+                    properties:
+                      secretRef:
+                        description: SecretRef points at a Secret holding the ek_
+                          (create it yourself, e.g. `ach-cli keys create`).
+                        properties:
+                          key:
+                            description: Key is the data key inside the Secret.
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name is the Kubernetes Secret name.
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    required:
+                    - secretRef
+                    type: object
+                type: object
+              artifacts:
+                description: Artifacts is the Harness Artifacts policy (contract §8).
+                properties:
+                  enabled:
+                    type: boolean
+                  maxArtifactBytes:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  retentionDays:
+                    format: int64
+                    minimum: 1
+                    type: integer
                 type: object
               channels:
                 items:
@@ -161,6 +212,14 @@ spec:
                         files). scope=event (default) runs it every invocation, the old prepare cadence;
                         scope=session runs it only when a new session is created. Valid for every channel type.
                       properties:
+                        destination:
+                          description: |-
+                            Destination is the relative path inside the Workspace the handoff's output replaces
+                            (contract §6). Required, non-empty. Path-escape rejection (no .. segments, no leading
+                            /) happens at runtime (Harness) — a CEL equivalent here is prohibitively expensive
+                            against the per-channel listType=map cost multiplier.
+                          minLength: 1
+                          type: string
                         forwardEnv:
                           description: |-
                             ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.
@@ -195,6 +254,7 @@ spec:
                           minimum: 1
                           type: integer
                       required:
+                      - destination
                       - script
                       type: object
                     name:
@@ -210,6 +270,22 @@ spec:
                           type: string
                       required:
                       - key
+                      type: object
+                    routing:
+                      description: |-
+                        Routing overrides the Harness's default Workspace/Session identity for this
+                        channel (contract §2). Omit for the adapter's default.
+                      properties:
+                        sessionKey:
+                          description: SessionKey overrides the adapter's default
+                            Session identity template.
+                          minLength: 1
+                          type: string
+                        workspaceKey:
+                          description: WorkspaceKey overrides the adapter's default
+                            Workspace identity template.
+                          minLength: 1
+                          type: string
                       type: object
                     script:
                       description: |-
@@ -244,52 +320,6 @@ spec:
                       required:
                       - script
                       type: object
-                    session:
-                      description: |-
-                        SessionSpec selects which opencode conversation a channel turn reuses and
-                        bounds its growth (config: channels[].session). type is the discriminator;
-                        key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
-                        block lets the harness apply its own default (type: none). This changes only
-                        which session a turn reuses — the router lane key (event.session_key) is
-                        unaffected.
-                      properties:
-                        key:
-                          description: |-
-                            Key is the {{ }} session template (payload.* / internal.*). REQUIRED iff
-                            type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN.
-                          type: string
-                        maxTokens:
-                          description: |-
-                            MaxTokens caps growth: once the previous turn's input_tokens exceed it,
-                            apply overflow (auto/custom only; ignored for none).
-                          format: int64
-                          minimum: 1
-                          type: integer
-                        overflow:
-                          default: compact
-                          description: |-
-                            Overflow: compact summarizes the session in place; rotate starts a fresh
-                            session and deletes the old one.
-                          enum:
-                          - compact
-                          - rotate
-                          type: string
-                        type:
-                          default: none
-                          description: |-
-                            none: fresh session per event, deleted post-turn. auto: reuse the
-                            channel-derived session_key. custom: reuse the session named by key.
-                          enum:
-                          - auto
-                          - none
-                          - custom
-                          type: string
-                      type: object
-                      x-kubernetes-validations:
-                      - message: session.key is required (non-empty) iff type is custom,
-                          forbidden otherwise
-                        rule: 'self.type != ''custom'' ? !has(self.key) : (has(self.key)
-                          && size(self.key) > 0)'
                     source:
                       enum:
                       - gitlab
@@ -368,6 +398,11 @@ spec:
                             - repository_update
                             type: string
                           type: array
+                        mergeRequestsOnly:
+                          description: |-
+                            MergeRequestsOnly discards GitLab issues and notes not on a merge request before
+                            admission (contract §2). gitlab source only; ignored for github/generic.
+                          type: boolean
                         triggerUsers:
                           description: |-
                             TriggerUsers is an actor allowlist: only these GitLab usernames may trigger
@@ -401,134 +436,48 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
-              cost:
-                description: |-
-                  CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
-                  Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
-                  hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
-                  litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
-                  litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
-                  ach-agent image >= v0.10.0.
-                properties:
-                  source:
-                    type: string
-                type: object
-              egress:
-                description: |-
-                  Egress makes the harness inject upstream credentials on the engine's behalf: the engine
-                  calls a declared origin with no credential (or a non-secret placeholder) and the
-                  harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only
-                  (not profile-inheritable). Needs an ach-agent image with egress support.
-                properties:
-                  services:
-                    items:
-                      description: EgressService is one upstream origin and the credential
-                        the harness adds to it.
-                      properties:
-                        auth:
-                          description: EgressAuth is the header the proxy sets and
-                            where its value comes from.
-                          properties:
-                            header:
-                              description: Header the proxy sets (RFC 9110 field-name
-                                token).
-                              maxLength: 64
-                              pattern: ^[A-Za-z0-9!#$%&'*+.^_`|~-]+$
-                              type: string
-                            placeholderEnv:
-                              description: |-
-                                PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that
-                                refuse to start without a token still run.
-                              pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                              type: string
-                            prefix:
-                              description: Prefix is prepended to the secret value,
-                                e.g. "Bearer ".
-                              maxLength: 64
-                              pattern: ^[^\r\n\x00]*$
-                              type: string
-                            secretKeyRef:
-                              description: SecretKeyRef holds the credential (same
-                                namespace). Bound only into the harness container.
-                              properties:
-                                key:
-                                  description: Key is the data key inside the Secret.
-                                  minLength: 1
-                                  type: string
-                                name:
-                                  description: Name is the Kubernetes Secret name.
-                                  minLength: 1
-                                  type: string
-                              required:
-                              - key
-                              - name
-                              type: object
-                          required:
-                          - header
-                          - secretKeyRef
-                          type: object
-                        name:
-                          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
-                          type: string
-                        origin:
-                          description: |-
-                            Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.
-                            The harness validates it fully at load.
-                          pattern: ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$
-                          type: string
-                      required:
-                      - auth
-                      - name
-                      - origin
-                      type: object
-                    maxItems: 32
-                    minItems: 1
-                    type: array
-                    x-kubernetes-list-map-keys:
-                    - name
-                    x-kubernetes-list-type: map
-                required:
-                - services
-                type: object
               engine:
                 description: |-
                   EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
-                  (the harness defaults them).
+                  (the harness defaults them). home/workDir/idleTtlSeconds/maxToolCalls/type/pi were retired
+                  for workspace-v1 (contract §10): one engine (OpenCode v2), no placements/binaries/paths to
+                  select, and tool-call counting is replaced by limits.maxSteps.
                 properties:
+                  compaction:
+                    description: |-
+                      Compaction configures OpenCode's native context compaction (contract §4). Replaces the
+                      retired session.maxTokens/overflow knobs.
+                    properties:
+                      auto:
+                        type: boolean
+                      buffer:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      keep:
+                        description: |-
+                          Keep is resolved as one atomic sub-block (its only field, tokens, has no independent
+                          meaning to override alone) — same convention as Persistence/Session below.
+                        properties:
+                          tokens:
+                            format: int64
+                            minimum: 0
+                            type: integer
+                        type: object
+                    type: object
                   forwardEnv:
+                    description: |-
+                      ForwardEnv selects literal-valued names from the merged env to the engine subprocess
+                      (contract §5). Only literal values are permitted — a name resolving to a secretKeyRef,
+                      a reserved name or a name absent from the merged env is a configuration error
+                      (agentrender.Render), not a silent drop.
                     items:
                       type: string
                     type: array
-                  home:
-                    type: string
-                  idleTtlSeconds:
-                    format: int64
-                    minimum: 0
-                    type: integer
-                  maxToolCalls:
-                    format: int64
-                    minimum: 0
-                    type: integer
-                  pi:
-                    description: Pi configures the Pi engine; consulted only when
-                      Type == "pi".
-                    properties:
-                      binaryPath:
-                        type: string
-                      mcpAdapterPath:
-                        type: string
-                    type: object
                   startupTimeoutSeconds:
                     format: int64
                     minimum: 1
                     type: integer
-                  type:
-                    description: |-
-                      Type selects the engine. Free string ("opencode"|"pi"); the harness validates and
-                      hard-fails on an unknown value. Omitted → harness default (opencode).
-                    type: string
-                  workDir:
-                    type: string
                 type: object
               env:
                 description: |-
@@ -725,8 +674,11 @@ spec:
                   rule: '!self.gateway || self.service'
               health:
                 description: |-
-                  HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
-                  targetPort and the container probes. Harness default port is 8080.
+                  HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+                  placement it drives the Service targetPort and the container probes. In distributed
+                  placement it is NOT used by the operator: the Service targets channels on 8080 and every
+                  role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+                  bound by ach-agent. Harness default port is 8080.
                 properties:
                   host:
                     type: string
@@ -741,6 +693,23 @@ spec:
                   Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
                   inside the mini-harness with only engine.forwardEnv variables.
                 properties:
+                  sessionRestore:
+                    description: |-
+                      SessionRestore runs once each time a session is restored from a snapshot (contract §6).
+                      Failure fails the invocation. Never runs alongside SessionStart for the same session —
+                      Start is create-only, Restore is restore-only.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
                   sessionStart:
                     description: |-
                       SessionStart runs once per new session, after the handoff and before the first turn.
@@ -774,40 +743,29 @@ spec:
                     - script
                     type: object
                 type: object
-              identity:
-                description: 'IdentitySpec carries the ACH ek_ (config: injected as
-                  ACH_TOKEN env via secretKeyRef).'
-                properties:
-                  secretRef:
-                    description: SecretRef points at a Secret holding the ek_ (create
-                      it yourself, e.g. `ach-cli keys create`).
-                    properties:
-                      key:
-                        description: Key is the data key inside the Secret.
-                        minLength: 1
-                        type: string
-                      name:
-                        description: Name is the Kubernetes Secret name.
-                        minLength: 1
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
-                required:
-                - secretRef
-                type: object
               image:
                 type: string
               limits:
-                description: 'LimitsSpec bounds invocations (config: limits.*). Unset
-                  → harness default.'
+                description: |-
+                  LimitsSpec bounds invocations (config: limits.*, contract §3). Fields stay POINTERS
+                  (except MaxSteps, below) so an agent can override one limit without restating the rest —
+                  per-field merge via ResolveLimits. The wire schema requires every field but
+                  maxConcurrentScripts unconditionally, but that completeness is checked on the RESOLVED
+                  result (RenderLimitsV1), not by forcing the type non-pointer.
                 properties:
                   idempotencyWindowSeconds:
                     format: int64
                     minimum: 1
                     type: integer
+                  maxActiveWorkspaces:
+                    format: int64
+                    minimum: 1
+                    type: integer
                   maxConcurrentInvocations:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  maxConcurrentScripts:
                     format: int64
                     minimum: 1
                     type: integer
@@ -820,12 +778,15 @@ spec:
                     minimum: 1
                     type: integer
                   maxSteps:
+                    description: |-
+                      MaxSteps bounds OpenCode steps per invocation (contract §3: no unlimited value). A
+                      POINTER like every other field here, so an agent can override one limit (e.g. just
+                      maxSteps, or everything EXCEPT maxSteps) without being forced to restate the rest of
+                      the block just to satisfy a non-pointer required field — completeness of the full
+                      resolved limits block is still enforced, but at RenderLimitsV1 (the merged result),
+                      not by forcing every partial override to carry every field.
                     format: int64
                     minimum: 1
-                    type: integer
-                  terminalOutputRetries:
-                    format: int64
-                    minimum: 0
                     type: integer
                 type: object
               mcpServers:
@@ -1046,7 +1007,12 @@ spec:
                 - message: memory.achMemory is required when type=ach-memory
                   rule: (self.type=='ach-memory' && has(self.achMemory)) || (self.type=='codemem')
               model:
-                description: 'ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).'
+                description: |-
+                  ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
+                  Name/Type are optional authoring fields (a profile or an agent may supply either
+                  alone via per-field merge, ResolveModel) — Render2 requires the EFFECTIVE
+                  (post-merge) name/type to be nonempty; this is a wire-completeness check, not a
+                  CRD-level requirement, since either field may legitimately come from the sibling.
                 properties:
                   name:
                     minLength: 1
@@ -1072,20 +1038,7 @@ spec:
                     - gemini
                     - anthropic
                     type: string
-                required:
-                - name
-                - type
                 type: object
-              placement:
-                description: |-
-                  Placement selects the pod topology; resolves ACHAgent.spec.placement ??
-                  AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent
-                  value cannot shadow the profile's). standalone renders one `agent` container
-                  exactly as before. Operator-only: never rendered into config.json.
-                enum:
-                - standalone
-                - sandboxed
-                type: string
               profileRef:
                 description: LocalObjectRef references a resource by name in the CR's
                   namespace.
@@ -1138,11 +1091,79 @@ spec:
                 required:
                 - system
                 type: object
+              workspace:
+                description: Workspace is the Harness Workspace/session lifecycle
+                  policy (contract §3/§7).
+                properties:
+                  idleTimeoutSeconds:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                  maxConcurrentSessions:
+                    description: |-
+                      MaxConcurrentSessions bounds sessions executing work simultaneously in a Workspace.
+                      A handoff with a shared destination requires this to be 1 (contract §6).
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  persistence:
+                    description: |-
+                      WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+                      workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+                      policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+                      control/execution-pod active-volume infrastructure.
+                      WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+                      workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+                      policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+                      control/execution-pod active-volume infrastructure. Both fields are required: the wire
+                      schema requires retentionDays unconditionally, even when enabled=false.
+                      Both Enabled and RetentionDays are pointers so an agent can override either one alone
+                      (ResolvePersistence per-field merge) without restating the other just to satisfy a
+                      non-pointer required field — e.g. `persistence: {enabled: false}` must inherit the
+                      profile's retentionDays, not null it out. Completeness of the resolved block (both
+                      fields set) is enforced at RenderWorkspaceV1/RenderArtifactsV1 time, same as every other
+                      policy block.
+                    properties:
+                      enabled:
+                        type: boolean
+                      retentionDays:
+                        format: int64
+                        minimum: 1
+                        type: integer
+                    type: object
+                  session:
+                    description: 'WorkspaceSessionSpec is workspace.session (contract
+                      §7). Pointer fields: per-field merge.'
+                    properties:
+                      idleTimeoutSeconds:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      persistence:
+                        description: |-
+                          Persistence is resolved as one atomic sub-block (same convention as
+                          CompactionSpec.Keep): its two fields are only meaningful together.
+                        properties:
+                          enabled:
+                            type: boolean
+                          retentionDays:
+                            format: int64
+                            minimum: 1
+                            type: integer
+                        type: object
+                    type: object
+                  shutdownTimeoutSeconds:
+                    format: int64
+                    minimum: 0
+                    type: integer
+                type: object
             required:
             - channels
-            - identity
             - profileRef
             type: object
+            x-kubernetes-validations:
+            - message: spec.ach.identity is required
+              rule: has(self.ach) && has(self.ach.identity)
           status:
             description: ACHAgentStatus is the observed state.
             properties:

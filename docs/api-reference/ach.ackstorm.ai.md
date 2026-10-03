@@ -123,24 +123,21 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `profileRef` _[LocalObjectRef](#localobjectref)_ |  |  | Required: \{\} <br /> |
-| `identity` _[IdentitySpec](#identityspec)_ |  |  | Required: \{\} <br /> |
 | `image` _string_ |  |  |  |
-| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  |  |
+| `ach` _[AchSpec](#achspec)_ |  |  |  |
 | `model` _[ModelSpec](#modelspec)_ |  |  |  |
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
-| `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone sandboxed] <br /> |
+| `workspace` _[WorkspaceSpec](#workspacespec)_ | Workspace is the Harness Workspace/session lifecycle policy (contract §3/§7). |  |  |
+| `artifacts` _[ArtifactsSpec](#artifactsspec)_ | Artifacts is the Harness Artifacts policy (contract §8). |  |  |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
-| `capability` _[CapabilitySpec](#capabilityspec)_ | Capability is optional: both of its fields are optional, so the block<br />validates nothing on its own. Render always emits a capability block<br />(the harness schema requires one) — capability.ach.baseUrl comes from<br />agentrender.ResolveAchBaseURL, never from here. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
 | `hooks` _[HooksSpec](#hooksspec)_ | Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run<br />inside the mini-harness with only engine.forwardEnv variables. |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
 | `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (local / remote) rendered into the<br />config's mcpServers map. Presence = enabled; omit for none. |  |  |
-| `egress` _[EgressSpec](#egressspec)_ | Egress makes the harness inject upstream credentials on the engine's behalf: the engine<br />calls a declared origin with no credential (or a non-secret placeholder) and the<br />harness's local proxy adds the header. Undeclared hosts pass through untouched. Agent-only<br />(not profile-inheritable). Needs an ach-agent image with egress support. |  |  |
 
 
 #### ACHAgentStatus
@@ -159,25 +156,6 @@ _Appears in:_
 | `observedGeneration` _integer_ |  |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ |  |  |  |
 | `gatewayURL` _string_ | GatewayURL is the inbound base URL for this agent on the shared gateway,<br />e.g. https://ach.example.com/agents/ach-system/achagent-gh. The last<br />segment is the agent's Service name; the gateway forwards anything<br />after it verbatim to that Service (append the harness route you need,<br />e.g. /channels/\{name\}/events for a webhook channel, or the a2a path).<br />Set only when the agent opts into gateway exposure (expose.gateway).<br />The host segment is only populated when the operator has<br />ACH_PUBLIC_BASE_URL (or, as a fallback, ACH_BASE_URL) configured;<br />otherwise this is the path-only form for the caller to prefix with<br />their own ingress host. |  |  |
-
-
-#### AchEndpointSpec
-
-
-
-AchEndpointSpec is the ACH platform coordinate (config: capability.ach.baseUrl + ACH_BASE_URL env).
-BaseURL is optional: it resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
-operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
-
-
-
-_Appears in:_
-- [ACHAgentSpec](#achagentspec)
-- [AgentDefaults](#agentdefaults)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `baseUrl` _string_ |  |  |  |
 
 
 #### AchMemoryAuthSpec
@@ -228,6 +206,34 @@ _Appears in:_
 | `project` _string_ | Project overrides the memory-bank slug. Empty (the norm) → the harness derives<br />\{POD_NAMESPACE\}-\{agent.name\} at boot, one bank per agent. Static: the slug SELECTS a<br />bank, so a payload-derived one would let an inbound event pick which bank the agent<br />reads and writes — the harness rejects \{\{ \}\} here, and so does the CEL below. |  |  |
 
 
+#### AchSpec
+
+
+
+AchSpec is the ACH platform block (config: ach{baseUrl,environment,identity,capability},
+contract §5). It is the SAME type used by both AgentProfile.spec.achagent.ach (shared
+defaults: baseUrl/environment/capability) and ACHAgent's inline AgentDefaults override
+(adds the required identity credential) — per-field deep merge via ResolveAch, exactly
+like model/engine/limits. identity is never a shared profile default: AgentProfile forbids
+setting it (object-level CEL on AgentProfileSpec); ACHAgentSpec requires it.
+
+BaseURL resolves as ACHAgent.spec.ach.baseUrl ?? AgentProfile.spec.achagent.ach.baseUrl ??
+operator ACH_BASE_URL env (agentrender.ResolveAchBaseURL). An empty result blocks the agent.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `baseUrl` _string_ |  |  |  |
+| `environment` _string_ | Environment is the ACH Hub Environment name, for documentation/intent only — see<br />CapabilitySpec.Environment's original doc: the ek already scopes the environment<br />server-side and the harness reads the hydrated environment, never this field. A<br />POINTER (unlike most other optional strings here): AgentProfile.spec.achagent.ach may<br />set a shared default (ResolveAch), and an agent needs to be able to override it with an<br />explicit empty string — indistinguishable from "unset" on a plain omitempty string. |  |  |
+| `identity` _[IdentitySpec](#identityspec)_ | Identity carries the ACH ek_ (injected as ACH_TOKEN env via secretKeyRef). Required<br />on the agent (ACHAgentSpec object-level CEL); forbidden on the profile (AgentProfileSpec<br />object-level CEL) — a credential is never an implicit shared profile default. |  |  |
+| `capability` _[CapabilitySpec](#capabilityspec)_ |  |  |  |
+
+
 #### AgentDefaults
 
 
@@ -249,13 +255,13 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `image` _string_ |  |  |  |
-| `ach` _[AchEndpointSpec](#achendpointspec)_ |  |  |  |
+| `ach` _[AchSpec](#achspec)_ |  |  |  |
 | `model` _[ModelSpec](#modelspec)_ |  |  |  |
 | `engine` _[EngineSpec](#enginespec)_ |  |  |  |
 | `limits` _[LimitsSpec](#limitsspec)_ |  |  |  |
 | `health` _[HealthSpec](#healthspec)_ |  |  |  |
-| `cost` _[CostSpec](#costspec)_ |  |  |  |
-| `placement` _string_ | Placement selects the pod topology; resolves ACHAgent.spec.placement ??<br />AgentProfile.spec.achagent.placement ?? standalone (no CRD default so an unset agent<br />value cannot shadow the profile's). standalone renders one `agent` container<br />exactly as before. Operator-only: never rendered into config.json. |  | Enum: [standalone sandboxed] <br /> |
+| `workspace` _[WorkspaceSpec](#workspacespec)_ | Workspace is the Harness Workspace/session lifecycle policy (contract §3/§7). |  |  |
+| `artifacts` _[ArtifactsSpec](#artifactsspec)_ | Artifacts is the Harness Artifacts policy (contract §8). |  |  |
 
 
 #### AgentProfile
@@ -305,8 +311,8 @@ AgentProfileList contains a list of AgentProfile.
 
 
 AgentProfileSpec is the reusable infra + defaults half. Agent-scoped defaults
-(image/ach/model/engine/limits/health/cost) live under the named achagent block and
-deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
+(image/ach/model/engine/limits/health/workspace/artifacts) live under the named achagent
+block and deep-merge with an ACHAgent's inline AgentDefaults (agent field wins);
 everything else here is profile-only infrastructure an agent cannot override.
 
 
@@ -323,10 +329,10 @@ _Appears in:_
 | `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
 | `persistence` _[PersistenceSpec](#persistencespec)_ |  |  |  |
-| `sandbox` _[SandboxSpec](#sandboxspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec.<br />Sandbox configures the sandboxed placement (required when placement resolves to sandboxed;<br />an agent that picks sandboxed over a profile without it fails to render). |  |  |
-| `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ |  |  |  |
+| `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy renders a default-deny egress NetworkPolicy for the agent pod.<br />Omitted → no policy (unrestricted egress). See NetworkPolicySpec. |  |  |
 | `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
-| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />— scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `podTemplate` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | PodTemplate is a raw strategic-merge-patch overlay applied over the operator-rendered pod<br />template (containers/env/volumes merge by name — the operator renders container "agent"<br />(standalone) or "channels"/"harness"/"engine" (distributed) — scalars user-wins). Pass-through by design<br />(ponytail: no field guardrails — the profile author already controls spec.achagent.image, i.e.<br />everything that runs in the pod). A malformed overlay surfaces as WorkloadApplied=False<br />(PodTemplateInvalid); a merged-but-broken pod surfaces as a failing rollout. Note the<br />env ACH_* CEL guard does NOT inspect this overlay. After the merge the operator<br />re-pins the selector label and the config-hash annotation. |  |  |
+| `execution` _[ExecutionInfraSpec](#executioninfraspec)_ | Execution is the contract §11 execution-role infrastructure (the mini-harness pod<br />Harness creates per Workspace): image, resources, ephemeral storage and scheduling for<br />THAT role, distinct from achagent.image/spec.resources above, which remain the<br />CONTROL pod's (Channels+Harness) settings. Root ruling 2026-10-01: a profile-only<br />section, not a new CR/WorkspaceProfile kind. |  | Required: \{\} <br /> |
 
 
 #### AgentProfileStatus
@@ -452,6 +458,29 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+
+
+#### ArtifactsSpec
+
+
+
+ArtifactsSpec is the Harness Artifacts policy (config: artifacts.*, contract §8). Enabled
+is a pointer, same rationale as WorkspacePersistenceSpec.Enabled: an agent overriding just
+maxArtifactBytes/retentionDays must not be forced to also restate enabled. All three merge
+per-field (ResolveArtifacts); completeness of the resolved block is enforced at
+RenderArtifactsV1.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ |  |  |  |
+| `maxArtifactBytes` _integer_ |  |  | Minimum: 1 <br /> |
+| `retentionDays` _integer_ |  |  | Minimum: 1 <br /> |
 
 
 #### BackendIdentityPolicy
@@ -624,7 +653,7 @@ CapabilitySpec is the per-agent capability block (config: capability{type:ach,ac
 
 
 _Appears in:_
-- [ACHAgentSpec](#achagentspec)
+- [AchSpec](#achspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -649,7 +678,7 @@ _Appears in:_
 | `type` _string_ |  |  | Enum: [webhook webhook-script cron queue a2a] <br />Required: \{\} <br /> |
 | `source` _string_ |  |  | Enum: [gitlab github generic] <br /> |
 | `concurrency` _integer_ |  | 1 | Minimum: 1 <br /> |
-| `session` _[SessionSpec](#sessionspec)_ |  |  |  |
+| `routing` _[RoutingSpec](#routingspec)_ | Routing overrides the Harness's default Workspace/Session identity for this<br />channel (contract §2). Omit for the adapter's default. |  |  |
 | `prompt` _string_ |  |  |  |
 | `webhook` _[WebhookSpec](#webhookspec)_ |  |  |  |
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
@@ -676,6 +705,47 @@ _Appears in:_
 | `project` _string_ |  |  |  |
 
 
+#### CompactionKeepSpec
+
+
+
+CompactionKeepSpec is engine.compaction.keep.
+
+
+
+_Appears in:_
+- [CompactionSpec](#compactionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `tokens` _integer_ |  |  | Minimum: 0 <br /> |
+
+
+#### CompactionSpec
+
+
+
+CompactionSpec configures OpenCode's native context compaction (config:
+engine.compaction). Fields stay POINTERS so an agent can override one of
+auto/keep/buffer without restating the others (per-field merge, ResolveCompaction) —
+the wire schema requires all three unconditionally wherever compaction is rendered, but
+that completeness is enforced on the RESOLVED (post-merge) result (RenderEngineV1,
+profile-level required-block CEL below), never by forcing the type itself to be
+all-or-nothing. Explicit false/0 must stay distinguishable from "agent didn't touch this
+field" — a non-pointer bool/int64 cannot express that.
+
+
+
+_Appears in:_
+- [EngineSpec](#enginespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `auto` _boolean_ |  |  |  |
+| `keep` _[CompactionKeepSpec](#compactionkeepspec)_ | Keep is resolved as one atomic sub-block (its only field, tokens, has no independent<br />meaning to override alone) — same convention as Persistence/Session below. |  |  |
+| `buffer` _integer_ |  |  | Minimum: 0 <br /> |
+
+
 #### ContextBlock
 
 
@@ -697,28 +767,6 @@ _Appears in:_
 | `skills` _string array_ | Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 
 
-#### CostSpec
-
-
-
-CostSpec selects where the per-invocation cost figure comes from (config: cost.source).
-Free string ("engine"|"litellm_usage"|"litellm_headers"|"none"); the harness validates and
-hard-fails on an unknown value. Omitted → harness default (engine, today's behavior).
-litellm_usage prices per-response usage against LiteLLM's table via GET /v2/model/info;
-litellm_headers reads x-litellm-response-cost and is non-streaming only. Requires an
-ach-agent image >= v0.10.0.
-
-
-
-_Appears in:_
-- [ACHAgentSpec](#achagentspec)
-- [AgentDefaults](#agentdefaults)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `source` _string_ |  |  |  |
-
-
 #### CronSpec
 
 
@@ -736,65 +784,14 @@ _Appears in:_
 | `timezone` _string_ |  | UTC |  |
 
 
-#### EgressAuth
-
-
-
-EgressAuth is the header the proxy sets and where its value comes from.
-
-
-
-_Appears in:_
-- [EgressService](#egressservice)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `header` _string_ | Header the proxy sets (RFC 9110 field-name token). |  | MaxLength: 64 <br />Pattern: `^[A-Za-z0-9!#$%&'*+.^_`\|~-]+$` <br /> |
-| `prefix` _string_ | Prefix is prepended to the secret value, e.g. "Bearer ". |  | MaxLength: 64 <br />Pattern: `^[^\r\n\x00]*$` <br /> |
-| `secretKeyRef` _[SecretKeyRef](#secretkeyref)_ | SecretKeyRef holds the credential (same namespace). Bound only into the harness container. |  |  |
-| `placeholderEnv` _string_ | PlaceholderEnv names an engine env var set to the literal "non-secret" so tools that<br />refuse to start without a token still run. |  | Pattern: `^[A-Za-z_][A-Za-z0-9_]*$` <br /> |
-
-
-#### EgressService
-
-
-
-EgressService is one upstream origin and the credential the harness adds to it.
-
-
-
-_Appears in:_
-- [EgressSpec](#egressspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `name` _string_ |  |  | Pattern: `^[a-z0-9]([a-z0-9-]\{0,61\}[a-z0-9])?$` <br /> |
-| `origin` _string_ | Origin is an exact https origin (scheme, host, optional port), e.g. https://api.github.com.<br />The harness validates it fully at load. |  | Pattern: `^https://[A-Za-z0-9.-]+(:[0-9]\{1,5\})?$` <br /> |
-| `auth` _[EgressAuth](#egressauth)_ |  |  |  |
-
-
-#### EgressSpec
-
-
-
-EgressSpec lists the upstream services whose credentials the harness injects.
-
-
-
-_Appears in:_
-- [ACHAgentSpec](#achagentspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `services` _[EgressService](#egressservice) array_ |  |  | MaxItems: 32 <br />MinItems: 1 <br /> |
-
-
 #### EngineSpec
 
 
 
 EngineSpec is the harness-local engine block (config: engine.*). Unset fields are omitted
-(the harness defaults them).
+(the harness defaults them). home/workDir/idleTtlSeconds/maxToolCalls/type/pi were retired
+for workspace-v1 (contract §10): one engine (OpenCode v2), no placements/binaries/paths to
+select, and tool-call counting is replaced by limits.maxSteps.
 
 
 
@@ -804,14 +801,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `home` _string_ |  |  |  |
-| `workDir` _string_ |  |  |  |
-| `forwardEnv` _string array_ |  |  |  |
-| `idleTtlSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `forwardEnv` _string array_ | ForwardEnv selects literal-valued names from the merged env to the engine subprocess<br />(contract §5). Only literal values are permitted — a name resolving to a secretKeyRef,<br />a reserved name or a name absent from the merged env is a configuration error<br />(agentrender.Render), not a silent drop. |  |  |
 | `startupTimeoutSeconds` _integer_ |  |  | Minimum: 1 <br /> |
-| `maxToolCalls` _integer_ |  |  | Minimum: 0 <br /> |
-| `type` _string_ | Type selects the engine. Free string ("opencode"\|"pi"); the harness validates and<br />hard-fails on an unknown value. Omitted → harness default (opencode). |  |  |
-| `pi` _[PiEngineSpec](#pienginespec)_ | Pi configures the Pi engine; consulted only when Type == "pi". |  |  |
+| `compaction` _[CompactionSpec](#compactionspec)_ | Compaction configures OpenCode's native context compaction (contract §4). Replaces the<br />retired session.maxTokens/overflow knobs. |  |  |
 
 
 #### Environment
@@ -922,6 +914,30 @@ _Appears in:_
 | `tools` _string array_ |  |  |  |
 | `mcpServers` _string array_ |  |  |  |
 | `skills` _string array_ |  |  |  |
+
+
+#### ExecutionInfraSpec
+
+
+
+ExecutionInfraSpec is AgentProfileSpec.Execution (config: infrastructure.execution,
+contract §11). image and ephemeralStorage are required — no operator-wide default
+(root ruling: explicit required effective policy, not a guessed renderer default).
+
+
+
+_Appears in:_
+- [AgentProfileSpec](#agentprofilespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ |  |  |  |
+| `ephemeralStorage` _string_ | EphemeralStorage is a Kubernetes resource.Quantity string (e.g. "2Gi") for the<br />execution pod's ephemeral-storage resource request/limit. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#localobjectreference-v1-core) array_ |  |  |  |
+| `nodeSelector` _object (keys:string, values:string)_ |  |  |  |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#toleration-v1-core) array_ |  |  |  |
+| `terminationGracePeriodSeconds` _integer_ |  |  | Minimum: 0 <br /> |
 
 
 #### ExpandedRuntime
@@ -1127,14 +1143,18 @@ _Appears in:_
 | `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become the hook's env; secretKeyRef values become its secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
 | `timeoutSeconds` _integer_ | TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
 | `scope` _string_ | Scope selects when the handoff runs: every event (the old prepare cadence), or only<br />when a new session is created. | event | Enum: [event session] <br /> |
+| `destination` _string_ | Destination is the relative path inside the Workspace the handoff's output replaces<br />(contract §6). Required, non-empty. Path-escape rejection (no .. segments, no leading<br />/) happens at runtime (Harness) — a CEL equivalent here is prohibitively expensive<br />against the per-channel listType=map cost multiplier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 
 
 #### HealthSpec
 
 
 
-HealthSpec is the harness HTTP surface (config: health{host,port}). It drives the Service
-targetPort and the container probes. Harness default port is 8080.
+HealthSpec is the harness HTTP surface (config: health{host,port}). In standalone
+placement it drives the Service targetPort and the container probes. In distributed
+placement it is NOT used by the operator: the Service targets channels on 8080 and every
+role is probed over HTTP on a fixed port (channels 8080, harness 8090, engine 8081)
+bound by ach-agent. Harness default port is 8080.
 
 
 
@@ -1182,6 +1202,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `sessionStart` _[HookSpec](#hookspec)_ | SessionStart runs once per new session, after the handoff and before the first turn.<br />Failure fails the invocation. |  |  |
+| `sessionRestore` _[HookSpec](#hookspec)_ | SessionRestore runs once each time a session is restored from a snapshot (contract §6).<br />Failure fails the invocation. Never runs alongside SessionStart for the same session —<br />Start is create-only, Restore is restore-only. |  |  |
 | `sessionSuspend` _[HookSpec](#hookspec)_ | SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox<br />suspend), before any HOME archive. May run many times per session. Best-effort. |  |  |
 
 
@@ -1189,12 +1210,13 @@ _Appears in:_
 
 
 
-IdentitySpec carries the ACH ek_ (config: injected as ACH_TOKEN env via secretKeyRef).
+IdentitySpec carries the ACH ek_ (config: injected as ACH_SECRET_IDENTITY env via
+secretKeyRef — the alias name ach.identity.env names in the rendered config).
 
 
 
 _Appears in:_
-- [ACHAgentSpec](#achagentspec)
+- [AchSpec](#achspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1205,7 +1227,11 @@ _Appears in:_
 
 
 
-LimitsSpec bounds invocations (config: limits.*). Unset → harness default.
+LimitsSpec bounds invocations (config: limits.*, contract §3). Fields stay POINTERS
+(except MaxSteps, below) so an agent can override one limit without restating the rest —
+per-field merge via ResolveLimits. The wire schema requires every field but
+maxConcurrentScripts unconditionally, but that completeness is checked on the RESOLVED
+result (RenderLimitsV1), not by forcing the type non-pointer.
 
 
 
@@ -1215,12 +1241,13 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `maxActiveWorkspaces` _integer_ |  |  | Minimum: 1 <br /> |
 | `maxConcurrentInvocations` _integer_ |  |  | Minimum: 1 <br /> |
+| `maxConcurrentScripts` _integer_ |  |  | Minimum: 1 <br /> |
 | `maxInvocationSeconds` _integer_ |  |  | Minimum: 1 <br /> |
 | `maxQueuedTotal` _integer_ |  |  | Minimum: 1 <br /> |
 | `idempotencyWindowSeconds` _integer_ |  |  | Minimum: 1 <br /> |
-| `maxSteps` _integer_ |  |  | Minimum: 1 <br /> |
-| `terminalOutputRetries` _integer_ |  |  | Minimum: 0 <br /> |
+| `maxSteps` _integer_ | MaxSteps bounds OpenCode steps per invocation (contract §3: no unlimited value). A<br />POINTER like every other field here, so an agent can override one limit (e.g. just<br />maxSteps, or everything EXCEPT maxSteps) without being forced to restate the rest of<br />the block just to satisfy a non-pointer required field — completeness of the full<br />resolved limits block is still enforced, but at RenderLimitsV1 (the merged result),<br />not by forcing every partial override to carry every field. |  | Minimum: 1 <br /> |
 
 
 #### LiteLLMConnection
@@ -1434,6 +1461,10 @@ _Appears in:_
 
 
 ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
+Name/Type are optional authoring fields (a profile or an agent may supply either
+alone via per-field merge, ResolveModel) — Render2 requires the EFFECTIVE
+(post-merge) name/type to be nonempty; this is a wire-completeness check, not a
+CRD-level requirement, since either field may legitimately come from the sibling.
 
 
 
@@ -1443,8 +1474,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `name` _string_ |  |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `type` _string_ |  |  | Enum: [openai gemini anthropic] <br />Required: \{\} <br /> |
+| `name` _string_ |  |  | MinLength: 1 <br /> |
+| `type` _string_ |  |  | Enum: [openai gemini anthropic] <br /> |
 | `params` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#json-v1-apiextensions-k8s-io)_ | Params is an open, unvalidated dict splatted to the model client. |  |  |
 | `thinking` _[ThinkingSpec](#thinkingspec)_ | Thinking is the normalized model-level reasoning intent (config: model.thinking).<br />Free-form (no Enum) — ach-agent's Pydantic ThinkingBlock is the single enforcer<br />(D-2 precedent): effort one of minimal\|low\|medium\|high\|xhigh, requires enabled=true. |  |  |
 
@@ -1496,27 +1527,6 @@ _Appears in:_
 | `storageClassName` _string_ |  |  |  |
 | `mountPath` _string_ |  | /var/lib/ach-agent |  |
 | `retainPolicy` _string_ | RetainPolicy controls PVC lifecycle on ACHAgent deletion. Retain → the PVC is created<br />WITHOUT a controller owner-ref, so it survives agent deletion (operator-managed cleanup). |  | Enum: [Retain Delete] <br /> |
-
-
-#### PiEngineSpec
-
-
-
-PiEngineSpec is the harness-local Pi engine block (config: engine.pi.*) — executable
-knobs ONLY (model identity and thinking intent live in ModelSpec). All fields are
-optional; empty binaryPath/mcpAdapterPath fall back to the image defaults (pi on PATH;
-the vendored adapter at /opt/pi-mcp-adapter/node_modules/pi-mcp-adapter). The
-v0.8.1-only model and thinking-level fields were removed for ach-agent v0.9.0.
-
-
-
-_Appears in:_
-- [EngineSpec](#enginespec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `binaryPath` _string_ |  |  |  |
-| `mcpAdapterPath` _string_ |  |  |  |
 
 
 #### Plugin
@@ -1922,6 +1932,29 @@ _Appears in:_
 | `headers` _object (keys:string, values:string)_ |  |  |  |
 
 
+#### RoutingSpec
+
+
+
+RoutingSpec overrides the Harness's default Workspace/Session identity for a channel
+(config: channels[].routing, contract §2). Both fields are optional and independent: an
+omitted one keeps the adapter's default. A present one is a non-empty {{ }} template
+string (event.*, payload.*) the Harness renders — the operator never interprets or
+renders it; an invalid render is rejected by the Harness with no fallback. MinLength (an
+OpenAPI structural keyword, not CEL) enforces non-empty cheaply — only present values are
+checked, so the field stays genuinely optional.
+
+
+
+_Appears in:_
+- [ChannelSpec](#channelspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `workspaceKey` _string_ | WorkspaceKey overrides the adapter's default Workspace identity template. |  | MinLength: 1 <br /> |
+| `sessionKey` _string_ | SessionKey overrides the adapter's default Session identity template. |  | MinLength: 1 <br /> |
+
+
 #### RuntimeBlock
 
 
@@ -1977,45 +2010,6 @@ _Appears in:_
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef points at the Secret carrying access-key-id and<br />secret-access-key (data keys named via accessKeyIdKey /<br />secretAccessKeyKey). |  | Required: \{\} <br /> |
 
 
-#### SandboxSessionsSpec
-
-
-
-SandboxSessionsSpec is the S3 archive location (harness-side; the sandbox never sees it).
-
-
-
-_Appears in:_
-- [SandboxSpec](#sandboxspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `bucket` _string_ |  |  | MinLength: 1 <br /> |
-| `maxArchiveBytes` _integer_ |  |  |  |
-
-
-#### SandboxSpec
-
-
-
-SandboxSpec configures the sandboxed placement: each session's engine runs in an
-agent-sandbox pod (kubernetes-sigs/agent-sandbox v1.0.x, a cluster prerequisite).
-
-
-
-_Appears in:_
-- [AgentProfileSpec](#agentprofilespec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `runtimeClassName` _string_ | RuntimeClassName for sandbox pods, e.g. gvisor. Empty = the cluster default runtime. |  |  |
-| `warmPoolReplicas` _integer_ | WarmPoolReplicas is the number of pre-started sandboxes. | 1 | Minimum: 0 <br /> |
-| `idleSeconds` _integer_ | IdleSeconds before an idle sandbox archives its HOME and is released. Unset = harness default. |  | Minimum: 0 <br /> |
-| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#resourcerequirements-v1-core)_ | Resources for the sandbox container. |  |  |
-| `serviceAccountName` _string_ | ServiceAccountName the HARNESS runs as when sandboxed (S3 via Pod Identity + the<br />sandboxclaims Role). Pre-created by the chart (agentSandbox.enabled). | ach-sandboxed-agent |  |
-| `sessions` _[SandboxSessionsSpec](#sandboxsessionsspec)_ | Sessions is where session HOME archives are stored. |  |  |
-
-
 #### SecretKeyRef
 
 
@@ -2027,7 +2021,6 @@ SecretKeyRef identifies a key in a same-namespace Secret.
 _Appears in:_
 - [A2AAuthSpec](#a2aauthspec)
 - [AchMemoryAuthSpec](#achmemoryauthspec)
-- [EgressAuth](#egressauth)
 - [IdentitySpec](#identityspec)
 - [LiteLLMConnectionSpec](#litellmconnectionspec)
 - [WebhookAuthSpec](#webhookauthspec)
@@ -2036,30 +2029,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `name` _string_ | Name is the Kubernetes Secret name. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `key` _string_ | Key is the data key inside the Secret. |  | MinLength: 1 <br />Required: \{\} <br /> |
-
-
-#### SessionSpec
-
-
-
-SessionSpec selects which opencode conversation a channel turn reuses and
-bounds its growth (config: channels[].session). type is the discriminator;
-key is the {{ }} template, valid ONLY when type==custom. Omitting the whole
-block lets the harness apply its own default (type: none). This changes only
-which session a turn reuses — the router lane key (event.session_key) is
-unaffected.
-
-
-
-_Appears in:_
-- [ChannelSpec](#channelspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `type` _string_ | none: fresh session per event, deleted post-turn. auto: reuse the<br />channel-derived session_key. custom: reuse the session named by key. | none | Enum: [auto none custom] <br /> |
-| `key` _string_ | Key is the \{\{ \}\} session template (payload.* / internal.*). REQUIRED iff<br />type==custom, FORBIDDEN otherwise. An empty render falls back to none + WARN. |  |  |
-| `maxTokens` _integer_ | MaxTokens caps growth: once the previous turn's input_tokens exceed it,<br />apply overflow (auto/custom only; ignored for none). |  | Minimum: 1 <br /> |
-| `overflow` _string_ | Overflow: compact summarizes the session in place; rotate starts a fresh<br />session and deletes the old one. | compact | Enum: [compact rotate] <br /> |
 
 
 #### Skill
@@ -2390,5 +2359,80 @@ _Appears in:_
 | `gitlabEvents` _string array_ |  |  | items:Enum: [merge_request issue note push project_create project_rename project_transfer project_update repository_update] <br /> |
 | `botUsername` _string_ | BotUsername is the GitLab username the agent posts AS (the egress PAT's<br />user — a distinct fact from the agent name). When set, the harness drops<br />inbound events authored by this user plus gitlab-generated system notes<br />pre-enqueue (loop-guard). Omit → guard off. gitlab source only; ignored<br />for github/generic. Rendered verbatim to channels[].webhook.botUsername. |  |  |
 | `triggerUsers` _string array_ | TriggerUsers is an actor allowlist: only these GitLab usernames may trigger<br />the handler. Omit → any author triggers. System events without a username are<br />rejected when this list is set, so webhook-script registrars should omit it.<br />GitLab source only; ignored for github/generic. |  |  |
+| `mergeRequestsOnly` _boolean_ | MergeRequestsOnly discards GitLab issues and notes not on a merge request before<br />admission (contract §2). gitlab source only; ignored for github/generic. |  |  |
+
+
+#### WorkspacePersistenceSpec
+
+
+
+WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+control/execution-pod active-volume infrastructure.
+WorkspacePersistenceSpec is a Workspace or session durability switch (contract §7:
+workspace.persistence, workspace.session.persistence). This is the Harness/Storage logical
+policy — distinct from AgentProfileSpec.Persistence, which is the operator's ephemeral
+control/execution-pod active-volume infrastructure. Both fields are required: the wire
+schema requires retentionDays unconditionally, even when enabled=false.
+Both Enabled and RetentionDays are pointers so an agent can override either one alone
+(ResolvePersistence per-field merge) without restating the other just to satisfy a
+non-pointer required field — e.g. `persistence: {enabled: false}` must inherit the
+profile's retentionDays, not null it out. Completeness of the resolved block (both
+fields set) is enforced at RenderWorkspaceV1/RenderArtifactsV1 time, same as every other
+policy block.
+
+
+
+_Appears in:_
+- [WorkspaceSessionSpec](#workspacesessionspec)
+- [WorkspaceSpec](#workspacespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ |  |  |  |
+| `retentionDays` _integer_ |  |  | Minimum: 1 <br /> |
+
+
+#### WorkspaceSessionSpec
+
+
+
+WorkspaceSessionSpec is workspace.session (contract §7). Pointer fields: per-field merge.
+
+
+
+_Appears in:_
+- [WorkspaceSpec](#workspacespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `idleTimeoutSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `persistence` _[WorkspacePersistenceSpec](#workspacepersistencespec)_ | Persistence is resolved as one atomic sub-block (same convention as<br />CompactionSpec.Keep): its two fields are only meaningful together. |  |  |
+
+
+#### WorkspaceSpec
+
+
+
+WorkspaceSpec is the Harness Workspace lifecycle policy (config: workspace.*, contract
+§3/§7). Pointer fields (except where noted) so an agent can override one setting without
+restating the rest — per-field merge via ResolveWorkspace. Completeness of the wire-
+required fields is checked on the RESOLVED result (RenderWorkspaceV1), not by forcing the
+type non-pointer.
+
+
+
+_Appears in:_
+- [ACHAgentSpec](#achagentspec)
+- [AgentDefaults](#agentdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `idleTimeoutSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `shutdownTimeoutSeconds` _integer_ |  |  | Minimum: 0 <br /> |
+| `maxConcurrentSessions` _integer_ | MaxConcurrentSessions bounds sessions executing work simultaneously in a Workspace.<br />A handoff with a shared destination requires this to be 1 (contract §6). |  | Minimum: 1 <br /> |
+| `persistence` _[WorkspacePersistenceSpec](#workspacepersistencespec)_ |  |  |  |
+| `session` _[WorkspaceSessionSpec](#workspacesessionspec)_ |  |  |  |
 
 

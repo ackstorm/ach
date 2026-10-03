@@ -40,6 +40,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -147,6 +148,30 @@ func buildPluginTestReconciler(t *testing.T, ns string, pool *pgxpool.Pool) *Env
 	}
 }
 
+// capturingEnvStatusClient returns a real-API client that records the
+// Environment status this reconciler successfully wrote, so the assertion
+// cannot observe the suite reconciler's (DB=nil) later overwrite.
+func capturingEnvStatusClient(t *testing.T) (client.Client, func() *achv1alpha1.Environment) {
+	t.Helper()
+	wc, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+	if err != nil {
+		t.Fatalf("NewWithWatch: %v", err)
+	}
+	var got *achv1alpha1.Environment
+	spy := interceptor.NewClient(wc, interceptor.Funcs{
+		SubResourceUpdate: func(ctx context.Context, c client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			if err := c.SubResource(sub).Update(ctx, obj, opts...); err != nil {
+				return err
+			}
+			if env, ok := obj.(*achv1alpha1.Environment); ok && sub == "status" {
+				got = env.DeepCopy() // last SUCCESSFUL write (retry-on-conflict safe)
+			}
+			return nil
+		},
+	})
+	return spy, func() *achv1alpha1.Environment { return got }
+}
+
 // TestEnvPluginContentPresent_NotSynced: an Environment whose
 // spec.context.plugins references a bare plugin that has a plugins row
 // with last_successful_refresh IS NULL must hold
@@ -155,6 +180,13 @@ func buildPluginTestReconciler(t *testing.T, ns string, pool *pgxpool.Pool) *Env
 // This is the false-green scenario: the plugin exists in Postgres (the
 // operator wrote it) but the artifact was never fetched. Before this fix,
 // the condition was unconditionally True → hydrate would 404 at runtime.
+//
+// The suite reconciler (DB=nil) also reconciles this Environment and writes
+// ExecutionResourcesResolved=True with no content gate, racing this test's
+// own status write. The assertion below captures the DB-wired reconciler's
+// own successful status Update via capturingEnvStatusClient, so it observes
+// that write directly instead of re-Getting a status the suite reconciler
+// may have since overwritten.
 func TestEnvPluginContentPresent_NotSynced(t *testing.T) {
 	pool, cleanup := setupPluginContentPresentDB(t)
 	defer cleanup()
@@ -214,15 +246,17 @@ func TestEnvPluginContentPresent_NotSynced(t *testing.T) {
 
 	// Call Reconcile() with the DB-wired reconciler.
 	r := buildPluginTestReconciler(t, ns, pool)
+	spy, written := capturingEnvStatusClient(t)
+	r.Client = spy
 	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cr)}
 	if _, err := r.Reconcile(ctx, req); err != nil {
 		t.Fatalf("Reconcile error: %v", err)
 	}
 
-	// Re-read status from the API server.
-	var final achv1alpha1.Environment
-	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &final); err != nil {
-		t.Fatalf("re-Get Environment: %v", err)
+	// Observe the DB-wired reconciler's own successful status write.
+	final := written()
+	if final == nil {
+		t.Fatal("DB-wired reconciler issued no successful status update")
 	}
 
 	// Assert ExecutionResourcesResolved=False because plugin content is absent.

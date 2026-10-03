@@ -259,6 +259,34 @@ litellmConnection:
     # masterKeySecretRef.name. (Replaces the removed forwarder.litellmMasterKey.)
     namespace: ""
 
+# runtime configures the operator-level global Storage backend (root D1 decision): backend
+# settings belong to the operator, not individual ACHAgents. bucket/region/endpointUrl/prefix/
+# credentialsSecretName map to the control pod's PRIVATE ACH_STORAGE_S3_* env only — never
+# config.json/PublicConfig, never execution pods. Empty bucket means unconfigured: only an
+# ACHAgent whose resolved workspace/session persistence or artifacts actually require storage
+# fails closed (WorkloadApplied=False/StorageUnavailable); an all-disabled agent is
+# unaffected. This is real backend configuration, never an operator health/reachability
+# signal — a configured bucket is not probed here.
+#
+# credentialsSecretName, when set, must already exist in each ACHAgent's own namespace with
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY keys (AWS_SESSION_TOKEN optional) — the
+# namespace-local Secret prerequisite is not fabricated. Leave empty to use the Harness's
+# ordinary ambient boto3 credential chain instead; the operator never writes/replicates this
+# Secret.
+runtime:
+  storage:
+    s3:
+      # bucket has no default — install-specific. Empty means unconfigured.
+      bucket: ""
+      # region/endpointUrl are optional; endpointUrl supports standard S3-compatible backends
+      # (e.g. the SeaweedFS test service).
+      region: ""
+      endpointUrl: ""
+      # prefix defaults to "ach" when unset.
+      prefix: "ach"
+      # credentialsSecretName is a literal Secret NAME only — never a credential value.
+      credentialsSecretName: ""
+
 # security — at-rest crypto material that platform-api AND the forwarder
 # REQUIRE at startup (validateConfig aborts the process otherwise). Both are
 # referenced from operator-supplied Secrets — the chart never generates or

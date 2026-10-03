@@ -16,34 +16,54 @@ metadata:
     app.kubernetes.io/component: operator
 rules:
 - apiGroups: [""]
-  resources: ["pods", "secrets"]
-  verbs: ["get", "list", "watch"]
-# Sandboxed ACHAgents: the operator creates (never updates) the per-agent
-# <agent>-sandbox-key Secret — the first Secret it writes into agent namespaces.
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["create"]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
-# Sandboxed ACHAgents: agent-sandbox template + warm pool (cluster prerequisite;
-# the rule is inert when the CRDs are absent).
-- apiGroups: ["extensions.agents.x-k8s.io"]
-  resources: ["sandboxtemplates", "sandboxwarmpools"]
-  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-# ACHAgent workload children (Deployment/ConfigMap/Service/ServiceAccount/PVC).
-# The ACHAgentReconciler is the operator's only workload-creating controller.
+# Secrets: read everywhere the informer cache watches (identity/channel/global storage
+# credentials); create only for the UID-owned legacy workspace key. Existing key Secrets are
+# never updated or deleted. No Secret verbs are ever granted to the Harness or execution SAs.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "get", "list", "watch"]
+# ACHAgent workload children (StatefulSet/ConfigMap/Service/ServiceAccount/PVC).
+# The ACHAgentReconciler is the operator's only workload-creating controller. StatefulSet,
+# not Deployment, per contract §11 (control one-container StatefulSet).
 - apiGroups: [""]
   resources: ["configmaps", "persistentvolumeclaims", "serviceaccounts", "services"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 - apiGroups: ["apps"]
-  resources: ["deployments"]
+  resources: ["statefulsets"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# statefulsets/scale: delegated to the per-agent Harness Role below — the operator must
+# itself hold any verb it grants there (RBAC escalation prevention).
+- apiGroups: ["apps"]
+  resources: ["statefulsets/scale"]
+  verbs: ["get", "patch", "update"]
+# Deployments: read+delete only, for the one-time cutover cleanup of a pre-workspace-v1
+# agent's old operator-owned Deployment (pruneLegacyDeployment) — never created/updated again.
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "delete"]
 # ACHAgent egress policy (AgentProfile.spec.networkPolicy). Rendered per agent,
 # pruned when the profile drops the block.
 - apiGroups: ["networking.k8s.io"]
   resources: ["networkpolicies"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# Per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
+# buildWorkspaceRoleBinding, named ach-harness-<uid>, contract §11 creator contract) — no
+# blanket bind/escalate grant: the operator only ever creates these two fixed, UID-named
+# objects with a fixed rule set.
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# Legacy cutover cleanup ONLY (pruneLegacySandbox): a pre-workspace-v1 sandboxed ACHAgent's
+# agent-sandbox SandboxTemplate/SandboxWarmPool (cluster prerequisite; inert when the CRDs are
+# absent). The operator never creates, updates, or watches these kinds again.
+- apiGroups: ["extensions.agents.x-k8s.io"]
+  resources: ["sandboxtemplates", "sandboxwarmpools"]
+  verbs: ["get", "delete"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
   - artifacts

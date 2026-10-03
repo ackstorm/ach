@@ -5,7 +5,11 @@ metadata:
   namespace: engineering
 spec:
   achagent:
-    image: ghcr.io/ackstorm/ach-agent:latest
+    # Unpublished (D3 — no real control image exists yet). Replace with the real
+    # published version-tagged control image (the "ach_runtime control" image, built
+    # from the ach-agent/ach-runtime repo — NOT the old standalone ach-agent binary)
+    # before applying this profile to a real cluster.
+    image: REPLACE_WITH_PUBLISHED_CONTROL_IMAGE
     # ach.baseUrl is optional: omitted here so agents inherit the operator's own
     # ACH_BASE_URL. Set it to pin an explicit (e.g. external) ACH; an ACHAgent can
     # further override per-agent via its own spec.ach.baseUrl.
@@ -16,32 +20,85 @@ spec:
       # minimal|low|medium|high|xhigh, requires enabled: true):
       #   thinking: { enabled: true, effort: high }
     engine:
-      forwardEnv: [HTTPS_PROXY, SSL_CERT_FILE]
-      idleTtlSeconds: 30
-      # Pi engine (requires an ach-agent image >= v0.9.0 that ships the `pi` binary):
-      #   type: pi
-      #   pi: { binaryPath: pi }   # executable knobs only; thinking lives under model
+      # Only literal-valued names present in spec.env may be forwarded (contract §5),
+      # never a secretKeyRef. Reserved: HOME, the pinned OPENCODE_BIN/
+      # OPENCODE_DISABLE_MODELS_FETCH/OPENCODE_DISABLE_PROJECT_CONFIG/
+      # OPENCODE_MODELS_URL/OPENCODE_SERVER_PASSWORD names, and the ACH_/XDG_/
+      # OPENCODE_CONFIG* prefixes — a cloud-credential, TLS or proxy var (like
+      # HTTPS_PROXY/SSL_CERT_FILE below) is explicitly ALLOWED, an operator's own
+      # choice, not something the renderer blocks. The literal itself is declared
+      # below, in spec.env.
+      forwardEnv: [OPENCODE_ENABLE_EXA]
+      # compaction block is required (workspace-v1, no harness default published).
+      compaction:
+        auto: true
+        keep:
+          tokens: 8000
+        buffer: 20000
+    # Every field below is required on the resolved (profile+agent-merged) value — the
+    # wire schema has no default for any of them — so a profile this shared is the one
+    # place a fleet is guaranteed to inherit a complete block unless an agent overrides it.
     limits:
-      maxConcurrentInvocations: 8
-      maxInvocationSeconds: 1800
-      maxSteps: 50
+      maxActiveWorkspaces: 4
+      maxConcurrentInvocations: 4
+      maxConcurrentScripts: 2
+      maxInvocationSeconds: 900
+      maxQueuedTotal: 100
+      idempotencyWindowSeconds: 3600
+      maxSteps: 30
+    # health is accepted and stored but not currently consumed by the operator or
+    # renderer (no standalone/distributed placement knob left to drive) —
+    # compatibility-only; omit it unless something downstream still reads it.
     health:
       host: 0.0.0.0
       port: 8000
-    # Pod topology (agent-overridable via ACHAgent.spec.placement): standalone (default, one
-    # `agent` container) or sandboxed (see profile-sandboxed.yaml).
-    # placement: standalone
-    # Where the per-invocation cost figure comes from (requires an ach-agent image
-    # >= v0.10.0; one of engine|litellm_usage|litellm_headers|none — the harness
-    # validates and hard-fails on an unknown value). Omit for today's behavior
-    # (engine, the opencode estimate). litellm_usage prices real LiteLLM rates via
-    # GET /v2/model/info; litellm_headers is non-streaming only. Setting or changing
-    # it rolls the agent Deployment (config-hash change).
-    # cost: { source: litellm_usage }
+    # workspace/artifacts blocks must be present and complete (workspace-v1, no harness
+    # default). persistence/session.persistence/artifacts default to false here so this
+    # profile needs no global Storage backend out of the box (D1). To enable durable
+    # history/artifacts for an agent, override per-agent — e.g. on the ACHAgent:
+    #   workspace:
+    #     persistence: { enabled: true }
+    #     session:
+    #       persistence: { enabled: true }   # workspace.session.persistence, nested
+    #   artifacts: { enabled: true }
+    # This REQUIRES the operator's global Storage backend to be configured
+    # (runtime.storage.s3.bucket, Helm values) — otherwise the agent fails closed with
+    # StorageUnavailable rather than silently running volatile (D1).
+    workspace:
+      idleTimeoutSeconds: 600
+      shutdownTimeoutSeconds: 300
+      maxConcurrentSessions: 1
+      persistence:
+        enabled: false
+        retentionDays: 90
+      session:
+        idleTimeoutSeconds: 300
+        persistence:
+          enabled: false
+          retentionDays: 90
+    artifacts:
+      enabled: false
+      maxArtifactBytes: 104857600
+      retentionDays: 90
+  # Execution is the contract §11 execution-role infrastructure (image/resources/scheduling
+  # for the per-Workspace execution pod the harness creates directly — a real, consumed
+  # creator path in v0.1.0; only the declarative Workspace CR for MANAGING workspaces by
+  # hand is deferred to v0.1.1).
+  execution:
+    # Unpublished (D3 — no real execution image exists yet); see achagent.image above.
+    image: REPLACE_WITH_PUBLISHED_EXECUTION_IMAGE
+    ephemeralStorage: 2Gi
+    # workspace.shutdownTimeoutSeconds (300, above) budgets the Harness's own shutdown
+    # sequence; grace adds a cancellation margin on top so Kubernetes does not SIGKILL
+    # the execution pod mid-shutdown.
+    terminationGracePeriodSeconds: 330
   # Pod environment inherited by every agent using this profile. Merely declaring a
   # variable does not expose it to the engine or prepare scripts; their forwardEnv
-  # lists opt in independently.
+  # lists opt in independently. OPENCODE_ENABLE_EXA is declared here because
+  # achagent.engine.forwardEnv (above) selects it as a shared default.
   env:
+    - name: OPENCODE_ENABLE_EXA
+      value: "true"
     - name: HTTPS_PROXY
       value: http://proxy.example.com:8080
     - name: SSL_CERT_FILE
@@ -58,13 +115,19 @@ spec:
   # Rules are declared, not derived: NetworkPolicy has no FQDN peer type, so the operator
   # cannot turn ach.baseUrl into a peer for you. Point these at your ACH forwarder/gateway.
   # `networkPolicy: {}` (no egress:) is the strictest setting — DNS only. On an enforcing CNI
-  # that also blocks ACH_BASE_URL (model/MCP calls fail) while the pod stays Ready — kubelet
-  # probes ignore egress. Recoverable instantly though: drop the block, no pod restart.
+  # that also blocks ACH_BASE_URL and any configured facade peer (hydration and every
+  # control-pod-routed model/MCP call fail) while the pod stays Ready — kubelet probes ignore
+  # egress. opencode's own direct model/MCP/A2A traffic in the execution pod is unaffected
+  # (outside this policy's reach). Recoverable instantly though: drop the block, no pod restart.
   #
   # Also declare peers for anything the harness dials directly (not via the ACH forwarder
-  # above): redis (queue channel / stats sink) and the memory backend
-  # (memory.achMemory.endpoint). Miss one and it degrades silently — memory/stats are
-  # fail-open. A2A peers need no rule: they are dialled through ACH_BASE_URL. Note this
+  # above): redis (queue channel / stats sink), the memory backend
+  # (memory.achMemory.endpoint), and any approved model/MCP facade the Harness executes
+  # upstream requests for itself, with its own private credentials — declare its actual
+  # configured peer, not an assumed one. Miss the redis or memory peer and it degrades
+  # silently — both are fail-open. A2A peers need no rule: they are dialled through
+  # ACH_BASE_URL. opencode's own direct model/MCP/A2A traffic (not routed through an approved
+  # facade) runs in the execution pod, outside this policy's reach either way. Note this
   # block is per-profile while memory/channels are per-agent, so a shared profile needs
   # the union of every agent's peers.
   #
@@ -91,16 +154,21 @@ spec:
       #     - protocol: TCP
       #       port: 443
   # Optional raw overlay strategic-merged over the operator-rendered pod template.
-  # Pass-through: anything a PodTemplateSpec accepts; containers merge by name ("agent"). The overlay WINS on
-  # conflict: the operator already sets runAsUser/runAsGroup/fsGroup 10001 (the image
-  # uid — a fresh root-owned cloud PVC is unwritable without fsGroup), so do not override
-  # them; add policy-only knobs like fsGroupChangePolicy.
+  # Pass-through: anything a PodTemplateSpec accepts; the control StatefulSet has one
+  # container, named "agent" (no standalone/distributed role split any more — one
+  # Channels+Harness control pod per ACHAgent). The overlay WINS on conflict: the
+  # operator already sets runAsUser/runAsGroup/fsGroup 10001 (the image uid — a fresh
+  # root-owned cloud PVC is unwritable without fsGroup), so do not override them; add
+  # policy-only knobs like fsGroupChangePolicy.
   podTemplate:
     spec:
       securityContext:
         fsGroupChangePolicy: OnRootMismatch
-      # Sandboxed runtime: the agent container runs opencode, which has a shell tool.
-      # runtimeClassName puts the whole pod behind a gVisor/Kata boundary instead of a
-      # shared host kernel. Needs the RuntimeClass to exist in the cluster; an unknown
-      # name means the pod will not run — surfaces as WorkloadReady=False on the ACHAgent.
+      # Sandboxed control pod: the agent container is Channels+Harness (holds
+      # ACH_SECRET_IDENTITY and channel secrets), NOT opencode — opencode runs in the
+      # separate per-Workspace execution pod (spec.execution), which has no
+      # podTemplate-equivalent overlay today. runtimeClassName puts this control pod
+      # behind a gVisor/Kata boundary instead of a shared host kernel. Needs the
+      # RuntimeClass to exist in the cluster; an unknown name means the pod will not
+      # run — surfaces as WorkloadReady=False on the ACHAgent.
       # runtimeClassName: gvisor

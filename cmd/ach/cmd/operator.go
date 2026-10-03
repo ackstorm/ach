@@ -40,6 +40,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/config"
@@ -555,6 +556,17 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		DB:                dbPool,
 		PublicBaseURL:     config.EnvOr("ACH_PUBLIC_BASE_URL", config.EnvOr("ACH_BASE_URL", "")),
 		DefaultAchBaseURL: config.EnvOr("ACH_BASE_URL", ""),
+		// RuntimeStorageOptions (root D1): real backend configuration, not an operator
+		// health signal. Bucket has no safe default (install-specific) — empty means the
+		// backend is unconfigured, and ValidateRuntimeStorage fails closed only for an
+		// ACHAgent whose resolved config actually requires persistence/artifacts.
+		RuntimeStorageOptions: agentrender.RuntimeStorageOptions{
+			Bucket:                config.EnvOr("ACH_STORAGE_S3_BUCKET", ""),
+			Region:                config.EnvOr("ACH_STORAGE_S3_REGION", ""),
+			EndpointURL:           config.EnvOr("ACH_STORAGE_S3_ENDPOINT_URL", ""),
+			Prefix:                config.EnvOr("ACH_STORAGE_S3_PREFIX", "ach"),
+			CredentialsSecretName: config.EnvOr("ACH_STORAGE_S3_CREDENTIALS_SECRET", ""),
+		},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller ACHAgent: %w", err)
 	}
