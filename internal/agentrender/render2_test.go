@@ -29,7 +29,7 @@ func fixtureExecutionSpec() *achv1alpha1.ExecutionInfraSpec {
 }
 
 func TestWorkspaceV1_InfrastructureMatchesFixture(t *testing.T) {
-	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", fixtureExecutionSpec())
+	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, fixtureExecutionSpec())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestWorkspaceV1_InfrastructureMatchesFixture(t *testing.T) {
 }
 
 func TestWorkspaceV1_Infrastructure_FailsClosedWithoutExecutionSpec(t *testing.T) {
-	_, err := RenderInfrastructureV1(fixtureAgentUID, "ach", nil)
+	_, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, nil)
 	if err == nil {
 		t.Fatal("expected failure: spec.execution is required")
 	}
@@ -46,7 +46,7 @@ func TestWorkspaceV1_Infrastructure_FailsClosedWithoutExecutionSpec(t *testing.T
 func TestWorkspaceV1_Infrastructure_GraceFallsBackWhenUnset(t *testing.T) {
 	exec := fixtureExecutionSpec()
 	exec.TerminationGracePeriodSeconds = nil
-	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", exec)
+	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, exec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,5 +213,38 @@ func TestRender2_RequiresEffectiveModelType(t *testing.T) {
 	_, err := Render2(profile, agent, "")
 	if err == nil || !strings.Contains(err.Error(), "no effective model.type") {
 		t.Fatalf("err = %v, want containing %q", err, "no effective model.type")
+	}
+}
+
+// TestRender2_ControlServiceAccountName: unset keeps the per-agent ach-harness-<uid> (and so the
+// rendered config + configVersion are exactly what they were before the field existed); set
+// renders the profile's stable ServiceAccount.
+func TestRender2_ControlServiceAccountName(t *testing.T) {
+	profile, agent := minimalRender2Fixture()
+	unset, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	if got, want := unset.Infrastructure.Control.ServiceAccount, "ach-harness-"+fixtureAgentUID; got != want {
+		t.Fatalf("unset control SA = %q, want %q", got, want)
+	}
+	direct, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, &profile.Spec.Execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direct.Control != unset.Infrastructure.Control {
+		t.Fatalf("unset infra differs from legacy name: %+v vs %+v", direct.Control, unset.Infrastructure.Control)
+	}
+
+	profile.Spec.ControlServiceAccountName = "ach-sandboxed-agent"
+	set, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	if got := set.Infrastructure.Control.ServiceAccount; got != "ach-sandboxed-agent" {
+		t.Fatalf("set control SA = %q, want ach-sandboxed-agent", got)
+	}
+	if set.ConfigVersion == unset.ConfigVersion {
+		t.Fatal("configVersion must change when the control SA changes")
 	}
 }

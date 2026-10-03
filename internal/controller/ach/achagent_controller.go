@@ -260,8 +260,11 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.apply(ctx, &agent, buildConfigMap(&agent, configJSON)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "ConfigMap", err)
 	}
-	if err := r.apply(ctx, &agent, buildControlServiceAccount(&agent)); err != nil {
-		return r.applyFail(ctx, &agent, conds, "ServiceAccount", err)
+	// A profile-named control SA is pre-existing and external: never created/owned here.
+	if profile.Spec.ControlServiceAccountName == "" {
+		if err := r.apply(ctx, &agent, buildControlServiceAccount(&agent)); err != nil {
+			return r.applyFail(ctx, &agent, conds, "ServiceAccount", err)
+		}
 	}
 	if err := r.apply(ctx, &agent, buildExecutionServiceAccount(&agent)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "ServiceAccount", err)
@@ -282,7 +285,7 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.apply(ctx, &agent, buildWorkspaceRole(&agent)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Role", err)
 	}
-	if err := r.apply(ctx, &agent, buildWorkspaceRoleBinding(&agent)); err != nil {
+	if err := r.apply(ctx, &agent, buildWorkspaceRoleBinding(&agent, effectiveControlServiceAccountName(&agent, &profile))); err != nil {
 		return r.applyFail(ctx, &agent, conds, "RoleBinding", err)
 	}
 	if err := r.apply(ctx, &agent, sts); err != nil {

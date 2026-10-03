@@ -360,6 +360,17 @@ spec:
                         type: integer
                     type: object
                 type: object
+              controlServiceAccountName:
+                description: |-
+                  ControlServiceAccountName, when set, is an existing ServiceAccount that the control
+                  (Harness) pods of every ACHAgent using this profile run as, instead of the per-agent
+                  ach-harness-<uid>. The operator does not create, own or delete it: it must already
+                  exist in the agent's namespace (e.g. one bound to a cloud identity such as EKS Pod
+                  Identity, which has no wildcards). Each agent still gets its own Role/RoleBinding,
+                  bound to this ServiceAccount. Empty keeps the per-agent ach-harness-<uid>.
+                maxLength: 63
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
               env:
                 description: |-
                   Env are pod-level environment variables inherited by ACHAgents using this profile.

@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -1108,5 +1109,50 @@ func TestACHAgent_CEL_AchIdentityRequired(t *testing.T) {
 	}
 	if err := k8sClient.Create(ctx, bad); err == nil {
 		t.Fatal("expected rejection: spec.ach.identity is required")
+	}
+}
+
+// A profile-named control ServiceAccount is used verbatim: the operator never creates
+// ach-harness-<uid>, the per-agent RoleBinding binds the shared SA, and a non-DNS-1123 name
+// is rejected at admission.
+func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-csa", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-csa", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{ControlServiceAccountName: "ach-sandboxed-agent", Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}}
+	mustApply(t, ctx, prof)
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-csa", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-csa"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-csa", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-csa", condWorkloadApplied, metav1.ConditionTrue)
+	var agent achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-csa"}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	if got := getControlStatefulSet(t, ctx, "aa-csa").Spec.Template.Spec.ServiceAccountName; got != "ach-sandboxed-agent" {
+		t.Errorf("control StatefulSet SA = %q, want ach-sandboxed-agent", got)
+	}
+	perAgent := controlServiceAccountName(string(agent.UID))
+	var sa corev1.ServiceAccount
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: perAgent}, &sa); err == nil {
+		t.Errorf("per-agent SA %s must not be created when the profile sets controlServiceAccountName", perAgent)
+	}
+	var rb rbacv1.RoleBinding
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: perAgent}, &rb); err != nil {
+		t.Fatalf("get per-agent RoleBinding: %v", err)
+	}
+	if len(rb.Subjects) != 1 || rb.Subjects[0].Name != "ach-sandboxed-agent" || rb.RoleRef.Name != perAgent {
+		t.Errorf("RoleBinding = subjects %+v roleRef %+v", rb.Subjects, rb.RoleRef)
+	}
+
+	bad := prof.DeepCopy()
+	bad.ObjectMeta = metav1.ObjectMeta{Name: "aa-prof-csa-bad", Namespace: WatchNamespace}
+	bad.Spec.ControlServiceAccountName = "Not_A_Label"
+	if err := k8sClient.Create(ctx, bad); err == nil {
+		t.Fatal("expected rejection: controlServiceAccountName is not a DNS-1123 label")
 	}
 }

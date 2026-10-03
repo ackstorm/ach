@@ -60,6 +60,12 @@ func controlServiceAccountName(uid string) string   { return "ach-harness-" + ui
 func executionServiceAccountName(uid string) string { return "ach-execution-" + uid }
 func controlServiceName(uid string) string          { return "ach-control-" + uid }
 
+// effectiveControlServiceAccountName is what the control pod runs as: the profile's stable
+// controlServiceAccountName when set, else controlServiceAccountName(uid).
+func effectiveControlServiceAccountName(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) string {
+	return agentrender.ControlServiceAccountName(string(a.UID), p)
+}
+
 var (
 	defaultCPURequest    = resource.MustParse("100m")
 	defaultMemoryRequest = resource.MustParse("128Mi")
@@ -193,20 +199,23 @@ func buildWorkspaceRole(a *achv1alpha1.ACHAgent) *rbacv1.Role {
 }
 
 // buildWorkspaceRoleBinding binds buildWorkspaceRole to the control (Harness) ServiceAccount
-// only, same name/namespace. The execution ServiceAccount is never bound to this or any
+// only: controlSA is the effective control SA (the profile's stable one, or the per-agent
+// ach-harness-<uid>); the Role/RoleBinding names stay per-agent. The execution ServiceAccount is never bound to this or any
 // other Role (contract §11: execution stays unbound).
-func buildWorkspaceRoleBinding(a *achv1alpha1.ACHAgent) *rbacv1.RoleBinding {
+func buildWorkspaceRoleBinding(a *achv1alpha1.ACHAgent, controlSA string) *rbacv1.RoleBinding {
 	name := controlServiceAccountName(string(a.UID))
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
-		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: name, Namespace: a.Namespace}},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: controlSA, Namespace: a.Namespace}},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: name},
 	}
 }
 
 // buildControlServiceAccount is the control (harness) pod's identity, named per contract
 // §11 (ach-harness-<uid>) — RenderInfrastructureV1 embeds this exact name in
-// infrastructure.control.serviceAccount.
+// infrastructure.control.serviceAccount. Not applied when the profile sets
+// controlServiceAccountName (that SA is external; ach-harness-<uid> SAs orphaned by a
+// profile switch are not deleted by the operator).
 func buildControlServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount {
 	trueVal := true
 	return &corev1.ServiceAccount{
@@ -465,7 +474,7 @@ func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, conf
 					Annotations: map[string]string{configHashAnnotation: configHash},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:            controlServiceAccountName(string(a.UID)),
+					ServiceAccountName:            effectiveControlServiceAccountName(a, p),
 					AutomountServiceAccountToken:  &trueVal,
 					TerminationGracePeriodSeconds: &grace,
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
@@ -541,7 +550,7 @@ func applyPodTemplateOverlay(base corev1.PodTemplateSpec, overlay []byte, a *ach
 	merged.Spec.Containers[0].Command = controlCommand
 	merged.Spec.Containers[0].VolumeMounts = replaceReservedMounts(merged.Spec.Containers[0].VolumeMounts, buildReservedInfraMounts())
 
-	merged.Spec.ServiceAccountName = controlServiceAccountName(string(a.UID))
+	merged.Spec.ServiceAccountName = base.Spec.ServiceAccountName // already the effective control SA
 	automount := true
 	merged.Spec.AutomountServiceAccountToken = &automount
 

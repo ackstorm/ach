@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -33,7 +34,7 @@ func TestWorkspaceCreatorRBAC(t *testing.T) {
 
 	assertWorkspaceRoleRules(t, role)
 
-	rb := buildWorkspaceRoleBinding(a)
+	rb := buildWorkspaceRoleBinding(a, controlServiceAccountName(string(a.UID)))
 	if rb.Name != wantName || rb.Namespace != a.Namespace {
 		t.Fatalf("RoleBinding = %s/%s, want %s/%s", rb.Namespace, rb.Name, a.Namespace, wantName)
 	}
@@ -136,7 +137,7 @@ func TestACHAgent_VolatileWithoutBrokerOrCA(t *testing.T) {
 	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
 	p.Spec.Execution = achv1alpha1.ExecutionInfraSpec{Image: "registry.test/exec:0.1.0", EphemeralStorage: "1Gi"}
 
-	infra, err := agentrender.RenderInfrastructureV1(string(a.UID), a.Namespace, &p.Spec.Execution)
+	infra, err := agentrender.RenderInfrastructureV1(string(a.UID), a.Namespace, controlServiceAccountName(string(a.UID)), &p.Spec.Execution)
 	if err != nil {
 		t.Fatalf("RenderInfrastructureV1 (no broker/CA argument any more): %v", err)
 	}
@@ -148,7 +149,7 @@ func TestACHAgent_VolatileWithoutBrokerOrCA(t *testing.T) {
 	executionSA := buildExecutionServiceAccount(a)
 	svc := buildControlService(a)
 	role := buildWorkspaceRole(a)
-	rb := buildWorkspaceRoleBinding(a)
+	rb := buildWorkspaceRoleBinding(a, controlServiceAccountName(string(a.UID)))
 	bootCM, err := buildExecutionBootstrapConfigMap(a, infra)
 	if err != nil {
 		t.Fatalf("buildExecutionBootstrapConfigMap: %v", err)
@@ -301,3 +302,51 @@ func assertControlContainer(t *testing.T, c corev1.Container, image string) {
 }
 
 func resourceMustParse(s string) resource.Quantity { return resource.MustParse(s) }
+
+// TestControlServiceAccount_ProfileOverride: a profile-named stable ServiceAccount becomes the
+// control pod identity and the RoleBinding subject, while Role/RoleBinding keep their
+// per-agent names; unset keeps ach-harness-<uid>.
+func TestControlServiceAccount_ProfileOverride(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
+	a.Spec.Ach = achIdentity("", "prod")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img:test"
+	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
+	perAgent := "ach-harness-" + string(a.UID)
+
+	if got := effectiveControlServiceAccountName(a, p); got != perAgent {
+		t.Fatalf("unset: effective SA = %q, want %q", got, perAgent)
+	}
+	p.Spec.ControlServiceAccountName = "ach-sandboxed-agent"
+	sa := effectiveControlServiceAccountName(a, p)
+	if sa != "ach-sandboxed-agent" {
+		t.Fatalf("set: effective SA = %q", sa)
+	}
+
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatalf("buildStatefulSet: %v", err)
+	}
+	if got := sts.Spec.Template.Spec.ServiceAccountName; got != sa {
+		t.Errorf("StatefulSet SA = %q, want %q", got, sa)
+	}
+
+	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{"spec":{"serviceAccountName":"evil"}}`)}
+	sts, err = buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatalf("buildStatefulSet overlay: %v", err)
+	}
+	if got := sts.Spec.Template.Spec.ServiceAccountName; got != sa {
+		t.Errorf("overlay must not override SA: got %q, want %q", got, sa)
+	}
+
+	rb := buildWorkspaceRoleBinding(a, sa)
+	if rb.Name != perAgent || rb.RoleRef.Name != perAgent {
+		t.Errorf("RoleBinding/Role names must stay per-agent: %s / %s", rb.Name, rb.RoleRef.Name)
+	}
+	if len(rb.Subjects) != 1 || rb.Subjects[0].Name != sa || rb.Subjects[0].Namespace != a.Namespace {
+		t.Errorf("RoleBinding subject = %+v, want SA %s/%s", rb.Subjects, a.Namespace, sa)
+	}
+}

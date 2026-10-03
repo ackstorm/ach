@@ -328,6 +328,16 @@ type AgentProfileSpec struct {
 	Achagent AgentDefaults `json:"achagent"`
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	// ControlServiceAccountName, when set, is an existing ServiceAccount that the control
+	// (Harness) pods of every ACHAgent using this profile run as, instead of the per-agent
+	// ach-harness-<uid>. The operator does not create, own or delete it: it must already
+	// exist in the agent's namespace (e.g. one bound to a cloud identity such as EKS Pod
+	// Identity, which has no wildcards). Each agent still gets its own Role/RoleBinding,
+	// bound to this ServiceAccount. Empty keeps the per-agent ach-harness-<uid>.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	ControlServiceAccountName string `json:"controlServiceAccountName,omitempty"`
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Env are pod-level environment variables inherited by ACHAgents using this profile.
