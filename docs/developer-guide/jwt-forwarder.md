@@ -336,7 +336,7 @@ consulted in order; the first one present decides):
 | `mode` | The value is | The forwarder |
 |---|---|---|
 | `resolve` | an ACH credential (`pk_`/`ek_`) | resolves it against ACH, removes the header, sends the caller's own LiteLLM key as `x-litellm-api-key`; unknown/revoked → `401 expired_or_revoked` |
-| `passthrough` | the backend's own key (a LiteLLM `sk-…` under a customer-facing name such as `x-genai-api-key`) | leaves the header as it came **and** mirrors it to `x-litellm-api-key`; no ACH identity (`middleware.RawLiteLLMKeyFromCtx`), no precheck, no per-target JWT |
+| `passthrough` | the backend's own key (a LiteLLM `sk-…` under a customer-facing name such as `x-genai-api-key`) | leaves the header as it came **and** mirrors it to `x-litellm-api-key`; no ACH identity (`middleware.RawLiteLLMKeyFromCtx`), no precheck, no per-target JWT. A `pk-`/`ek-` value here is resolved as if the slot were `resolve` (header removed) — an ACH key never reaches the upstream |
 
 Every other header passes as it came — including `Authorization` when a
 declared slot carried the credential (Claude Code on an Anthropic
@@ -345,15 +345,18 @@ Code's `apiKeyHelper` sends the same value in `x-api-key` and
 `Authorization` — the first resolves, the second is ignored upstream).
 
 With **no declared slot present**, `Authorization: Bearer` is resolved only
-when it is ACH's own OAuth access token — JWS-shaped, verified against the
-signing key (the only way an MCP client can present one). A JWS that does
+when it is ours: ACH's own OAuth access token — JWS-shaped, verified against
+the signing key (the only way an MCP client can present one) — or a
+`pk-`/`ek-` key (an OpenAI SDK puts its key there). A JWS that does
 not verify (expired, foreign issuer) is `401` + challenge, so the client
 re-authenticates with ACH. Anything else in `Authorization` — a raw `sk-`,
 Basic, LiteLLM's UI bearer on `/v1/agents` or `/health/license` — is not ours
 to judge: it is forwarded untouched with **no ACH identity** (no precheck, no
-BIP JWT, no env tag) and LiteLLM authenticates it. A `pk_` put there by
-mistake is LiteLLM's 401, not ACH's. `authorization` cannot be listed as a
-slot.
+BIP JWT, no env tag) and LiteLLM authenticates it. A `pk-`/`ek-` is never
+"anything else": forwarding one could not authenticate (LiteLLM takes only
+`sk-`) and would only hand an ACH secret to the upstream, so it is resolved
+and removed; unknown or malformed is ACH's 401. `authorization` cannot be
+listed as a slot.
 platform-api shares the middleware with its own `platformApi.headers`
 (resolve only). On `/mcp` + `/a2a` the per-target ACH JWT overwrites
 `Authorization` when a BIP mints one.

@@ -594,8 +594,9 @@ func TestAuthn_PassthroughHeaderKeptNoIdentity(t *testing.T) {
 	}
 }
 
-// Authorization: our JWS is resolved (and removed); anything else is not
-// ours and passes untouched; a JWS that does not verify is 401.
+// Authorization: our JWS or a pk-/ek- key is resolved (and removed);
+// anything else is not ours and passes untouched; a JWS that does not
+// verify is 401.
 func TestAuthn_AuthorizationResolvesOnlyOurOAuthToken(t *testing.T) {
 	res := &slotResolver{info: pkInfo()} // stands in for the OAuth resolver: any JWS "verifies"
 	var seen http.Header
@@ -607,7 +608,7 @@ func TestAuthn_AuthorizationResolvesOnlyOurOAuthToken(t *testing.T) {
 	}
 	// Not ours (LiteLLM UI's own bearer, a raw key, Basic): no lookup, no
 	// identity, forwarded untouched — the upstream authenticates it.
-	for _, v := range []string{"Bearer pk-x", "Bearer sk-raw-123", "Basic dXNlcjpwYXNz"} {
+	for _, v := range []string{"Bearer sk-raw-123", "Basic dXNlcjpwYXNz"} {
 		res.last = ""
 		var hasKC bool
 		req := httptest.NewRequest("GET", "/v1/models", nil)
@@ -625,6 +626,36 @@ func TestAuthn_AuthorizationResolvesOnlyOurOAuthToken(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer aaa.bbb.ccc")
 	if rec := serveAuthn(unknown, opts(achKey), req, nil); rec.Code != 401 {
 		t.Fatalf("foreign JWS: %d", rec.Code)
+	}
+}
+
+// An ACH key never leaves ACH, whatever slot carries it: Authorization:
+// Bearer and a passthrough slot resolve a pk-/ek- like x-ach-key does, and
+// remove the header. A malformed one is a 401, not forwarded.
+func TestAuthn_ACHKeyResolvedInAnySlot(t *testing.T) {
+	cases := map[string]string{
+		"Authorization":   "Bearer ek-x",
+		"x-genai-api-key": "ek-x",
+	}
+	for h, v := range cases {
+		res := &slotResolver{info: pkInfo()}
+		var seen http.Header
+		var raw string
+		req := httptest.NewRequest("GET", "/v1/models", nil)
+		req.Header.Set(h, v)
+		rec := serveAuthn(res, opts(achKey, genaiKey), req, func(_ http.ResponseWriter, r *http.Request) {
+			seen = r.Header.Clone()
+			raw, _ = RawLiteLLMKeyFromCtx(r.Context())
+		})
+		if rec.Code != 200 || res.last != "ek-x" || seen.Get(h) != "" || raw != "" {
+			t.Fatalf("%s=%q: %d resolved=%q after=%q raw=%q, want resolved and removed", h, v, rec.Code, res.last, seen.Get(h), raw)
+		}
+		unknown := &slotResolver{}
+		req = httptest.NewRequest("GET", "/v1/models", nil)
+		req.Header.Set(h, v)
+		if rec := serveAuthn(unknown, opts(achKey, genaiKey), req, nil); rec.Code != 401 {
+			t.Fatalf("%s=%q unknown: %d, want 401", h, v, rec.Code)
+		}
 	}
 }
 

@@ -24,8 +24,9 @@ import (
 // rules ACH mirrors): x-ach-key is ACH's own header (Hub §3); x-api-key is
 // where the Anthropic SDK puts a key (Claude Code with ANTHROPIC_API_KEY or
 // an apiKeyHelper); Authorization is consulted LAST and only consumed when
-// it carries a LiteLLM key or our JWT — otherwise it is the upstream
-// provider's credential and passes through untouched. Authn reads the slot
+// it carries our JWT or a pk-/ek- key — otherwise it is the upstream
+// provider's credential and passes through untouched. A pk-/ek- key is
+// resolved in ANY slot, passthrough included: it never leaves ACH. Authn reads the slot
 // once, resolves it, and DISCARDS it from r.Header before the inner handler
 // runs (D-19 / T-03-05-02).
 const (
@@ -102,14 +103,22 @@ type AuthnOptions struct {
 
 // credential returns the first declared header present (value, header,
 // mode). With none present, Authorization: Bearer is a resolve candidate
-// ONLY when it is JWS-shaped — ACH's own OAuth token; the resolver's
-// signature check decides. Anything else in Authorization is not ours to
-// judge: no candidate, and foreign=true — the request goes through with
-// no ACH identity and the header untouched (LiteLLM's UI bearer, a raw
-// key a client put there); the upstream authenticates it.
+// ONLY when it is ours — JWS-shaped (ACH's OAuth token; the resolver's
+// signature check decides) or a pk-/ek- key. Anything else in Authorization
+// is not ours to judge: no candidate, and foreign=true — the request goes
+// through with no ACH identity and the header untouched (LiteLLM's UI
+// bearer, a raw sk- key); the upstream authenticates it.
+//
+// A pk-/ek- value is resolved whatever slot carries it, passthrough
+// included: LiteLLM accepts only sk- keys, so forwarding one could never
+// authenticate — it would only hand an ACH secret to the upstream. Resolving
+// removes the header (D-19), so it never leaves ACH.
 func credential(r *http.Request, headers []CredentialHeader) (value, from, mode string, foreign bool) {
 	for _, h := range headers {
 		if v := strings.TrimSpace(r.Header.Get(h.Name)); v != "" {
+			if k := strings.TrimSpace(strings.TrimPrefix(v, "Bearer ")); isACHKey(k) {
+				return k, h.Name, ModeResolve, false
+			}
 			return v, h.Name, h.Mode, false
 		}
 	}
@@ -118,10 +127,17 @@ func credential(r *http.Request, headers []CredentialHeader) (value, from, mode 
 		return "", "", "", false
 	}
 	tok := strings.TrimSpace(strings.TrimPrefix(raw, "Bearer "))
-	if strings.HasPrefix(raw, "Bearer ") && keys.LooksLikeJWS(tok) {
+	if strings.HasPrefix(raw, "Bearer ") && (keys.LooksLikeJWS(tok) || isACHKey(tok)) {
 		return tok, authzHeader, ModeResolve, false
 	}
 	return "", "", "", true
+}
+
+// isACHKey matches on the prefix alone, not keys.ClassifyBearer's full
+// shape: a truncated or mistyped ek- must not leak either — it resolves to
+// nothing and is a 401.
+func isACHKey(v string) bool {
+	return strings.HasPrefix(v, keys.PkBearerPrefix) || strings.HasPrefix(v, keys.EkBearerPrefix)
 }
 
 // requestIDPrefix is the namespace for server-generated request IDs.

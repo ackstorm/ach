@@ -121,7 +121,7 @@ platformApi:
   # headers: the credential slots platform-api reads, in order (same shape as
   # forwarder.headers). resolve only — platform-api does not proxy, so a
   # passthrough entry is refused at start-up. Authorization: Bearer is
-  # accepted only as ACH's own OAuth token.
+  # accepted only as ACH's own OAuth token or a pk-/ek- key.
   headers:
     - name: x-ach-key
       mode: resolve
@@ -207,8 +207,10 @@ forwarder:
   # (pk_/ek_) resolved against ACH and forwarded as the caller's own LiteLLM
   # key (x-litellm-api-key), header removed; mode: passthrough → the backend's
   # own key, forwarded as it came and also mirrored to x-litellm-api-key, no
-  # ACH identity. `authorization` cannot be listed: it is only ever ACH's own
-  # OAuth bearer (MCP clients), handled by protocol; anything else there is 401.
+  # ACH identity. A pk-/ek- value is resolved in ANY slot (passthrough and
+  # Authorization included) and removed: an ACH key never reaches LiteLLM.
+  # `authorization` cannot be listed: it is resolved only for ACH's own OAuth
+  # token or a pk-/ek- key; anything else there passes untouched.
   headers:
     - name: x-ach-key       # ach-cli, hydrate, ach-agent
       mode: resolve
