@@ -230,6 +230,7 @@ func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 	if strings.Contains(bootstrap.Data[bootstrapFileName], string(keySecret.Data[workspaceKeyDataKey])) || strings.Contains(bootstrap.Data[bootstrapFileName], "ACH_SANDBOX_KEY") {
 		t.Fatal("private workspace key or its env name leaked into execution bootstrap ConfigMap")
 	}
+	assertExecutionSAUnbound(t, ctx, &agent)
 	keySecret.Data[workspaceKeyDataKey] = []byte("operator-supplied-key-rotation")
 	if err := k8sClient.Update(ctx, &keySecret); err != nil {
 		t.Fatalf("update workspace key Secret: %v", err)
@@ -1155,5 +1156,46 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	bad.Spec.ControlServiceAccountName = "Not_A_Label"
 	if err := k8sClient.Create(ctx, bad); err == nil {
 		t.Fatal("expected rejection: controlServiceAccountName is not a DNS-1123 label")
+	}
+}
+
+// assertExecutionSAUnbound: ach-execution-<uid> is a name only (the runtime renders the
+// workspace pod with automountServiceAccountToken=false) — no RoleBinding or
+// ClusterRoleBinding anywhere may reference it.
+func assertExecutionSAUnbound(t *testing.T, ctx context.Context, agent *achv1alpha1.ACHAgent) {
+	t.Helper()
+	execSA := agentrender.ExecutionServiceAccountName(string(agent.UID))
+	var sa corev1.ServiceAccount
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: execSA}, &sa); err != nil {
+		t.Fatalf("get execution ServiceAccount: %v", err)
+	}
+	if sa.AutomountServiceAccountToken == nil || *sa.AutomountServiceAccountToken {
+		t.Errorf("execution ServiceAccount automount = %v, want false", sa.AutomountServiceAccountToken)
+	}
+	isExec := func(subjects []rbacv1.Subject) bool {
+		for _, s := range subjects {
+			if s.Kind == rbacv1.ServiceAccountKind && s.Name == execSA {
+				return true
+			}
+		}
+		return false
+	}
+	var rbs rbacv1.RoleBindingList
+	if err := k8sClient.List(ctx, &rbs); err != nil {
+		t.Fatalf("list RoleBindings: %v", err)
+	}
+	for _, rb := range rbs.Items {
+		if isExec(rb.Subjects) {
+			t.Errorf("RoleBinding %s/%s binds the execution ServiceAccount %s", rb.Namespace, rb.Name, execSA)
+		}
+	}
+	var crbs rbacv1.ClusterRoleBindingList
+	if err := k8sClient.List(ctx, &crbs); err != nil {
+		t.Fatalf("list ClusterRoleBindings: %v", err)
+	}
+	for _, crb := range crbs.Items {
+		if isExec(crb.Subjects) {
+			t.Errorf("ClusterRoleBinding %s binds the execution ServiceAccount %s", crb.Name, execSA)
+		}
 	}
 }
