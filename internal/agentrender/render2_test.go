@@ -252,16 +252,17 @@ func TestRender2_ControlServiceAccountName(t *testing.T) {
 	}
 }
 
-// TestControlName: ach-control-<agent name>, trimmed + hashed past 40 chars so the pod
+// TestControlName: agent-<agent name>, trimmed + hashed past 46 chars (or on '.') so the pod
 // name and the controller-revision-hash label value ("<sts>-<10 chars>") fit in 63.
 func TestControlName(t *testing.T) {
-	long := strings.Repeat("a", 31) + "-reviewer-for-gitlab-merge-requests"
+	long := strings.Repeat("a", 37) + "-reviewer-for-gitlab-merge-requests"
+	trail := strings.Repeat("c", 36) + "-" + strings.Repeat("d", 20)
 	cases := []struct{ name, in, want string }{
-		{"short", "gitlab-reviewer", "ach-control-gitlab-reviewer"},
-		{"exactly 40", strings.Repeat("b", 40), "ach-control-" + strings.Repeat("b", 40)},
-		{"over 40", long, "ach-control-" + strings.Repeat("a", 31) + "-" + sha8(long)},
-		{"trailing dash after trim", strings.Repeat("c", 30) + "-" + strings.Repeat("d", 20), "ach-control-" + strings.Repeat("c", 30) + "-" + sha8(strings.Repeat("c", 30)+"-"+strings.Repeat("d", 20))},
-		{"dots are not label chars", "team.reviewer", "ach-control-team-reviewer-" + sha8("team.reviewer")},
+		{"short", "gitlab-reviewer", "agent-gitlab-reviewer"},
+		{"exactly 46", strings.Repeat("b", 46), "agent-" + strings.Repeat("b", 46)},
+		{"over 46", long, "agent-" + strings.Repeat("a", 37) + "-" + sha8(long)},
+		{"trailing dash after trim", trail, "agent-" + strings.Repeat("c", 36) + "-" + sha8(trail)},
+		{"dot in name", "team.reviewer", "agent-team-reviewer-" + sha8("team.reviewer")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -269,7 +270,7 @@ func TestControlName(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("ControlName(%q) = %q, want %q", tc.in, got, tc.want)
 			}
-			if len(got)+len("-0") > 63 || len(got)+len("-")+10 > 63 {
+			if len(got) > 52 {
 				t.Fatalf("ControlName(%q) = %q (%d chars): pod or revision-hash label would exceed 63", tc.in, got, len(got))
 			}
 			if errs := validation.IsDNS1035Label(got); len(errs) > 0 {
@@ -280,10 +281,17 @@ func TestControlName(t *testing.T) {
 			}
 		})
 	}
-	// Two long names sharing their first 31 chars must not collide.
-	a, b := strings.Repeat("x", 31)+"-alpha-agent-long-name", strings.Repeat("x", 31)+"-bravo-agent-long-name"
+	// Two long names sharing their first 37 chars must not collide.
+	a, b := strings.Repeat("x", 37)+"-alpha-agent-long-name", strings.Repeat("x", 37)+"-bravo-agent-long-name"
 	if ControlName(a) == ControlName(b) {
 		t.Fatalf("long names sharing a prefix collided: %q", ControlName(a))
+	}
+	// Never collides with the operator's other per-agent Service (achagent-<name>) or the
+	// ach-* platform/workspace names, for any pair of agent names: different first bytes.
+	for _, n := range []string{"foo", "achagent-foo", "ach-ws-x", strings.Repeat("z", 60)} {
+		if got := ControlName(n); !strings.HasPrefix(got, "agent-") || strings.HasPrefix(got, "ach") {
+			t.Fatalf("ControlName(%q) = %q escapes the agent- namespace", n, got)
+		}
 	}
 }
 

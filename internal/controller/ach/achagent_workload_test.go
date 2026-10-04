@@ -437,10 +437,12 @@ func TestBuildStatefulSet_PodTemplateOverlay_CannotRemoveReservedInfra(t *testin
 	p.Spec.PodTemplate = &apiextensionsv1.JSON{Raw: []byte(`{
 		"spec": {
 			"volumes": [
-				{"name": "ach-agent-config", "$patch": "delete"}
+				{"name": "ach-agent-config", "$patch": "delete"},
+				{"name": "ach-tmp", "$patch": "delete"}
 			],
 			"containers": [{"name": "agent", "volumeMounts": [
-				{"mountPath": "/etc/ach-runtime", "$patch": "delete"}
+				{"mountPath": "/etc/ach-runtime", "$patch": "delete"},
+				{"mountPath": "/tmp", "$patch": "delete"}
 			]}]
 		}
 	}`)}
@@ -450,7 +452,7 @@ func TestBuildStatefulSet_PodTemplateOverlay_CannotRemoveReservedInfra(t *testin
 		t.Fatal(err)
 	}
 	ps := sts.Spec.Template.Spec
-	for _, name := range []string{configVolumeName} {
+	for _, name := range []string{configVolumeName, tmpVolumeName} {
 		found := false
 		for _, v := range ps.Volumes {
 			if v.Name == name {
@@ -461,7 +463,7 @@ func TestBuildStatefulSet_PodTemplateOverlay_CannotRemoveReservedInfra(t *testin
 			t.Errorf("overlay deleted reserved volume %q and it was not re-pinned", name)
 		}
 	}
-	wantPaths := []string{configMountDir}
+	wantPaths := []string{configMountDir, tmpMountDir}
 	for _, wantPath := range wantPaths {
 		found := false
 		for _, m := range ps.Containers[0].VolumeMounts {
@@ -739,11 +741,11 @@ func buildTestControlSTS(t *testing.T) (*appsv1.StatefulSet, *achv1alpha1.ACHAge
 }
 
 // TestBuildStatefulSet_ControlNaming is the contract §11 regression guard found by root's
-// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<agent name>
+// review of f66d476: the control StatefulSet's own metadata.name must be agent-<agent name>
 // (matching ServiceName, not the legacy achagent-<name> scheme other children keep).
 func TestBuildStatefulSet_ControlNaming(t *testing.T) {
 	sts, a := buildTestControlSTS(t)
-	wantName := "ach-control-" + a.Name
+	wantName := "agent-" + a.Name
 	if sts.Name != wantName {
 		t.Errorf("StatefulSet name = %q, want %q (contract §11)", sts.Name, wantName)
 	}
@@ -770,8 +772,55 @@ func TestBuildStatefulSet_ControlPodHardening(t *testing.T) {
 	if csc == nil || csc.AllowPrivilegeEscalation == nil || *csc.AllowPrivilegeEscalation {
 		t.Errorf("container must set allowPrivilegeEscalation=false: %+v", csc)
 	}
+	if csc == nil || csc.ReadOnlyRootFilesystem == nil || !*csc.ReadOnlyRootFilesystem {
+		t.Errorf("container must set readOnlyRootFilesystem=true: %+v", csc)
+	}
 	if csc == nil || csc.Capabilities == nil || len(csc.Capabilities.Drop) != 1 || csc.Capabilities.Drop[0] != "ALL" || len(csc.Capabilities.Add) != 0 {
 		t.Errorf("container must drop ALL capabilities and add none: %+v", csc)
+	}
+}
+
+// TestBuildStatefulSet_WritableTmp: with a read-only root the control process's only writable
+// path is an emptyDir at /tmp, and TMPDIR points at it explicitly — even over a profile env
+// that tries to move it (ach-runtime: exactly one writable path, children inherit TMPDIR).
+func TestBuildStatefulSet_WritableTmp(t *testing.T) {
+	a := &achv1alpha1.ACHAgent{}
+	a.Name, a.Namespace = "demo", "ns"
+	a.Spec.Ach = achIdentity("", "")
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.Achagent.Image = "img"
+	p.Spec.Env = mkEnv("TMPDIR", "/var/tmp")
+	sts, err := buildStatefulSet(a, p, "h", buildAgentEnv(a, p, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := sts.Spec.Template.Spec
+	var vol *corev1.Volume
+	for i := range ps.Volumes {
+		if ps.Volumes[i].Name == tmpVolumeName {
+			vol = &ps.Volumes[i]
+		}
+	}
+	if vol == nil || vol.EmptyDir == nil {
+		t.Fatalf("want emptyDir volume %q, got %+v", tmpVolumeName, ps.Volumes)
+	}
+	var mnt *corev1.VolumeMount
+	for i := range ps.Containers[0].VolumeMounts {
+		if ps.Containers[0].VolumeMounts[i].Name == tmpVolumeName {
+			mnt = &ps.Containers[0].VolumeMounts[i]
+		}
+	}
+	if mnt == nil || mnt.MountPath != "/tmp" || mnt.ReadOnly {
+		t.Fatalf("want writable mount at /tmp, got %+v", mnt)
+	}
+	var tmpdir []string
+	for _, e := range ps.Containers[0].Env {
+		if e.Name == "TMPDIR" {
+			tmpdir = append(tmpdir, e.Value)
+		}
+	}
+	if len(tmpdir) != 1 || tmpdir[0] != "/tmp" {
+		t.Fatalf("TMPDIR entries = %v, want exactly [/tmp]", tmpdir)
 	}
 }
 
@@ -809,8 +858,8 @@ func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
 	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
 	infra := agentrender.WSInfrastructureBlock{
 		Execution: agentrender.WSExecutionInfraBlock{
-			ControlEndpoint: "http://ach-control-" + a.Name + ".ns.svc:8081",
-			FacadeEndpoint:  "http://ach-control-" + a.Name + ".ns.svc:8081/facades",
+			ControlEndpoint: "http://agent-" + a.Name + ".ns.svc:8081",
+			FacadeEndpoint:  "http://agent-" + a.Name + ".ns.svc:8081/facades",
 		},
 	}
 

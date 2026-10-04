@@ -86,7 +86,7 @@ func mustApply(t *testing.T, ctx context.Context, obj client.Object) {
 }
 
 // getControlStatefulSet fetches the named ACHAgent to learn its apiserver-assigned UID, then
-// gets the control StatefulSet by its contract name (ach-control-<agent name>) — NOT
+// gets the control StatefulSet by its contract name (agent-<agent name>) — NOT
 // agentResourceName(name): the control StatefulSet is UID-named per §11, unlike the
 // ConfigMap/Service/NetworkPolicy children, which still use the legacy name-based scheme.
 func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) appsv1.StatefulSet {

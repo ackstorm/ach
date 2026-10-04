@@ -183,27 +183,29 @@ func ControlServiceAccountName(agentUID string, p *achv1alpha1.AgentProfile) str
 	return HarnessName(agentUID)
 }
 
-// controlNameMaxPart bounds the agent-name part of ControlName: "ach-control-" (12) + 40 =
-// 52, so the pod name (+"-0") and the StatefulSet's controller-revision-hash label value
-// (+"-" + 10-char hash) both stay within the 63-char label limit.
-const controlNameMaxPart = 40
+// controlNameMaxPart bounds the agent-name part of ControlName: "agent-" (6) + 46 = 52, so
+// the pod name (+"-0") and the StatefulSet's controller-revision-hash label value (+"-" +
+// 10-char hash) both stay within the 63-char label limit.
+const controlNameMaxPart = 46
 
 // ControlName is the control StatefulSet, its governing Service and its pod-name stem:
-// ach-control-<agent name>. A name longer than controlNameMaxPart (agent names may be up to
-// 253 chars) — or one carrying '.', valid in a metadata.name but not in a Service name —
-// becomes its first 31 chars (dots as '-', trailing '-' dropped) + "-" + the first 8 hex of
-// sha256(full name): deterministic, and two names sharing a 31-char prefix still differ.
+// agent-<agent name>. A name longer than controlNameMaxPart (agent names may be up to 253
+// chars) — or one carrying '.', valid in a metadata.name but not in a Service name — becomes
+// its first 37 chars (dots as '-', trailing '-' dropped) + "-" + the first 8 hex of
+// sha256(full name): deterministic, and two names sharing a 37-char prefix still differ.
+// "agent-" never collides with the operator's achagent-<name> Service nor the ach-* platform
+// and runtime-owned ach-ws-* names (different leading bytes).
 func ControlName(agentName string) string {
 	part := agentName
 	if len(part) > controlNameMaxPart || strings.Contains(part, ".") {
 		sum := sha256.Sum256([]byte(agentName))
 		part = strings.ReplaceAll(part, ".", "-")
-		if len(part) > 31 {
-			part = part[:31]
+		if len(part) > 37 {
+			part = part[:37]
 		}
 		part = strings.TrimRight(part, "-") + "-" + hex.EncodeToString(sum[:])[:8]
 	}
-	return "ach-control-" + part
+	return "agent-" + part
 }
 
 // RenderInfrastructureV1 resolves infrastructure{control,execution}. agentName/agentUID are

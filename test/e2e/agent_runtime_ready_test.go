@@ -281,7 +281,7 @@ func phase6RequireRealRuntimeImages(t *testing.T) {
 	}
 }
 
-// controlStatefulSetRef is the contract §11 control workload (ach-control-<agent name>,
+// controlStatefulSetRef is the contract §11 control workload (agent-<agent name>,
 // agentrender.ControlName) as a kubectl workload ref ("statefulset/...") suitable for
 // `kubectl exec`/`kubectl wait`.
 func controlStatefulSetRef(agentName string) string {
