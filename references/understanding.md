@@ -183,9 +183,14 @@ parity checklist: `references/adding-a-cr-kind.md`.
   boot — no init container; status from probes, fixed control port, no `health` knob any
   more (compatibility-only CRD field, read by nothing that builds real k8s objects). The
   Harness's own namespaced Role/RoleBinding (`ach-harness-<uid>`, same name as its
-  ServiceAccount) grants exactly the verbs it needs to create/manage per-Workspace
-  StatefulSets/Services/Pods — no Secret/RBAC CRUD, TokenReview, pod exec, or cross-
-  namespace grant; the execution ServiceAccount is never bound to anything. `AgentProfile.spec.controlServiceAccountName` (optional) makes the control pods run as one
+  ServiceAccount) grants exactly the verbs the runtime Harness client issues on its
+  workspace objects (statefulsets get/list/create/patch/delete, pods get/list/delete,
+  services get/create) — no watch/update/scale, Secret/RBAC, TokenReview, pod exec, or cross-
+  namespace grant; the execution ServiceAccount is never bound to anything. The control pod
+  is selected by `ach.ackstorm.ai/agent` + `ach.ackstorm.ai/component=control` (workspace
+  pods carry the agent label too); it runs uid 10001, RuntimeDefault seccomp, no
+  capabilities, no service links. A missing profile-named control SA is
+  `ControlServiceAccountResolved=False`. `AgentProfile.spec.controlServiceAccountName` (optional) makes the control pods run as one
   pre-existing, externally managed ServiceAccount (e.g. for EKS Pod Identity, which has no wildcards)
   instead of `ach-harness-<uid>`: the operator then skips creating it, the per-agent Role/RoleBinding
   keep their names and bind that SA, and an `ach-harness-<uid>` SA orphaned by a profile switch is

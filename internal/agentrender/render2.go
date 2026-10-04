@@ -112,8 +112,8 @@ func RenderChannelV1(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) (
 // WSControlInfraBlock is infrastructure.control (schema ControlInfraBlock — contract §11
 // scope reset: the control pod's broker and client TLS configuration are excluded, not
 // deferred — D2 reuses the existing signed mini-harness bearer and HMAC facade
-// authentication for authenticated application calls instead; only the UID-derived service
-// account remains here).
+// authentication for authenticated application calls instead; only the control service
+// account remains here — ControlServiceAccountName).
 type WSControlInfraBlock struct {
 	ServiceAccount string `json:"serviceAccount"`
 }
