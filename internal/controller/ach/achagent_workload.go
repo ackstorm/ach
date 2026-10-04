@@ -33,6 +33,8 @@ const (
 	pvcVolumeName        = "ach-agent-state"
 	configHashAnnotation = "ach.ackstorm.ai/config-hash"
 	agentLabelKey        = "ach.ackstorm.ai/agent"
+	componentLabelKey    = "ach.ackstorm.ai/component"
+	componentControl     = "control"
 	defaultGraceSeconds  = int64(120)
 	agentUID             = int64(10001)
 	controlServicePort   = 8081
@@ -86,8 +88,11 @@ func agentLabels(a *achv1alpha1.ACHAgent) map[string]string {
 	}
 }
 
+// agentSelectorLabels selects the agent's CONTROL pod. The component label is required:
+// the runtime also labels workspace pods ach.ackstorm.ai/agent=<name>, and they must never
+// back the control/expose Services or inherit the control egress NetworkPolicy.
 func agentSelectorLabels(agentName string) map[string]string {
-	return map[string]string{agentLabelKey: agentName}
+	return map[string]string{agentLabelKey: agentName, componentLabelKey: componentControl}
 }
 
 // computeConfigHash digests every pod-template input so any change rolls the pod. secretHash is

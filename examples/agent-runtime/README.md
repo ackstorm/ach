@@ -117,7 +117,7 @@ self-hydrates, **`Ready=False` with `WorkloadReady=PodNotReady` usually means
 hydration failed** — check the pod logs and the `/readyz` probe:
 
 ```bash
-kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer -c agent --tail=100
+kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer,ach.ackstorm.ai/component=control -c agent --tail=100
 ```
 
 ## Notes

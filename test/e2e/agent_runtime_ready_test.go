@@ -346,7 +346,7 @@ func TestAgentRuntimeReady(t *testing.T) {
 				"--for=condition=WorkloadReady=true", "--timeout=300s", "achagent/"+name).CombinedOutput()
 			if err != nil {
 				pods, _ := exec.Command("kubectl", "-n", "ach-system", "get", "pods",
-					"-l", "ach.ackstorm.ai/agent="+name, "-o", "wide").CombinedOutput()
+					"-l", "ach.ackstorm.ai/agent="+name+",ach.ackstorm.ai/component=control", "-o", "wide").CombinedOutput()
 				t.Fatalf("%s never became WorkloadReady: %v\n%s\n%s", name, err, out, pods)
 			}
 		})

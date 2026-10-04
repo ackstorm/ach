@@ -182,6 +182,13 @@ dropped) + `-` + first 8 hex of `sha256(full name)`. 12 + 40 = 52 keeps the pod 
 stays in labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
 `http://<ControlName>.<ns>.svc:8081[/facades]`.
 
+Labels: the control pod carries `ach.ackstorm.ai/agent=<name>` +
+`ach.ackstorm.ai/component=control`, and every operator selector aimed at it (control
+StatefulSet, control + `achagent-<name>` Services, NetworkPolicy, WorkloadReady pod list)
+requires BOTH — the runtime also stamps `ach.ackstorm.ai/agent=<name>` on workspace pods.
+The operator never parses, validates or selects on `ach-ws-*` names or the
+`runtime.ach.ackstorm.ai/*` labels.
+
 The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
 the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
 

@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -851,5 +852,33 @@ func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
 	}
 	if _, present := cm.Data["ca.crt"]; present {
 		t.Fatal("bootstrap ConfigMap must never carry ca.crt (contract §11 scope reset)")
+	}
+}
+
+// TestControlSelectors_IgnoreWorkspacePods: the runtime labels workspace pods
+// ach.ackstorm.ai/agent=<name> too, so every operator selector aimed at the control pod
+// (StatefulSet, control + expose Services, NetworkPolicy) must also require the control
+// component label — a workspace pod must never become a control endpoint or inherit the
+// control egress policy.
+func TestControlSelectors_IgnoreWorkspacePods(t *testing.T) {
+	sts, a := buildTestControlSTS(t)
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.NetworkPolicy = &achv1alpha1.NetworkPolicySpec{}
+	workspacePod := labels.Set{agentLabelKey: a.Name, "runtime.ach.ackstorm.ai/agent-uid": string(a.UID), "runtime.ach.ackstorm.ai/workspace-name": "ach-ws-demo-0123456789abcdef0123"}
+	controlPod := labels.Set(sts.Spec.Template.Labels)
+	selectors := map[string]map[string]string{
+		"StatefulSet":     sts.Spec.Selector.MatchLabels,
+		"control Service": buildControlService(a).Spec.Selector,
+		"expose Service":  buildService(a, p).Spec.Selector,
+		"NetworkPolicy":   buildNetworkPolicy(a, p).Spec.PodSelector.MatchLabels,
+	}
+	for name, sel := range selectors {
+		s := labels.SelectorFromSet(sel)
+		if s.Matches(workspacePod) {
+			t.Errorf("%s selector %v matches a workspace pod", name, sel)
+		}
+		if !s.Matches(controlPod) {
+			t.Errorf("%s selector %v does not match the control pod %v", name, sel, controlPod)
+		}
 	}
 }

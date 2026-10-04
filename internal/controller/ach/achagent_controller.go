@@ -487,7 +487,7 @@ func (r *ACHAgentReconciler) applyFail(ctx context.Context, a *achv1alpha1.ACHAg
 
 func (r *ACHAgentReconciler) deriveWorkloadReady(ctx context.Context, a *achv1alpha1.ACHAgent, configHash string, conds *[]metav1.Condition) {
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods, client.InNamespace(a.Namespace), client.MatchingLabels{agentLabelKey: a.Name}); err != nil {
+	if err := r.List(ctx, &pods, client.InNamespace(a.Namespace), client.MatchingLabels(agentSelectorLabels(a.Name))); err != nil {
 		setCond(conds, condWorkloadReady, metav1.ConditionFalse, "ListFailed", err.Error(), a.Generation)
 		return
 	}
