@@ -13,7 +13,7 @@ instance) collapse via `agentrender.Render2` into the single workspace-v1 wire d
 `docs/schemas/ach-workspace-contract-v1.md` + `ach-workspace-config-v1.schema.json`).
 The `ACHAgentReconciler` writes `config.json` to a ConfigMap (`achagent-<name>`) and
 applies a single-replica, single-container **control StatefulSet**
-(`ach-control-<uid>`, container `agent` — Channels+Harness only) that mounts it at
+(`ach-control-<name>`, container `agent` — Channels+Harness only) that mounts it at
 `/etc/ach-runtime/config.json`; inbound channel-auth secrets ride in env
 (`secretKeyRef`), never file-mounted (NOT an isolation boundary: same-uid reads
 `/proc/<pid>/environ` either way); a salted config-hash annotation rolls the pod on
@@ -164,6 +164,46 @@ still on the old shape is rejected or blocked, not silently translated:
   stage-06 fixture exercises it any more — the chart surface is preserved
   independently of workspace-v1 runtime readiness (`helm-render-check.sh` topology 6).
 
+## Object names (contract §11)
+
+One source of truth each, in `internal/agentrender/render2.go`:
+
+| Object | Name | Helper |
+|--------|------|--------|
+| control StatefulSet + headless Service (pod `<name>-0`) | `ach-control-<agent name>` | `ControlName` |
+| control SA (default), per-agent Role + RoleBinding | `ach-harness-<uid>` | `HarnessName` |
+| execution SA + bootstrap ConfigMap | `ach-execution-<uid>` | `ExecutionServiceAccountName` |
+| workspace StatefulSet/Service/pod | `ach-ws-…` | runtime-owned — the operator never computes or validates it |
+
+`ControlName`: the name as is when ≤ 40 chars; otherwise (or when it contains `.`, legal
+in `metadata.name` but not in a Service name) its first 31 chars (dots → `-`, trailing `-`
+dropped) + `-` + first 8 hex of `sha256(full name)`. 12 + 40 = 52 keeps the pod name
+(`-0`) and the controller-revision-hash label value (`-` + 10 chars) within 63. The UID
+stays in labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
+`http://<ControlName>.<ns>.svc:8081[/facades]`.
+
+Labels: the control pod carries `ach.ackstorm.ai/agent=<name>` +
+`ach.ackstorm.ai/component=control`, and every operator selector aimed at it (control
+StatefulSet, control + `achagent-<name>` Services, NetworkPolicy, WorkloadReady pod list)
+requires BOTH — the runtime also stamps `ach.ackstorm.ai/agent=<name>` on workspace pods.
+The operator never parses, validates or selects on `ach-ws-*` names or the
+`runtime.ach.ackstorm.ai/*` labels.
+
+The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
+the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
+
+## Harness RBAC (`ach-harness-<uid>` Role)
+
+Exactly what the runtime's Kubernetes client (`ach-runtime` `harness/kubernetes.py`)
+issues — GET, LIST (by `runtime.ach.ackstorm.ai/agent-uid`), POST, merge-PATCH, DELETE
+with a UID precondition: `apps/statefulsets` get/list/create/patch/delete (replicas 0↔1,
+recreate on template drift), `services` get/create, `pods` get/list/delete. No `watch`,
+no `update`, no `statefulsets/scale` (the Harness patches `spec.replicas` on the
+StatefulSet itself). RBAC cannot express an `ach-ws-*` name prefix, so the Role covers the
+namespace; the Harness scopes every call to its own UID-labelled/owned objects. When the
+runtime client grows a verb, add it here AND to the operator ClusterRole (escalation
+prevention: the operator must hold whatever it grants).
+
 ## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
 
 Optional DNS-1123 label (max 63). Set: control StatefulSet (and the podTemplate re-pin), the
@@ -171,5 +211,8 @@ per-agent RoleBinding subject, and rendered `infrastructure.control.serviceAccou
 pre-existing SA in the agent's namespace; the operator does not create/own/delete it and skips
 `ach-harness-<uid>`. Role/RoleBinding names stay `ach-harness-<uid>`. Unset: unchanged output
 (same `configVersion`). Switching a profile back and forth leaves orphaned `ach-harness-<uid>`
-SAs (owner-ref GC only on ACHAgent delete); the operator never deletes them. Execution SA/RBAC
+SAs (owner-ref GC only on ACHAgent delete); the operator never deletes them. A named SA that does not
+exist sets `ControlServiceAccountResolved=False` (reason `ServiceAccountNotFound`) and
+applies nothing for that agent; a ServiceAccount watch re-enqueues it once the SA appears.
+Unset: `ControlServiceAccountResolved=True` (`PerAgentServiceAccount`). Execution SA/RBAC
 unchanged. Helper: `agentrender.ControlServiceAccountName`.

@@ -844,16 +844,16 @@ verify_all() {
   kubectl -n ach-system get configmap achagent-e2e-agent \
     -o jsonpath='{.data.config\.json}' \
     | jq -e '.schemaVersion=="workspace-v1" and .ach.identity.env=="ACH_SECRET_IDENTITY"' >/dev/null
-  local e2e_agent_uid e2e_agent_pvc_uid uid
+  local e2e_agent_uid
   e2e_agent_uid=$(kubectl -n ach-system get achagent e2e-agent -o jsonpath='{.metadata.uid}')
-  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_uid}" \
+  kubectl -n ach-system get statefulset ach-control-e2e-agent \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_SECRET_IDENTITY")].valueFrom.secretKeyRef.name}' \
     | grep -q .
   # Single `agent` container on the ephemeral control StatefulSet too — same shape
   # assertion the persistent one below already carries, retargeted here from the
   # retired standalone/distributed smoke check so an added container still fails this
   # gate (ach-task6-review.md M2).
-  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_uid}" -o json \
+  kubectl -n ach-system get statefulset ach-control-e2e-agent -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]' >/dev/null
   kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_uid}" \
     -o jsonpath='{.subjects[0].name} {.roleRef.name}' \
@@ -861,14 +861,14 @@ verify_all() {
   # Persistent standalone: whole operator-managed control-pod PVC at the mountPath,
   # single `agent` container (same name as before — only the workload kind changed).
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
-  e2e_agent_pvc_uid=$(kubectl -n ach-system get achagent e2e-agent-pvc -o jsonpath='{.metadata.uid}')
-  kubectl -n ach-system get statefulset "ach-control-${e2e_agent_pvc_uid}" -o json \
+  kubectl -n ach-system get statefulset ach-control-e2e-agent-pvc -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]
              and any(.spec.template.spec.volumes[]; .persistentVolumeClaim != null)' >/dev/null
   # Every control pod pins uid/gid/fsGroup 10001 — a fresh root-owned cloud PVC is
   # unwritable by the image uid without it (ach-agent finding 2026-09-15).
-  for uid in "${e2e_agent_uid}" "${e2e_agent_pvc_uid}"; do
-    kubectl -n ach-system get statefulset "ach-control-${uid}" \
+  local name
+  for name in e2e-agent e2e-agent-pvc; do
+    kubectl -n ach-system get statefulset "ach-control-${name}" \
       -o jsonpath='{.spec.template.spec.securityContext.runAsUser} {.spec.template.spec.securityContext.fsGroup}' \
       | grep -qx '10001 10001'
   done

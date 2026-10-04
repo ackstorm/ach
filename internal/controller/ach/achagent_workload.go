@@ -33,6 +33,8 @@ const (
 	pvcVolumeName        = "ach-agent-state"
 	configHashAnnotation = "ach.ackstorm.ai/config-hash"
 	agentLabelKey        = "ach.ackstorm.ai/agent"
+	componentLabelKey    = "ach.ackstorm.ai/component"
+	componentControl     = "control"
 	defaultGraceSeconds  = int64(120)
 	agentUID             = int64(10001)
 	controlServicePort   = 8081
@@ -52,16 +54,12 @@ const (
 // legacy distributed-placement "--role" args convention.
 var controlCommand = []string{"python", "-m", "ach_runtime", "control", "--config", configFilePath}
 
-// controlServiceAccountName/executionServiceAccountName/controlServiceName are the
-// contract §11 UID-derived names — RenderInfrastructureV1 (internal/agentrender/render2.go)
-// embeds these exact strings into the rendered wire config, so the k8s objects MUST use
-// them verbatim or the config lies about the real topology.
-func controlServiceAccountName(uid string) string   { return "ach-harness-" + uid }
-func executionServiceAccountName(uid string) string { return "ach-execution-" + uid }
-func controlServiceName(uid string) string          { return "ach-control-" + uid }
+// Contract §11 names live in agentrender (HarnessName, ExecutionServiceAccountName,
+// ControlName): RenderInfrastructureV1 embeds them in the rendered wire config, so the k8s
+// objects built here MUST use the same functions or the config lies about the topology.
 
 // effectiveControlServiceAccountName is what the control pod runs as: the profile's stable
-// controlServiceAccountName when set, else controlServiceAccountName(uid).
+// controlServiceAccountName when set, else agentrender.HarnessName(uid).
 func effectiveControlServiceAccountName(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile) string {
 	return agentrender.ControlServiceAccountName(string(a.UID), p)
 }
@@ -90,8 +88,11 @@ func agentLabels(a *achv1alpha1.ACHAgent) map[string]string {
 	}
 }
 
+// agentSelectorLabels selects the agent's CONTROL pod. The component label is required:
+// the runtime also labels workspace pods ach.ackstorm.ai/agent=<name>, and they must never
+// back the control/expose Services or inherit the control egress NetworkPolicy.
 func agentSelectorLabels(agentName string) map[string]string {
-	return map[string]string{agentLabelKey: agentName}
+	return map[string]string{agentLabelKey: agentName, componentLabelKey: componentControl}
 }
 
 // computeConfigHash digests every pod-template input so any change rolls the pod. secretHash is
@@ -178,22 +179,22 @@ func buildConfigMap(a *achv1alpha1.ACHAgent, configJSON []byte) *corev1.ConfigMa
 	}
 }
 
-// buildWorkspaceRole grants the Harness (control pod) exactly what it needs to create and
-// manage per-Workspace execution StatefulSets/Services/Pods in its own namespace (contract
-// §11 creator contract) — named ach-harness-<uid>, same as the control ServiceAccount it
-// binds. No Secret/RBAC CRUD, TokenReview, pod create/exec, or cross-namespace grant: the
-// Harness's own runtime client is responsible for restricting operations to its own
-// UID/owner-labelled Workspace objects — this namespace Role is not per-agent isolation by
-// itself.
+// buildWorkspaceRole grants the Harness (control pod) exactly the verbs its runtime
+// Kubernetes client (ach-runtime harness/kubernetes.py) issues against its own ach-ws-*
+// workspace objects, in its own namespace (contract §11 creator contract): StatefulSets
+// get/list/create/patch (replicas 0↔1)/delete (recreate on template drift), Services
+// get/create, Pods get/list/delete. No watch, no update (PUT), no /scale subresource, no
+// Secret/RBAC, TokenReview, pod create/exec or cross-namespace grant. RBAC cannot match a
+// name prefix, so the Role is namespace-wide; the Harness itself restricts every call to
+// objects labelled/owned by its agent UID — this Role is not per-agent isolation by itself.
 func buildWorkspaceRole(a *achv1alpha1.ACHAgent) *rbacv1.Role {
-	name := controlServiceAccountName(string(a.UID))
+	name := agentrender.HarnessName(string(a.UID))
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "watch", "create", "update", "patch", "delete"}},
-			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets/scale"}, Verbs: []string{"get", "update", "patch"}},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch", "delete"}},
-			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list", "watch", "create", "update", "patch", "delete"}},
+			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "create", "patch", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "create"}},
 		},
 	}
 }
@@ -203,7 +204,7 @@ func buildWorkspaceRole(a *achv1alpha1.ACHAgent) *rbacv1.Role {
 // ach-harness-<uid>); the Role/RoleBinding names stay per-agent. The execution ServiceAccount is never bound to this or any
 // other Role (contract §11: execution stays unbound).
 func buildWorkspaceRoleBinding(a *achv1alpha1.ACHAgent, controlSA string) *rbacv1.RoleBinding {
-	name := controlServiceAccountName(string(a.UID))
+	name := agentrender.HarnessName(string(a.UID))
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
 		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: controlSA, Namespace: a.Namespace}},
@@ -219,7 +220,7 @@ func buildWorkspaceRoleBinding(a *achv1alpha1.ACHAgent, controlSA string) *rbacv
 func buildControlServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount {
 	trueVal := true
 	return &corev1.ServiceAccount{
-		ObjectMeta:                   metav1.ObjectMeta{Name: controlServiceAccountName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
+		ObjectMeta:                   metav1.ObjectMeta{Name: agentrender.HarnessName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
 		AutomountServiceAccountToken: &trueVal,
 	}
 }
@@ -231,17 +232,17 @@ func buildControlServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount 
 func buildExecutionServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount {
 	falseVal := false
 	return &corev1.ServiceAccount{
-		ObjectMeta:                   metav1.ObjectMeta{Name: executionServiceAccountName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
+		ObjectMeta:                   metav1.ObjectMeta{Name: agentrender.ExecutionServiceAccountName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
 		AutomountServiceAccountToken: &falseVal,
 	}
 }
 
 // buildControlService is the control pod's headless governing Service (contract §11:
-// ach-control-<uid>, port 8081) — infrastructure.execution.controlEndpoint/facadeEndpoint
+// ach-control-<agent name>, port 8081) — infrastructure.execution.controlEndpoint/facadeEndpoint
 // are built from this exact DNS name by RenderInfrastructureV1. ClusterIP: None since the
 // control StatefulSet has a single replica and callers address the Service name directly.
 func buildControlService(a *achv1alpha1.ACHAgent) *corev1.Service {
-	name := controlServiceName(string(a.UID))
+	name := agentrender.ControlName(a.Name)
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: corev1.ServiceSpec{
@@ -279,7 +280,7 @@ func buildExecutionBootstrapConfigMap(a *achv1alpha1.ACHAgent, infra agentrender
 		return nil, fmt.Errorf("marshal bootstrap.json: %w", err)
 	}
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: executionServiceAccountName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
+		ObjectMeta: metav1.ObjectMeta{Name: agentrender.ExecutionServiceAccountName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Data:       map[string]string{bootstrapFileName: string(data)},
 	}, nil
 }
@@ -461,12 +462,12 @@ func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, conf
 	}}
 
 	sts := &appsv1.StatefulSet{
-		// Name is the contract §11 control name (ach-control-<uid>), matching ServiceName
+		// Name is the contract §11 control name (ach-control-<agent name>, agentrender.ControlName), matching ServiceName
 		// below verbatim — not the legacy achagent-<name> scheme other children still use.
-		ObjectMeta: metav1.ObjectMeta{Name: controlServiceName(string(a.UID)), Namespace: a.Namespace, Labels: agentLabels(a)},
+		ObjectMeta: metav1.ObjectMeta{Name: agentrender.ControlName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &one,
-			ServiceName: controlServiceName(string(a.UID)),
+			ServiceName: agentrender.ControlName(a.Name),
 			Selector:    &metav1.LabelSelector{MatchLabels: agentSelectorLabels(a.Name)},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
@@ -474,8 +475,12 @@ func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, conf
 					Annotations: map[string]string{configHashAnnotation: configHash},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:            effectiveControlServiceAccountName(a, p),
-					AutomountServiceAccountToken:  &trueVal,
+					ServiceAccountName:           effectiveControlServiceAccountName(a, p),
+					AutomountServiceAccountToken: &trueVal,
+					// No service-link env: the Harness reaches the API server through the
+					// kubernetes.default env kubelet always injects, and nothing else in the
+					// namespace belongs in its environment.
+					EnableServiceLinks:            &falseVal,
 					TerminationGracePeriodSeconds: &grace,
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,

@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 )
 
 // legacyCleanupFixture builds a minimal AgentProfile + ACHAgent pair that reaches
@@ -124,7 +125,7 @@ func TestACHAgent_LegacyCleanupAfterControlApply(t *testing.T) {
 			t.Fatalf("legacy Deployment must be pruned once the control StatefulSet applies, Get err: %v", err)
 		}
 		var sts appsv1.StatefulSet
-		if err := fake.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: controlServiceName(string(agent.UID))}, &sts); err != nil {
+		if err := fake.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: agentrender.ControlName(agent.Name)}, &sts); err != nil {
 			t.Fatalf("control StatefulSet must be applied: %v", err)
 		}
 		var fresh achv1alpha1.ACHAgent

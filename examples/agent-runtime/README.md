@@ -44,7 +44,7 @@ many times).
 
 The operator collapses the two into the workspace-v1 wire config (`schemaVersion:
 "workspace-v1"`), writes it to a ConfigMap (`achagent-<name>`, key `config.json`), and
-applies a single-replica control StatefulSet (`ach-control-<uid>`, one `agent` container —
+applies a single-replica control StatefulSet (`ach-control-<name>`, one `agent` container —
 Channels+Harness) that mounts it at `/etc/ach-runtime/config.json`. The harness
 **self-hydrates** against ACH at boot — there is no init container and no CLI step. It then
 creates one standard zero/one-replica execution StatefulSet per non-migrable Workspace
@@ -109,13 +109,15 @@ kubectl -n engineering get achagent
 kubectl -n engineering describe achagent gitlab-reviewer
 ```
 
-`Ready=True` rolls up five conditions: `ProfileResolved`, `IdentityResolved`,
+`Ready=True` rolls up six conditions: `ProfileResolved`,
+`ControlServiceAccountResolved` (False `ServiceAccountNotFound` when the profile's
+`controlServiceAccountName` does not exist yet), `IdentityResolved`,
 `ChannelSecretsResolved`, `WorkloadApplied`, `WorkloadReady`. Because the agent
 self-hydrates, **`Ready=False` with `WorkloadReady=PodNotReady` usually means
 hydration failed** — check the pod logs and the `/readyz` probe:
 
 ```bash
-kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer -c agent --tail=100
+kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer,ach.ackstorm.ai/component=control -c agent --tail=100
 ```
 
 ## Notes
@@ -133,7 +135,7 @@ kubectl -n engineering logs -l ach.ackstorm.ai/agent=gitlab-reviewer -c agent --
 ## Hardening the control pod
 
 `spec.podTemplate`/`spec.networkPolicy` (both on the `AgentProfile`) only ever bound the
-**control** StatefulSet (`ach-control-<uid>`, one `agent` container — Channels+Harness).
+**control** StatefulSet (`ach-control-<name>`, one `agent` container — Channels+Harness).
 That container holds the agent's private credentials (`ACH_SECRET_IDENTITY`, channel
 secrets) but does **not** run opencode or any shell tool. opencode — and the shell tool —
 run in the separate per-Workspace **execution** pod the Harness creates directly from

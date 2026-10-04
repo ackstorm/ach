@@ -3,6 +3,8 @@
 package agentrender
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 )
@@ -29,7 +32,7 @@ func fixtureExecutionSpec() *achv1alpha1.ExecutionInfraSpec {
 }
 
 func TestWorkspaceV1_InfrastructureMatchesFixture(t *testing.T) {
-	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, fixtureExecutionSpec())
+	got, err := RenderInfrastructureV1("gitlab-reviewer", fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, fixtureExecutionSpec())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +40,7 @@ func TestWorkspaceV1_InfrastructureMatchesFixture(t *testing.T) {
 }
 
 func TestWorkspaceV1_Infrastructure_FailsClosedWithoutExecutionSpec(t *testing.T) {
-	_, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, nil)
+	_, err := RenderInfrastructureV1("gitlab-reviewer", fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, nil)
 	if err == nil {
 		t.Fatal("expected failure: spec.execution is required")
 	}
@@ -46,7 +49,7 @@ func TestWorkspaceV1_Infrastructure_FailsClosedWithoutExecutionSpec(t *testing.T
 func TestWorkspaceV1_Infrastructure_GraceFallsBackWhenUnset(t *testing.T) {
 	exec := fixtureExecutionSpec()
 	exec.TerminationGracePeriodSeconds = nil
-	got, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, exec)
+	got, err := RenderInfrastructureV1("gitlab-reviewer", fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, exec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +231,7 @@ func TestRender2_ControlServiceAccountName(t *testing.T) {
 	if got, want := unset.Infrastructure.Control.ServiceAccount, "ach-harness-"+fixtureAgentUID; got != want {
 		t.Fatalf("unset control SA = %q, want %q", got, want)
 	}
-	direct, err := RenderInfrastructureV1(fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, &profile.Spec.Execution)
+	direct, err := RenderInfrastructureV1("gitlab-reviewer", fixtureAgentUID, "ach", "ach-harness-"+fixtureAgentUID, &profile.Spec.Execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,5 +249,82 @@ func TestRender2_ControlServiceAccountName(t *testing.T) {
 	}
 	if set.ConfigVersion == unset.ConfigVersion {
 		t.Fatal("configVersion must change when the control SA changes")
+	}
+}
+
+// TestControlName: ach-control-<agent name>, trimmed + hashed past 40 chars so the pod
+// name and the controller-revision-hash label value ("<sts>-<10 chars>") fit in 63.
+func TestControlName(t *testing.T) {
+	long := strings.Repeat("a", 31) + "-reviewer-for-gitlab-merge-requests"
+	cases := []struct{ name, in, want string }{
+		{"short", "gitlab-reviewer", "ach-control-gitlab-reviewer"},
+		{"exactly 40", strings.Repeat("b", 40), "ach-control-" + strings.Repeat("b", 40)},
+		{"over 40", long, "ach-control-" + strings.Repeat("a", 31) + "-" + sha8(long)},
+		{"trailing dash after trim", strings.Repeat("c", 30) + "-" + strings.Repeat("d", 20), "ach-control-" + strings.Repeat("c", 30) + "-" + sha8(strings.Repeat("c", 30)+"-"+strings.Repeat("d", 20))},
+		{"dots are not label chars", "team.reviewer", "ach-control-team-reviewer-" + sha8("team.reviewer")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ControlName(tc.in)
+			if got != tc.want {
+				t.Fatalf("ControlName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			if len(got)+len("-0") > 63 || len(got)+len("-")+10 > 63 {
+				t.Fatalf("ControlName(%q) = %q (%d chars): pod or revision-hash label would exceed 63", tc.in, got, len(got))
+			}
+			if errs := validation.IsDNS1035Label(got); len(errs) > 0 {
+				t.Fatalf("ControlName(%q) = %q is not a valid Service name: %v", tc.in, got, errs)
+			}
+			if ControlName(tc.in) != got {
+				t.Fatal("ControlName must be deterministic")
+			}
+		})
+	}
+	// Two long names sharing their first 31 chars must not collide.
+	a, b := strings.Repeat("x", 31)+"-alpha-agent-long-name", strings.Repeat("x", 31)+"-bravo-agent-long-name"
+	if ControlName(a) == ControlName(b) {
+		t.Fatalf("long names sharing a prefix collided: %q", ControlName(a))
+	}
+}
+
+func sha8(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])[:8]
+}
+
+// TestRender2_ControlEndpointUsesAgentName: the endpoints point at the name-derived control
+// Service, never the UID.
+func TestRender2_ControlEndpointUsesAgentName(t *testing.T) {
+	profile, agent := minimalRender2Fixture()
+	cfg, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	want := "http://" + ControlName(agent.Name) + "." + agent.Namespace + ".svc:8081"
+	if cfg.Infrastructure.Execution.ControlEndpoint != want || cfg.Infrastructure.Execution.FacadeEndpoint != want+"/facades" {
+		t.Fatalf("endpoints = %q / %q, want %q (+/facades)", cfg.Infrastructure.Execution.ControlEndpoint, cfg.Infrastructure.Execution.FacadeEndpoint, want)
+	}
+}
+
+// TestRender2_AlwaysEmitsAgentName: the runtime names workspace pods ach-ws-<name>-<ref>, so
+// agent.name is required on the wire and always rendered from metadata.name.
+func TestRender2_AlwaysEmitsAgentName(t *testing.T) {
+	profile, agent := minimalRender2Fixture()
+	cfg, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Agent map[string]any `json:"agent"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Agent["name"] != agent.Name || agent.Name == "" {
+		t.Fatalf("agent.name = %v, want %q", doc.Agent["name"], agent.Name)
 	}
 }

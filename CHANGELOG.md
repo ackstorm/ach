@@ -20,9 +20,22 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   its name/namespace/UID and never recreates it. Old per-agent sandbox-key Secrets and harness
   session snapshots are left untouched — neither converted nor deleted.
 
+### Changed
+- **BREAKING (upgrade):** the control StatefulSet/Service/pod are named `ach-control-<agent name>`
+  (names over 40 chars, or containing `.`: first 31 chars + `-` + 8 hex of sha256) instead of
+  `ach-control-<uid>`, and select on `ach.ackstorm.ai/agent` + `ach.ackstorm.ai/component=control`
+  (workspace pods carry the agent label too). The old `ach-control-<uid>` StatefulSet/Service
+  are not pruned — delete them after upgrading.
+- Control pod sets `enableServiceLinks: false`.
+- The per-agent `ach-harness-<uid>` Role is narrowed to what the runtime Harness issues:
+  statefulsets get/list/create/patch/delete, pods get/list/delete, services get/create (no
+  watch/update, no `statefulsets/scale`); the operator drops `statefulsets/scale` too.
+
 ### Added
+- `ControlServiceAccountResolved` ACHAgent condition (part of `Ready`): `False`
+  `ServiceAccountNotFound` when `AgentProfile.spec.controlServiceAccountName` names a missing SA.
 - Workspace-v1 control/execution split: the operator renders and applies a single-replica
-  **control StatefulSet** (`ach-control-<uid>`, Channels+Harness only, public probe port 8080,
+  **control StatefulSet** (`ach-control-<agent name>`, Channels+Harness only, public probe port 8080,
   private control Service port 8081) that self-hydrates at boot; the Harness running inside it
   creates real per-Workspace **execution StatefulSets directly** (0.1.0 — a declarative
   `Workspace` CR for hand-managing those objects yourself is deferred to 0.1.1), bootstrapped

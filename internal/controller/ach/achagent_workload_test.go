@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -703,9 +704,6 @@ func TestBuildDeployment_Shape(t *testing.T) {
 			t.Errorf("pod %s = %v, want %d", name, got, agentUID)
 		}
 	}
-	if ps.EnableServiceLinks != nil {
-		t.Error("enableServiceLinks must stay unset")
-	}
 	var pvcMnt *corev1.VolumeMount
 	for i := range ps.Containers[0].VolumeMounts {
 		if ps.Containers[0].VolumeMounts[i].Name == pvcVolumeName {
@@ -741,16 +739,39 @@ func buildTestControlSTS(t *testing.T) (*appsv1.StatefulSet, *achv1alpha1.ACHAge
 }
 
 // TestBuildStatefulSet_ControlNaming is the contract §11 regression guard found by root's
-// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<uid>
+// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<agent name>
 // (matching ServiceName, not the legacy achagent-<name> scheme other children keep).
 func TestBuildStatefulSet_ControlNaming(t *testing.T) {
 	sts, a := buildTestControlSTS(t)
-	wantName := "ach-control-" + string(a.UID)
+	wantName := "ach-control-" + a.Name
 	if sts.Name != wantName {
 		t.Errorf("StatefulSet name = %q, want %q (contract §11)", sts.Name, wantName)
 	}
 	if sts.Spec.ServiceName != wantName {
 		t.Errorf("StatefulSet.ServiceName = %q, want %q (must match metadata.name)", sts.Spec.ServiceName, wantName)
+	}
+}
+
+// TestBuildStatefulSet_ControlPodHardening: the control pod keeps its SA token (the Harness
+// talks to the Kubernetes API) but is otherwise locked down: non-root uid 10001,
+// RuntimeDefault seccomp, no privilege escalation, no capabilities, and no service-link env
+// (every Service in the namespace would otherwise land in the container env — ach-* Services
+// even as ACH_* names). The kubernetes.default master env is injected regardless.
+func TestBuildStatefulSet_ControlPodHardening(t *testing.T) {
+	sts, _ := buildTestControlSTS(t)
+	ps := sts.Spec.Template.Spec
+	if ps.EnableServiceLinks == nil || *ps.EnableServiceLinks {
+		t.Error("enableServiceLinks must be false")
+	}
+	if sc := ps.SecurityContext; sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot || sc.SeccompProfile == nil || sc.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Errorf("pod securityContext = %+v, want runAsNonRoot + RuntimeDefault seccomp", sc)
+	}
+	csc := ps.Containers[0].SecurityContext
+	if csc == nil || csc.AllowPrivilegeEscalation == nil || *csc.AllowPrivilegeEscalation {
+		t.Errorf("container must set allowPrivilegeEscalation=false: %+v", csc)
+	}
+	if csc == nil || csc.Capabilities == nil || len(csc.Capabilities.Drop) != 1 || csc.Capabilities.Drop[0] != "ALL" || len(csc.Capabilities.Add) != 0 {
+		t.Errorf("container must drop ALL capabilities and add none: %+v", csc)
 	}
 }
 
@@ -788,8 +809,8 @@ func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
 	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
 	infra := agentrender.WSInfrastructureBlock{
 		Execution: agentrender.WSExecutionInfraBlock{
-			ControlEndpoint: "http://ach-control-" + string(a.UID) + ".ns.svc:8081",
-			FacadeEndpoint:  "http://ach-control-" + string(a.UID) + ".ns.svc:8081/facades",
+			ControlEndpoint: "http://ach-control-" + a.Name + ".ns.svc:8081",
+			FacadeEndpoint:  "http://ach-control-" + a.Name + ".ns.svc:8081/facades",
 		},
 	}
 
@@ -831,5 +852,33 @@ func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
 	}
 	if _, present := cm.Data["ca.crt"]; present {
 		t.Fatal("bootstrap ConfigMap must never carry ca.crt (contract §11 scope reset)")
+	}
+}
+
+// TestControlSelectors_IgnoreWorkspacePods: the runtime labels workspace pods
+// ach.ackstorm.ai/agent=<name> too, so every operator selector aimed at the control pod
+// (StatefulSet, control + expose Services, NetworkPolicy) must also require the control
+// component label — a workspace pod must never become a control endpoint or inherit the
+// control egress policy.
+func TestControlSelectors_IgnoreWorkspacePods(t *testing.T) {
+	sts, a := buildTestControlSTS(t)
+	p := &achv1alpha1.AgentProfile{}
+	p.Spec.NetworkPolicy = &achv1alpha1.NetworkPolicySpec{}
+	workspacePod := labels.Set{agentLabelKey: a.Name, "runtime.ach.ackstorm.ai/agent-uid": string(a.UID), "runtime.ach.ackstorm.ai/workspace-name": "ach-ws-demo-0123456789abcdef0123"}
+	controlPod := labels.Set(sts.Spec.Template.Labels)
+	selectors := map[string]map[string]string{
+		"StatefulSet":     sts.Spec.Selector.MatchLabels,
+		"control Service": buildControlService(a).Spec.Selector,
+		"expose Service":  buildService(a, p).Spec.Selector,
+		"NetworkPolicy":   buildNetworkPolicy(a, p).Spec.PodSelector.MatchLabels,
+	}
+	for name, sel := range selectors {
+		s := labels.SelectorFromSet(sel)
+		if s.Matches(workspacePod) {
+			t.Errorf("%s selector %v matches a workspace pod", name, sel)
+		}
+		if !s.Matches(controlPod) {
+			t.Errorf("%s selector %v does not match the control pod %v", name, sel, controlPod)
+		}
 	}
 }

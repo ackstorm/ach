@@ -53,19 +53,17 @@ const (
 	condChannelSecretsResolved = "ChannelSecretsResolved"
 	condWorkloadApplied        = "WorkloadApplied"
 	condWorkloadReady          = "WorkloadReady"
+	// condControlServiceAccountResolved is False when the profile's controlServiceAccountName
+	// names a ServiceAccount that does not exist (the control pod could never start).
+	condControlServiceAccountResolved = "ControlServiceAccountResolved"
 )
 
-var requiredConds = []string{condProfileResolved, condIdentityResolved, condChannelSecretsResolved, condWorkloadApplied, condWorkloadReady}
+var requiredConds = []string{condProfileResolved, condControlServiceAccountResolved, condIdentityResolved, condChannelSecretsResolved, condWorkloadApplied, condWorkloadReady}
 
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=achagents,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=achagents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=agentprofiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-// statefulsets/scale: delegated to the per-agent Harness Role (buildWorkspaceRole) below —
-// the operator must itself hold any verb it grants there (RBAC escalation prevention), so
-// this is granted here too even though the operator's own reconcile loop never scales a
-// StatefulSet directly.
-// +kubebuilder:rbac:groups=apps,resources=statefulsets/scale,verbs=get;update;patch
 // Deployments: read+delete only, for the one-time cutover cleanup of a pre-workspace-v1
 // agent's old operator-owned Deployment (pruneLegacyDeployment) — this reconciler never
 // creates/updates a Deployment again (control workloads are StatefulSets).
@@ -78,8 +76,8 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // for the UID-owned legacy workspace key Secret; existing keys are never updated or deleted.
 // No Secret verbs are ever granted to the Harness or execution ServiceAccounts.
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
-// pods delete: delegated to the per-agent Harness Role below, same escalation-prevention
-// reasoning as statefulsets/scale.
+// pods delete: delegated to the per-agent Harness Role below — the operator must itself
+// hold any verb it grants there (RBAC escalation prevention).
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
@@ -152,6 +150,23 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("get agentprofile: %w", err)
 	}
 	setCond(&conds, condProfileResolved, metav1.ConditionTrue, "ProfileFound", "", agent.Generation)
+
+	// 1b. A profile-named control SA is external: it must already exist. Created later, the
+	// ServiceAccount watch (agentsForControlServiceAccount) re-enqueues this agent.
+	if name := profile.Spec.ControlServiceAccountName; name != "" {
+		var sa corev1.ServiceAccount
+		if err := r.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: name}, &sa); err != nil {
+			if apierrors.IsNotFound(err) {
+				setCond(&conds, condControlServiceAccountResolved, metav1.ConditionFalse, "ServiceAccountNotFound",
+					fmt.Sprintf("ServiceAccount %q named by AgentProfile %q spec.controlServiceAccountName not found in namespace %q", name, profile.Name, agent.Namespace), agent.Generation)
+				return r.finish(ctx, &agent, conds)
+			}
+			return ctrl.Result{}, fmt.Errorf("get control serviceaccount: %w", err)
+		}
+		setCond(&conds, condControlServiceAccountResolved, metav1.ConditionTrue, "ServiceAccountFound", "", agent.Generation)
+	} else {
+		setCond(&conds, condControlServiceAccountResolved, metav1.ConditionTrue, "PerAgentServiceAccount", "", agent.Generation)
+	}
 
 	// 2. Identity Secret + key (APIReader — uncached). Object-level CEL on ACHAgentSpec
 	// requires spec.ach.identity on any NEWLY admitted object, but a CR stored before that
@@ -472,7 +487,7 @@ func (r *ACHAgentReconciler) applyFail(ctx context.Context, a *achv1alpha1.ACHAg
 
 func (r *ACHAgentReconciler) deriveWorkloadReady(ctx context.Context, a *achv1alpha1.ACHAgent, configHash string, conds *[]metav1.Condition) {
 	var pods corev1.PodList
-	if err := r.List(ctx, &pods, client.InNamespace(a.Namespace), client.MatchingLabels{agentLabelKey: a.Name}); err != nil {
+	if err := r.List(ctx, &pods, client.InNamespace(a.Namespace), client.MatchingLabels(agentSelectorLabels(a.Name))); err != nil {
 		setCond(conds, condWorkloadReady, metav1.ConditionFalse, "ListFailed", err.Error(), a.Generation)
 		return
 	}
@@ -608,9 +623,27 @@ func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Watches(&achv1alpha1.AgentProfile{}, handler.EnqueueRequestsFromMapFunc(r.agentsForProfile)).
+		Watches(&corev1.ServiceAccount{}, handler.EnqueueRequestsFromMapFunc(r.agentsForControlServiceAccount)).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.agentsForSecret), builder.OnlyMetadata).
 		Named("achagent").
 		Complete(r)
+}
+
+// agentsForControlServiceAccount re-enqueues the agents of every profile in the SA's
+// namespace that names it as controlServiceAccountName (so ControlServiceAccountResolved
+// flips as soon as the SA appears or disappears).
+func (r *ACHAgentReconciler) agentsForControlServiceAccount(ctx context.Context, obj client.Object) []reconcile.Request {
+	var profiles achv1alpha1.AgentProfileList
+	if err := r.List(ctx, &profiles, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range profiles.Items {
+		if profiles.Items[i].Spec.ControlServiceAccountName == obj.GetName() {
+			reqs = append(reqs, r.agentsForProfile(ctx, &profiles.Items[i])...)
+		}
+	}
+	return reqs
 }
 
 func (r *ACHAgentReconciler) agentsForProfile(ctx context.Context, obj client.Object) []reconcile.Request {

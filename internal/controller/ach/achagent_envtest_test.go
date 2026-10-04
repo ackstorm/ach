@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 )
 
 // testExecutionSpec/testWorkspaceSpec/testArtifactsSpec/testEngineSpec/testLimitsSpec
@@ -85,7 +86,7 @@ func mustApply(t *testing.T, ctx context.Context, obj client.Object) {
 }
 
 // getControlStatefulSet fetches the named ACHAgent to learn its apiserver-assigned UID, then
-// gets the control StatefulSet by its contract name (ach-control-<uid>) — NOT
+// gets the control StatefulSet by its contract name (ach-control-<agent name>) — NOT
 // agentResourceName(name): the control StatefulSet is UID-named per §11, unlike the
 // ConfigMap/Service/NetworkPolicy children, which still use the legacy name-based scheme.
 func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) appsv1.StatefulSet {
@@ -95,7 +96,7 @@ func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) 
 		t.Fatalf("get achagent %q: %v", agentName, err)
 	}
 	var sts appsv1.StatefulSet
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: controlServiceName(string(a.UID))}, &sts); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ControlName(a.Name)}, &sts); err != nil {
 		t.Fatalf("get control statefulset for %q: %v", agentName, err)
 	}
 	return sts
@@ -223,12 +224,13 @@ func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 	}
 	oldConfigVersion := before["configVersion"]
 	var bootstrap corev1.ConfigMap
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: executionServiceAccountName(string(agent.UID))}, &bootstrap); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ExecutionServiceAccountName(string(agent.UID))}, &bootstrap); err != nil {
 		t.Fatalf("get execution bootstrap ConfigMap: %v", err)
 	}
 	if strings.Contains(bootstrap.Data[bootstrapFileName], string(keySecret.Data[workspaceKeyDataKey])) || strings.Contains(bootstrap.Data[bootstrapFileName], "ACH_SANDBOX_KEY") {
 		t.Fatal("private workspace key or its env name leaked into execution bootstrap ConfigMap")
 	}
+	assertExecutionSAUnbound(t, ctx, &agent)
 	keySecret.Data[workspaceKeyDataKey] = []byte("operator-supplied-key-rotation")
 	if err := k8sClient.Update(ctx, &keySecret); err != nil {
 		t.Fatalf("update workspace key Secret: %v", err)
@@ -1120,6 +1122,7 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-csa", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
 	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-csa", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{ControlServiceAccountName: "ach-sandboxed-agent", Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}}
 	mustApply(t, ctx, prof)
+	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-sandboxed-agent", Namespace: WatchNamespace}})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-csa", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
@@ -1136,7 +1139,7 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	if got := getControlStatefulSet(t, ctx, "aa-csa").Spec.Template.Spec.ServiceAccountName; got != "ach-sandboxed-agent" {
 		t.Errorf("control StatefulSet SA = %q, want ach-sandboxed-agent", got)
 	}
-	perAgent := controlServiceAccountName(string(agent.UID))
+	perAgent := agentrender.HarnessName(string(agent.UID))
 	var sa corev1.ServiceAccount
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: perAgent}, &sa); err == nil {
 		t.Errorf("per-agent SA %s must not be created when the profile sets controlServiceAccountName", perAgent)
@@ -1155,4 +1158,80 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	if err := k8sClient.Create(ctx, bad); err == nil {
 		t.Fatal("expected rejection: controlServiceAccountName is not a DNS-1123 label")
 	}
+}
+
+// assertExecutionSAUnbound: ach-execution-<uid> is a name only (the runtime renders the
+// workspace pod with automountServiceAccountToken=false) — no RoleBinding or
+// ClusterRoleBinding anywhere may reference it.
+func assertExecutionSAUnbound(t *testing.T, ctx context.Context, agent *achv1alpha1.ACHAgent) {
+	t.Helper()
+	execSA := agentrender.ExecutionServiceAccountName(string(agent.UID))
+	var sa corev1.ServiceAccount
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: agent.Namespace, Name: execSA}, &sa); err != nil {
+		t.Fatalf("get execution ServiceAccount: %v", err)
+	}
+	if sa.AutomountServiceAccountToken == nil || *sa.AutomountServiceAccountToken {
+		t.Errorf("execution ServiceAccount automount = %v, want false", sa.AutomountServiceAccountToken)
+	}
+	isExec := func(subjects []rbacv1.Subject) bool {
+		for _, s := range subjects {
+			if s.Kind == rbacv1.ServiceAccountKind && s.Name == execSA {
+				return true
+			}
+		}
+		return false
+	}
+	var rbs rbacv1.RoleBindingList
+	if err := k8sClient.List(ctx, &rbs); err != nil {
+		t.Fatalf("list RoleBindings: %v", err)
+	}
+	for _, rb := range rbs.Items {
+		if isExec(rb.Subjects) {
+			t.Errorf("RoleBinding %s/%s binds the execution ServiceAccount %s", rb.Namespace, rb.Name, execSA)
+		}
+	}
+	var crbs rbacv1.ClusterRoleBindingList
+	if err := k8sClient.List(ctx, &crbs); err != nil {
+		t.Fatalf("list ClusterRoleBindings: %v", err)
+	}
+	for _, crb := range crbs.Items {
+		if isExec(crb.Subjects) {
+			t.Errorf("ClusterRoleBinding %s binds the execution ServiceAccount %s", crb.Name, execSA)
+		}
+	}
+}
+
+// A profile-named control ServiceAccount that does not exist leaves the agent
+// ControlServiceAccountResolved=False (no workload applied — its pod could not start), and
+// creating the SA re-enqueues the agent without any other change.
+func TestACHAgent_ControlServiceAccountName_Missing(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-csa-missing", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-csa-missing", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{ControlServiceAccountName: "ach-late-sa", Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-csa-missing", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-csa-missing"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-csa-missing", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-csa-missing", condControlServiceAccountResolved, metav1.ConditionFalse)
+	waitAgentCond(t, ctx, "aa-csa-missing", condReady, metav1.ConditionFalse)
+	var agent achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-csa-missing"}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	c := apimeta.FindStatusCondition(agent.Status.Conditions, condControlServiceAccountResolved)
+	if c.Reason != "ServiceAccountNotFound" || !strings.Contains(c.Message, "ach-late-sa") {
+		t.Errorf("condition = %s/%q, want ServiceAccountNotFound naming ach-late-sa", c.Reason, c.Message)
+	}
+	var sts appsv1.StatefulSet
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ControlName("aa-csa-missing")}, &sts); !apierrors.IsNotFound(err) {
+		t.Errorf("control StatefulSet must not be applied while its SA is missing: err=%v", err)
+	}
+
+	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-late-sa", Namespace: WatchNamespace}})
+	waitAgentCond(t, ctx, "aa-csa-missing", condControlServiceAccountResolved, metav1.ConditionTrue)
+	waitAgentCond(t, ctx, "aa-csa-missing", condWorkloadApplied, metav1.ConditionTrue)
 }

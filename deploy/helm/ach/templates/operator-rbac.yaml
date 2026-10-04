@@ -36,11 +36,6 @@ rules:
 - apiGroups: ["apps"]
   resources: ["statefulsets"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-# statefulsets/scale: delegated to the per-agent Harness Role below — the operator must
-# itself hold any verb it grants there (RBAC escalation prevention).
-- apiGroups: ["apps"]
-  resources: ["statefulsets/scale"]
-  verbs: ["get", "patch", "update"]
 # Deployments: read+delete only, for the one-time cutover cleanup of a pre-workspace-v1
 # agent's old operator-owned Deployment (pruneLegacyDeployment) — never created/updated again.
 - apiGroups: ["apps"]

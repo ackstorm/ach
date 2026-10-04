@@ -124,7 +124,7 @@ NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 single **workspace-v1** wire config (`schemaVersion: "workspace-v1"`, contract §11) the
 `ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a `config.json`
 ConfigMap + a single-replica, single-container **control StatefulSet**
-(`ach-control-<uid>`) that self-hydrates against ACH at boot (no init container, no CLI),
+(`ach-control-<name>`) that self-hydrates against ACH at boot (no init container, no CLI),
 plus the execution identity/bootstrap scaffolding the Harness running IN that control pod
 uses to create real per-Workspace execution StatefulSets directly (the declarative
 `Workspace` CR for hand-managing them yourself is deferred to v0.1.1). There is no

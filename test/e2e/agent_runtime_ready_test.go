@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ackstorm/ach/internal/agentrender"
 )
 
 func TestClassifyRuntimeImages(t *testing.T) {
@@ -279,18 +281,11 @@ func phase6RequireRealRuntimeImages(t *testing.T) {
 	}
 }
 
-// controlStatefulSetRef resolves the contract §11 control workload name
-// (ach-control-<uid>) for the given ACHAgent, as a kubectl workload ref ("statefulset/...")
-// suitable for `kubectl exec`/`kubectl wait`.
-func controlStatefulSetRef(ctx context.Context, t *testing.T, namespace, agentName string) string {
-	t.Helper()
-	out, err := exec.CommandContext(ctx, "kubectl", "-n", namespace, "get", "achagent", agentName,
-		"-o", "jsonpath={.metadata.uid}").CombinedOutput()
-	uid := strings.TrimSpace(string(out))
-	if err != nil || uid == "" {
-		t.Fatalf("resolve %s uid: %v %q", agentName, err, out)
-	}
-	return "statefulset/ach-control-" + uid
+// controlStatefulSetRef is the contract §11 control workload (ach-control-<agent name>,
+// agentrender.ControlName) as a kubectl workload ref ("statefulset/...") suitable for
+// `kubectl exec`/`kubectl wait`.
+func controlStatefulSetRef(agentName string) string {
+	return "statefulset/" + agentrender.ControlName(agentName)
 }
 
 // kubectlExecWorkload wraps `kubectl exec -n <ns> <workloadRef> -c <container> -- <cmd...>`.
@@ -351,7 +346,7 @@ func TestAgentRuntimeReady(t *testing.T) {
 				"--for=condition=WorkloadReady=true", "--timeout=300s", "achagent/"+name).CombinedOutput()
 			if err != nil {
 				pods, _ := exec.Command("kubectl", "-n", "ach-system", "get", "pods",
-					"-l", "ach.ackstorm.ai/agent="+name, "-o", "wide").CombinedOutput()
+					"-l", "ach.ackstorm.ai/agent="+name+",ach.ackstorm.ai/component=control", "-o", "wide").CombinedOutput()
 				t.Fatalf("%s never became WorkloadReady: %v\n%s\n%s", name, err, out, pods)
 			}
 		})
@@ -364,7 +359,7 @@ func TestAgentRuntimeReady(t *testing.T) {
 	t.Run("persistent_standalone_writable", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		ref := controlStatefulSetRef(ctx, t, "ach-system", "e2e-agent-pvc")
+		ref := controlStatefulSetRef("e2e-agent-pvc")
 		stdout, stderr, err := kubectlExecWorkload(ctx, "ach-system", ref, "agent", "sh", "-c",
 			`touch /var/lib/ach-agent/.e2e-probe && rm /var/lib/ach-agent/.e2e-probe && echo $(id -u):$(id -g)`)
 		if err != nil || strings.TrimSpace(stdout) != "10001:10001" {
