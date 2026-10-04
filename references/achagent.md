@@ -13,7 +13,7 @@ instance) collapse via `agentrender.Render2` into the single workspace-v1 wire d
 `docs/schemas/ach-workspace-contract-v1.md` + `ach-workspace-config-v1.schema.json`).
 The `ACHAgentReconciler` writes `config.json` to a ConfigMap (`achagent-<name>`) and
 applies a single-replica, single-container **control StatefulSet**
-(`ach-control-<uid>`, container `agent` — Channels+Harness only) that mounts it at
+(`ach-control-<name>`, container `agent` — Channels+Harness only) that mounts it at
 `/etc/ach-runtime/config.json`; inbound channel-auth secrets ride in env
 (`secretKeyRef`), never file-mounted (NOT an isolation boundary: same-uid reads
 `/proc/<pid>/environ` either way); a salted config-hash annotation rolls the pod on
@@ -163,6 +163,24 @@ still on the old shape is rejected or blocked, not silently translated:
   kubernetes-sigs/agent-sandbox cluster prerequisite before `reconcile_ach`, but no
   stage-06 fixture exercises it any more — the chart surface is preserved
   independently of workspace-v1 runtime readiness (`helm-render-check.sh` topology 6).
+
+## Object names (contract §11)
+
+One source of truth each, in `internal/agentrender/render2.go`:
+
+| Object | Name | Helper |
+|--------|------|--------|
+| control StatefulSet + headless Service (pod `<name>-0`) | `ach-control-<agent name>` | `ControlName` |
+| control SA (default), per-agent Role + RoleBinding | `ach-harness-<uid>` | `HarnessName` |
+| execution SA + bootstrap ConfigMap | `ach-execution-<uid>` | `ExecutionServiceAccountName` |
+| workspace StatefulSet/Service/pod | `ach-ws-…` | runtime-owned — the operator never computes or validates it |
+
+`ControlName`: the name as is when ≤ 40 chars; otherwise (or when it contains `.`, legal
+in `metadata.name` but not in a Service name) its first 31 chars (dots → `-`, trailing `-`
+dropped) + `-` + first 8 hex of `sha256(full name)`. 12 + 40 = 52 keeps the pod name
+(`-0`) and the controller-revision-hash label value (`-` + 10 chars) within 63. The UID
+stays in labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
+`http://<ControlName>.<ns>.svc:8081[/facades]`.
 
 ## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
 

@@ -741,11 +741,11 @@ func buildTestControlSTS(t *testing.T) (*appsv1.StatefulSet, *achv1alpha1.ACHAge
 }
 
 // TestBuildStatefulSet_ControlNaming is the contract §11 regression guard found by root's
-// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<uid>
+// review of f66d476: the control StatefulSet's own metadata.name must be ach-control-<agent name>
 // (matching ServiceName, not the legacy achagent-<name> scheme other children keep).
 func TestBuildStatefulSet_ControlNaming(t *testing.T) {
 	sts, a := buildTestControlSTS(t)
-	wantName := "ach-control-" + string(a.UID)
+	wantName := "ach-control-" + a.Name
 	if sts.Name != wantName {
 		t.Errorf("StatefulSet name = %q, want %q (contract §11)", sts.Name, wantName)
 	}
@@ -788,8 +788,8 @@ func TestBuildExecutionBootstrapConfigMap_StrictShape(t *testing.T) {
 	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
 	infra := agentrender.WSInfrastructureBlock{
 		Execution: agentrender.WSExecutionInfraBlock{
-			ControlEndpoint: "http://ach-control-" + string(a.UID) + ".ns.svc:8081",
-			FacadeEndpoint:  "http://ach-control-" + string(a.UID) + ".ns.svc:8081/facades",
+			ControlEndpoint: "http://ach-control-" + a.Name + ".ns.svc:8081",
+			FacadeEndpoint:  "http://ach-control-" + a.Name + ".ns.svc:8081/facades",
 		},
 	}
 

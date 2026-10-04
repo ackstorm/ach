@@ -34,7 +34,7 @@ func TestWorkspaceCreatorRBAC(t *testing.T) {
 
 	assertWorkspaceRoleRules(t, role)
 
-	rb := buildWorkspaceRoleBinding(a, controlServiceAccountName(string(a.UID)))
+	rb := buildWorkspaceRoleBinding(a, agentrender.HarnessName(string(a.UID)))
 	if rb.Name != wantName || rb.Namespace != a.Namespace {
 		t.Fatalf("RoleBinding = %s/%s, want %s/%s", rb.Namespace, rb.Name, a.Namespace, wantName)
 	}
@@ -46,7 +46,7 @@ func TestWorkspaceCreatorRBAC(t *testing.T) {
 	}
 
 	// Execution is never a subject of this (or any other) binding.
-	executionName := executionServiceAccountName(string(a.UID))
+	executionName := agentrender.ExecutionServiceAccountName(string(a.UID))
 	for _, s := range rb.Subjects {
 		if s.Name == executionName {
 			t.Fatal("execution ServiceAccount must never be bound to the Harness workspace-creator Role")
@@ -137,7 +137,7 @@ func TestACHAgent_VolatileWithoutBrokerOrCA(t *testing.T) {
 	p.Spec.Achagent.Ach = &achv1alpha1.AchSpec{BaseURL: "https://ach"}
 	p.Spec.Execution = achv1alpha1.ExecutionInfraSpec{Image: "registry.test/exec:0.1.0", EphemeralStorage: "1Gi"}
 
-	infra, err := agentrender.RenderInfrastructureV1(string(a.UID), a.Namespace, controlServiceAccountName(string(a.UID)), &p.Spec.Execution)
+	infra, err := agentrender.RenderInfrastructureV1(a.Name, string(a.UID), a.Namespace, agentrender.HarnessName(string(a.UID)), &p.Spec.Execution)
 	if err != nil {
 		t.Fatalf("RenderInfrastructureV1 (no broker/CA argument any more): %v", err)
 	}
@@ -149,7 +149,7 @@ func TestACHAgent_VolatileWithoutBrokerOrCA(t *testing.T) {
 	executionSA := buildExecutionServiceAccount(a)
 	svc := buildControlService(a)
 	role := buildWorkspaceRole(a)
-	rb := buildWorkspaceRoleBinding(a, controlServiceAccountName(string(a.UID)))
+	rb := buildWorkspaceRoleBinding(a, agentrender.HarnessName(string(a.UID)))
 	bootCM, err := buildExecutionBootstrapConfigMap(a, infra)
 	if err != nil {
 		t.Fatalf("buildExecutionBootstrapConfigMap: %v", err)
@@ -235,7 +235,7 @@ func TestControlWorkload_ConfigAndProfile(t *testing.T) {
 		t.Fatalf("buildStatefulSet: %v", err)
 	}
 	ps := sts.Spec.Template.Spec
-	wantName := "ach-control-" + string(a.UID)
+	wantName := "ach-control-" + a.Name
 	if sts.Name != wantName || sts.Spec.ServiceName != wantName {
 		t.Errorf("control StatefulSet naming = %q/%q, want %q", sts.Name, sts.Spec.ServiceName, wantName)
 	}

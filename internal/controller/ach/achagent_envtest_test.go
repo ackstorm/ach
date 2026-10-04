@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
+	"github.com/ackstorm/ach/internal/agentrender"
 )
 
 // testExecutionSpec/testWorkspaceSpec/testArtifactsSpec/testEngineSpec/testLimitsSpec
@@ -85,7 +86,7 @@ func mustApply(t *testing.T, ctx context.Context, obj client.Object) {
 }
 
 // getControlStatefulSet fetches the named ACHAgent to learn its apiserver-assigned UID, then
-// gets the control StatefulSet by its contract name (ach-control-<uid>) — NOT
+// gets the control StatefulSet by its contract name (ach-control-<agent name>) — NOT
 // agentResourceName(name): the control StatefulSet is UID-named per §11, unlike the
 // ConfigMap/Service/NetworkPolicy children, which still use the legacy name-based scheme.
 func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) appsv1.StatefulSet {
@@ -95,7 +96,7 @@ func getControlStatefulSet(t *testing.T, ctx context.Context, agentName string) 
 		t.Fatalf("get achagent %q: %v", agentName, err)
 	}
 	var sts appsv1.StatefulSet
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: controlServiceName(string(a.UID))}, &sts); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ControlName(a.Name)}, &sts); err != nil {
 		t.Fatalf("get control statefulset for %q: %v", agentName, err)
 	}
 	return sts
@@ -223,7 +224,7 @@ func TestACHAgent_HappyPath_AppliesConfigMapAndDeployment(t *testing.T) {
 	}
 	oldConfigVersion := before["configVersion"]
 	var bootstrap corev1.ConfigMap
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: executionServiceAccountName(string(agent.UID))}, &bootstrap); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ExecutionServiceAccountName(string(agent.UID))}, &bootstrap); err != nil {
 		t.Fatalf("get execution bootstrap ConfigMap: %v", err)
 	}
 	if strings.Contains(bootstrap.Data[bootstrapFileName], string(keySecret.Data[workspaceKeyDataKey])) || strings.Contains(bootstrap.Data[bootstrapFileName], "ACH_SANDBOX_KEY") {
@@ -1136,7 +1137,7 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	if got := getControlStatefulSet(t, ctx, "aa-csa").Spec.Template.Spec.ServiceAccountName; got != "ach-sandboxed-agent" {
 		t.Errorf("control StatefulSet SA = %q, want ach-sandboxed-agent", got)
 	}
-	perAgent := controlServiceAccountName(string(agent.UID))
+	perAgent := agentrender.HarnessName(string(agent.UID))
 	var sa corev1.ServiceAccount
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: perAgent}, &sa); err == nil {
 		t.Errorf("per-agent SA %s must not be created when the profile sets controlServiceAccountName", perAgent)

@@ -152,8 +152,8 @@
     "execution": {
       "image": "registry.ackstorm.ai/ach-runtime/execution:0.1.0",
       "serviceAccount": "ach-execution-3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77",
-      "controlEndpoint": "http://ach-control-3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77.ach.svc:8081",
-      "facadeEndpoint": "http://ach-control-3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77.ach.svc:8081/facades",
+      "controlEndpoint": "http://ach-control-gitlab-reviewer.ach.svc:8081",
+      "facadeEndpoint": "http://ach-control-gitlab-reviewer.ach.svc:8081/facades",
       "resources": {
         "requests": {
           "cpu": "250m",

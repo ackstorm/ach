@@ -3,7 +3,10 @@
 package agentrender
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -161,35 +164,66 @@ type WSInfrastructureBlock struct {
 // controlEndpoint.
 const controlPort = 8081
 
+// HarnessName is the per-agent ach-harness-<uid> name: the default control ServiceAccount
+// and, always, the per-agent workspace-creator Role/RoleBinding. The one place that prefix
+// is spelled.
+func HarnessName(agentUID string) string { return "ach-harness-" + agentUID }
+
+// ExecutionServiceAccountName is ach-execution-<uid> (contract §11; the runtime schema
+// requires exactly this value in infrastructure.execution.serviceAccount). Also the name of
+// the execution bootstrap ConfigMap.
+func ExecutionServiceAccountName(agentUID string) string { return "ach-execution-" + agentUID }
+
 // ControlServiceAccountName is the effective control (Harness) ServiceAccount: the profile's
-// stable controlServiceAccountName when set, else the per-agent ach-harness-<uid>.
+// stable controlServiceAccountName when set, else the per-agent HarnessName.
 func ControlServiceAccountName(agentUID string, p *achv1alpha1.AgentProfile) string {
 	if p.Spec.ControlServiceAccountName != "" {
 		return p.Spec.ControlServiceAccountName
 	}
-	return "ach-harness-" + agentUID
+	return HarnessName(agentUID)
 }
 
-// RenderInfrastructureV1 resolves infrastructure{control,execution}. agentUID is the
-// ACHAgent's canonical lowercase UUID (metadata.uid); namespace is the ACHAgent's
-// namespace; controlSA is the effective control ServiceAccount (ControlServiceAccountName). execSpec is AgentProfileSpec.Execution (required by CRD CEL — see
-// api/ach/v1alpha1). Contract §11 scope reset: the control pod's broker and client TLS
-// configuration are excluded, not deferred — D2 reuses the existing signed mini-harness
-// bearer and HMAC facade authentication instead, so this mapping always succeeds once
-// execSpec is present.
-func RenderInfrastructureV1(agentUID, namespace, controlSA string, execSpec *achv1alpha1.ExecutionInfraSpec) (WSInfrastructureBlock, error) {
+// controlNameMaxPart bounds the agent-name part of ControlName: "ach-control-" (12) + 40 =
+// 52, so the pod name (+"-0") and the StatefulSet's controller-revision-hash label value
+// (+"-" + 10-char hash) both stay within the 63-char label limit.
+const controlNameMaxPart = 40
+
+// ControlName is the control StatefulSet, its governing Service and its pod-name stem:
+// ach-control-<agent name>. A name longer than controlNameMaxPart (agent names may be up to
+// 253 chars) — or one carrying '.', valid in a metadata.name but not in a Service name —
+// becomes its first 31 chars (dots as '-', trailing '-' dropped) + "-" + the first 8 hex of
+// sha256(full name): deterministic, and two names sharing a 31-char prefix still differ.
+func ControlName(agentName string) string {
+	part := agentName
+	if len(part) > controlNameMaxPart || strings.Contains(part, ".") {
+		sum := sha256.Sum256([]byte(agentName))
+		part = strings.ReplaceAll(part, ".", "-")
+		if len(part) > 31 {
+			part = part[:31]
+		}
+		part = strings.TrimRight(part, "-") + "-" + hex.EncodeToString(sum[:])[:8]
+	}
+	return "ach-control-" + part
+}
+
+// RenderInfrastructureV1 resolves infrastructure{control,execution}. agentName/agentUID are
+// the ACHAgent's metadata.name and canonical lowercase UUID; namespace is its namespace;
+// controlSA is the effective control ServiceAccount (ControlServiceAccountName). execSpec is
+// AgentProfileSpec.Execution (required by CRD CEL — see api/ach/v1alpha1). Contract §11
+// scope reset: the control pod's broker and client TLS configuration are excluded, not
+// deferred — D2 reuses the existing signed mini-harness bearer and HMAC facade
+// authentication instead, so this mapping always succeeds once execSpec is present.
+func RenderInfrastructureV1(agentName, agentUID, namespace, controlSA string, execSpec *achv1alpha1.ExecutionInfraSpec) (WSInfrastructureBlock, error) {
 	if execSpec == nil {
 		return WSInfrastructureBlock{}, fmt.Errorf("spec.execution is required")
 	}
-	uid32 := stripDashes(agentUID)
-	executionSA := "ach-execution-" + agentUID
-	controlHost := "ach-control-" + agentUID + "." + namespace + ".svc"
+	controlHost := ControlName(agentName) + "." + namespace + ".svc"
 	controlEndpoint := fmt.Sprintf("http://%s:%d", controlHost, controlPort)
 
 	grace := executionGrace(execSpec.TerminationGracePeriodSeconds, nil)
 
 	exec := WSExecutionInfraBlock{
-		Image: execSpec.Image, ServiceAccount: executionSA,
+		Image: execSpec.Image, ServiceAccount: ExecutionServiceAccountName(agentUID),
 		ControlEndpoint: controlEndpoint, FacadeEndpoint: controlEndpoint + "/facades",
 		EphemeralStorage:              execSpec.EphemeralStorage,
 		TerminationGracePeriodSeconds: grace,
@@ -214,7 +248,6 @@ func RenderInfrastructureV1(agentUID, namespace, controlSA string, execSpec *ach
 		exec.Tolerations = append(exec.Tolerations, wt)
 	}
 
-	_ = uid32 // reserved for the <=62-char execution Pod/StatefulSet name derivation (workload builder), not the wire doc
 	return WSInfrastructureBlock{
 		Control:   WSControlInfraBlock{ServiceAccount: controlSA},
 		Execution: exec,
@@ -251,16 +284,6 @@ func renderK8sResources(r *corev1.ResourceRequirements) *WSK8sResourceBlock {
 		}
 	}
 	return out
-}
-
-func stripDashes(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] != '-' {
-			out = append(out, s[i])
-		}
-	}
-	return string(out)
 }
 
 // WSConfig is the full workspace-v1 wire document (schema root). McpServers has no home in
@@ -348,7 +371,7 @@ func Render2(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL 
 	if err != nil {
 		return WSConfig{}, err
 	}
-	infra, err := RenderInfrastructureV1(string(a.UID), a.Namespace, ControlServiceAccountName(string(a.UID), &p), &p.Spec.Execution)
+	infra, err := RenderInfrastructureV1(a.Name, string(a.UID), a.Namespace, ControlServiceAccountName(string(a.UID), &p), &p.Spec.Execution)
 	if err != nil {
 		return WSConfig{}, err
 	}

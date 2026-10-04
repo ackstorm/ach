@@ -73,7 +73,7 @@ func getControlStatefulSetIn(t *testing.T, ns, name string) appsv1.StatefulSet {
 		t.Fatalf("get achagent %q: %v", name, err)
 	}
 	var sts appsv1.StatefulSet
-	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: controlServiceName(string(a.UID))}, &sts); err != nil {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: agentrender.ControlName(a.Name)}, &sts); err != nil {
 		t.Fatalf("get control statefulset for %q: %v", name, err)
 	}
 	return sts

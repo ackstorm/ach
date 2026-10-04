@@ -179,7 +179,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   consumes to create per-Workspace execution StatefulSets directly are NOT deferred).
   Operator renders the workspace-v1 wire config (`internal/agentrender`,
   Render2/RenderInfrastructureV1, JSON tags schema-locked) plus the single-replica control
-  StatefulSet (contract §11, name `ach-control-<uid>`) the harness **self-hydrates** at
+  StatefulSet (contract §11, name `ach-control-<name>`) the harness **self-hydrates** at
   boot — no init container; status from probes, fixed control port, no `health` knob any
   more (compatibility-only CRD field, read by nothing that builds real k8s objects). The
   Harness's own namespaced Role/RoleBinding (`ach-harness-<uid>`, same name as its
