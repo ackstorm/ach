@@ -182,6 +182,9 @@ dropped) + `-` + first 8 hex of `sha256(full name)`. 12 + 40 = 52 keeps the pod 
 stays in labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
 `http://<ControlName>.<ns>.svc:8081[/facades]`.
 
+The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
+the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
+
 ## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
 
 Optional DNS-1123 label (max 63). Set: control StatefulSet (and the podTemplate re-pin), the

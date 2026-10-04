@@ -305,3 +305,26 @@ func TestRender2_ControlEndpointUsesAgentName(t *testing.T) {
 		t.Fatalf("endpoints = %q / %q, want %q (+/facades)", cfg.Infrastructure.Execution.ControlEndpoint, cfg.Infrastructure.Execution.FacadeEndpoint, want)
 	}
 }
+
+// TestRender2_AlwaysEmitsAgentName: the runtime names workspace pods ach-ws-<name>-<ref>, so
+// agent.name is required on the wire and always rendered from metadata.name.
+func TestRender2_AlwaysEmitsAgentName(t *testing.T) {
+	profile, agent := minimalRender2Fixture()
+	cfg, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Agent map[string]any `json:"agent"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Agent["name"] != agent.Name || agent.Name == "" {
+		t.Fatalf("agent.name = %v, want %q", doc.Agent["name"], agent.Name)
+	}
+}
