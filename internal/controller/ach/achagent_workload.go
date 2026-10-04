@@ -174,22 +174,22 @@ func buildConfigMap(a *achv1alpha1.ACHAgent, configJSON []byte) *corev1.ConfigMa
 	}
 }
 
-// buildWorkspaceRole grants the Harness (control pod) exactly what it needs to create and
-// manage per-Workspace execution StatefulSets/Services/Pods in its own namespace (contract
-// §11 creator contract) — named ach-harness-<uid>, same as the control ServiceAccount it
-// binds. No Secret/RBAC CRUD, TokenReview, pod create/exec, or cross-namespace grant: the
-// Harness's own runtime client is responsible for restricting operations to its own
-// UID/owner-labelled Workspace objects — this namespace Role is not per-agent isolation by
-// itself.
+// buildWorkspaceRole grants the Harness (control pod) exactly the verbs its runtime
+// Kubernetes client (ach-runtime harness/kubernetes.py) issues against its own ach-ws-*
+// workspace objects, in its own namespace (contract §11 creator contract): StatefulSets
+// get/list/create/patch (replicas 0↔1)/delete (recreate on template drift), Services
+// get/create, Pods get/list/delete. No watch, no update (PUT), no /scale subresource, no
+// Secret/RBAC, TokenReview, pod create/exec or cross-namespace grant. RBAC cannot match a
+// name prefix, so the Role is namespace-wide; the Harness itself restricts every call to
+// objects labelled/owned by its agent UID — this Role is not per-agent isolation by itself.
 func buildWorkspaceRole(a *achv1alpha1.ACHAgent) *rbacv1.Role {
 	name := agentrender.HarnessName(string(a.UID))
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "watch", "create", "update", "patch", "delete"}},
-			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets/scale"}, Verbs: []string{"get", "update", "patch"}},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch", "delete"}},
-			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list", "watch", "create", "update", "patch", "delete"}},
+			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "create", "patch", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "delete"}},
+			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "create"}},
 		},
 	}
 }

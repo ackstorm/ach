@@ -185,6 +185,18 @@ stays in labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` a
 The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
 the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
 
+## Harness RBAC (`ach-harness-<uid>` Role)
+
+Exactly what the runtime's Kubernetes client (`ach-runtime` `harness/kubernetes.py`)
+issues — GET, LIST (by `runtime.ach.ackstorm.ai/agent-uid`), POST, merge-PATCH, DELETE
+with a UID precondition: `apps/statefulsets` get/list/create/patch/delete (replicas 0↔1,
+recreate on template drift), `services` get/create, `pods` get/list/delete. No `watch`,
+no `update`, no `statefulsets/scale` (the Harness patches `spec.replicas` on the
+StatefulSet itself). RBAC cannot express an `ach-ws-*` name prefix, so the Role covers the
+namespace; the Harness scopes every call to its own UID-labelled/owned objects. When the
+runtime client grows a verb, add it here AND to the operator ClusterRole (escalation
+prevention: the operator must hold whatever it grants).
+
 ## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
 
 Optional DNS-1123 label (max 63). Set: control StatefulSet (and the podTemplate re-pin), the

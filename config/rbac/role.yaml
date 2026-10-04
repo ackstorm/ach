@@ -128,14 +128,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - apps
-  resources:
-  - statefulsets/scale
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - extensions.agents.x-k8s.io
   resources:
   - sandboxtemplates

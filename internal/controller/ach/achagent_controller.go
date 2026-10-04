@@ -61,11 +61,6 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=achagents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=agentprofiles,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-// statefulsets/scale: delegated to the per-agent Harness Role (buildWorkspaceRole) below —
-// the operator must itself hold any verb it grants there (RBAC escalation prevention), so
-// this is granted here too even though the operator's own reconcile loop never scales a
-// StatefulSet directly.
-// +kubebuilder:rbac:groups=apps,resources=statefulsets/scale,verbs=get;update;patch
 // Deployments: read+delete only, for the one-time cutover cleanup of a pre-workspace-v1
 // agent's old operator-owned Deployment (pruneLegacyDeployment) — this reconciler never
 // creates/updates a Deployment again (control workloads are StatefulSets).
@@ -78,8 +73,8 @@ var requiredConds = []string{condProfileResolved, condIdentityResolved, condChan
 // for the UID-owned legacy workspace key Secret; existing keys are never updated or deleted.
 // No Secret verbs are ever granted to the Harness or execution ServiceAccounts.
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
-// pods delete: delegated to the per-agent Harness Role below, same escalation-prevention
-// reasoning as statefulsets/scale.
+// pods delete: delegated to the per-agent Harness Role below — the operator must itself
+// hold any verb it grants there (RBAC escalation prevention).
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/

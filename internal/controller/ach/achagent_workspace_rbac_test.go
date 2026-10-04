@@ -16,9 +16,9 @@ import (
 )
 
 // TestWorkspaceCreatorRBAC pins the exact Harness workspace-creator grants (contract §11
-// creator contract): apps/statefulsets full CRUD + statefulsets/scale, core pods
-// get/list/watch/delete, core services full CRUD — nothing else (no Secret/RBAC CRUD, no
-// TokenReview, no pod create/exec). The Role/RoleBinding are named after and bind only the
+// creator contract) — only what the runtime Harness client issues: statefulsets
+// get/list/create/patch/delete, pods get/list/delete, services get/create. Nothing else (no
+// watch/update/scale, no Secret/RBAC CRUD, no TokenReview, no pod create/exec). The Role/RoleBinding are named after and bind only the
 // control (Harness) ServiceAccount, with ordinary automount=true; the execution
 // ServiceAccount is never a subject of this or any other binding.
 func TestWorkspaceCreatorRBAC(t *testing.T) {
@@ -78,10 +78,9 @@ func assertWorkspaceRoleRules(t *testing.T, role *rbacv1.Role) {
 		got = append(got, rule{r.APIGroups[0], r.Resources[0], verbs})
 	}
 	want := []rule{
-		{"apps", "statefulsets", []string{"create", "delete", "get", "list", "patch", "update", "watch"}},
-		{"apps", "statefulsets/scale", []string{"get", "patch", "update"}},
-		{"", "pods", []string{"delete", "get", "list", "watch"}},
-		{"", "services", []string{"create", "delete", "get", "list", "patch", "update", "watch"}},
+		{"apps", "statefulsets", []string{"create", "delete", "get", "list", "patch"}},
+		{"", "pods", []string{"delete", "get", "list"}},
+		{"", "services", []string{"create", "get"}},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Role.Rules = %+v, want exactly %+v", got, want)
