@@ -703,9 +703,6 @@ func TestBuildDeployment_Shape(t *testing.T) {
 			t.Errorf("pod %s = %v, want %d", name, got, agentUID)
 		}
 	}
-	if ps.EnableServiceLinks != nil {
-		t.Error("enableServiceLinks must stay unset")
-	}
 	var pvcMnt *corev1.VolumeMount
 	for i := range ps.Containers[0].VolumeMounts {
 		if ps.Containers[0].VolumeMounts[i].Name == pvcVolumeName {
@@ -751,6 +748,29 @@ func TestBuildStatefulSet_ControlNaming(t *testing.T) {
 	}
 	if sts.Spec.ServiceName != wantName {
 		t.Errorf("StatefulSet.ServiceName = %q, want %q (must match metadata.name)", sts.Spec.ServiceName, wantName)
+	}
+}
+
+// TestBuildStatefulSet_ControlPodHardening: the control pod keeps its SA token (the Harness
+// talks to the Kubernetes API) but is otherwise locked down: non-root uid 10001,
+// RuntimeDefault seccomp, no privilege escalation, no capabilities, and no service-link env
+// (every Service in the namespace would otherwise land in the container env — ach-* Services
+// even as ACH_* names). The kubernetes.default master env is injected regardless.
+func TestBuildStatefulSet_ControlPodHardening(t *testing.T) {
+	sts, _ := buildTestControlSTS(t)
+	ps := sts.Spec.Template.Spec
+	if ps.EnableServiceLinks == nil || *ps.EnableServiceLinks {
+		t.Error("enableServiceLinks must be false")
+	}
+	if sc := ps.SecurityContext; sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot || sc.SeccompProfile == nil || sc.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Errorf("pod securityContext = %+v, want runAsNonRoot + RuntimeDefault seccomp", sc)
+	}
+	csc := ps.Containers[0].SecurityContext
+	if csc == nil || csc.AllowPrivilegeEscalation == nil || *csc.AllowPrivilegeEscalation {
+		t.Errorf("container must set allowPrivilegeEscalation=false: %+v", csc)
+	}
+	if csc == nil || csc.Capabilities == nil || len(csc.Capabilities.Drop) != 1 || csc.Capabilities.Drop[0] != "ALL" || len(csc.Capabilities.Add) != 0 {
+		t.Errorf("container must drop ALL capabilities and add none: %+v", csc)
 	}
 }
 

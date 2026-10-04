@@ -470,8 +470,12 @@ func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, conf
 					Annotations: map[string]string{configHashAnnotation: configHash},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:            effectiveControlServiceAccountName(a, p),
-					AutomountServiceAccountToken:  &trueVal,
+					ServiceAccountName:           effectiveControlServiceAccountName(a, p),
+					AutomountServiceAccountToken: &trueVal,
+					// No service-link env: the Harness reaches the API server through the
+					// kubernetes.default env kubelet always injects, and nothing else in the
+					// namespace belongs in its environment.
+					EnableServiceLinks:            &falseVal,
 					TerminationGracePeriodSeconds: &grace,
 					ImagePullSecrets:              p.Spec.ImagePullSecrets,
 					NodeSelector:                  p.Spec.NodeSelector,
