@@ -1122,6 +1122,7 @@ func TestACHAgent_ControlServiceAccountName_UsedAndNotCreated(t *testing.T) {
 	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-csa", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
 	prof := &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-csa", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{ControlServiceAccountName: "ach-sandboxed-agent", Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}}
 	mustApply(t, ctx, prof)
+	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-sandboxed-agent", Namespace: WatchNamespace}})
 	mustApply(t, ctx, &achv1alpha1.ACHAgent{
 		ObjectMeta: metav1.ObjectMeta{Name: "aa-csa", Namespace: WatchNamespace},
 		Spec: achv1alpha1.ACHAgentSpec{
@@ -1198,4 +1199,39 @@ func assertExecutionSAUnbound(t *testing.T, ctx context.Context, agent *achv1alp
 			t.Errorf("ClusterRoleBinding %s binds the execution ServiceAccount %s", crb.Name, execSA)
 		}
 	}
+}
+
+// A profile-named control ServiceAccount that does not exist leaves the agent
+// ControlServiceAccountResolved=False (no workload applied — its pod could not start), and
+// creating the SA re-enqueues the agent without any other change.
+func TestACHAgent_ControlServiceAccountName_Missing(t *testing.T) {
+	ctx := context.Background()
+	mustApply(t, ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "aa-ek-csa-missing", Namespace: WatchNamespace}, Data: map[string][]byte{"ek": []byte("ek_test")}})
+	mustApply(t, ctx, &achv1alpha1.AgentProfile{ObjectMeta: metav1.ObjectMeta{Name: "aa-prof-csa-missing", Namespace: WatchNamespace}, Spec: achv1alpha1.AgentProfileSpec{ControlServiceAccountName: "ach-late-sa", Achagent: achv1alpha1.AgentDefaults{Image: "img:test", Ach: &achv1alpha1.AchSpec{BaseURL: "https://ach"}, Model: &achv1alpha1.ModelSpec{Name: "m", Type: "openai"}, Limits: testLimitsSpec(10), Workspace: testWorkspaceSpec(), Artifacts: testArtifactsSpec(), Engine: testEngineSpec()}, Execution: testExecutionSpec()}})
+	mustApply(t, ctx, &achv1alpha1.ACHAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "aa-csa-missing", Namespace: WatchNamespace},
+		Spec: achv1alpha1.ACHAgentSpec{
+			ProfileRef:    achv1alpha1.LocalObjectRef{Name: "aa-prof-csa-missing"},
+			AgentDefaults: achv1alpha1.AgentDefaults{Ach: envtestIdentity("aa-ek-csa-missing", "prod")},
+			Channels:      []achv1alpha1.ChannelSpec{{Name: "c", Type: "cron", Cron: &achv1alpha1.CronSpec{Schedule: "* * * * *"}}},
+		},
+	})
+	waitAgentCond(t, ctx, "aa-csa-missing", condControlServiceAccountResolved, metav1.ConditionFalse)
+	waitAgentCond(t, ctx, "aa-csa-missing", condReady, metav1.ConditionFalse)
+	var agent achv1alpha1.ACHAgent
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: "aa-csa-missing"}, &agent); err != nil {
+		t.Fatal(err)
+	}
+	c := apimeta.FindStatusCondition(agent.Status.Conditions, condControlServiceAccountResolved)
+	if c.Reason != "ServiceAccountNotFound" || !strings.Contains(c.Message, "ach-late-sa") {
+		t.Errorf("condition = %s/%q, want ServiceAccountNotFound naming ach-late-sa", c.Reason, c.Message)
+	}
+	var sts appsv1.StatefulSet
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: WatchNamespace, Name: agentrender.ControlName("aa-csa-missing")}, &sts); !apierrors.IsNotFound(err) {
+		t.Errorf("control StatefulSet must not be applied while its SA is missing: err=%v", err)
+	}
+
+	mustApply(t, ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "ach-late-sa", Namespace: WatchNamespace}})
+	waitAgentCond(t, ctx, "aa-csa-missing", condControlServiceAccountResolved, metav1.ConditionTrue)
+	waitAgentCond(t, ctx, "aa-csa-missing", condWorkloadApplied, metav1.ConditionTrue)
 }

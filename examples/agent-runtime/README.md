@@ -109,7 +109,9 @@ kubectl -n engineering get achagent
 kubectl -n engineering describe achagent gitlab-reviewer
 ```
 
-`Ready=True` rolls up five conditions: `ProfileResolved`, `IdentityResolved`,
+`Ready=True` rolls up six conditions: `ProfileResolved`,
+`ControlServiceAccountResolved` (False `ServiceAccountNotFound` when the profile's
+`controlServiceAccountName` does not exist yet), `IdentityResolved`,
 `ChannelSecretsResolved`, `WorkloadApplied`, `WorkloadReady`. Because the agent
 self-hydrates, **`Ready=False` with `WorkloadReady=PodNotReady` usually means
 hydration failed** — check the pod logs and the `/readyz` probe:

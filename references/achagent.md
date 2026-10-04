@@ -204,5 +204,8 @@ per-agent RoleBinding subject, and rendered `infrastructure.control.serviceAccou
 pre-existing SA in the agent's namespace; the operator does not create/own/delete it and skips
 `ach-harness-<uid>`. Role/RoleBinding names stay `ach-harness-<uid>`. Unset: unchanged output
 (same `configVersion`). Switching a profile back and forth leaves orphaned `ach-harness-<uid>`
-SAs (owner-ref GC only on ACHAgent delete); the operator never deletes them. Execution SA/RBAC
+SAs (owner-ref GC only on ACHAgent delete); the operator never deletes them. A named SA that does not
+exist sets `ControlServiceAccountResolved=False` (reason `ServiceAccountNotFound`) and
+applies nothing for that agent; a ServiceAccount watch re-enqueues it once the SA appears.
+Unset: `ControlServiceAccountResolved=True` (`PerAgentServiceAccount`). Execution SA/RBAC
 unchanged. Helper: `agentrender.ControlServiceAccountName`.
