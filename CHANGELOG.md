@@ -21,12 +21,20 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   session snapshots are left untouched — neither converted nor deleted.
 
 ### Changed
-- **BREAKING (upgrade):** the control StatefulSet/Service/pod are named `ach-control-<agent name>`
+- **BREAKING (upgrade):** the control StatefulSet/Service/pod are renamed from
+  `ach-control-<agent name>` to `agent-<agent name>` (pod `agent-<name>-0`; names over 46 chars,
+  or containing `.`: first 37 chars + `-` + 8 hex of sha256). `controlEndpoint`/`facadeEndpoint`
+  follow. The existing `ach-control-<name>` StatefulSet and Service become orphans (owned by the
+  ACHAgent, so GC'd only on agent delete) — delete them by hand after upgrading.
+- **BREAKING (upgrade, 0.10.0):** the control StatefulSet/Service/pod are named `ach-control-<agent name>`
   (names over 40 chars, or containing `.`: first 31 chars + `-` + 8 hex of sha256) instead of
   `ach-control-<uid>`, and select on `ach.ackstorm.ai/agent` + `ach.ackstorm.ai/component=control`
   (workspace pods carry the agent label too). The old `ach-control-<uid>` StatefulSet/Service
   are not pruned — delete them after upgrading.
 - Control pod sets `enableServiceLinks: false`.
+- Control container runs with `readOnlyRootFilesystem: true`; its only writable path is a
+  reserved `/tmp` emptyDir with `TMPDIR=/tmp` pinned. Requires ach-runtime control image
+  ≥ 0.1.8.
 - The per-agent `ach-harness-<uid>` Role is narrowed to what the runtime Harness issues:
   statefulsets get/list/create/patch/delete, pods get/list/delete, services get/create (no
   watch/update, no `statefulsets/scale`); the operator drops `statefulsets/scale` too.
@@ -35,7 +43,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - `ControlServiceAccountResolved` ACHAgent condition (part of `Ready`): `False`
   `ServiceAccountNotFound` when `AgentProfile.spec.controlServiceAccountName` names a missing SA.
 - Workspace-v1 control/execution split: the operator renders and applies a single-replica
-  **control StatefulSet** (`ach-control-<agent name>`, Channels+Harness only, public probe port 8080,
+  **control StatefulSet** (`agent-<agent name>`, Channels+Harness only, public probe port 8080,
   private control Service port 8081) that self-hydrates at boot; the Harness running inside it
   creates real per-Workspace **execution StatefulSets directly** (0.1.0 — a declarative
   `Workspace` CR for hand-managing those objects yourself is deferred to 0.1.1), bootstrapped

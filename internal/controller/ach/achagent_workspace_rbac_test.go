@@ -234,7 +234,7 @@ func TestControlWorkload_ConfigAndProfile(t *testing.T) {
 		t.Fatalf("buildStatefulSet: %v", err)
 	}
 	ps := sts.Spec.Template.Spec
-	wantName := "ach-control-" + a.Name
+	wantName := "agent-" + a.Name
 	if sts.Name != wantName || sts.Spec.ServiceName != wantName {
 		t.Errorf("control StatefulSet naming = %q/%q, want %q", sts.Name, sts.Spec.ServiceName, wantName)
 	}

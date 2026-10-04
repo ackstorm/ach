@@ -25,12 +25,16 @@ import (
 )
 
 const (
-	agentContainerName   = "agent"
-	configVolumeName     = "ach-agent-config"
-	configMountDir       = "/etc/ach-runtime"
-	configFileName       = "config.json"
-	configFilePath       = configMountDir + "/" + configFileName
-	pvcVolumeName        = "ach-agent-state"
+	agentContainerName = "agent"
+	configVolumeName   = "ach-agent-config"
+	configMountDir     = "/etc/ach-runtime"
+	configFileName     = "config.json"
+	configFilePath     = configMountDir + "/" + configFileName
+	pvcVolumeName      = "ach-agent-state"
+	// tmpVolumeName/tmpMountDir: the control process's single writable path under a
+	// read-only root filesystem (ach-runtime: TMPDIR only; handoff/script children inherit it).
+	tmpVolumeName        = "ach-tmp"
+	tmpMountDir          = "/tmp"
 	configHashAnnotation = "ach.ackstorm.ai/config-hash"
 	agentLabelKey        = "ach.ackstorm.ai/agent"
 	componentLabelKey    = "ach.ackstorm.ai/component"
@@ -150,6 +154,8 @@ func buildAgentEnv(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, default
 		}
 		env = append(env, e)
 	}
+	// TMPDIR is pinned to the writable emptyDir: anywhere else is read-only.
+	env = overrideEnv(env, []corev1.EnvVar{{Name: "TMPDIR", Value: tmpMountDir}})
 	// Channel auth and generated handoff/script aliases are injected as env vars, NOT
 	// mounted files: the agent runs same-uid as the harness and can read mounted
 	// secret files, but not the harness process env (PR_SET_DUMPABLE=0). Value via
@@ -238,7 +244,7 @@ func buildExecutionServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccoun
 }
 
 // buildControlService is the control pod's headless governing Service (contract §11:
-// ach-control-<agent name>, port 8081) — infrastructure.execution.controlEndpoint/facadeEndpoint
+// agent-<agent name>, port 8081) — infrastructure.execution.controlEndpoint/facadeEndpoint
 // are built from this exact DNS name by RenderInfrastructureV1. ClusterIP: None since the
 // control StatefulSet has a single replica and callers address the Service name directly.
 func buildControlService(a *achv1alpha1.ACHAgent) *corev1.Service {
@@ -456,13 +462,14 @@ func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, conf
 		ReadinessProbe: &corev1.Probe{ProbeHandler: probe("/readyz"), PeriodSeconds: 10, FailureThreshold: 3},
 		LivenessProbe:  &corev1.Probe{ProbeHandler: probe("/healthz"), PeriodSeconds: 20, FailureThreshold: 3},
 		SecurityContext: &corev1.SecurityContext{
+			ReadOnlyRootFilesystem:   &trueVal,
 			AllowPrivilegeEscalation: &falseVal,
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		},
 	}}
 
 	sts := &appsv1.StatefulSet{
-		// Name is the contract §11 control name (ach-control-<agent name>, agentrender.ControlName), matching ServiceName
+		// Name is the contract §11 control name (agent-<agent name>, agentrender.ControlName), matching ServiceName
 		// below verbatim — not the legacy achagent-<name> scheme other children still use.
 		ObjectMeta: metav1.ObjectMeta{Name: agentrender.ControlName(a.Name), Namespace: a.Namespace, Labels: agentLabels(a)},
 		Spec: appsv1.StatefulSetSpec{
@@ -572,15 +579,17 @@ func buildReservedInfraVolumes(a *achv1alpha1.ACHAgent) []corev1.Volume {
 			Name:         configVolumeName,
 			VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: agentResourceName(a.Name)}}},
 		},
+		{Name: tmpVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 }
 
 // buildReservedInfraMounts mounts the config ConfigMap as a single read-only DIRECTORY at
 // configMountDir (no SubPath) — a SubPath mount never live-updates on a ConfigMap change,
-// unlike a directory mount.
+// unlike a directory mount — plus the writable /tmp emptyDir the read-only root needs.
 func buildReservedInfraMounts() []corev1.VolumeMount {
 	return []corev1.VolumeMount{
 		{Name: configVolumeName, MountPath: configMountDir, ReadOnly: true},
+		{Name: tmpVolumeName, MountPath: tmpMountDir},
 	}
 }
 

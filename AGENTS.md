@@ -120,7 +120,7 @@ NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 single **workspace-v1** wire config (`schemaVersion: "workspace-v1"`, contract §11) the
 `ach-agent` harness self-boots from: the `ACHAgentReconciler` writes a `config.json`
 ConfigMap + a single-replica, single-container **control StatefulSet**
-(`ach-control-<name>`) that self-hydrates against ACH at boot (no init container, no CLI),
+(`agent-<name>`) that self-hydrates against ACH at boot (no init container, no CLI),
 plus the execution identity/bootstrap scaffolding the Harness running IN that control pod
 uses to create real per-Workspace execution StatefulSets directly (the declarative
 `Workspace` CR for hand-managing them yourself is deferred to v0.1.1). There is no
@@ -481,8 +481,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 - **ACHAgent rendering/placement (workspace-v1)**: see `references/achagent.md` for the full
   contract. The e2e stage 06 ships TWO shapes: `e2e-agent` (ephemeral) + `e2e-agent-pvc` (on
   the persistent `e2e-profile-pvc`) — both control/execution images now reference the
-  `ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.0` candidates (unpublished; Root
-  kind-loads them into the cluster before stage 06 applies). Two evidence tracks: `scripts/cluster.sh
+  published `ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.8` images (kind pulls them). Two evidence tracks: `scripts/cluster.sh
   verify_all` gates the rendered shape (`WorkloadApplied`, uid/fsGroup 10001
   on both control StatefulSets); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`,
   swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid

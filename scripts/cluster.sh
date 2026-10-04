@@ -833,10 +833,9 @@ verify_all() {
   # StatefulSet — one Channels+Harness control pod per ACHAgent, no standalone/
   # distributed placement in 0.1.0). WorkloadApplied=True (NOT WorkloadReady). PREREQUISITE:
   # both e2e-profile/e2e-profile-pvc control/execution images reference the
-  # ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.0 candidate references (not yet
-  # published releases) — Root must kind-load both images into the cluster before this
-  # stage applies/syncs, or WorkloadReady never flips (image pull failure in a running
-  # pod, not a render/schema failure). Assert the rendered config.json is workspace-v1-shaped, the identity
+  # published ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.8 images (kind pulls
+  # them; no pull access = WorkloadReady never flips — an image pull failure, not a
+  # render/schema failure). Assert the rendered config.json is workspace-v1-shaped, the identity
   # secret arrives via secretKeyRef under the exact alias name the config promises, the
   # control StatefulSet carries that same injection plus fsGroup 10001, and the Harness has
   # its own creator RoleBinding (ach-harness-<uid>).
@@ -846,14 +845,14 @@ verify_all() {
     | jq -e '.schemaVersion=="workspace-v1" and .ach.identity.env=="ACH_SECRET_IDENTITY"' >/dev/null
   local e2e_agent_uid
   e2e_agent_uid=$(kubectl -n ach-system get achagent e2e-agent -o jsonpath='{.metadata.uid}')
-  kubectl -n ach-system get statefulset ach-control-e2e-agent \
+  kubectl -n ach-system get statefulset agent-e2e-agent \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_SECRET_IDENTITY")].valueFrom.secretKeyRef.name}' \
     | grep -q .
   # Single `agent` container on the ephemeral control StatefulSet too — same shape
   # assertion the persistent one below already carries, retargeted here from the
   # retired standalone/distributed smoke check so an added container still fails this
   # gate (ach-task6-review.md M2).
-  kubectl -n ach-system get statefulset ach-control-e2e-agent -o json \
+  kubectl -n ach-system get statefulset agent-e2e-agent -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]' >/dev/null
   kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_uid}" \
     -o jsonpath='{.subjects[0].name} {.roleRef.name}' \
@@ -861,14 +860,14 @@ verify_all() {
   # Persistent standalone: whole operator-managed control-pod PVC at the mountPath,
   # single `agent` container (same name as before — only the workload kind changed).
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
-  kubectl -n ach-system get statefulset ach-control-e2e-agent-pvc -o json \
+  kubectl -n ach-system get statefulset agent-e2e-agent-pvc -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]
              and any(.spec.template.spec.volumes[]; .persistentVolumeClaim != null)' >/dev/null
   # Every control pod pins uid/gid/fsGroup 10001 — a fresh root-owned cloud PVC is
   # unwritable by the image uid without it (ach-agent finding 2026-09-15).
   local name
   for name in e2e-agent e2e-agent-pvc; do
-    kubectl -n ach-system get statefulset "ach-control-${name}" \
+    kubectl -n ach-system get statefulset "agent-${name}" \
       -o jsonpath='{.spec.template.spec.securityContext.runAsUser} {.spec.template.spec.securityContext.fsGroup}' \
       | grep -qx '10001 10001'
   done
