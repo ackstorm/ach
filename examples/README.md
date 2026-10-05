@@ -19,6 +19,12 @@ marketplaces, the `demo` + `demo-unresolved` Environments) now live under
 `test/e2e/cluster/{04-objects,05-environment}/`, not here. If you are looking
 for the object the operator reconciles in e2e, look there.
 
+`workspace.yaml` is a separate curated sample, not a synced fixture. It remains
+at `replicas: 0`; omitted child UID preconditions are for fresh creation only
+when no StatefulSet or Pod exists. Existing active adoption and guarded sleep
+require observed child UIDs, and activation requires true idle (zero replicas
+and no Pod of any phase) before the operator changes the execution template.
+
 ## What's here
 
 | File | Kind | Notes |
@@ -30,6 +36,7 @@ for the object the operator reconciles in e2e, look there.
 | `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
 | `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 | `agent-runtime/`                      | `AgentProfile` + `ACHAgent`                | A running-agent example (workspace-v1 control/execution split, contract §11) — webhook/cron channels, handoff, memory. See `agent-runtime/README.md`. |
+| `workspace.yaml`                      | `Workspace`                                 | Asleep per-execution request owned by an `ACHAgent`; name follows runtime 0.1.8 agent-name/ref naming (maximum 52 characters), while UID/reference ownership remains full and unchanged. |
 
 ## End-to-end demo
 

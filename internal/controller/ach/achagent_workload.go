@@ -185,30 +185,26 @@ func buildConfigMap(a *achv1alpha1.ACHAgent, configJSON []byte) *corev1.ConfigMa
 	}
 }
 
-// buildWorkspaceRole grants the Harness (control pod) exactly the verbs its runtime
-// Kubernetes client (ach-runtime harness/kubernetes.py) issues against its own ach-ws-*
-// workspace objects, in its own namespace (contract §11 creator contract): StatefulSets
-// get/list/create/patch (replicas 0↔1)/delete (recreate on template drift), Services
-// get/create, Pods get/list/delete. No watch, no update (PUT), no /scale subresource, no
-// Secret/RBAC, TokenReview, pod create/exec or cross-namespace grant. RBAC cannot match a
-// name prefix, so the Role is namespace-wide; the Harness itself restricts every call to
-// objects labelled/owned by its agent UID — this Role is not per-agent isolation by itself.
+// buildWorkspaceRole grants the Harness (control pod) the final Workspace request contract:
+// it manages Workspace CRs, reads operator-owned StatefulSets and Services, and deletes
+// Pods for restart. It cannot write workloads directly. Named ach-harness-<uid>, the Role is
+// namespace-scoped; the Harness still scopes requests to its own UID/owner-labelled objects.
+// No Secret/RBAC CRUD, TokenReview, pod create/exec, or cross-namespace grant.
 func buildWorkspaceRole(a *achv1alpha1.ACHAgent) *rbacv1.Role {
 	name := agentrender.HarnessName(string(a.UID))
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: a.Namespace, Labels: agentLabels(a)},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "create", "patch", "delete"}},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "delete"}},
-			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "create"}},
+			{APIGroups: []string{"ach.ackstorm.ai"}, Resources: []string{"workspaces"}, Verbs: []string{"create", "delete", "get", "list", "patch", "update", "watch"}},
+			{APIGroups: []string{"apps"}, Resources: []string{"statefulsets"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"delete", "get", "list", "watch"}},
 		},
 	}
 }
 
-// buildWorkspaceRoleBinding binds buildWorkspaceRole to the control (Harness) ServiceAccount
-// only: controlSA is the effective control SA (the profile's stable one, or the per-agent
-// ach-harness-<uid>); the Role/RoleBinding names stay per-agent. The execution ServiceAccount is never bound to this or any
-// other Role (contract §11: execution stays unbound).
+// buildWorkspaceRoleBinding binds buildWorkspaceRole to the effective control (Harness)
+// ServiceAccount only. The execution ServiceAccount is never bound to a Role.
 func buildWorkspaceRoleBinding(a *achv1alpha1.ACHAgent, controlSA string) *rbacv1.RoleBinding {
 	name := agentrender.HarnessName(string(a.UID))
 	return &rbacv1.RoleBinding{
@@ -232,9 +228,8 @@ func buildControlServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount 
 }
 
 // buildExecutionServiceAccount is the execution pod's identity (contract §11:
-// ach-execution-<uid>). The Workspace CR that schedules execution pods against this SA is
-// deferred to v0.1.1 — this scaffolding is applied ahead of that so the identity already
-// exists and matches infrastructure.execution.serviceAccount in the rendered config.
+// ach-execution-<uid>). Workspace reconciliation uses this unbound SA, matching
+// infrastructure.execution.serviceAccount in the rendered config.
 func buildExecutionServiceAccount(a *achv1alpha1.ACHAgent) *corev1.ServiceAccount {
 	falseVal := false
 	return &corev1.ServiceAccount{
@@ -393,11 +388,8 @@ func exposeGateway(a *achv1alpha1.ACHAgent) bool {
 // so what's hashed equals what's deployed. Inbound channel-auth secrets ride in env
 // (secretKeyRef), never as mounted files.
 //
-// Per-Workspace execution StatefulSets themselves are NOT built here: the Harness running in
-// THIS control pod creates them directly at runtime against buildExecutionServiceAccount/
-// buildExecutionBootstrapConfigMap — that consumption is real in v0.1.0. Only the declarative
-// Workspace CR (a user-facing k8s resource for managing workspaces) is deferred to v0.1.1;
-// the execution identity/bootstrap resources the Harness needs are not deferred.
+// Per-Workspace execution StatefulSets are reconciled by WorkspaceReconciler from Harness
+// requests; this builder remains scoped to the control workload and its reserved resources.
 // ServiceName is the control pod's own headless Service (buildControlService) — required by
 // StatefulSet and also the exact DNS name RenderInfrastructureV1 embeds as controlEndpoint.
 func buildStatefulSet(a *achv1alpha1.ACHAgent, p *achv1alpha1.AgentProfile, configHash string, env []corev1.EnvVar) (*appsv1.StatefulSet, error) {

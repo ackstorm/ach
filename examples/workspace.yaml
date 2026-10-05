@@ -1,0 +1,39 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Workspace
+metadata:
+  # The name follows the ACHAgent name and workspace digest; UID remains the
+  # full ownership identity. This example intentionally remains asleep.
+  name: ach-ws-demo-0123456789abcdef0123
+  namespace: agents
+  labels:
+    runtime.ach.ackstorm.ai/agent-uid: 3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77
+    runtime.ach.ackstorm.ai/workspace-name: ach-ws-demo-0123456789abcdef0123
+  annotations:
+    runtime.ach.ackstorm.ai/workspace-ref: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  ownerReferences:
+    - apiVersion: ach.ackstorm.ai/v1alpha1
+      kind: ACHAgent
+      name: demo
+      uid: 3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77
+      blockOwnerDeletion: true
+      controller: true
+spec:
+  agentRef:
+    name: demo
+    # Canonical UID of the ACHAgent in the same namespace.
+    uid: 3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77
+  # Full 64-character lowercase digest identifying the workspace.
+  workspaceRef: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  # Zero sleeps the Workspace; one requests activation.
+  replicas: 0
+  # This example leaves both preconditions absent because it only demonstrates
+  # fresh creation. That is accepted only when no existing StatefulSet or Pod is
+  # present. For active adoption, supply both observed StatefulSet and Pod UIDs;
+  # adoption preserves the existing template. For guarded sleep of an active Pod,
+  # set replicas: 0 and both observed UIDs; the operator changes replicas only.
+  # To activate an already-created sleeping workload, first confirm there is no
+  # Pod of any phase and provide its observed StatefulSet UID. Template updates
+  # are allowed only at true idle: replicas=0 and no Pod.
+
+# Deleting this Workspace alone does not delete its workload or storage. Deleting
+# the owning ACHAgent retains that owner's existing garbage-collection semantics.

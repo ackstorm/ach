@@ -31,6 +31,8 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [SkillList](#skilllist)
 - [SkillMarketplace](#skillmarketplace)
 - [SkillMarketplaceList](#skillmarketplacelist)
+- [Workspace](#workspace)
+- [WorkspaceList](#workspacelist)
 
 
 
@@ -2363,6 +2365,65 @@ _Appears in:_
 | `mergeRequestsOnly` _boolean_ | MergeRequestsOnly discards GitLab issues and notes not on a merge request before<br />admission (contract §2). gitlab source only; ignored for github/generic. |  |  |
 
 
+#### Workspace
+
+
+
+Workspace requests a sleeping or active execution workload for one ACHAgent workspace.
+
+
+
+_Appears in:_
+- [WorkspaceList](#workspacelist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `Workspace` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[WorkspaceResourceSpec](#workspaceresourcespec)_ |  |  | Required: \{\} <br /> |
+| `status` _[WorkspaceStatus](#workspacestatus)_ |  |  |  |
+
+
+#### WorkspaceAgentReference
+
+
+
+WorkspaceAgentReference pins a Workspace to one ACHAgent object incarnation.
+
+
+
+_Appears in:_
+- [WorkspaceResourceSpec](#workspaceresourcespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is resolved in the Workspace's namespace. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `uid` _string_ | UID is the canonical lowercase UID of the ACHAgent. |  | Pattern: `^[0-9a-f]\{8\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{12\}$` <br />Required: \{\} <br /> |
+
+
+#### WorkspaceList
+
+
+
+WorkspaceList contains a list of Workspace resources.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `WorkspaceList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[Workspace](#workspace) array_ |  |  |  |
+
+
 #### WorkspacePersistenceSpec
 
 
@@ -2393,6 +2454,29 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ |  |  |  |
 | `retentionDays` _integer_ |  |  | Minimum: 1 <br /> |
+
+
+#### WorkspaceResourceSpec
+
+
+
+WorkspaceResourceSpec describes the identity and requested replica count of one
+per-agent execution Workspace. Execution configuration is resolved from the owning
+ACHAgent's current AgentProfile by the operator; this API deliberately carries no
+image, resource, profile, secret, storage, or routing-key material.
+
+
+
+_Appears in:_
+- [Workspace](#workspace)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `agentRef` _[WorkspaceAgentReference](#workspaceagentreference)_ | AgentRef identifies the same-namespace ACHAgent by name and immutable UID. |  | Required: \{\} <br /> |
+| `workspaceRef` _string_ | WorkspaceRef is the full lowercase SHA-256 digest of this Workspace identity. |  | Pattern: `^[0-9a-f]\{64\}$` <br />Required: \{\} <br /> |
+| `replicas` _integer_ | Replicas is required and limited to sleeping (0) or active (1). It has no default,<br />so creating a Workspace cannot activate execution implicitly. |  | Maximum: 1 <br />Minimum: 0 <br />Required: \{\} <br /> |
+| `expectedStatefulSetUID` _string_ | ExpectedStatefulSetUID is an optional precondition for operating on an existing<br />execution StatefulSet. |  |  |
+| `expectedPodUID` _string_ | ExpectedPodUID is an optional pod replacement precondition used when scaling to zero. |  |  |
 
 
 #### WorkspaceSessionSpec
@@ -2435,5 +2519,23 @@ _Appears in:_
 | `maxConcurrentSessions` _integer_ | MaxConcurrentSessions bounds sessions executing work simultaneously in a Workspace.<br />A handoff with a shared destination requires this to be 1 (contract §6). |  | Minimum: 1 <br /> |
 | `persistence` _[WorkspacePersistenceSpec](#workspacepersistencespec)_ |  |  |  |
 | `session` _[WorkspaceSessionSpec](#workspacesessionspec)_ |  |  |  |
+
+
+#### WorkspaceStatus
+
+
+
+WorkspaceStatus records operator observations for one requested generation.
+
+
+
+_Appears in:_
+- [Workspace](#workspace)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the Workspace generation evaluated by the operator. |  |  |
+| `statefulSetUID` _string_ | StatefulSetUID is the UID of the execution StatefulSet observed for this Workspace. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions use the standard Kubernetes condition shape. The operator publishes<br />OwnerResolved, WorkloadApplied, WorkloadReady, and UpdatePending conditions. |  |  |
 
 

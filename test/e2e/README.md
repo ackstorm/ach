@@ -28,6 +28,8 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase6_helpers_test.go`              | Phase 06 helpers (`phase6SuiteGuard`, `phase6WriteTempConfig`, `phase6NormalizeHydrate`, `phase6RunAch`)                |
 | `oauth_login_helpers_test.go`         | `oauthLogin` (loopback ceremony → token pair, the user's credential everywhere) + `writeCLIConfig` (stages an OAuth profile) |
 | `device_grant_test.go`                | RFC 8628 device grant end to end: AS endpoints, the verification page, the real `ach-cli login --no-browser`            |
+| `agent_runtime_ready_test.go`          | Published control-runtime readiness plus persistent PVC write proof as uid 10001 |
+| `workspace_runtime_test.go`            | Workspace runtime helper contracts and seven isolated I1 lifecycle cases (final Harness Role, operator children, matching human-name adoption shapes, no-Pod refresh, preconditions, full-identity conflict) |
 
 ## Focused dev loop
 
@@ -61,6 +63,16 @@ maps the name to 127.0.0.1; CoreDNS rewrites it to the nginx shim for pods).
 | `fixtures/marketplace_fixture_server.yaml`        | phase 2 fixture server (applied by `applyFixtureServer`) |
 | `fixtures/phase4_marketplace_internal.json`       | §11c (served by `applyPhase4MarketplaceServer`)         |
 | `phase3_fixtures/environment_*.yaml`              | phase 3 SCs #2/#3                                      |
+| `cluster/06-agent/workspace-fixture.yaml`          | Disposable Workspace source fixture; intentionally excluded from the synced `06-agent` kustomization and applied only by Workspace e2e cases |
+
+Workspace evidence has three distinct layers: pure helper tests pin the
+runtime-0.1.9 name vectors; controller/envtest and the seven I1 cases exercise
+operator request/child behavior; and the independent real-cluster gate is still
+required for actual runtime-origin adoption/migration evidence. Synthetic
+matching-shape adoption tests do not prove runtime provenance. Preserve the
+real execution 0.1.6-to-0.1.7 image/resource refresh assertion and the published
+`TestAgentRuntimeReady` PVC write proof. Native-S3 and real migration gates are
+not replaced by helper or envtest results.
 
 ## Re-capturing the hydrate golden
 

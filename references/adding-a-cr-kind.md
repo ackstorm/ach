@@ -25,6 +25,7 @@ first, then walk the matrix.
 | **discovery** | `PluginMarketplace`, `SkillMarketplace` | Fetches the **whole repo**, tree-walks it, slices each discovered item into its own tarball + inventory entry. Opts OUT of fetch-narrowing (`withoutGitPath`). |
 | **governance** | `Environment`, `BackendIdentityPolicy` | No content of its own; resolves/gates references and drives downstream state (LiteLLM access-groups, forwarder RBAC/JWT mint). |
 | **config singleton** | `LiteLLMConnection` | Cluster-level configuration the operator reads; not served, not hydrated, not inventoried. |
+| **runtime workload** | `Workspace` | Operational execution request consumed by the Harness and reconciled by the operator; it has no projection, admin inventory, content, hydrate, or finalizer lifecycle. |
 
 ## The 11 surfaces
 
@@ -68,19 +69,19 @@ first, then walk the matrix.
 
 ✓ = required · — = N/A for this archetype · ◑ = conditional (see footnotes)
 
-| # | Surface | object | discovery | governance | config singleton |
-|---|---------|:------:|:---------:|:----------:|:----------------:|
-| 1 | CRD + CEL | ✓ | ✓ | ✓ | ✓ |
-| 2 | Projection table + `with_tx_notify` | ✓ | ✓ | ✓ | ◑¹ |
-| 3 | Status conditions (+`NameConflict` G15; `origin`/`locked` if UI-writable) | ✓ | ✓ | ✓ | ✓ |
-| 4 | Reconciler + finalizer | ✓ | ✓ | ✓ | ✓ |
-| 5 | Content pipeline (F1) | ✓ (narrow-at-fetch) | ◑² (whole-repo → slice) | — | — |
-| 6 | Admin inventory | ✓ | ✓ (`<item>@<mkt>`) | ✓ | — |
-| 7 | Admin refresh | ✓ | ✓ | ◑³ | — |
-| 8 | Hydrate | ✓ | ◑⁴ | ◑⁵ | — |
-| 9 | Metrics | ✓ | ✓ | ✓ | ✓ |
-| 10 | Docs / spec | ✓ | ✓ | ✓ | ✓ |
-| 11 | Tests | ✓ | ✓ | ✓ | ✓ |
+| # | Surface | object | discovery | governance | config singleton | runtime workload |
+|---|---------|:------:|:---------:|:----------:|:----------------:|:---------------:|
+| 1 | CRD + CEL | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 2 | Projection table + `with_tx_notify` | ✓ | ✓ | ✓ | ◑¹ | — |
+| 3 | Status conditions (+`NameConflict` G15; `origin`/`locked` if UI-writable) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 4 | Reconciler + finalizer | ✓ | ✓ | ✓ | ✓ | ◑⁶ |
+| 5 | Content pipeline (F1) | ✓ (narrow-at-fetch) | ◑² (whole-repo → slice) | — | — | — |
+| 6 | Admin inventory | ✓ | ✓ (`<item>@<mkt>`) | ✓ | — | — |
+| 7 | Admin refresh | ✓ | ✓ | ◑³ | — | — |
+| 8 | Hydrate | ✓ | ◑⁴ | ◑⁵ | — | — |
+| 9 | Metrics | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 10 | Docs / spec | ✓ | ✓ | ✓ | ✓ | ✓ |
+| 11 | Tests | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **Footnotes**
 
@@ -98,6 +99,46 @@ first, then walk the matrix.
    object archetype.
 5. `Environment` is the hydrate root (`ach-cli env hydrate`);
    `BackendIdentityPolicy` is not hydrated.
+6. `Workspace` has status and an operator reconciler, but no finalizer: deleting
+   a Workspace request retains its execution workload and storage. The operator
+   consumes it directly and the Harness observes resulting children; it is not a
+   projected product object or user hydrate input.
+
+## `Workspace` runtime-workload archetype
+
+`Workspace` is an operational request created by the ach-agent Harness. Its
+CRD/CEL, status, controller-runtime metrics, reconciler, unit tests, envtests, and
+documentation are required. Postgres projection/NOTIFY, admin inventory/refresh,
+content delivery, CLI hydrate, and external-cleanup finalizers do not apply: the
+operator and Harness consume the object directly. The operator keeps ACHAgent
+ownership of the execution StatefulSet and Service; the Workspace CR is not their
+garbage-collection owner.
+
+The Workspace generation/status reports the evaluated request generation. A
+request carries observed StatefulSet UID and, when closing a live Pod, Pod UID
+preconditions so delayed operations cannot mutate replacement children. True idle
+means replicas=0 and no Pod of any phase. Only true idle permits execution-template
+updates; while a Pod exists or the StatefulSet has one replica, profile drift is
+reported as pending and does not rewrite the live template. Scale-to-zero changes
+only replicas after identity and precondition checks. Matching-shape adoption
+preserves the full live template and both child UIDs while reporting `UpdatePending`;
+it is not actual runtime-origin migration evidence.
+
+The operator stamps a private Workspace UID marker on a StatefulSet only when
+creating it. Matching marker/full identity may complete no-mutation status
+observation after an interrupted write or generation advance; it does not
+authorize scale/template writes or legacy adoption. Omitting UID preconditions
+does not authorize mutation of an existing workload: creation requires no existing
+StatefulSet or Pod. Workspace deletion retains workload and storage; ACHAgent
+deletion keeps its existing owner-reference garbage-collection behavior.
+
+Harness RBAC grants Workspace create/delete/get/list/patch/update/watch,
+StatefulSet and Service get/list/watch, and Pod delete/get/list/watch. The operator
+retains corresponding permissions to reconcile and delegate these requests. No
+`statefulsets/scale` grant is delegated. Legacy UID-derived workload names are
+conflicts, not automatically translated or adopted. Runtime-backend migration,
+native-S3 behavior, and canonical real-cluster acceptance remain separate gates;
+unit/envtest and synthetic adoption are not substitutes.
 
 ## Retroactive audit note
 

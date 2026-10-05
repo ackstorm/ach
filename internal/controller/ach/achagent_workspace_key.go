@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -26,17 +27,8 @@ func workspaceKeySecretName(uid string) string { return "ach-key-" + uid }
 func (r *ACHAgentReconciler) ensureWorkspaceKey(ctx context.Context, a *achv1alpha1.ACHAgent) error {
 	key := types.NamespacedName{Namespace: a.Namespace, Name: workspaceKeySecretName(string(a.UID))}
 	readAndValidate := func() error {
-		var existing corev1.Secret
-		if err := r.APIReader.Get(ctx, key, &existing); err != nil {
-			return err
-		}
-		if !workspaceKeyOwnedBy(&existing, a) {
-			return fmt.Errorf("workspace key Secret is not controlled by this ACHAgent")
-		}
-		if len(existing.Data[workspaceKeyDataKey]) == 0 {
-			return fmt.Errorf("workspace key Secret has no nonempty key")
-		}
-		return nil
+		_, err := readWorkspaceKey(ctx, r.APIReader, a)
+		return err
 	}
 	if err := readAndValidate(); err == nil {
 		return nil
@@ -68,6 +60,26 @@ func (r *ACHAgentReconciler) ensureWorkspaceKey(ctx context.Context, a *achv1alp
 		return fmt.Errorf("create workspace key Secret: %w", err)
 	}
 	return nil
+}
+
+// readWorkspaceKey returns a defensive copy of the literal bytes in the
+// ACHAgent-owned key Secret. It deliberately performs no decoding or format
+// validation; callers outside ACHAgent reconciliation must never create or
+// mutate the Secret.
+func readWorkspaceKey(ctx context.Context, reader client.Reader, a *achv1alpha1.ACHAgent) ([]byte, error) {
+	var secret corev1.Secret
+	key := types.NamespacedName{Namespace: a.Namespace, Name: workspaceKeySecretName(string(a.UID))}
+	if err := reader.Get(ctx, key, &secret); err != nil {
+		return nil, err
+	}
+	if !workspaceKeyOwnedBy(&secret, a) {
+		return nil, fmt.Errorf("workspace key Secret is not controlled by this ACHAgent")
+	}
+	value := secret.Data[workspaceKeyDataKey]
+	if len(value) == 0 {
+		return nil, fmt.Errorf("workspace key Secret has no nonempty key")
+	}
+	return append([]byte(nil), value...), nil
 }
 
 func workspaceKeyOwnedBy(secret *corev1.Secret, a *achv1alpha1.ACHAgent) bool {

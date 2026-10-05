@@ -27,9 +27,9 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["create", "get", "list", "watch"]
-# ACHAgent workload children (StatefulSet/ConfigMap/Service/ServiceAccount/PVC).
-# The ACHAgentReconciler is the operator's only workload-creating controller. StatefulSet,
-# not Deployment, per contract §11 (control one-container StatefulSet).
+# ACHAgent and Workspace workload children (StatefulSet/ConfigMap/Service/ServiceAccount/PVC).
+# ACHAgent owns the control StatefulSet; Workspace reconciles execution StatefulSets requested
+# through Workspace CRs. Both controllers need the same child-object writes.
 - apiGroups: [""]
   resources: ["configmaps", "persistentvolumeclaims", "serviceaccounts", "services"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
@@ -46,10 +46,10 @@ rules:
 - apiGroups: ["networking.k8s.io"]
   resources: ["networkpolicies"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
-# Per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
-# buildWorkspaceRoleBinding, named ach-harness-<uid>, contract §11 creator contract) — no
-# blanket bind/escalate grant: the operator only ever creates these two fixed, UID-named
-# objects with a fixed rule set.
+# Per-agent Harness Workspace-request Role/RoleBinding (buildWorkspaceRole/
+# buildWorkspaceRoleBinding, named ach-harness-<uid>) — Workspace writes are delegated to
+# this fixed rule set; the Harness can only read workload children and delete Pods, not
+# create or update StatefulSets or Services. No blanket bind/escalate grant.
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["roles", "rolebindings"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
@@ -70,6 +70,7 @@ rules:
   - prompts
   - skills
   - skillmarketplaces
+  - workspaces
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 # ACHAgent is user-owned: the operator watches + patches status, never
 # creates/deletes it. AgentProfile is read-only (no reconciler).
@@ -103,6 +104,7 @@ rules:
   - prompts/status
   - skills/status
   - skillmarketplaces/status
+  - workspaces/status
   verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

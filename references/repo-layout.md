@@ -70,10 +70,13 @@ ach/
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
 │       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
-│       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
-│                            + env-team-denied (SC2 unauthorized_team negative)
-│                            + guardrail-unresolved (P0-A provisioning barrier)
-│                            + env-groups (runtime group tags only)
+│       ├── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
+│       │                    + env-team-denied (SC2 unauthorized_team negative)
+│       │                    + guardrail-unresolved (P0-A provisioning barrier)
+│       │                    + env-groups (runtime group tags only)
+│       └── 06-agent/        SYNCED AgentProfile/ACHAgent fixtures plus a
+│                            disposable Workspace runtime fixture (excluded
+│                            from the kustomization; applied only by its e2e test)
 ├── ROADMAP.md, CHANGELOG.md, SECURITY.md, MAINTAINERS.md, CONTRIBUTING.md
 └── PROJECT, README.md, LICENSE, NOTICE
 ```
@@ -123,3 +126,8 @@ mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
 samples** (the ServiceMonitor, the alert rules, the ach-cli initContainer, the
 manual JWT helper) plus the golden `hydrate.json`. The two are independent —
 moving or editing one does not touch the other.
+
+The Workspace fixture under `test/e2e/cluster/06-agent/` is deliberately not
+part of the synced cluster stage. The lifecycle e2e test applies its generic
+source and Workspace request for its own bounded scenario; stage 06 itself
+remains the cron-only agent readiness fixture.

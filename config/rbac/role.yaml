@@ -60,6 +60,7 @@ rules:
   - prompts/status
   - skillmarketplaces/status
   - skills/status
+  - workspaces/status
   verbs:
   - get
   - patch
@@ -84,6 +85,7 @@ rules:
   - prompts
   - skillmarketplaces
   - skills
+  - workspaces
   verbs:
   - create
   - delete

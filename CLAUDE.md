@@ -117,7 +117,7 @@ the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<sv
 in front of `ach-gateway` (preserving the single `ach.e2e.local:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
 `Skill`, `SkillMarketplace`, `Prompt`, `Artifact`, `LiteLLMConnection`,
-`BackendIdentityPolicy`, `AgentProfile`, `ACHAgent` (`api/` is authoritative —
+`BackendIdentityPolicy`, `AgentProfile`, `ACHAgent`, `Workspace` (`api/` is authoritative —
 NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 `ek_`/`pk_` keys and teams are platform-api/DB objects). **`AgentProfile` (reusable infra
 + defaults) + `ACHAgent` (an agent instance)** render via `agentrender.Render2` into the
@@ -126,8 +126,14 @@ single **workspace-v1** wire config (`schemaVersion: "workspace-v1"`, contract �
 ConfigMap + a single-replica, single-container **control StatefulSet**
 (`agent-<name>`) that self-hydrates against ACH at boot (no init container, no CLI),
 plus the execution identity/bootstrap scaffolding the Harness running IN that control pod
-uses to create real per-Workspace execution StatefulSets directly (the declarative
-`Workspace` CR for hand-managing them yourself is deferred to v0.1.1). There is no
+uses to request per-Workspace execution through a `Workspace` CR. The operator is the
+sole writer of execution StatefulSets and Services; the Harness Role grants Workspace
+`create,delete,get,list,patch,update,watch`, StatefulSet/Service `get,list,watch`, and
+Pod `delete,get,list,watch`. Workspace names follow runtime 0.1.9's human-agent-name
+contract; full UID/reference and storage identity checks remain authoritative. Synthetic
+matching-shape adoption tests do not prove runtime-origin migration. Native-S3 and canonical
+real-Kubernetes acceptance remain separate pending gates. See `references/achagent.md`.
+There is no
 `standalone`/`distributed`/`sandboxed` placement knob any more, and `ACHAgent.spec.egress`
 is retired — both ACHAgent-only features were replaced, not adapted; a pre-existing
 ACHAgent's old Deployment and any agent-sandbox `SandboxTemplate`/`SandboxWarmPool` it

@@ -15,13 +15,12 @@ import (
 	"github.com/ackstorm/ach/internal/agentrender"
 )
 
-// TestWorkspaceCreatorRBAC pins the exact Harness workspace-creator grants (contract §11
-// creator contract) — only what the runtime Harness client issues: statefulsets
-// get/list/create/patch/delete, pods get/list/delete, services get/create. Nothing else (no
-// watch/update/scale, no Secret/RBAC CRUD, no TokenReview, no pod create/exec). The Role/RoleBinding are named after and bind only the
+// TestWorkspaceRequestRBAC pins the exact final Harness grants (contract §11): Workspace
+// CRUD, read-only StatefulSets/Services, and Pod read/delete — nothing else (no Secret/RBAC
+// CRUD, no TokenReview, no pod create/exec). The Role/RoleBinding are named after and bind only the
 // control (Harness) ServiceAccount, with ordinary automount=true; the execution
 // ServiceAccount is never a subject of this or any other binding.
-func TestWorkspaceCreatorRBAC(t *testing.T) {
+func TestWorkspaceRequestRBAC(t *testing.T) {
 	a := &achv1alpha1.ACHAgent{}
 	a.Name, a.Namespace = "demo", "ns"
 	a.UID = "3fa0b3b2-9c7a-4e1d-8a2f-6d1c0e9b4a77"
@@ -49,12 +48,12 @@ func TestWorkspaceCreatorRBAC(t *testing.T) {
 	executionName := agentrender.ExecutionServiceAccountName(string(a.UID))
 	for _, s := range rb.Subjects {
 		if s.Name == executionName {
-			t.Fatal("execution ServiceAccount must never be bound to the Harness workspace-creator Role")
+			t.Fatal("execution ServiceAccount must never be bound to the Harness Workspace Role")
 		}
 	}
 
-	// Ordinary control automount is true (contract §11 creator cutover: the Harness needs an
-	// ordinary API token to use the workspace-creator Role/RoleBinding granted above —
+	// Ordinary control automount is true: the Harness needs an ordinary API token to use the
+	// Workspace request Role/RoleBinding granted above —
 	// execution, not control, is the SA that stays unbound/unmounted).
 	sa := buildControlServiceAccount(a)
 	if sa.Name != wantName || sa.AutomountServiceAccountToken == nil || !*sa.AutomountServiceAccountToken {
@@ -70,17 +69,26 @@ func assertWorkspaceRoleRules(t *testing.T, role *rbacv1.Role) {
 	}
 	got := make([]rule, 0, len(role.Rules))
 	for _, r := range role.Rules {
-		if len(r.APIGroups) != 1 || len(r.Resources) != 1 {
+		if len(r.APIGroups) != 1 || len(r.Resources) != 1 || len(r.ResourceNames) != 0 {
 			t.Fatalf("rule must name exactly one group and one resource (no wildcard grants): %+v", r)
 		}
+		if r.APIGroups[0] == "*" || r.Resources[0] == "*" {
+			t.Fatalf("rule must not use wildcard groups/resources: %+v", r)
+		}
 		verbs := append([]string(nil), r.Verbs...)
+		for _, verb := range verbs {
+			if verb == "*" {
+				t.Fatalf("rule must not use wildcard verbs: %+v", r)
+			}
+		}
 		sort.Strings(verbs)
 		got = append(got, rule{r.APIGroups[0], r.Resources[0], verbs})
 	}
 	want := []rule{
-		{"apps", "statefulsets", []string{"create", "delete", "get", "list", "patch"}},
-		{"", "pods", []string{"delete", "get", "list"}},
-		{"", "services", []string{"create", "get"}},
+		{"ach.ackstorm.ai", "workspaces", []string{"create", "delete", "get", "list", "patch", "update", "watch"}},
+		{"apps", "statefulsets", []string{"get", "list", "watch"}},
+		{"", "pods", []string{"delete", "get", "list", "watch"}},
+		{"", "services", []string{"get", "list", "watch"}},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Role.Rules = %+v, want exactly %+v", got, want)
@@ -106,15 +114,20 @@ func assertWorkspaceRoleRules(t *testing.T, role *rbacv1.Role) {
 			t.Errorf("missing expected rule for %s/%s", w.group, w.resource)
 		}
 	}
-	// No Secret/RBAC CRUD, no TokenReview, no pod create/exec, no cross-namespace grant.
+	// No direct workload writes, status writes, or privileged APIs.
 	for _, r := range role.Rules {
 		for _, res := range r.Resources {
 			switch res {
-			case "secrets", "roles", "rolebindings", "clusterroles", "clusterrolebindings", "tokenreviews", "pods/exec":
+			case "statefulsets/scale", "workspaces/status", "secrets", "roles", "rolebindings", "clusterroles", "clusterrolebindings", "tokenreviews", "pods/exec", "jobs":
 				t.Errorf("Role must never grant resource %q", res)
 			}
 		}
 		for _, v := range r.Verbs {
+			if v == "create" || v == "update" || v == "patch" || v == "delete" {
+				if r.Resources[0] == "statefulsets" || r.Resources[0] == "services" {
+					t.Errorf("Role must not write %s", r.Resources[0])
+				}
+			}
 			if r.Resources[0] == "pods" && v == "create" {
 				t.Error("Role must never grant pods create")
 			}

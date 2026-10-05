@@ -2,8 +2,8 @@
 
 // Package ach — ACHAgentReconciler renders an ACHAgent (+ its AgentProfile) into the
 // workspace-v1 ConfigMap and a single-replica control StatefulSet (contract §11), plus the
-// execution identity/bootstrap scaffolding (ServiceAccount + bootstrap.json ConfigMap) ahead
-// of the Workspace CR (deferred to v0.1.1). The ach-agent harness self-hydrates against ACH
+// execution identity/bootstrap scaffolding (ServiceAccount + bootstrap.json ConfigMap) used
+// by WorkspaceReconciler. The ach-agent harness self-hydrates against ACH
 // at boot, so this reconciler owns NO init container and derives WorkloadReady from
 // pod.status (probe-backed) only.
 package ach
@@ -76,11 +76,13 @@ var requiredConds = []string{condProfileResolved, condControlServiceAccountResol
 // for the UID-owned legacy workspace key Secret; existing keys are never updated or deleted.
 // No Secret verbs are ever granted to the Harness or execution ServiceAccounts.
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create
-// pods delete: delegated to the per-agent Harness Role below — the operator must itself
-// hold any verb it grants there (RBAC escalation prevention).
+// Pod read/delete is used by Workspace reconciliation and granted to the Harness so it can
+// observe and restart only the execution Pods associated with its Workspace requests.
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=workspaces,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=workspaces/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
-// The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
+// The per-agent Harness Workspace-request Role/RoleBinding (buildWorkspaceRole/
 // buildWorkspaceRoleBinding, achagent_workload.go) — namespaced, not cluster-wide. No
 // blanket bind/escalate grant: the operator only ever creates these two fixed, UID-named
 // objects with the fixed rule set above.
@@ -295,8 +297,8 @@ func (r *ACHAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.applyFail(ctx, &agent, conds, "PVC", err)
 		}
 	}
-	// Workspace creator Role/RoleBinding (contract §11 creator contract) — applied before the
-	// control StatefulSet so the Harness can create its first Workspace as soon as it starts.
+	// Workspace request Role/RoleBinding is applied before the control StatefulSet so the
+	// Harness can submit its first Workspace request as soon as it starts.
 	if err := r.apply(ctx, &agent, buildWorkspaceRole(&agent)); err != nil {
 		return r.applyFail(ctx, &agent, conds, "Role", err)
 	}
@@ -617,7 +619,7 @@ func (r *ACHAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&networkingv1.NetworkPolicy{}).
-		// The per-agent Harness workspace-creator Role/RoleBinding (buildWorkspaceRole/
+		// The per-agent Harness Workspace-request Role/RoleBinding (buildWorkspaceRole/
 		// buildWorkspaceRoleBinding, achagent_workload.go) — an Owns() source so a hand-edit
 		// re-enqueues the owning ACHAgent, same as every other owned child.
 		Owns(&rbacv1.Role{}).

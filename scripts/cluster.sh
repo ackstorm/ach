@@ -326,6 +326,7 @@ reconcile_litellm() {
       -H 'Content-Type: application/json' \
       -d '{
         "model_name": "demo-model",
+        "model_info": {"mode": "chat"},
         "litellm_params": {
           "model": "openai/demo-model",
           "api_base": "http://ach-mock-model.ach-system.svc/v1",
@@ -843,8 +844,11 @@ verify_all() {
   kubectl -n ach-system get configmap achagent-e2e-agent \
     -o jsonpath='{.data.config\.json}' \
     | jq -e '.schemaVersion=="workspace-v1" and .ach.identity.env=="ACH_SECRET_IDENTITY"' >/dev/null
-  local e2e_agent_uid
+  local e2e_agent_uid e2e_agent_sa
   e2e_agent_uid=$(kubectl -n ach-system get achagent e2e-agent -o jsonpath='{.metadata.uid}')
+  e2e_agent_sa=$(kubectl -n ach-system get statefulset/agent-e2e-agent \
+    -o jsonpath='{.spec.template.spec.serviceAccountName}')
+  test -n "${e2e_agent_sa}"
   kubectl -n ach-system get statefulset agent-e2e-agent \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ACH_SECRET_IDENTITY")].valueFrom.secretKeyRef.name}' \
     | grep -q .
@@ -854,15 +858,126 @@ verify_all() {
   # gate (ach-task6-review.md M2).
   kubectl -n ach-system get statefulset agent-e2e-agent -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]' >/dev/null
+  kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_uid}" -o json \
+    | jq -e --arg sa "${e2e_agent_sa}" \
+      '[.subjects[] | select(.kind=="ServiceAccount" and .name==$sa and .namespace=="ach-system")] | length == 1' \
+      >/dev/null
   kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_uid}" \
-    -o jsonpath='{.subjects[0].name} {.roleRef.name}' \
-    | grep -qx "ach-harness-${e2e_agent_uid} ach-harness-${e2e_agent_uid}"
+    -o jsonpath='{.roleRef.name}' | grep -qx "ach-harness-${e2e_agent_uid}"
+  expect_can_i_denied() {
+    local output status stderr_file stderr_output
+    stderr_file=$(mktemp)
+    if output=$(kubectl auth can-i "$@" 2>"${stderr_file}"); then
+      status=0
+    else
+      status=$?
+    fi
+    stderr_output=$(<"${stderr_file}")
+    if [[ -s "${stderr_file}" ]]; then
+      cat "${stderr_file}" >&2
+    fi
+    rm -f -- "${stderr_file}"
+    if [[ "${output}" != "no" || "${status}" -ne 1 || -n "${stderr_output}" ]]; then
+      printf '[cluster.sh] expected denied can-i result (stdout=no, exit=1); got exit=%s stdout=%q\n' "${status}" "${output}" >&2
+      return 1
+    fi
+  }
+  # The final Harness request Role is intentionally separated from child writes:
+  # the operator remains the sole StatefulSet/Service writer.
+  kubectl api-resources --api-group=ach.ackstorm.ai -o name | grep -qx workspaces.ach.ackstorm.ai
+  for verb in get list watch create update patch delete; do
+    kubectl auth can-i "${verb}" workspaces -n ach-system \
+      --as="system:serviceaccount:ach-system:${e2e_agent_sa}" | grep -qx yes
+  done
+  for resource in statefulsets services; do
+    for verb in get list watch; do
+      kubectl auth can-i "${verb}" "${resource}" -n ach-system \
+        --as="system:serviceaccount:ach-system:${e2e_agent_sa}" | grep -qx yes
+    done
+    for verb in create update patch delete; do
+      expect_can_i_denied "${verb}" "${resource}" -n ach-system \
+        --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+    done
+  done
+  for verb in get list watch delete; do
+    kubectl auth can-i "${verb}" pods -n ach-system \
+      --as="system:serviceaccount:ach-system:${e2e_agent_sa}" | grep -qx yes
+  done
+  expect_can_i_denied update statefulsets --subresource=scale -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied patch statefulsets --subresource=scale -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied update workspaces --subresource=status -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied patch workspaces --subresource=status -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied get secrets -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied create roles -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied create rolebindings -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied create pods -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied create jobs -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
+  expect_can_i_denied create pods --subresource=exec -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_sa}"
   # Persistent standalone: whole operator-managed control-pod PVC at the mountPath,
   # single `agent` container (same name as before — only the workload kind changed).
   kubectl -n ach-system wait --for=condition=WorkloadApplied --timeout="${to}" achagent/e2e-agent-pvc
+  local e2e_agent_pvc_uid e2e_agent_pvc_sa
+  e2e_agent_pvc_uid=$(kubectl -n ach-system get achagent e2e-agent-pvc -o jsonpath='{.metadata.uid}')
+  e2e_agent_pvc_sa=$(kubectl -n ach-system get statefulset/agent-e2e-agent-pvc \
+    -o jsonpath='{.spec.template.spec.serviceAccountName}')
+  test -n "${e2e_agent_pvc_sa}"
   kubectl -n ach-system get statefulset agent-e2e-agent-pvc -o json \
     | jq -e '[.spec.template.spec.containers[].name] == ["agent"]
              and any(.spec.template.spec.volumes[]; .persistentVolumeClaim != null)' >/dev/null
+  kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_pvc_uid}" -o json \
+    | jq -e --arg sa "${e2e_agent_pvc_sa}" \
+      '[.subjects[] | select(.kind=="ServiceAccount" and .name==$sa and .namespace=="ach-system")] | length == 1' \
+      >/dev/null
+  kubectl -n ach-system get rolebinding "ach-harness-${e2e_agent_pvc_uid}" \
+    -o jsonpath='{.roleRef.name}' | grep -qx "ach-harness-${e2e_agent_pvc_uid}"
+  for verb in get list watch create update patch delete; do
+    kubectl auth can-i "${verb}" workspaces -n ach-system \
+      --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}" | grep -qx yes
+  done
+  for resource in statefulsets services; do
+    for verb in get list watch; do
+      kubectl auth can-i "${verb}" "${resource}" -n ach-system \
+        --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}" | grep -qx yes
+    done
+    for verb in create update patch delete; do
+      expect_can_i_denied "${verb}" "${resource}" -n ach-system \
+        --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+    done
+  done
+  for verb in get list watch delete; do
+    kubectl auth can-i "${verb}" pods -n ach-system \
+      --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}" | grep -qx yes
+  done
+  expect_can_i_denied update statefulsets --subresource=scale -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied patch statefulsets --subresource=scale -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied update workspaces --subresource=status -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied patch workspaces --subresource=status -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied get secrets -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied create roles -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied create rolebindings -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied create pods -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied create jobs -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
+  expect_can_i_denied create pods --subresource=exec -n ach-system \
+    --as="system:serviceaccount:ach-system:${e2e_agent_pvc_sa}"
   # Every control pod pins uid/gid/fsGroup 10001 — a fresh root-owned cloud PVC is
   # unwritable by the image uid without it (ach-agent finding 2026-09-15).
   local name

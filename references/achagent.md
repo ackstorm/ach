@@ -27,13 +27,13 @@ standalone/distributed placement left to drive it).
 
 There is **no `standalone`/`distributed` placement knob any more** (contract §11 scope
 reset, 0.1.0 — `ResolvePlacement`/`distributedContainers`/`distributedVolumes`/role ports
-are gone, not merely deferred). The Harness, running IN the control pod, creates one
-real, zero/one-replica **execution StatefulSet per non-migrable Workspace directly** at
-runtime, from `spec.execution` (image/resources/ephemeralStorage/scheduling/
-imagePullSecrets/nodeSelector/tolerations/terminationGracePeriodSeconds — contract §11
-execution-role infra) — a consumed creator path in v0.1.0, not a stub; only the
-declarative `Workspace` CR for hand-managing those objects yourself is deferred to
-v0.1.1. OpenCode and its shell tool run in THIS execution pod, never the control pod —
+are gone, not merely deferred). The runtime-workload `Workspace` CR is the request/status
+boundary for each non-migrable execution Workspace. The Harness submits Workspace requests;
+the operator reconciler alone creates and updates the execution StatefulSet and Service, with
+the ACHAgent retained as child owner. Execution shape comes from `spec.execution`
+(image/resources/ephemeralStorage/scheduling/imagePullSecrets/nodeSelector/tolerations/
+terminationGracePeriodSeconds — contract §11 execution-role infra). OpenCode and its shell
+tool run in THIS execution pod, never the control pod —
 there is currently no `podTemplate`/`networkPolicy`-equivalent overlay for it, so
 `AgentProfile.spec.podTemplate`/`spec.networkPolicy` harden only the control pod's own
 process and its own direct egress (the ACH API, redis, the memory backend — never
@@ -153,11 +153,14 @@ still on the old shape is rejected or blocked, not silently translated:
   `config.json`, the `ACH_SECRET_IDENTITY` secretKeyRef, the control StatefulSet's
   single `agent` container + fsGroup 10001, the Harness's own creator RoleBinding
   `ach-harness-<uid>`); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`,
-  swaps it into `e2e-agent-ek`, and (same 0.1.0-candidate image prerequisite, checked per profile by
+  swaps it into `e2e-agent-ek`, and (same candidate-image prerequisite, checked per profile by
   `classifyRuntimeImages`/`phase6RequireRealRuntimeImages` — a kubectl/read failure
   fails the test, never a silent skip) requires `WorkloadReady=True` on both agents
-  plus a PVC write as uid 10001 on the persistent one. There is no Workspace
-  lifecycle/distributed-isolation test — that evidence does not exist yet.
+  plus a PVC write as uid 10001 on the persistent one. The separate
+  `test/e2e/workspace_runtime_test.go` source carries seven I1 cases and the
+  0.1.6-to-0.1.7 execution image/resource refresh assertion. Those source assertions
+  do not prove runtime-origin migration, native-S3 behavior, or canonical
+  real-Kubernetes acceptance; those remain separate gates.
 - `install_agent_sandbox` (`scripts/cluster.sh`) still installs the optional
   kubernetes-sigs/agent-sandbox cluster prerequisite before `reconcile_ach`, but no
   stage-06 fixture exercises it any more — the chart surface is preserved
@@ -172,7 +175,7 @@ One source of truth each, in `internal/agentrender/render2.go`:
 | control StatefulSet + headless Service (pod `<name>-0`) | `agent-<agent name>` | `ControlName` |
 | control SA (default), per-agent Role + RoleBinding | `ach-harness-<uid>` | `HarnessName` |
 | execution SA + bootstrap ConfigMap | `ach-execution-<uid>` | `ExecutionServiceAccountName` |
-| workspace StatefulSet/Service/pod | `ach-ws-…` | runtime-owned — the operator never computes or validates it |
+| workspace StatefulSet/Service/pod | `ach-ws-…` | `workspaceResourceName(agentName, workspaceRef)` |
 
 `ControlName`: the name as is when ≤ 46 chars; otherwise (or when it contains `.`, legal
 in `metadata.name` but not in a Service name) its first 37 chars (dots → `-`, trailing `-`
@@ -187,12 +190,19 @@ labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
 Labels: the control pod carries `ach.ackstorm.ai/agent=<name>` +
 `ach.ackstorm.ai/component=control`, and every operator selector aimed at it (control
 StatefulSet, control + `achagent-<name>` Services, NetworkPolicy, WorkloadReady pod list)
-requires BOTH — the runtime also stamps `ach.ackstorm.ai/agent=<name>` on workspace pods.
-The operator never parses, validates or selects on `ach-ws-*` names or the
-`runtime.ach.ackstorm.ai/*` labels.
+requires BOTH. Workspace Service/StatefulSet identity uses the existing runtime labels;
+the execution pod additionally carries `ach.ackstorm.ai/agent=<name>` only when the
+unmodified name is a valid label value. That extra label is not copied to selectors.
 
-The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
-the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
+The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`.
+Workspace children use the runtime 0.1.9 name contract: dots become hyphens; normalized
+names up to 24 characters are retained, and longer names use the first 15 normalized
+characters plus `-` and the first eight lowercase SHA-256 hex characters of the full
+original name. The first 20 workspace-reference hex characters follow under
+`ach-ws-`. Names are at most 52 characters. UID ownership, full reference digests, and
+S3 identity remain unchanged. An old UID-derived workload name is a conflict, not a
+translation/adoption/deletion path; matching runtime human-name workload shapes are the
+only modeled adoption case.
 
 ## Control pod hardening
 
@@ -208,15 +218,20 @@ not (overlay pass-through).
 
 ## Harness RBAC (`ach-harness-<uid>` Role)
 
-Exactly what the runtime's Kubernetes client (`ach-runtime` `harness/kubernetes.py`)
-issues — GET, LIST (by `runtime.ach.ackstorm.ai/agent-uid`), POST, merge-PATCH, DELETE
-with a UID precondition: `apps/statefulsets` get/list/create/patch/delete (replicas 0↔1,
-recreate on template drift), `services` get/create, `pods` get/list/delete. No `watch`,
-no `update`, no `statefulsets/scale` (the Harness patches `spec.replicas` on the
-StatefulSet itself). RBAC cannot express an `ach-ws-*` name prefix, so the Role covers the
-namespace; the Harness scopes every call to its own UID-labelled/owned objects. When the
-runtime client grows a verb, add it here AND to the operator ClusterRole (escalation
-prevention: the operator must hold whatever it grants).
+The Harness requests only Workspace objects and reads/deletes operator-owned children.
+The exact verbs are Workspace `create,delete,get,list,patch,update,watch`; StatefulSet
+and Service `get,list,watch`; Pod `delete,get,list,watch`. It has no direct child writes,
+`/scale`, Workspace status, Secret, RBAC, Job, or exec grant. The operator is the sole
+execution StatefulSet/Service writer. The Role is namespace-scoped; ownership and full
+UID/reference checks constrain the selected Workspace and children. Keep operator
+ClusterRole permissions sufficient to grant this Role (escalation prevention).
+
+Execution pods match runtime 0.1.9 hardening: UID/GID/fsGroup 10001, non-root,
+RuntimeDefault seccomp, no privilege escalation, drop all capabilities, disabled
+service links, and no execution ServiceAccount token. Workspace deletion retains its
+workloads/storage. Synthetic adoption assertions establish matching-shape behavior only;
+they are not proof of actual runtime-origin migration. Native-S3 and real migration
+evidence remain separate gates.
 
 ## Stable control ServiceAccount (`AgentProfile.spec.controlServiceAccountName`)
 

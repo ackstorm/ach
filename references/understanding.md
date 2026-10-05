@@ -94,7 +94,7 @@ through `exit.DispatchAndRender` (sole `os.Exit` callers).
 
 | Mode | Role | Key wiring |
 |---|---|---|
-| operator | Sole K8s watcher. Reconciles the 9 live CRD kinds → projects Postgres rows via `WithTxNotify` (row write + NOTIFY in one tx). Sole LiteLLM access-group/tag writer. Mints `ach-jwt-signing-keys` (mint-once, survives uninstall), bootstraps `LiteLLMConnection/default` pre-`mgr.Start` (Helm can't — REST-mapper limitation). Runnables: LiteLLM snapshot (5m), orphan cleanup, 5-min resync, `ach_refresh` LISTEN. | `ACH_DB_URL`, pepper, `ACH_NAMESPACE` (ach-system), `ACH_CACHE_ROOT` (/var/cache/ach), size caps, orphan knobs |
+| operator | Sole K8s watcher. Reconciles the 9 projected content/governance CRD kinds plus `AgentProfile`, `ACHAgent`, and `Workspace`; projects Postgres rows via `WithTxNotify` (row write + NOTIFY in one tx). Sole LiteLLM access-group/tag writer and sole Workspace execution StatefulSet/Service writer. Mints `ach-jwt-signing-keys` (mint-once, survives uninstall), bootstraps `LiteLLMConnection/default` pre-`mgr.Start` (Helm can't — REST-mapper limitation). Runnables: LiteLLM snapshot (5m), orphan cleanup, 5-min resync, `ach_refresh` LISTEN. | `ACH_DB_URL`, pepper, `ACH_NAMESPACE` (ach-system), `ACH_CACHE_ROOT` (/var/cache/ach), size caps, orphan knobs |
 | platform-api | NO k8s client. Chi REST: OAuth 2.1 AS (code+PKCE, RFC 8628 device grant, Dex behind it), `pk_`/`ek_` lifecycle, `/platform/hydrate`, admin (inventory/refresh/keys/runtime-catalog), UI Objects API (Environment-only v1, GitOps-wins), **the web console**: the SPA at `/` (embedded `internal/platformapi/console/dist`, chi NotFound fallback), an in-process cookie session over the same AS (`/platform/console/session/*`, revalidated at the IdP every AccessTTL through the shared Dex refresh token), the cookie→`KeyContext` adapter (same handlers as a bearer; D-28 fetch-metadata CSRF), `/platform/console/{bootstrap,capabilities}` (Personal = LiteLLM reads as the user's own key, `litellm.UserView`), and the optional OpenWork Den (`/openwork`, `/api/den`). | `ACH_BASE_URL`, DB, pepper, DEK, LiteLLM base+master, Dex 3-var set, Redis, `POD_NAMESPACE` |
 | forwarder | Runtime data path `/v1 /gemini /mcp /a2a` (+ `GET /v2/model/info` for ach-agent pricing; NO catch-all — D-18). Key resolve (Redis 60s → Postgres), MCP/A2A precheck, header strip+rewrite, per-target JWT mint, JWKS. Only k8s touchpoint: the JWT Secret informer (field-selector-scoped). LiteLLM endpoint+key resolved from the `LiteLLMConnection/default` projection at boot (60s retry). | dual port: traffic :8080, health :8081 |
 | content-service | Default: **sidecar in operator Pod** (RWO PVC forces co-location; `contentService.standalone=true` + RWX for HA, G16). 8-gate authz pipeline → `sendfile(2)` streaming, inode-pinned via early `os.Open`. Range/conditional headers ignored — always full 200, `Cache-Control: no-store`. | :8082, Redis envcache (`ach_environments_changed`) |
@@ -112,7 +112,7 @@ Dev/e2e routing: nginx `ach-local-gateway` is an **e2e-only shim** (single
 `localhost:8080` origin; adds `/dex` + `/metrics/<svc>` kludges, falls through
 to the real `ach-gateway`). See `references/local-testing-gateway.md`.
 
-## 4. Resource model — 11 CRD kinds, 4 archetypes
+## 4. Resource model — 12 CRD kinds, 5 archetypes
 
 `ach.ackstorm.ai/v1alpha1`, all namespaced. Archetype doctrine + 11-surface
 parity checklist: `references/adding-a-cr-kind.md`.
@@ -150,6 +150,17 @@ parity checklist: `references/adding-a-cr-kind.md`.
 - **config singleton**: `LiteLLMConnection` — name CEL-forced `default`;
   endpoint + master-key SecretRef. Operator probes, `EnsureDefaultTeam`
   (idempotent — LiteLLM assigns UUID team_id).
+- **runtime workload**: `AgentProfile` and `ACHAgent` configure an agent control
+  workload; `Workspace` is its namespaced per-execution request. The operator is
+  the sole writer of execution StatefulSets/Services. Workspace names follow the
+  runtime 0.1.9 human-agent-name contract (maximum 52 characters); full ACHAgent
+  UID/reference ownership and S3 identity remain unchanged. The Harness Role can
+  create/delete/get/list/patch/update/watch Workspace requests, read/list/watch
+  StatefulSets and Services, and read/list/watch/delete Pods, but cannot write
+  child StatefulSets or Services. Workspace deletion retains workload and
+  storage. An old UID-derived workload name is a conflict, not an automatic
+  migration/adoption path. See `references/achagent.md` for exact naming, RBAC,
+  hardening, and evidence boundaries.
 - **agent fleet**: `AgentProfile` (infra template: resources,
   extraEnv (ACH_* CEL-forbidden), persistence PVC (Retain/Delete) — the operator's OWN
   persistent control-pod volume, unrelated to the Harness/Storage `workspace.persistence`
@@ -157,7 +168,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   peers), raw `podTemplate` strategic-merge overlay — pass-through by design, selector +
   config-hash re-pinned after merge; `spec.execution` (contract §11 execution-role infra:
   image/resources/ephemeralStorage/scheduling for the per-Workspace execution pod the
-  Harness creates directly) + `ACHAgent` (instance: nested `ach.identity.secretRef` ek_ →
+  operator reconciles from Workspace requests) + `ACHAgent` (instance: nested `ach.identity.secretRef` ek_ →
   `ACH_SECRET_IDENTITY` env via secretKeyRef — never file-mounted, explicitly NOT an
   isolation boundary (same-uid reads /proc/pid/environ); `ach.environment`/`ach.capability`
   share the profile's `achagent.ach` defaults per-field, identity never does (profile-level
@@ -174,22 +185,24 @@ parity checklist: `references/adding-a-cr-kind.md`.
   handoff/; agent-level `spec.hooks.{sessionStart,sessionSuspend}` run inside the
   mini-harness with only engine.forwardEnv; `expose.service` + `expose.gateway` both default
   false, gateway requires service). One Channels+Harness control container per ACHAgent —
-  no standalone/distributed/sandboxed placement, no Jobs, no Workspace CR in 0.1.0 (CR/
-  controller deferred to 0.1.1; the execution identity/bootstrap resources the Harness
-  consumes to create per-Workspace execution StatefulSets directly are NOT deferred).
+  no standalone/distributed/sandboxed placement or Jobs. Released 0.1.0 did not include a
+  Workspace CR; the current Workspace request/controller path makes the operator the sole
+  execution StatefulSet/Service writer, while ACHAgent remains their owner.
   Operator renders the workspace-v1 wire config (`internal/agentrender`,
   Render2/RenderInfrastructureV1, JSON tags schema-locked) plus the single-replica control
   StatefulSet (contract §11, name `agent-<name>`) the harness **self-hydrates** at
   boot — no init container; status from probes, fixed control port, no `health` knob any
   more (compatibility-only CRD field, read by nothing that builds real k8s objects). The
   Harness's own namespaced Role/RoleBinding (`ach-harness-<uid>`, same name as its
-  ServiceAccount) grants exactly the verbs the runtime Harness client issues on its
-  workspace objects (statefulsets get/list/create/patch/delete, pods get/list/delete,
-  services get/create) — no watch/update/scale, Secret/RBAC, TokenReview, pod exec, or cross-
-  namespace grant; the execution ServiceAccount is never bound to anything. The control pod
-  is selected by `ach.ackstorm.ai/agent` + `ach.ackstorm.ai/component=control` (workspace
-  pods carry the agent label too); it runs uid 10001, RuntimeDefault seccomp, no
-  capabilities, no service links. A missing profile-named control SA is
+  ServiceAccount) grants Workspace create/delete/get/list/patch/update/watch,
+  StatefulSet/Service get/list/watch, and Pod delete/get/list/watch — no direct child writes,
+  `/scale`, Workspace status, Secret/RBAC, TokenReview, pod exec, or cross-namespace grant;
+  the execution ServiceAccount is never bound to anything. The control pod
+  is selected by `ach.ackstorm.ai/agent` + `ach.ackstorm.ai/component=control` (execution
+  pods carry the unchanged agent-name label only when it is a valid Kubernetes label value,
+  and never use it as an identity selector); execution pods use UID/GID/fsGroup 10001, non-root,
+  RuntimeDefault seccomp, no privilege escalation, drop ALL capabilities, and disable
+  service links and the execution ServiceAccount token. A missing profile-named control SA is
   `ControlServiceAccountResolved=False`. `AgentProfile.spec.controlServiceAccountName` (optional) makes the control pods run as one
   pre-existing, externally managed ServiceAccount (e.g. for EKS Pod Identity, which has no wildcards)
   instead of `ach-harness-<uid>`: the operator then skips creating it, the per-agent Role/RoleBinding

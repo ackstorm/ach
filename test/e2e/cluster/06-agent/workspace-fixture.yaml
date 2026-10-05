@@ -1,0 +1,108 @@
+# Disposable Workspace acceptance-test template. This file is deliberately not
+# referenced by kustomization.yaml; workspace_runtime_test.go applies only the
+# AgentProfile and ACHAgent documents as administrator, then submits rendered
+# Workspace requests as the live control StatefulSet's effective ServiceAccount.
+# The Workspace placeholders are documentation for the rendered identity and
+# observed UID preconditions; the test fills them from live Kubernetes objects.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: AgentProfile
+metadata:
+  name: workspace-kube-e2e-profile
+  namespace: ach-system
+spec:
+  achagent:
+    image: ghcr.io/ackstorm/ach-runtime-control:0.1.7
+    ach:
+      baseUrl: http://ach.e2e.local:8080
+    model:
+      name: demo-model
+      type: openai
+    engine:
+      compaction:
+        auto: true
+        keep:
+          tokens: 8000
+        buffer: 20000
+    limits:
+      maxActiveWorkspaces: 4
+      maxConcurrentInvocations: 4
+      maxConcurrentScripts: 2
+      maxInvocationSeconds: 900
+      maxQueuedTotal: 100
+      idempotencyWindowSeconds: 3600
+      maxSteps: 30
+    workspace:
+      idleTimeoutSeconds: 600
+      shutdownTimeoutSeconds: 300
+      maxConcurrentSessions: 1
+      persistence:
+        enabled: false
+        retentionDays: 90
+      session:
+        idleTimeoutSeconds: 300
+        persistence:
+          enabled: false
+          retentionDays: 90
+    artifacts:
+      enabled: false
+      maxArtifactBytes: 104857600
+      retentionDays: 90
+  execution:
+    image: ghcr.io/ackstorm/ach-runtime-execution:0.1.6
+    ephemeralStorage: 1Gi
+    terminationGracePeriodSeconds: 330
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: workspace-kube-e2e-agent
+  namespace: ach-system
+spec:
+  profileRef:
+    name: workspace-kube-e2e-profile
+  ach:
+    identity:
+      secretRef:
+        name: e2e-agent-ek
+        key: ek
+    environment: demo
+  channels:
+    - name: workspace-kube-e2e
+      type: webhook
+      source: generic
+      webhook:
+        auth:
+          type: none
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Workspace
+metadata:
+  name: "{{DERIVED_WORKSPACE_NAME}}"
+  namespace: ach-system
+  labels:
+    runtime.ach.ackstorm.ai/agent-uid: "{{LIVE_AGENT_UID}}"
+    runtime.ach.ackstorm.ai/workspace-name: "{{DERIVED_WORKSPACE_NAME}}"
+  annotations:
+    runtime.ach.ackstorm.ai/workspace-ref: "{{FULL_WORKSPACE_DIGEST}}"
+  ownerReferences:
+    - apiVersion: ach.ackstorm.ai/v1alpha1
+      kind: ACHAgent
+      name: workspace-kube-e2e-agent
+      uid: "{{LIVE_AGENT_UID}}"
+      controller: true
+      blockOwnerDeletion: false
+spec:
+  agentRef:
+    name: workspace-kube-e2e-agent
+    uid: "{{LIVE_AGENT_UID}}"
+  workspaceRef: "{{FULL_WORKSPACE_DIGEST}}"
+  replicas: 0
+  expectedStatefulSetUID: "{{OBSERVED_STATEFULSET_UID}}"
+  expectedPodUID: "{{OBSERVED_POD_UID}}"
