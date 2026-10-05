@@ -36,7 +36,7 @@ type OAuthDeps struct {
 	Probe      func(ctx context.Context, email, userID, key string) probeOutcome
 
 	// Seams. nil → the real thing: the oauth2+oidc Dex leg, provisionUser,
-	// Auth.MintPK, db.ActiveOAuthPK, db.RevokePersonalKey + LiteLLM revoke.
+	// Auth.MintPK, db.ActiveOAuthPKAnyExpiry, db.RevokePersonalKey + LiteLLM revoke.
 	DexLogin      func(state, pkceVerifier string) string
 	DexExchange   func(ctx context.Context, code, pkceVerifier string) (email, name string, groups []string, dexRefresh string, err error)
 	DexRefresh    func(ctx context.Context, dexRefresh string) (rotated string, err error)

@@ -84,6 +84,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Limit pre-push secret scanning to changed commits with gitleaks; keep govulncheck in CI.
 
 ### Fixed
+- OAuth login and refresh no longer fail permanently for a user whose oauth `pk_` expired
+  while idle (`server_error` from a `personal_keys_one_active_oauth_per_owner` violation,
+  then `invalid_grant`): the token endpoint now sees the expired-but-active row, revokes it
+  and mints a fresh one. The resolver still never resolves an expired row.
+- A refresh grant that fails server-side (LiteLLM down, `pk_` mint, signer, store) no
+  longer consumes the presented refresh token: the client's retry works instead of forcing
+  a new login. Concurrent refreshes with one token still yield exactly one new pair.
 - Fresh installs no longer deadlock on `ach-jwt-signing-keys`: the content-service
   sidecar's Secret volume is `optional: true` (the operator mints that Secret on
   boot from the same Pod).

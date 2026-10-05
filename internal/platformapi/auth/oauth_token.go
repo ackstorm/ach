@@ -71,7 +71,8 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 // and the oauth pk_ go, so each JWT dies at its own expiry and each other
 // session fails its next refresh without asking Dex — and the client is
 // told invalid_grant, which sends it back to login (where the IdP says
-// no). Dex unreachable is a 503 and the presented token stays valid.
+// no). Dex unreachable is a 503 and the presented token stays valid; so
+// does any failure to issue the new pair (LiteLLM down, pk_ ensure, store).
 func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID string) {
 	presented := r.PostForm.Get("refresh_token")
 	var rf oauthRefresh
@@ -102,7 +103,13 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
-	d.issue(w, r, rf.oauthUser, clientID)
+	if !d.issue(w, r, rf.oauthUser, clientID) {
+		// No new pair went out: hand the presented token back so the
+		// client's retry works instead of forcing a fresh login.
+		if err := d.Store.Put(r.Context(), "refresh", presented, rf, d.RefreshTTL); err != nil {
+			d.Auth.Logger.Error("oauth: restoring the refresh token after a failed grant failed", "err", err)
+		}
+	}
 }
 
 // errIdPRefused: the identity provider no longer honours the user — every
@@ -142,31 +149,33 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
 	return d.Store.Put(ctx, dexRefreshKind, sub, rotated, d.RefreshTTL)
 }
 
-func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) {
+// issue answers the grant with a new token pair; false when it answered
+// an error instead and no pair went out.
+func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) bool {
 	sub, userID := u.Sub, u.UserID
 	var err error
 	if err := d.ensureOAuthPK(r.Context(), sub, userID); err != nil {
 		if errors.Is(err, ErrMintLiteLLM) {
 			oauthError(w, 503, "temporarily_unavailable", "litellm unreachable")
-			return
+			return false
 		}
 		d.Auth.Logger.Error("oauth: ensure pk_ failed", "err", err)
 		oauthError(w, 500, "server_error", "")
-		return
+		return false
 	}
 	access, err := d.Signer.Sign(r.Context(), jwt.Claims{Iss: d.Issuer, Sub: sub, Aud: d.Audience, Email: sub, TTL: d.AccessTTL})
 	if err != nil {
 		oauthError(w, 500, "server_error", "signer not loaded")
-		return
+		return false
 	}
 	refresh, err := NewSessionID()
 	if err != nil {
 		oauthError(w, 500, "server_error", "")
-		return
+		return false
 	}
 	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{oauthUser: u, ClientID: clientID}, d.RefreshTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
-		return
+		return false
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -177,6 +186,7 @@ func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, cl
 		"expires_in":    int(d.AccessTTL / time.Second),
 		"refresh_token": refresh,
 	})
+	return true
 }
 
 // ensureOAuthPK guarantees one live purpose='oauth' row for sub: reuse it
@@ -259,11 +269,13 @@ func (d OAuthDeps) liteLLMHasKey(ctx context.Context, row *db.PkKeyInfo) (bool, 
 	return false, nil
 }
 
+// lookupOAuthPK returns the active oauth row whatever its expiry — the row
+// the unique index counts — so an expired one is revoked, not collided with.
 func (d OAuthDeps) lookupOAuthPK(ctx context.Context, email string) (*db.PkKeyInfo, error) {
 	if d.OAuthPKLookup != nil {
 		return d.OAuthPKLookup(ctx, email)
 	}
-	return db.ActiveOAuthPK(ctx, d.Auth.Pool, email)
+	return db.ActiveOAuthPKAnyExpiry(ctx, d.Auth.Pool, email)
 }
 
 func (d OAuthDeps) revokeOAuthPK(ctx context.Context, keyID string) error {

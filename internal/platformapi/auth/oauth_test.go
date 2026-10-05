@@ -366,6 +366,7 @@ type fakeOAuthPKs struct {
 	// litellmLost: tokens LiteLLM no longer lists (deleted out-of-band).
 	litellmLost map[string]bool
 	litellmErr  error
+	mintErr     error
 }
 
 // installFakePKs wires the pk_ seams and a LiteLLM whose key list mirrors
@@ -395,6 +396,9 @@ func installFakePKs(f *asFixture) *fakeOAuthPKs {
 		return nil
 	}
 	f.deps.Mint = func(_ context.Context, email, userID, purpose string) (string, db.PkInsertRow, error) {
+		if p.mintErr != nil {
+			return "", db.PkInsertRow{}, p.mintErr
+		}
 		if p.rows[email] != nil {
 			return "", db.PkInsertRow{}, errors.New("unique index: one active oauth row per owner")
 		}
@@ -517,6 +521,82 @@ func TestToken_RotatesAnOAuthPKThatIsAboutToExpire(t *testing.T) {
 	}
 	if pks.minted != 1 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_old" {
 		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+// An active oauth row that already expired (the user idled through the
+// rotation window) is still the row the unique index counts: it is revoked
+// and replaced, never collided with. The fake lookup returns rows whatever
+// their expiry, like db.ActiveOAuthPKAnyExpiry.
+func TestToken_ReplacesAnOAuthPKThatAlreadyExpired(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	tok, uid := "lt-old", "u@x.com"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(-time.Minute), LiteLLMUserID: &uid, LiteLLMToken: &tok, Status: "active"}
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 1 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_old" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+// A refresh whose new pair cannot be issued (LiteLLM down, the pk_ mint
+// failing) answers 5xx and leaves the presented refresh token valid: the
+// client retries instead of being sent back to login.
+func TestToken_RefreshKeepsThePresentedTokenWhenIssueFails(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	pks.litellmErr = errors.New("dial tcp: refused")
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 {
+		t.Fatalf("litellm down: %d %s", w.Code, w.Body)
+	}
+	pks.litellmErr = nil
+	pks.litellmLost["lt-u@x.com"] = true // forces revoke + mint
+	pks.mintErr = errors.New("insert: boom")
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 500 {
+		t.Fatalf("mint failing: %d %s", w.Code, w.Body)
+	}
+	pks.mintErr = nil
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 200 {
+		t.Fatalf("retry with the same refresh token: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("a successful refresh still consumes the token: %d", w.Code)
+	}
+}
+
+// Two refreshes racing on one token: exactly one gets a pair, the other
+// invalid_grant. The second request is fired from inside the first's IdP
+// check, i.e. after the first read the token and before it took it.
+func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	var inner int
+	f.dexRefresh = func(rt string) (string, error) {
+		if inner == 0 {
+			inner = -1
+			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr).Code
+		}
+		return rt + "+", nil
+	}
+	outer := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if inner != 200 || outer.Code != 400 || !strings.Contains(outer.Body.String(), "invalid_grant") {
+		t.Fatalf("want one 200 and one invalid_grant: inner=%d outer=%d %s", inner, outer.Code, outer.Body)
 	}
 }
 
