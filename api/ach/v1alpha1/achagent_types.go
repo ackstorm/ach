@@ -541,6 +541,7 @@ type ACHAgentStatus struct {
 // +kubebuilder:printcolumn:name="Gateway",type=string,JSONPath=".status.gatewayURL",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 50",message="ACHAgent name must be <= 50 chars (operator derives <=63-char child names)"
+// +kubebuilder:validation:XValidation:rule="!self.metadata.name.matches('-[0-9a-f]{20}$')",message="ACHAgent name must not end in -<20 hex> (reserved for the runtime's agent-<name>-<20 hex> workspace names)"
 
 // ACHAgent is a running agent instance.
 type ACHAgent struct {

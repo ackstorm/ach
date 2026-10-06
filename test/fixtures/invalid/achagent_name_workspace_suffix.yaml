@@ -1,0 +1,26 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: ACHAgent metadata.name must not end in "-<20 lowercase hex>".
+# Expected error substring: "must not end in -<20 hex>"
+#
+# The runtime names an agent's workspace StatefulSets agent-<name>-<20 hex>, sharing the
+# control StatefulSet's agent-<name> stem. An agent named "gitlab-reviewer-<20 hex>" would
+# get the control name of gitlab-reviewer's workspace, so such names are reserved.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: gitlab-reviewer-171b4b3eaa8f3aea38f9
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  identity:
+    secretRef:
+      name: ops-ek
+      key: ek
+  capability:
+    environment: engineering-prod
+  channels:
+    - name: tick
+      type: cron
+      cron:
+        schedule: "* * * * *"

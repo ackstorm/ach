@@ -1279,6 +1279,9 @@ spec:
         - message: ACHAgent name must be <= 50 chars (operator derives <=63-char child
             names)
           rule: size(self.metadata.name) <= 50
+        - message: ACHAgent name must not end in -<20 hex> (reserved for the runtime's
+            agent-<name>-<20 hex> workspace names)
+          rule: '!self.metadata.name.matches(''-[0-9a-f]{20}$'')'
     served: true
     storage: true
     subresources:

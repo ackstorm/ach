@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (admission):** an `ACHAgent` name ending in `-<20 lowercase hex>` is now rejected
+  by CRD validation. ach-runtime names an agent's workspace StatefulSets
+  `agent-<name>-<20 hex>`, sharing the control StatefulSet's `agent-<name>` stem; reserving the
+  suffix keeps a control name from ever equalling another agent's workspace name.
+
 ### Added
 - `ACHAgent.spec.hooks.workspaceStart` / `workspaceStop` ({script, timeoutSeconds}): run once
   per workspace in the execution pod — after restore/create before any session, and before

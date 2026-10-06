@@ -288,7 +288,7 @@ func TestControlName(t *testing.T) {
 		t.Fatalf("long names sharing a prefix collided: %q", ControlName(a))
 	}
 	// Never collides with the operator's other per-agent Service (achagent-<name>) or the
-	// ach-* platform/workspace names, for any pair of agent names: different first bytes.
+	// ach-* platform names, for any pair of agent names: different first bytes.
 	for _, n := range []string{"foo", "achagent-foo", "ach-ws-x", strings.Repeat("z", 60)} {
 		if got := ControlName(n); !strings.HasPrefix(got, "agent-") || strings.HasPrefix(got, "ach") {
 			t.Fatalf("ControlName(%q) = %q escapes the agent- namespace", n, got)
@@ -315,7 +315,7 @@ func TestRender2_ControlEndpointUsesAgentName(t *testing.T) {
 	}
 }
 
-// TestRender2_AlwaysEmitsAgentName: the runtime names workspace pods ach-ws-<name>-<ref>, so
+// TestRender2_AlwaysEmitsAgentName: the runtime names workspace pods agent-<name>-<ref>, so
 // agent.name is required on the wire and always rendered from metadata.name.
 func TestRender2_AlwaysEmitsAgentName(t *testing.T) {
 	profile, agent := minimalRender2Fixture()

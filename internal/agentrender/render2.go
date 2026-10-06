@@ -194,7 +194,8 @@ const controlNameMaxPart = 46
 // its first 37 chars (dots as '-', trailing '-' dropped) + "-" + the first 8 hex of
 // sha256(full name): deterministic, and two names sharing a 37-char prefix still differ.
 // "agent-" never collides with the operator's achagent-<name> Service nor the ach-* platform
-// and runtime-owned ach-ws-* names (different leading bytes).
+// names (different leading bytes). The runtime's workspace names agent-<name part>-<20 hex>
+// share the stem; the CRD rejects agent names ending in -<20 hex>, so they never coincide.
 func ControlName(agentName string) string {
 	part := agentName
 	if len(part) > controlNameMaxPart || strings.Contains(part, ".") {

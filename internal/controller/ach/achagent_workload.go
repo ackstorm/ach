@@ -186,7 +186,7 @@ func buildConfigMap(a *achv1alpha1.ACHAgent, configJSON []byte) *corev1.ConfigMa
 }
 
 // buildWorkspaceRole grants the Harness (control pod) exactly the verbs its runtime
-// Kubernetes client (ach-runtime harness/kubernetes.py) issues against its own ach-ws-*
+// Kubernetes client (ach-runtime harness/kubernetes.py) issues against its own agent-<name>-<ref>
 // workspace objects, in its own namespace (contract §11 creator contract): StatefulSets
 // get/list/create/patch (replicas 0↔1)/delete (recreate on template drift), Services
 // get/create, Pods get/list/delete. No watch, no update (PUT), no /scale subresource, no

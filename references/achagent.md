@@ -172,15 +172,18 @@ One source of truth each, in `internal/agentrender/render2.go`:
 | control StatefulSet + headless Service (pod `<name>-0`) | `agent-<agent name>` | `ControlName` |
 | control SA (default), per-agent Role + RoleBinding | `ach-harness-<uid>` | `HarnessName` |
 | execution SA + bootstrap ConfigMap | `ach-execution-<uid>` | `ExecutionServiceAccountName` |
-| workspace StatefulSet/Service/pod | `ach-ws-…` | runtime-owned — the operator never computes or validates it |
+| workspace StatefulSet/Service/pod | `agent-<name part>-<20 hex>` | runtime-owned — the operator never computes or validates it |
 
 `ControlName`: the name as is when ≤ 46 chars; otherwise (or when it contains `.`, legal
 in `metadata.name` but not in a Service name) its first 37 chars (dots → `-`, trailing `-`
 dropped) + `-` + first 8 hex of `sha256(full name)`. 6 + 46 = 52 keeps the pod name
 (`-0`) and the controller-revision-hash label value (`-` + 10 chars) within 63. `agent-`
 cannot collide with the operator's `achagent-<name>` expose Service, the `ach-*` platform
-Services or the runtime's `ach-ws-*` (different leading bytes); it can collide only with a
-foreign object someone else names `agent-…` in the same namespace. The UID stays in
+Services (different leading bytes). The runtime's workspace names share the `agent-` stem
+(`agent-<name part ≤ 25>-<20 hex>`, so execution pods sort next to the control pod); the CRD
+rejects agent names ending in `-<20 hex>`, so a control name never equals a workspace name.
+It can otherwise collide only with a foreign object someone else names `agent-…` in the
+same namespace. The UID stays in
 labels/ownership, not in the name. `controlEndpoint`/`facadeEndpoint` are
 `http://<ControlName>.<ns>.svc:8081[/facades]`.
 
@@ -188,11 +191,11 @@ Labels: the control pod carries `ach.ackstorm.ai/agent=<name>` +
 `ach.ackstorm.ai/component=control`, and every operator selector aimed at it (control
 StatefulSet, control + `achagent-<name>` Services, NetworkPolicy, WorkloadReady pod list)
 requires BOTH — the runtime also stamps `ach.ackstorm.ai/agent=<name>` on workspace pods.
-The operator never parses, validates or selects on `ach-ws-*` names or the
+The operator never parses, validates or selects on workspace names or the
 `runtime.ach.ackstorm.ai/*` labels.
 
 The rendered `agent` block always carries `name` (= `metadata.name`), `namespace`, `uid`:
-the runtime names workspace pods `ach-ws-<name part>-<ref>` and requires `agent.name`.
+the runtime names workspace pods `agent-<name part>-<ref>` and requires `agent.name`.
 
 ## Control pod hardening
 
@@ -213,7 +216,7 @@ issues — GET, LIST (by `runtime.ach.ackstorm.ai/agent-uid`), POST, merge-PATCH
 with a UID precondition: `apps/statefulsets` get/list/create/patch/delete (replicas 0↔1,
 recreate on template drift), `services` get/create, `pods` get/list/delete. No `watch`,
 no `update`, no `statefulsets/scale` (the Harness patches `spec.replicas` on the
-StatefulSet itself). RBAC cannot express an `ach-ws-*` name prefix, so the Role covers the
+StatefulSet itself). RBAC cannot express a workspace name prefix, so the Role covers the
 namespace; the Harness scopes every call to its own UID-labelled/owned objects. When the
 runtime client grows a verb, add it here AND to the operator ClusterRole (escalation
 prevention: the operator must hold whatever it grants).

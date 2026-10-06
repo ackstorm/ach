@@ -209,6 +209,14 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "mcpServers",
 		},
+		// ACHAgent names ending in -<20 hex> are reserved: the runtime's workspace names are
+		// agent-<name>-<20 hex>, sharing the control name's agent- stem.
+		{
+			name:           "invalid_achagent_name_workspace_suffix",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_name_workspace_suffix.yaml",
+			shouldFail:     true,
+			errMustContain: "must not end in -<20 hex>",
+		},
 		// ACHAgent.spec.memory is discriminated on type: ach-memory REQUIRES the
 		// achMemory block (endpoint has no default); codemem does not.
 		{
