@@ -963,6 +963,17 @@
     "HooksBlock": {
       "additionalProperties": false,
       "properties": {
+        "workspaceStart": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HookBlock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "sessionStart": {
           "anyOf": [
             {
@@ -986,6 +997,17 @@
           "default": null
         },
         "sessionSuspend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HookBlock"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workspaceStop": {
           "anyOf": [
             {
               "$ref": "#/$defs/HookBlock"

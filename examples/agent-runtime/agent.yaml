@@ -93,10 +93,19 @@ spec:
       # routing: { sessionKey: "main" }  # continuity across ticks
       cron: { schedule: "0 8 * * 1-5", timezone: Europe/Madrid }
       prompt: "Scan main for new CVEs; open an issue if any are critical."
-  # Agent-level session hooks, run inside the mini-harness with only
+  # Agent-level workspace + session hooks, run inside the mini-harness with only
   # engine.forwardEnv variables (never channel credentials).
   hooks:
+    # workspaceStart/workspaceStop need ach-runtime >= 0.1.13 (older runtimes reject them).
+    workspaceStart:
+      script: |
+        git config --global --add safe.directory '*'
+      timeoutSeconds: 60
+    workspaceStop:
+      script: |
+        echo "workspace closing" >&2
     sessionStart:
+      # exit 0 appends stdout to the prompt; exit 78 skips the run; other exits fail it.
       script: |
         echo "session starting for $ACH_AGENT_NAME" >&2
       timeoutSeconds: 30

@@ -410,17 +410,20 @@ func RenderWebhookV1(ch *achv1alpha1.ChannelSpec) *WSWebhookBlock {
 	return b
 }
 
-// WSHookBlock is hooks.sessionStart / hooks.sessionRestore / hooks.sessionSuspend (schema
-// HookBlock — script required).
+// WSHookBlock is one hooks.* entry (schema HookBlock — script required).
 type WSHookBlock struct {
 	Script         string `json:"script"`
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
-// WSHooksBlock is hooks{...} (schema HooksBlock). Unlike the retired shape, ALL THREE keys
-// are always present on the wire — the fixture renders unset hooks as explicit nulls, not
-// an omitted key — so the struct intentionally has no omitempty on any field.
+// WSHooksBlock is hooks{...} (schema HooksBlock). The three session keys are always present
+// on the wire — the fixture renders unset hooks as explicit nulls, not an omitted key — so
+// they intentionally have no omitempty. The two workspace keys are emitted only when set:
+// runtimes <= 0.1.12 validate with extra="forbid", so even a null key would make them
+// reject the config and crash-loop.
 type WSHooksBlock struct {
+	WorkspaceStart *WSHookBlock `json:"workspaceStart,omitempty"`
+	WorkspaceStop  *WSHookBlock `json:"workspaceStop,omitempty"`
 	SessionStart   *WSHookBlock `json:"sessionStart"`
 	SessionRestore *WSHookBlock `json:"sessionRestore"`
 	SessionSuspend *WSHookBlock `json:"sessionSuspend"`
@@ -433,12 +436,14 @@ func renderHookV1(h *achv1alpha1.HookSpec) *WSHookBlock {
 	return &WSHookBlock{Script: h.Script, TimeoutSeconds: h.TimeoutSeconds}
 }
 
-// RenderHooksV1 maps HooksSpec verbatim, including the new SessionRestore hook.
+// RenderHooksV1 maps HooksSpec verbatim.
 func RenderHooksV1(h *achv1alpha1.HooksSpec) WSHooksBlock {
 	if h == nil {
 		return WSHooksBlock{}
 	}
 	return WSHooksBlock{
+		WorkspaceStart: renderHookV1(h.WorkspaceStart),
+		WorkspaceStop:  renderHookV1(h.WorkspaceStop),
 		SessionStart:   renderHookV1(h.SessionStart),
 		SessionRestore: renderHookV1(h.SessionRestore),
 		SessionSuspend: renderHookV1(h.SessionSuspend),

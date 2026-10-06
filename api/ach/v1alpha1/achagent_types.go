@@ -437,11 +437,21 @@ type HookSpec struct {
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
-// HooksSpec configures the agent's session lifecycle hooks. Agent-level only: hooks
-// describe one agent's session behaviour and are not part of AgentProfile/AgentDefaults.
+// HooksSpec configures the agent's workspace and session lifecycle hooks. Agent-level
+// only: hooks describe one agent's behaviour and are not part of AgentProfile/AgentDefaults.
 type HooksSpec struct {
+	// WorkspaceStart runs once in the execution pod after the workspace is restored (or
+	// created), before any session. Best-effort: a failure raises the alarm
+	// workspace_start_failed and never blocks. Requires ach-runtime >= 0.1.13.
+	// +optional
+	WorkspaceStart *HookSpec `json:"workspaceStart,omitempty"`
+	// WorkspaceStop runs once before the workspace snapshot/close. Best-effort: a failure
+	// raises the alarm workspace_stop_failed. Requires ach-runtime >= 0.1.13.
+	// +optional
+	WorkspaceStop *HookSpec `json:"workspaceStop,omitempty"`
 	// SessionStart runs once per new session, after the handoff and before the first turn.
-	// Failure fails the invocation.
+	// It is a run gate: exit 0 appends its stdout to the prompt, exit 78 skips the run
+	// without an engine call, and any other non-zero exit fails the invocation.
 	// +optional
 	SessionStart *HookSpec `json:"sessionStart,omitempty"`
 	// SessionRestore runs once each time a session is restored from a snapshot (contract §6).
@@ -480,7 +490,7 @@ type ACHAgentSpec struct {
 	Prompt *AgentPromptSpec `json:"prompt,omitempty"`
 	// +optional
 	Memory *MemorySpec `json:"memory,omitempty"`
-	// Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
+	// Hooks are agent-level workspace and session lifecycle hooks, run
 	// inside the mini-harness with only engine.forwardEnv variables.
 	// +optional
 	Hooks *HooksSpec `json:"hooks,omitempty"`

@@ -4,6 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ACHAgent.spec.hooks.workspaceStart` / `workspaceStop` ({script, timeoutSeconds}): run once
+  per workspace in the execution pod — after restore/create before any session, and before
+  the snapshot/close. Best-effort (alarms `workspace_start_failed` / `workspace_stop_failed`).
+  **Requires ach-runtime >= 0.1.13**; unset, the keys are omitted from the rendered config so
+  older runtimes are unaffected. Vendored workspace-v1 schema re-synced from ach-runtime v0.1.14.
+  The `sessionStart` doc now states its run-gate semantics (exit 78 skips the run, any other
+  non-zero exit fails it).
+
 ### Removed
 - **BREAKING:** `AgentProfile`/`ACHAgent` placement (`standalone`/`distributed`/`sandboxed`,
   including `AgentProfile.spec.sandbox` and the per-agent `SandboxTemplate`/`SandboxWarmPool`)

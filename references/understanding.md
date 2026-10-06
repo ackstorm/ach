@@ -171,7 +171,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   ${env:NAME} refs; co-resident same-uid CAN read — front via ACH if unacceptable); channel
   `handoff` (scope event|session) replaces the old prepare/cleanup pair — a credentialed
   harness script run in an empty dir, its output wholesale-replacing the session workspace's
-  handoff/; agent-level `spec.hooks.{sessionStart,sessionSuspend}` run inside the
+  handoff/; agent-level `spec.hooks.{sessionStart,sessionRestore,sessionSuspend,workspaceStart,workspaceStop}` (workspace pair: ach-runtime >= 0.1.13, omitted from the wire when unset) run inside the
   mini-harness with only engine.forwardEnv; `expose.service` + `expose.gateway` both default
   false, gateway requires service). One Channels+Harness control container per ACHAgent —
   no standalone/distributed/sandboxed placement, no Jobs, no Workspace CR in 0.1.0 (CR/

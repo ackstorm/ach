@@ -111,7 +111,7 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 
 		hooks := crdProperty(t, spec, "hooks")
 		sessionStart := crdProperty(t, hooks, "sessionStart")
-		assertDescriptionContains(t, "CRD hooks.sessionStart", sessionStart, "once per new session", "after the handoff", "Failure fails the invocation")
+		assertDescriptionContains(t, "CRD hooks.sessionStart", sessionStart, "once per new session", "after the handoff", "exit 78 skips the run", "any other non-zero exit fails the invocation")
 		sessionSuspend := crdProperty(t, hooks, "sessionSuspend")
 		assertDescriptionContains(t, "CRD hooks.sessionSuspend", sessionSuspend, sessionSuspendWants...)
 	}

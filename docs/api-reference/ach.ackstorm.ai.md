@@ -134,7 +134,7 @@ _Appears in:_
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#envvar-v1-core) array_ | Env are pod-level environment variables merged over AgentProfile.spec.env by name.<br />An agent entry replaces the complete inherited EnvVar. Reserved ACH_* names are<br />forbidden; only literal values and secretKeyRef sources are supported. |  |  |
 | `prompt` _[AgentPromptSpec](#agentpromptspec)_ |  |  |  |
 | `memory` _[MemorySpec](#memoryspec)_ |  |  |  |
-| `hooks` _[HooksSpec](#hooksspec)_ | Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run<br />inside the mini-harness with only engine.forwardEnv variables. |  |  |
+| `hooks` _[HooksSpec](#hooksspec)_ | Hooks are agent-level workspace and session lifecycle hooks, run<br />inside the mini-harness with only engine.forwardEnv variables. |  |  |
 | `expose` _[ExposeSpec](#exposespec)_ | Expose controls reachability (Service + gateway route). Omit for a fully<br />private agent (no Service, no public URL). |  |  |
 | `channels` _[ChannelSpec](#channelspec) array_ |  |  | MinItems: 1 <br />Required: \{\} <br /> |
 | `mcpServers` _[McpServerSpec](#mcpserverspec) array_ | MCPServers are harness-managed MCP servers (local / remote) rendered into the<br />config's mcpServers map. Presence = enabled; omit for none. |  |  |
@@ -1192,8 +1192,8 @@ _Appears in:_
 
 
 
-HooksSpec configures the agent's session lifecycle hooks. Agent-level only: hooks
-describe one agent's session behaviour and are not part of AgentProfile/AgentDefaults.
+HooksSpec configures the agent's workspace and session lifecycle hooks. Agent-level
+only: hooks describe one agent's behaviour and are not part of AgentProfile/AgentDefaults.
 
 
 
@@ -1202,7 +1202,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `sessionStart` _[HookSpec](#hookspec)_ | SessionStart runs once per new session, after the handoff and before the first turn.<br />Failure fails the invocation. |  |  |
+| `workspaceStart` _[HookSpec](#hookspec)_ | WorkspaceStart runs once in the execution pod after the workspace is restored (or<br />created), before any session. Best-effort: a failure raises the alarm<br />workspace_start_failed and never blocks. Requires ach-runtime >= 0.1.13. |  |  |
+| `workspaceStop` _[HookSpec](#hookspec)_ | WorkspaceStop runs once before the workspace snapshot/close. Best-effort: a failure<br />raises the alarm workspace_stop_failed. Requires ach-runtime >= 0.1.13. |  |  |
+| `sessionStart` _[HookSpec](#hookspec)_ | SessionStart runs once per new session, after the handoff and before the first turn.<br />It is a run gate: exit 0 appends its stdout to the prompt, exit 78 skips the run<br />without an engine call, and any other non-zero exit fails the invocation. |  |  |
 | `sessionRestore` _[HookSpec](#hookspec)_ | SessionRestore runs once each time a session is restored from a snapshot (contract §6).<br />Failure fails the invocation. Never runs alongside SessionStart for the same session —<br />Start is create-only, Restore is restore-only. |  |  |
 | `sessionSuspend` _[HookSpec](#hookspec)_ | SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox<br />suspend), before any HOME archive. May run many times per session. Best-effort. |  |  |
 

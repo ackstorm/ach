@@ -119,6 +119,12 @@ spec.hooks.sessionStart.timeoutSeconds	integer
 spec.hooks.sessionSuspend	object
 spec.hooks.sessionSuspend.script	string
 spec.hooks.sessionSuspend.timeoutSeconds	integer
+spec.hooks.workspaceStart	object
+spec.hooks.workspaceStart.script	string
+spec.hooks.workspaceStart.timeoutSeconds	integer
+spec.hooks.workspaceStop	object
+spec.hooks.workspaceStop.script	string
+spec.hooks.workspaceStop.timeoutSeconds	integer
 spec.image	string
 spec.limits	object
 spec.limits.idempotencyWindowSeconds	integer

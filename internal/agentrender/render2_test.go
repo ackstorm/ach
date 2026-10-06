@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -334,5 +335,60 @@ func TestRender2_AlwaysEmitsAgentName(t *testing.T) {
 	}
 	if doc.Agent["name"] != agent.Name || agent.Name == "" {
 		t.Fatalf("agent.name = %v, want %q", doc.Agent["name"], agent.Name)
+	}
+}
+
+// TestRender2_WorkspaceHooks: workspaceStart/workspaceStop render as {script,
+// timeoutSeconds} and validate against the vendored schema; unset, the keys are ABSENT
+// (runtimes <= 0.1.12 forbid unknown keys, so an emitted null would crash-loop them) while
+// the three session keys stay present-null.
+func TestRender2_WorkspaceHooks(t *testing.T) {
+	schema := compileSchema(t, vendoredWorkspaceV1Schema)
+	render := func(h *achv1alpha1.HooksSpec) map[string]any {
+		t.Helper()
+		profile, agent := minimalRender2Fixture()
+		agent.Spec.Hooks = h
+		cfg, err := Render2(profile, agent, "")
+		if err != nil {
+			t.Fatalf("Render2: %v", err)
+		}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			t.Fatal(err)
+		}
+		if err := schema.Validate(any(v)); err != nil {
+			t.Fatalf("output violates ach-workspace-config-v1:\n%v", err)
+		}
+		return v["hooks"].(map[string]any)
+	}
+
+	timeout := int64(30)
+	hooks := render(&achv1alpha1.HooksSpec{
+		WorkspaceStart: &achv1alpha1.HookSpec{Script: "./start.sh", TimeoutSeconds: &timeout},
+		WorkspaceStop:  &achv1alpha1.HookSpec{Script: "./stop.sh"},
+	})
+	if got := hooks["workspaceStart"]; !reflect.DeepEqual(got, map[string]any{"script": "./start.sh", "timeoutSeconds": float64(30)}) {
+		t.Errorf("workspaceStart = %v", got)
+	}
+	if got := hooks["workspaceStop"]; !reflect.DeepEqual(got, map[string]any{"script": "./stop.sh"}) {
+		t.Errorf("workspaceStop = %v", got)
+	}
+
+	for _, h := range []*achv1alpha1.HooksSpec{nil, {SessionStart: &achv1alpha1.HookSpec{Script: "x"}}} {
+		hooks = render(h)
+		for _, k := range []string{"workspaceStart", "workspaceStop"} {
+			if _, present := hooks[k]; present {
+				t.Errorf("hooks.%s present for unset hook, want absent: %v", k, hooks)
+			}
+		}
+		for _, k := range []string{"sessionRestore", "sessionSuspend"} {
+			if v, present := hooks[k]; !present || v != nil {
+				t.Errorf("hooks.%s = %v (present=%v), want null", k, v, present)
+			}
+		}
 	}
 }

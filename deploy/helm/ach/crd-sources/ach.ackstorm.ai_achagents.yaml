@@ -690,7 +690,7 @@ spec:
                 type: object
               hooks:
                 description: |-
-                  Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run
+                  Hooks are agent-level workspace and session lifecycle hooks, run
                   inside the mini-harness with only engine.forwardEnv variables.
                 properties:
                   sessionRestore:
@@ -713,7 +713,8 @@ spec:
                   sessionStart:
                     description: |-
                       SessionStart runs once per new session, after the handoff and before the first turn.
-                      Failure fails the invocation.
+                      It is a run gate: exit 0 appends its stdout to the prompt, exit 78 skips the run
+                      without an engine call, and any other non-zero exit fails the invocation.
                     properties:
                       script:
                         minLength: 1
@@ -730,6 +731,39 @@ spec:
                     description: |-
                       SessionSuspend runs every time the session's engine stops (idle, shutdown, sandbox
                       suspend), before any HOME archive. May run many times per session. Best-effort.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
+                  workspaceStart:
+                    description: |-
+                      WorkspaceStart runs once in the execution pod after the workspace is restored (or
+                      created), before any session. Best-effort: a failure raises the alarm
+                      workspace_start_failed and never blocks. Requires ach-runtime >= 0.1.13.
+                    properties:
+                      script:
+                        minLength: 1
+                        type: string
+                      timeoutSeconds:
+                        format: int64
+                        maximum: 3600
+                        minimum: 1
+                        type: integer
+                    required:
+                    - script
+                    type: object
+                  workspaceStop:
+                    description: |-
+                      WorkspaceStop runs once before the workspace snapshot/close. Best-effort: a failure
+                      raises the alarm workspace_stop_failed. Requires ach-runtime >= 0.1.13.
                     properties:
                       script:
                         minLength: 1

@@ -38,9 +38,28 @@ runs it only when a new session is created. `spec.hooks.sessionStart` /
 `spec.hooks.sessionSuspend` are agent-level hooks that run inside the mini-harness
 (only `engine.forwardEnv` variables, never channel credentials):
 `sessionStart` runs once per new session, after the handoff and before the first
-turn (fail-closed); `sessionSuspend` runs every time the session's engine stops
-(idle, shutdown, sandbox suspend), before any HOME archive (best-effort, may run
-many times).
+turn, and is a run gate: exit 0 appends its stdout to the prompt, exit 78 skips the
+run without an engine call (RunState `skipped`), any other exit fails the invocation;
+`sessionSuspend` runs every time the session's engine stops (idle, shutdown, sandbox
+suspend), before any HOME archive (best-effort, may run many times).
+
+`spec.hooks.workspaceStart` / `spec.hooks.workspaceStop` (ach-runtime >= 0.1.13)
+run once per workspace in the execution pod: `workspaceStart` after the workspace
+is restored or created, before any session; `workspaceStop` before the workspace
+snapshot/close. Both are best-effort — a failure raises the alarm
+`workspace_start_failed` / `workspace_stop_failed` and never blocks. Unset, they
+are omitted from the rendered config, so agents on an older runtime keep working;
+setting one on a runtime <= 0.1.12 makes it reject the config.
+
+```yaml
+spec:
+  hooks:
+    workspaceStart:
+      script: git config --global --add safe.directory '*'
+      timeoutSeconds: 60
+    workspaceStop:
+      script: echo "workspace closing" >&2
+```
 
 The operator collapses the two into the workspace-v1 wire config (`schemaVersion:
 "workspace-v1"`), writes it to a ConfigMap (`achagent-<name>`, key `config.json`), and
