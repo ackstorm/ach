@@ -3882,7 +3882,7 @@
 </tr>
 <tr>
 <td><code>hooks</code> <em><a href="#hooksspec">HooksSpec</a></em></td>
-<td>Hooks are agent-level session lifecycle hooks (sessionStart, sessionSuspend), run<br />inside the mini-harness with only engine.forwardEnv variables.</td>
+<td>Hooks are agent-level workspace and session lifecycle hooks, run<br />inside the mini-harness with only engine.forwardEnv variables.</td>
 <td></td>
 <td></td>
 </tr>
@@ -6020,8 +6020,8 @@ gets channel credentials.</p>
 </tbody>
 </table>
 <h4 id="hooksspec">HooksSpec<a class="headerlink" href="#hooksspec" title="Permanent link">&para;</a></h4>
-<p>HooksSpec configures the agent's session lifecycle hooks. Agent-level only: hooks
-describe one agent's session behaviour and are not part of AgentProfile/AgentDefaults.</p>
+<p>HooksSpec configures the agent's workspace and session lifecycle hooks. Agent-level
+only: hooks describe one agent's behaviour and are not part of AgentProfile/AgentDefaults.</p>
 <p><em>Appears in:</em>
 - <a href="#achagentspec">ACHAgentSpec</a></p>
 <table>
@@ -6035,8 +6035,20 @@ describe one agent's session behaviour and are not part of AgentProfile/AgentDef
 </thead>
 <tbody>
 <tr>
+<td><code>workspaceStart</code> <em><a href="#hookspec">HookSpec</a></em></td>
+<td>WorkspaceStart runs once in the execution pod after the workspace is restored (or<br />created), before any session. Best-effort: a failure raises the alarm<br />workspace_start_failed and never blocks. Requires ach-runtime &gt;= 0.1.13.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>workspaceStop</code> <em><a href="#hookspec">HookSpec</a></em></td>
+<td>WorkspaceStop runs once before the workspace snapshot/close. Best-effort: a failure<br />raises the alarm workspace_stop_failed. Requires ach-runtime &gt;= 0.1.13.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td><code>sessionStart</code> <em><a href="#hookspec">HookSpec</a></em></td>
-<td>SessionStart runs once per new session, after the handoff and before the first turn.<br />Failure fails the invocation.</td>
+<td>SessionStart runs once per new session, after the handoff and before the first turn.<br />It is a run gate: exit 0 appends its stdout to the prompt, exit 78 skips the run<br />without an engine call, and any other non-zero exit fails the invocation.</td>
 <td></td>
 <td></td>
 </tr>
