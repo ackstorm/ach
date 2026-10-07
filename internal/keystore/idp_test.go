@@ -166,6 +166,12 @@ func TestIdPVerifier(t *testing.T) {
 		t.Fatalf("keys 502: want ErrIdPUnreachable, got %v", err)
 	}
 	idp.failKeys(0)
+	// A known kid triggers no fetch: the outage must not linger as a 503 on
+	// an expired token (clients refresh only on 401).
+	stale := signRS(t, "k1", k1, claims(func(c jwtv5.MapClaims) { c["exp"] = time.Now().Add(-time.Minute).Unix() }))
+	if _, _, err := v.Verify(ctx, stale); !errors.Is(err, ErrIdPTokenInvalid) {
+		t.Fatalf("expired token after recovery: want ErrIdPTokenInvalid, got %v", err)
+	}
 	if _, _, err := v.Verify(ctx, signRS(t, "k1", k1, claims(nil))); err != nil {
 		t.Fatalf("recovered: %v", err)
 	}

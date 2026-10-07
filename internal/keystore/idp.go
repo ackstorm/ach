@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -49,9 +50,14 @@ type IdPVerifier struct {
 	// down" from "bad token".
 	down atomic.Bool
 
-	mu  sync.Mutex
-	ver *oidc.IDTokenVerifier
+	mu       sync.Mutex
+	ver      *oidc.IDTokenVerifier
+	failedAt time.Time // last discovery failure; retried after discoveryBackoff
 }
+
+// discoveryBackoff: during an issuer outage, requests fail fast instead of
+// queueing behind one 10 s discovery attempt each.
+const discoveryBackoff = 5 * time.Second
 
 type flagTransport struct{ down *atomic.Bool }
 
@@ -75,10 +81,17 @@ func (v *IdPVerifier) verifier() (*oidc.IDTokenVerifier, error) {
 	if v.ver != nil {
 		return v.ver, nil
 	}
+	if time.Since(v.failedAt) < discoveryBackoff {
+		return nil, ErrIdPUnreachable
+	}
 	// Background, not the request ctx: RemoteKeySet keeps this ctx for
 	// every later JWKS fetch.
 	p, err := oidc.NewProvider(oidc.ClientContext(context.Background(), v.client), v.cfg.Issuer)
 	if err != nil {
+		v.failedAt = time.Now()
+		// Once per backoff window; the cause (unreachable, 404, issuer
+		// mismatch) is otherwise invisible behind a 503. No token here.
+		slog.Warn("trusted idp: discovery failed", "issuer", v.cfg.Issuer, "err", err)
 		return nil, fmt.Errorf("%w: discovery: %v", ErrIdPUnreachable, err)
 	}
 	// The audience is checked below against a list; go-oidc takes one ClientID.
@@ -94,6 +107,10 @@ func (v *IdPVerifier) Verify(ctx context.Context, raw string) (string, time.Time
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	// Reset first: only a fetch made during THIS verify may mark the issuer
+	// down (a key already cached means no fetch, and a stale flag would turn
+	// an expired token into a 503 the client never refreshes on).
+	v.down.Store(false)
 	tok, err := ver.Verify(ctx, raw)
 	if err != nil {
 		// ponytail: process-wide flag — during an outage a concurrent bad
@@ -166,7 +183,7 @@ func (r *trustedIdPResolver) Resolve(ctx context.Context, plaintext string) (*Ke
 		return nil, ErrLoginRequired
 	}
 	if row.Extended && r.hook != nil && row.LiteLLMToken != nil {
-		r.hook(ctx, *row.LiteLLMToken)
+		r.hook(context.WithoutCancel(ctx), *row.LiteLLMToken) // outlives the singleflight leader ctx
 	}
 	info := KeyInfoFromPK(row)
 	if exp.Before(*info.ExpiresAt) {
