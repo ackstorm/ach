@@ -68,13 +68,29 @@ import (
 //     structured event (Hub §16.1 / T-AUDIT-01). Errors wrap the function
 //     name only — no parameter contents appear in any wrapped error.
 func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex string) (*PkKeyInfo, error) {
-	const sql = `
+	return checkAndExtend(ctx, pool, "PkCheckAndExtend", `credential_hash = $1`, credentialHashHex)
+}
+
+// OAuthPKCheckAndExtend is PkCheckAndExtend for the owner's purpose='oauth'
+// row, keyed by email: the forwarder's trusted-IdP path (a Dex token) has no
+// pk_ plaintext, only the identity. Same 7-day slide and 90-day cap — the
+// cap forces a real ACH login at least every 90 days; until then each use
+// keeps a LibreChat-only user's row (and, via Extended, its LiteLLM key)
+// alive, which /token otherwise does for ACH OAuth clients.
+func OAuthPKCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, ownerEmail string) (*PkKeyInfo, error) {
+	return checkAndExtend(ctx, pool, "OAuthPKCheckAndExtend", `owner_email = $1 AND purpose = 'oauth'`, ownerEmail)
+}
+
+// checkAndExtend is the shared statement; match is a constant predicate
+// (never caller input) binding $1.
+func checkAndExtend(ctx context.Context, pool *pgxpool.Pool, name, match, arg string) (*PkKeyInfo, error) {
+	sql := `
 		WITH candidate AS (
 		    SELECT key_id, owner_email,
 		           (last_used_at IS NULL
 		            OR last_used_at < now() - interval '5 minutes') AS should_extend
 		      FROM personal_keys
-		     WHERE credential_hash = $1
+		     WHERE ` + match + `
 		       AND status = 'active'
 		       AND expires_at > now()
 		       AND created_at + interval '90 days' > now()
@@ -102,7 +118,7 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		          candidate.should_extend
 	`
 	r := &PkKeyInfo{}
-	err := pool.QueryRow(ctx, sql, credentialHashHex).Scan(
+	err := pool.QueryRow(ctx, sql, arg).Scan(
 		&r.KeyID, &r.OwnerEmail, &r.ExpiresAt, &r.LiteLLMUserID, &r.LiteLLMToken,
 		&r.LiteLLMKeyMaterial, &r.Extended,
 	)
@@ -114,7 +130,7 @@ func PkCheckAndExtend(ctx context.Context, pool *pgxpool.Pool, credentialHashHex
 		if isTransientPgErr(err) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("db: PkCheckAndExtend: %w", err)
+		return nil, fmt.Errorf("db: %s: %w", name, err)
 	}
 	return r, nil
 }

@@ -285,6 +285,14 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
     per-request re-check, so the LiteLLM ack is the barrier. Out-of-band
     deleted LiteLLM key → 404 treated as idempotent success.
   - Redis keystore TTL 60s, NON-configurable = bounded acceptance window.
+- **Trusted external IdP bearer** (`forwarder.trustedIdP`, opt-in): a JWS
+  whose unverified `iss` equals the ONE configured issuer (Dex for
+  LibreChat) is verified (RS256 discovery JWKS, exp, aud list, claim
+  non-empty, `email_verified` not false) and mapped to the user's EXISTING
+  oauth `pk_` (`keystore.NewTrustedIdPResolver`, inside the Redis cache) —
+  never minted. No live row → 403 `ach_login_required`; issuer down → 503
+  `idp_unreachable`. Each use slides that row like a plain pk_
+  (`db.OAuthPKCheckAndExtend`: 7 d, 90 d cap). Forwarder only.
 - **JWT trust path** (`/mcp`, `/a2a`; authoritative:
   `docs/developer-guide/jwt-forwarder.md`): BIP opts in → forwarder mints
   EdDSA `{iss=ACH_BASE_URL, sub=<bare owner-email> (hard-cut from the old

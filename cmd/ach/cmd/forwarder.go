@@ -25,7 +25,9 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -105,17 +107,20 @@ type forwarderConfig struct {
 	// GeminiStripModelPrefixes: ACH_GEMINI_STRIP_MODEL_PREFIXES — vendor
 	// prefixes stripped from the model name on /gemini only.
 	GeminiStripModelPrefixes []string
-	DBURL                    string
-	Pepper                   []byte
-	KeyEncryptionKey         []byte
-	RedisAddr                string
-	RedisPassword            string
-	RedisTLS                 bool
-	RedisDB                  int
-	TrafficBindAddr          string
-	HealthBindAddr           string
-	Namespace                string
-	JWTSecretName            string
+	// TrustedIdP: ACH_TRUSTED_IDP_{ISSUER,AUDIENCES,CLAIM} — one external
+	// issuer whose access token resolves to the user's oauth pk_. nil = off.
+	TrustedIdP       *keystore.IdPConfig
+	DBURL            string
+	Pepper           []byte
+	KeyEncryptionKey []byte
+	RedisAddr        string
+	RedisPassword    string
+	RedisTLS         bool
+	RedisDB          int
+	TrafficBindAddr  string
+	HealthBindAddr   string
+	Namespace        string
+	JWTSecretName    string
 }
 
 func validateForwarderConfig() (*forwarderConfig, error) {
@@ -134,6 +139,16 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	if cfg.GeminiStripModelPrefixes, err = proxy.ParseGeminiStripModelPrefixes(
 		os.Getenv("ACH_GEMINI_STRIP_MODEL_PREFIXES")); err != nil {
 		return nil, fmt.Errorf("ACH_GEMINI_STRIP_MODEL_PREFIXES: %w", err)
+	}
+	if iss := strings.TrimSpace(os.Getenv("ACH_TRUSTED_IDP_ISSUER")); iss != "" {
+		var auds []string
+		raw := cmp.Or(os.Getenv("ACH_TRUSTED_IDP_AUDIENCES"), "[]")
+		if err := json.Unmarshal([]byte(raw), &auds); err != nil || len(auds) == 0 {
+			return nil, errors.New("ACH_TRUSTED_IDP_AUDIENCES: a non-empty JSON list is required " +
+				"when ACH_TRUSTED_IDP_ISSUER is set")
+		}
+		cfg.TrustedIdP = &keystore.IdPConfig{Issuer: iss, Audiences: auds,
+			Claim: cmp.Or(strings.TrimSpace(os.Getenv("ACH_TRUSTED_IDP_CLAIM")), "email")}
 	}
 
 	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
@@ -332,6 +347,12 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, "ach", pool)
+	if cfg.TrustedIdP != nil {
+		oauthResolver = keystore.NewTrustedIdPResolver(oauthResolver, keystore.NewIdPVerifier(*cfg.TrustedIdP),
+			func(ctx context.Context, email string) (*db.PkKeyInfo, error) {
+				return db.OAuthPKCheckAndExtend(ctx, pool, email)
+			}, extendHook)
+	}
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
@@ -393,6 +414,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		AuthnOptions: pamw.AuthnOptions{
 			Challenge: proxy.ChallengeFor(cfg.BaseURL),
 			Headers:   cfg.CredentialHeaders,
+			LoginURL:  strings.TrimRight(cfg.BaseURL, "/") + "/",
 		},
 		GeminiStripModelPrefixes: cfg.GeminiStripModelPrefixes,
 	}

@@ -672,6 +672,35 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ LibreChat (trusted IdP / Dex token): 403 `ach_login_required`
+
+The Dex token verified, but the user has no live `purpose='oauth'` pk_: they
+never signed in to ACH, the row was revoked (an IdP refusal at an ACH refresh
+does that), or it passed its 90-day cap (each Dex use slides it 7 days, never
+past `created_at + 90 days`). The forwarder never mints one. Fix: the user
+signs in once at the console (`ACH_BASE_URL/`) — that grant mints a fresh row.
+Check: `SELECT key_id, status, expires_at, created_at FROM personal_keys WHERE
+owner_email = '<email>' AND purpose = 'oauth' ORDER BY created_at DESC LIMIT 1;`
+
+### ❌ LibreChat (trusted IdP): 503 `idp_unreachable`
+
+The forwarder cannot fetch the issuer's discovery document or JWKS (transport
+error or 5xx). Check forwarder egress to the issuer host and that
+`forwarder.trustedIdP.issuer` is the exact URL Dex serves discovery under
+(`curl <issuer>/.well-known/openid-configuration`). Other credentials keep
+working; this path heals on its own when the issuer answers again.
+
+### ❌ LibreChat (trusted IdP): 401 on every call though the user is signed in to Dex
+
+The token is not recognised or does not verify. In order: its `iss` must equal
+`forwarder.trustedIdP.issuer` byte for byte (trailing slash, `/dex` path); its
+`aud` (the Dex client id, e.g. `chat`) must be in `audiences`; the client must
+request the `email` scope or the claim is absent; `email_verified: false`
+(Dex emits false for an OIDC connector whose upstream omits the claim unless
+the connector sets `insecureSkipEmailVerified: true`); only RS256 is accepted.
+A Dex-token request answered by LiteLLM's own 401 "Invalid proxy server token"
+instead is the row's LiteLLM key gone — the user's next ACH sign-in re-mints it.
+
 ### ❌ OAuth (Claude Code / Codex / opencode): 401 with `WWW-Authenticate` on every request
 
 The tool never ran its login. MCP entries hydrate writes carry **no

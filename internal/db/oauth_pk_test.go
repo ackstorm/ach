@@ -18,6 +18,43 @@ import (
 // (ActiveOAuthPK), yet it still occupies the one-active-oauth-per-owner
 // index, so the token endpoint's lookup (ActiveOAuthPKAnyExpiry) must
 // return it — that is the row it revokes before minting a new one.
+// TestOAuthPKCheckAndExtend: keyed by owner + purpose='oauth', same slide
+// and caps as PkCheckAndExtend; a plain pk_ of the same owner never matches.
+func TestOAuthPKCheckAndExtend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	mustExec(t, ctx, pool, `
+		INSERT INTO personal_keys (key_id, credential_hash, owner_email, expires_at, last_used_at, purpose)
+		VALUES ('pkid_cli', 'h_cli', 'u@example.com', now() + interval '1 day', NULL, 'cli'),
+		       ('pkid_oa', 'h_oa', 'u@example.com', now() + interval '1 day', now() - interval '10 minutes', 'oauth'),
+		       ('pkid_old', 'h_old', 'old@example.com', now() + interval '1 day', NULL, 'oauth')
+	`)
+	mustExec(t, ctx, pool, `UPDATE personal_keys SET created_at = now() - interval '91 days' WHERE key_id = 'pkid_old'`)
+
+	got, err := db.OAuthPKCheckAndExtend(ctx, pool, "u@example.com")
+	if err != nil || got == nil || got.KeyID != "pkid_oa" || !got.Extended {
+		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	if d := time.Until(got.ExpiresAt) - 7*24*time.Hour; d < -5*time.Second || d > 5*time.Second {
+		t.Errorf("expires_at not slid to now+7d: %v", got.ExpiresAt)
+	}
+	if again, err := db.OAuthPKCheckAndExtend(ctx, pool, "u@example.com"); err != nil || again == nil || again.Extended {
+		t.Fatalf("debounce: got=%+v err=%v", again, err)
+	}
+	if got, err := db.OAuthPKCheckAndExtend(ctx, pool, "old@example.com"); err != nil || got != nil {
+		t.Fatalf("past the 90-day cap must read as none: got=%+v err=%v", got, err)
+	}
+	if _, err := db.RevokePersonalKey(ctx, pool, "pkid_oa"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.OAuthPKCheckAndExtend(ctx, pool, "u@example.com"); err != nil || got != nil {
+		t.Fatalf("revoked oauth row (cli row must not match): got=%+v err=%v", got, err)
+	}
+}
+
 func TestOAuthPK_ExpiredActiveRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()

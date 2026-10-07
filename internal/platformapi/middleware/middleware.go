@@ -99,6 +99,9 @@ type AuthnOptions struct {
 	// rejected, and cookie-authenticated mutations pass the D-28 SameSite
 	// check.
 	Cookie *CookieAuth
+	// LoginURL is named in the 403 ach_login_required message (a trusted-IdP
+	// token whose user has no live oauth pk_): the console at ACH_BASE_URL.
+	LoginURL string
 }
 
 // credential returns the first declared header present (value, header,
@@ -439,6 +442,15 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 			}
 
 			info, err := resolver.Resolve(ctx, plaintext)
+			switch {
+			case errors.Is(err, keystore.ErrLoginRequired):
+				render.Error(w, http.StatusForbidden, "ach_login_required",
+					"Your ACH access has expired or was never set up. Sign in once at "+opts.LoginURL+" to renew it, then retry.", reqID)
+				return
+			case errors.Is(err, keystore.ErrIdPUnreachable):
+				render.Error(w, http.StatusServiceUnavailable, "idp_unreachable", "identity provider unreachable", reqID)
+				return
+			}
 			if err != nil {
 				if auditLog != nil {
 					audit.EmitAudit(ctx, auditLog, audit.Event{

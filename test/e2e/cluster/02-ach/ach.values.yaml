@@ -88,6 +88,11 @@ forwarder:
   headers:
     - {name: x-ach-key, mode: resolve}
     - {name: x-api-key, mode: resolve}
+  # The in-cluster Dex issuer (scripts/cluster.sh rewrites dex-config.yaml's
+  # issuer to this) — the token's iss must match byte for byte.
+  trustedIdP:
+    issuer: http://dex.dex-system.svc.cluster.local:5556/dex
+    audiences: [e2e-chat]
 
 # NOTE: the e2e test backends are NO LONGER chart toggles. They moved out of
 # the Helm chart into test/e2e/cluster/03-test-backends/ (applied by cluster.sh
