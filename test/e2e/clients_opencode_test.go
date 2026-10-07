@@ -62,16 +62,32 @@ func TestClientsOpenCode(t *testing.T) {
 	}
 
 	jwt := oauthLogin(t, base, "").Access
-	code, hdr, m := get("Bearer " + jwt)
-	if code != 200 || hdr.Get("Cache-Control") != "no-store" || m["auth"] != "ok" || m["stale"] != false {
-		t.Fatalf("config: %d %v %v", code, hdr, m)
-	}
-	cfg, _ := m["config"].(map[string]any)
-	prov, _ := cfg["provider"].(map[string]any)
-	ai, _ := prov["ai-platform"].(map[string]any)
-	models, _ := ai["models"].(map[string]any)
-	if len(models) == 0 {
-		t.Fatalf("no models under provider ai-platform: %v", m)
+	// On a fresh cluster the user's shell team may be brand new: it reaches demo's
+	// models only after the operator's next demo reconcile attaches it (the poke
+	// makes that immediate), and LiteLLM then keeps answering /model_group/info
+	// from its in-memory pre-attach state for a few minutes (measured 3.5-4 min
+	// with LiteLLM v1.99.1, independent of DEFAULT_ACCESS_GROUP_CACHE_TTL). A
+	// settled user passes on the first read.
+	pokeDemoEnvironment(t)
+	var m map[string]any
+	var models map[string]any
+	for deadline := time.Now().Add(5 * time.Minute); ; time.Sleep(2 * time.Second) {
+		var code int
+		var hdr http.Header
+		code, hdr, m = get("Bearer " + jwt)
+		if code != 200 || hdr.Get("Cache-Control") != "no-store" || m["auth"] != "ok" || m["stale"] != false {
+			t.Fatalf("config: %d %v %v", code, hdr, m)
+		}
+		cfg, _ := m["config"].(map[string]any)
+		prov, _ := cfg["provider"].(map[string]any)
+		ai, _ := prov["ai-platform"].(map[string]any)
+		models, _ = ai["models"].(map[string]any)
+		if len(models) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no models under provider ai-platform within 5m: %v", m)
+		}
 	}
 	for name, raw := range models {
 		if lim, _ := raw.(map[string]any)["limit"].(map[string]any); lim["context"].(float64) <= 0 {
@@ -82,7 +98,7 @@ func TestClientsOpenCode(t *testing.T) {
 		t.Fatalf("skills = %v", m["skills"])
 	}
 
-	code, _, m = get("Bearer x.y.z")
+	code, _, m := get("Bearer x.y.z")
 	if code != 200 || m["auth"] != "invalid" || m["user"] != nil {
 		t.Fatalf("baseline: %d %v", code, m)
 	}

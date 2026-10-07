@@ -226,13 +226,7 @@ func TestAccessGroupSynced_PkUserShell_ReachesEntitlements(t *testing.T) {
 	}
 	shellID := shells[0].TeamID
 
-	// Force a "demo" reconcile so the operator's next pass attaches this
-	// shell to demo's access group — a brand-new shell is fail-closed until
-	// that happens (the documented one-time window, references/troubleshooting.md).
-	if out, aerr := exec.Command("kubectl", "-n", "ach-system", "annotate", "environment/demo",
-		"ach.ackstorm.ai/e2e-poke="+time.Now().UTC().Format(time.RFC3339Nano), "--overwrite").CombinedOutput(); aerr != nil {
-		t.Fatalf("kubectl annotate environment/demo: %v\n%s", aerr, out)
-	}
+	pokeDemoEnvironment(t)
 
 	ag, err := client.GetAccessGroupByName(ctx, litellm.AccessGroupName("demo"))
 	if err != nil {
@@ -432,5 +426,17 @@ func assertPkKeyHasExpiry(t *testing.T, llURL, masterKey, ownerEmail string) {
 	}
 	if newestExpires == nil || *newestExpires == "" {
 		t.Fatalf("newest pk_ (created_at=%s) carries no expiry — durationString regression (expires:None)", newestAt)
+	}
+}
+
+// pokeDemoEnvironment forces a "demo" reconcile so the operator attaches a
+// brand-new ach-user-<email> shell to demo's access group — the shell is
+// fail-closed until that happens (the documented one-time window,
+// references/troubleshooting.md). Callers wait for the effect themselves.
+func pokeDemoEnvironment(t *testing.T) {
+	t.Helper()
+	if out, err := exec.Command("kubectl", "-n", "ach-system", "annotate", "environment/demo",
+		"ach.ackstorm.ai/e2e-poke="+time.Now().UTC().Format(time.RFC3339Nano), "--overwrite").CombinedOutput(); err != nil {
+		t.Fatalf("kubectl annotate environment/demo: %v\n%s", err, out)
 	}
 }

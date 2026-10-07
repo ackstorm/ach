@@ -475,6 +475,13 @@ NEXT reconcile pass. A brand-new pk_ is therefore briefly fail-closed (reaches
 nothing), not fail-open. One-time per user; resolves itself on the next
 Environment reconcile (well under the default `wait-*` timeouts).
 
+Even once attached, LiteLLM's `/model_group/info` for that key (what
+`/clients/opencode/config` lists) keeps answering from its in-memory
+pre-attach state for a few more minutes: measured 3.5–4 min after the
+operator logged `updated access group` (LiteLLM v1.99.1, no Redis), unchanged
+with `DEFAULT_ACCESS_GROUP_CACHE_TTL=60`. `TestClientsOpenCode` pokes `demo`
+and polls up to 5 min for exactly this.
+
 ### ℹ️ A `pk_` minted before the per-user shell change can reach everything
 
 The mirror image of the `ek_` case above: pre-change PKs carry `team_id=NULL`
