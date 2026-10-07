@@ -5068,7 +5068,7 @@ refuses a request once the tag's accumulated spend exceeds MaxBudget).</p>
 </tr>
 <tr>
 <td><code>handoff</code> <em><a href="#handoffspec">HandoffSpec</a></em></td>
-<td>Handoff runs in the harness, in an empty directory; its output wholesale-replaces the<br />session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary<br />files). scope=event (default) runs it every invocation, the old prepare cadence;<br />scope=session runs it only when a new session is created. Valid for every channel type.</td>
+<td>Handoff runs in the harness, in an empty directory; its output wholesale-replaces the<br />session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary<br />files). It runs every invocation; for per-session files set<br />routing.workspaceKey: session. Valid for every channel type.</td>
 <td></td>
 <td></td>
 </tr>
@@ -5941,12 +5941,6 @@ Replaces the old prepare/cleanup pair.</p>
 <td>TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted.</td>
 <td></td>
 <td>Maximum: 3600 <br />Minimum: 1 <br /></td>
-</tr>
-<tr>
-<td><code>scope</code> <em>string</em></td>
-<td>Scope selects when the handoff runs: every event (the old prepare cadence), or only<br />when a new session is created.</td>
-<td>event</td>
-<td>Enum: [event session] <br /></td>
 </tr>
 <tr>
 <td><code>destination</code> <em>string</em></td>
@@ -7559,7 +7553,7 @@ checked, so the field stays genuinely optional.</p>
 <tbody>
 <tr>
 <td><code>workspaceKey</code> <em>string</em></td>
-<td>WorkspaceKey overrides the adapter's default Workspace identity template.</td>
+<td>WorkspaceKey overrides the adapter's default Workspace identity template. The<br />reserved keyword "session" gives each session its own workspace.</td>
 <td></td>
 <td>MinLength: 1 <br /></td>
 </tr>
