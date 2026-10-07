@@ -45,6 +45,10 @@ make pre-push
 git push origin main
 ```
 
+After the release is confirmed OK (`Latest` in `gh release list`, the
+`Release` run green), run the post-release cleanup in CLAUDE.md "After every
+release — clean up".
+
 There is no need to `make release-bump` locally or to create the tag
 yourself. `make release-bump VERSION=X.Y.Z` is still available as the
 internal target release.yml invokes; it can also be run by hand if you

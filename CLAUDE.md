@@ -430,6 +430,25 @@ govulncheck** — the latter is CI + cron only (see "Test phases"). Fix
 the root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
 gates).
 
+## After every release — clean up (once confirmed OK)
+
+A release is confirmed OK when `gh release list -L 1` shows the new version
+as `Latest` AND `gh run list --branch main -L 3` shows its `Release` run
+`success`. Only then, always:
+
+1. `make clean-cache` in the primary checkout and in every worktree whose
+   branch is merged (`.gocache` is 3–9 GB each; a full `/home/coder` once
+   killed a release-cut mid pre-push with ENOSPC).
+2. `git worktree remove` + `git branch -D` the merged feature worktrees;
+   delete the merged remote branch (`git push origin --delete <branch>`).
+3. `make clean-docker` (safe with kind up).
+4. `git pull --ff-only` on `main` to pick up the bot's manifest bump.
+
+Never touch another session's worktree or cache while it runs a gate
+(`pgrep -af <worktree-name>`), and never `uv cache clean`: long-running MCP
+servers (ach-memory, muster) run from it. A release that failed is NOT
+cleaned up — the warm caches are what the retry needs.
+
 ## Common failure modes (generic / workflow)
 
 Service-specific debugging (content-service 404, forwarder JWT 401,
