@@ -35,3 +35,29 @@ func TestForwarderConfig_CredentialHeaders(t *testing.T) {
 		t.Fatalf("authorization in the list must be refused: %v", err)
 	}
 }
+
+func TestForwarderConfig_TrustedIdP(t *testing.T) {
+	setRequiredForwarderEnv(t)
+	cfg, err := validateForwarderConfig()
+	if err != nil || cfg.TrustedIdP != nil {
+		t.Fatalf("unset must be off: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_TRUSTED_IDP_ISSUER", "https://auth.example.com/")
+	if _, err = validateForwarderConfig(); err == nil || !strings.Contains(err.Error(), "ACH_TRUSTED_IDP_AUDIENCES") {
+		t.Fatalf("issuer without audiences must refuse to start: %v", err)
+	}
+	t.Setenv("ACH_TRUSTED_IDP_AUDIENCES", `[]`)
+	if _, err = validateForwarderConfig(); err == nil {
+		t.Fatal("empty audience list must refuse to start")
+	}
+	t.Setenv("ACH_TRUSTED_IDP_AUDIENCES", `["chat"]`)
+	cfg, err = validateForwarderConfig()
+	if err != nil || cfg.TrustedIdP == nil || cfg.TrustedIdP.Issuer != "https://auth.example.com/" ||
+		cfg.TrustedIdP.Claim != "email" || len(cfg.TrustedIdP.Audiences) != 1 {
+		t.Fatalf("set: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_TRUSTED_IDP_CLAIM", "preferred_username")
+	if cfg, err = validateForwarderConfig(); err != nil || cfg.TrustedIdP.Claim != "preferred_username" {
+		t.Fatalf("claim: %+v %v", cfg, err)
+	}
+}

@@ -280,6 +280,13 @@ func readModelMockCapture(t *testing.T, localPort string) modelCaptureSnap {
 // connection 500 (bounded, 30s) so a flaky hop never fails the assertion.
 func driveV1ToBackend(t *testing.T, forwarderURL, key, marker, mockLocal string) modelCaptureSnap {
 	t.Helper()
+	return driveV1ToBackendAs(t, forwarderURL, "x-ach-key", key, marker, mockLocal)
+}
+
+// driveV1ToBackendAs is driveV1ToBackend with the credential in any header
+// (e.g. Authorization: Bearer <trusted-IdP token>).
+func driveV1ToBackendAs(t *testing.T, forwarderURL, header, value, marker, mockLocal string) modelCaptureSnap {
+	t.Helper()
 	body := fmt.Sprintf(`{"model":"demo-model","messages":[{"role":"user","content":%q}]}`, marker)
 	var snap modelCaptureSnap
 	deadline := time.Now().Add(30 * time.Second)
@@ -290,7 +297,7 @@ func driveV1ToBackend(t *testing.T, forwarderURL, key, marker, mockLocal string)
 			t.Fatalf("new request: %v", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-ach-key", key)
+		req.Header.Set(header, value)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("forwarder POST: %v", err)

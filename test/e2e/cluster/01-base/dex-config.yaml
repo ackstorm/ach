@@ -37,6 +37,14 @@ staticClients:
       # OAuth front door: platform-api's AS is a second OIDC client leg.
       - http://ach.e2e.local:8080/platform/oauth/as-callback
       - https://ach.e2e.local:8080/platform/oauth/as-callback
+  # A non-ACH relying party (LibreChat's shape): its Dex access token is
+  # presented straight to the forwarder (forwarder.trustedIdP, audience
+  # e2e-chat) — test/e2e/trusted_idp_test.go.
+  - id: e2e-chat
+    secret: e2e-chat-not-for-prod
+    name: 'E2E chat client (dev)'
+    redirectURIs:
+      - http://127.0.0.1:1/cb
 
 connectors:
   - type: mockCallback

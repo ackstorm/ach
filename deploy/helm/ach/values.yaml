@@ -233,6 +233,23 @@ forwarder:
   gemini:
     stripModelPrefixes: []
     # stripModelPrefixes: ["gemini.", "gemini/", "vertex_ai."]
+  # trustedIdP: accept an access token from ONE external OIDC issuer (e.g. the
+  # Dex that LibreChat signs in with) as `Authorization: Bearer`. Recognised
+  # only when the token's `iss` equals `issuer` byte for byte (trailing slash
+  # and path included); verified RS256 against the issuer's discovery JWKS,
+  # `exp`, `aud` in `audiences`, `claim` non-empty and `email_verified` not
+  # false. The claim value (lower-cased) must be a user who has signed in to
+  # ACH at least once: it resolves to that user's oauth pk_ — same budget,
+  # Environment access and revocation as an ACH login; each use slides that
+  # row 7 days, capped 90 days after it was minted (an ACH login near or past
+  # its expiry mints a fresh one). No live row →
+  # 403 ach_login_required (names the console); issuer down → 503
+  # idp_unreachable (the forwarder still starts). Empty issuer = off; an
+  # issuer without audiences refuses to start.
+  trustedIdP:
+    issuer: ""
+    audiences: []
+    claim: email
 
 # litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
 # Configure endpoint + master-key Secret ref here ONCE; the chart fans it

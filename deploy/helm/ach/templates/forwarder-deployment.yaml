@@ -88,6 +88,16 @@ spec:
               value: {{ . | toJson | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.forwarder.trustedIdP }}
+            {{- if .issuer }}
+            - name: ACH_TRUSTED_IDP_ISSUER
+              value: {{ .issuer | quote }}
+            - name: ACH_TRUSTED_IDP_AUDIENCES
+              value: {{ .audiences | default list | toJson | quote }}
+            - name: ACH_TRUSTED_IDP_CLAIM
+              value: {{ .claim | default "email" | quote }}
+            {{- end }}
+            {{- end }}
             # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
             # rest (the forwarder opens sealed LiteLLM material with the DEK and
             # resolves pk_ via the pepper). Sourced from the security.* Secret

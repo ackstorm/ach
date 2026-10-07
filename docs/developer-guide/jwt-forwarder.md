@@ -357,6 +357,35 @@ BIP JWT, no env tag) and LiteLLM authenticates it. A `pk-`/`ek-` is never
 `sk-`) and would only hand an ACH secret to the upstream, so it is resolved
 and removed; unknown or malformed is ACH's 401. `authorization` cannot be
 listed as a slot.
+
+**Trusted external IdP** (`forwarder.trustedIdP` → `ACH_TRUSTED_IDP_ISSUER`,
+`_AUDIENCES` (JSON list, required with the issuer or the forwarder refuses to
+start), `_CLAIM` (default `email`); off when the issuer is empty). A JWS in
+`Authorization: Bearer` whose **unverified** `iss` equals the issuer byte for
+byte is not judged as ACH's own: `keystore.NewTrustedIdPResolver` verifies it
+against the issuer's discovery JWKS (go-oidc `RemoteKeySet`, refetch on an
+unknown `kid`), RS256 only, `exp`, exact `iss`, `aud` in the list, the claim
+present and non-empty (trimmed, lower-cased), and `email_verified` not
+`false` (absent is accepted — some connectors omit it). The identity resolves
+to the user's EXISTING `purpose='oauth'` pk_, so everything downstream is a
+pk_ caller: own LiteLLM key as `x-litellm-api-key`, the IdP token removed,
+`x-litellm-tags: user:<email>`, BIP JWTs on `/mcp`/`/a2a`. The forwarder never
+mints a LiteLLM key or user:
+
+| Case | Answer |
+|---|---|
+| token invalid (sig, alg, exp, aud, claim, `email_verified:false`) | 401 + challenge, like any bad bearer |
+| valid, user never signed in to ACH / oauth row revoked / past the 90-day cap | **403 `ach_login_required`** naming the console — no challenge (the caller already holds a valid IdP token; an ACH OAuth dance is not what it needs) |
+| issuer discovery or JWKS unreachable (transport error / 5xx) | **503 `idp_unreachable`**; the forwarder still starts (discovery is lazy and retried) and every other credential path is untouched |
+| LiteLLM no longer lists the row's key | LiteLLM's own 401 — fail closed, no per-request `/key/list`; the user's next ACH grant re-mints (`ensureOAuthPK`) |
+
+Row lifetime: LibreChat never calls `/token`, which is what keeps an oauth row
+alive for ACH OAuth clients. So each trusted-IdP use slides the row exactly
+like a plain pk_ (`db.OAuthPKCheckAndExtend`: 7 days, 5-minute debounce,
+absolute cap `created_at + 90 days`) and fires the existing LiteLLM expiry
+mirror. A positive cache entry lives at most 60 s and never past the IdP
+token's `exp`. A user disabled at the IdP keeps a valid token until its `exp`
+(Dex default 24 h), then stops sliding the row.
 platform-api shares the middleware with its own `platformApi.headers`
 (resolve only). On `/mcp` + `/a2a` the per-target ACH JWT overwrites
 `Authorization` when a BIP mints one.

@@ -354,6 +354,41 @@ func TestAuthnInvalidBearer(t *testing.T) {
 	}
 }
 
+// TestAuthnTrustedIdPOutcomes — the trusted-IdP sentinels are not 500s:
+// no oauth pk_ is 403 naming the console (no challenge, so MCP clients do
+// not start an ACH OAuth dance), an unreachable issuer is 503; neither audits.
+func TestAuthnTrustedIdPOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code int
+		want string
+	}{
+		{keystore.ErrLoginRequired, http.StatusForbidden, `"ach_login_required"`},
+		{keystore.ErrIdPUnreachable, http.StatusServiceUnavailable, `"idp_unreachable"`},
+	} {
+		auLog, auBuf := newAuditCapture()
+		resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) { return nil, tc.err })
+		opts := AuthnOptions{Challenge: func(*http.Request) string { return "Bearer x" }, LoginURL: "https://ach.example/"}
+		chain := RequestID(Authn(resolver, nil, auLog, opts)(helloHandler(t)))
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set("Authorization", "Bearer aaa.bbb.ccc")
+		chain.ServeHTTP(rec, req)
+		if rec.Code != tc.code || !strings.Contains(rec.Body.String(), tc.want) {
+			t.Fatalf("%v: got %d %s", tc.err, rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("WWW-Authenticate") != "" {
+			t.Errorf("%v: no challenge expected", tc.err)
+		}
+		if auBuf.Len() != 0 {
+			t.Errorf("%v: no audit expected, got %s", tc.err, auBuf.String())
+		}
+		if tc.code == http.StatusForbidden && !strings.Contains(rec.Body.String(), "https://ach.example/") {
+			t.Errorf("403 must name the console URL: %s", rec.Body.String())
+		}
+	}
+}
+
 // TestAuthnResolverErr — resolver returns a transient error; Authn
 // renders 500 internal_error and emits a single audit line.
 func TestAuthnResolverErr(t *testing.T) {
