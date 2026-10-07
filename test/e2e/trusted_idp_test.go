@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -58,24 +59,20 @@ func TestTrustedIdP(t *testing.T) {
 		}
 	})
 
+	// The stamped tags, observed at the backend through the test-only mirror
+	// header (same evidence as testPhase4SC2EkTagStamping). Spend on the
+	// user: tag cannot be read here: e2e sets no user ceiling, so LiteLLM
+	// keeps no user:<email> tag row to accumulate it.
 	t.Run("user_budget_tag", func(t *testing.T) {
-		llPort := startPortForward(t, sc5LiteLLMNS, sc5LiteLLMSvc, 4000)
-		llURL := fmt.Sprintf("http://127.0.0.1:%d", llPort)
-		withMcpQueryCost(t, llURL, costedMcpServer, mcpQueryCost)
-		tag := "user:" + mockDexEmail
-		before := 0.0
-		if e, ok := tagInfo(t, llURL, tag); ok && e != nil {
-			before = e.Spend
+		if err := waitDeploymentReady(t, phase4Namespace, mockModelDeployment, 15*time.Second); err != nil {
+			t.Fatalf("ach-mock-model not Ready: %v", err)
 		}
-		dex := dexAccessToken(t, base)
-		call := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"%s.echo","arguments":{"text":"tag"}}}`, costedMcpServer)
-		if code, body := bearerDo(t, http.MethodPost, base+"/mcp/"+costedMcpServer+"/", dex, call); code != http.StatusOK {
-			t.Fatalf("costed MCP call: %d %s", code, truncate([]byte(body), 400))
+		mockLocal := strconv.Itoa(startPortForward(t, phase4Namespace, "svc/"+mockModelService, mockModelSvcPort))
+		snap := driveV1ToBackendAs(t, base, "Authorization", "Bearer "+dexAccessToken(t, base),
+			fmt.Sprintf("dex-tag-%d", time.Now().UnixNano()), mockLocal)
+		if got := headerValue(snap.Headers, headerTagsName); got != "user:"+mockDexEmail {
+			t.Fatalf("backend %s=%q, want exactly user:%s", headerTagsName, got, mockDexEmail)
 		}
-		within(t, tagSpendWindow, "spend to land on "+tag, func() bool {
-			e, ok := tagInfo(t, llURL, tag)
-			return ok && e != nil && e.Spend > before
-		})
 	})
 
 	t.Run("foreign_issuer_401", func(t *testing.T) {
