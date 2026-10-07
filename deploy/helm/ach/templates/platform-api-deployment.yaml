@@ -136,6 +136,10 @@ spec:
             - name: ACH_GENAI_DEFAULT_SMALL_MODEL
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.genai.mcpEnabledEnvironments }}
+            - name: ACH_GENAI_MCP_ENABLED_ENVIRONMENTS
+              value: {{ . | toJson | quote }}
+            {{- end }}
             - name: ACH_OPENWORK_ENABLED
               value: {{ .Values.openwork.enabled | quote }}
             {{- if .Values.openwork.enabled }}
