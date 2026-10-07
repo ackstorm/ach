@@ -333,3 +333,56 @@ func TestClient_DoRaw_NonOk_ServerError(t *testing.T) {
 		t.Errorf("ServerError %+v, want {503 internal_error ...}", sErr)
 	}
 }
+
+// TestClient_Do_RedirectedPOSTFails asserts a 301 on a write is an error
+// naming the target, never a silently followed body-less GET.
+func TestClient_Do_RedirectedPOSTFails(t *testing.T) {
+	var gets int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			gets++
+			_, _ = io.WriteString(w, `{"items":[]}`)
+			return
+		}
+		http.Redirect(w, r, "/elsewhere/keys", http.StatusMovedPermanently)
+	}))
+	defer srv.Close()
+
+	c := &httpclient.Client{BaseURL: srv.URL, APIKey: "pk-x"}
+	var out map[string]any
+	err := c.Do(context.Background(), http.MethodPost, "/platform/keys", map[string]string{"a": "b"}, &out)
+	if err == nil {
+		t.Fatal("Do: want redirect error, got nil")
+	}
+	want := "server redirected POST /platform/keys to " + srv.URL +
+		"/elsewhere/keys; update the profile URL (ach-cli login <new-url>)"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v\nwant it to contain %q", err, want)
+	}
+	if gets != 0 {
+		t.Errorf("server saw %d GETs; the redirect must not be followed", gets)
+	}
+}
+
+// TestClient_Do_RedirectedGETFollows asserts reads still follow redirects.
+func TestClient_Do_RedirectedGETFollows(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/old" {
+			http.Redirect(w, r, "/new", http.StatusMovedPermanently)
+			return
+		}
+		_, _ = io.WriteString(w, `{"hello":"world"}`)
+	}))
+	defer srv.Close()
+
+	c := &httpclient.Client{BaseURL: srv.URL, APIKey: "pk-x"}
+	var out struct {
+		Hello string `json:"hello"`
+	}
+	if err := c.Do(context.Background(), http.MethodGet, "/old", nil, &out); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	if out.Hello != "world" {
+		t.Errorf("decoded %+v, want hello=world", out)
+	}
+}

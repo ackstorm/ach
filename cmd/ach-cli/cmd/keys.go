@@ -222,6 +222,10 @@ func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysC
 		// resp is zero-valued on a non-2xx: nothing of a key can leak.
 		return err
 	}
+	if resp.KeyID == "" || resp.Plaintext == "" {
+		return &exit.CodedError{Code: exit.General,
+			Msg: "the server returned an incomplete response (no key id or key); nothing was saved"}
+	}
 	// The one and only time the plaintext is printed; stdout carries
 	// nothing else so it is pipe-safe.
 	_, _ = fmt.Fprintln(stdout, resp.Plaintext)

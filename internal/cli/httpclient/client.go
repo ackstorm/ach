@@ -53,7 +53,9 @@ type Client struct {
 	APIKey string
 
 	// HTTPClient is the underlying transport. nil defaults to a
-	// fresh *http.Client{Timeout: defaultTimeout}.
+	// fresh *http.Client{Timeout: defaultTimeout} that refuses to
+	// follow a redirect of a non-GET/HEAD request (checkRedirect); an
+	// injected client keeps its own redirect policy.
 	HTTPClient *http.Client
 
 	// Verbose, when true, writes a redacted request-line + header
@@ -192,13 +194,29 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	}
 	hc := c.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: defaultTimeout}
+		hc = &http.Client{Timeout: defaultTimeout, CheckRedirect: checkRedirect}
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("httpclient: do: %w", err)
 	}
 	return resp, nil
+}
+
+// checkRedirect refuses to follow a redirect of a write. net/http turns a
+// 301/302/303 POST into a body-less GET, so a moved profile URL would land
+// the write on a read endpoint whose 2xx decodes as an empty success.
+// GET/HEAD keep net/http's default policy (at most 10 redirects).
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	orig := via[0]
+	if orig.Method != http.MethodGet && orig.Method != http.MethodHead {
+		return fmt.Errorf("server redirected %s %s to %s; update the profile URL (ach-cli login <new-url>)",
+			orig.Method, orig.URL.Path, req.URL)
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 // dumpVerbose writes the request line + header dump to c.Stderr. nil

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -27,12 +28,13 @@ type keysReq struct {
 // answers from the configurable fields.
 type keysTestServer struct {
 	*httptest.Server
-	mu        sync.Mutex
-	reqs      []keysReq
-	envs      []string         // GET /platform/environments names
-	listItems []map[string]any // GET /platform/keys items
-	status    int              // status for POST/DELETE/PATCH on /platform/keys/…; 0 → 204
-	errCode   string           // error code when status >= 400
+	mu         sync.Mutex
+	reqs       []keysReq
+	envs       []string         // GET /platform/environments names
+	listItems  []map[string]any // GET /platform/keys items
+	status     int              // status for POST/DELETE/PATCH on /platform/keys/…; 0 → 204
+	errCode    string           // error code when status >= 400
+	createResp map[string]any   // POST /platform/keys body; nil → a full key
 }
 
 func newKeysTestServer(t *testing.T) *keysTestServer {
@@ -54,6 +56,10 @@ func newKeysTestServer(t *testing.T) *keysTestServer {
 		case r.URL.Path == "/platform/keys" && r.Method == http.MethodGet:
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": srv.listItems})
 		case r.URL.Path == "/platform/keys" && r.Method == http.MethodPost:
+			if srv.createResp != nil {
+				_ = json.NewEncoder(w).Encode(srv.createResp)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"key_id": "ekid_new", "plaintext": testEKSaved})
 		default:
 			if srv.status >= 400 {
@@ -147,6 +153,36 @@ func TestKeysCreate_SavesByNameAndPrintsOnce(t *testing.T) {
 	}
 	if got := loadProfileP(t, path).Keys["demo"]; got != (config.SavedKey{ID: "ekid_new", Key: testEKSaved}) {
 		t.Errorf("saved = %+v", got)
+	}
+}
+
+// A 2xx without key_id/plaintext (e.g. a redirected POST answered by the
+// list endpoint) must fail loudly: nothing printed, nothing saved.
+func TestKeysCreate_IncompleteResponseSavesNothing(t *testing.T) {
+	credTestEnv(t)
+	srv := newKeysTestServer(t)
+	srv.createResp = map[string]any{}
+	path := seedKeysProfile(t, srv.URL, nil)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newKeysCmd()
+	cmd.SilenceUsage = true // as the real root does; keep stdout to what RunE writes
+	stdout, _, code, err := executeCommand(t, cmd, "create", "demo")
+	if code != exit.General || err == nil || !strings.Contains(err.Error(), "incomplete response") {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q; want empty", stdout)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("config file rewritten:\n%s", after)
 	}
 }
 
