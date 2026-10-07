@@ -311,7 +311,6 @@ type WSHandoffBlock struct {
 	Env            map[string]string        `json:"env,omitempty"`
 	SecretEnv      map[string]WSSecretAlias `json:"secretEnv,omitempty"`
 	TimeoutSeconds *int64                   `json:"timeoutSeconds,omitempty"`
-	Scope          string                   `json:"scope,omitempty"`
 	Destination    string                   `json:"destination"`
 }
 
@@ -359,7 +358,7 @@ func RenderHandoffV1(ch *achv1alpha1.ChannelSpec, resolvedEnv []corev1.EnvVar) (
 	if err != nil {
 		return nil, err
 	}
-	b := &WSHandoffBlock{Script: legacy.Script, Env: legacy.Env, TimeoutSeconds: legacy.TimeoutSeconds, Scope: ch.Handoff.Scope, Destination: ch.Handoff.Destination}
+	b := &WSHandoffBlock{Script: legacy.Script, Env: legacy.Env, TimeoutSeconds: legacy.TimeoutSeconds, Destination: ch.Handoff.Destination}
 	if len(legacy.SecretEnv) > 0 {
 		b.SecretEnv = make(map[string]WSSecretAlias, len(legacy.SecretEnv))
 		for k, v := range legacy.SecretEnv {

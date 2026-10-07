@@ -208,8 +208,8 @@ spec:
                       description: |-
                         Handoff runs in the harness, in an empty directory; its output wholesale-replaces the
                         session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary
-                        files). scope=event (default) runs it every invocation, the old prepare cadence;
-                        scope=session runs it only when a new session is created. Valid for every channel type.
+                        files). It runs every invocation; for per-session files set
+                        routing.workspaceKey: session. Valid for every channel type.
                       properties:
                         destination:
                           description: |-
@@ -229,15 +229,6 @@ spec:
                             type: string
                           type: array
                           x-kubernetes-list-type: set
-                        scope:
-                          default: event
-                          description: |-
-                            Scope selects when the handoff runs: every event (the old prepare cadence), or only
-                            when a new session is created.
-                          enum:
-                          - event
-                          - session
-                          type: string
                         script:
                           description: |-
                             Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;
@@ -281,8 +272,9 @@ spec:
                           minLength: 1
                           type: string
                         workspaceKey:
-                          description: WorkspaceKey overrides the adapter's default
-                            Workspace identity template.
+                          description: |-
+                            WorkspaceKey overrides the adapter's default Workspace identity template. The
+                            reserved keyword "session" gives each session its own workspace.
                           minLength: 1
                           type: string
                       type: object
@@ -430,6 +422,9 @@ spec:
                     rule: 'self.type==''webhook-script'' ? has(self.script) : !has(self.script)'
                   - message: webhook-script forbids prompt and handoff
                     rule: self.type!='webhook-script' || (!has(self.prompt) && !has(self.handoff))
+                  - message: generic webhook and queue channels require routing.sessionKey
+                    rule: '!(self.type==''queue'' || (self.type==''webhook'' && has(self.source)
+                      && self.source==''generic'')) || (has(self.routing) && has(self.routing.sessionKey))'
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:

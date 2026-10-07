@@ -260,7 +260,8 @@ type A2ASpec struct {
 // OpenAPI structural keyword, not CEL) enforces non-empty cheaply — only present values are
 // checked, so the field stays genuinely optional.
 type RoutingSpec struct {
-	// WorkspaceKey overrides the adapter's default Workspace identity template.
+	// WorkspaceKey overrides the adapter's default Workspace identity template. The
+	// reserved keyword "session" gives each session its own workspace.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	WorkspaceKey *string `json:"workspaceKey,omitempty"`
@@ -300,12 +301,6 @@ type PrepareSpec struct {
 // Replaces the old prepare/cleanup pair.
 type HandoffSpec struct {
 	PrepareSpec `json:",inline"`
-	// Scope selects when the handoff runs: every event (the old prepare cadence), or only
-	// when a new session is created.
-	// +kubebuilder:validation:Enum=event;session
-	// +kubebuilder:default=event
-	// +optional
-	Scope string `json:"scope,omitempty"`
 	// Destination is the relative path inside the Workspace the handoff's output replaces
 	// (contract §6). Required, non-empty. Path-escape rejection (no .. segments, no leading
 	// /) happens at runtime (Harness) — a CEL equivalent here is prohibitively expensive
@@ -320,6 +315,7 @@ type HandoffSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook' || self.type=='webhook-script' || !has(self.source)",message="channels.source is only valid for webhook channels"
 // +kubebuilder:validation:XValidation:rule="self.type=='webhook-script' ? has(self.script) : !has(self.script)",message="channels.script is required only for webhook-script"
 // +kubebuilder:validation:XValidation:rule="self.type!='webhook-script' || (!has(self.prompt) && !has(self.handoff))",message="webhook-script forbids prompt and handoff"
+// +kubebuilder:validation:XValidation:rule="!(self.type=='queue' || (self.type=='webhook' && has(self.source) && self.source=='generic')) || (has(self.routing) && has(self.routing.sessionKey))",message="generic webhook and queue channels require routing.sessionKey"
 type ChannelSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -350,8 +346,8 @@ type ChannelSpec struct {
 	A2A *A2ASpec `json:"a2a,omitempty"`
 	// Handoff runs in the harness, in an empty directory; its output wholesale-replaces the
 	// session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary
-	// files). scope=event (default) runs it every invocation, the old prepare cadence;
-	// scope=session runs it only when a new session is created. Valid for every channel type.
+	// files). It runs every invocation; for per-session files set
+	// routing.workspaceKey: session. Valid for every channel type.
 	// +optional
 	Handoff *HandoffSpec `json:"handoff,omitempty"`
 	// Script is the deterministic handler for type=webhook-script. The normalized webhook

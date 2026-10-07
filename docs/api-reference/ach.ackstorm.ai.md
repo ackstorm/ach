@@ -685,7 +685,7 @@ _Appears in:_
 | `cron` _[CronSpec](#cronspec)_ |  |  |  |
 | `queue` _[QueueSpec](#queuespec)_ |  |  |  |
 | `a2a` _[A2ASpec](#a2aspec)_ |  |  |  |
-| `handoff` _[HandoffSpec](#handoffspec)_ | Handoff runs in the harness, in an empty directory; its output wholesale-replaces the<br />session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary<br />files). scope=event (default) runs it every invocation, the old prepare cadence;<br />scope=session runs it only when a new session is created. Valid for every channel type. |  |  |
+| `handoff` _[HandoffSpec](#handoffspec)_ | Handoff runs in the harness, in an empty directory; its output wholesale-replaces the<br />session workspace's handoff/ (content-agnostic — a repo clone, a DB extract, arbitrary<br />files). It runs every invocation; for per-session files set<br />routing.workspaceKey: session. Valid for every channel type. |  |  |
 | `script` _[PrepareSpec](#preparespec)_ | Script is the deterministic handler for type=webhook-script. The normalized webhook<br />JSON is passed on stdin; the harness never invokes the agent engine. Its workspace is<br />temporary and removed after each event. |  |  |
 
 
@@ -1143,7 +1143,6 @@ _Appears in:_
 | `script` _string_ | Script is the static /bin/sh program. Lifecycle hooks feed it to `sh -eu -s`;<br />webhook-script uses `sh -eu -c` so stdin remains available for webhook JSON. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `forwardEnv` _string array_ | ForwardEnv selects names from the merged AgentProfile.spec.env + ACHAgent.spec.env.<br />Literal values become the hook's env; secretKeyRef values become its secretEnv via<br />generated Pod aliases. Unknown names are ignored and remain unset. |  | items:Pattern: ^[A-Za-z_][A-Za-z0-9_]*$ <br /> |
 | `timeoutSeconds` _integer_ | TimeoutSeconds bounds the hook script; on expiry the harness SIGKILLs its process<br />group. Harness default is 120 when omitted. |  | Maximum: 3600 <br />Minimum: 1 <br /> |
-| `scope` _string_ | Scope selects when the handoff runs: every event (the old prepare cadence), or only<br />when a new session is created. | event | Enum: [event session] <br /> |
 | `destination` _string_ | Destination is the relative path inside the Workspace the handoff's output replaces<br />(contract §6). Required, non-empty. Path-escape rejection (no .. segments, no leading<br />/) happens at runtime (Harness) — a CEL equivalent here is prohibitively expensive<br />against the per-channel listType=map cost multiplier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 
 
@@ -1954,7 +1953,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `workspaceKey` _string_ | WorkspaceKey overrides the adapter's default Workspace identity template. |  | MinLength: 1 <br /> |
+| `workspaceKey` _string_ | WorkspaceKey overrides the adapter's default Workspace identity template. The<br />reserved keyword "session" gives each session its own workspace. |  | MinLength: 1 <br /> |
 | `sessionKey` _string_ | SessionKey overrides the adapter's default Session identity template. |  | MinLength: 1 <br /> |
 
 

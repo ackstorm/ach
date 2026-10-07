@@ -108,8 +108,15 @@ still on the old shape is rejected or blocked, not silently translated:
 - **Channel session → routing**: the old `channels[].session.type: none|auto|custom` enum is
   gone. The Harness now picks its own default Workspace/Session identity per channel; set
   `channels[].routing.{workspaceKey,sessionKey}` only to override one of those two `{{ }}`
-  templates (`event.*`/`payload.*`) — there is no mandatory template to author, and an omitted
-  key just keeps the adapter's default.
+  templates (`event.*`/`payload.*`/`event.headers.*`) — an omitted key keeps the adapter's
+  default. Two exceptions (ach-runtime v0.1.16): a generic webhook (`source: generic`) or
+  `queue` channel has no default session and MUST set `routing.sessionKey` (CEL on
+  `ChannelSpec` rejects it at admission); `workspaceKey: session` is a reserved keyword giving
+  each session its own workspace (one pod per session) — no CRD change, it stays a string.
+- **Handoff scope removed**: `channels[].handoff.scope` is gone (ach-runtime v0.1.16 accepts
+  only `event`, so it configured nothing); ACH no longer renders it, which lets the next
+  ach-runtime release drop the field. The handoff runs every event; for per-session handoff
+  files use `routing.workspaceKey: session`.
 - **Handoff destination**: `channels[].handoff.destination` (the relative path inside the
   Workspace the handoff output replaces) is required, non-empty — it has no implicit default.
 - **Engine/placement/egress**: `engine.type`/`pi`/`home`/`workDir`/`idleTtlSeconds`/

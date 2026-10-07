@@ -110,7 +110,7 @@ func gitlabPRReviewerAgent() (ach *achv1alpha1.AchSpec, engine *achv1alpha1.Engi
 				TimeoutSeconds: ptr(int64(300)),
 				Script:         "set -eu\ncase \"$ACH_EVENT_PROJECT_PATH\" in\n  \"\"|*[!a-zA-Z0-9_./-]*) exit 1 ;;\nesac\ncase \"/$ACH_EVENT_PROJECT_PATH/\" in\n  *\"/../\"*|*\"/./\"*|*\"//\"*) exit 1 ;;\nesac\ncase \"$ACH_EVENT_MR_IID\" in\n  \"\"|*[!0-9]*) exit 1 ;;\nesac\nAUTH=$(printf 'oauth2:%s' \"$GITLAB_TOKEN\" | base64 -w0)\nexport GIT_CONFIG_COUNT=1\nexport GIT_CONFIG_KEY_0=http.extraHeader\nexport GIT_CONFIG_VALUE_0=\"Authorization: Basic $AUTH\"\nexport GIT_TERMINAL_PROMPT=0\nexport GIT_LFS_SKIP_SMUDGE=1\ngit clone --no-checkout --no-recurse-submodules \\\n  \"$GITLAB_REPO_BASEURL/$ACH_EVENT_PROJECT_PATH.git\" \\\n  \"$ACH_HANDOFF_DIR/repo\"\ngit -C \"$ACH_HANDOFF_DIR/repo\" fetch origin \\\n  \"refs/merge-requests/$ACH_EVENT_MR_IID/head\"\ngit -C \"$ACH_HANDOFF_DIR/repo\" checkout --detach FETCH_HEAD\n",
 			},
-			Scope: "event", Destination: "handoff",
+			Destination: "handoff",
 		},
 	}
 	return ach, engine, limits, workspace, artifacts, env, channel

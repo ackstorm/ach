@@ -31,10 +31,11 @@ set in spec.env`), it does not silently skip the name and leave it unset.
 and harness do not clone, cache, lock, or delete repositories on its behalf. It
 runs in the harness, in an empty `$ACH_HANDOFF_DIR`; its output wholesale-replaces
 the session workspace's `handoff/` directory (content-agnostic — a repo clone, a
-DB extract, arbitrary files). `scope: event` (the default) runs it every
-invocation — the handoff always starts from an empty directory, so a script that
-wants an incremental checkout must clone from scratch each time; `scope: session`
-runs it only when a new session is created. `spec.hooks.sessionStart` /
+DB extract, arbitrary files). It runs every invocation — the handoff always
+starts from an empty directory, so a script that wants an incremental checkout
+must clone from scratch each time. The directory is shared by every session in
+the workspace; give the channel `routing.workspaceKey: session` for one
+workspace (pod) per session. `spec.hooks.sessionStart` /
 `spec.hooks.sessionSuspend` are agent-level hooks that run inside the mini-harness
 (only `engine.forwardEnv` variables, never channel credentials):
 `sessionStart` runs once per new session, after the handoff and before the first

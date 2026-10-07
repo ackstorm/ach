@@ -53,10 +53,10 @@ spec:
         auth: { type: gitlab_token, secretRef: { name: gitlab-webhook, key: secret } }
         gitlabEvents: [merge_request, note]
       handoff:
-        # scope: event (default) — runs every invocation, cloning from scratch into
+        # Runs every invocation, cloning from scratch into
         # the empty $ACH_HANDOFF_DIR each time (a handoff always starts empty, so
-        # there is no existing tree to fetch into). Use scope: session to run this
-        # only when a new session is created instead.
+        # there is no existing tree to fetch into). For per-session files give the
+        # channel routing.workspaceKey: session.
         # destination (required): the relative Workspace path this handoff's output
         # replaces wholesale (contract §6).
         destination: handoff

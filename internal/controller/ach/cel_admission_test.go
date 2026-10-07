@@ -217,6 +217,13 @@ func TestCELAdmission(t *testing.T) {
 			shouldFail:     true,
 			errMustContain: "must not end in -<20 hex>",
 		},
+		// ach-runtime v0.1.16: queue / generic webhook channels have no default session.
+		{
+			name:           "invalid_achagent_queue_without_sessionkey",
+			fixturePath:    "../../../test/fixtures/invalid/achagent_queue_without_sessionkey.yaml",
+			shouldFail:     true,
+			errMustContain: "require routing.sessionKey",
+		},
 		// ACHAgent.spec.memory is discriminated on type: ach-memory REQUIRES the
 		// achMemory block (endpoint has no default); codemem does not.
 		{

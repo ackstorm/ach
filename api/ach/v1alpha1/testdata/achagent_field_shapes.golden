@@ -39,7 +39,6 @@ spec.channels[].handoff	object
 spec.channels[].handoff.destination	string
 spec.channels[].handoff.forwardEnv	array
 spec.channels[].handoff.forwardEnv[]	string
-spec.channels[].handoff.scope	string enum[event,session]
 spec.channels[].handoff.script	string
 spec.channels[].handoff.timeoutSeconds	integer
 spec.channels[].name	string

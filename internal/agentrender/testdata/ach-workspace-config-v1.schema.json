@@ -865,7 +865,7 @@
     },
     "HandoffBlock": {
       "additionalProperties": false,
-      "description": "`channels[].handoff` \u2014 replaces the shared Workspace directory at `destination`.\n\nV1 requires `workspace.maxConcurrentSessions == 1` whenever any channel carries a handoff\n(contract \u00a76) \u2014 the Workspace, not a per-session HOME, is always the destination.",
+      "description": "`channels[].handoff` \u2014 replaces the shared Workspace directory at `destination`.\n\nV1 requires `workspace.maxConcurrentSessions == 1` whenever any channel carries a handoff\n(contract \u00a76) \u2014 the Workspace, not a per-session HOME, is always the destination. It runs\nfor every event; the directory is shared by every session in the workspace, so per-session\nfiles need `routing.workspaceKey: session`. `scope` stays only because ACH renders it.",
       "properties": {
         "script": {
           "title": "Script",
@@ -893,11 +893,8 @@
           "type": "integer"
         },
         "scope": {
+          "const": "event",
           "default": "event",
-          "enum": [
-            "event",
-            "session"
-          ],
           "title": "Scope",
           "type": "string"
         },
@@ -1259,7 +1256,7 @@
     },
     "RoutingBlock": {
       "additionalProperties": false,
-      "description": "`channels[].routing` (contract \u00a72) \u2014 both overrides optional and independent.\n\nAn omitted override keeps the adapter default; a present one must be a non-empty template\nstring. Template syntax/rendering is an adapter concern (Task 3), not validated here.",
+      "description": "`channels[].routing` (contract \u00a72) \u2014 both overrides optional and independent.\n\nAn omitted override keeps the adapter default (generic webhook and queue have no default\nsession and require `sessionKey`); a present one must be a non-empty template string.\n`workspaceKey: session` is a reserved keyword: one workspace per session.\nTemplate syntax/rendering is an adapter concern (Task 3), not validated here.",
       "properties": {
         "workspaceKey": {
           "type": "string",

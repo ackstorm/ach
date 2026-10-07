@@ -104,8 +104,6 @@ func TestACHAgentGeneratedHookDescriptions(t *testing.T) {
 		}
 		handoff := crdProperty(t, items, "handoff")
 		assertDescriptionContains(t, "CRD handoff", handoff, "wholesale-replaces", "session workspace's handoff")
-		scope := crdProperty(t, handoff, "scope")
-		assertDescriptionContains(t, "CRD handoff.scope", scope, "every event", "a new session is created")
 		script := crdProperty(t, items, "script")
 		assertDescriptionContains(t, "CRD script", script, "deterministic handler", "never invokes the agent engine", "temporary")
 

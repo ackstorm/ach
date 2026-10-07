@@ -1,0 +1,24 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: a queue (or generic webhook) channel has no default session
+# since ach-runtime v0.1.16 and must set routing.sessionKey.
+# Expected error substring: "require routing.sessionKey"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: ACHAgent
+metadata:
+  name: invalid-queue-without-sessionkey
+  namespace: ach-system
+spec:
+  profileRef:
+    name: standard
+  ach:
+    identity:
+      secretRef:
+        name: ops-ek
+        key: ek
+    environment: engineering-prod
+  channels:
+    - name: jobs
+      type: queue
+      queue:
+        key: jobs
+      # routing.sessionKey deliberately omitted → CEL rejection

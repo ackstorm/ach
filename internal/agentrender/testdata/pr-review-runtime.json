@@ -107,7 +107,6 @@
         "mergeRequestsOnly": true
       },
       "handoff": {
-        "scope": "event",
         "destination": "handoff",
         "timeoutSeconds": 300,
         "env": {
