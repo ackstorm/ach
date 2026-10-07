@@ -333,6 +333,13 @@ genai:
   # Empty = off.
   defaultModel: ""
   defaultSmallModel: ""
+  # Environments whose runtime MCP servers (spec.runtime.mcpServers plus the
+  # mcpServerGroups expansion) /clients/opencode/config emits "enabled": true.
+  # It never adds a server: only one already in the user's own LiteLLM MCP
+  # list is flipped on; every other server stays "enabled": false. An unknown
+  # or deleting Environment is ignored. Empty = all disabled (no DB read).
+  mcpEnabledEnvironments: []
+  # mcpEnabledEnvironments: ["ackstorm"]
 
 # openwork: the OpenWork organization server ("Den") served by platform-api
 # at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den

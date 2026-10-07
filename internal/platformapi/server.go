@@ -135,6 +135,9 @@ type Deps struct {
 	// GenAIDefaultModel / GenAIDefaultSmallModel are bare model names
 	// (ACH_GENAI_DEFAULT_MODEL / ACH_GENAI_DEFAULT_SMALL_MODEL); empty = off.
 	GenAIDefaultModel, GenAIDefaultSmallModel string
+	// GenAIMCPEnabledEnvs (ACH_GENAI_MCP_ENABLED_ENVIRONMENTS) names
+	// the Environments whose runtime MCP servers the OpenCode config enables.
+	GenAIMCPEnabledEnvs []string
 	// OpenCodePluginSpec is the plugin /.well-known/opencode installs
 	// (ACH_OPENCODE_PLUGIN_SPEC, an npm or git spec); empty leaves it unmounted.
 	OpenCodePluginSpec string
@@ -204,6 +207,7 @@ func New(deps Deps) http.Handler {
 			r.Get("/clients/opencode/config", opencode.ConfigHandler(opencode.ConfigDeps{
 				BaseURL: deps.BaseURL, Provider: deps.GenAIProvider, Verify: deps.VerifyAccessToken,
 				DefaultModel: deps.GenAIDefaultModel, DefaultSmall: deps.GenAIDefaultSmallModel,
+				MCPEnabledEnvs: deps.GenAIMCPEnabledEnvs, Environment: deps.Store.GetEnvironment,
 				Resolver: deps.Resolver, KeyEncryptionKey: deps.KeyEncryptionKey,
 				AsUser: func(k string) opencode.UserCatalog { return deps.LiteLLMREST.AsUser(k) },
 				Admin:  deps.LiteLLMREST, Store: od.Store, Logger: deps.Logger,

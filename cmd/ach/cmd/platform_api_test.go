@@ -153,3 +153,19 @@ func TestValidatePlatformAPIConfig_Teams(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePlatformAPIConfig_MCPEnabledEnvironments(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil || cfg.MCPEnabledEnvironments != nil {
+		t.Fatalf("unset: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_GENAI_MCP_ENABLED_ENVIRONMENTS", `["ackstorm","team-b"]`)
+	if cfg, err = validatePlatformAPIConfig(); err != nil || !reflect.DeepEqual(cfg.MCPEnabledEnvironments, []string{"ackstorm", "team-b"}) {
+		t.Fatalf("list: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_GENAI_MCP_ENABLED_ENVIRONMENTS", `ackstorm`)
+	if _, err = validatePlatformAPIConfig(); err == nil || !strings.Contains(err.Error(), "ACH_GENAI_MCP_ENABLED_ENVIRONMENTS") {
+		t.Fatalf("malformed: %v", err)
+	}
+}

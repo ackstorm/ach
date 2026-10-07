@@ -19,8 +19,8 @@ once, on the user's terminal, and stay there.
 
 ## MCP servers
 
-Every MCP server this user can reach is already in OpenCode's config, **disabled**.
-See them with:
+Every MCP server this user can reach is already in OpenCode's config, **disabled**
+unless the organization enables it by default. See them with:
 
 ```bash
 opencode mcp list
@@ -31,7 +31,7 @@ do not invent a URL. An ACH administrator can grant access.
 
 To use one:
 
-1. Enable it. Global (every project): `~/.config/opencode/opencode.json`. One project:
+1. Enable it (skip if `opencode mcp list` already shows it enabled). Global (every project): `~/.config/opencode/opencode.json`. One project:
    `opencode.json` at the project root. Read the file first and merge; do not rewrite
    it or drop keys you did not add:
 

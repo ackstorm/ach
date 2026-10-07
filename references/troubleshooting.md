@@ -1229,8 +1229,9 @@ A model/small_model the user set in their own opencode.json always wins.
 Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
 + `opencode service restart`: `opencode models` lists only `<provider>/*`, and
 `opencode mcp list` lists every MCP server the user's own LiteLLM key reaches, all
-`disabled` (ACH serves them `enabled:false` in `/clients/opencode/config`; the plugin
-registers them through `ctx.mcp.transform`). Observed 2026-09-29, three separate causes:
+`disabled` (ACH serves them `enabled:false` in `/clients/opencode/config` — except those
+in the runtime MCP set of a `genai.mcpEnabledEnvironments` Environment, served
+`enabled:true`; the plugin registers them through `ctx.mcp.transform`). Observed 2026-09-29, three separate causes:
 
 - **Right after the restart.** The service loads the plugin, which then fetches the
   config (2 s timeout). A `models` / `mcp list` run in the same second races it.
