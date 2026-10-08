@@ -174,6 +174,28 @@ func TestAdminList_All_JSON(t *testing.T) {
 	}
 }
 
+// TestAdminList_Environments_SendsAll: `admin list environments` is the
+// full inventory, so it always asks for ?all=true.
+func TestAdminList_Environments_SendsAll(t *testing.T) {
+	adminTestEnv(t)
+	var gotAll string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAll = r.URL.Query().Get("all")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(envelope())
+	}))
+	t.Cleanup(srv.Close)
+	swapHTTPClientForTest(t, &adminHTTPClient, srv.Client())
+	seedAdminConfig(t, srv.URL)
+
+	if _, _, code, err := executeAdmin(t, "", "list", "environments"); err != nil || code != exit.OK {
+		t.Fatalf("err=%v code=%d", err, code)
+	}
+	if gotAll != "true" {
+		t.Errorf("all = %q; want \"true\"", gotAll)
+	}
+}
+
 // TestAdminList_RuntimeKinds: each runtime kind reads its
 // /platform/admin/runtime/* route and renders the KIND NAME STATUS table.
 func TestAdminList_RuntimeKinds(t *testing.T) {

@@ -116,24 +116,24 @@ func decodeAccessGroupSynced(raw []byte) bool {
 // ListAuthorizedEnvironments returns the projection rows in s.ns that the
 // caller is authorized to see (API-08 / Hub §15.5):
 //
-//   - When isAdmin is true, every Environment in s.ns is returned (the admin
-//     allowlist check is the handler's responsibility — only callers whose
-//     owner_email is in the allowlist reach this code path with isAdmin=true).
-//   - When isAdmin is false, an Environment is included iff its
+//   - When all is true, every Environment in s.ns is returned (the admin
+//     allowlist check is the handler's responsibility — only an admin asking
+//     for ?all=true reaches this code path with all=true).
+//   - When all is false, an Environment is included iff its
 //     authorized_teams[] shares at least one element with callerTeams.
 //
 // Soft-deleted rows (deletion_timestamp IS NOT NULL) are excluded by the
 // underlying db.ListEnvironments helper — the list endpoint surfaces the
 // not-draining set; the Content Service authz path uses GetEnvironment which
 // deliberately surfaces drain-mode rows per CS-09.
-func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []string, isAdmin bool) ([]db.EnvironmentRow, error) {
+func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []string, all bool) ([]db.EnvironmentRow, error) {
 	rows, err := db.ListEnvironments(ctx, s.pool, s.ns)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]db.EnvironmentRow, 0, len(rows))
 	for _, row := range rows {
-		if isAdmin || achteams.HasIntersect(row.AuthorizedTeams, callerTeams) {
+		if all || achteams.HasIntersect(row.AuthorizedTeams, callerTeams) {
 			out = append(out, row)
 		}
 	}

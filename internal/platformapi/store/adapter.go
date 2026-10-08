@@ -116,6 +116,7 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 			Prompts:   r.ContextPrompts,
 			Plugins:   r.ContextPlugins,
 			Artifacts: r.ContextArtifacts,
+			Skills:    r.ContextSkills,
 		},
 		Runtime: achv1alpha1.RuntimeBlock{
 			Models:     r.RuntimeModels,

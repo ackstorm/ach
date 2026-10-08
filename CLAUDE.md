@@ -181,7 +181,15 @@ User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
 `logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local` (workspace verbs
 `hydrate`/`status`/`save`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
 `env hydrate|uninstall <env> --only plugin/<name>` (or `skill/<name>`) touches one item;
-`--dir`/`-g` pick the root, `--target a,b` the tools). `keys` = the caller's own
+`--dir`/`-g` pick the root, `--target a,b` the tools). `env list` shows only the
+Environments the caller's teams are authorized for — admins included (`GET
+/platform/environments` filters every caller); `env list --admin` sends `?all=true`,
+the admin-only full inventory (403 `not_admin` otherwise), and `admin list
+environments` always does. `env describe <env>` reads `GET
+/platform/environments/{name}`, where admins still read any Environment (as do
+hydrate and the console reads); `keys create` stays team-scoped — the ek_ mint
+has no admin bypass. The console's Environments tab mirrors this (admin-only
+"Show all environments" toggle). `keys` = the caller's own
 `ek-` keys (`create <env>`/`list`/`revoke`/`suspend`/`resume`/`budget`, by saved
 name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
 (`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;

@@ -54,8 +54,8 @@ func Mount(deps Deps) func(r chi.Router) {
 
 		// Read-only object inventory (GET) — projection reads from Postgres,
 		// gated by the same AdminOnly middleware. environments has no route
-		// here: the CLI uses the existing GET /platform/environments (admin
-		// sees all rows via that handler's admin bypass).
+		// here: the CLI uses the existing GET /platform/environments?all=true
+		// (admin-only; that handler 403s not_admin for anyone else).
 		inv := inventory.Deps{Lister: inventory.NewLister(deps.Pool, deps.Namespace)}
 		r.Get("/plugins", inventory.PluginsHandler(inv))
 		r.Get("/prompts", inventory.PromptsHandler(inv))

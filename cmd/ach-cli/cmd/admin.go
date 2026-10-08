@@ -401,14 +401,11 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 
 // fetchAdminKind pages through one kind's endpoint and returns the
 // accumulated AdminObjectViews. environments is special-cased onto
-// GET /platform/environments + the EnvironmentView map.
+// GET /platform/environments?all=true (the full inventory, not the
+// caller's team-scoped list) + the EnvironmentView map.
 func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]render.AdminObjectView, error) {
-	base := "/platform/admin/" + kind
 	if kind == "environments" {
-		base = pathEnvironments
-	}
-	pathFor := func(c string) string { return withCursor(base, c) }
-	if kind == "environments" {
+		pathFor := func(c string) string { return buildEnvListPath(defaultEnvListLimit, c, true) }
 		items, err := fetchAll[adminEnvItem](ctx, hc, "", pathFor)
 		if err != nil {
 			return nil, err
@@ -419,7 +416,8 @@ func fetchAdminKind(ctx context.Context, hc *httpclient.Client, kind string) ([]
 		}
 		return out, nil
 	}
-	return fetchAll[render.AdminObjectView](ctx, hc, "", pathFor)
+	base := "/platform/admin/" + kind
+	return fetchAll[render.AdminObjectView](ctx, hc, "", func(c string) string { return withCursor(base, c) })
 }
 
 // withCursor appends an optional cursor query to base.

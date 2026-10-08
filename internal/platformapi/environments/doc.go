@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package environments hosts the GET /platform/environments endpoint pair
-// (Plan 03-09): a paginated list filtered by team intersection (admin sees
-// all) and a single-environment get (with the same filtering).
+// (Plan 03-09): a paginated list filtered by team intersection for every
+// caller (admin-only ?all=true returns every row) and a single-environment
+// get (admins bypass the team check there).
 //
 // Design summary (Hub §15.5, API-08):
 //
-//   - ListHandler — pk_ only; reads keyCtx.IsAdmin (populated by middleware.Authn
-//     against the deployment admin allowlist per BLK-02) and looks up caller
+//   - ListHandler — pk_ only; ?all=true requires keyCtx.IsAdmin (populated by
+//     middleware.Authn against the deployment admin allowlist per BLK-02,
+//     else 403 not_admin) and skips the team filter; otherwise looks up caller
 //     team memberships via internal/platformapi/teams.LookupCallerTeams
 //     (the canonical helper per WARN-06; Phase 4 will swap it for a Redis-
 //     cached implementation). Calls store.ListAuthorizedEnvironments to

@@ -42,12 +42,16 @@ type Deps struct {
 }
 
 // ListHandler returns GET /platform/environments. Filters by team
-// intersection unless caller is admin; paginates via ?limit + ?cursor.
+// intersection for EVERY caller, admins included — it is a personal list.
+// ?all=true returns every row and is admin-only (the full inventory behind
+// `ach-cli env list --admin` / `admin list environments`); paginates via
+// ?limit + ?cursor.
 //
 // Error matrix (Hub §15.5):
 //
 //   - 400 invalid_argument        — bad ?limit / ?cursor
 //   - 401 invalid_key_type        — ek_ caller (management endpoint per API-11)
+//   - 403 not_admin               — ?all=true from a non-admin caller
 //   - 503 litellm_unreachable     — teams.LookupCallerTeams transport error
 //   - 500 internal_error          — Store read failure
 //   - 200 OK                       — { items: [<EnvironmentView>], next_cursor: <string or nil> }
@@ -80,11 +84,15 @@ func ListHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Determine caller teams (only when non-admin; admin sees all so the
-		// LiteLLM call is unnecessary).
+		// ?all=true is the admin inventory: every row, so the LiteLLM call is
+		// unnecessary. Without it an admin is filtered like anyone else.
+		all := r.URL.Query().Get("all") == "true"
+		if all && !keyCtx.IsAdmin {
+			render.Error(w, http.StatusForbidden, audit.OutcomeNotAdmin, "not in admin allowlist", reqID)
+			return
+		}
 		var callerTeams []string
-		isAdmin := keyCtx.IsAdmin
-		if !isAdmin {
+		if !all {
 			teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
 			if err != nil {
 				if deps.Audit != nil {
@@ -102,7 +110,7 @@ func ListHandler(deps Deps) http.HandlerFunc {
 			callerTeams = teams
 		}
 
-		envs, err := deps.Store.ListAuthorizedEnvironments(ctx, callerTeams, isAdmin)
+		envs, err := deps.Store.ListAuthorizedEnvironments(ctx, callerTeams, all)
 		if err != nil {
 			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
 				"failed to list environments", reqID)
@@ -122,9 +130,9 @@ func ListHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// GetHandler returns GET /platform/environments/{name}. Same filtering
-// discipline as ListHandler: non-admin callers must intersect at least one
-// of the env's authorizedTeams.
+// GetHandler returns GET /platform/environments/{name}. Unlike ListHandler,
+// admins bypass the team check here (CallerMayRead); non-admin callers must
+// intersect at least one of the env's authorizedTeams.
 //
 // Error matrix (Hub §15.5 / API-08):
 //

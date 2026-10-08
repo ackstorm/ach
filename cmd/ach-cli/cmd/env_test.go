@@ -111,6 +111,36 @@ func TestEnv_List_SinglePage(t *testing.T) {
 	}
 }
 
+// TestEnv_List_AdminFlag asserts --admin sends ?all=true and a bare
+// list does not.
+func TestEnv_List_AdminFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"list"}, ""},
+		{[]string{"list", "--admin"}, "true"},
+	} {
+		dir := envTestEnv(t)
+		var gotAll atomic.Value
+		ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAll.Store(r.URL.Query().Get("all"))
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{}, "next_cursor": nil})
+		}))
+		seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+		swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+		if _, _, _, err := executeEnv(t, tc.args...); err != nil {
+			t.Fatalf("env %v: %v", tc.args, err)
+		}
+		if got, _ := gotAll.Load().(string); got != tc.want {
+			t.Errorf("env %v: all = %q; want %q", tc.args, got, tc.want)
+		}
+		ts.Close()
+	}
+}
+
 // TestEnv_List_JSON asserts -o json prints the item array as JSON.
 func TestEnv_List_JSON(t *testing.T) {
 	dir := envTestEnv(t)
@@ -271,20 +301,17 @@ func newUnauthorized401Server(t *testing.T, code, message string) *httptest.Serv
 }
 
 // TestEnv_Describe_HappyPath asserts the two-call shape (GET
-// /environments paginated, then POST /hydrate) renders runtime +
+// /environments/{name}, then POST /hydrate) renders runtime +
 // context block and exits 0.
 func TestEnv_Describe_HappyPath(t *testing.T) {
 	dir := envTestEnv(t)
 
 	var envCalls, hydrateCalls int32
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/environments", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&envCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items":       []map[string]any{{"name": "demo"}},
-			"next_cursor": nil,
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
 	})
 	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hydrateCalls, 1)
@@ -346,12 +373,9 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 	dir := envTestEnv(t)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/environments", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items":       []map[string]any{{"name": "demo"}},
-			"next_cursor": nil,
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
 	})
 	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -382,78 +406,6 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 	}
 }
 
-// TestEnv_Describe_PaginatedFind asserts the row resolution paginates
-// through /environments before /hydrate.
-func TestEnv_Describe_PaginatedFind(t *testing.T) {
-	dir := envTestEnv(t)
-
-	var envCalls, hydrateCalls int32
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/environments", func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&envCalls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		switch n {
-		case 1:
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items":       []map[string]any{{"name": "alpha"}},
-				"next_cursor": "c1",
-			})
-		case 2:
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items":       []map[string]any{{"name": "beta"}},
-				"next_cursor": "c2",
-			})
-		case 3:
-			if r.URL.Query().Get("cursor") != "c2" {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items":       []map[string]any{{"name": "demo"}},
-				"next_cursor": nil,
-			})
-		default:
-			w.WriteHeader(http.StatusBadRequest)
-		}
-	})
-	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, _ *http.Request) {
-		atomic.AddInt32(&hydrateCalls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"schemaVersion": "v1alpha1",
-			"environment":   "demo",
-			"runtime": map[string]any{
-				"models": []map[string]any{}, "mcpServers": []map[string]any{}, "a2aAgents": []map[string]any{},
-			},
-			"context": map[string]any{
-				"prompts": []map[string]any{}, "plugins": []map[string]any{}, "artifacts": []map[string]any{},
-			},
-		})
-	})
-	ts := httptest.NewTLSServer(mux)
-	defer ts.Close()
-
-	seedEnvConfig(t, dir, "prod", &config.Profile{
-		URL: ts.URL,
-		Key: testEK,
-	})
-	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
-
-	_, _, code, err := executeEnv(t, "describe", "demo")
-	if err != nil {
-		t.Fatalf("describe paginated: %v", err)
-	}
-	if code != exit.OK {
-		t.Errorf("code = %d; want 0", code)
-	}
-	if got := atomic.LoadInt32(&envCalls); got != 3 {
-		t.Errorf("envCalls = %d; want 3 (3 pages)", got)
-	}
-	if got := atomic.LoadInt32(&hydrateCalls); got != 1 {
-		t.Errorf("hydrateCalls = %d; want 1", got)
-	}
-}
-
 // TestEnv_Describe_MetadataOnly asserts --metadata-only skips the
 // /hydrate call entirely.
 func TestEnv_Describe_MetadataOnly(t *testing.T) {
@@ -461,13 +413,10 @@ func TestEnv_Describe_MetadataOnly(t *testing.T) {
 
 	var envCalls, hydrateCalls int32
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/environments", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&envCalls, 1)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items":       []map[string]any{{"name": "demo"}},
-			"next_cursor": nil,
-		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
 	})
 	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, _ *http.Request) {
 		atomic.AddInt32(&hydrateCalls, 1)
@@ -503,20 +452,18 @@ func TestEnv_Describe_MetadataOnly(t *testing.T) {
 	}
 }
 
-// TestEnv_Describe_NotFound asserts a missing env exits 1.
+// TestEnv_Describe_NotFound asserts a 404 from GET /environments/{name}
+// exits 1 with the "not found" hint.
 func TestEnv_Describe_NotFound(t *testing.T) {
 	dir := envTestEnv(t)
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/platform/environments" {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items":       []map[string]any{{"name": "alpha"}, {"name": "beta"}},
-				"next_cursor": nil,
-			})
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      map[string]string{"code": "environment_not_found", "message": "environment not found"},
+			"request_id": "req_x",
+		})
 	}))
 	defer ts.Close()
 

@@ -210,7 +210,7 @@ func fetchEnvNamesBestEffort(ctx context.Context, hc *httpclient.Client) []strin
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var resp page[render.EnvView]
-	if err := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, ""), nil, &resp); err != nil {
+	if err := hc.Do(ctx, http.MethodGet, buildEnvListPath(defaultEnvListLimit, "", false), nil, &resp); err != nil {
 		return nil
 	}
 	names := make([]string, 0, len(resp.Items))
