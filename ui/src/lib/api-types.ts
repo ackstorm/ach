@@ -121,6 +121,22 @@ export interface EnvironmentRow {
    * `status` — see lib/env-status.ts. Absent on an older platform-api.
    */
   conditions?: Array<{ type: string; status: string; reason?: string; message?: string }>;
+  /** spec.authorizedTeams (store.EnvironmentView); omitted when empty. */
+  authorizedTeams?: string[];
+  /** Declared runtime names (store.RowToView); each list omitted when empty. */
+  runtime?: {
+    models?: string[];
+    mcpServers?: string[];
+    a2aAgents?: string[];
+    guardrails?: string[];
+  };
+  /** Declared context names (store.RowToView); each list omitted when empty. */
+  context?: {
+    plugins?: string[];
+    skills?: string[];
+    prompts?: string[];
+    artifacts?: string[];
+  };
 }
 
 /** GET /platform/environments response — {items,next_cursor} per Hub §15.5. */

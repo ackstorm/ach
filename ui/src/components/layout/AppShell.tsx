@@ -105,6 +105,7 @@ export function AppShell({ me, config }: AppShellProps) {
     { to: '/models', label: 'Models' },
     { to: '/mcp', label: 'MCPs' },
     { to: '/a2a', label: 'A2A' },
+    { to: '/environments', label: 'Environments' },
     { to: '/stats', label: 'Stats' },
     { to: '/howto', label: 'How-to' },
   ];

@@ -218,7 +218,7 @@ export function Dashboard({ me }: DashboardProps) {
           </div>
           <button
             type="button"
-            onClick={openModal}
+            onClick={() => openModal()}
             className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
             + New Key

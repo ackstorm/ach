@@ -34,6 +34,7 @@ import { Stats } from '@/routes/Stats';
 import { Models } from '@/routes/Models';
 import { Mcp } from '@/routes/Mcp';
 import { A2a } from '@/routes/A2a';
+import { Environments } from '@/routes/Environments';
 import { HowTo } from '@/routes/HowTo';
 
 // Mid-session expiry redirects straight to the console login (no landing
@@ -54,6 +55,7 @@ function makeRouter(me: SessionMe, config: AppConfig) {
         { path: 'models', element: <Models /> },
         { path: 'mcp', element: <Mcp /> },
         { path: 'a2a', element: <A2a /> },
+        { path: 'environments', element: <Environments /> },
         { path: 'howto', element: <HowTo /> },
       ],
     },

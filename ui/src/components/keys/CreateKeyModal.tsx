@@ -61,6 +61,7 @@ interface CreateResult {
 export function CreateKeyModal() {
   const open = useCreateKeyModalStore((s) => s.open);
   const closeModal = useCreateKeyModalStore((s) => s.closeModal);
+  const presetEnvironment = useCreateKeyModalStore((s) => s.environment);
 
   const [name, setName] = useState('');
   const [environment, setEnvironment] = useState('');
@@ -98,6 +99,12 @@ export function CreateKeyModal() {
       if (firstKeyable) setEnvironment(firstKeyable.name);
     }
   }, [environment, environments]);
+
+  // An opener that names an Environment (the Environments page) wins over the
+  // first-keyable default above.
+  useEffect(() => {
+    if (open && presetEnvironment) setEnvironment(presetEnvironment);
+  }, [open, presetEnvironment]);
 
   // Reset every transient field then bubble the close up via the store. Wired to
   // Cancel / done AND to onOpenChange(false) (Esc / overlay click).

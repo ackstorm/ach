@@ -220,6 +220,20 @@ describe('CreateKeyModal — form view', () => {
     const select = screen.getByLabelText('environment') as HTMLSelectElement;
     expect(select.value).toBe('prod');
   });
+
+  it('an opener-named environment wins over the first-keyable default', () => {
+    setMutation(vi.fn());
+    setEnvironments([
+      { name: 'prod', status: 'Available' },
+      { name: 'staging', status: 'Available' },
+    ]);
+    useCreateKeyModalStore.getState().closeModal();
+    useCreateKeyModalStore.getState().openModal('staging');
+    render(<CreateKeyModal />);
+
+    const select = screen.getByLabelText('environment') as HTMLSelectElement;
+    expect(select.value).toBe('staging');
+  });
 });
 
 describe('CreateKeyModal — client validation (no request)', () => {
