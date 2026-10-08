@@ -13,12 +13,10 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
@@ -48,7 +46,6 @@ const (
 // UserCatalog is what the handler reads as the user (litellm.UserView).
 type UserCatalog interface {
 	ListModelGroups(ctx context.Context) ([]litellm.ModelGroupInfo, error)
-	ListMCPServers(ctx context.Context) ([]litellm.MCPServerEntry, error)
 }
 
 // AdminCatalog is what it reads with the master key (*litellm.RESTClient).
@@ -72,11 +69,9 @@ type ConfigDeps struct {
 	Store            *auth.OAuthStore
 	Logger           *slog.Logger
 
-	// MCPEnabledEnvs (genai.mcpEnabledEnvironments) names the Environments
-	// whose runtime MCP servers arrive enabled; Environment reads one from the
-	// projection (nil row = absent). Never called when MCPEnabledEnvs is empty.
-	MCPEnabledEnvs []string
-	Environment    func(ctx context.Context, name string) (*db.EnvironmentRow, error)
+	// DefaultEnv (genai.defaultEnvironment) is the Environment the skill tells
+	// users to hydrate globally; empty cuts that step.
+	DefaultEnv string
 }
 
 // ConfigHandler serves GET /clients/opencode/config.
@@ -87,7 +82,7 @@ func ConfigHandler(d ConfigDeps) http.HandlerFunc {
 
 func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 	base := strings.TrimRight(d.BaseURL, "/")
-	skill := genaiSkill(base, d.Provider)
+	skill := apiSkill(base, d.Provider, d.DefaultEnv)
 	caps := &capsCache{admin: d.Admin, log: d.Logger}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -138,30 +133,21 @@ func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 		defer cancel()
 		user := d.AsUser(string(sk))
 		var (
-			wg         sync.WaitGroup
-			groups     []litellm.ModelGroupInfo
-			mcps       []litellm.MCPServerEntry
-			gErr, mErr error
-			deps       map[string]litellm.ModelCaps
-			aliases    map[string]string
+			wg      sync.WaitGroup
+			groups  []litellm.ModelGroupInfo
+			gErr    error
+			deps    map[string]litellm.ModelCaps
+			aliases map[string]string
 		)
-		wg.Add(3)
+		wg.Add(2)
 		go func() { defer wg.Done(); groups, gErr = user.ListModelGroups(uctx) }()
-		go func() { defer wg.Done(); mcps, mErr = user.ListMCPServers(uctx) }()
 		go func() { defer wg.Done(); deps, aliases = caps.get(uctx) }()
 		wg.Wait()
 		if gErr != nil {
 			fallback()
 			return
 		}
-		if mErr != nil { // the models still stand on their own: serve them without MCP
-			d.Logger.Warn("opencode config: MCP list failed", "user", email, "err", mErr)
-		}
-		var mcpOn map[string]bool
-		if len(mcps) > 0 {
-			mcpOn = mcpEnabled(ctx, d, email)
-		}
-		b := body(&email, buildConfig(base, d.Provider, d.DefaultModel, d.DefaultSmall, groups, mcps, mcpOn, deps, aliases), []any{skill}, "ok", false)
+		b := body(&email, buildConfig(base, d.Provider, d.DefaultModel, d.DefaultSmall, groups, deps, aliases), []any{skill}, "ok", false)
 		if err := d.Store.Put(ctx, cacheKind, email, b, cacheTTL); err != nil {
 			d.Logger.Warn("opencode config: cache write failed", "user", email, "err", err)
 		}
@@ -175,31 +161,8 @@ func bearer(r *http.Request) (string, bool) {
 	return tok, strings.EqualFold(scheme, "bearer") && tok != ""
 }
 
-// mcpEnabled returns the runtime MCP server names of the configured
-// Environments (the projection holds LiteLLM server_name, group expansion
-// included). An absent or draining Environment adds nothing; a read failure
-// enables nothing — the config is still served, every server disabled.
-func mcpEnabled(ctx context.Context, d ConfigDeps, email string) map[string]bool {
-	on := map[string]bool{}
-	for _, name := range d.MCPEnabledEnvs {
-		row, err := d.Environment(ctx, name)
-		if err != nil {
-			d.Logger.Warn("opencode config: environment read failed, MCP servers stay disabled", "user", email, "environment", name, "err", err)
-			return nil
-		}
-		if row == nil || row.DeletionTimestamp != nil {
-			d.Logger.Warn("opencode config: MCP-enabled environment not found", "environment", name)
-			continue
-		}
-		for _, s := range row.RuntimeMCPServers {
-			on[s] = true
-		}
-	}
-	return on
-}
-
-func buildConfig(base, provider, defModel, defSmall string, groups []litellm.ModelGroupInfo, mcps []litellm.MCPServerEntry,
-	mcpOn map[string]bool, deps map[string]litellm.ModelCaps, aliases map[string]string) map[string]any {
+func buildConfig(base, provider, defModel, defSmall string, groups []litellm.ModelGroupInfo,
+	deps map[string]litellm.ModelCaps, aliases map[string]string) map[string]any {
 	models := map[string]any{}
 	for _, g := range groups {
 		if g.Name == "" || g.Mode == nil || *g.Mode != "chat" {
@@ -217,12 +180,6 @@ func buildConfig(base, provider, defModel, defSmall string, groups []litellm.Mod
 		}
 		models[g.Name] = model(g.Name, overlay(capsFromGroup(g), deps[target]))
 	}
-	servers := map[string]any{}
-	for _, m := range mcps {
-		if m.ServerName != "" {
-			servers[m.ServerName] = map[string]any{"type": "remote", "url": base + "/mcp/" + url.PathEscape(m.ServerName), "enabled": mcpOn[m.ServerName]}
-		}
-	}
 	config := map[string]any{}
 	if len(models) > 0 {
 		// No "env": auth comes from the plugin; an env entry would let an
@@ -238,9 +195,6 @@ func buildConfig(base, provider, defModel, defSmall string, groups []litellm.Mod
 		if _, ok := models[name]; ok && name != "" {
 			config[key] = provider + "/" + name
 		}
-	}
-	if len(servers) > 0 {
-		config["mcp"] = servers
 	}
 	return config
 }

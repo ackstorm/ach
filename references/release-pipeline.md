@@ -23,7 +23,7 @@ goreleaser or the chart push **does leave an orphan tag on origin** — see
 Cutting a release (stable example, `v0.1.0`):
 
 Before cutting, check whether the range since the last tag changes anything the
-`genai-api` skill (`internal/platformapi/opencode/skill/SKILL.md`) tells users'
+`<provider>-api` skill (`internal/platformapi/opencode/skill/SKILL.md`) tells users'
 agents to do — `ach-cli` commands/flags, the OpenCode sign-in flow, MCP enablement.
 If it does, fix the skill in the release, not after:
 

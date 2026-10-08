@@ -1260,14 +1260,14 @@ is silently omitted and OpenCode takes the first model. Check `curl -H "Authoriz
 <token>" https://<ach>/clients/opencode/config | jq '.config|{model,small_model}, (.provider[]|.models|keys)'`.
 A model/small_model the user set in their own opencode.json always wins.
 
-### ❌ OpenCode v2: no `ackstorm` models and `opencode mcp list` empty after `opencode auth login`
+### ❌ OpenCode v2: no `ackstorm` models after `opencode auth login`
 
 Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
-+ `opencode service restart`: `opencode models` lists only `<provider>/*`, and
-`opencode mcp list` lists every MCP server the user's own LiteLLM key reaches, all
-`disabled` (ACH serves them `enabled:false` in `/clients/opencode/config` — except those
-in the runtime MCP set of a `genai.mcpEnabledEnvironments` Environment, served
-`enabled:true`; the plugin registers them through `ctx.mcp.transform`). Observed 2026-09-29, three separate causes:
++ `opencode service restart`: `opencode models` lists only `<provider>/*`.
+`/clients/opencode/config` carries no MCP servers (since 2026-10-08): `opencode mcp list`
+shows only what a hydrated Environment wrote (`ach-cli env hydrate <env> --target opencode`,
+`-g` or `--dir`), so an empty list there means nothing was hydrated, not a login fault.
+Observed 2026-09-29, three separate causes:
 
 - **Right after the restart.** The service loads the plugin, which then fetches the
   config (2 s timeout). A `models` / `mcp list` run in the same second races it.

@@ -51,6 +51,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/opencode"
 	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
@@ -109,10 +110,6 @@ type platformAPIConfig struct {
 	// (ACH_CONSOLE_CHAT_URL, chart platformApi.console.chatUrl). Empty hides
 	// the button.
 	ConsoleChatURL string
-	// MCPEnabledEnvironments (ACH_GENAI_MCP_ENABLED_ENVIRONMENTS, chart
-	// genai.mcpEnabledEnvironments, JSON list): Environments whose runtime MCP
-	// servers /clients/opencode/config emits enabled.
-	MCPEnabledEnvironments []string
 	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
@@ -228,11 +225,6 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	cfg.ConsoleChatURL = chatURL
-	if raw := os.Getenv("ACH_GENAI_MCP_ENABLED_ENVIRONMENTS"); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &cfg.MCPEnabledEnvironments); err != nil {
-			return nil, fmt.Errorf("ACH_GENAI_MCP_ENABLED_ENVIRONMENTS: want a JSON list of Environment names: %w", err)
-		}
-	}
 	return cfg, nil
 }
 
@@ -411,6 +403,11 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if !genaiProviderID.MatchString(genaiProvider) {
 		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: want lowercase letters, digits and '-' (%s)", genaiProvider, genaiProviderID)
 	}
+	// The skill is named after the provider ("<provider>-api"), under the
+	// plugin's stricter skill-name rule: an invalid name is dropped silently.
+	if _, err := opencode.SkillName(genaiProvider); err != nil {
+		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: %w", genaiProvider, err)
+	}
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, signer, cfg.BaseURL, "ach", pool)
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
@@ -426,16 +423,16 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 			},
 			Headers: cfg.CredentialHeaders,
 		},
-		Pool:                   pool,
-		Redis:                  out.redis,
-		LiteLLM:                liteLLM,
-		LiteLLMREST:            liteLLM,
-		OpenWork:               openwork.FromEnv(),
-		GenAIProvider:          genaiProvider,
-		GenAIDefaultModel:      os.Getenv("ACH_GENAI_DEFAULT_MODEL"),
-		GenAIDefaultSmallModel: os.Getenv("ACH_GENAI_DEFAULT_SMALL_MODEL"),
-		GenAIMCPEnabledEnvs:    cfg.MCPEnabledEnvironments,
-		OpenCodePluginSpec:     os.Getenv("ACH_OPENCODE_PLUGIN_SPEC"),
+		Pool:                    pool,
+		Redis:                   out.redis,
+		LiteLLM:                 liteLLM,
+		LiteLLMREST:             liteLLM,
+		OpenWork:                openwork.FromEnv(),
+		GenAIProvider:           genaiProvider,
+		GenAIDefaultModel:       os.Getenv("ACH_GENAI_DEFAULT_MODEL"),
+		GenAIDefaultSmallModel:  os.Getenv("ACH_GENAI_DEFAULT_SMALL_MODEL"),
+		GenAIDefaultEnvironment: os.Getenv("ACH_GENAI_DEFAULT_ENVIRONMENT"),
+		OpenCodePluginSpec:      os.Getenv("ACH_OPENCODE_PLUGIN_SPEC"),
 		// Same issuer/audience as the OAuth resolver above.
 		VerifyAccessToken: func(tok string) (string, error) { return signer.Verify(tok, cfg.BaseURL, "ach") },
 		Pepper:            cfg.Pepper,

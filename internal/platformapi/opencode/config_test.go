@@ -18,7 +18,6 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -44,19 +43,11 @@ func (f *fakeResolver) Resolve(context.Context, string) (*keystore.KeyInfo, erro
 
 type fakeUser struct {
 	groups []litellm.ModelGroupInfo
-	mcps   []litellm.MCPServerEntry
 	err    error
-	mcpErr error
 }
 
 func (f *fakeUser) ListModelGroups(context.Context) ([]litellm.ModelGroupInfo, error) {
 	return f.groups, f.err
-}
-func (f *fakeUser) ListMCPServers(context.Context) ([]litellm.MCPServerEntry, error) {
-	if f.mcpErr != nil {
-		return nil, f.mcpErr
-	}
-	return f.mcps, f.err
 }
 
 type fakeAdmin struct {
@@ -85,15 +76,11 @@ type fixture struct {
 	user  *fakeUser
 	admin *fakeAdmin
 	seen  string // key the handler asked AsUser for
-
-	envs     map[string]*db.EnvironmentRow // Environment projection rows by name
-	envErr   error
-	envCalls int
 }
 
-func newFixture(t *testing.T) *fixture { return newFixtureWith(t, "", "") }
+func newFixture(t *testing.T) *fixture { return newFixtureWith(t, "", "", "") }
 
-func newFixtureWith(t *testing.T, defModel, defSmall string, mcpEnvs ...string) *fixture {
+func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
 	t.Helper()
 	sealed, err := keycrypt.Seal(kek, []byte(userKey))
 	if err != nil {
@@ -109,7 +96,6 @@ func newFixtureWith(t *testing.T, defModel, defSmall string, mcpEnvs ...string) 
 				{Name: "a2a/finops-advisor", Mode: ptr("chat")},
 				{Name: "ackstorm.router", Mode: ptr("chat"), SupportsFunctionCalling: true},
 			},
-			mcps: []litellm.MCPServerEntry{{ServerName: "github"}, {ServerName: ""}},
 		},
 		admin: &fakeAdmin{
 			deps: map[string]litellm.ModelCaps{
@@ -130,15 +116,11 @@ func newFixtureWith(t *testing.T, defModel, defSmall string, mcpEnvs ...string) 
 			return "", errors.New("bad signature")
 		},
 		Resolver: f.res, KeyEncryptionKey: kek,
-		AsUser:         func(k string) UserCatalog { f.seen = k; return f.user },
-		Admin:          f.admin,
-		Store:          &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		MCPEnabledEnvs: mcpEnvs,
-		Environment: func(_ context.Context, name string) (*db.EnvironmentRow, error) {
-			f.envCalls++
-			return f.envs[name], f.envErr
-		},
+		AsUser:     func(k string) UserCatalog { f.seen = k; return f.user },
+		Admin:      f.admin,
+		Store:      &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DefaultEnv: defEnv,
 	})
 	return f
 }
@@ -195,7 +177,7 @@ func TestConfig_OK(t *testing.T) {
 	}
 	cfg := m["config"].(map[string]any)
 	for k := range cfg {
-		if k != "provider" && k != "mcp" && k != "model" && k != "small_model" {
+		if k != "provider" && k != "model" && k != "small_model" {
 			t.Fatalf("unexpected config key %q", k)
 		}
 	}
@@ -203,11 +185,10 @@ func TestConfig_OK(t *testing.T) {
 	if _, has := p["env"]; has || p["options"].(map[string]any)["baseURL"] != "https://ach.test/v1" || p["name"] != "acme" {
 		t.Fatalf("provider %v", p)
 	}
-	gh := cfg["mcp"].(map[string]any)["github"].(map[string]any)
-	if len(cfg["mcp"].(map[string]any)) != 1 || gh["type"] != "remote" || gh["url"] != "https://ach.test/mcp/github" || gh["enabled"] != false {
+	if _, has := cfg["mcp"]; has {
 		t.Fatalf("mcp %v", cfg["mcp"])
 	}
-	if sk := m["skills"].([]any); len(sk) != 1 || sk[0].(map[string]any)["name"] != "genai-api" {
+	if sk := m["skills"].([]any); len(sk) != 1 || sk[0].(map[string]any)["name"] != "acme-api" {
 		t.Fatalf("skills %v", sk)
 	}
 	if strings.Contains(w.Body.String(), "secret.model") {
@@ -251,18 +232,9 @@ func TestConfig_UpstreamDownServesCacheThenBareFallback(t *testing.T) {
 		mut(f)
 		w, m := f.get(t, "Bearer "+goodTok)
 		if w.Code != 200 || m["auth"] != "ok" || m["user"] != userEmail || m["stale"] != true ||
-			len(m["config"].(map[string]any)) != 0 || m["skills"].([]any)[0].(map[string]any)["name"] != "genai-api" {
+			len(m["config"].(map[string]any)) != 0 || m["skills"].([]any)[0].(map[string]any)["name"] != "acme-api" {
 			t.Fatalf("%s: %d %s", name, w.Code, w.Body)
 		}
-	}
-}
-
-func TestConfig_MCPListDownStillServesModels(t *testing.T) {
-	f := newFixture(t)
-	f.user.mcpErr = errors.New("no MCP gateway")
-	w, m := f.get(t, "Bearer "+goodTok)
-	if w.Code != 200 || m["stale"] != false || len(models(m)) != 3 || m["config"].(map[string]any)["mcp"] != nil {
-		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
 
@@ -335,7 +307,7 @@ func TestConfig_DefaultModels(t *testing.T) {
 		{"non-chat", "text-embedding", "a2a/finops-advisor", nil, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			_, m := newFixtureWith(t, c.model, c.small).get(t, "Bearer "+goodTok)
+			_, m := newFixtureWith(t, c.model, c.small, "").get(t, "Bearer "+goodTok)
 			cfg := m["config"].(map[string]any)
 			if cfg["model"] != c.wantModel || cfg["small_model"] != c.wantSm {
 				t.Fatalf("model=%v small_model=%v", cfg["model"], cfg["small_model"])
@@ -344,54 +316,13 @@ func TestConfig_DefaultModels(t *testing.T) {
 	}
 }
 
-func TestConfig_MCPEnabledEnvironments(t *testing.T) {
-	enabled := func(t *testing.T, f *fixture) map[string]any {
-		t.Helper()
-		w, m := f.get(t, "Bearer "+goodTok)
-		if w.Code != 200 || m["stale"] != false {
-			t.Fatalf("%d %s", w.Code, w.Body)
+func TestConfig_SkillDefaultEnvironment(t *testing.T) {
+	for env, want := range map[string]bool{"ackstorm": true, "": false} {
+		_, m := newFixtureWith(t, "", "", env).get(t, "Bearer "+goodTok)
+		sk := m["skills"].([]any)[0].(map[string]any)
+		md := sk["files"].(map[string]any)["SKILL.md"].(string)
+		if sk["name"] != "acme-api" || strings.Contains(md, "ach-cli env hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
+			t.Fatalf("%q: skill %v", env, sk)
 		}
-		out := map[string]any{}
-		for name, v := range m["config"].(map[string]any)["mcp"].(map[string]any) {
-			out[name] = v.(map[string]any)["enabled"]
-		}
-		return out
 	}
-	gone := time.Now()
-	setup := func(t *testing.T, mcpEnvs ...string) *fixture {
-		f := newFixtureWith(t, "", "", mcpEnvs...)
-		f.envs = map[string]*db.EnvironmentRow{
-			"ackstorm": {Name: "ackstorm", RuntimeMCPServers: []string{"github", "slack"}}, // slack: not the user's
-			"draining": {Name: "draining", RuntimeMCPServers: []string{"jira"}, DeletionTimestamp: &gone},
-		}
-		f.user.mcps = []litellm.MCPServerEntry{{ServerName: "github"}, {ServerName: "jira"}, {ServerName: "notion"}}
-		return f
-	}
-
-	t.Run("intersection, unknown and draining ignored", func(t *testing.T) {
-		got := enabled(t, setup(t, "ackstorm", "ghost", "draining"))
-		if len(got) != 3 || got["github"] != true || got["jira"] != false || got["notion"] != false {
-			t.Fatalf("enabled %v (slack must not be added)", got)
-		}
-	})
-	t.Run("db failure disables all", func(t *testing.T) {
-		f := setup(t, "ackstorm")
-		f.envErr = errors.New("pg down")
-		for name, on := range enabled(t, f) {
-			if on != false {
-				t.Fatalf("%s enabled on a DB failure", name)
-			}
-		}
-	})
-	t.Run("empty setting reads no environment", func(t *testing.T) {
-		f := setup(t)
-		for name, on := range enabled(t, f) {
-			if on != false {
-				t.Fatalf("%s enabled with no setting", name)
-			}
-		}
-		if f.envCalls != 0 {
-			t.Fatalf("environment read %d times", f.envCalls)
-		}
-	})
 }
