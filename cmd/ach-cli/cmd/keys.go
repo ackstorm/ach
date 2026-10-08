@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,7 +35,10 @@ import (
 var keysHTTPClient *http.Client
 
 // keyStatuses are the effective states GET /platform/keys filters on.
-var keyStatuses = []string{"active", "suspended", "expired", "invalid", "revoked"}
+var keyStatuses = []string{"active", "suspended", "expired", "invalid", statusRevoked}
+
+// statusRevoked is the one key status that never counts as a live key.
+const statusRevoked = "revoked"
 
 // envKeysCreateResponse mirrors the POST /platform/keys response.
 type envKeysCreateResponse struct {
@@ -280,6 +284,10 @@ or all.`,
 			if out.v == outputJSON {
 				return writeJSON(cmd.OutOrStdout(), rows)
 			}
+			if len(rows) == 0 {
+				_, _ = io.WriteString(cmd.OutOrStdout(), emptyKeysMessage(status, environment))
+				return nil
+			}
 			_, _ = io.WriteString(cmd.OutOrStdout(), render.FormatKeyList(rows))
 			return nil
 		},
@@ -289,6 +297,25 @@ or all.`,
 	cmd.Flags().StringVar(&environment, "env", "", "Only keys of this Environment")
 	cmd.Flags().StringVar(&status, "status", "active", "active|suspended|expired|invalid|revoked|all")
 	return cmd
+}
+
+// emptyKeysMessage says which filters produced no rows and how to widen them.
+func emptyKeysMessage(status, environment string) string {
+	what := "No keys"
+	if status != statusAll {
+		what = "No " + status + " keys"
+	}
+	if environment != "" {
+		what += fmt.Sprintf(" for environment %q", environment)
+	}
+	switch {
+	case status != statusAll:
+		return what + " (try --status all)\n"
+	case environment != "":
+		return what + " (check the name with `ach-cli env list`)\n"
+	default:
+		return what + "; `ach-cli keys create <env>` makes one\n"
+	}
 }
 
 // listKeys pages GET /platform/keys?type=ek. status "all" sends no filter.
@@ -330,7 +357,7 @@ func resolveKeyID(ctx context.Context, hc *httpclient.Client, c cred, arg string
 	}
 	var ids []string
 	for _, r := range rows {
-		if r.Name == arg && r.Status != "revoked" {
+		if r.Name == arg && r.Status != statusRevoked {
 			ids = append(ids, r.KeyID)
 		}
 	}
@@ -338,7 +365,18 @@ func resolveKeyID(ctx context.Context, hc *httpclient.Client, c cred, arg string
 	case 1:
 		return ids[0], nil
 	case 0:
-		return "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("no key named %q", arg)}
+		var names []string
+		for _, r := range rows {
+			if r.Status != statusRevoked && r.Name != "" {
+				names = append(names, r.Name)
+			}
+		}
+		hint := "you have no keys; `ach-cli keys create <env>` makes one"
+		if len(names) > 0 {
+			sort.Strings(names)
+			hint = "your keys: " + strings.Join(slices.Compact(names), ", ")
+		}
+		return "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("no key named %q; %s", arg, hint)}
 	default:
 		return "", &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf(
 			"%d keys are named %q; pass one of their ids: %s", len(ids), arg, strings.Join(ids, ", "))}

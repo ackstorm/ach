@@ -2,7 +2,10 @@
 package exit_test
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -36,5 +39,19 @@ func TestDispatch_Fallthrough(t *testing.T) {
 	code := exit.Dispatch(errors.New("unrecognized"))
 	if code != exit.General {
 		t.Errorf("unknown err → General; got %d", code)
+	}
+}
+
+func TestDispatchAndRender_ServerHint(t *testing.T) {
+	var buf bytes.Buffer
+	err := fmt.Errorf("hydrate: %w", &httpclient.ServerError{Status: 404, Code: "environment_not_found"})
+	exit.DispatchAndRender(err, &buf)
+	if !strings.Contains(buf.String(), "hint: run `ach-cli env list`") {
+		t.Errorf("missing hint: %q", buf.String())
+	}
+	buf.Reset()
+	exit.DispatchAndRender(&httpclient.ServerError{Status: 500, Code: "internal"}, &buf)
+	if strings.Contains(buf.String(), "hint:") {
+		t.Errorf("unexpected hint: %q", buf.String())
 	}
 }

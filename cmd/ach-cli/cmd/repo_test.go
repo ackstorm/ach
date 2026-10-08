@@ -48,6 +48,10 @@ func TestCloneExitErr(t *testing.T) {
 			}
 		})
 	}
+	// A not-found / no-access failure tells the user what to do next.
+	if ce := cloneExitErr("resolve", fmt.Errorf("x: %w", sourceserr.ErrNotFound)); !strings.Contains(ce.Msg, "--token") {
+		t.Errorf("not-found message lacks the --token hint: %q", ce.Msg)
+	}
 }
 
 // initFixtureRepo creates a local git repository with a .claude-plugin/marketplace.json

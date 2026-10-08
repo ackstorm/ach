@@ -220,7 +220,7 @@ func findEnvironmentByName(ctx context.Context, hc *httpclient.Client, name stri
 	}
 	return render.EnvView{}, &exit.CodedError{
 		Code: exit.General,
-		Msg:  fmt.Sprintf("environment %q not found", name),
+		Msg:  fmt.Sprintf("environment %q not found; run `ach-cli env list` to see the Environments you can use", name),
 	}
 }
 

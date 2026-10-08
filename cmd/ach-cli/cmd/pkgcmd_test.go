@@ -743,18 +743,16 @@ func TestPluginCmd_List_RepoFlag(t *testing.T) {
 		}
 	})
 
-	// --repo nonexistent: must succeed and print "no plugins installed".
+	// --repo nonexistent: an unregistered repo is an error, not an empty list
+	// (a typo must not read as "nothing installed").
 	t.Run("filter_nonexistent", func(t *testing.T) {
 		var buf bytes.Buffer
 		cmd := newPluginCmd()
 		cmd.SetOut(&buf)
 		cmd.SetErr(&buf)
 		cmd.SetArgs([]string{"list", "--repo", "nonexistent"})
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("plugin list --repo nonexistent: %v", err)
-		}
-		if !strings.Contains(buf.String(), "no plugins installed") {
-			t.Errorf("expected 'no plugins installed' for unknown repo, got: %s", buf.String())
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), `repo "nonexistent" is not registered`) {
+			t.Fatalf("plugin list --repo nonexistent: err = %v", err)
 		}
 	})
 }

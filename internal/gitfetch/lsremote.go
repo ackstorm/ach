@@ -77,6 +77,11 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		// CommandContext SIGKILLs git on ctx expiry (e.g. a credential helper
+		// blocked on an interactive sign-in): classify that as the timeout.
+		if ctx.Err() != nil {
+			err = fmt.Errorf("%v (%w)", err, ctx.Err())
+		}
 		return "", ClassifyError(fmt.Errorf("ls-remote %s %s: %v: %s",
 			url, ref, err, truncateBytes(out, 512)))
 	}

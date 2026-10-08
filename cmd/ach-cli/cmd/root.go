@@ -2,9 +2,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/spf13/cobra"
+
+	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
 // Version is overridden via -ldflags at build time (see Makefile build target).
@@ -41,7 +45,34 @@ func runRoot(cmd *cobra.Command) error {
 	return cmd.Help()
 }
 
-func Execute() error { return rootCmd.Execute() }
+var wrapArgsOnce sync.Once
+
+func Execute() error {
+	wrapArgsOnce.Do(func() { withUsageOnArgErrors(rootCmd) })
+	return rootCmd.Execute()
+}
+
+// withUsageOnArgErrors wraps every subcommand's positional-args validator so
+// a bare cobra arity error ("accepts 1 arg(s), received 0") also prints the
+// usage line and where to get help. Validators that already return a
+// friendly *exit.CodedError are left as they are.
+func withUsageOnArgErrors(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		withUsageOnArgErrors(c)
+		if c.Args == nil {
+			continue
+		}
+		orig := c.Args
+		c.Args = func(cmd *cobra.Command, args []string) error {
+			err := orig(cmd, args)
+			var ce *exit.CodedError
+			if err == nil || errors.As(err, &ce) {
+				return err
+			}
+			return fmt.Errorf("%w\nusage: %s\nRun '%s --help' for details", err, cmd.UseLine(), cmd.CommandPath())
+		}
+	}
+}
 
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("ach-cli %s\n", Version))

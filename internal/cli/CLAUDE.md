@@ -83,6 +83,12 @@ come from `login` and only `admin keys` sees them. `TestHelp_Vocabulary`
 (help_jargon_test.go) fails the build if pk-/pk_/pkid_/ek_ appear in help
 outside `admin`, or an example says `ach <cmd>` instead of `ach-cli`.
 
+**Errors say what to do next.** Two shared hooks, use them instead of
+per-command text: `exit.DispatchAndRender` prints a `hint:` line for a server
+error code in `serverHints` (e.g. `environment_not_found` → `env list`), and
+`withUsageOnArgErrors` (root.go) appends the usage line to every bare cobra
+arity error (a validator returning a `*exit.CodedError` is left alone).
+
 `env*` = the governed path (platform-api → Dex → hydrate). `local repo`/`plugin`/
 `skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,local,repo,plugin,skill}.go`
 (parents) + `pkgcmd.go` (shared install/uninstall/update/outdated RunE for plugin+skill).

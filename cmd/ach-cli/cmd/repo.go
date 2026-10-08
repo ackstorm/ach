@@ -392,20 +392,23 @@ func resolveAndDetect(
 // fetch errors correct (the sentinels still match identically to ReasonOf via
 // errors.Is) while sending unclassified logic errors to General.
 func cloneExitErr(action string, err error) *exit.CodedError {
-	var code exit.Code
+	const noAccess = "repo not found or no access: check the source, or pass --token " +
+		"(or set GITHUB_TOKEN / GITLAB_TOKEN) for a private repo"
+	code, hint := exit.General, ""
 	switch {
 	case errors.Is(err, sourceserr.ErrUnauthorized):
-		code = exit.AuthN
+		code, hint = exit.AuthN, noAccess
+	case errors.Is(err, sourceserr.ErrNotFound):
+		hint = noAccess
 	case errors.Is(err, sourceserr.ErrUnreachable):
-		code = exit.Network
-	default:
-		code = exit.General
+		code, hint = exit.Network, "could not read the repo in time: check the source and your network; "+
+			"a git credential helper waiting for a sign-in does this too (pass --token to skip it)"
 	}
-	return &exit.CodedError{
-		Code:    code,
-		Msg:     fmt.Sprintf("repo %s: %v", action, err),
-		Wrapped: err,
+	msg := fmt.Sprintf("repo %s: %v", action, err)
+	if hint != "" {
+		msg = fmt.Sprintf("repo %s: %s\n  detail: %v", action, hint, err)
 	}
+	return &exit.CodedError{Code: code, Msg: msg, Wrapped: err}
 }
 
 // kindStr converts a source.Kind to its string representation for storage.

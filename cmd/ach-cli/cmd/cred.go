@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -98,7 +99,13 @@ func resolveCred(ctx context.Context, f credFlags, gate synthetic.Gate) (cred, e
 	default:
 		saved, ok := prof.Keys[key]
 		if !ok {
-			return cred{}, &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("key %q not found in profile %q", key, name)}
+			hint := "it has no saved keys (`ach-cli keys create <env>` saves one)"
+			if len(prof.Keys) > 0 {
+				hint = "saved keys: " + strings.Join(slices.Sorted(maps.Keys(prof.Keys)), ", ")
+			}
+			return cred{}, &exit.CodedError{Code: exit.General,
+				// The value is not echoed: it may be a mistyped secret.
+				Msg: fmt.Sprintf("--key / ACH_KEY names no key saved in profile %q; %s", name, hint)}
 		}
 		c.Bearer = saved.Key
 	}

@@ -90,7 +90,7 @@ func TestResolveCred_ProfilePrecedence(t *testing.T) {
 			flagKey: "laptop", want: testEKSaved},
 		{name: "ACH_KEY name from saved keys", profile: savedKeyProfile(),
 			envKey: "laptop", want: testEKSaved},
-		{name: "unknown name", profile: oauthProfile("https://h"), flagKey: "x", wantErr: `key "x" not found in profile "p"`},
+		{name: "unknown name", profile: oauthProfile("https://h"), flagKey: "x", wantErr: `no key saved in profile "p"`},
 		{name: "no credential", profile: &config.Profile{URL: "https://h"}, wantErr: `profile "p" has no credential`},
 	}
 	for _, tc := range cases {

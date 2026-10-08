@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -197,7 +198,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		if in.only != nil {
 			return notInstalled(in)
 		}
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "nothing installed; no state.json found")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), nothingInstalledMessage(in.environment, filepath.Dir(achDir)))
 		return nil
 	}
 
@@ -275,6 +276,24 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 		"uninstall: pruned %d, preserved %d%s\n", totalPruned, totalPreserved, dryRunSuffix)
 	return nil
+}
+
+// nothingInstalledMessage names where uninstall looked and which
+// Environments ARE hydrated there, so a typo is not mistaken for a clean
+// workspace.
+func nothingInstalledMessage(env, achRoot string) string {
+	msg := fmt.Sprintf("nothing installed for environment %q in %s", env, achRoot)
+	entries, _ := os.ReadDir(achRoot)
+	var envs []string
+	for _, e := range entries {
+		if m, _ := filepath.Glob(filepath.Join(achRoot, e.Name(), "state*.json")); e.IsDir() && len(m) > 0 {
+			envs = append(envs, e.Name())
+		}
+	}
+	if len(envs) == 0 {
+		return msg
+	}
+	return msg + "; hydrated there: " + strings.Join(envs, ", ")
 }
 
 // notInstalled is the --only error for an item absent from every state file.

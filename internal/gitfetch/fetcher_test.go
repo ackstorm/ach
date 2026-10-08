@@ -782,3 +782,14 @@ func TestLsRemote_RespectsInnerTimeout(t *testing.T) {
 		t.Errorf("LsRemote took %v; inner deadline should fire well before 45s", elapsed)
 	}
 }
+
+// TestLsRemote_TimeoutIsUnreachable: git killed on ctx expiry (a credential
+// helper blocked on an interactive sign-in) is a timeout, not a bad upstream.
+func TestLsRemote_TimeoutIsUnreachable(t *testing.T) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := LsRemote(ctx, "https://example.invalid/r.git", "main", "", AuthBearer)
+	if !errors.Is(err, sourceserr.ErrUnreachable) {
+		t.Fatalf("err = %v; want ErrUnreachable", err)
+	}
+}

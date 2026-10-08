@@ -318,6 +318,11 @@ func runGit(ctx context.Context, workdir, token string, scheme AuthScheme, subco
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		// CommandContext SIGKILLs git on ctx expiry ("signal: killed"); name
+		// the ctx error so ClassifyError sees a timeout, not a bad upstream.
+		if ctx.Err() != nil {
+			err = fmt.Errorf("%v (%w)", err, ctx.Err())
+		}
 		return fmt.Errorf("git %v: %v: %s", redactArgs(full), err, truncateBytes(out, 512))
 	}
 	return nil

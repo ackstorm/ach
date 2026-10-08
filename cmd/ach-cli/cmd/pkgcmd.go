@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -982,6 +983,16 @@ func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
 
 // ---- list -------------------------------------------------------------------
 
+// repoRegistered reports whether a local repo of that name is registered; an
+// unreadable repos.json counts as registered so it never masks real output.
+func repoRegistered(name string) bool {
+	repos, err := store.LoadRepos()
+	if err != nil {
+		return true
+	}
+	return slices.ContainsFunc(repos.Repos, func(r store.RepoEntry) bool { return r.Name == name })
+}
+
 func newPkgListCmd(kind pkgKind) *cobra.Command {
 	var flagRepo string
 	kindStr := string(kind)
@@ -1013,6 +1024,10 @@ the repo (not supported in v1 list — run 'ach-cli local repo update' to refres
 			}
 
 			if len(rows) == 0 {
+				if flagRepo != "" && !repoRegistered(flagRepo) {
+					return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf(
+						"repo %q is not registered; `ach-cli local repo list` shows the registered ones", flagRepo)}
+				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no %ss installed\n", kindStr)
 				return nil
 			}

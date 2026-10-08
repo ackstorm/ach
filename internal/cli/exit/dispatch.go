@@ -37,6 +37,15 @@ func DispatchAndRender(err error, stderr io.Writer) Code {
 	code := Dispatch(err)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
+		var sErr *httpclient.ServerError
+		if errors.As(err, &sErr) && serverHints[sErr.Code] != "" {
+			_, _ = fmt.Fprintln(stderr, "hint: "+serverHints[sErr.Code])
+		}
 	}
 	return code
+}
+
+// serverHints is the next step for a server error code the user can act on.
+var serverHints = map[string]string{
+	"environment_not_found": "run `ach-cli env list` to see the Environments you can use",
 }
