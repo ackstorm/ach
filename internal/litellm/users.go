@@ -69,7 +69,10 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 	var env struct {
 		UserID    string `json:"user_id"`
 		UserEmail string `json:"user_email"`
-		Teams     []struct {
+		UserInfo  struct {
+			UserAlias string `json:"user_alias"`
+		} `json:"user_info"`
+		Teams []struct {
 			TeamID    string `json:"team_id"`
 			TeamAlias string `json:"team_alias"`
 		} `json:"teams,omitempty"`
@@ -94,6 +97,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 			Users []struct {
 				UserID    string   `json:"user_id"`
 				UserEmail string   `json:"user_email"`
+				UserAlias string   `json:"user_alias"`
 				Teams     []string `json:"teams,omitempty"`
 			} `json:"users"`
 		}
@@ -109,6 +113,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 						UserID:    u.UserID,
 						UserEmail: u.UserEmail,
 						Teams:     u.Teams,
+						UserAlias: u.UserAlias,
 					}, nil
 				}
 				// The by-id /user/info call exists ONLY to recover the
@@ -126,6 +131,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 						UserID:    u.UserID,
 						UserEmail: u.UserEmail,
 						Teams:     u.Teams,
+						UserAlias: u.UserAlias,
 					}, nil
 				}
 				outTeams := make([]string, 0, len(idEnv.Teams))
@@ -140,6 +146,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 					UserID:    u.UserID,
 					UserEmail: u.UserEmail,
 					Teams:     outTeams,
+					UserAlias: u.UserAlias,
 				}, nil
 			}
 		}
@@ -149,6 +156,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 		UserID:    env.UserID,
 		UserEmail: env.UserEmail,
 		Teams:     make([]string, 0, len(env.Teams)),
+		UserAlias: env.UserInfo.UserAlias,
 	}
 	for _, t := range env.Teams {
 		if t.TeamAlias != "" {
@@ -158,6 +166,13 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 		}
 	}
 	return out, nil
+}
+
+// UserUpdate issues POST /user/update. LiteLLM changes only the fields
+// present in the body; the response is discarded.
+func (c *RESTClient) UserUpdate(ctx context.Context, req *UserUpdateRequest) error {
+	_, err := c.makeRequest(ctx, "POST", "/user/update", req)
+	return err
 }
 
 // TeamMemberAdd issues POST /team/member_add with a nested {"member": {...}}

@@ -122,6 +122,12 @@ func (c *NoopClient) UserInfoByEmail(_ context.Context, email string) (*UserInfo
 	return nil, ErrNotFound
 }
 
+// UserUpdate logs and returns nil.
+func (c *NoopClient) UserUpdate(_ context.Context, req *UserUpdateRequest) error {
+	c.Log.Info("stub: would update LiteLLM user", "user_id", req.UserID)
+	return nil
+}
+
 // TeamMemberAdd is the Phase 3 Plan 03-07 SSO-callback call. NoopClient
 // logs and returns nil unconditionally — no duplicate-add detection.
 func (c *NoopClient) TeamMemberAdd(_ context.Context, teamID, userID, role string) error {

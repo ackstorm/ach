@@ -254,7 +254,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
-	userID, err := d.provision(r.Context(), email, groups)
+	userID, err := d.provision(r.Context(), email, name, groups)
 	if err != nil {
 		_, status, msg := classifyProvisionError(err)
 		d.Auth.Logger.Warn("oauth: user provisioning failed", "err", err)
@@ -370,9 +370,9 @@ func dexDenied(err error) bool {
 	return errors.As(err, &re) && re.Response != nil && re.Response.StatusCode == http.StatusBadRequest
 }
 
-func (d OAuthDeps) provision(ctx context.Context, email string, groups []string) (string, error) {
+func (d OAuthDeps) provision(ctx context.Context, email, name string, groups []string) (string, error) {
 	if d.Provision != nil {
 		return d.Provision(ctx, email, groups)
 	}
-	return provisionUser(ctx, d.Auth, email, groups)
+	return provisionUser(ctx, d.Auth, email, name, groups)
 }

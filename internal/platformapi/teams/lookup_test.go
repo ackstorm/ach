@@ -65,7 +65,8 @@ func (f *fakeLiteLLM) RevokeKey(_ context.Context, _ string) error { return nil 
 func (f *fakeLiteLLM) UserNew(_ context.Context, _ *litellm.UserNewRequest) (*litellm.UserInfo, error) {
 	return nil, nil
 }
-func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeLiteLLM) UserUpdate(_ context.Context, _ *litellm.UserUpdateRequest) error { return nil }
+func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error            { return nil }
 func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 	return nil, nil
 }

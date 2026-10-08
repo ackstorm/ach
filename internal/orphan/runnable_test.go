@@ -99,6 +99,7 @@ func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, _ string) (*litellm.Use
 	return nil, nil
 }
 
+func (f *fakeLiteLLM) UserUpdate(_ context.Context, _ *litellm.UserUpdateRequest) error { return nil }
 func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error {
 	return nil
 }

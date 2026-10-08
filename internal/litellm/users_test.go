@@ -84,7 +84,7 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 		// team objects (each with team_id + team_alias), NOT strings.
 		// The test fixture mirrors the real wire shape so the envelope
 		// decode added for FIX01 §A.1 stays honest.
-		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","teams":[` +
+		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","user_info":{"user_alias":"A B"},"teams":[` +
 			`{"team_id":"default","team_alias":"default"},` +
 			`{"team_id":"ops","team_alias":"ops"}` +
 			`]}`))
@@ -99,8 +99,8 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 	if got == nil {
 		t.Fatal("UserInfoByEmail: nil response")
 	}
-	if got.UserID != "u-1" || got.UserEmail != "a@b.c" {
-		t.Errorf("UserInfoByEmail: want {u-1, a@b.c}, got %+v", got)
+	if got.UserID != "u-1" || got.UserEmail != "a@b.c" || got.UserAlias != "A B" {
+		t.Errorf("UserInfoByEmail: want {u-1, a@b.c, A B}, got %+v", got)
 	}
 	if len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "ops" {
 		t.Errorf("UserInfoByEmail: want Teams=[default ops] (team_id flattened), got %+v", got.Teams)

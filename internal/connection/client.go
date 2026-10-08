@@ -142,6 +142,14 @@ func (c *Client) UserInfoByEmail(ctx context.Context, email string) (*litellm.Us
 	return client.UserInfoByEmail(ctx, email)
 }
 
+func (c *Client) UserUpdate(ctx context.Context, req *litellm.UserUpdateRequest) error {
+	client, err := c.current()
+	if err != nil {
+		return err
+	}
+	return client.UserUpdate(ctx, req)
+}
+
 func (c *Client) TeamMemberAdd(ctx context.Context, teamID, userID, role string) error {
 	client, err := c.current()
 	if err != nil {

@@ -158,6 +158,10 @@ func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Ho
 // their email and to the Dex `groups` claim (enrollExtraTeams — best-effort,
 // additive).
 //
+// name (the Dex `name` claim, may be empty) becomes the LiteLLM user_alias:
+// set on UserNew, and backfilled on an existing user whose alias is empty —
+// best-effort, and never over a non-empty alias (an admin may have set it).
+//
 // Returns the resolved LiteLLM user_id on success. Failure cases are
 // classified by classifyProvisionError into one of:
 //   - audit.OutcomeDefaultTeamMissing (a default team is absent, or
@@ -166,7 +170,7 @@ func durationString(d time.Duration) string { return fmt.Sprintf("%dh", int(d.Ho
 //   - audit.OutcomeLitellmUnreachable (UserNew or UserInfoByEmail error
 //     other than "not found")
 //   - audit.OutcomeInternalError (genuinely unexpected)
-func provisionUser(ctx context.Context, deps Deps, email string, groups []string) (string, error) {
+func provisionUser(ctx context.Context, deps Deps, email, name string, groups []string) (string, error) {
 	// Resolve each default team's LiteLLM team_id by alias up front.
 	// LiteLLM team_id is a UUID auto-assigned at team creation; ACH must
 	// look it up by alias rather than hard-coding the literal string
@@ -212,6 +216,7 @@ func provisionUser(ctx context.Context, deps Deps, email string, groups []string
 				UserEmail:     email,
 				UserID:        email, // deterministic LiteLLM user_id = email (not a random UUID)
 				Teams:         defaultTeamIDs,
+				UserAlias:     name,
 				AutoCreateKey: litellm.BoolPtr(false), // no leaked default key; pk_ is minted via /key/generate
 			})
 			if createErr != nil {
@@ -247,6 +252,11 @@ func provisionUser(ctx context.Context, deps Deps, email string, groups []string
 	// revocation.
 	if err := enrolDefaults(user.UserID, "existing-user"); err != nil {
 		return "", err
+	}
+	if name != "" && user.UserAlias == "" {
+		if err := deps.LiteLLM.UserUpdate(ctx, &litellm.UserUpdateRequest{UserID: user.UserID, UserAlias: name}); err != nil {
+			deps.Logger.Warn("sso.callback: user_alias backfill failed", "err", err, "user_id", user.UserID)
+		}
 	}
 	enrollExtraTeams(ctx, deps, user.UserID, email, groups)
 	if budgetErr := upsertUserBudgetTag(ctx, deps, email); budgetErr != nil {

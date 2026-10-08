@@ -297,6 +297,9 @@ type UserNewRequest struct {
 	UserEmail string   `json:"user_email"`
 	UserID    string   `json:"user_id,omitempty"`
 	Teams     []string `json:"teams,omitempty"`
+	// UserAlias is LiteLLM's display name for the user (the IdP `name`
+	// claim). Empty → omitted.
+	UserAlias string `json:"user_alias,omitempty"`
 	// AutoCreateKey controls LiteLLM's /user/new default-key minting.
 	// nil → field omitted (LiteLLM default auto_create_key=true). ACH
 	// callers pass BoolPtr(false) so the user is created WITHOUT an
@@ -316,6 +319,14 @@ type UserInfo struct {
 	UserID    string   `json:"user_id"`
 	UserEmail string   `json:"user_email"`
 	Teams     []string `json:"teams,omitempty"`
+	UserAlias string   `json:"user_alias,omitempty"`
+}
+
+// UserUpdateRequest is the POST /user/update body. Only the fields ACH
+// sets; LiteLLM leaves every omitted field unchanged.
+type UserUpdateRequest struct {
+	UserID    string `json:"user_id"`
+	UserAlias string `json:"user_alias,omitempty"`
 }
 
 // AccessGroupCreateRequest is the POST /v1/access_group request body

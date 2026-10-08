@@ -178,7 +178,8 @@ func (f *fakeLitellm) UserNew(_ context.Context, _ *litellm.UserNewRequest) (*li
 func (f *fakeLitellm) UserInfoByEmail(_ context.Context, _ string) (*litellm.UserInfo, error) {
 	return nil, nil
 }
-func (f *fakeLitellm) TeamMemberAdd(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeLitellm) UserUpdate(_ context.Context, _ *litellm.UserUpdateRequest) error { return nil }
+func (f *fakeLitellm) TeamMemberAdd(_ context.Context, _, _, _ string) error            { return nil }
 func (f *fakeLitellm) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
 	return nil, nil
 }

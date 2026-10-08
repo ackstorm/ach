@@ -131,6 +131,9 @@ type Client interface {
 	// Plans 03-08 + 03-09 for the §8.2 step-4 team-intersection check (KEY-11).
 	UserInfoByEmail(ctx context.Context, email string) (*UserInfo, error)
 
+	// UserUpdate issues POST /user/update (login alias backfill).
+	UserUpdate(ctx context.Context, req *UserUpdateRequest) error
+
 	// TeamMemberAdd issues POST /team/member_add. LiteLLM treats
 	// duplicate-add as 4xx; callers (Plan 03-07) decide whether to swallow.
 	// The error propagates verbatim with no special-case wrapping here.

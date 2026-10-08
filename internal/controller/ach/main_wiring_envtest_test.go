@@ -120,6 +120,9 @@ func (f *wiringFakeLiteLLM) UserNew(_ context.Context, _ *litellm.UserNewRequest
 func (f *wiringFakeLiteLLM) UserInfoByEmail(_ context.Context, _ string) (*litellm.UserInfo, error) {
 	return nil, nil
 }
+func (f *wiringFakeLiteLLM) UserUpdate(_ context.Context, _ *litellm.UserUpdateRequest) error {
+	return nil
+}
 func (f *wiringFakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error { return nil }
 func (f *wiringFakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 	return nil, nil

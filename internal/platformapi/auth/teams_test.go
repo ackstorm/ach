@@ -45,7 +45,7 @@ func TestProvisionUser_ExtraTeams(t *testing.T) {
 	}
 	t.Run("existing team joined, missing team skipped, login ok", func(t *testing.T) {
 		flm := teamsFake("default", "ops") // "dream" does not exist
-		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", []string{"ops@x.com", "dream@x.com"}); err != nil {
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", "", []string{"ops@x.com", "dream@x.com"}); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(flm.rec.teamMemberAdds, []string{"id-default", "id-ops"}) {
@@ -54,7 +54,7 @@ func TestProvisionUser_ExtraTeams(t *testing.T) {
 	})
 	t.Run("first login creates the user with the resolved team IDs, not aliases", func(t *testing.T) {
 		flm := teamsFake("default")
-		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", nil); err != nil {
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", "", nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := flm.rec.lastUserNewReq.Teams; !reflect.DeepEqual(got, []string{"id-default"}) {
@@ -66,7 +66,7 @@ func TestProvisionUser_ExtraTeams(t *testing.T) {
 		flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
 			return &litellm.UserInfo{UserID: "u", UserEmail: email}, nil
 		}
-		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", []string{"dream@x.com"}); err != nil {
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", "", []string{"dream@x.com"}); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(flm.rec.teamMemberAdds, []string{"id-default", "id-dream"}) {
@@ -82,13 +82,13 @@ func TestProvisionUser_ExtraTeams(t *testing.T) {
 			}
 			return base(a)
 		}
-		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", []string{"ops@x.com"}); err != nil {
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", "", []string{"ops@x.com"}); err != nil {
 			t.Fatalf("login must survive: %v", err)
 		}
 	})
 	t.Run("missing DEFAULT team still fails the login", func(t *testing.T) {
 		flm := teamsFake() // nothing exists
-		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", nil); err == nil {
+		if _, err := provisionUser(context.Background(), deps(flm), "pepe@x.com", "", nil); err == nil {
 			t.Fatal("want default_team_missing")
 		}
 	})

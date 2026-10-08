@@ -40,6 +40,7 @@ type callRecord struct {
 	revokeKeyTokensSeen   []string
 	lastUserNewEmail      string
 	lastUserNewReq        *litellm.UserNewRequest
+	userUpdates           []litellm.UserUpdateRequest
 	lastTeamMemberAddTeam string
 	lastTeamMemberAddUser string
 	lastTeamMemberAddRole string
@@ -62,6 +63,7 @@ type fakeLiteLLM struct {
 	// Behaviour switches (defaults match Test 1: first-time SSO happy).
 	userInfoBehaviour    func(email string) (*litellm.UserInfo, error)
 	userNewBehaviour     func(req *litellm.UserNewRequest) (*litellm.UserInfo, error)
+	userUpdateError      error
 	teamMemberAddError   func(teamID, userID, role string) error
 	keyGenerateBehaviour func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error)
 	revokeKeyError       func(keyID string) error
@@ -204,6 +206,10 @@ func (f *fakeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*
 	f.rec.lastUserNewReq = req
 	return f.userNewBehaviour(req)
 }
+func (f *fakeLiteLLM) UserUpdate(_ context.Context, req *litellm.UserUpdateRequest) error {
+	f.rec.userUpdates = append(f.rec.userUpdates, *req)
+	return f.userUpdateError
+}
 func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, teamID, userID, role string) error {
 	f.rec.teamMemberAddCalls++
 	f.rec.teamMemberAdds = append(f.rec.teamMemberAdds, teamID)
@@ -268,7 +274,7 @@ func provisionDeps(flm *fakeLiteLLM) Deps {
 func TestProvisionUser(t *testing.T) {
 	t.Run("first time: user_id=email, no auto key, enrolled in the resolved default team", func(t *testing.T) {
 		flm := newFakeLiteLLM()
-		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", nil)
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "", nil)
 		if err != nil || uid != "litellm-user-alice@example.com" {
 			t.Fatalf("uid=%q err=%v", uid, err)
 		}
@@ -287,7 +293,7 @@ func TestProvisionUser(t *testing.T) {
 			return nil, &litellm.APIError{Method: "POST", Path: "/user/new", StatusCode: 409, Code: "409",
 				Body: []byte(`{"error":{"message":"User with id alice@example.com already exists","code":"409"}}`)}
 		}
-		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", nil)
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "", nil)
 		if err != nil || uid != "alice@example.com" {
 			t.Fatalf("uid=%q err=%v", uid, err)
 		}
@@ -310,7 +316,7 @@ func TestProvisionUser(t *testing.T) {
 				StatusCode: http.StatusBadRequest, Code: "400",
 			}
 		}
-		uid, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", nil)
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", "", nil)
 		if err != nil || uid != "litellm-existing" || flm.rec.userNewCalls != 0 || flm.rec.teamMemberAddCalls != 1 {
 			t.Fatalf("uid=%q err=%v rec=%+v", uid, err, flm.rec)
 		}
@@ -319,7 +325,7 @@ func TestProvisionUser(t *testing.T) {
 	t.Run("default team alias missing in LiteLLM", func(t *testing.T) {
 		flm := newFakeLiteLLM()
 		flm.listTeamsBehaviour = func(string) ([]litellm.TeamListEntry, error) { return nil, nil }
-		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", nil)
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", "", nil)
 		var pe *provisionErr
 		if !errors.As(err, &pe) || pe.kind != provisionKindDefaultTeamMissing || flm.rec.userNewCalls != 0 {
 			t.Fatalf("err=%v", err)
@@ -332,7 +338,7 @@ func TestProvisionUser(t *testing.T) {
 			return &litellm.UserInfo{UserID: "litellm-dave", UserEmail: email}, nil
 		}
 		flm.teamMemberAddError = func(string, string, string) error { return litellm.ErrNotFound }
-		_, err := provisionUser(context.Background(), provisionDeps(flm), "dave@example.com", nil)
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "dave@example.com", "", nil)
 		var pe *provisionErr
 		if !errors.As(err, &pe) || pe.kind != provisionKindDefaultTeamMissing {
 			t.Fatalf("err=%v", err)
@@ -342,7 +348,7 @@ func TestProvisionUser(t *testing.T) {
 	t.Run("LiteLLM unreachable", func(t *testing.T) {
 		flm := newFakeLiteLLM()
 		flm.userInfoBehaviour = func(string) (*litellm.UserInfo, error) { return nil, errors.New("dial tcp: refused") }
-		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", nil)
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", "", nil)
 		var pe *provisionErr
 		if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
 			t.Fatalf("err=%v", err)
@@ -354,6 +360,54 @@ func mintDeps(flm *fakeLiteLLM, rec *dbInsertRecord) Deps {
 	d := provisionDeps(flm)
 	d.Pepper, d.KeyEncryptionKey, d.InsertPKFn = []byte("test-pepper-32-bytes-long-aaaaaa"), testDEK(), rec.insertFn
 	return d
+}
+
+// provisionUser carries the IdP name into LiteLLM's user_alias.
+func TestProvisionUserAlias(t *testing.T) {
+	t.Run("first time: the IdP name becomes the user_alias", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		if _, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "Alice A", nil); err != nil {
+			t.Fatal(err)
+		}
+		if req := flm.rec.lastUserNewReq; req == nil || req.UserAlias != "Alice A" {
+			t.Fatalf("UserNew request: %+v", req)
+		}
+	})
+
+	// The alias is backfilled only when empty — an admin-set alias wins — and
+	// a failed backfill never blocks the login.
+	aliasCases := []struct {
+		name, current, claim string
+		updateErr            error
+		wantUpdate           bool
+	}{
+		{"existing user without alias: backfilled", "", "Bob B", nil, true},
+		{"existing user with alias: left alone", "Robert", "Bob B", nil, false},
+		{"no name claim: no update", "", "", nil, false},
+		{"backfill failure: login still succeeds", "", "Bob B", errors.New("litellm down"), true},
+	}
+	for _, tc := range aliasCases {
+		t.Run(tc.name, func(t *testing.T) {
+			flm := newFakeLiteLLM()
+			flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+				return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email, UserAlias: tc.current}, nil
+			}
+			flm.userUpdateError = tc.updateErr
+			if _, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", tc.claim, nil); err != nil {
+				t.Fatal(err)
+			}
+			got := flm.rec.userUpdates
+			if !tc.wantUpdate {
+				if len(got) != 0 {
+					t.Fatalf("unexpected UserUpdate: %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].UserID != "litellm-existing" || got[0].UserAlias != tc.claim {
+				t.Fatalf("UserUpdate: %+v", got)
+			}
+		})
+	}
 }
 
 func TestMintPK_PutsKeyInUserShellWithExpiry(t *testing.T) {
@@ -401,7 +455,7 @@ func TestProvisionUserWritesUserBudgetTag(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}
 
-	if _, err := provisionUser(context.Background(), deps, "Pepe@Example.com", nil); err != nil {
+	if _, err := provisionUser(context.Background(), deps, "Pepe@Example.com", "", nil); err != nil {
 		t.Fatalf("provisionUser: %v", err)
 	}
 	got, ok := flm.upsertedTags["user:pepe@example.com"]
@@ -423,7 +477,7 @@ func TestProvisionUserWritesUserBudgetTagForExistingUser(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
 
-	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", nil); err != nil {
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
 		t.Fatalf("provisionUser: %v", err)
 	}
 	if _, ok := flm.upsertedTags["user:pepe@example.com"]; !ok {
@@ -437,7 +491,7 @@ func TestProvisionUserWithoutBudgetWritesNoTag(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = nil
 
-	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", nil); err != nil {
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
 		t.Fatalf("provisionUser: %v", err)
 	}
 	if len(flm.upsertedTags) != 0 {
@@ -460,7 +514,7 @@ func TestProvisionUserLeavesAnExistingBudgetAlone(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
 
-	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", nil); err != nil {
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
 		t.Fatalf("provisionUser: %v", err)
 	}
 	if flm.upsertTagCalls != 0 {
@@ -479,7 +533,7 @@ func TestProvisionUserSeedsABudgetlessTag(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
 
-	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", nil); err != nil {
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
 		t.Fatalf("provisionUser: %v", err)
 	}
 	if got, ok := flm.upsertedTags["user:pepe@example.com"]; !ok || got.MaxBudget != 100 {
@@ -499,7 +553,7 @@ func TestProvisionUserTagReadFailureIsLoud(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
 
-	_, err := provisionUser(context.Background(), deps, "pepe@example.com", nil)
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil)
 	var pe *provisionErr
 	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
 		t.Fatalf("want a litellm provisionErr, got %v", err)
@@ -517,7 +571,7 @@ func TestProvisionUserTagFailureIsLoud(t *testing.T) {
 	deps := provisionDeps(flm)
 	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
 
-	_, err := provisionUser(context.Background(), deps, "pepe@example.com", nil)
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil)
 	var pe *provisionErr
 	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
 		t.Fatalf("want a litellm provisionErr, got %v", err)
