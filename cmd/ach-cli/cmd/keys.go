@@ -88,8 +88,9 @@ func newKeysCreateCmd() *cobra.Command {
 		Use:   "create <environment>",
 		Args:  cobra.MaximumNArgs(1),
 		Short: "Create a key for an Environment and save it in your profile",
-		Long: `Create an environment key (ek-…) and save it in your profile under --name
-(default: the environment name). The key is printed to stdout exactly once.
+		Long: `Create an environment key (ek-…) named --name (required: what the key is
+for, so you and the console can tell keys apart) and save it in your profile
+under that name. The key is printed to stdout exactly once.
 
 --no-save prints it without saving — for CI pipelines and secret managers
 that read stdout.
@@ -97,12 +98,17 @@ that read stdout.
 --expires takes a number of days (90d), a duration (720h) or a date
 (2026-12-31T00:00:00Z). --max-budget caps what this key can spend (USD),
 optionally per --budget-duration (30d); your own total budget still applies.`,
-		Example: `  ach-cli keys create frontend-dev
-  ach-cli keys create frontend-dev --name laptop --expires 90d
-  ach-cli keys create staging --no-save --max-budget 20 --budget-duration 30d`,
+		Example: `  ach-cli keys create frontend-dev --name laptop --expires 90d
+  ach-cli keys create staging --name ci-deploy --no-save --max-budget 20 --budget-duration 30d`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("budget-duration") && !cmd.Flags().Changed("max-budget") {
 				return &exit.CodedError{Code: exit.General, Msg: "--budget-duration needs --max-budget"}
+			}
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return &exit.CodedError{
+					Code: exit.General, Msg: "--name is required: say what the key is for, e.g. --name ci-deploy",
+				}
 			}
 			var expiresAt string
 			if expires != "" {
@@ -127,9 +133,6 @@ optionally per --budget-duration (30d); your own total budget still applies.`,
 			if err := checkEnvironment(cmd.Context(), hc, env); err != nil {
 				return err
 			}
-			if strings.TrimSpace(name) == "" {
-				name = env
-			}
 			if !noSave && c.Profile != nil {
 				if _, taken := c.Profile.Keys[name]; taken {
 					return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf(
@@ -144,7 +147,7 @@ optionally per --budget-duration (30d); your own total budget still applies.`,
 		},
 	}
 	registerCredFlags(cmd, &f)
-	cmd.Flags().StringVar(&name, "name", "", "Name to save the key under (default: the environment name)")
+	cmd.Flags().StringVar(&name, "name", "", "What the key is for; also the name it is saved under (required)")
 	cmd.Flags().StringVar(&expires, "expires", "", "Expiry: 90d, a duration (720h) or an RFC3339 date")
 	cmd.Flags().Float64Var(&maxBudget, "max-budget", 0, "Spend cap for this key, in USD")
 	cmd.Flags().StringVar(&budgetDuration, "budget-duration", "", "Budget reset period, e.g. 30d (needs --max-budget)")
@@ -192,8 +195,8 @@ func checkEnvironment(ctx context.Context, hc *httpclient.Client, env string) er
 	}
 	if env == "" {
 		return &exit.CodedError{Code: exit.General, Msg: "missing environment.\n" +
-			"  Usage: ach-cli keys create <environment> [--name <name>]\n" +
-			"  Example: ach-cli keys create frontend-dev" + yours}
+			"  Usage: ach-cli keys create <environment> --name <name>\n" +
+			"  Example: ach-cli keys create frontend-dev --name laptop" + yours}
 	}
 	if len(names) > 0 && !slices.Contains(names, env) {
 		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("environment %q not found.%s", env, yours)}

@@ -26,7 +26,7 @@ var networkCommands = map[string][]string{
 	"env list":     {"env", "list"},
 	"env describe": {"env", "describe", "demo"},
 	"env hydrate":  {"env", "hydrate", "demo", "--no-warnings"},
-	"keys create":  {"keys", "create", "demo", "--no-save"},
+	"keys create":  {"keys", "create", "demo", "--name", "ci", "--no-save"},
 	"keys list":    {"keys", "list"},
 	"keys revoke":  {"keys", "revoke", "ekid_abc", "--yes"},
 	"admin list":   {"admin", "list", "plugins"},
@@ -71,7 +71,7 @@ func TestSyntheticGuard_SessionCommandsRefused(t *testing.T) {
 		{"profile", "list"}, {"profile", "show"}, {"profile", "use", "p"},
 		{"profile", "add", "ci", "--url", "https://h", "--key", testEK},
 		{"profile", "rename", "a", "b"}, {"profile", "remove", "p", "--force"},
-		{"keys", "create", "demo"},
+		{"keys", "create", "demo", "--name", "ci"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			synthTestEnv(t)

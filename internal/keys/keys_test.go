@@ -91,8 +91,9 @@ func TestNewBearer_InvalidPrefix(t *testing.T) {
 }
 
 func TestNewBearer_AlphabetIsBase64URL(t *testing.T) {
-	allowed := regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	for i := 0; i < 100; i++ {
+	// First char alphanumeric: "pk--…"/"ek-_…" reads as a typo.
+	allowed := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]+$`)
+	for i := 0; i < 1000; i++ {
 		v, err := NewBearer(PrefixPk)
 		if err != nil {
 			t.Fatalf("iter %d: NewBearer err: %v", i, err)
@@ -102,7 +103,7 @@ func TestNewBearer_AlphabetIsBase64URL(t *testing.T) {
 			t.Fatalf("iter %d: suffix len = %d; want 64", i, len(suffix))
 		}
 		if !allowed.MatchString(suffix) {
-			t.Fatalf("iter %d: suffix %q has chars outside [A-Za-z0-9_-]", i, suffix)
+			t.Fatalf("iter %d: suffix %q has chars outside [A-Za-z0-9_-] or a symbol first", i, suffix)
 		}
 	}
 }

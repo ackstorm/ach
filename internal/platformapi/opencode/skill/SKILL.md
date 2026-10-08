@@ -182,8 +182,8 @@ within ONE Environment, without the user's identity. Tell the user to run these 
 their own terminal:
 
 ```bash
-ach-cli keys create <environment> --name <name>   # shown once, saved in your profile as <name>
-ach-cli keys create <environment> --no-save       # for CI / a secrets manager: stdout only
+ach-cli keys create <environment> --name <name>   # <name> (required) = what it is for; shown once, saved as <name>
+ach-cli keys create <environment> --name ci-deploy --no-save   # CI / a secrets manager: stdout only
 ach-cli keys list
 ach-cli keys suspend <name>                        # pause it; keys resume <name> undoes it
 ach-cli keys revoke <name>                         # for good (a saved name or an ekid_…)

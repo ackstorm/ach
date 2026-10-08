@@ -82,11 +82,18 @@ func NewBearer(prefix BearerPrefix) (string, error) {
 		return "", ErrInvalidPrefix
 	}
 	var b [48]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
+	for {
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		// base64url is case-significant — emit verbatim, no ToLower.
+		suffix := bearerEncoding.EncodeToString(b[:])
+		// Redraw a suffix starting with '-' or '_' (1 in 32): "ek--…" reads
+		// as a typo. ponytail: costs <1 bit of the 384; old keys still parse.
+		if c := suffix[0]; c != '-' && c != '_' {
+			return string(prefix) + suffix, nil
+		}
 	}
-	// base64url is case-significant — emit verbatim, no ToLower.
-	return string(prefix) + bearerEncoding.EncodeToString(b[:]), nil
 }
 
 // KeyIDPrefix is a newtype around the string prefix for opaque key_id

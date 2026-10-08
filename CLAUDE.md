@@ -18,6 +18,12 @@ When a change alters behavior/contracts/workflows that `CLAUDE.md`,
 no "docs follow-up PR later". Drift is a bug; fix a stale claim in the change
 that revealed it.
 
+**Every change — whatever it touches — check whether it affects the user-facing
+skill `internal/platformapi/opencode/skill/SKILL.md`** (the `<provider>-api`
+onboarding every user's agent follows: commands, flags, URLs, output, login,
+MCP, keys, console behavior). If it does, update it in the same commit; a stale
+line there is a broken instruction for every user.
+
 | Change | Update |
 |--------|--------|
 | CRD field / condition / default | `docs/api-reference/` (`make gen-crd-ref-docs`) + `examples/` |

@@ -137,7 +137,7 @@ func TestKeysCreate_SavesByNameAndPrintsOnce(t *testing.T) {
 	srv := newKeysTestServer(t)
 	path := seedKeysProfile(t, srv.URL, nil)
 
-	stdout, _, code, err := executeKeys(t, "", "create", "demo")
+	stdout, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo")
 	if err != nil || code != exit.OK {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -170,7 +170,7 @@ func TestKeysCreate_IncompleteResponseSavesNothing(t *testing.T) {
 
 	cmd := newKeysCmd()
 	cmd.SilenceUsage = true // as the real root does; keep stdout to what RunE writes
-	stdout, _, code, err := executeCommand(t, cmd, "create", "demo")
+	stdout, _, code, err := executeCommand(t, cmd, "create", "demo", "--name", "demo")
 	if code != exit.General || err == nil || !strings.Contains(err.Error(), "incomplete response") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -191,7 +191,7 @@ func TestKeysCreate_RefusesSavedName(t *testing.T) {
 	srv := newKeysTestServer(t)
 	seedKeysProfile(t, srv.URL, map[string]config.SavedKey{"demo": {ID: "ekid_old", Key: testEK}})
 
-	_, _, code, err := executeKeys(t, "", "create", "demo")
+	_, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo")
 	if code != exit.General || err == nil ||
 		!strings.Contains(err.Error(), `a key named "demo" is already saved in profile "p"; pick --name or revoke it`) {
 		t.Fatalf("code=%d err=%v", code, err)
@@ -206,7 +206,7 @@ func TestKeysCreate_ExpiresAndBudget(t *testing.T) {
 	srv := newKeysTestServer(t)
 	seedKeysProfile(t, srv.URL, nil)
 
-	if _, _, _, err := executeKeys(t, "", "create", "demo", "--expires", "90d",
+	if _, _, _, err := executeKeys(t, "", "create", "demo", "--name", "demo", "--expires", "90d",
 		"--max-budget", "20", "--budget-duration", "30d", "--no-save"); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestKeysCreate_BudgetDurationNeedsMaxBudget(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
 	seedKeysProfile(t, srv.URL, nil)
-	_, _, code, err := executeKeys(t, "", "create", "demo", "--budget-duration", "30d")
+	_, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo", "--budget-duration", "30d")
 	if code != exit.General || err == nil || !strings.Contains(err.Error(), "--max-budget") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -264,9 +264,25 @@ func TestKeysCreate_MissingOrUnknownEnvListsYours(t *testing.T) {
 	srv.envs = []string{"frontend-dev", "platform"}
 	seedKeysProfile(t, srv.URL, nil)
 
-	for _, args := range [][]string{{"create"}, {"create", "ghost"}} {
+	for _, args := range [][]string{{"create", "--name", "x"}, {"create", "ghost", "--name", "x"}} {
 		_, _, code, err := executeKeys(t, "", args...)
 		if code != exit.General || err == nil || !strings.Contains(err.Error(), "frontend-dev, platform") {
+			t.Errorf("%v: code=%d err=%v", args, code, err)
+		}
+	}
+	if len(srv.writes()) != 0 {
+		t.Errorf("no POST may be sent: %+v", srv.writes())
+	}
+}
+
+func TestKeysCreate_NameRequired(t *testing.T) {
+	credTestEnv(t)
+	srv := newKeysTestServer(t)
+	seedKeysProfile(t, srv.URL, nil)
+
+	for _, args := range [][]string{{"create", "demo"}, {"create", "demo", "--name", " ", "--no-save"}} {
+		_, _, code, err := executeKeys(t, "", args...)
+		if code != exit.General || err == nil || !strings.Contains(err.Error(), "--name is required") {
 			t.Errorf("%v: code=%d err=%v", args, code, err)
 		}
 	}
