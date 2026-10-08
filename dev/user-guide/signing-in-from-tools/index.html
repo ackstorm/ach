@@ -1346,8 +1346,11 @@ above.</p>
 <h2 id="model-endpoint-a-credential-helper">Model endpoint: a credential helper<a class="headerlink" href="#model-endpoint-a-credential-helper" title="Permanent link">&para;</a></h2>
 <p>No tool runs OAuth against a model base URL. Each takes a <strong>command that
 prints a credential to stdout</strong>; <code>ach-cli token</code> is that command. <code>ach-cli
-env hydrate</code> writes the wiring for you when you are signed in as a person
-(OAuth or a <code>pk_</code> — never for an <code>ek_</code>); this is what it writes, for the
+env hydrate --models</code> writes the wiring for you when you are signed in as a
+person (OAuth or a <code>pk_</code> — never for an <code>ek_</code>; without <code>--models</code> hydrate
+leaves the tool's model login alone, and removes wiring an earlier <code>--models</code>
+run wrote). <code>ach-cli</code> must be on <code>PATH</code> — the tools spawn
+it through <code>/bin/sh</code>, which does not see shell aliases. This is what it writes, for the
 case you set it up by hand:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1">// Claude Code — settings.json. Pair with ANTHROPIC_BASE_URL=https://ach.example.com</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="p">{</span><span class="nt">"apiKeyHelper"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-cli token"</span><span class="p">}</span>
