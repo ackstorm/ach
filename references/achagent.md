@@ -50,7 +50,9 @@ the agent-overridable defaults; an `ACHAgent` sets the same fields flat on its s
 (inline `AgentDefaults`) and resolution is a uniform per-field deep merge
 (`agentrender.Resolve{Image,Model,Engine,Limits,Workspace,Artifacts}` + `ResolveAchBaseURL`
 + `ResolveAch`/`ResolveEnv`): a set agent field wins, an omitted one inherits the
-profile's. `engine.forwardEnv`/`model.params`/`model.thinking` are atomic (present on
+profile's. An effective `model.type` left unset by both renders as `openai`
+(`agentrender.DefaultModelType` — ACH model aliases resolve on LiteLLM's `/v1`); an
+unset effective `model.name` still fails the render. `engine.forwardEnv`/`model.params`/`model.thinking` are atomic (present on
 the agent ⇒ replace as a whole); `workspace.persistence`/`workspace.session`/`artifacts`
 merge recursively per leaf field — an agent overriding just one leaf (e.g.
 `workspace.session.idleTimeoutSeconds`) still inherits every untouched sibling from the
