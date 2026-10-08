@@ -59,7 +59,7 @@ ach-cli admin keys list [--owner e] [--type pk|ek] [--status …] | revoke <id> 
 ach-cli admin users budget <email> --max-budget X | limits <email> --max-keys N | admin refresh <kind> <name>
 
 # local-first serverless package manager (no k8s, no CRD)
-ach-cli local repo   add <source> --name <n> [--token] [--auth bearer|oauth2] [--path] | list | remove | update
+ach-cli local repo   add <source> --name <n> [--token] [--auth bearer|basic-oauth2] [--path] | list | remove | update
 ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [--dir d] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
 ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
 ```
@@ -419,7 +419,7 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 ## `internal/cli/localpkg/` — the local package manager
 
 - `source/source.go` — `Parse(ref)` over `github:owner/repo[#ref]`,
-  `git:https://…[#ref]`, local paths. Derives clone URL + default `AuthScheme`
+  `git:https://…[#ref]` (local paths are rejected — not yet supported). Derives clone URL + default `AuthScheme`
   (GitLab host → `AuthBasicOAuth2`, else `AuthBearer`).
 - `store/store.go` — local state under `~/.config/ach/local/`:
   `repos.json` (`hasToken:true` only — **token NEVER stored here**),

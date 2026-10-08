@@ -25,7 +25,7 @@ func TestFormatProfileList(t *testing.T) {
 			Keys: map[string]config.SavedKey{"a": {ID: "ekid_a", Key: testEK1}, "b": {ID: "ekid_b", Key: testEK2}}},
 	}})
 	want := []string{
-		"CURRENT NAME URL AUTH KEYS",
+		"CURRENT NAME URL AUTH SAVED KEYS",
 		"ci https://ci.example key 0",
 		"none https://n.example none 0",
 		"* prod https://prod.example session 2",
@@ -73,8 +73,8 @@ func TestFormatEnvList(t *testing.T) {
 	if !strings.Contains(got, "NAME") {
 		t.Errorf("missing 'NAME' header; got: %s", got)
 	}
-	if !strings.Contains(got, "NAMESPACE") {
-		t.Errorf("missing 'NAMESPACE' header; got: %s", got)
+	if strings.Contains(got, "NAMESPACE") {
+		t.Errorf("NAMESPACE column is gone (always the release namespace); got: %s", got)
 	}
 	if !strings.Contains(got, "STATUS") {
 		t.Errorf("missing 'STATUS' header; got: %s", got)
@@ -306,5 +306,14 @@ func TestFormatEnvDescribeShowsGuardrails(t *testing.T) {
 	}
 	if strings.Contains(out, "/guardrail/") {
 		t.Fatalf("fabricated guardrail endpoint:\n%s", out)
+	}
+}
+
+// TestFormatEnvDescribe_EmptySectionsSayNone: an Environment with no runtime
+// or no context prints "(none)", not a bare table header.
+func TestFormatEnvDescribe_EmptySectionsSayNone(t *testing.T) {
+	got := FormatEnvDescribe(EnvView{Name: "e"}, &HydrateView{}, true)
+	if strings.Count(got, "  (none)") != 2 || strings.Contains(got, "KIND") {
+		t.Errorf("empty describe:\n%s", got)
 	}
 }

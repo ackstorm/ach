@@ -109,8 +109,8 @@ func profileAuth(dep *config.Profile) string {
 }
 
 // FormatProfileList renders `profile list`: CURRENT (* on the default),
-// NAME, URL, AUTH (session|key|none) and KEYS (saved key count), sorted by
-// name.
+// NAME, URL, AUTH (session|key|none) and SAVED KEYS (keys saved in this
+// profile — not the server-side count `whoami` reports as Keys), sorted by name.
 func FormatProfileList(f *config.File) string {
 	if f == nil || len(f.Profiles) == 0 {
 		return "No profiles configured\n"
@@ -123,7 +123,7 @@ func FormatProfileList(f *config.File) string {
 
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH\tKEYS")
+	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH\tSAVED KEYS")
 	for _, name := range names {
 		dep := f.Profiles[name]
 		if dep == nil {
@@ -186,9 +186,11 @@ func FormatEnvList(envs []EnvView) string {
 	}
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "NAME\tNAMESPACE\tSTATUS\tDESCRIPTION")
+	// No NAMESPACE column: every Environment lives in the release namespace,
+	// so it only took the width the description needs (`env describe` shows it).
+	_, _ = fmt.Fprintln(tw, "NAME\tSTATUS\tDESCRIPTION")
 	for _, e := range envs {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Namespace, e.Status, truncateField(e.Description, 40))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Status, truncateField(e.Description, 80))
 	}
 	_ = tw.Flush()
 	return sb.String()
@@ -250,41 +252,51 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	// Runtime block (3 axes — each row surfaces the per-runtime
 	// `endpoint` per W3 phase-goal sentence).
 	_, _ = fmt.Fprintln(&sb, "Runtime:")
-	tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tENDPOINT")
-	for _, m := range h.Runtime.Models {
-		_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", orEM(m.Name), orEM(m.ID), orEM(m.Endpoint))
+	rt := h.Runtime
+	if len(rt.Models)+len(rt.MCPServers)+len(rt.A2AAgents)+len(rt.Guardrails) == 0 {
+		_, _ = fmt.Fprintln(&sb, "  (none)")
+	} else {
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tENDPOINT")
+		for _, m := range rt.Models {
+			_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", orEM(m.Name), orEM(m.ID), orEM(m.Endpoint))
+		}
+		for _, s := range rt.MCPServers {
+			_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", orEM(s.Name), orEM(s.ID), orEM(s.Endpoint))
+		}
+		for _, a := range rt.A2AAgents {
+			_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", orEM(a.Name), orEM(a.ID), orEM(a.Endpoint))
+		}
+		for _, g := range rt.Guardrails {
+			// No endpoint: a guardrail is applied by LiteLLM, never called.
+			_, _ = fmt.Fprintf(tw, "  guardrail\t%s\t%s\t%s\n", g, g, emDash)
+		}
+		_ = tw.Flush()
 	}
-	for _, s := range h.Runtime.MCPServers {
-		_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", orEM(s.Name), orEM(s.ID), orEM(s.Endpoint))
-	}
-	for _, a := range h.Runtime.A2AAgents {
-		_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", orEM(a.Name), orEM(a.ID), orEM(a.Endpoint))
-	}
-	for _, g := range h.Runtime.Guardrails {
-		// No endpoint: a guardrail is applied by LiteLLM, never called.
-		_, _ = fmt.Fprintf(tw, "  guardrail\t%s\t%s\t%s\n", g, g, emDash)
-	}
-	_ = tw.Flush()
 
 	// Context block (3 axes — each row surfaces the per-context-entry
 	// `downloadUrl` per W3 phase-goal sentence).
 	_, _ = fmt.Fprintln(&sb, "Context:")
-	tw = tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tDOWNLOADURL")
-	for _, p := range h.Context.Prompts {
-		_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
+	cx := h.Context
+	if len(cx.Prompts)+len(cx.Plugins)+len(cx.Artifacts)+len(cx.Skills) == 0 {
+		_, _ = fmt.Fprintln(&sb, "  (none)")
+	} else {
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tDOWNLOADURL")
+		for _, p := range cx.Prompts {
+			_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
+		}
+		for _, pl := range cx.Plugins {
+			_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\n", pl.Name, orEM(pl.DownloadURL))
+		}
+		for _, ar := range cx.Artifacts {
+			_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\n", ar.Name, orEM(ar.DownloadURL))
+		}
+		for _, sk := range cx.Skills {
+			_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\n", sk.Name, orEM(sk.DownloadURL))
+		}
+		_ = tw.Flush()
 	}
-	for _, pl := range h.Context.Plugins {
-		_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\n", pl.Name, orEM(pl.DownloadURL))
-	}
-	for _, ar := range h.Context.Artifacts {
-		_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\n", ar.Name, orEM(ar.DownloadURL))
-	}
-	for _, sk := range h.Context.Skills {
-		_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\n", sk.Name, orEM(sk.DownloadURL))
-	}
-	_ = tw.Flush()
 
 	return sb.String()
 }

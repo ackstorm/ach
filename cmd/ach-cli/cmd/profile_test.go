@@ -54,7 +54,9 @@ func TestProfileList(t *testing.T) {
 	for _, l := range raw {
 		lines = append(lines, strings.Join(strings.Fields(l), " "))
 	}
-	want := []string{"CURRENT NAME URL AUTH KEYS", "ci https://ci.example key 0", "* prod https://prod.example session 1"}
+	want := []string{
+		"CURRENT NAME URL AUTH SAVED KEYS", "ci https://ci.example key 0", "* prod https://prod.example session 1",
+	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got:\n%s", out)
 	}
