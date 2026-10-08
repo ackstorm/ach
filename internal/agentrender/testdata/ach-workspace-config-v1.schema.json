@@ -1122,6 +1122,12 @@
           "exclusiveMinimum": 0,
           "title": "Maxsteps",
           "type": "integer"
+        },
+        "maxStallSeconds": {
+          "default": 300,
+          "exclusiveMinimum": 0,
+          "title": "Maxstallseconds",
+          "type": "integer"
         }
       },
       "required": [

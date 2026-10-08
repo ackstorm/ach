@@ -15,7 +15,7 @@ spec:
     enabled: true
     size: 1Gi
   achagent:
-    image: ghcr.io/ackstorm/ach-runtime-control:0.1.8
+    image: ghcr.io/ackstorm/ach-runtime-control:0.1.18
     ach:
       baseUrl: http://ach-gateway.ach-system.svc
     model:
@@ -54,6 +54,6 @@ spec:
       maxArtifactBytes: 104857600
       retentionDays: 90
   execution:
-    image: ghcr.io/ackstorm/ach-runtime-execution:0.1.8
+    image: ghcr.io/ackstorm/ach-runtime-execution:0.1.18
     ephemeralStorage: 1Gi
     terminationGracePeriodSeconds: 330

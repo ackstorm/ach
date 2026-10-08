@@ -153,7 +153,7 @@ still on the old shape is rejected or blocked, not silently translated:
   the old `e2e-agent-dist` distributed-placement fixture and the sandboxed
   `e2e-agent-sbx`/`profile-sbx.yaml` fixture were both retired with their respective
   placements, not renamed or merged. Both control/execution images now reference the
-  published `ghcr.io/ackstorm/ach-runtime-control:0.1.8`/`ghcr.io/ackstorm/ach-runtime-execution:0.1.8`
+  published `ghcr.io/ackstorm/ach-runtime-control:0.1.18`/`ghcr.io/ackstorm/ach-runtime-execution:0.1.18`
   images (public; kind pulls them), so stage 06 as shipped reaches
   `WorkloadApplied=True`. Two evidence tracks: `scripts/cluster.sh verify_all` gates the RENDERING
   shape (`WorkloadApplied=True`, a schema-valid

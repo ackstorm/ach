@@ -481,7 +481,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 - **ACHAgent rendering/placement (workspace-v1)**: see `references/achagent.md` for the full
   contract. The e2e stage 06 ships TWO shapes: `e2e-agent` (ephemeral) + `e2e-agent-pvc` (on
   the persistent `e2e-profile-pvc`) — both control/execution images now reference the
-  published `ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.8` images (kind pulls them). Two evidence tracks: `scripts/cluster.sh
+  published `ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.18` images (kind pulls them). Two evidence tracks: `scripts/cluster.sh
   verify_all` gates the rendered shape (`WorkloadApplied`, uid/fsGroup 10001
   on both control StatefulSets); `test/e2e/agent_runtime_ready_test.go` mints a real `ek_`,
   swaps it into `e2e-agent-ek`, and requires `WorkloadReady=True` on both + a PVC write as uid

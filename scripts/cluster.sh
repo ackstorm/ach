@@ -833,7 +833,7 @@ verify_all() {
   # StatefulSet — one Channels+Harness control pod per ACHAgent, no standalone/
   # distributed placement in 0.1.0). WorkloadApplied=True (NOT WorkloadReady). PREREQUISITE:
   # both e2e-profile/e2e-profile-pvc control/execution images reference the
-  # published ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.8 images (kind pulls
+  # published ghcr.io/ackstorm/ach-runtime-{control,execution}:0.1.18 images (kind pulls
   # them; no pull access = WorkloadReady never flips — an image pull failure, not a
   # render/schema failure). Assert the rendered config.json is workspace-v1-shaped, the identity
   # secret arrives via secretKeyRef under the exact alias name the config promises, the
