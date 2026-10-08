@@ -29,11 +29,12 @@
 // Gating mirrors TestPhase7CLIEngine: phase7SuiteGuard t.Skipf's cleanly
 // when the binary or cluster is missing, so a non-e2e run is a clean skip.
 //
-// Known gap asserted here (NOT a bug): plugin hooks (caveman's src/hooks/)
-// are NOT projected for any platform — no adapter ProjectionRule routes src/,
-// and src is non-Known metadata so it is now SILENTLY skipped (no warning).
-// assertHooksDropped asserts that silence. When hooks support lands it must be
-// updated alongside the per-platform hook-destination assertions. See
+// Known gap asserted here (NOT a bug): plugin hooks are NOT projected for any
+// platform. caveman ships them under src/ (non-Known metadata: SILENTLY
+// skipped) and, since upstream 2026-10-06, also as a top-level hooks/ (a Known
+// kind no adapter routes: reported in the skipped-components warning).
+// assertHooksDropped pins both. When hooks support lands it must be updated
+// alongside the per-platform hook-destination assertions. See
 // .planning/todos/pending/*-support-plugin-hooks-projection.md.
 
 package e2e
@@ -354,27 +355,26 @@ func assertProjectedCommands(t *testing.T, output string, pe allPlatformExpect) 
 	}
 }
 
-// assertHooksDropped locks in the CURRENT behavior: caveman's plugin hooks
-// ship under the src/ top-level, which route.KnownComponentKinds does NOT list,
-// so src (and the hooks nested in it) are SILENTLY skipped for every platform —
-// they never appear in the attributed drop warning. (Pre-Phase-1 src polluted a
-// generic "dropped unsupported components" line; that cry-wolf line is gone.)
-// When a real top-level hooks/ kind + a KnownComponentKinds entry land, this
-// MUST be updated alongside the per-platform hook-destination assertions — see
+// assertHooksDropped locks in the CURRENT behavior. src/ is not in
+// route.KnownComponentKinds, so it (and caveman's hooks nested in it) is
+// SILENTLY skipped for every platform — never in the attributed drop warning.
+// (Pre-Phase-1 src polluted a generic "dropped unsupported components" line;
+// that cry-wolf line is gone.) A top-level hooks/ IS a Known kind that no
+// adapter routes yet, so the warning naming it is correct, not asserted away:
+// whether it appears depends only on what upstream caveman ships at `main`.
+// When hooks projection lands this MUST be updated alongside the per-platform
+// hook-destination assertions — see
 // .planning/todos/pending/*-support-plugin-hooks-projection.md.
 func assertHooksDropped(t *testing.T, id string, stderr []byte) {
 	t.Helper()
 	s := string(stderr)
 	marker := "warning: platform " + id + " does not support"
 	if !strings.Contains(s, marker) {
-		return // no attributed warning at all → src/hooks correctly silent
+		return // no attributed warning at all → src correctly silent
 	}
-	body := dropBody(s, marker)
-	for _, silent := range []string{"src", "hooks"} {
-		if strings.Contains(body, silent) {
-			t.Errorf("%s: %q must be silently skipped, not warned (metadata-silent contract)\nbody=%q",
-				id, silent, body)
-		}
+	if body := dropBody(s, marker); strings.Contains(body, "src") {
+		t.Errorf("%s: \"src\" must be silently skipped, not warned (metadata-silent contract)\nbody=%q",
+			id, body)
 	}
 }
 
