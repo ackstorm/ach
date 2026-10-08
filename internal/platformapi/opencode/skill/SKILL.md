@@ -1,6 +1,6 @@
 ---
 name: {{skill}}
-description: Onboard to and work with this organization's AI platform (ACH) at {{base}}. Use when the user wants to get set up, install or sign in to ach-cli, list or hydrate Environments, lay out a workspace per Environment, share that setup with a teammate, see, enable, sign in to or troubleshoot an MCP server, create, list or revoke an environment key (ek-) for an agent, CI job or script, or set up Claude Code or Codex against the platform.
+description: Onboard to and work with this organization's AI platform (ACH) at {{base}}. Use when the user mentions ACH, an Environment or an MCP server, or wants to get set up, install, update or sign in to ach-cli, list or hydrate Environments (globally or into the current folder), lay out a workspace per Environment, share that setup with a teammate, see, enable, sign in to or troubleshoot an MCP server, create, list or revoke an environment key (ek-) for an agent, CI job or script, or set up Claude Code or Codex against the platform.
 ---
 
 # {{provider}} platform (ACH)
@@ -20,7 +20,8 @@ once, on the user's terminal, and stay there.
 ## Onboarding, step by step
 
 Walk the user through these steps in this order. Skip a step that is already done (check
-first: `ach-cli --version`, `ach-cli whoami`, `ach-cli env status`). Run each command
+first: `ach-cli --version`, `ach-cli whoami`, `ach-cli env status`). If `ach-cli` is
+missing, offer to install it before anything else. Run each command
 only with the user's go-ahead, show its output, and stop to fix any error before moving
 on.
 
@@ -58,6 +59,9 @@ Expand-Archive ach-cli.zip -DestinationPath "$env:LOCALAPPDATA\ach-cli" -Force
 ach-cli --version
 ```
 
+To update ach-cli, run the same commands again: they install the latest release over
+the old one (`ach-cli --version` before and after).
+
 ### Sign in
 
 Same single sign-on as OpenCode:
@@ -86,8 +90,9 @@ administrator grants it.
 {{#default_env}}
 ### Install the baseline for every project
 
-The organization's baseline Environment is `{{default_env}}`. Hydrate it into the
-user's global OpenCode config, so every project gets it:
+The organization's baseline Environment is `{{default_env}}`. Check whether it is
+already installed (`ach-cli env status {{default_env}} -g`); if not, propose it to the
+user. Hydrate it into the user's global OpenCode config, so every project gets it:
 
 ```bash
 ach-cli env hydrate {{default_env}} -g --target opencode
@@ -119,6 +124,10 @@ Every project under that folder gets the Environment: OpenCode merges the
 repo or not, so no `git init` is needed. Start OpenCode inside the project
 (`cd ~/Projects/gmail/<project> && opencode`). Hydrate also adds `.ach/` and `.opencode/`
 to a `.gitignore` in that folder.
+
+To hydrate into the folder the user is working in now ("hydrate finops here"), drop
+`--dir`: `ach-cli env hydrate finops --target opencode` writes into the current
+directory. Confirm the folder with the user first.
 
 Do not hydrate two Environments into the same folder chain unless the user wants both
 merged into one OpenCode.
