@@ -256,3 +256,33 @@ func TestLife02_PassthroughInvariant(t *testing.T) {
 		t.Errorf("passthrough on-disk = %q; want preserved %q", got, body)
 	}
 }
+
+// TestPublishFile_DeepHashScopedToKeys: a rendered deep doc carrying structure
+// outside fw.Keys (codex's empty [a2a_agents]) must record the same hash the
+// on-disk side computes, or every re-hydrate/uninstall reports a phantom edit.
+func TestPublishFile_DeepHashScopedToKeys(t *testing.T) {
+	toolRoot := t.TempDir()
+	d := &adapterDispatcherImpl{platformID: "codex"}
+	fw := adapter.FileWrite{
+		Path:    ".codex/config.toml",
+		Content: []byte("[a2a_agents]\n\n[mcp_servers.x]\nurl = \"https://h/mcp/x\"\n"),
+		Merge:   adapter.MergeDeep,
+		Keys:    []string{"mcp_servers.x"},
+	}
+	got, err := d.publishFile(fw, nil, toolRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := state.FileEntry{Target: got.Target, Hash: got.Hash, Merge: got.Merge, Keys: got.Keys}
+	disk, present, err := currentScopedHash(entry, filepath.Join(toolRoot, fw.Path))
+	if err != nil || !present || disk != got.Hash {
+		t.Fatalf("on-disk scoped hash %q (present=%v err=%v) != recorded %q", disk, present, err, got.Hash)
+	}
+
+	// A row recorded with an older, differently-scoped hash heals: disk equals
+	// what we write, so there is no edit to preserve.
+	entry.Hash = "xxh3:stale"
+	if _, err := d.publishFile(fw, &entry, toolRoot); err != nil {
+		t.Fatalf("re-publish over stale-hash row: %v", err)
+	}
+}

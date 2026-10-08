@@ -1227,6 +1227,39 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 	return d.publishFile(fw, prior, toolRoot)
 }
 
+// deepHashes hashes a co-owned deep-merge file: ONLY our contributed subtree
+// (parsed → map → deterministic re-encode) so it is directly comparable to
+// the on-disk subtree regardless of struct-vs-map field ordering, and the
+// user's other keys are invisible to the drift check. Both sides are scoped
+// to fw.Keys — the same scope currentScopedHash extracts at sync time: a
+// rendered doc may carry structure outside the keys (an empty table), and
+// hashing it made every re-hydrate/uninstall report a phantom local edit.
+func deepHashes(fw adapter.FileWrite, finalAbs string, isTOML bool) (fresh, onDisk string, err error) {
+	oursMap, err := merge.ParseDoc(fw.Content, isTOML)
+	if err != nil {
+		return "", "", fmt.Errorf("parse rendered %s: %w", finalAbs, err)
+	}
+	if len(fw.Keys) > 0 {
+		oursMap, _ = merge.ExtractByKeys(oursMap, fw.Keys)
+	}
+	if fresh, err = merge.SubtreeHash(oursMap); err != nil {
+		return "", "", fmt.Errorf("hash rendered %s: %w", finalAbs, err)
+	}
+	diskMap, ok, err := merge.ReadParseDoc(finalAbs, isTOML)
+	if err != nil {
+		return "", "", fmt.Errorf("read existing %s: %w", finalAbs, err)
+	}
+	if !ok {
+		return fresh, "", nil
+	}
+	if sub, found := merge.ExtractByKeys(diskMap, fw.Keys); found {
+		if onDisk, err = merge.SubtreeHash(sub); err != nil {
+			return "", "", fmt.Errorf("hash on-disk %s: %w", finalAbs, err)
+		}
+	}
+	return fresh, onDisk, nil
+}
+
 // publishFile is the bucket-agnostic core of publishRuntimeFile: the
 // caller supplies the prior state.FileEntry it looked up from the correct
 // bucket (Adapter.Files for the runtime loop, Plugins[] for the projection
@@ -1252,29 +1285,9 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, herr)
 		}
 	case fw.Merge == adapter.MergeDeep:
-		// Co-owned deep-merge file: hash ONLY our contributed subtree
-		// (parsed → map → deterministic re-encode) so it is directly
-		// comparable to the on-disk subtree regardless of struct-vs-map
-		// field ordering, and the user's other keys are invisible to the
-		// drift check.
-		oursMap, err := merge.ParseDoc(fw.Content, isTOML)
-		if err != nil {
-			return FileWrite{}, fmt.Errorf("adapter %s parse rendered %s: %w", d.platformID, finalAbs, err)
-		}
-		if freshHash, err = merge.SubtreeHash(oursMap); err != nil {
-			return FileWrite{}, fmt.Errorf("adapter %s hash rendered %s: %w", d.platformID, finalAbs, err)
-		}
-		diskMap, ok, derr := merge.ReadParseDoc(finalAbs, isTOML)
-		if derr != nil {
-			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, derr)
-		}
-		if ok {
-			sub, found := merge.ExtractByKeys(diskMap, fw.Keys)
-			if found {
-				if onDiskHash, err = merge.SubtreeHash(sub); err != nil {
-					return FileWrite{}, fmt.Errorf("adapter %s hash on-disk %s: %w", d.platformID, finalAbs, err)
-				}
-			}
+		var herr error
+		if freshHash, onDiskHash, herr = deepHashes(fw, finalAbs, isTOML); herr != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s %w", d.platformID, herr)
 		}
 	default:
 		// File-owned replace (incl. opaque passthrough projection —
@@ -1306,6 +1319,12 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		freshSourceHash = fw.SourceHash
 	}
 	outcome := compareDrift(prior, onDiskHash, freshSourceHash)
+	// Disk already holds exactly what we are about to write: no user edit
+	// can be lost, whatever the recorded hash says (also heals a state row
+	// written with an older, differently-scoped hash).
+	if onDiskHash != "" && onDiskHash == freshHash && ShouldExit2(outcome) {
+		outcome = NoOp
+	}
 
 	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
 	// prior == nil (fresh hydrate) never refuses — there is nothing of ours

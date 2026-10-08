@@ -274,13 +274,30 @@ func RemoveDottedKey(root map[string]any, path string) {
 // document (JSON or TOML per isTOML, byte-stable via EncodeDoc).
 func PruneDottedKeys(doc map[string]any, keys []string, isTOML bool) (out []byte, empty bool, err error) {
 	for _, k := range keys {
+		if _, ok := GetDottedKey(doc, k); !ok {
+			continue // never ours to remove, nor its (user's) parent
+		}
 		RemoveDottedKey(doc, k)
+		// Drop the parent tables our removal emptied ("mcp_servers.x" →
+		// an empty [mcp_servers] would otherwise stay behind).
+		for i := strings.LastIndex(k, "."); i > 0; i = strings.LastIndex(k, ".") {
+			k = k[:i]
+			if v, ok := GetDottedKey(doc, k); !ok || !isEmptyMap(v) {
+				break
+			}
+			RemoveDottedKey(doc, k)
+		}
 	}
 	if len(doc) == 0 {
 		return nil, true, nil
 	}
 	out, err = EncodeDoc(doc, isTOML)
 	return out, false, err
+}
+
+func isEmptyMap(v any) bool {
+	m, ok := v.(map[string]any)
+	return ok && len(m) == 0
 }
 
 // WriteComposite performs the forward composite merge: a marker-bounded

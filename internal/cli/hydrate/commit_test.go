@@ -19,6 +19,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/lock"
 	"github.com/ackstorm/ach/internal/cli/manifest"
+	"github.com/ackstorm/ach/internal/cli/merge"
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
@@ -1921,5 +1922,56 @@ func TestRenderContext_OnlyMarksPartialRun(t *testing.T) {
 	c.opts.Only = &Item{Kind: kindPlugin, Name: "a"}
 	if !isPartialRun(c.renderContext(context.Background())) {
 		t.Error("--only run not marked partial")
+	}
+}
+
+// TestRenderContext_ModelsOptIn: the model-endpoint helper wiring is opt-in
+// (--models), and even then only for a person bearer.
+func TestRenderContext_ModelsOptIn(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.Bearer, c.opts.BaseURL = "pk-"+strings.Repeat("a", 64), "https://ach.example.com"
+	if got := adapter.HelperBaseURLFromContext(c.renderContext(context.Background())); got != "" {
+		t.Errorf("helper wired without --models: %q", got)
+	}
+	c.opts.Models = true
+	if got := adapter.HelperBaseURLFromContext(c.renderContext(context.Background())); got != "https://ach.example.com" {
+		t.Errorf("--models person hydrate: helper = %q", got)
+	}
+	c.opts.Bearer = "ek-" + strings.Repeat("a", 64)
+	if got := adapter.HelperBaseURLFromContext(c.renderContext(context.Background())); got != "" {
+		t.Errorf("--models ek_ hydrate wired helper: %q", got)
+	}
+}
+
+// TestStep11Sync_PrunesDroppedAdapterKeysWithoutSync: a hydrate that no
+// longer renders the --models helper wiring removes it from settings.json
+// even without --sync, leaving the user's own keys alone.
+func TestStep11Sync_PrunesDroppedAdapterKeysWithoutSync(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	abs := filepath.Join(c.toolRoot, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"apiKeyHelper":"ach-cli token","env":{"ANTHROPIC_BASE_URL":"https://h"},"theme":"dark"}`
+	if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ours := []string{"apiKeyHelper", "env.ANTHROPIC_BASE_URL"}
+	doc, _, _ := merge.ReadParseDoc(abs, false)
+	sub, _ := merge.ExtractByKeys(doc, ours)
+	h, _ := merge.SubtreeHash(sub)
+	existing := &state.File{Adapter: state.AdapterSection{ID: "claude-code", Files: []state.FileEntry{
+		{Target: ".claude/settings.json", Hash: h, Merge: "deep", Keys: ours},
+	}}}
+
+	var res Result
+	if err := c.step11Sync(existing, nil, RenderResult{}, true, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(abs)
+	if strings.Contains(string(got), "apiKeyHelper") || strings.Contains(string(got), "ANTHROPIC_BASE_URL") ||
+		strings.Contains(string(got), `"env"`) || !strings.Contains(string(got), "theme") {
+		t.Errorf("settings.json after prune = %s", got)
 	}
 }

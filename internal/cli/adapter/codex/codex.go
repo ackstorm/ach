@@ -174,8 +174,8 @@ type a2aAgentTable struct {
 type configTOMLShape struct {
 	ModelProvider  string                        `toml:"model_provider,omitempty"`
 	ModelProviders map[string]modelProviderTable `toml:"model_providers,omitempty"`
-	MCPServers     map[string]mcpServerTable     `toml:"mcp_servers"`
-	A2AAgents      map[string]a2aAgentTable      `toml:"a2a_agents"`
+	MCPServers     map[string]mcpServerTable     `toml:"mcp_servers,omitempty"`
+	A2AAgents      map[string]a2aAgentTable      `toml:"a2a_agents,omitempty"`
 }
 
 // modelProviderTable is `[model_providers.<id>]` — the Hub as a custom model

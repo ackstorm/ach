@@ -174,8 +174,14 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
 		creds, err = client.Login(ctx, clientID)
 	case actPrint:
-		creds, err = client.DeviceLogin(ctx, clientID, func(code, uri string) {
-			_, _ = fmt.Fprintf(stdout, "\nOpen %s and enter the code:\n\n    %s\n\nWaiting for you to sign in…\n", uri, code)
+		creds, err = client.DeviceLogin(ctx, clientID, func(code, uri string, prefilled bool) {
+			ask := "enter this code"
+			if prefilled {
+				ask = "confirm the page shows this code"
+			}
+			_, _ = fmt.Fprintf(stdout,
+				"\nOpen this URL in a browser and %s:\n\n    %s\n\n    %s\n\nWaiting for you to sign in…\n",
+				ask, uri, code)
 		})
 	}
 	if err != nil {
@@ -195,7 +201,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	if err := config.Save(configPath, file); err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli token` to print an access token\n", name)
+	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli env list` to see your Environments\n", name)
 	return nil
 }
 

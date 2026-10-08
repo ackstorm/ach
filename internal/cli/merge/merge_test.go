@@ -474,9 +474,16 @@ func TestPruneDottedKeys(t *testing.T) {
 		t.Errorf("kept key missing from re-encode: %q", out)
 	}
 
-	// RemoveDottedKey does not clean up now-empty parent maps (unchanged
-	// existing behavior) — empty=true only when the top-level key itself
-	// is removed.
+	// Parents emptied by the removal go too; a parent with other content stays.
+	doc1 := map[string]any{"mcp_servers": map[string]any{"x": 1}, "keep": true}
+	if out, _, _ := merge.PruneDottedKeys(doc1, []string{"mcp_servers.x"}, true); strings.Contains(string(out), "mcp_servers") {
+		t.Errorf("emptied parent table left behind: %q", out)
+	}
+	doc3 := map[string]any{"mcp_servers": map[string]any{"x": 1, "user": 2}}
+	if out, _, _ := merge.PruneDottedKeys(doc3, []string{"mcp_servers.x"}, true); !strings.Contains(string(out), "user") {
+		t.Errorf("non-empty parent dropped: %q", out)
+	}
+
 	doc2 := map[string]any{"only": 1}
 	_, empty, err = merge.PruneDottedKeys(doc2, []string{"only"}, false)
 	if err != nil || !empty {

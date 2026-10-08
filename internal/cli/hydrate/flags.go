@@ -53,6 +53,11 @@ type Opts struct {
 	// per spec §6.3).
 	OnlyRuntime bool
 
+	// Models opts a PERSON hydrate (OAuth / pk_) into the model-endpoint
+	// helper wiring (Claude Code `apiKeyHelper` + ANTHROPIC_BASE_URL, Codex
+	// model_provider). Off by default: the tool keeps its own model login.
+	Models bool
+
 	// Only hydrates just this item: runtime off, no --sync, state MERGED
 	// into the prior state instead of replacing the Plugins/Skills buckets.
 	Only *Item

@@ -50,8 +50,8 @@ ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U 
 
 # governed remote object (CR-defined, server-mediated)
 ach-cli env list [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
-ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run]
-ach-cli env status [env] [-g] [--files] [-o] | save | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
+ach-cli env status [env] [-g] [--dir d] [--files] [-o] | save [--dir d] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
 ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
@@ -191,6 +191,17 @@ projected (self-heals on `<b>`'s next hydrate).
   so `hydrate --sync` left a removed plugin's `CLAUDE.md` block / `.mcp.json`
   keys behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
   GREW would then prune keys Render just wrote.
+- **Adapter runtime keys are pruned on EVERY hydrate, `--sync` or not**
+  (`commit.step11Sync`): without `--sync` it runs `Sync` over the
+  `Adapter` bucket only, so keys the render stopped emitting (the `--models`
+  helper after a run without `--models`, an MCP server dropped from the
+  Environment) leave the file. They are ACH-generated, never user content.
+  `--sync` widens it to every bucket (plugins/skills/prompts files).
+- **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
+  at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
+  codex (empty `[a2a_agents]` table) report a phantom edit on every
+  re-hydrate/uninstall. A drift verdict is also dropped when disk already
+  equals what we write (heals rows recorded with an older hash scope).
 - **`env hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
@@ -257,9 +268,11 @@ merge) — don't conflate them.
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
 asserted in e2e — not a bug).
 
-**Model-endpoint helper wiring (person hydrate only).** When the hydrate
-bearer is a PERSON credential (OAuth JWS or `pk-`; `commit.renderContext` →
-`adapter.WithHelperBaseURL`), claude-code additionally deep-merges
+**Model-endpoint helper wiring (opt-in `--models`, person hydrate only).**
+Off by default — the tool keeps its own model login (and a helper that names
+`ach-cli` breaks the tool when the binary is only a shell alias, not on PATH).
+With `env hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
+`commit.renderContext` → `adapter.WithHelperBaseURL`), claude-code additionally deep-merges
 `.claude/settings.json` (`apiKeyHelper: "ach-cli token"` +
 `env.ANTHROPIC_BASE_URL: <hub>`) and codex adds `model_provider = "ach"` +
 `[model_providers.ach]` (`base_url <hub>/v1`, `wire_api responses`,

@@ -112,6 +112,7 @@ func newHydrateCmd() *cobra.Command {
 		flagGlobal        bool
 		flagConflict      string
 		flagOnly          string
+		flagModels        bool
 
 		// D-04 hidden flag — surface preserved for the W3-P3 golden-
 		// diff anchor.
@@ -121,9 +122,10 @@ func newHydrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hydrate [env]",
 		Args:  cobra.MaximumNArgs(1),
-		Short: "Materialize workspace artifacts (engine) or stream raw manifest (--raw)",
+		Short: "Install an Environment's content and MCP/A2A config into your agent tool",
 		Long: `Download an environment's content (prompts, skills, artifacts) into your
-agent tool's config directory, and wire up its runtime (models / MCP / A2A).
+agent tool's config directory, and wire up its runtime (MCP / A2A; models
+only with --models).
 
 Scope:
   (default)           Project context (prompts / plugins / artifacts /
@@ -134,12 +136,18 @@ Scope:
                       skill/<name>) and merge it into the existing state.
                       No runtime is written; needs an environment and
                       cannot be combined with --sync, --only-runtime.
+  --models            Also route the tool's model traffic through ACH
+                      (Claude Code apiKeyHelper + ANTHROPIC_BASE_URL, Codex
+                      model provider; needs ach-cli on PATH). Off by
+                      default: the tool keeps its own model login.
 
 Behavior:
   --sync              Remove files no longer in the environment.
   --force             Overwrite local edits and bypass safety refusals.
   --dry-run           Show what would change without writing anything.
   --allow-symlinks    Permit symlinks in downloaded archives (unsafe).
+  --conflict <p>      Two plugins writing the same file: namespace (default,
+                      prefix with the plugin name) | skip | overwrite | refuse.
 
 Locking:
   --wait              Wait indefinitely if another hydrate holds the lock.
@@ -202,6 +210,7 @@ Exit codes:
 				conflict:      conflict,
 				raw:           flagRaw,
 				only:          only,
+				models:        flagModels,
 			})
 		},
 	}
@@ -239,6 +248,8 @@ Exit codes:
 		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
 		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
+	cmd.Flags().BoolVar(&flagModels, "models", false,
+		"Route the tool's model traffic through ACH (apiKeyHelper / model provider wiring)")
 
 	// D-04 hidden: --raw preserves the Phase 6 POST+stream byte-for-byte
 	// contract. Hidden so --help advertises only the engine surface.
@@ -278,6 +289,7 @@ type hydrateInputs struct {
 	global        bool
 	conflict      conflict.Policy
 	only          *hydrate.Item // --only
+	models        bool          // --models
 
 	// D-04 hidden raw flag.
 	raw bool
@@ -496,6 +508,7 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 			Force:             in.force,
 			Conflict:          in.conflict,
 			Only:              in.only,
+			Models:            in.models,
 			DryRun:            in.dryRun,
 			AllowSymlinks:     in.allowSymlinks,
 			Output:            in.output,
@@ -516,16 +529,16 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 		}
 		results = append(results, res)
 	}
-	if !in.dryRun {
-		meta := summaryMeta{
-			global:     in.global,
-			output:     in.output,
-			keyPrefix:  bearerPrefix,
-			oauth:      keys.LooksLikeJWS(bearer),
-			noWarnings: in.noWarnings,
-		}
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHydrateSummary(results, meta))
+	meta := summaryMeta{
+		global:     in.global,
+		output:     in.output,
+		keyPrefix:  bearerPrefix,
+		oauth:      keys.LooksLikeJWS(bearer),
+		noWarnings: in.noWarnings,
+		models:     in.models,
+		dryRun:     in.dryRun,
 	}
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), renderHydrateSummary(results, meta))
 	return nil
 }
 
@@ -637,9 +650,9 @@ func summaryFromResultsCompact(results []hydrate.Result, meta summaryMeta) strin
 		}
 	}
 	if env != "" {
-		fmt.Fprintf(&b, "Hydrated %q", env)
+		fmt.Fprintf(&b, "%s %q", hydratedVerb(meta), env)
 	} else {
-		fmt.Fprint(&b, "Hydrated")
+		fmt.Fprint(&b, hydratedVerb(meta))
 	}
 	if facts := scopeKeyFacts(meta); facts != "" {
 		fmt.Fprintf(&b, " (%s)", facts)
@@ -653,7 +666,7 @@ func summaryFromResultsCompact(results []hydrate.Result, meta summaryMeta) strin
 		}
 	}
 	for _, r := range results {
-		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.PlatformID, strings.Join(compactSegments(r), " · "))
+		fmt.Fprintf(&b, "  %-*s  %s\n", width, r.PlatformID, strings.Join(compactSegments(r, meta), " · "))
 	}
 
 	if !meta.noWarnings {
@@ -673,11 +686,18 @@ func summaryFromResultsCompact(results []hydrate.Result, meta summaryMeta) strin
 // summary uses (runtime → plugins+kinds → prompts → artifacts → standalone
 // skills → files). Standalone skills (spec.context.skills) are distinct from
 // the plugin-projected skills already counted in ProjectedByKind.
-func compactSegments(r hydrate.Result) []string {
+func compactSegments(r hydrate.Result, meta summaryMeta) []string {
 	var segs []string
 	rs := r.RuntimeSummary
 	if rs.Models > 0 {
-		segs = append(segs, countNoun(rs.Models, "model", "models"))
+		seg := countNoun(rs.Models, "model", "models")
+		switch modelsState(r, meta) {
+		case modelsWired:
+			seg += " (wired)"
+		case modelsNotWired:
+			seg += " (not wired; --models)"
+		}
+		segs = append(segs, seg)
 	}
 	if rs.MCPServers > 0 {
 		segs = append(segs, countNoun(rs.MCPServers, "mcp server", "mcp servers"))
@@ -717,7 +737,9 @@ func compactSegments(r hydrate.Result) []string {
 	if cs.Skills > 0 && r.ProjectedByKind["skills"] == 0 {
 		segs = append(segs, countNoun(cs.Skills, "skill", "skills"))
 	}
-	segs = append(segs, countNoun(r.FilesWritten, "file", "files"))
+	if !meta.dryRun {
+		segs = append(segs, countNoun(r.FilesWritten, "file", "files"))
+	}
 	return segs
 }
 
@@ -731,6 +753,58 @@ type summaryMeta struct {
 	keyPrefix  keys.BearerPrefix // pk-/ek- classification of the bearer
 	oauth      bool              // the bearer is an OAuth access token (rendered configs carry no credential)
 	noWarnings bool              // --no-warnings → drop the Tips footer
+	models     bool              // --models → model-endpoint helper wiring requested
+	dryRun     bool              // --dry-run → nothing was written; say "would"
+}
+
+// hydratedVerb heads the summary: what happened, or under --dry-run what
+// would happen.
+func hydratedVerb(meta summaryMeta) string {
+	if meta.dryRun {
+		return "Dry run (nothing written): would hydrate"
+	}
+	return "Hydrated"
+}
+
+// helperTargets are the adapters that render the --models helper wiring
+// (claudecode settings.json, codex model_provider).
+var helperTargets = map[string]bool{"claude-code": true, "codex": true}
+
+// modelsWiring is whether this target's model endpoint can be wired locally
+// (a person hydrate on a helper target) and, if so, whether --models did.
+// Access itself is a server-side LiteLLM access-group either way.
+type modelsWiring int
+
+const (
+	modelsServerSide modelsWiring = iota // ek_ / non-helper target: nothing local
+	modelsWired
+	modelsNotWired
+)
+
+func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
+	person := meta.oauth || meta.keyPrefix == keys.PrefixPk
+	switch {
+	case !person || !helperTargets[res.PlatformID]:
+		return modelsServerSide
+	case meta.models:
+		return modelsWired
+	default:
+		return modelsNotWired
+	}
+}
+
+func modelsLine(res hydrate.Result, meta summaryMeta) string {
+	n := res.RuntimeSummary.Models
+	switch modelsState(res, meta) {
+	case modelsWired:
+		return fmt.Sprintf("    ✓ Models: %d (%s sends model traffic through ACH, credential from `ach-cli token`)",
+			n, res.PlatformID)
+	case modelsNotWired:
+		return fmt.Sprintf("    • Models: %d available — not wired; add --models to send %s's model traffic through ACH",
+			n, res.PlatformID)
+	default:
+		return fmt.Sprintf("    • Models: %d (served server-side via the gateway — nothing to install locally)", n)
+	}
 }
 
 // summaryFromResult renders the post-hydrate success summary printed to
@@ -742,9 +816,9 @@ func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 	var b strings.Builder
 	facts := scopeKeyFacts(meta)
 	if res.Environment != "" {
-		fmt.Fprintf(&b, "Hydrated %q environment for %s", res.Environment, res.PlatformID)
+		fmt.Fprintf(&b, "%s %q environment for %s", hydratedVerb(meta), res.Environment, res.PlatformID)
 	} else {
-		fmt.Fprintf(&b, "Hydrated for %s", res.PlatformID)
+		fmt.Fprintf(&b, "%s for %s", hydratedVerb(meta), res.PlatformID)
 	}
 	if facts != "" {
 		fmt.Fprintf(&b, " (%s)", facts)
@@ -760,11 +834,7 @@ func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 			fmt.Fprintf(&b, "    ✓ A2A agents: %d\n", res.RuntimeSummary.A2AAgents)
 		}
 		if res.RuntimeSummary.Models > 0 {
-			// Models are NOT wired locally: access is a server-side LiteLLM
-			// access-group behind the gateway, so this is informational (•),
-			// never a ✓ "installed" line.
-			fmt.Fprintf(&b, "    • Models: %d (served server-side via the gateway — nothing to install locally)\n",
-				res.RuntimeSummary.Models)
+			fmt.Fprintln(&b, modelsLine(res, meta))
 		}
 		if res.RuntimeSummary.Guardrails > 0 {
 			// Like models, guardrails are enforced server-side by LiteLLM —
@@ -810,9 +880,13 @@ func summaryFromResult(res hydrate.Result, meta summaryMeta) string {
 	}
 
 	fmt.Fprintln(&b, "  Files")
-	fmt.Fprintf(&b, "    ✓ %s written, %s preserved\n",
-		countNoun(res.FilesWritten, "file", "files"),
-		countNoun(res.FilesPreserved, "file", "files"))
+	if meta.dryRun {
+		fmt.Fprintln(&b, "    • none written (dry run)")
+	} else {
+		fmt.Fprintf(&b, "    ✓ %s written, %s preserved\n",
+			countNoun(res.FilesWritten, "file", "files"),
+			countNoun(res.FilesPreserved, "file", "files"))
+	}
 
 	// Tips footer: actionable scope/credential hints. Suppressed by
 	// --no-warnings (the header facts above are NOT — scope and key kind are
@@ -890,6 +964,17 @@ func formatKindCounts(counts map[string]int) string {
 // skipped) as a slice, so callers can join with ", " (verbose summary) or
 // " · " (compact multi-target line).
 func kindSegments(counts map[string]int) []string {
+	// A plugin's root .mcp.json and its mcp/ dir are both MCP server
+	// configs: one label, not two that read as the same thing.
+	if counts[".mcp.json"] > 0 {
+		folded := make(map[string]int, len(counts))
+		for k, v := range counts {
+			folded[k] = v
+		}
+		folded["mcp"] += folded[".mcp.json"]
+		delete(folded, ".mcp.json")
+		counts = folded
+	}
 	kinds := make([]string, 0, len(counts))
 	for k := range counts {
 		kinds = append(kinds, k)

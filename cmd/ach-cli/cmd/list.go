@@ -53,6 +53,7 @@ func newEnvStatusCmd() *cobra.Command {
 		out        outputFlag
 		flagGlobal bool
 		flagFiles  bool
+		flagDir    string
 	)
 	c := &cobra.Command{
 		Use:   "status [env]",
@@ -87,6 +88,9 @@ empty JSON array under -o json) and exits 0.`,
 					Msg:     fmt.Sprintf("list: resolve workspace directory: %v", err),
 					Wrapped: err,
 				}
+			}
+			if flagDir != "" {
+				cwd = flagDir
 			}
 
 			// Per-environment namespacing (spec §8.1): in project scope with no
@@ -148,6 +152,15 @@ empty JSON array under -o json) and exits 0.`,
 				return nil
 			}
 
+			if len(entries) == 0 {
+				where := filepath.Join(cwd, ".ach")
+				if flagGlobal {
+					where = "the global scope ($HOME/.ach)"
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"No resources installed in %s; run `ach-cli env hydrate <env>` (see `ach-cli env list`)\n", where)
+				return nil
+			}
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries, flagFiles))
 			return nil
 		},
@@ -155,6 +168,7 @@ empty JSON array under -o json) and exits 0.`,
 	registerOutputFlag(c, &out, "table", "json")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	c.Flags().BoolVarP(&flagFiles, "files", "f", false, "List every projected file instead of a per-resource summary")
+	c.Flags().StringVar(&flagDir, "dir", "", "Workspace root override (default: cwd)")
 	return c
 }
 

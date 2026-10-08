@@ -69,8 +69,11 @@ above.
 
 No tool runs OAuth against a model base URL. Each takes a **command that
 prints a credential to stdout**; `ach-cli token` is that command. `ach-cli
-env hydrate` writes the wiring for you when you are signed in as a person
-(OAuth or a `pk_` — never for an `ek_`); this is what it writes, for the
+env hydrate --models` writes the wiring for you when you are signed in as a
+person (OAuth or a `pk_` — never for an `ek_`; without `--models` hydrate
+leaves the tool's model login alone, and removes wiring an earlier `--models`
+run wrote). `ach-cli` must be on `PATH` — the tools spawn
+it through `/bin/sh`, which does not see shell aliases. This is what it writes, for the
 case you set it up by hand:
 
 ```json

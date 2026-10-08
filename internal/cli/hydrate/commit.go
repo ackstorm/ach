@@ -354,12 +354,14 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	result.PlatformID = c.opts.Platform
 	result.Environment = c.opts.Environment
 
+	cleanup := c.dryRunCleanup() // stat before step 1 creates <achDir>
+
 	// Step 1: lock.
 	lease, err := c.step1Lock(ctx)
 	if err != nil {
 		return result, err
 	}
-	defer func() { _ = lease.Release() }()
+	defer func() { _ = lease.Release(); cleanup() }()
 	c.maybeKill(1)
 
 	// Step 2: sweep tmp.
@@ -554,32 +556,8 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// remains at the step-11 boundary as advertised by
 	// sc2_commit_sequence_sigkill. T-07-W5-01-03 — gated on !DryRun.
 	c.maybeKill(11)
-	if c.opts.Sync && !c.opts.DryRun {
-		// STATE-05: prune state entries (and their projected files) for
-		// resources dropped from the Environment. composeNextState is PURE
-		// (no I/O), so state.json is still untouched at the maybeKill(11)
-		// boundary above (the sc2 invariant). Passing the composed next-state
-		// as newFile is the fix — previously existingState was passed as BOTH
-		// prev and newFile, so the inverse-merge set-difference was always
-		// empty and nothing was ever pruned.
-		composed := c.composeNextState(existingState, m, renderResult, adapterRan, result.PlatformID, runtimeFiles)
-		stats, err := syncFn(existingState, composed, c.achDir, c.toolRoot, SyncOptions{
-			Force:  c.opts.Force,
-			Stderr: c.opts.Stderr,
-		})
-		if err != nil {
-			var ce *exit.CodedError
-			if errors.As(err, &ce) {
-				return result, err
-			}
-			return result, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("sync inverse-merge: %v", err),
-				Wrapped: err,
-			}
-		}
-		result.FilesPruned += stats.Pruned
-		result.FilesPreserved += stats.Preserved
+	if err := c.step11Sync(existingState, m, renderResult, adapterRan, runtimeFiles, &result); err != nil {
+		return result, err
 	}
 
 	// Step 12: atomic state write.
@@ -675,6 +653,21 @@ func (noopLease) Release() error { return nil }
 // ErrLockContended + ErrLockTimeout both map to exit.General (1) per
 // spec §6.7; the user-facing message is set here so the caller layer
 // can rely on a stable surface.
+// dryRunCleanup returns what a dry run must undo so it leaves no trace: the
+// <achDir> step 1 creates for the lock, when it did not exist before. Every
+// removal is non-recursive, so a concurrent real hydrate that took the lock
+// after ours keeps its files (the dir then simply stays).
+func (c *commit) dryRunCleanup() func() {
+	if _, err := os.Stat(c.achDir); !c.opts.DryRun || !errors.Is(err, os.ErrNotExist) {
+		return func() {}
+	}
+	return func() {
+		for _, p := range []string{lock.Path(c.achDir), c.pluginStageRoot(), c.achDir, filepath.Dir(c.achDir)} {
+			_ = os.Remove(p) // .ach/ last, only if now empty
+		}
+	}
+}
+
 func (c *commit) step1Lock(ctx context.Context) (lock.Lease, error) {
 	// Ensure parent dir exists so the locker can create the lock file.
 	if err := os.MkdirAll(c.achDir, 0o755); err != nil {
@@ -1035,12 +1028,13 @@ func (c *commit) warnDropped(byKind map[string][]string, flat []string) {
 				continue
 			}
 			seen[s] = true
-			shadow = append(shadow, s)
+			// "mcp:<id> (runtime-owned)" → "<id>" for the user-facing line.
+			shadow = append(shadow, strings.TrimSuffix(strings.TrimPrefix(s, "mcp:"), " (runtime-owned)"))
 		}
 		if len(shadow) > 0 {
 			sort.Strings(shadow)
 			_, _ = fmt.Fprintf(c.opts.Stderr,
-				"warning: platform %s: projected MCP server(s) shadowed by runtime-owned definitions: %s\n",
+				"note: %s: a plugin also ships MCP server(s) %s; the Environment's own definition is used\n",
 				c.opts.Platform, strings.Join(shadow, ", "))
 		}
 	}
@@ -1054,6 +1048,48 @@ func (c *commit) warnConflicts(lines []string) {
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(c.opts.Stderr, "warning: %s\n", line)
 	}
+}
+
+// step11Sync is the STATE-05 / D-16 inverse-merge sync. With --sync it prunes
+// every state entry (and its projected file) for resources dropped from the
+// Environment. Without --sync it still prunes the adapter runtime-config keys
+// this render no longer emits (e.g. the --models helper wiring after a run
+// without --models): those keys are ACH-generated, never user content, and a
+// leftover apiKeyHelper naming a missing binary breaks the tool. composeNextState
+// is PURE (no I/O), so state.json is still untouched at the maybeKill(11)
+// boundary (the sc2 invariant). Gated on !DryRun (T-07-W5-01-03).
+func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render RenderResult, adapterRan bool,
+	runtimeFiles []state.FileEntry, result *Result) error {
+	if c.opts.DryRun || existing == nil {
+		return nil
+	}
+	composed := c.composeNextState(existing, m, render, adapterRan, result.PlatformID, runtimeFiles)
+	prev := existing
+	if !c.opts.Sync {
+		if !adapterRan {
+			return nil
+		}
+		prev = &state.File{Adapter: existing.Adapter}
+		composed = &state.File{Adapter: composed.Adapter}
+	}
+	stats, err := syncFn(prev, composed, c.achDir, c.toolRoot, SyncOptions{
+		Force:  c.opts.Force,
+		Stderr: c.opts.Stderr,
+	})
+	if err != nil {
+		var ce *exit.CodedError
+		if errors.As(err, &ce) {
+			return err
+		}
+		return &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("sync inverse-merge: %v", err),
+			Wrapped: err,
+		}
+	}
+	result.FilesPruned += stats.Pruned
+	result.FilesPreserved += stats.Preserved
+	return nil
 }
 
 // step12WriteState — atomic state.json publication via state.Save
@@ -1433,8 +1469,8 @@ func (defaultStateStore) GuardEnvironment(existing *state.File, requested string
 // renderContext stuffs what the adapters need to know about the caller:
 // the credential to embed (an OAuth JWS is NOT rendered — the tool runs
 // its own ceremony on the 401 + RFC 9728 pointer; docs/developer-guide/
-// oauth-client-conformance.md §4) and, for a PERSON hydrate (OAuth or pk_), the Hub
-// base URL for the model-endpoint helper wiring. An ek_ (agents / CI) has
+// oauth-client-conformance.md §4) and, for a PERSON hydrate (OAuth or pk_)
+// run with --models, the Hub base URL for the model-endpoint helper wiring. An ek_ (agents / CI) has
 // no interactive login to lean on and keeps the key-in-file contract, so
 // it gets no helper wiring.
 func (c *commit) renderContext(ctx context.Context) context.Context {
@@ -1443,7 +1479,7 @@ func (c *commit) renderContext(ctx context.Context) context.Context {
 		renderCred = ""
 	}
 	ctx = adapter.WithCredential(ctx, renderCred)
-	if personBearer(c.opts.Bearer) {
+	if c.opts.Models && personBearer(c.opts.Bearer) {
 		ctx = adapter.WithHelperBaseURL(ctx, c.opts.BaseURL)
 	}
 	if c.opts.Only != nil {

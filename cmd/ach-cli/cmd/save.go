@@ -21,7 +21,8 @@ var errNothingHydrated = errors.New("nothing hydrated in this workspace yet")
 // newEnvSaveCmd builds `ach-cli env save`: derive ach.yaml from the realized
 // hydrate state under .ach/<env>/ and write it to the workspace root.
 func newEnvSaveCmd() *cobra.Command {
-	return &cobra.Command{
+	var flagDir string
+	cmd := &cobra.Command{
 		Use:   "save",
 		Short: "Write ach.yaml from the environments already hydrated in this workspace",
 		Long: "Derives a committed ach.yaml from the environments hydrated under " +
@@ -32,6 +33,9 @@ func newEnvSaveCmd() *cobra.Command {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+			}
+			if flagDir != "" {
+				cwd = flagDir
 			}
 			m, err := deriveManifest(cwd)
 			if errors.Is(err, errNothingHydrated) {
@@ -60,6 +64,8 @@ func newEnvSaveCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&flagDir, "dir", "", "Workspace root override (default: cwd)")
+	return cmd
 }
 
 // deriveManifest builds an achfile.Manifest from the hydrate state under

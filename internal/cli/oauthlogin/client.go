@@ -237,7 +237,7 @@ const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 // until a token, a terminal error, or expires_in. The registered redirect
 // is a loopback placeholder — the device grant never uses it, but DCR
 // needs one and the same client id then serves both flows.
-func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(userCode, verificationURI string)) (*config.OAuthCreds, error) {
+func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(userCode, verificationURI string, prefilled bool)) (*config.OAuthCreds, error) {
 	m, err := c.discover(ctx)
 	if err != nil {
 		return nil, err
@@ -264,6 +264,7 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 		DeviceCode      string `json:"device_code"`
 		UserCode        string `json:"user_code"`
 		VerificationURI string `json:"verification_uri"`
+		Complete        string `json:"verification_uri_complete"`
 		ExpiresIn       int    `json:"expires_in"`
 		Interval        int    `json:"interval"`
 		Error           string `json:"error"`
@@ -273,7 +274,13 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 	if resp.StatusCode != http.StatusOK || da.DeviceCode == "" {
 		return nil, fmt.Errorf("device authorization: %s (status %d)", da.Error, resp.StatusCode)
 	}
-	show(da.UserCode, da.VerificationURI)
+	// RFC 8628 §3.3.1: the complete URI pre-fills the code; the code is still
+	// shown so the user can confirm the page matches this terminal.
+	uri := da.VerificationURI
+	if da.Complete != "" {
+		uri = da.Complete
+	}
+	show(da.UserCode, uri, da.Complete != "")
 
 	if da.Interval <= 0 {
 		da.Interval = 5 // RFC 8628 §3.2: absent → 5 seconds

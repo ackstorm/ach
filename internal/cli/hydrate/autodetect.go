@@ -39,13 +39,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// closedSetIDs is the v1alpha1 closed-set adapter id list. Used in the
-// zero-match error message so the user sees the canonical names even
-// when no adapter registered (defensive — production callers always
-// blank-import all four, but a misconfigured test binary could surface
-// "no agent target detected" without any registered ids in adapter.Iter()).
-const closedSetIDs = "claude-code, codex, gemini-cli, opencode"
-
 // Autodetect scans `root` against every registered adapter's Detect and
 // returns the canonical id of the single match. Behavior per outcome:
 //
@@ -86,7 +79,7 @@ func Autodetect(root string, stderr io.Writer) (string, error) {
 			Code: exit.General,
 			Msg: fmt.Sprintf(
 				"no agent target detected at %s; pass --target <id> (one of: %s)",
-				root, closedSetIDs,
+				root, registeredIDs(),
 			),
 		}
 	case 1:
@@ -133,16 +126,11 @@ func ResolvePlatform(id string) (string, error) {
 
 // registeredIDs returns the closed set of canonical ids in
 // sort.Strings order for use in error messages. Sourced from
-// adapter.Iter() so it reflects what is actually registered at the
-// time of the call (defensive — production callers always have all
-// four registered, but a misconfigured test could see fewer).
+// adapter.Iter() so it never drifts from what --target accepts.
 func registeredIDs() string {
 	ids := make([]string, 0, 4)
 	for _, a := range adapter.Iter() {
 		ids = append(ids, a.ID())
-	}
-	if len(ids) == 0 {
-		return closedSetIDs
 	}
 	sort.Strings(ids)
 	return strings.Join(ids, ", ")

@@ -40,7 +40,8 @@ func fakeAS(t *testing.T) (*httptest.Server, *int32) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code": "dev1", "user_code": "BCDF-GHJK", "verification_uri": srv.URL + "/device",
-			"expires_in": 600, "interval": 1,
+			"verification_uri_complete": srv.URL + "/device?user_code=BCDF-GHJK",
+			"expires_in":                600, "interval": 1,
 		})
 	})
 	mux.HandleFunc("/register", func(w http.ResponseWriter, _ *http.Request) {
@@ -167,11 +168,11 @@ func TestDeviceLogin_ShowsCodeThenPollsUntilApproved(t *testing.T) {
 	as, regs := fakeAS(t)
 	c := &Client{BaseURL: as.URL}
 	shown := ""
-	creds, err := c.DeviceLogin(context.Background(), "", func(code, uri string) { shown = code + " @ " + uri })
+	creds, err := c.DeviceLogin(context.Background(), "", func(code, uri string, _ bool) { shown = code + " @ " + uri })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shown != "BCDF-GHJK @ "+as.URL+"/device" || creds.ClientID != "oc_test" || creds.AccessToken != "g.h.i" || creds.RefreshToken != "r3" {
+	if shown != "BCDF-GHJK @ "+as.URL+"/device?user_code=BCDF-GHJK" || creds.ClientID != "oc_test" || creds.AccessToken != "g.h.i" || creds.RefreshToken != "r3" {
 		t.Fatalf("shown=%q creds=%+v", shown, creds)
 	}
 	if atomic.LoadInt32(regs) != 1 {
@@ -183,7 +184,7 @@ func TestDeviceLogin_TerminalErrorStopsPolling(t *testing.T) {
 	as, _ := fakeAS(t)
 	c := &Client{BaseURL: as.URL}
 	// A cached client id the AS does not know → device_authorization 400.
-	if _, err := c.DeviceLogin(context.Background(), "oc_unknown", func(string, string) {}); err == nil || !strings.Contains(err.Error(), "invalid_client") {
+	if _, err := c.DeviceLogin(context.Background(), "oc_unknown", func(string, string, bool) {}); err == nil || !strings.Contains(err.Error(), "invalid_client") {
 		t.Fatalf("err=%v", err)
 	}
 }

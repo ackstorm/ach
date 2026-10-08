@@ -886,7 +886,7 @@ func TestHydrateSummary(t *testing.T) {
 		"  Runtime",
 		"    ✓ MCP servers: 2",
 		"    ✓ A2A agents: 1",
-		"    • Models: 3 (served server-side via the gateway — nothing to install locally)",
+		"    • Models: 3 available — not wired; add --models to send claude-code's model traffic through ACH",
 		"  Context",
 		"    ✓ Plugins: 4 total (8 agents, 12 commands, 4 skills)",
 		"    ✓ Prompts: 2 files",
@@ -1250,5 +1250,69 @@ func TestRunHydrate_Only(t *testing.T) {
 				t.Errorf("engine ran; want rejection first")
 			}
 		})
+	}
+}
+
+// TestModelsLine: the models line tells a person hydrate whether --models
+// wired the tool's model endpoint; an ek_ or a non-helper target gets the
+// plain informational line.
+func TestModelsLine(t *testing.T) {
+	res := hydrate.Result{PlatformID: "claude-code", RuntimeSummary: hydrate.RuntimeSummary{Models: 2}}
+	for _, tc := range []struct {
+		name     string
+		platform string
+		meta     summaryMeta
+		want     string
+	}{
+		{"pk no flag", "claude-code", summaryMeta{keyPrefix: keys.PrefixPk}, "not wired; add --models"},
+		{"oauth flag", "codex", summaryMeta{oauth: true, models: true}, "✓ Models: 2 (codex sends model traffic through ACH"},
+		{"ek flag", "claude-code", summaryMeta{keyPrefix: keys.PrefixEk, models: true}, "nothing to install locally"},
+		{"opencode", "opencode", summaryMeta{oauth: true, models: true}, "nothing to install locally"},
+	} {
+		res.PlatformID = tc.platform
+		if got := modelsLine(res, tc.meta); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: got %q, want substring %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestHydrateSummary_DryRunAndCompactModels: --dry-run says nothing was
+// written (no Files tally), and the multi-target line tells a person hydrate
+// whether models were wired.
+func TestHydrateSummary_DryRunAndCompactModels(t *testing.T) {
+	res := hydrate.Result{
+		Environment: "demo", PlatformID: "claude-code",
+		RuntimeSummary: hydrate.RuntimeSummary{Models: 2},
+	}
+	got := renderHydrateSummary([]hydrate.Result{res}, summaryMeta{oauth: true, dryRun: true})
+	if !strings.Contains(got, `Dry run (nothing written): would hydrate "demo"`) ||
+		!strings.Contains(got, "none written (dry run)") {
+		t.Errorf("dry-run summary: %q", got)
+	}
+	codex := res
+	codex.PlatformID = "codex"
+	gem := res
+	gem.PlatformID = "gemini-cli"
+	got = renderHydrateSummary([]hydrate.Result{res, codex, gem}, summaryMeta{oauth: true})
+	for _, want := range []string{"claude-code  2 models (not wired; --models)", "gemini-cli   2 models ·"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("compact summary missing %q; got %q", want, got)
+		}
+	}
+	got = renderHydrateSummary([]hydrate.Result{res, codex}, summaryMeta{oauth: true, models: true})
+	if !strings.Contains(got, "2 models (wired)") {
+		t.Errorf("compact --models summary: %q", got)
+	}
+}
+
+// TestFormatKindCounts_FoldsMcpJSON: a plugin's root .mcp.json and mcp/ dir
+// are both MCP configs — one label.
+func TestFormatKindCounts_FoldsMcpJSON(t *testing.T) {
+	counts := map[string]int{".mcp.json": 2, "mcp": 4, "skills": 7}
+	if got := formatKindCounts(counts); got != "6 MCP configs, 7 skills" {
+		t.Errorf("got %q", got)
+	}
+	if counts[".mcp.json"] != 2 {
+		t.Error("caller's map mutated")
 	}
 }
