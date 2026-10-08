@@ -325,6 +325,10 @@ func renderMemoryV1(m *achv1alpha1.MemorySpec) (*MemoryBlock, error) {
 	return renderMemory(m), nil
 }
 
+// DefaultModelType is the effective model.type when neither the agent nor the profile
+// sets one: ACH model aliases resolve through LiteLLM's model_group_alias on /v1.
+const DefaultModelType = "openai"
+
 // Render2 collapses profile + agent into the full workspace-v1 WSConfig, including
 // configVersion. This is the orchestrator task-2-ach-report.md names as the pending
 // cutover target — now implemented, wired by the controller in place of the retired
@@ -344,7 +348,10 @@ func Render2(p achv1alpha1.AgentProfile, a achv1alpha1.ACHAgent, defaultBaseURL 
 		return WSConfig{}, fmt.Errorf("no effective model.name: set it on the agent or the profile")
 	}
 	if model.Type == "" {
-		return WSConfig{}, fmt.Errorf("no effective model.type: set it on the agent or the profile")
+		// Copy before defaulting: ResolveModel may return the profile/agent pointer itself.
+		m := *model
+		m.Type = DefaultModelType
+		model = &m
 	}
 	if ResolveImage(a.Spec.Image, p.Spec.Achagent.Image) == "" {
 		return WSConfig{}, fmt.Errorf("no image: set ACHAgent.spec.image or AgentProfile.spec.achagent.image")

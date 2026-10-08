@@ -1039,8 +1039,9 @@ spec:
                   ModelSpec selects the ACH-served model (config: model{name,type,params,thinking}).
                   Name/Type are optional authoring fields (a profile or an agent may supply either
                   alone via per-field merge, ResolveModel) — Render2 requires the EFFECTIVE
-                  (post-merge) name/type to be nonempty; this is a wire-completeness check, not a
-                  CRD-level requirement, since either field may legitimately come from the sibling.
+                  (post-merge) name to be nonempty and defaults an unset effective type to openai
+                  (ACH model aliases resolve on LiteLLM's /v1); neither is a CRD-level requirement,
+                  since either field may legitimately come from the sibling.
                 properties:
                   name:
                     minLength: 1

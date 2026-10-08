@@ -198,10 +198,10 @@ func TestRender2_FullOutputConformsToSchemaAndJCSHash(t *testing.T) {
 	}
 }
 
-// TestRender2_RequiresEffectiveModelName/Type: a profile/agent pair whose merged model is
-// missing name or type must fail closed — ModelSpec.Name/Type have no CRD Required marker
-// any more (either field may legitimately come from the sibling), so Render2 is the one
-// place completeness of the EFFECTIVE value is still enforced.
+// TestRender2_RequiresEffectiveModelName: a profile/agent pair whose merged model is
+// missing name must fail closed — ModelSpec.Name has no CRD Required marker any more
+// (it may legitimately come from the sibling), so Render2 is the one place completeness
+// of the EFFECTIVE value is still enforced.
 func TestRender2_RequiresEffectiveModelName(t *testing.T) {
 	profile, agent := minimalRender2Fixture()
 	profile.Spec.Achagent.Model = &achv1alpha1.ModelSpec{Type: "openai"}
@@ -211,12 +211,20 @@ func TestRender2_RequiresEffectiveModelName(t *testing.T) {
 	}
 }
 
-func TestRender2_RequiresEffectiveModelType(t *testing.T) {
+// TestRender2_DefaultsEffectiveModelType: an unset effective type renders as openai
+// without writing it back into the profile.
+func TestRender2_DefaultsEffectiveModelType(t *testing.T) {
 	profile, agent := minimalRender2Fixture()
 	profile.Spec.Achagent.Model = &achv1alpha1.ModelSpec{Name: "m"}
-	_, err := Render2(profile, agent, "")
-	if err == nil || !strings.Contains(err.Error(), "no effective model.type") {
-		t.Fatalf("err = %v, want containing %q", err, "no effective model.type")
+	cfg, err := Render2(profile, agent, "")
+	if err != nil {
+		t.Fatalf("Render2: %v", err)
+	}
+	if cfg.Model.Type != DefaultModelType {
+		t.Fatalf("model.type = %q, want %q", cfg.Model.Type, DefaultModelType)
+	}
+	if profile.Spec.Achagent.Model.Type != "" {
+		t.Fatalf("profile model.type mutated to %q", profile.Spec.Achagent.Model.Type)
 	}
 }
 
