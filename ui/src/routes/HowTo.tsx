@@ -5,12 +5,13 @@
 //
 //   §1 Quickstart  — mint a key (link to the Keys tab) + a copy-paste `curl` to
 //                    the `ackstorm.fast` model alias against the user's gateway.
-//   §2 Editors/CLI — tabbed setup for Claude Code / Gemini / opencode / codex /
-//                    GitHub Copilot / Qwen Code (env exports, except the JSON-config
-//                    tools); each links the authoritative LiteLLM guide where one exists.
-//   §3 MCP servers — connect MCP clients to the gateway's /mcp endpoint (same key);
-//                    optional x-mcp-servers header / group URL to scope the tools.
-//   §4 No terminal — chat-UI cards (ACKstorm Chat, hosted; openwork, coming soon).
+//   §2 Editors/CLI — OpenCode only (SSO plugin install). The other tools (Pi,
+//                    Claude Code, Codex, Qwen, Gemini, Copilot) stay in TOOL_GROUPS
+//                    with `enabled: false`: kept in source, not rendered.
+//   §3 MCP servers — `opencode mcp add/auth` against /mcp/<server>, plus a curl
+//                    JSON-RPC smoke test. The generic-client tabs (Cursor, Claude
+//                    Desktop, VS Code, JSON, x-mcp-servers) are kept but hidden.
+//   §4 No terminal — chat-UI cards (ACKstorm Chat, hosted; OpenCode Desktop, coming soon).
 //
 // PERSONALIZATION (no rebuild): the gateway base URL is read live from the
 // session (`me.endpoint` === settings.api_public_url, e.g. https://api.<domain>);
@@ -251,20 +252,46 @@ console.log(resp.choices[0].message.content);`;
     }
   }
 }`;
-  // Quick smoke test via the MCP REST API — list/call tools with curl, no LLM.
-  const mcpCurl = `# List the MCP tools you can access
-curl -s ${apiBase}/mcp-rest/tools/list \\
-  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" | jq .
+  // MCP over plain curl: streamable-HTTP JSON-RPC against ONE server at
+  // /mcp/<server>/ (the forwarder routes nothing else — LiteLLM's /mcp-rest is
+  // not reachable through ACH). initialize returns the Mcp-Session-Id the next
+  // calls carry; same flow as test/e2e/oauth_frontdoor_test.go serverOutcome.
+  const MCP_EXAMPLE = 'mcp-google-drive';
+  const mcpCurl = `MCP=${apiBase}/mcp/${MCP_EXAMPLE}/
+H=(-H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream")
 
-# Call a tool (server_id + tool name + arguments)
-curl -s -X POST ${apiBase}/mcp-rest/tools/call \\
-  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "server_id": "Zapier_Gmail",
-    "name": "getProfile",
-    "arguments": {}
-  }' | jq .`;
+# 1. Open a session (keeps the Mcp-Session-Id response header)
+SID=$(curl -si "$MCP" "\${H[@]}" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}' \\
+  | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\\r')
+
+# 2. List the server's tools
+curl -s "$MCP" "\${H[@]}" -H "Mcp-Session-Id: $SID" \\
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+# 3. Call one (tool name + arguments from the list)
+curl -s "$MCP" "\${H[@]}" -H "Mcp-Session-Id: $SID" \\
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"<tool>","arguments":{}}}'`;
+
+  // OpenCode: register a server by URL, then sign in (ACH SSO, then the
+  // provider's own consent screen for some servers). OAuth, no key.
+  const opencodeMcpCmd = `# Add a server (drop --global to add it to this project only)
+opencode mcp add google-drive --url ${apiBase}/mcp/${MCP_EXAMPLE} --global
+
+# Sign in to it (opens the browser)
+opencode mcp auth google-drive
+
+# Or pick from every configured server
+opencode mcp auth`;
+  const opencodeMcpList = `Authenticate an MCP server
+│
+◆  Select MCP server
+│  Search: _
+│
+│  MCP
+│  ● google-drive (disabled)
+│  ○ mcp-context7 (disabled)
+│  ○ mcp-aws-documentation ✓ (disabled)`;
 
   // ── Editor / CLI setup ───────────────────────────────────────────────────────
   // Live setup for Claude Code, Gemini CLI, opencode, and codex. The base URL is
@@ -308,78 +335,20 @@ opencode service restart          # opencode v2: the running service loads the p
     {
       id: 'opencode',
       label: 'OpenCode',
-      intro: {
-        text: 'Recommended: sign in via the ACH SSO plugin — no key to copy or export. The config below (with a pasted key) is the fallback.',
-        caption: 'install',
-        code: opencodeSsoCmd,
-      },
       variants: [
         {
-          id: 'opencode-gemini',
-          subLabel: 'Gemini',
+          id: 'opencode',
           ready: true,
-          caption: '~/.config/opencode/opencode.json',
-          // Fallback (see intro above): OpenCode's native `google` provider against the
-          // gateway's Gemini-compatible passthrough (/gemini/v1beta). Model names must
-          // match the Gemini models your gateway exposes. apiKey is read from the
-          // LITELLM_API_KEY env var (opencode `{env:...}` interpolation), same as Codex.
-          code: `{
-  "$schema": "https://opencode.ai/config.json",
-  "enabled_providers": ["google"],
-  "provider": {
-    "google": {
-      "options": {
-        "baseURL": "${apiBase}/gemini/v1beta",
-        "apiKey": "{env:LITELLM_API_KEY}",
-        "timeout": 600000
-      }
-    }
-  },
-  "model": "google/gemini-flash-latest",
-  "small_model": "google/gemini-flash-lite-latest"
-}`,
-          note: 'Fallback: export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="ek_..."`, then run `opencode`. Model names must match the Gemini models your gateway exposes.',
-          guide: {
-            url: 'https://docs.litellm.ai/docs/tutorials/opencode_integration',
-            label: 'OpenCode + LiteLLM guide',
-          },
-        },
-        {
-          id: 'opencode-openai',
-          subLabel: 'OpenAI',
-          ready: true,
-          caption: '~/.config/opencode/opencode.json',
-          // Fallback (see intro above): opencode configured by a JSON file, an
-          // OpenAI-compatible provider pointed at the gateway. The model keys MUST
-          // match LiteLLM aliases. apiKey is read from the LITELLM_API_KEY env var
-          // (opencode `{env:...}` interpolation), same as Codex.
-          code: `{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "litellm": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "LiteLLM",
-      "options": {
-        "baseURL": "${apiBase}/v1",
-        "apiKey": "{env:LITELLM_API_KEY}"
-      },
-      "models": {
-        "ackstorm.fast": { "name": "ACKstorm Fast" },
-        "ackstorm.smart": { "name": "ACKstorm Smart" }
-      }
-    }
-  }
-}`,
-          note: 'Fallback: export the key referenced by `{env:LITELLM_API_KEY}` first: `export LITELLM_API_KEY="ek_..."`, then run `opencode` and pick a LiteLLM model with `/models`.',
-          guide: {
-            url: 'https://docs.litellm.ai/docs/tutorials/opencode_integration',
-            label: 'OpenCode + LiteLLM guide',
-          },
+          caption: 'install',
+          code: opencodeSsoCmd,
+          note: 'Signs in with your company account through the ACH SSO plugin — no key to copy or export. Your models appear under the provider above.',
         },
       ],
     },
+    // Hidden from the page (OpenCode only), kept for reference: `enabled: false`.
     {
       id: 'pi',
+      enabled: false,
       label: 'Pi agent',
       variants: [
         {
@@ -450,6 +419,7 @@ opencode service restart          # opencode v2: the running service loads the p
     },
     {
       id: 'claude',
+      enabled: false,
       label: 'Claude Code',
       variants: [
         {
@@ -511,6 +481,7 @@ claude`,
     },
     {
       id: 'codex',
+      enabled: false,
       label: 'Codex',
       variants: [
         {
@@ -542,6 +513,7 @@ supports_websockets = false`,
     },
     {
       id: 'qwen',
+      enabled: false,
       label: 'Qwen Code',
       variants: [
         {
@@ -564,7 +536,6 @@ qwen`,
         },
       ],
     },
-    // Below this line: hidden from the page, kept for reference.
     {
       id: 'gemini',
       label: 'Gemini CLI',
@@ -661,7 +632,7 @@ gemini`,
       )}
     </>
   );
-  const [mcpTab, setMcpTab] = useState<string>('access');
+  const [mcpTab, setMcpTab] = useState<string>('opencode');
 
   return (
     <div className="flex flex-col gap-8">
@@ -800,7 +771,7 @@ gemini`,
             id="tools"
             icon={ArrowRight}
             title="Editors & CLIs"
-            sub="Point your AI coding tool at the gateway. Export the variables, then run the tool as usual."
+            sub="Connect OpenCode to the gateway with single sign-on."
           >
             <Tabs value={toolGroup} onValueChange={setToolGroup}>
               <TabsList variant="line" className="flex-wrap">
@@ -846,11 +817,12 @@ gemini`,
                 </TabsContent>
               ))}
             </Tabs>
-            <p className="mt-3 font-sans text-xs leading-relaxed text-text-secondary">
+            {/* Key-based tools only (hidden above): kept, not shown. */}
+            <p className="hidden mt-3 font-sans text-xs leading-relaxed text-text-secondary">
               Swap {KEY_PLACEHOLDER} for your key (mint it on the Keys tab). The
               base URL is your live gateway; only the key differs per user.
             </p>
-            <p className="mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
+            <p className="hidden mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
               A tool that only supports the plain OPENAI_API_KEY convention sends it
               via Authorization: Bearer, which ACH does not resolve — it needs a way
               to set{' '}
@@ -865,14 +837,36 @@ gemini`,
             id="mcp"
             icon={Server}
             title="MCP servers"
-            sub="Give MCP-capable clients (Cursor, Claude Desktop, …) access to the gateway's tool servers. The MCP endpoint lives on the same gateway host, under /mcp, and uses your same virtual key."
+            sub="Add the gateway's MCP servers to OpenCode and sign in to each one. Every server lives on the same gateway host, at /mcp/<server>."
           >
             <Tabs value={mcpTab} onValueChange={setMcpTab}>
               <TabsList variant="line" className="flex-wrap">
-                <TabsTrigger value="access">MCP Access</TabsTrigger>
-                <TabsTrigger value="group">MCP Group access</TabsTrigger>
+                <TabsTrigger value="opencode">OpenCode</TabsTrigger>
+                {/* Generic MCP clients (Cursor, Claude Desktop, VS Code, JSON) and
+                    x-mcp-servers scoping: kept, not shown (OpenCode only). */}
+                <TabsTrigger value="access" className="hidden">MCP Access</TabsTrigger>
+                <TabsTrigger value="group" className="hidden">MCP Group access</TabsTrigger>
                 <TabsTrigger value="curl">Try with curl</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="opencode" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Add a server by its URL,{' '}
+                  <span className="font-mono text-text-primary">
+                    {`${apiBase}/mcp/<server>`}
+                  </span>
+                  , then sign in with{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  — single sign-on, no key. Restart OpenCode after adding one.
+                </p>
+                <CodeBlock code={opencodeMcpCmd} caption="opencode" />
+                <p className="mt-4 mb-2 font-sans text-sm text-text-secondary">
+                  Without a name,{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  lists every configured server to pick from:
+                </p>
+                <CodeBlock code={opencodeMcpList} caption="opencode mcp auth" />
+              </TabsContent>
 
               <TabsContent value="access" className="mt-4">
                 <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
@@ -925,8 +919,8 @@ gemini`,
 
               <TabsContent value="curl" className="mt-4">
                 <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
-                  List and call tools directly over the MCP REST API — no client,
-                  no LLM. Swap{' '}
+                  List and call a server's tools over plain JSON-RPC — no client,
+                  no LLM (bash). Swap{' '}
                   <span className="font-mono text-text-primary">
                     {KEY_PLACEHOLDER}
                   </span>{' '}
@@ -968,7 +962,7 @@ gemini`,
                     ACKstorm Chat
                   </span>
                   {/* Hosted + ready -> the open-in-new icon is accent green
-                      (openwork's stays muted since it is not wired yet). */}
+                      (OpenCode Desktop's stays muted since it is not wired yet). */}
                   <ExternalLink
                     className="size-4 text-primary"
                     aria-hidden="true"
@@ -987,7 +981,7 @@ gemini`,
               </a>
               )}
 
-              {/* openwork — coming soon (not yet wired to the gateway) */}
+              {/* OpenCode Desktop (the openwork app) — coming soon (not yet wired to the gateway) */}
               <a
                 href="https://github.com/different-ai/openwork"
                 target="_blank"
@@ -997,7 +991,7 @@ gemini`,
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2">
                     <span className="font-sans text-sm font-semibold text-text-primary">
-                      openwork
+                      OpenCode Desktop
                     </span>
                     <span className="inline-flex items-center rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
                       Coming soon
@@ -1009,10 +1003,10 @@ gemini`,
                   />
                 </div>
                 <p className="font-sans text-sm leading-relaxed text-text-secondary">
-                  Open-source AI workspace. Gateway support is on the way — not
-                  available yet. Star the repo to follow along.
+                  OpenCode as a desktop app. Gateway support is on the way — not
+                  available yet.
                 </p>
-                <span className="mt-1 break-all font-mono text-[11px] text-text-tertiary">
+                <span className="hidden mt-1 break-all font-mono text-[11px] text-text-tertiary">
                   github.com/different-ai/openwork
                 </span>
               </a>
@@ -1032,7 +1026,7 @@ gemini`,
                 ['404 Model not found', 'The model alias is not enabled for your team or does not exist. Check the Models tab for available aliases.'],
                 ['429 Rate limited', 'Your key, team, or the upstream provider hit a rate limit. Retry with backoff or check your limits.'],
                 ['MCP: no tools discovered', 'The MCP server is reachable but returned no tools. Check the server health and your access group on the MCP tab.'],
-                ['MCP: authentication failed', `Confirm your MCP client sends the ${AUTH_HEADER} header with your key (no Bearer prefix).`],
+                ['MCP: authentication failed', 'In OpenCode: opencode mcp logout <name>, then opencode mcp auth <name>. With curl: send the ' + AUTH_HEADER + ' header with your key (no Bearer prefix).'],
               ].map(([code, body]) => (
                 <div key={code} className="rounded-lg border border-border bg-surface p-4">
                   <div className="font-mono text-sm font-semibold text-text-primary">{code}</div>

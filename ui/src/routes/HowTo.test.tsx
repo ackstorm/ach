@@ -105,11 +105,25 @@ describe('HowTo — OpenCode install', () => {
   it('installs via the well-known URL and signs in with provider_name', () => {
     setModels([]);
     const { container } = render(<HowTo />);
-    fireEvent.click(screen.getByRole('tab', { name: 'OpenCode' }));
     const text = container.textContent ?? '';
     expect(text).toContain('opencode auth login https://api.ackstorm.ai');
     expect(text).toContain('opencode auth login acme');
     expect(text).toContain('opencode service restart');
     expect(text).not.toContain('/clients/opencode/plugin');
+  });
+});
+
+describe('HowTo — OpenCode only', () => {
+  it('shows only OpenCode tools, its MCP commands and OpenCode Desktop', () => {
+    setModels([]);
+    const { container } = render(<HowTo />);
+    for (const hidden of ['Claude Code', 'Codex', 'Pi agent', 'Qwen Code', 'Cursor', 'Claude Desktop']) {
+      expect(screen.queryByRole('tab', { name: hidden })).toBeNull();
+    }
+    const text = container.textContent ?? '';
+    expect(text).toContain('opencode mcp add google-drive --url https://api.ackstorm.ai/mcp/mcp-google-drive --global');
+    expect(text).toContain('opencode mcp auth google-drive');
+    expect(text).toContain('OpenCode Desktop');
+    expect(text).not.toContain('opencode.json');
   });
 });
