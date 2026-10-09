@@ -5,6 +5,9 @@ package s3
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -159,5 +162,56 @@ func TestNew_HTTPEndpointAcceptedWithOptIn(t *testing.T) {
 	}
 	if f == nil {
 		t.Fatal("expected non-nil Fetcher")
+	}
+}
+
+// TestFetch_FirstFetchDownloads drives a fake S3 that honours
+// If-None-Match the way S3 does: a first fetch (no PriorRev) must get the
+// body, not a 304 for the ETag HeadObject just returned.
+func TestFetch_FirstFetchDownloads(t *testing.T) {
+	t.Setenv(allowHTTPEndpointEnv, "true")
+	const etag = `"abc123"`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, "payload")
+		}
+	}))
+	defer srv.Close()
+
+	f, err := New(&achv1alpha1.S3Source{
+		Bucket:   "bucket",
+		Key:      "key",
+		Region:   "us-east-1",
+		Endpoint: srv.URL,
+		AuthSecretRef: achv1alpha1.SourceAuthSecretRef{
+			Name:               "secret",
+			AccessKeyIDKey:     "access-key-id",
+			SecretAccessKeyKey: "secret-access-key",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.Fetch(context.Background(), sources.FetchRequest{Secret: &corev1.Secret{Data: map[string][]byte{
+		"access-key-id":     []byte("ak"),
+		"secret-access-key": []byte("sk"),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.NotModified || res.Body == nil {
+		t.Fatalf("first fetch returned NotModified=%v body=%v, want the object", res.NotModified, res.Body != nil)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if body, _ := io.ReadAll(res.Body); string(body) != "payload" {
+		t.Fatalf("body %q, want payload", body)
+	}
+	if res.UpstreamRev != "abc123" {
+		t.Fatalf("UpstreamRev %q, want abc123", res.UpstreamRev)
 	}
 }

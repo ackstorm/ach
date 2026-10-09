@@ -140,28 +140,14 @@ func (f *Fetcher) Fetch(ctx context.Context, req sources.FetchRequest) (*sources
 		}, nil
 	}
 
-	// 6. GetObject for body. We also send the quoted ETag as
-	//    If-None-Match — defense in depth in case PriorRev was lost
-	//    but the object hasn't changed; S3 surfaces this as a
-	//    NotModified-class error we map to NotModified=true.
-	quotedETag := `"` + etag + `"`
+	// 6. GetObject for body. No If-None-Match: step 5 already answered
+	//    the not-modified case, and sending the ETag HeadObject just
+	//    returned made S3 answer 304 to every first fetch.
 	out, err := client.GetObject(ctx, &awss3.GetObjectInput{
-		Bucket:      aws.String(f.spec.Bucket),
-		Key:         aws.String(f.spec.Key),
-		IfNoneMatch: aws.String(quotedETag),
+		Bucket: aws.String(f.spec.Bucket),
+		Key:    aws.String(f.spec.Key),
 	})
 	if err != nil {
-		// 304-equivalent: AWS surfaces a smithy *http.ResponseError with
-		// StatusCode 304 (no typed error type for NotModified on
-		// GetObject). Detect via HTTP status and translate to
-		// NotModified=true.
-		var httpErr *smithyhttp.ResponseError
-		if errors.As(err, &httpErr) && httpErr.HTTPStatusCode() == 304 {
-			return &sources.FetchResult{
-				NotModified: true,
-				UpstreamRev: etag,
-			}, nil
-		}
 		return nil, classifyS3Err(err, "GetObject")
 	}
 
