@@ -1522,6 +1522,11 @@ the new <code>next.kid</code>.</p>
 </code></pre></div>
 <p>Setting <code>next.kid</code> to the empty base64 string <code>""</code> clears the slot
 (the Forwarder's SecretLoader treats empty <code>next.kid</code> as "no next slot").</p>
+<p>platform-api and content-service read the Secret from their mounted volume
+instead, re-read every 30 s, so they pick the promotion up within about
+90 s (kubelet sync plus that interval). An OAuth token platform-api signs
+with the old kid in that window fails at the Forwarder until the client
+refreshes it.</p>
 <h3 id="6-verify-the-cut-over">6. Verify the cut-over<a class="headerlink" href="#6-verify-the-cut-over" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s2">"</span><span class="nv">$ACH_BASE_URL</span><span class="s2">/.well-known/jwks.json"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">'.keys | length'</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># expect: 1</span>
