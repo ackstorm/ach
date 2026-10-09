@@ -534,7 +534,7 @@ substituted.
 > **`ModifyResponse` is header-only.** It was previously `nil`, documented
 > as deliberate "for streaming pass-through (D-05)". The constraint that
 > comment encoded is that the **body** is never touched, and it still is
-> not: `ModifyResponse` runs before the body is copied and buffers nothing,
+> not (except `GET /v1/models`, below): `ModifyResponse` runs before the body is copied and buffers nothing,
 > so SSE and streamable-http pass-through are unaffected. The proxy suite's
 > streaming test runs with the hook installed precisely to keep that honest.
 

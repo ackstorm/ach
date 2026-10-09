@@ -60,10 +60,13 @@ func filterModelList(resp *http.Response) error {
 	if !ok || resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "" {
 		return nil
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxTagScanBody))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxTagScanBody+1))
 	_ = resp.Body.Close()
 	if err != nil {
 		return err
+	}
+	if len(raw) > maxTagScanBody {
+		return errBodyTooLarge // never pass a truncated list off as whole (502)
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(raw))
 	var list map[string]json.RawMessage
