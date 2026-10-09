@@ -253,9 +253,16 @@ func provisionUser(ctx context.Context, deps Deps, email, name string, groups []
 	if err := enrolDefaults(user.UserID, "existing-user"); err != nil {
 		return "", err
 	}
-	if name != "" && user.UserAlias == "" {
-		if err := deps.LiteLLM.UserUpdate(ctx, &litellm.UserUpdateRequest{UserID: user.UserID, UserAlias: name}); err != nil {
-			deps.Logger.Warn("sso.callback: user_alias backfill failed", "err", err, "user_id", user.UserID)
+	// Backfill what an out-of-band creator left empty. A NULL user_email
+	// hides the user from LiteLLM's email lookups (found only through the
+	// by-id fallback); setting it makes the record whole again.
+	if user.UserEmail == "" || (name != "" && user.UserAlias == "") {
+		req := &litellm.UserUpdateRequest{UserID: user.UserID, UserEmail: email}
+		if user.UserAlias == "" {
+			req.UserAlias = name
+		}
+		if err := deps.LiteLLM.UserUpdate(ctx, req); err != nil {
+			deps.Logger.Warn("sso.callback: user_email/user_alias backfill failed", "err", err, "user_id", user.UserID)
 		}
 	}
 	enrollExtraTeams(ctx, deps, user.UserID, email, groups)

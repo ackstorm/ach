@@ -150,11 +150,59 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 				}, nil
 			}
 		}
-		return nil, ErrNotFound
+		return c.userInfoByID(ctx, email)
 	}
 	out := &UserInfo{
 		UserID:    env.UserID,
 		UserEmail: env.UserEmail,
+		Teams:     make([]string, 0, len(env.Teams)),
+		UserAlias: env.UserInfo.UserAlias,
+	}
+	for _, t := range env.Teams {
+		if t.TeamAlias != "" {
+			out.Teams = append(out.Teams, t.TeamAlias)
+		} else if t.TeamID != "" {
+			out.Teams = append(out.Teams, t.TeamID)
+		}
+	}
+	return out, nil
+}
+
+// userInfoByID is UserInfoByEmail's last resort: no /user/list row carries
+// the email. A user whose user_email is NULL (created out-of-band with
+// user_id=email, e.g. by token-factory) is invisible to both email lookups,
+// and every team check then sees zero teams. ACH keys users by
+// user_id=email, so ask by id — but only an answer for exactly that id
+// counts: LiteLLM may answer with its default_user_id placeholder, which
+// carries the admin's teams.
+func (c *RESTClient) userInfoByID(ctx context.Context, email string) (*UserInfo, error) {
+	raw, err := c.makeRequest(ctx, "GET", "/user/info?user_id="+url.QueryEscape(email), nil)
+	if err != nil {
+		if IsHTTPNotFound(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var env struct {
+		UserID   string `json:"user_id"`
+		UserInfo struct {
+			UserEmail string `json:"user_email"`
+			UserAlias string `json:"user_alias"`
+		} `json:"user_info"`
+		Teams []struct {
+			TeamID    string `json:"team_id"`
+			TeamAlias string `json:"team_alias"`
+		} `json:"teams,omitempty"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("litellm: decode GET /user/info: %w", err)
+	}
+	if env.UserID != email {
+		return nil, ErrNotFound
+	}
+	out := &UserInfo{
+		UserID:    env.UserID,
+		UserEmail: env.UserInfo.UserEmail,
 		Teams:     make([]string, 0, len(env.Teams)),
 		UserAlias: env.UserInfo.UserAlias,
 	}

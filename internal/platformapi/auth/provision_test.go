@@ -408,6 +408,22 @@ func TestProvisionUserAlias(t *testing.T) {
 			}
 		})
 	}
+
+	// A user created out-of-band with a NULL user_email (found only through
+	// the by-id fallback) gets the email backfilled; a set alias is kept.
+	t.Run("existing user without email: email backfilled, alias kept", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userInfoBehaviour = func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "bob@example.com", UserAlias: "Robert"}, nil
+		}
+		if _, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", "Bob B", nil); err != nil {
+			t.Fatal(err)
+		}
+		got := flm.rec.userUpdates
+		if len(got) != 1 || got[0].UserEmail != "bob@example.com" || got[0].UserAlias != "" {
+			t.Fatalf("UserUpdate: %+v", got)
+		}
+	})
 }
 
 func TestMintPK_PutsKeyInUserShellWithExpiry(t *testing.T) {

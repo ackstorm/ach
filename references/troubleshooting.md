@@ -1300,3 +1300,33 @@ Two v2 `auth logout` traps (from alitellm-auth, same plugin):
 A plugin under `~/.config/opencode/plugins/` that logs `Plugin must export a default
 definition with an id and an effect or setup function` is a v1-only plugin that v2
 skips. Harmless to ACH.
+
+### ❌ OpenCode refresh `400 invalid_grant` for every install of one user; log `identity provider refused the refresh; sessions ended … claimed twice`
+
+Every `/platform/oauth/token` refresh replays the user's ONE shared Dex refresh
+token. Before 2026-10-09 that replay ran on the request context: a slow Dex
+answer (15 s on 2026-10-08) whose client hung up was cancelled AFTER Dex had
+rotated, the rotated token was never stored, and the next replay got Dex's
+`refresh token claimed twice` (400) — which ends every session of the user and
+revokes the oauth `pk_`. `revalidateAtIdP` now runs detached
+(`context.WithoutCancel` + 30 s). An affected user must log in again
+(`opencode auth login -p <provider>`). Every refused refresh logs an
+`oauth: refresh refused: …` line with `sub`/`client_id`.
+
+Dex facts (`dexidp/dex` `grants/refresh.go`): reuse, an unknown token and an
+expired one all answer 400 with the same "invalid or already claimed" family —
+not distinguishable; an upstream connector refusal (user disabled at Google)
+answers **500**, which ACH maps to 503, not to "sessions ended". The prod Dex
+`refreshTokens.validIfNotUsedFor: 720h` ends a session idle for 30 days — an
+accepted cap below `RefreshTTL` (90 d).
+
+### ❌ `env list` empty / `403 unauthorized_team` for one user whose LiteLLM `user_email` is NULL
+
+A LiteLLM user created out-of-band (token-factory) with `user_id=<email>` but a
+NULL `user_email` was invisible to `UserInfoByEmail` (`/user/info?user_email=`
+answers the `default_user_id` placeholder, `/user/list?user_email=` has no
+match) → zero teams everywhere (env list, hydrate, `ek_` create, forwarder
+`/mcp`/`/a2a` precheck). `UserInfoByEmail` now falls back to
+`/user/info?user_id=<email>`, trusting only an answer for exactly that id (the
+placeholder carries the admin's teams), and the SSO login backfills
+`user_email` on the record.

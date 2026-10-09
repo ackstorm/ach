@@ -326,6 +326,7 @@ type UserInfo struct {
 // sets; LiteLLM leaves every omitted field unchanged.
 type UserUpdateRequest struct {
 	UserID    string `json:"user_id"`
+	UserEmail string `json:"user_email,omitempty"`
 	UserAlias string `json:"user_alias,omitempty"`
 }
 

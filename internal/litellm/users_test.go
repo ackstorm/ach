@@ -221,6 +221,60 @@ func TestUserInfoByEmailByIDPlaceholderGuard(t *testing.T) {
 	}
 }
 
+// TestUserInfoByEmailNullEmailFallsBackToUserID — incident 2026-10-08:
+// a user created out-of-band with user_id=email but a NULL user_email is
+// invisible to both email lookups; every team check saw zero teams. The
+// last resort asks /user/info?user_id=<email>, trusting only an answer
+// for exactly that id.
+func TestUserInfoByEmailNullEmailFallsBackToUserID(t *testing.T) {
+	cases := []struct {
+		name   string
+		byID   func(w http.ResponseWriter)
+		wantID string
+	}{
+		{"null-email user found by id", func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"user_id":"jp@example.com","user_info":{"user_email":null},"teams":[{"team_id":"t1","team_alias":"default"},{"team_id":"t2"}]}`))
+		}, "jp@example.com"},
+		{"placeholder by id is not the user", func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"user_id":"default_user_id","teams":[{"team_id":"t9","team_alias":"admin"}]}`))
+		}, ""},
+		{"404 by id is not found", func(w http.ResponseWriter) {
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"error":{"message":"not found"}}`))
+		}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/user/info" && r.URL.Query().Get("user_id") == "jp@example.com":
+					tc.byID(w)
+				case r.URL.Path == "/user/info":
+					_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+				case r.URL.Path == "/user/list":
+					_, _ = w.Write([]byte(`{"users":[{"user_id":"other@example.com","user_email":"other@example.com"}]}`))
+				default:
+					t.Errorf("unexpected path: %s", r.URL)
+				}
+			}))
+			defer srv.Close()
+
+			got, err := newTestClient(t, srv.URL).UserInfoByEmail(context.Background(), "jp@example.com")
+			if tc.wantID == "" {
+				if !errors.Is(err, ErrNotFound) {
+					t.Fatalf("want ErrNotFound, got %+v, %v", got, err)
+				}
+				return
+			}
+			if err != nil || got.UserID != tc.wantID || got.UserEmail != "" ||
+				len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "t2" {
+				t.Fatalf("got %+v, %v", got, err)
+			}
+		})
+	}
+}
+
 // TestUserInfoByEmailEscapesPlus asserts that the email url-escape uses
 // QueryEscape semantics — the `+` in `a+tag@b.c` MUST become `%2B`, not
 // stay literal (literal `+` in a query string decodes as space).
