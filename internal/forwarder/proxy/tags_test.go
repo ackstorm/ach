@@ -144,3 +144,34 @@ func TestDirectorLeavesBodyUnmodified(t *testing.T) {
 		t.Fatalf("body = %q, want it untouched", got[:n])
 	}
 }
+
+// A client "Connection: X-Litellm-Tags" makes ReverseProxy delete that header
+// AFTER Director, so the budget tags must survive end to end (review #13).
+func TestConnectionHeaderCannotStripBudgetTags(t *testing.T) {
+	var got http.Header
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = r.Header.Clone() }))
+	defer up.Close()
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, up.URL)})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	req.Header.Set("Connection", "X-Litellm-Tags, X-Litellm-Api-Key")
+	req = req.WithContext(ctxWith(middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9"}))
+	rp.ServeHTTP(httptest.NewRecorder(), req)
+	if got.Get("X-Litellm-Tags") != "user:pepe@example.com" {
+		t.Fatalf("x-litellm-tags stripped via Connection: %v", got)
+	}
+	if _, ok := got["X-Litellm-Api-Key"]; !ok {
+		t.Fatalf("x-litellm-api-key stripped via Connection: %v", got)
+	}
+}
+
+// A websocket upgrade must keep working: only "Upgrade" survives.
+func TestConnectionHeaderKeepsUpgrade(t *testing.T) {
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000")})
+	req := httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+	req.Header.Set("Connection", "keep-alive, Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	rp.Director(req)
+	if got := req.Header.Get("Connection"); got != "Upgrade" {
+		t.Fatalf("Connection = %q, want Upgrade", got)
+	}
+}

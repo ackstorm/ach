@@ -102,6 +102,14 @@ func New(deps Deps) *httputil.ReverseProxy {
 	}
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
+			// ReverseProxy deletes every header the client names in Connection
+			// AFTER Director runs, so "Connection: X-Litellm-Tags" would strip
+			// the budget tags set below (review #13). Keep only an upgrade.
+			if hasUpgradeToken(req.Header["Connection"]) {
+				req.Header.Set("Connection", "Upgrade")
+			} else {
+				req.Header.Del("Connection")
+			}
 			req.URL.Scheme = deps.LiteLLMUpstream.Scheme
 			req.URL.Host = deps.LiteLLMUpstream.Host
 			// req.Host stays what the client dialled: LiteLLM composes its
@@ -249,4 +257,17 @@ func keyTypeFor(ctx context.Context) string {
 		return "ek"
 	}
 	return "none"
+}
+
+// hasUpgradeToken reports whether any Connection value lists the "upgrade"
+// token (stdlib stand-in for httpguts.HeaderValuesContainsToken).
+func hasUpgradeToken(values []string) bool {
+	for _, v := range values {
+		for _, tok := range strings.Split(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(tok), "upgrade") {
+				return true
+			}
+		}
+	}
+	return false
 }
