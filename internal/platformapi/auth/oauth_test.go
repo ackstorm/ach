@@ -853,3 +853,34 @@ func TestASCallback_KeepsTheDexTokenWhenProvisioningFails(t *testing.T) {
 		t.Fatalf("dex refresh token must be the fresh one: ok=%v %q", ok, rt)
 	}
 }
+
+// A pk_ revoke (EndSessions) landing while Dex answers a refresh must not be
+// undone by the refresh storing the rotated token: no key resurrected, no
+// fresh pk_ minted.
+func TestToken_RefreshCannotResurrectEndedSessions(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	minted := pks.minted
+
+	f.dexRefresh = func(rt string) (string, error) {
+		if err := f.deps.EndSessions(context.Background(), "u@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		return rt + "+", nil
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("refresh racing a revoke: %d %s", w.Code, w.Body)
+	}
+	var stored string
+	if ok, _ := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &stored); ok {
+		t.Fatalf("Dex token resurrected: %q", stored)
+	}
+	if pks.minted != minted {
+		t.Fatalf("a new pk_ was minted after the revoke")
+	}
+}

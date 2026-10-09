@@ -99,6 +99,16 @@ func revokePersonalKey(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		// End the caller's OAuth sessions BEFORE the flip: a refresh in flight
+		// then finds no Dex token and cannot re-mint after the row flips. The
+		// email is the caller's own, so it is safe even if the flip 404s.
+		// Best-effort: the DB flip is the barrier.
+		if deps.EndOAuthSessions != nil {
+			if err := deps.EndOAuthSessions(ctx, keyCtx.OwnerEmail); err != nil && deps.Logger != nil {
+				deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
+			}
+		}
+
 		// DB-first revocation (KEY-07): flip DB row with owner check enforced
 		// by the DB function. ErrKeyNotFoundOrNotOwner → 404 (no existence leak).
 		litellmToken, err := deps.DB.RevokePersonalKeyByOwner(ctx, keyID, keyCtx.OwnerEmail)
@@ -121,13 +131,6 @@ func revokePersonalKey(deps Deps) http.HandlerFunc {
 			})
 			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 			return
-		}
-
-		// Best-effort like the LiteLLM delete: the DB flip is the barrier.
-		if deps.EndOAuthSessions != nil {
-			if err := deps.EndOAuthSessions(ctx, keyCtx.OwnerEmail); err != nil && deps.Logger != nil {
-				deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
-			}
 		}
 
 		// Best-effort LiteLLM delete (WARN-04): DB flip already happened and IS

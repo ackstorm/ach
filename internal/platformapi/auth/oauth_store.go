@@ -30,6 +30,17 @@ func (s *OAuthStore) Put(ctx context.Context, kind, id string, v any, ttl time.D
 	return s.RDB.Set(ctx, oauthKey(kind, id), b, ttl).Err()
 }
 
+// PutIfExists overwrites a record only while it still exists (SET XX); false
+// when it is gone. A rotation that must not resurrect a record deleted
+// meanwhile (EndSessions) uses it.
+func (s *OAuthStore) PutIfExists(ctx context.Context, kind, id string, v any, ttl time.Duration) (bool, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return false, err
+	}
+	return s.RDB.SetXX(ctx, oauthKey(kind, id), b, ttl).Result()
+}
+
 // Get decodes into out; false when absent.
 func (s *OAuthStore) Get(ctx context.Context, kind, id string, out any) (bool, error) {
 	b, err := s.RDB.Get(ctx, oauthKey(kind, id)).Bytes()

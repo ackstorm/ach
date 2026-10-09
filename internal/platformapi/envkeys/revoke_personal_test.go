@@ -337,7 +337,7 @@ func TestRevokePersonalHandler(t *testing.T) {
 	}
 }
 
-// A pk_ revoke ends the owner's OAuth sessions; a 404 does not.
+// A pk_ revoke ends the owner's OAuth sessions BEFORE the flip, so even a 404 (not owner) ends the caller's own.
 func TestRevokePersonal_EndsOwnerOAuthSessions(t *testing.T) {
 	run := func(dbErr error) (int, []string) {
 		var ended []string
@@ -365,7 +365,7 @@ func TestRevokePersonal_EndsOwnerOAuthSessions(t *testing.T) {
 	if code, ended := run(nil); code != 200 || len(ended) != 1 || ended[0] != "user@example.com" {
 		t.Fatalf("revoke: code=%d ended=%v", code, ended)
 	}
-	if code, ended := run(db.ErrKeyNotFoundOrNotOwner); code != 404 || len(ended) != 0 {
+	if code, ended := run(db.ErrKeyNotFoundOrNotOwner); code != 404 || len(ended) != 1 {
 		t.Fatalf("404: code=%d ended=%v", code, ended)
 	}
 }
