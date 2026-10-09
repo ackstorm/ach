@@ -61,6 +61,13 @@ func stripBodyTags(r *http.Request) error {
 		return nil
 	}
 
+	// Starlette decodes headers as latin-1 and Python's strip() also removes
+	// \xa0 and \x85, which Go's TrimSpace leaves in place: refuse any
+	// non-ASCII or control byte (tab excepted) and repeated Content-Type
+	// headers instead of guessing how LiteLLM would classify them.
+	if cts := r.Header.Values("Content-Type"); len(cts) > 1 || (len(cts) == 1 && ambiguousHeader(cts[0])) {
+		return errInvalidBody
+	}
 	// Classify exactly as LiteLLM does (http_parsing_utils.py): text before the
 	// first ";", trimmed and lower-cased. mime.ParseMediaType is stricter
 	// (duplicate params -> "") and would disagree on what is a form.
@@ -106,6 +113,31 @@ func checkURLEncoded(raw []byte) error {
 	return nil
 }
 
+func ambiguousHeader(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if c := v[i]; c >= 0x80 || (c < 0x20 && c != '\t') || c == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNameAndNameStar reports a Content-Disposition carrying both name= and
+// name*= (parsers disagree on which wins).
+func hasNameAndNameStar(cd string) bool {
+	var plain, star bool
+	for _, seg := range strings.Split(cd, ";")[1:] {
+		k, _, _ := strings.Cut(seg, "=")
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "name":
+			plain = true
+		case "name*":
+			star = true
+		}
+	}
+	return plain && star
+}
+
 // boundaryOf returns the multipart boundary, or "" when none can be found.
 func boundaryOf(ct string) string {
 	if _, params, err := mime.ParseMediaType(ct); err == nil {
@@ -146,7 +178,7 @@ func checkMultipart(raw []byte, boundary string) error {
 			return errInvalidBody
 		}
 		_, params, err := mime.ParseMediaType(cd[0])
-		if err != nil {
+		if err != nil || hasNameAndNameStar(cd[0]) {
 			return errInvalidBody
 		}
 		if hasTagField(strings.TrimSpace(params["name"])) {

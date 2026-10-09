@@ -155,6 +155,10 @@ func TestStripBodyTagsRejects(t *testing.T) {
 		{"zero-part multipart", "multipart/form-data; boundary=" + b, "--" + b + "--\r\n", errInvalidBody},
 		{"junk after boundary", "multipart/form-data; boundary=" + b,
 			"--" + b + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nv\r\n--" + b + "junk", errInvalidBody},
+		{"NBSP content type", "application/x-www-form-urlencoded\u00a0", `{"a":"x&metadata=%7B%7D&b=1"}`, errInvalidBody},
+		{"NEL content type", "application/x-www-form-urlencoded\u0085", `{"a":"x"}`, errInvalidBody},
+		{"control byte content type", "application/json\x0b", `{"a":"x"}`, errInvalidBody},
+		{"name and name*", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name*=utf-8''metadata`), errInvalidBody},
 		{"multipart without boundary", "multipart/form-data", mp("model"), errInvalidBody},
 	}
 	for _, c := range cases {
@@ -191,5 +195,14 @@ func TestHandlerV1RejectsUnparseableBody(t *testing.T) {
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), c.code) || forwarded {
 			t.Fatalf("%s: code = %d body = %s forwarded = %v", c.ct, rec.Code, rec.Body.String(), forwarded)
 		}
+	}
+}
+
+func TestStripBodyTagsRepeatedContentType(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/v1/x", strings.NewReader(`{"a":1}`))
+	r.Header.Add("Content-Type", "application/json")
+	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	if err := stripBodyTags(r); !errors.Is(err, errInvalidBody) {
+		t.Fatalf("err = %v, want errInvalidBody", err)
 	}
 }
