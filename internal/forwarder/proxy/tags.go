@@ -15,7 +15,9 @@ import (
 // tagsHeader is LiteLLM's per-request tag slot. Measured 2026-09-22: a tag
 // presented here is budget-enforced on /v1, /gemini (both the passthrough
 // and the OpenAI-compat v1beta shape) and /mcp — which is why ACH stamps
-// tags in ONE place (the Director) instead of mutating JSON bodies. It
+// tags in ONE place (the Director) instead of injecting into JSON bodies; the
+// /v1 and /gemini handlers only STRIP client-supplied body tags (bodytags.go,
+// review #5), so a caller cannot charge another tag's budget. It
 // replaces FWD-06's metadata.tags injection wholesale: never both at once,
 // or a tag would be counted twice.
 const tagsHeader = "X-Litellm-Tags"

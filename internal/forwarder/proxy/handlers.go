@@ -46,11 +46,23 @@ type HandlerDeps struct {
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
-// /v1 and /gemini: forward, and let the Director stamp the budget tags.
-// routeLabel is the metrics route dimension.
+// /v1 and /gemini: strip client body tags (the JSON request body is read once
+// for that, review #5; responses still stream untouched), forward, and let the
+// Director stamp the budget tags. routeLabel is the metrics route dimension.
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
+		if err := stripBodyTags(r); err != nil {
+			reqID := middleware.RequestIDFromCtx(r.Context())
+			if errors.Is(err, errBodyTooLarge) {
+				metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "request_too_large")
+				render.Error(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large", reqID)
+				return
+			}
+			metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
+			render.Error(w, http.StatusBadRequest, "invalid_request", "could not read request body", reqID)
+			return
+		}
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
 		rp.ServeHTTP(w, r)
 	}

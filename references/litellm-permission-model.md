@@ -462,6 +462,16 @@ The forwarder stamps them on EVERY authenticated request, in that order, via
 `x-litellm-tags` (`internal/forwarder/proxy/tags.go`). A `pk_` carries only
 `user:`; a request with no ACH identity carries none.
 
+**Client body tags are stripped (review #5).** LiteLLM merges body `tags`,
+`metadata.tags` and `litellm_metadata.tags` with the header and checks/charges
+every tag's budget, and its `reject_clientside_metadata_tags` covers only
+`metadata.tags`. Left alone, a caller could write `"tags":["user:victim@corp"]`
+and bill someone else. The `/v1` and `/gemini` handlers
+(`internal/forwarder/proxy/bodytags.go`) therefore read each
+`application/json` request body once (32 MiB cap, else 413
+`request_too_large`) and drop those three keys; untouched bodies are forwarded
+byte-identical, and responses still stream.
+
 ### Enforcement
 
 | Fact | Evidence |

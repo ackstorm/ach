@@ -70,7 +70,8 @@ type Deps struct {
 	// its bare Google name; the caller may send either.
 	//
 	// /v1 deliberately has no equivalent: there the model travels in the
-	// JSON body, and the Director never touches req.Body (D-05 streaming).
+	// JSON body, and the Director never touches req.Body (the handlers read
+	// the JSON request body once to strip client budget tags, review #5).
 	// Use LiteLLM's own model_group_alias for that surface.
 	GeminiStripModelPrefixes []string
 }
@@ -89,8 +90,9 @@ type Deps struct {
 // ACH rather than LiteLLM's own front door. It runs BEFORE the body is copied
 // and buffers nothing, so streaming pass-through (D-05) is unaffected — the
 // constraint that comment always encoded is that the BODY is never touched, and
-// it still is not. Director likewise does NOT touch req.Body, preserving SSE
-// semantics. With an empty/unparseable BaseURL the hook is nil, exactly as before.
+// it still is not. Response streaming (SSE) is untouched; on /v1 and /gemini
+// the handler reads the JSON REQUEST body once to strip client budget tags
+// (review #5), and the Director itself never touches req.Body. With an empty/unparseable BaseURL the hook is nil, exactly as before.
 func New(deps Deps) *httputil.ReverseProxy {
 	publicBase := parsePublicBase(deps.BaseURL)
 	var modifyResponse func(*http.Response) error

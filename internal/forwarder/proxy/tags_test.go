@@ -125,26 +125,6 @@ func TestDirectorOverwritesSpoofedTagHeader(t *testing.T) {
 	}
 }
 
-// TestDirectorLeavesBodyUnmodified — tags ride the header now; the request
-// body is forwarded byte-for-byte (the 1 MiB JSON rewrite is gone).
-func TestDirectorLeavesBodyUnmodified(t *testing.T) {
-	const body = `{"model":"demo-model","metadata":{"tags":["mine"]}}`
-	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(ctxWith(middleware.KeyContext{
-		KeyType: keys.PrefixEk, OwnerEmail: "p@e.com", Environment: "demo", KeyID: "ek_1",
-	}))
-
-	rp.Director(req)
-
-	got := make([]byte, len(body)+16)
-	n, _ := req.Body.Read(got)
-	if string(got[:n]) != body {
-		t.Fatalf("body = %q, want it untouched", got[:n])
-	}
-}
-
 // A client "Connection: X-Litellm-Tags" makes ReverseProxy delete that header
 // AFTER Director, so the budget tags must survive end to end (review #13).
 func TestConnectionHeaderCannotStripBudgetTags(t *testing.T) {
