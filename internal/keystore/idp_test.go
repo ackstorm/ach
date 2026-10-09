@@ -276,3 +276,29 @@ func TestTrustedIdPResolver(t *testing.T) {
 		t.Fatalf("issuer down: want ErrIdPUnreachable, got %v", err)
 	}
 }
+
+// Review #4: the Redis resolver cache is shared with platform-api and
+// content-service, so a Dex token the forwarder accepts must never land in
+// it — composed as cmd/ach/cmd/forwarder.go wires it, trusted IdP outside.
+func TestTrustedIdPResolver_NotInSharedCache(t *testing.T) {
+	idp := newTestIdP(t)
+	k1 := rsaKey(t)
+	idp.serve("k1", k1)
+	ctx := context.Background()
+	dex := signRS(t, "k1", k1, jwtv5.MapClaims{"iss": idp.srv.URL, "aud": "chat", "exp": time.Now().Add(time.Hour).Unix(), "email": "u@x.com"})
+
+	// What platform-api/content-service resolve through: ACH's own chain,
+	// which refuses a Dex token, behind the shared cache.
+	shared, _, _ := setupCached(t, &fakeResolver{respond: func(string) (*KeyInfo, error) { return nil, nil }})
+	lookup := func(_ context.Context, email string) (*db.PkKeyInfo, error) {
+		return &db.PkKeyInfo{KeyID: "pkid_oa", OwnerEmail: email, ExpiresAt: time.Now().Add(24 * time.Hour)}, nil
+	}
+	fwd := NewTrustedIdPResolver(shared, NewIdPVerifier(IdPConfig{Issuer: idp.srv.URL, Audiences: []string{"chat"}, Claim: "email"}), lookup, nil)
+
+	if info, err := fwd.Resolve(ctx, dex); err != nil || info == nil {
+		t.Fatalf("forwarder: info=%+v err=%v", info, err)
+	}
+	if info, err := shared.Resolve(ctx, dex); err != nil || info != nil {
+		t.Fatalf("platform-api view of the same Dex token: want (nil,nil), got %+v %v", info, err)
+	}
+}

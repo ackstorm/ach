@@ -159,7 +159,8 @@ type trustedIdPResolver struct {
 // tag, shell team, revocation identical); everything else goes to inner
 // unchanged. Never mints: no row is ErrLoginRequired. lookup slides the row
 // (db.OAuthPKCheckAndExtend); hook mirrors a slide onto the LiteLLM key.
-// Sits INSIDE the Redis cache like the OAuth resolver.
+// Sits OUTSIDE the Redis cache: that cache is shared with platform-api and
+// content-service, which must never accept an IdP token.
 func NewTrustedIdPResolver(inner Resolver, v *IdPVerifier, lookup OAuthPKLookup, hook PkExtendHook) Resolver {
 	return &trustedIdPResolver{inner: inner, v: v, lookup: lookup, hook: hook}
 }
@@ -187,7 +188,7 @@ func (r *trustedIdPResolver) Resolve(ctx context.Context, plaintext string) (*Ke
 	}
 	info := KeyInfoFromPK(row)
 	if exp.Before(*info.ExpiresAt) {
-		info.ExpiresAt = &exp // the cache entry never outlives the IdP token
+		info.ExpiresAt = &exp // never outlive the IdP token
 	}
 	return info, nil
 }

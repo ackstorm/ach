@@ -347,16 +347,21 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, "ach", pool)
-	if cfg.TrustedIdP != nil {
-		oauthResolver = keystore.NewTrustedIdPResolver(oauthResolver, keystore.NewIdPVerifier(*cfg.TrustedIdP),
-			func(ctx context.Context, email string) (*db.PkKeyInfo, error) {
-				return db.OAuthPKCheckAndExtend(ctx, pool, email)
-			}, extendHook)
-	}
 	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
+	}
+	// The trusted IdP sits OUTSIDE the Redis cache: platform-api and
+	// content-service read that cache too, and a Dex token cached here would
+	// pass as an identity there (review #4).
+	// ponytail: one DB lookup per trusted-IdP request; add a forwarder-local
+	// cache if LibreChat traffic ever makes it show.
+	if cfg.TrustedIdP != nil {
+		cachedResolver = keystore.NewTrustedIdPResolver(cachedResolver, keystore.NewIdPVerifier(*cfg.TrustedIdP),
+			func(ctx context.Context, email string) (*db.PkKeyInfo, error) {
+				return db.OAuthPKCheckAndExtend(ctx, pool, email)
+			}, extendHook)
 	}
 
 	// W9 (REVIEW): the cached client requires mgr.Start() to populate,

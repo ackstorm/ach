@@ -289,7 +289,7 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
   whose unverified `iss` equals the ONE configured issuer (Dex for
   LibreChat) is verified (RS256 discovery JWKS, exp, aud list, claim
   non-empty, `email_verified` not false) and mapped to the user's EXISTING
-  oauth `pk_` (`keystore.NewTrustedIdPResolver`, inside the Redis cache) —
+  oauth `pk_` (`keystore.NewTrustedIdPResolver`, outside the shared Redis cache — platform-api and content-service read it) —
   never minted. No live row → 403 `ach_login_required`; issuer down → 503
   `idp_unreachable`. Each use slides that row like a plain pk_
   (`db.OAuthPKCheckAndExtend`: 7 d, 90 d cap). Forwarder only.

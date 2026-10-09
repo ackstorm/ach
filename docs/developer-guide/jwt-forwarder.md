@@ -383,8 +383,9 @@ Row lifetime: LibreChat never calls `/token`, which is what keeps an oauth row
 alive for ACH OAuth clients. So each trusted-IdP use slides the row exactly
 like a plain pk_ (`db.OAuthPKCheckAndExtend`: 7 days, 5-minute debounce,
 absolute cap `created_at + 90 days`) and fires the existing LiteLLM expiry
-mirror. A positive cache entry lives at most 60 s and never past the IdP
-token's `exp`. A user disabled at the IdP keeps a valid token until its `exp`
+mirror. A trusted-IdP result is never put in the Redis resolver cache:
+platform-api and content-service read that cache too, and must not accept
+an IdP token, so every such request is checked against Postgres. A user disabled at the IdP keeps a valid token until its `exp`
 (Dex default 24 h), then stops sliding the row.
 platform-api shares the middleware with its own `platformApi.headers`
 (resolve only). On `/mcp` + `/a2a` the per-target ACH JWT overwrites
