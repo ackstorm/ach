@@ -10,9 +10,7 @@
 //     fetcher always operates on a single key).
 //  2. If req.PriorRev equals the ETag, returns
 //     FetchResult{NotModified: true} — caller skips re-publish.
-//  3. Otherwise GetObject (passes If-None-Match for safety; the SDK
-//     surfaces 304-equivalent via NotModified-class errors) and returns
-//     the streaming body.
+//  3. Otherwise GetObject (unconditional) and returns the streaming body.
 //
 // Authentication uses static credentials extracted from
 // req.Secret.Data[AccessKeyIDKey + SecretAccessKeyKey]. Endpoint

@@ -184,7 +184,7 @@ func (r *trustedIdPResolver) Resolve(ctx context.Context, plaintext string) (*Ke
 		return nil, ErrLoginRequired
 	}
 	if row.Extended && r.hook != nil && row.LiteLLMToken != nil {
-		r.hook(context.WithoutCancel(ctx), *row.LiteLLMToken) // outlives the singleflight leader ctx
+		r.hook(context.WithoutCancel(ctx), *row.LiteLLMToken) // outlives the request ctx
 	}
 	info := KeyInfoFromPK(row)
 	if exp.Before(*info.ExpiresAt) {

@@ -129,6 +129,12 @@ kubectl -n <deployment-namespace> patch secret ach-jwt-signing-keys --type=json 
 Setting `next.kid` to the empty base64 string `""` clears the slot
 (the Forwarder's SecretLoader treats empty `next.kid` as "no next slot").
 
+platform-api and content-service read the Secret from their mounted volume
+instead, re-read every 30 s, so they pick the promotion up within about
+90 s (kubelet sync plus that interval). An OAuth token platform-api signs
+with the old kid in that window fails at the Forwarder until the client
+refreshes it.
+
 ### 6. Verify the cut-over
 
 ```bash

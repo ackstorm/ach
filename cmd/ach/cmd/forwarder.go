@@ -355,8 +355,9 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	// The trusted IdP sits OUTSIDE the Redis cache: platform-api and
 	// content-service read that cache too, and a Dex token cached here would
 	// pass as an identity there (review #4).
-	// ponytail: one DB lookup per trusted-IdP request; add a forwarder-local
-	// cache if LibreChat traffic ever makes it show.
+	// ponytail: one row-locking UPDATE per trusted-IdP request
+	// (db.OAuthPKCheckAndExtend); add a forwarder-local cache if LibreChat
+	// traffic ever makes it show.
 	if cfg.TrustedIdP != nil {
 		cachedResolver = keystore.NewTrustedIdPResolver(cachedResolver, keystore.NewIdPVerifier(*cfg.TrustedIdP),
 			func(ctx context.Context, email string) (*db.PkKeyInfo, error) {
