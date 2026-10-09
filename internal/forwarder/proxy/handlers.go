@@ -54,13 +54,19 @@ func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	inner := func(w http.ResponseWriter, r *http.Request) {
 		if err := stripBodyTags(r); err != nil {
 			reqID := middleware.RequestIDFromCtx(r.Context())
-			if errors.Is(err, errBodyTooLarge) {
+			switch {
+			case errors.Is(err, errBodyTooLarge):
 				metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "request_too_large")
 				render.Error(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large", reqID)
 				return
+			case errors.Is(err, errClientTags):
+				metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_tags_not_allowed")
+				render.Error(w, http.StatusBadRequest, "client_tags_not_allowed",
+					"budget tags and metadata cannot be sent in form bodies through ACH", reqID)
+				return
 			}
 			metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
-			render.Error(w, http.StatusBadRequest, "invalid_request", "could not read request body", reqID)
+			render.Error(w, http.StatusBadRequest, "invalid_request", "request body is not valid", reqID)
 			return
 		}
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")

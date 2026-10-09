@@ -92,7 +92,8 @@ type Deps struct {
 // constraint that comment always encoded is that the BODY is never touched, and
 // it still is not. Response streaming (SSE) is untouched; on /v1 and /gemini
 // the handler reads the JSON REQUEST body once to strip client budget tags
-// (review #5), and the Director itself never touches req.Body. With an empty/unparseable BaseURL the hook is nil, exactly as before.
+// (review #5), and the Director itself never touches req.Body. With an
+// empty/unparseable BaseURL the hook is nil, exactly as before.
 func New(deps Deps) *httputil.ReverseProxy {
 	publicBase := parsePublicBase(deps.BaseURL)
 	var modifyResponse func(*http.Response) error

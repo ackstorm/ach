@@ -468,9 +468,14 @@ every tag's budget, and its `reject_clientside_metadata_tags` covers only
 `metadata.tags`. Left alone, a caller could write `"tags":["user:victim@corp"]`
 and bill someone else. The `/v1` and `/gemini` handlers
 (`internal/forwarder/proxy/bodytags.go`) therefore read each
-`application/json` request body once (32 MiB cap, else 413
+request body once (32 MiB cap, else 413
 `request_too_large`) and drop those three keys; untouched bodies are forwarded
-byte-identical, and responses still stream.
+byte-identical, and responses still stream. It fails closed because LiteLLM's
+body parser is more lenient than Go's: every non-form body is scanned as JSON
+regardless of Content-Type (a string-valued `metadata` is parsed and
+re-encoded as an object), an unparseable non-empty body (e.g. `NaN`) is 400
+`invalid_request`, and a multipart/urlencoded form with a `tags`, `metadata`
+or `litellm_metadata` field is 400 `client_tags_not_allowed`.
 
 ### Enforcement
 
