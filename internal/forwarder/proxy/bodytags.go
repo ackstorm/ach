@@ -128,10 +128,13 @@ func hasNameAndNameStar(cd string) bool {
 	var plain, star bool
 	for _, seg := range strings.Split(cd, ";")[1:] {
 		k, _, _ := strings.Cut(seg, "=")
-		switch strings.ToLower(strings.TrimSpace(k)) {
-		case "name":
+		k = strings.ToLower(strings.TrimSpace(k))
+		if k == "name" {
 			plain = true
-		case "name*":
+		}
+		// name* and RFC 2231 continuations (name*0*, name*1) are all the
+		// starred form.
+		if strings.HasPrefix(k, "name*") {
 			star = true
 		}
 	}

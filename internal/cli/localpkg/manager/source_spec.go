@@ -53,16 +53,25 @@ func BuildEntrySpec(
 	return spec, nil
 }
 
-// tokenFor returns the marketplace token only for an entry on the
-// marketplace's own host — never a PAT to a host a marketplace.json names
-// (mirrors the operator's tokenForHost).
+// tokenFor returns the marketplace token only for an https entry on the
+// marketplace's own host AND port (default 443) — never a PAT to a host,
+// port or cleartext scheme a marketplace.json names (mirrors the operator's
+// tokenForHost).
 func tokenFor(entryURL, marketplaceCloneURL, token string) string {
 	e, err1 := url.Parse(entryURL)
 	m, err2 := url.Parse(marketplaceCloneURL)
-	if err1 != nil || err2 != nil || e.Hostname() == "" || !strings.EqualFold(e.Hostname(), m.Hostname()) {
+	if err1 != nil || err2 != nil || e.Scheme != "https" || e.Hostname() == "" ||
+		!strings.EqualFold(e.Hostname(), m.Hostname()) || portOrDefault(e) != portOrDefault(m) {
 		return ""
 	}
 	return token
+}
+
+func portOrDefault(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	return "443"
 }
 
 func buildEntrySpec(src contentkit.ClaudeCodeMarketplaceSource, marketplaceCloneURL, marketplaceRef string) (gitfetch.Spec, error) {

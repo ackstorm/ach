@@ -201,6 +201,9 @@ func TestBuildEntrySpec_TokenHostScoping(t *testing.T) {
 		{"foreign git-subdir", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "git-subdir", URL: "https://attacker.example/p.git"}, ""},
 		{"github on github mkt", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "github", Repo: "org/x"}, "T"},
 		{"github on gitlab mkt", gl, contentkit.ClaudeCodeMarketplaceSource{Kind: "github", Repo: "org/x"}, ""},
+		{"http same host", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "url", URL: "http://github.com/org/other.git"}, ""},
+		{"different port", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "url", URL: "https://github.com:8443/org/other.git"}, ""},
+		{"explicit default port", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "url", URL: "https://GitHub.com:443/org/other.git"}, "T"},
 		{"local-path", gl, contentkit.ClaudeCodeMarketplaceSource{Kind: "local-path", Path: "p"}, "T"},
 	}
 	for _, tc := range tests {

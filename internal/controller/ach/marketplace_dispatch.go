@@ -238,7 +238,10 @@ func ownHostOf(mp *achv1alpha1.PluginMarketplace) string {
 // applied to EVERY marketplace type (a github/bitbucket/http marketplace
 // likewise must not lend its token to a foreign-host entry).
 func tokenForHost(mp *achv1alpha1.PluginMarketplace, host, token string) string {
-	if own := ownHostOf(mp); own != "" && strings.EqualFold(host, own) {
+	// host and own come from sources.CanonicalCloneURL: https-only (http is
+	// rejected there) and "host[:port]", so equality covers scheme and port;
+	// only an explicit default port needs normalising.
+	if own := ownHostOf(mp); own != "" && strings.EqualFold(strings.TrimSuffix(host, ":443"), strings.TrimSuffix(own, ":443")) {
 		return token
 	}
 	return ""

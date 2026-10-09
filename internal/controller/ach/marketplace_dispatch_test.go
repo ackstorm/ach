@@ -496,3 +496,27 @@ func TestBuildGitSpecForEntry_TokenScopedToOwnHost(t *testing.T) {
 		})
 	}
 }
+
+// The token also needs the same port, and an http:// entry is refused before
+// any token is considered (CanonicalCloneURL is https-only).
+func TestBuildGitSpecForEntry_TokenNeedsSamePortAndHTTPS(t *testing.T) {
+	auth := &corev1.Secret{Data: map[string][]byte{"token": []byte("glpat-secret")}}
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "gitlab",
+			GitLab: &achv1alpha1.GitLabSource{Host: "git.example.com", Project: "g/p"},
+		},
+	}
+	entry := func(u string) contentkit.ClaudeCodeMarketplacePlugin {
+		return contentkit.ClaudeCodeMarketplacePlugin{Name: "p", Source: contentkit.ClaudeCodeMarketplaceSource{Kind: kindURL, URL: u}}
+	}
+	if spec, err := buildGitSpecForEntry(mp, entry("https://git.example.com:8443/g/o.git"), auth, "/cache"); err != nil || spec.Token != "" {
+		t.Errorf("other port: token = %q err = %v; want none", spec.Token, err)
+	}
+	if spec, err := buildGitSpecForEntry(mp, entry("https://git.example.com:443/g/o.git"), auth, "/cache"); err != nil || spec.Token == "" {
+		t.Errorf("explicit 443: token = %q err = %v; want kept", spec.Token, err)
+	}
+	if spec, err := buildGitSpecForEntry(mp, entry("http://git.example.com/g/o.git"), auth, "/cache"); err == nil && spec.Token != "" {
+		t.Errorf("http entry got a token")
+	}
+}

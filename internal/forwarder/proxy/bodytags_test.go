@@ -165,6 +165,7 @@ func TestStripBodyTagsRejects(t *testing.T) {
 		{"NEL content type", "application/x-www-form-urlencoded\u0085", `{"a":"x"}`, errInvalidBody},
 		{"control byte content type", "application/json\x0b", `{"a":"x"}`, errInvalidBody},
 		{"name and name*", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name*=utf-8''metadata`), errInvalidBody},
+		{"name and name*0*", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name*0*=utf-8''meta; name*1*=data`), errInvalidBody},
 		{"multipart without boundary", "multipart/form-data", mp("model"), errInvalidBody},
 	}
 	for _, c := range cases {
