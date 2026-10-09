@@ -281,7 +281,11 @@ func migrateLegacyFlatState(workspaceCwd string, stderr io.Writer) error {
 		return nil
 	}
 
-	targetDir := filepath.Join(achRoot, loaded.Environment)
+	statePath, err := state.ResolvePath(workspaceCwd, loaded.Environment, false)
+	if err != nil {
+		return nil // not a safe environment name: leave the flat state alone
+	}
+	targetDir := filepath.Dir(statePath)
 	if _, err := os.Stat(filepath.Join(targetDir, "state.json")); err == nil {
 		return nil // already migrated
 	}

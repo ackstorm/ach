@@ -44,6 +44,12 @@ func ResolvePath(workspaceCwd, environment string, global bool) (string, error) 
 	if environment == "" {
 		return "", fmt.Errorf("%w: a non-empty environment is required (state is namespaced by environment per spec §8.1)", ErrInvalidPath)
 	}
+	// The name can come from a committed ach.yaml: a ".." or a separator
+	// would put <ach-dir> — and every RemoveAll under it — outside the
+	// workspace (review #14).
+	if err := validateSegment("environment", environment); err != nil {
+		return "", err
+	}
 	if global {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -70,7 +76,10 @@ func ResolvePath(workspaceCwd, environment string, global bool) (string, error) 
 // platform MUST be a single non-empty path segment (no separators, not "."/"..");
 // callers pass a canonical adapter id from hydrate.ResolvePlatform.
 func ResolvePlatformPath(workspaceCwd, environment, platform string, global bool) (string, error) {
-	if err := validatePlatformSegment(platform); err != nil {
+	if platform == "" {
+		return "", fmt.Errorf("%w: a non-empty platform is required for a per-platform state path", ErrInvalidPath)
+	}
+	if err := validateSegment("platform", platform); err != nil {
 		return "", err
 	}
 	base, err := ResolvePath(workspaceCwd, environment, global)
@@ -104,15 +113,10 @@ func ListStatePaths(workspaceCwd, environment string, global bool) ([]string, er
 	return out, nil
 }
 
-// validatePlatformSegment rejects a platform value that is not a single, safe
-// path segment — defense-in-depth against a crafted id reaching the filename.
-func validatePlatformSegment(platform string) error {
-	if platform == "" {
-		return fmt.Errorf("%w: a non-empty platform is required for a per-platform state path", ErrInvalidPath)
-	}
-	if platform == "." || platform == ".." ||
-		strings.ContainsAny(platform, `/\`) || platform != filepath.Base(platform) {
-		return fmt.Errorf("%w: invalid platform segment %q", ErrInvalidPath, platform)
+// validateSegment rejects a value that is not a single, safe path segment.
+func validateSegment(what, v string) error {
+	if v == "." || v == ".." || strings.ContainsAny(v, `/\`) || v != filepath.Base(v) {
+		return fmt.Errorf("%w: invalid %s segment %q", ErrInvalidPath, what, v)
 	}
 	return nil
 }

@@ -158,3 +158,15 @@ func TestListStatePaths(t *testing.T) {
 		t.Errorf("ListStatePaths(absent) = %v, want empty", empty)
 	}
 }
+
+// Review #14: an Environment name from a committed ach.yaml must not move
+// <ach-dir> (and every RemoveAll under it) outside the workspace.
+func TestResolvePath_RejectsUnsafeEnvironment(t *testing.T) {
+	for _, env := range []string{"..", ".", "../../victim", "a/b", `a\b`, "/abs"} {
+		for _, global := range []bool{false, true} {
+			if p, err := state.ResolvePath("/ws", env, global); !errors.Is(err, state.ErrInvalidPath) {
+				t.Errorf("env %q global=%v: got %q, %v; want ErrInvalidPath", env, global, p, err)
+			}
+		}
+	}
+}
