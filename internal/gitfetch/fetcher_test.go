@@ -793,3 +793,20 @@ func TestLsRemote_TimeoutIsUnreachable(t *testing.T) {
 		t.Fatalf("err = %v; want ErrUnreachable", err)
 	}
 }
+
+// Review #2: an option-like URL must be refused before git runs.
+func TestOptionLikeURLRefused(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "pwned")
+	evil := "--upload-pack=touch " + marker
+
+	if _, err := LsRemote(context.Background(), evil, "main", "", AuthBearer); !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+		t.Errorf("LsRemote err = %v, want ErrUpstreamInvalid", err)
+	}
+	_, err := New(Spec{URL: evil, Ref: "main", SHA: strings.Repeat("a", 40), CacheRoot: t.TempDir()}).Fetch(context.Background())
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+		t.Errorf("Fetch err = %v, want ErrUpstreamInvalid", err)
+	}
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Fatal("marker exists: git executed the option")
+	}
+}

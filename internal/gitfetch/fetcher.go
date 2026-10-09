@@ -145,6 +145,9 @@ func (f *Fetcher) Fetch(ctx context.Context) (*Result, error) {
 	if spec.URL == "" {
 		return nil, fmt.Errorf("git: spec.URL required: %w", sourceserr.ErrUpstreamInvalid)
 	}
+	if err := validateURL(spec.URL); err != nil {
+		return nil, err
+	}
 	if spec.Ref == "" {
 		return nil, fmt.Errorf("git: spec.Ref required: %w", sourceserr.ErrUpstreamInvalid)
 	}
@@ -189,7 +192,7 @@ func (f *Fetcher) Fetch(ctx context.Context) (*Result, error) {
 	// git clone --depth=1 --branch=<ref> <url> <dst>
 	// Auth (when spec.Token != "") rides on -c http.extraHeader= prepended
 	// inside runGit; never URL-injected.
-	if err := runGit(ctx, cloneDir, spec.Token, spec.AuthScheme, "clone", "--depth=1", "--branch="+spec.Ref, "--no-tags", "--single-branch", cloneURL, cloneDir); err != nil {
+	if err := runGit(ctx, cloneDir, spec.Token, spec.AuthScheme, "clone", "--depth=1", "--branch="+spec.Ref, "--no-tags", "--single-branch", "--", cloneURL, cloneDir); err != nil {
 		cleanupOnErr()
 		return nil, ClassifyError(err)
 	}
@@ -249,6 +252,15 @@ func (f *Fetcher) Fetch(ctx context.Context) (*Result, error) {
 		Body:        rc,
 		UpstreamRev: spec.SHA,
 	}, nil
+}
+
+// validateURL refuses a repository argument git would parse as an option
+// ("--upload-pack=<cmd>" runs a command). Callers also pass "--" before it.
+func validateURL(u string) error {
+	if strings.HasPrefix(strings.TrimSpace(u), "-") {
+		return fmt.Errorf("git url %q looks like an option: %w", u, sourceserr.ErrUpstreamInvalid)
+	}
+	return nil
 }
 
 // buildGitInvocation returns the full args slice for a git subcommand.

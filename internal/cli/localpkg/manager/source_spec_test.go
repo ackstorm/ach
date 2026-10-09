@@ -13,7 +13,7 @@ func TestBuildEntrySpec(t *testing.T) {
 	t.Parallel()
 
 	const (
-		mktURL   = "https://git.example.com/org/marketplace.git"
+		mktURL   = "https://github.com/org/marketplace.git"
 		mktRef   = "main"
 		token    = "tok-123"
 		bearerSc = gitfetch.AuthBearer
@@ -73,7 +73,7 @@ func TestBuildEntrySpec(t *testing.T) {
 				Ref:        "v1",
 				SHA:        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 				Subtree:    "tools",
-				Token:      token,
+				Token:      "", // foreign host: token withheld
 				AuthScheme: bearerSc,
 			},
 		},
@@ -88,7 +88,7 @@ func TestBuildEntrySpec(t *testing.T) {
 				Ref:        "main",
 				SHA:        "",
 				Subtree:    "",
-				Token:      token,
+				Token:      "", // foreign host: token withheld
 				AuthScheme: bearerSc,
 			},
 		},
@@ -182,6 +182,39 @@ func TestBuildEntrySpec(t *testing.T) {
 			}
 			if got.AuthScheme != tc.want.AuthScheme {
 				t.Errorf("AuthScheme: got %v, want %v", got.AuthScheme, tc.want.AuthScheme)
+			}
+		})
+	}
+}
+
+func TestBuildEntrySpec_TokenHostScoping(t *testing.T) {
+	t.Parallel()
+	const gh = "https://github.com/org/mkt.git"
+	const gl = "https://gitlab.example/g/m.git"
+	tests := []struct {
+		name, mkt string
+		src       contentkit.ClaudeCodeMarketplaceSource
+		want      string
+	}{
+		{"foreign url", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "url", URL: "https://attacker.example/p.git"}, ""},
+		{"same-host url", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "url", URL: "https://github.com/org/other.git"}, "T"},
+		{"foreign git-subdir", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "git-subdir", URL: "https://attacker.example/p.git"}, ""},
+		{"github on github mkt", gh, contentkit.ClaudeCodeMarketplaceSource{Kind: "github", Repo: "org/x"}, "T"},
+		{"github on gitlab mkt", gl, contentkit.ClaudeCodeMarketplaceSource{Kind: "github", Repo: "org/x"}, ""},
+		{"local-path", gl, contentkit.ClaudeCodeMarketplaceSource{Kind: "local-path", Path: "p"}, "T"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := BuildEntrySpec(tc.src, tc.mkt, "main", "T", gitfetch.AuthBasicOAuth2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Token != tc.want {
+				t.Errorf("Token = %q, want %q", got.Token, tc.want)
+			}
+			if tc.want == "" && got.AuthScheme != gitfetch.AuthBearer {
+				t.Errorf("AuthScheme not zeroed with dropped token: %v", got.AuthScheme)
 			}
 		})
 	}
