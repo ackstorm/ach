@@ -919,6 +919,10 @@ func ListAllHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusUnauthorized, "unauthenticated", "missing key context", reqID)
 			return
 		}
+		if keyCtx.KeyType != keys.PrefixPk {
+			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "ek_ may not list keys", reqID)
+			return
+		}
 		q := r.URL.Query()
 		limit, err := parseLimit(q.Get("limit"))
 		if err != nil {

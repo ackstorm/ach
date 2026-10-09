@@ -369,3 +369,35 @@ func TestRevokePersonal_EndsOwnerOAuthSessions(t *testing.T) {
 		t.Fatalf("404: code=%d ended=%v", code, ended)
 	}
 }
+
+// An ek_ caller may not revoke a pk_: 401 invalid_key_type, no DB flip, no
+// OAuth session teardown.
+func TestRevokePersonal_EkCallerRefused(t *testing.T) {
+	ended := false
+	fdb := &revokePersonalDB{}
+	deps := Deps{
+		DB:      fdb,
+		LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}},
+		Redis:   &noopRedis{},
+		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		EndOAuthSessions: func(context.Context, string) error {
+			ended = true
+			return nil
+		},
+	}
+	r := chi.NewRouter()
+	MountKeys(r, deps)
+	req := httptest.NewRequest(http.MethodDelete, "/platform/keys/pkid_target00000000000000001", nil)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID: "ekid_caller00000000000000000", KeyType: keys.PrefixEk, OwnerEmail: "user@example.com",
+	}, false)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req.WithContext(middleware.WithRequestID(ctx, "req_test")))
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "invalid_key_type") {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fdb.revokeCallKeyID != "" || ended {
+		t.Fatalf("ek_ reached revoke: db=%q ended=%v", fdb.revokeCallKeyID, ended)
+	}
+}

@@ -1149,3 +1149,27 @@ func TestListAll_StatusFilterIsOnEffectiveState(t *testing.T) {
 		}
 	})
 }
+
+// An ek_ caller may not list keys: 401 invalid_key_type, DB never queried.
+func TestListAllHandler_EkCallerRefused(t *testing.T) {
+	fdb := &fakeEkDB{}
+	deps := Deps{
+		DB:      fdb,
+		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLM: &litellm.NoopClient{},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/platform/keys", nil)
+	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+		KeyID: "ekid_00000000000000000000000000", KeyType: keys.PrefixEk, OwnerEmail: "user@example.com",
+	}, false)
+	req = req.WithContext(middleware.WithRequestID(ctx, "req_test"))
+	rec := httptest.NewRecorder()
+	ListAllHandler(deps).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "invalid_key_type") {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fdb.lastFilter.OwnerEmail != nil {
+		t.Errorf("DB queried for ek_ caller: %+v", fdb.lastFilter)
+	}
+}

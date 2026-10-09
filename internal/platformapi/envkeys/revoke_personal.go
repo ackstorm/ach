@@ -68,6 +68,16 @@ func revokePersonalKey(deps Deps) http.HandlerFunc {
 
 		keyID := chi.URLParam(r, "key_id")
 
+		// Caller-type guard: an ek_ may not revoke a pk_ (same rule as CreateHandler).
+		if keyCtx.KeyType != keys.PrefixPk {
+			audit.EmitAudit(ctx, deps.Audit, audit.Event{
+				Action: audit.ActionPkRevoke, Outcome: audit.OutcomeInvalidKeyType,
+				Actor: actor, RequestID: reqID, KeyID: keyID,
+			})
+			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "ek_ may not revoke a pk_", reqID)
+			return
+		}
+
 		// pkid_ prefix guard — reject anything that is not a pk_ key ID.
 		if !strings.HasPrefix(keyID, keys.PkidKeyIDPrefix) {
 			render.Error(w, http.StatusBadRequest, codeInvalidArgument,
