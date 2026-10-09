@@ -16,6 +16,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -390,10 +391,15 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no login
 	}
 	out.signer = signer
+	var redirectHosts []string
+	if err := json.Unmarshal([]byte(cmp.Or(os.Getenv("ACH_OAUTH_REDIRECT_HOSTS"), "[]")), &redirectHosts); err != nil {
+		return out, fmt.Errorf("ACH_OAUTH_REDIRECT_HOSTS: want a JSON list of hostnames: %w", err)
+	}
 	oauthDeps := &auth.OAuthDeps{
 		Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
 		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
 		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
+		RedirectHosts: redirectHosts,
 	}
 	// The OpenCode plugin (github.com/ackstorm/opencode-oidc-provider) only accepts a
 	// provider id matching its PROVIDER_ID and silently falls back to

@@ -112,6 +112,8 @@ spec:
               value: {{ .Values.platformApi.teams.sso | default dict | toJson | quote }}
             - name: ACH_USER_MAX_KEYS
               value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
+            - name: ACH_OAUTH_REDIRECT_HOSTS
+              value: {{ (.Values.platformApi.oauth).redirectHosts | default list | toJson | quote }}
             {{- with (.Values.platformApi.console).chatUrl }}
             - name: ACH_CONSOLE_CHAT_URL
               value: {{ . | quote }}

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,7 +29,14 @@ type OAuthDeps struct {
 	Namespace  string
 	AccessTTL  time.Duration
 	RefreshTTL time.Duration
-	Now        func() time.Time
+
+	// RedirectHosts are the only hosts an https redirect_uri may name
+	// (platformApi.oauth.redirectHosts -> ACH_OAUTH_REDIRECT_HOSTS). Loopback
+	// http is always allowed. Registration is anonymous and Dex logs a
+	// signed-in user in silently, so any other https host could collect a
+	// victim's authorization code.
+	RedirectHosts []string
+	Now           func() time.Time
 
 	// HTTPClient is a seam for tests calling broker metadata/registration;
 	// nil → a 10s stdlib client.
@@ -88,12 +97,15 @@ func isLoopback(raw string) bool {
 	return h == "127.0.0.1" || h == "localhost" || h == "::1"
 }
 
-func redirectAllowed(raw string) bool {
+func (d OAuthDeps) redirectAllowed(raw string) bool {
+	if isLoopback(raw) {
+		return true
+	}
 	u, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || u.Scheme != "https" {
 		return false
 	}
-	return (u.Scheme == "https" && u.Hostname() != "") || isLoopback(raw)
+	return slices.ContainsFunc(d.RedirectHosts, func(h string) bool { return strings.EqualFold(h, u.Hostname()) })
 }
 
 // redirectMatches: exact, except a loopback redirect may change port

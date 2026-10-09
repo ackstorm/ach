@@ -53,6 +53,20 @@ could start `/authorize` for THEIR DCR client, hand the Dex URL to a
 victim, and redeem the victim's code with their own PKCE verifier (login
 CSRF / code injection; v0.9.0 security review, fixed in v0.9.1).
 
+### ❌ `invalid_redirect_uri` registering an MCP web client (e.g. claude.ai)
+```bash
+# POST /platform/oauth/register -> 400 invalid_redirect_uri
+# GET /platform/oauth/authorize  -> 400 "redirect_uri is not registered for this client"
+```
+✅ Only loopback `http` redirects (ach-cli, OpenCode) are accepted by default.
+An `https` redirect needs its host in `platformApi.oauth.redirectHosts`
+(chart value -> `ACH_OAUTH_REDIRECT_HOSTS`, JSON list), e.g. `[claude.ai]`.
+The allowlist is also checked at `/authorize`, so a client registered before
+a host was removed stops working at once.
+WHY: registration is anonymous and Dex signs a logged-in user in silently, so
+any `https` redirect host could collect a victim's authorization code (review
+#1, 2026-10-09). Only list hosts you trust with your users' codes.
+
 ### ❌ `ach-cli env hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
 ```bash
 ach-cli env hydrate demo          # profile logged in via `ach-cli login` (OAuth)

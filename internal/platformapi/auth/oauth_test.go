@@ -154,7 +154,7 @@ func TestRegister(t *testing.T) {
 	f := newAS(t)
 	w := f.do(t, "POST", "/platform/oauth/register", map[string]any{
 		"client_name":   "OpenCode",
-		"redirect_uris": []string{"http://127.0.0.1:19876/mcp/oauth/callback", "http://localhost:53421/callback", "https://app.example/cb"},
+		"redirect_uris": []string{"http://127.0.0.1:19876/mcp/oauth/callback", "http://localhost:53421/callback"},
 	}, map[string]string{"Content-Type": "application/json"})
 	if w.Code != 201 {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
@@ -169,6 +169,28 @@ func TestRegister(t *testing.T) {
 	}
 	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"client_name": "x"}, nil); w.Code != 400 {
 		t.Fatalf("no redirects: %d", w.Code)
+	}
+	// https only for an allowlisted host (review #1): anonymous DCR + silent
+	// Dex login would otherwise hand a victim's code to any https site.
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"https://evil.example/cb"}}, nil); w.Code != 400 {
+		t.Fatalf("https host not allowlisted: %d", w.Code)
+	}
+	f.deps.RedirectHosts = []string{"claude.ai"}
+	f.mount()
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"https://Claude.ai/api/mcp/auth_callback"}}, nil); w.Code != 201 {
+		t.Fatalf("allowlisted host: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestAuthorize_RejectsStoredClientWithDisallowedHost(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	c := oauthClient{ClientID: "legacy", RedirectURIs: []string{"https://evil.example/cb"}}
+	if err := f.store.Put(context.Background(), "client", "legacy", c, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	w := f.do(t, "GET", authorizeURL("legacy", map[string]string{"redirect_uri": "https://evil.example/cb"}), nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("stored client with disallowed host: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }
 

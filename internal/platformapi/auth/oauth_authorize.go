@@ -164,7 +164,7 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if !registered {
+	if !registered || !d.redirectAllowed(redirectURI) {
 		// Never bounce to an address the client did not register.
 		htmlError(w, 400, "redirect_uri is not registered for this client")
 		return

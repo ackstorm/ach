@@ -33,8 +33,8 @@ func (d OAuthDeps) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, u := range body.RedirectURIs {
-		if !redirectAllowed(u) {
-			oauthError(w, 400, "invalid_redirect_uri", "redirect_uris must be https or loopback http")
+		if !d.redirectAllowed(u) {
+			oauthError(w, 400, "invalid_redirect_uri", "redirect_uris must be loopback http or https on an allowed host")
 			return
 		}
 	}
