@@ -56,7 +56,7 @@ func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 			return
 		}
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
-		rp.ServeHTTP(w, r)
+		rp.ServeHTTP(w, prepareModelList(r))
 	}
 	return observeDuration(routeLabel, inner)
 }

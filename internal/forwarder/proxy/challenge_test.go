@@ -158,7 +158,7 @@ func TestRewriteChallengeHost(t *testing.T) {
 }
 
 // TestParsePublicBaseRejects pins that only an absolute http(s) URL enables the
-// rewrite — anything else leaves ModifyResponse nil.
+// rewrite — anything else leaves the challenge rewrite off.
 func TestParsePublicBaseRejects(t *testing.T) {
 	for _, raw := range []string{"", "not a url", "/relative/path", "ach.example.com"} {
 		if got := parsePublicBase(raw); got != nil {

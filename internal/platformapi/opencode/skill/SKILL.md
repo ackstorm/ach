@@ -204,6 +204,8 @@ cap later.
 
 Store the key in the consumer's secret store. It is sent as the `x-ach-key` header
 (or `x-api-key`) to `{{base}}/v1` for models and `{{base}}/mcp/<name>` for MCP.
+`GET {{base}}/v1/models` lists chat models only; add `?types=embedding` (any LiteLLM
+model mode, comma-separated) or `?types=all` to see the others.
 
 ## Other tools
 

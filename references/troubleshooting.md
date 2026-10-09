@@ -712,6 +712,17 @@ FIX: send budget-free requests (drop those fields; ACH stamps the tags itself).
 Uploads above 32 MiB, or in a refused shape, go to LiteLLM directly, done by an
 admin; they are not routable through ACH.
 
+### ❌ A model is missing from `GET /v1/models` (embedding, transcription, image…)
+
+**Symptom:** a granted model works when called by name but is not in the
+`/v1/models` list (LibreChat's picker, an SDK's `models.list()`).
+
+**Cause:** the forwarder lists only `chat`/`completion` models by default
+(`internal/forwarder/proxy/models.go`). Call `/v1/models?types=embedding`
+(any LiteLLM mode, comma-separated) or `?types=all`. A chat model that is
+missing has the wrong `mode` in LiteLLM: set `model_info.mode: chat` on its
+deployment. A model with no `mode` at all is always listed.
+
 ### ❌ LibreChat (trusted IdP / Dex token): 403 `ach_login_required`
 
 The Dex token verified, but the user has no live `purpose='oauth'` pk_: they

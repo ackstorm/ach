@@ -139,6 +139,30 @@ func TestOAuthFrontDoor(t *testing.T) {
 		}
 	}
 
+	// 6a. /v1/models lists text models by default, every mode with
+	//     ?types=all; both stay a well-formed OpenAI list through the real
+	//     LiteLLM (gzip and all), and the default is a subset of all.
+	ids := func(path string) map[string]bool {
+		code, _, body := getJSON(t, path, map[string]string{"Authorization": "Bearer " + access})
+		data, ok := body["data"].([]any)
+		if code != 200 || !ok {
+			t.Fatalf("%s: %d %v", path, code, body)
+		}
+		out := map[string]bool{}
+		for _, d := range data {
+			m, _ := d.(map[string]any)
+			id, _ := m["id"].(string)
+			out[id] = true
+		}
+		return out
+	}
+	all := ids("/v1/models?types=all")
+	for id := range ids("/v1/models") {
+		if !all[id] {
+			t.Fatalf("default /v1/models lists %q, missing from ?types=all", id)
+		}
+	}
+
 	// 6b. The content-service accepts the JWT too (hydrate from an OAuth
 	//     profile fetches every object with it in x-ach-key).
 	if code, _, body := getJSON(t, "/content/prompt/claude-code-system-prompt",

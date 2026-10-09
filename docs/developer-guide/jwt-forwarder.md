@@ -538,6 +538,18 @@ substituted.
 > so SSE and streamable-http pass-through are unaffected. The proxy suite's
 > streaming test runs with the hook installed precisely to keep that honest.
 
+**The one body rewrite: `GET /v1/models`.** That list is small JSON, never a
+stream, so the hook filters it (`proxy/models.go`): by default only items
+whose LiteLLM `mode` is `chat` or `completion` are kept, which is what the
+console labels "chat", so a chat client (LibreChat) offers no embedding,
+transcription, image or rerank model. `?types=<mode>[,<mode>…]` adds
+LiteLLM's own mode names on top (`embedding`, `audio_transcription`,
+`image_generation`, `responses`…), `?types=all` turns the filter off, and
+`types` never reaches LiteLLM. An item with no `mode` stays: LiteLLM omits it
+when neither `model_info.mode` nor its cost map knows the model. The request
+drops `Accept-Encoding` so the Transport hands the hook plain JSON; any body
+that is not a 200 `{"data":[…]}` list passes through untouched.
+
 ---
 
 ## 1.6 OAuth consent is declared by the backend policy

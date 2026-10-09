@@ -85,7 +85,8 @@ type Deps struct {
 //  3. Strip + rewrite headers (Plan 04-01 — pure function).
 //  4. JWT attach LAST — strip has already cleared any client Authorization.
 //
-// ModifyResponse is HEADER-ONLY (issue #177): it rewrites the
+// ModifyResponse is HEADER-ONLY (issue #177) everywhere but GET /v1/models,
+// whose small JSON list it filters by model mode (models.go): it rewrites the
 // resource_metadata pointer in a 401/403 WWW-Authenticate challenge so it names
 // ACH rather than LiteLLM's own front door. It runs BEFORE the body is copied
 // and buffers nothing, so streaming pass-through (D-05) is unaffected — the
@@ -93,15 +94,14 @@ type Deps struct {
 // it still is not. Response streaming (SSE) is untouched; on /v1 and /gemini
 // the handler reads the JSON REQUEST body once to strip client budget tags
 // (review #5), and the Director itself never touches req.Body. With an
-// empty/unparseable BaseURL the hook is nil, exactly as before.
+// empty/unparseable BaseURL the challenge rewrite is skipped.
 func New(deps Deps) *httputil.ReverseProxy {
 	publicBase := parsePublicBase(deps.BaseURL)
-	var modifyResponse func(*http.Response) error
-	if publicBase != nil {
-		modifyResponse = func(resp *http.Response) error {
+	modifyResponse := func(resp *http.Response) error {
+		if publicBase != nil {
 			rewriteChallengeHost(resp, publicBase)
-			return nil
 		}
+		return filterModelList(resp)
 	}
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
