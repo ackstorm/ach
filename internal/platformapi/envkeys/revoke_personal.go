@@ -113,6 +113,13 @@ func revokePersonalKey(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		// Best-effort like the LiteLLM delete: the DB flip is the barrier.
+		if deps.EndOAuthSessions != nil {
+			if err := deps.EndOAuthSessions(ctx, keyCtx.OwnerEmail); err != nil && deps.Logger != nil {
+				deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
+			}
+		}
+
 		// Best-effort LiteLLM delete (WARN-04): DB flip already happened and IS
 		// the caller-observable revocation barrier. LiteLLM-unreachable → 200,
 		// outcome OutcomeLitellmUnreachable. Orphan-cleanup loop reconciles.

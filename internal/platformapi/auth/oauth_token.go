@@ -314,3 +314,12 @@ func (d OAuthDeps) mint(ctx context.Context, email, userID, purpose string) (str
 	}
 	return d.Auth.MintPK(ctx, email, userID, purpose)
 }
+
+// EndSessions ends every OAuth session of the user: their shared Dex
+// refresh token goes, so each refresh and console revalidation fails
+// ("no Dex refresh token stored") and each access JWT dies with its
+// revoked pk_ row. A pk_ revoke calls it — without it the next refresh
+// re-minted the revoked credential. Logging in again works.
+func (d OAuthDeps) EndSessions(ctx context.Context, email string) error {
+	return d.Store.Del(ctx, dexRefreshKind, email)
+}

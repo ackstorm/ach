@@ -52,6 +52,9 @@ type Deps struct {
 	// SetMaxKeys upserts one person's ek_ key ceiling. Production binds this
 	// to db.SetUserMaxKeys; the function seam keeps handler tests pool-free.
 	SetMaxKeys func(ctx context.Context, email string, maxKeys int) error
+	// EndOAuthSessions ends the owner's OAuth sessions after a pk_ revoke
+	// (nil = no-op).
+	EndOAuthSessions func(ctx context.Context, email string) error
 }
 
 // revokeRequest is the JSON body of POST /platform/admin/keys/revoke.
@@ -416,6 +419,11 @@ func revokePkInline(ctx context.Context, deps Deps, keyID string) (litellmOK boo
 	}
 	if row == nil {
 		return false, errKeyNotActive
+	}
+	if deps.EndOAuthSessions != nil {
+		if err := deps.EndOAuthSessions(ctx, row.OwnerEmail); err != nil && deps.Logger != nil {
+			deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
+		}
 	}
 	litellmOK = true
 	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {

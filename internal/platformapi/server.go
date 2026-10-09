@@ -262,6 +262,9 @@ func New(deps Deps) http.Handler {
 			DefaultMaxKeys:   deps.DefaultMaxKeys,
 			DefaultTeams:     deps.Teams.Default,
 		}
+		if deps.OAuth != nil {
+			envkeysDeps.EndOAuthSessions = deps.OAuth.EndSessions
+		}
 		envkeys.MountKeys(r, envkeysDeps)
 
 		// WARN-06: environments.Deps now carries LiteLLM (for
@@ -297,6 +300,9 @@ func New(deps Deps) http.Handler {
 			SetMaxKeys: func(ctx context.Context, email string, n int) error {
 				return db.SetUserMaxKeys(ctx, deps.Pool, email, n)
 			},
+		}
+		if deps.OAuth != nil {
+			adminDeps.EndOAuthSessions = deps.OAuth.EndSessions
 		}
 		r.Route("/platform/admin", admin.Mount(adminDeps))
 

@@ -717,6 +717,29 @@ func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
 	}
 }
 
+// EndSessions (a pk_ revoke) kills the shared Dex token: the next refresh is
+// invalid_grant and Dex is never asked.
+func TestEndSessions_RefreshDies(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+
+	if err := f.deps.EndSessions(context.Background(), "u@x.com"); err != nil {
+		t.Fatal(err)
+	}
+	seen := len(f.dexSeen)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("refresh after EndSessions: %d %s", w.Code, w.Body)
+	}
+	if len(f.dexSeen) != seen {
+		t.Fatalf("Dex must not be asked: %v", f.dexSeen)
+	}
+}
+
 // Two tools, one user: Dex keeps one refresh token per (user, client) and
 // replaces it on a new login, so ACH keeps one per user too — the second
 // login must not strand the first tool, and both rotate the same token.

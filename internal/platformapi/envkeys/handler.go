@@ -109,6 +109,9 @@ type Deps struct {
 	// DefaultMaxKeys is the chart-wide ek_ ceiling (ACH_USER_MAX_KEYS)
 	// applied to anyone without a user_limits row. 0 means deny-by-default.
 	DefaultMaxKeys int
+	// EndOAuthSessions ends the owner's OAuth sessions after a pk_ revoke
+	// (nil = no-op).
+	EndOAuthSessions func(ctx context.Context, email string) error
 }
 
 // CreateRequest is the POST /platform/keys request body shape (D-16

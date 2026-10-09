@@ -336,3 +336,36 @@ func TestRevokePersonalHandler(t *testing.T) {
 		})
 	}
 }
+
+// A pk_ revoke ends the owner's OAuth sessions; a 404 does not.
+func TestRevokePersonal_EndsOwnerOAuthSessions(t *testing.T) {
+	run := func(dbErr error) (int, []string) {
+		var ended []string
+		deps := Deps{
+			DB:      &revokePersonalDB{revokeErr: dbErr},
+			LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}},
+			Redis:   &noopRedis{},
+			Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+			EndOAuthSessions: func(_ context.Context, e string) error {
+				ended = append(ended, e)
+				return nil
+			},
+		}
+		r := chi.NewRouter()
+		MountKeys(r, deps)
+		req := httptest.NewRequest(http.MethodDelete, "/platform/keys/pkid_target00000000000000001", nil)
+		ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{
+			KeyID: "pkid_caller00000000000000000", KeyType: keys.PrefixPk, OwnerEmail: "user@example.com",
+		}, false)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req.WithContext(middleware.WithRequestID(ctx, "req_test")))
+		return rec.Code, ended
+	}
+	if code, ended := run(nil); code != 200 || len(ended) != 1 || ended[0] != "user@example.com" {
+		t.Fatalf("revoke: code=%d ended=%v", code, ended)
+	}
+	if code, ended := run(db.ErrKeyNotFoundOrNotOwner); code != 404 || len(ended) != 0 {
+		t.Fatalf("404: code=%d ended=%v", code, ended)
+	}
+}

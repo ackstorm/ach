@@ -132,14 +132,24 @@ func TestRevokeKey_PkHappyPath_DBFirst(t *testing.T) {
 	ll := &fakeLitellm{order: order}
 	rd := &recordingRedis{order: order}
 	var auditBuf bytes.Buffer
+	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: rd,
 		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&auditBuf),
 		Namespace: testNs,
+		EndOAuthSessions: func(_ context.Context, e string) error {
+			ended = append(ended, e)
+			return nil
+		},
 	}
 	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/keys/revoke",
 		[]byte(`{"key_id":"pkid_rv1"}`))
+	defer func() {
+		if len(ended) != 1 || ended[0] != "victim@example.com" {
+			t.Errorf("OAuth sessions ended for %v, want [victim@example.com]", ended)
+		}
+	}()
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
 	}
@@ -374,16 +384,24 @@ func TestRevokeUserKeys_HappyPath(t *testing.T) {
 	seedEnvironmentKey(t, pool, "ekid_u1a", "ch-u1c", "u@x.com", "envX", "lt3")
 
 	ll := &fakeLitellm{}
+	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
 		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
+		EndOAuthSessions: func(_ context.Context, e string) error {
+			ended = append(ended, e)
+			return nil
+		},
 	}
 	rec := adminPostJSON(t, newAdminRouter(t, deps),
 		"/platform/admin/users/u%40x.com/revoke-keys", nil)
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
+	}
+	if len(ended) != 2 || ended[0] != "u@x.com" {
+		t.Fatalf("OAuth sessions ended for %v, want u@x.com per pk_", ended)
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, `"revoked_count":3`) {
