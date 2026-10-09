@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // maxTagScanBody caps the request body stripBodyTags will buffer.
@@ -60,10 +61,13 @@ func stripBodyTags(r *http.Request) error {
 		return nil
 	}
 
-	mt, params, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	switch mt {
+	// Classify exactly as LiteLLM does (http_parsing_utils.py): text before the
+	// first ";", trimmed and lower-cased. mime.ParseMediaType is stricter
+	// (duplicate params -> "") and would disagree on what is a form.
+	ct := r.Header.Get("Content-Type")
+	switch strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0])) {
 	case "multipart/form-data":
-		return checkMultipart(raw, params["boundary"])
+		return checkMultipart(raw, boundaryOf(ct))
 	case "application/x-www-form-urlencoded":
 		return checkURLEncoded(raw)
 	}
@@ -82,7 +86,7 @@ func stripBodyTags(r *http.Request) error {
 
 func hasTagField(name string) bool {
 	for _, k := range tagBearing {
-		if name == k {
+		if strings.EqualFold(name, k) {
 			return true
 		}
 	}
@@ -102,22 +106,50 @@ func checkURLEncoded(raw []byte) error {
 	return nil
 }
 
+// boundaryOf returns the multipart boundary, or "" when none can be found.
+func boundaryOf(ct string) string {
+	if _, params, err := mime.ParseMediaType(ct); err == nil {
+		return params["boundary"]
+	}
+	// Strict parse failed (e.g. duplicate params): take the first boundary=.
+	for _, p := range strings.Split(ct, ";")[1:] {
+		if k, v, ok := strings.Cut(p, "="); ok && strings.EqualFold(strings.TrimSpace(k), "boundary") {
+			return strings.Trim(strings.TrimSpace(v), `"`)
+		}
+	}
+	return ""
+}
+
+// checkMultipart refuses any part that names a tag-bearing field. Starlette
+// ignores the disposition type, keeps the LAST Content-Disposition header and
+// takes the last name param, while Go's FormName is stricter on all three, so
+// every ambiguity (several headers, unparseable header, duplicate param, zero
+// parts, a broken tail) is a 400 rather than a guess.
 func checkMultipart(raw []byte, boundary string) error {
 	if boundary == "" {
 		return errInvalidBody
 	}
 	mr := multipart.NewReader(bytes.NewReader(raw), boundary)
+	parts := 0
 	for {
 		p, err := mr.NextPart()
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF && parts > 0 { //nolint:errorlint // a clean end is the bare io.EOF; Go wraps a truncated tail
 			return nil
 		}
 		if err != nil {
 			return errInvalidBody
 		}
-		name := p.FormName()
+		parts++
+		cd := p.Header["Content-Disposition"]
 		_ = p.Close()
-		if hasTagField(name) {
+		if len(cd) != 1 {
+			return errInvalidBody
+		}
+		_, params, err := mime.ParseMediaType(cd[0])
+		if err != nil {
+			return errInvalidBody
+		}
+		if hasTagField(strings.TrimSpace(params["name"])) {
 			return errClientTags
 		}
 	}
@@ -129,9 +161,11 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 	if !json.Valid(raw) {
 		return nil, false, errInvalidBody
 	}
+	// No legitimate /v1 or /gemini body is an array, string or number, and
+	// Starlette may read a JSON string as a form: only an object passes.
 	var top map[string]json.RawMessage
-	if json.Unmarshal(raw, &top) != nil {
-		return raw, false, nil // valid JSON, not an object: no tag slot
+	if bytes.TrimSpace(raw)[0] != '{' || json.Unmarshal(raw, &top) != nil {
+		return nil, false, errInvalidBody
 	}
 	if _, ok := top["tags"]; ok {
 		delete(top, "tags")
@@ -143,12 +177,18 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 			continue
 		}
 		// LiteLLM json-parses a metadata value sent as a string.
-		var s string
-		if json.Unmarshal(v, &s) == nil {
-			v = json.RawMessage(s)
+		var str string
+		isStr := json.Unmarshal(v, &str) == nil
+		if isStr {
+			v = json.RawMessage(str)
 		}
 		var sub map[string]json.RawMessage
 		if json.Unmarshal(v, &sub) != nil {
+			// A non-empty string LiteLLM could json-parse (Python accepts
+			// NaN...) but Go cannot: refuse. Non-string values carry no tags.
+			if isStr && strings.TrimSpace(str) != "" {
+				return nil, false, errInvalidBody
+			}
 			continue
 		}
 		if _, ok := sub["tags"]; !ok {

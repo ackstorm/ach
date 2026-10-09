@@ -35,7 +35,9 @@ func TestStripBodyTags(t *testing.T) {
 		{"metadata tags", "application/json; charset=utf-8", `{"metadata":{"tags":["x"],"trace":"t"}}`, `{"metadata":{"trace":"t"}}`},
 		{"litellm_metadata tags", "application/json", `{"litellm_metadata":{"tags":["x"]}}`, `{"litellm_metadata":{}}`},
 		{"no tags", "application/json", `{"model":"m",  "messages": []}`, ""},
-		{"metadata plain string", "application/json", `{"metadata":"s"}`, ""},
+		{"metadata empty string", "application/json", `{"metadata":""}`, ""},
+		{"metadata number", "application/json", `{"metadata":3}`, ""},
+		{"chat body", "application/json", `{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true}`, ""},
 		{"string metadata with tags", "application/json", `{"metadata":"{\"tags\":[\"user:v\"],\"t\":1}"}`, `{"metadata":{"t":1}}`},
 		{"string litellm_metadata with tags", "application/json", `{"litellm_metadata":"{\"tags\":[\"x\"]}"}`, `{"litellm_metadata":{}}`},
 		{"text/plain tagged", "text/plain", `{"model":"m","tags":["user:v"]}`, `{"model":"m"}`},
@@ -127,6 +129,9 @@ func TestStripBodyTagsRejects(t *testing.T) {
 	mp := func(field string) string {
 		return "--" + b + "\r\nContent-Disposition: form-data; name=\"" + field + "\"\r\n\r\nv\r\n--" + b + "--\r\n"
 	}
+	mpRaw := func(cd string) string {
+		return "--" + b + "\r\nContent-Disposition: " + cd + "\r\n\r\nv\r\n--" + b + "--\r\n"
+	}
 	cases := []struct {
 		name, ct, in string
 		want         error
@@ -136,6 +141,20 @@ func TestStripBodyTagsRejects(t *testing.T) {
 		{"urlencoded metadata", "application/x-www-form-urlencoded", "model=m&metadata=%7B%7D", errClientTags},
 		{"multipart tags", "multipart/form-data; boundary=" + b, mp("tags"), errClientTags},
 		{"multipart litellm_metadata", "multipart/form-data; boundary=" + b, mp("litellm_metadata"), errClientTags},
+		{"NaN in string metadata", "application/json", `{"metadata":"{\"tags\":[\"user:v\"],\"x\":NaN}"}`, errInvalidBody},
+		{"plain string metadata", "application/json", `{"metadata":"s"}`, errInvalidBody},
+		{"urlencoded dup params", "application/x-www-form-urlencoded; a=1; a=1", "metadata=%7B%7D", errClientTags},
+		{"top-level array", "application/json", `[{"tags":["x"]}]`, errInvalidBody},
+		{"top-level string", "", `"metadata=x"`, errInvalidBody},
+		{"top-level null", "application/json", `null`, errInvalidBody},
+		{"attachment disposition", "multipart/form-data; boundary=" + b, mpRaw(`attachment; name="metadata"`), errClientTags},
+		{"uppercase field", "multipart/form-data; boundary=" + b, mp("Metadata"), errClientTags},
+		{"duplicate Content-Disposition", "multipart/form-data; boundary=" + b,
+			"--" + b + "\r\nContent-Disposition: form-data; name=\"model\"\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\nv\r\n--" + b + "--\r\n", errInvalidBody},
+		{"duplicate name param", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name="metadata"`), errInvalidBody},
+		{"zero-part multipart", "multipart/form-data; boundary=" + b, "--" + b + "--\r\n", errInvalidBody},
+		{"junk after boundary", "multipart/form-data; boundary=" + b,
+			"--" + b + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nv\r\n--" + b + "junk", errInvalidBody},
 		{"multipart without boundary", "multipart/form-data", mp("model"), errInvalidBody},
 	}
 	for _, c := range cases {
@@ -146,8 +165,9 @@ func TestStripBodyTagsRejects(t *testing.T) {
 		})
 	}
 
-	// A form without tag fields is forwarded byte-identical.
-	in := mp("model")
+	// A canonical audio-upload form is forwarded byte-identical.
+	in := "--" + b + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n--" + b +
+		"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\x00\x01\r\n--" + b + "--\r\n"
 	got, _, err := stripped(t, "multipart/form-data; boundary="+b, in)
 	if err != nil || string(got) != in {
 		t.Fatalf("err = %v, body = %q, want byte-identical", err, got)

@@ -475,7 +475,11 @@ body parser is more lenient than Go's: every non-form body is scanned as JSON
 regardless of Content-Type (a string-valued `metadata` is parsed and
 re-encoded as an object), an unparseable non-empty body (e.g. `NaN`) is 400
 `invalid_request`, and a multipart/urlencoded form with a `tags`, `metadata`
-or `litellm_metadata` field is 400 `client_tags_not_allowed`.
+or `litellm_metadata` field is 400 `client_tags_not_allowed`. Wherever Go and
+Starlette/python-multipart could read the same bytes differently (Content-Type
+classified LiteLLM's way, non-object JSON, unparseable string metadata, several
+or odd Content-Disposition headers, zero-part or truncated multipart) the answer
+is 400 `invalid_request`.
 
 ### Enforcement
 
