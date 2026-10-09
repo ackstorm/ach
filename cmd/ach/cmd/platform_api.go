@@ -390,6 +390,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
 		return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no login
 	}
+	go jwt.WatchDir(ctx, signer, cfg.JWTSecretDir, jwt.DirReloadInterval, logger)
 	out.signer = signer
 	var redirectHosts []string
 	if err := json.Unmarshal([]byte(cmp.Or(os.Getenv("ACH_OAUTH_REDIRECT_HOSTS"), "[]")), &redirectHosts); err != nil {

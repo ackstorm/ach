@@ -188,6 +188,7 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	if err := jwt.LoadFromDir(verifier, cfg.JWTSecretDir); err != nil {
 		return fmt.Errorf("oauth verifier: %w", err) // fail closed, like platform-api
 	}
+	go jwt.WatchDir(ctx, verifier, cfg.JWTSecretDir, jwt.DirReloadInterval, logger)
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
 	resolver, err := keystore.NewCachedResolver(oauthResolver, redisClient, cfg.Pepper)
 	if err != nil {

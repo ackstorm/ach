@@ -5,6 +5,7 @@ package jwt
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -138,4 +139,48 @@ func TestLoadFromDir(t *testing.T) {
 	if s.Loaded() {
 		t.Fatal("must not load on error")
 	}
+}
+
+// TestWatchDir_PicksUpRotation mirrors a kubelet Secret volume (files
+// reached through the ..data symlink, swapped atomically) and checks a
+// rotation reaches a running signer — review #8.
+func TestWatchDir_PicksUpRotation(t *testing.T) {
+	dir := t.TempDir()
+	publish := func(name, kid string) {
+		data := filepath.Join(dir, name)
+		if err := os.Mkdir(data, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeSlot(t, data, "current", kid, freshSeed(t))
+		tmp := filepath.Join(dir, "..data_tmp")
+		if err := os.Symlink(name, tmp); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, filepath.Join(dir, "..data")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publish("..v1", "k1")
+	for _, f := range []string{"current.kid", "current.seed"} {
+		if err := os.Symlink(filepath.Join("..data", f), filepath.Join(dir, f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := NewEd25519Signer()
+	if err := LoadFromDir(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go WatchDir(ctx, s, dir, 10*time.Millisecond, slog.New(slog.DiscardHandler))
+
+	publish("..v2", "k2")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if jwks := s.JWKS(); len(jwks) == 1 && jwks[0].Kid == "k2" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("rotation not picked up: jwks=%+v", s.JWKS())
 }
