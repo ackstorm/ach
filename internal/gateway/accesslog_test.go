@@ -4,6 +4,7 @@ package gateway
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,5 +103,30 @@ func TestAccessLogOffNoWrap(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if !called || buf.Len() != 0 {
 		t.Errorf("off mode should pass through with no log; called=%v buf=%q", called, buf.String())
+	}
+}
+
+// ReverseProxy hijacks the connection through http.ResponseController to
+// complete a WebSocket upgrade; the wrapper must not hide Hijack.
+func TestAccessLogKeepsHijack(t *testing.T) {
+	var buf bytes.Buffer
+	srv := httptest.NewServer(AccessLog(&buf, AccessLogCombined, fixedClock())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+		_ = conn.Close()
+	})))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d, want 204", resp.StatusCode)
 	}
 }

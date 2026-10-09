@@ -747,3 +747,38 @@ func TestParseCredentialHeaders(t *testing.T) {
 		t.Fatalf("empty: %v %v", got, err)
 	}
 }
+
+// The forwarder's ReverseProxy streams through http.ResponseController
+// (Flush) and upgrades WebSockets through it (Hijack): both must reach the
+// real connection through the AccessLog wrapper.
+func TestAccessLogKeepsFlushAndHijack(t *testing.T) {
+	srv := httptest.NewServer(AccessLog(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		if r.URL.Path == "/hijack" {
+			conn, _, err := rc.Hijack()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_, _ = io.WriteString(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+			_ = conn.Close()
+			return
+		}
+		if err := rc.Flush(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})))
+	defer srv.Close()
+
+	for path, want := range map[string]int{"/flush": http.StatusOK, "/hijack": http.StatusNoContent} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d (%s)", path, resp.StatusCode, want, body)
+		}
+	}
+}

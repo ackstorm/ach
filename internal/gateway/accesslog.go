@@ -77,6 +77,10 @@ func (a *accessLogWriter) Flush() {
 	}
 }
 
+// Unwrap lets http.ResponseController reach the inner writer's Hijack, which
+// ReverseProxy needs to complete a WebSocket upgrade.
+func (a *accessLogWriter) Unwrap() http.ResponseWriter { return a.ResponseWriter }
+
 // AccessLog returns middleware that emits one Apache/nginx-style line per
 // request to out. A mutex serializes writes so concurrent requests never
 // interleave partial lines. Format AccessLogOff returns the handler

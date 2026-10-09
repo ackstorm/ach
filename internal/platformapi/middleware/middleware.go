@@ -260,6 +260,11 @@ func (s *statusCapturingWriter) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
+// Unwrap lets http.ResponseController reach the inner writer's Flush and
+// Hijack: the forwarder's ReverseProxy streams SSE/MCP/A2A through them and
+// hijacks the connection for a WebSocket upgrade.
+func (s *statusCapturingWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // AccessLog logs {method, path, status, latency_ms, request_id} for
 // every request. NEVER reads or logs the x-ach-key header, request body,
 // or response body (T-03-05-01 / FWD-11 invariant).
