@@ -194,11 +194,12 @@ func TestOAuthFrontDoor(t *testing.T) {
 		}
 		time.Sleep(3 * time.Second)
 	}
-	// A fresh grant re-mints a row: the AS itself is unaffected by the revoke.
+	// The revoke ended the user's sessions: refresh is refused, a fresh login works.
 	refreshForm.Set("refresh_token", second["refresh_token"].(string))
-	if code, third := tokenPost(t, refreshForm); code != 200 {
-		t.Fatalf("post-revoke refresh must re-mint: %d %v", code, third)
+	if code, third := tokenPost(t, refreshForm); code == 200 {
+		t.Fatalf("post-revoke refresh must be refused: %d %v", code, third)
 	}
+	oauthLogin(t, base, "")
 }
 
 func deleteBrokerGrant(t *testing.T) {
@@ -231,6 +232,9 @@ func revokeOAuthPK(t *testing.T, base, access string) {
 		t.Fatalf("revoke %s: err=%v status=%v", keyID, err, resp)
 	}
 	resp.Body.Close()
+	// A pk_ revoke ends the owner's OAuth sessions, so the cached JWT is dead;
+	// later tests must log in again.
+	cachedPk = ""
 }
 
 func serverOutcome(t *testing.T, base, access, key string) string {
