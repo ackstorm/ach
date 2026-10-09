@@ -82,11 +82,13 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		return
 	}
 	if !ok || rf.ClientID != clientID {
+		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token or other client", "client_id", clientID)
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
 	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
 		if errors.Is(err, errIdPRefused) {
+			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
 			_ = d.Store.Del(r.Context(), "refresh", presented)
 			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
 			return
@@ -100,6 +102,7 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 	}
 	// rotation: the old one is gone; a concurrent refresh already took it
 	if ok, err := d.Store.Take(r.Context(), "refresh", presented, &rf); err != nil || !ok {
+		d.Auth.Logger.Info("oauth: refresh refused: token already rotated by a concurrent refresh", "sub", rf.Sub, "client_id", clientID, "err", err)
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
@@ -116,6 +119,9 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 // session of that user is over (the Dex token and the oauth pk_ are gone).
 var errIdPRefused = errors.New("oauth: identity provider refused the user")
 
+// dexRefreshTimeout bounds the detached Dex refresh in revalidateAtIdP.
+const dexRefreshTimeout = 30 * time.Second
+
 // ErrIdPUnreachable: Dex did not answer; the presented credential stays valid.
 var ErrIdPUnreachable = errors.New("identity provider unreachable")
 
@@ -124,11 +130,19 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 // nil: the IdP still honours the user and the rotated token is stored.
 // errIdPRefused: sessions ended (Dex token deleted, oauth pk_ revoked).
 // ErrIdPUnreachable: Dex did not answer — nothing changed, retry later.
+//
+// It runs on a context the client cannot cancel: Dex rotates the token
+// even when our caller hangs up mid-call, and a rotated token we never
+// stored is "claimed twice" at the next replay — which ends every session
+// of the user (incident 2026-10-08: a 15 s Dex answer, client gone).
 func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dexRefreshTimeout)
+	defer cancel()
 	var dexRefresh string
 	if ok, err := d.Store.Get(ctx, dexRefreshKind, sub, &dexRefresh); err != nil {
 		return err
 	} else if !ok {
+		d.Auth.Logger.Info("oauth: no Dex refresh token stored for the user; sessions ended", "sub", sub)
 		return errIdPRefused
 	}
 	rotated, err := d.dexRefresh(ctx, dexRefresh)

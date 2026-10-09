@@ -600,6 +600,44 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	}
 }
 
+// The client hangs up while Dex is answering (incident 2026-10-08: Dex
+// took 15 s). Dex rotated anyway, so the rotated token must be stored;
+// otherwise the next refresh replays a consumed token, Dex says "claimed
+// twice", and every session of the user ends.
+func TestToken_RefreshStoresTheRotatedDexTokenWhenTheClientHangsUp(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	ctx, hangUp := context.WithCancel(context.Background())
+	f.dexRefresh = func(rt string) (string, error) {
+		if rt == "dex-rt-0" {
+			hangUp() // the client is gone; Dex has rotated regardless
+			return rt + "+", nil
+		}
+		if rt == "dex-rt-0+" {
+			return rt + "+", nil
+		}
+		// replaying a consumed token: Dex's "claimed twice"
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_request"}
+	}
+	req := httptest.NewRequest("POST", "/platform/oauth/token", strings.NewReader(refresh)).WithContext(ctx)
+	req.Header.Set("Content-Type", formHdr["Content-Type"])
+	f.r.ServeHTTP(httptest.NewRecorder(), req)
+
+	var stored string
+	if ok, err := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &stored); err != nil || !ok || stored != "dex-rt-0+" {
+		t.Fatalf("rotated Dex token must be stored: %q ok=%v err=%v", stored, ok, err)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 200 {
+		t.Fatalf("next refresh after the hang-up: %d %s (dex saw %v)", w.Code, w.Body, f.dexSeen)
+	}
+}
+
 func TestToken_Rejects(t *testing.T) {
 	f := newAS(t)
 	installFakePKs(f)
