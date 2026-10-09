@@ -52,27 +52,36 @@ type HandlerDeps struct {
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
-		if err := stripBodyTags(r); err != nil {
-			reqID := middleware.RequestIDFromCtx(r.Context())
-			switch {
-			case errors.Is(err, errBodyTooLarge):
-				metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "request_too_large")
-				render.Error(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large", reqID)
-				return
-			case errors.Is(err, errClientTags):
-				metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_tags_not_allowed")
-				render.Error(w, http.StatusBadRequest, "client_tags_not_allowed",
-					"budget tags and metadata cannot be sent in form bodies through ACH", reqID)
-				return
-			}
-			metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
-			render.Error(w, http.StatusBadRequest, "invalid_request", "request body is not valid", reqID)
+		if !stripTagsOrReject(w, r, routeLabel) {
 			return
 		}
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
 		rp.ServeHTTP(w, r)
 	}
 	return observeDuration(routeLabel, inner)
+}
+
+// stripTagsOrReject runs stripBodyTags and renders its 400/413 on failure
+// (false: the request was answered and must not be forwarded).
+func stripTagsOrReject(w http.ResponseWriter, r *http.Request, routeLabel string) bool {
+	err := stripBodyTags(r)
+	if err == nil {
+		return true
+	}
+	reqID := middleware.RequestIDFromCtx(r.Context())
+	switch {
+	case errors.Is(err, errBodyTooLarge):
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "request_too_large")
+		render.Error(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large", reqID)
+	case errors.Is(err, errClientTags):
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_tags_not_allowed")
+		render.Error(w, http.StatusBadRequest, "client_tags_not_allowed",
+			"budget tags and metadata cannot be sent in form bodies through ACH", reqID)
+	default:
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
+		render.Error(w, http.StatusBadRequest, "invalid_request", "request body is not valid", reqID)
+	}
+	return false
 }
 
 // HandlerModelInfo returns the GET /v2/model/info proxy handler — the one
@@ -94,21 +103,25 @@ func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough
 // optional BIP lookup + JWT attach, then proxies. See FWD-03, FWD-05,
 // FWD-07.
 func HandlerMCP(deps HandlerDeps) http.HandlerFunc {
-	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp")
+	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp", false)
 }
 
 // HandlerA2A returns the /a2a/{name}/* handler. Same shape as HandlerMCP
 // but consults Environment.spec.runtime.a2aAgents and emits "a2a:<name>"
 // as the JWT audience.
 func HandlerA2A(deps HandlerDeps) http.HandlerFunc {
-	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a")
+	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a", true)
 }
 
 type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) ([]string, error)
 
-func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string) http.HandlerFunc {
+func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
+		// /a2a: LiteLLM merges JSON-RPC body (and params.*) tags like /v1's.
+		if stripTags && !stripTagsOrReject(w, r, routeLabel) {
+			return
+		}
 		name := chi.URLParam(r, "name")
 		reqID := middleware.RequestIDFromCtx(r.Context())
 		keyTypeLabel := keyTypeFor(r.Context())

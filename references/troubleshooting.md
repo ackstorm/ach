@@ -693,6 +693,25 @@ WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
 (`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
 A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
 
+### ❌ Forwarder refuses a request body: 413 `request_too_large` / 400 `invalid_request` / 400 `client_tags_not_allowed`
+
+The forwarder scans every `/v1`, `/gemini` and `/a2a` body for client budget
+tags (`tags`, `metadata.tags`, `litellm_metadata.tags`) before forwarding, so a
+caller cannot redirect spend to another user's budget (review #5). It fails
+closed, by design:
+
+- 413 `request_too_large`: the body is above 32 MiB. OpenAI `/v1/files` and
+  `/v1/uploads` parts above that size are refused.
+- 400 `invalid_request`: the body is not a JSON object, or the Content-Type or
+  multipart framing is ambiguous. Gemini Files API raw-binary uploads
+  (`/gemini/upload/...`) are refused this way.
+- 400 `client_tags_not_allowed`: a form (multipart/urlencoded) field is named
+  `tags`, `metadata` or `litellm_metadata`.
+
+FIX: send budget-free requests (drop those fields; ACH stamps the tags itself).
+Uploads above 32 MiB, or in a refused shape, go to LiteLLM directly, done by an
+admin; they are not routable through ACH.
+
 ### ❌ LibreChat (trusted IdP / Dex token): 403 `ach_login_required`
 
 The Dex token verified, but the user has no live `purpose='oauth'` pk_: they

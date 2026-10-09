@@ -664,3 +664,32 @@ func chiWithName(h http.HandlerFunc) http.HandlerFunc {
 		h(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx)))
 	}
 }
+
+// /a2a runs the body-tag strip like /v1 and /gemini: params.tags never
+// reaches LiteLLM, and a rejected body is a 400 that is not forwarded.
+func TestHandlerA2A_StripsBodyTags(t *testing.T) {
+	upstream, rec := upstreamSpy()
+	defer upstream.Close()
+	env := makeEnvRow("demo", nil, []string{"agent-x"}, nil)
+	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	do := func(body string) *httptest.ResponseRecorder {
+		r := requestWithKC(t, http.MethodPost, "/a2a/agent-x", kc, body)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("name", "agent-x")
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		w := httptest.NewRecorder()
+		HandlerA2A(deps)(w, r)
+		return w
+	}
+	if w := do(`{"method":"message/send","params":{"tags":["user:v"],"metadata":{"tags":["x"]}}}`); w.Code != 200 {
+		t.Fatalf("code = %d %s", w.Code, w.Body)
+	}
+	if got := string(rec.LastBody()); strings.Contains(got, "tags") {
+		t.Fatalf("tags reached upstream: %s", got)
+	}
+	calls := rec.Calls()
+	if w := do(`{"params":NaN}`); w.Code != 400 || rec.Calls() != calls {
+		t.Fatalf("bad body: code = %d forwarded = %v", w.Code, rec.Calls() != calls)
+	}
+}

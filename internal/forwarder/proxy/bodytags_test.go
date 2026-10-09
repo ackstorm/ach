@@ -43,6 +43,12 @@ func TestStripBodyTags(t *testing.T) {
 		{"text/plain tagged", "text/plain", `{"model":"m","tags":["user:v"]}`, `{"model":"m"}`},
 		{"missing content type tagged", "", `{"model":"m","tags":["user:v"]}`, `{"model":"m"}`},
 		{"protobuf type tagged", "application/x-protobuf", `{"model":"m","tags":["user:v"]}`, `{"model":"m"}`},
+		{"a2a params tags", "application/json", `{"jsonrpc":"2.0","method":"message/send","params":{"tags":["user:v"],"message":{"role":"user"}}}`,
+			`{"jsonrpc":"2.0","method":"message/send","params":{"message":{"role":"user"}}}`},
+		{"a2a params metadata tags", "application/json", `{"params":{"metadata":{"tags":["x"],"k":1}}}`, `{"params":{"metadata":{"k":1}}}`},
+		{"a2a params string litellm_metadata tags", "application/json", `{"params":{"litellm_metadata":"{\"tags\":[\"x\"]}"}}`, `{"params":{"litellm_metadata":{}}}`},
+		{"a2a message/send untouched", "application/json", `{"jsonrpc":"2.0","id":"1","method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"hi"}],"messageId":"m1"},"metadata":{"k":1}}}`, ""},
+		{"params not an object", "application/json", `{"params":[1,2]}`, ""},
 		{"empty body", "application/json", ``, ""},
 		{"whitespace body", "", " \n", ""},
 	}

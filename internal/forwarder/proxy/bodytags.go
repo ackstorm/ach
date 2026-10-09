@@ -199,12 +199,46 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 	if bytes.TrimSpace(raw)[0] != '{' || json.Unmarshal(raw, &top) != nil {
 		return nil, false, errInvalidBody
 	}
-	if _, ok := top["tags"]; ok {
-		delete(top, "tags")
+	changed, err = stripObjTags(top)
+	if err != nil {
+		return nil, false, err
+	}
+	// LiteLLM's A2A handler feeds the JSON-RPC body through the same
+	// tag-merging path and lifts litellm params out of params.*, so the same
+	// keys are stripped one level down.
+	if pv, ok := top["params"]; ok {
+		var params map[string]json.RawMessage
+		if json.Unmarshal(pv, &params) == nil {
+			pch, err := stripObjTags(params)
+			if err != nil {
+				return nil, false, err
+			}
+			if pch {
+				nb, err := json.Marshal(params)
+				if err != nil {
+					return nil, false, err
+				}
+				top["params"] = nb
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return raw, false, nil
+	}
+	out, err = json.Marshal(top)
+	return out, true, err
+}
+
+// stripObjTags removes "tags" from m and from its "metadata" /
+// "litellm_metadata" objects (re-encoding those that changed), in place.
+func stripObjTags(m map[string]json.RawMessage) (changed bool, err error) {
+	if _, ok := m["tags"]; ok {
+		delete(m, "tags")
 		changed = true
 	}
 	for _, k := range []string{"metadata", "litellm_metadata"} {
-		v, ok := top[k]
+		v, ok := m[k]
 		if !ok {
 			continue
 		}
@@ -219,7 +253,7 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 			// A non-empty string LiteLLM could json-parse (Python accepts
 			// NaN...) but Go cannot: refuse. Non-string values carry no tags.
 			if isStr && strings.TrimSpace(str) != "" {
-				return nil, false, errInvalidBody
+				return false, errInvalidBody
 			}
 			continue
 		}
@@ -229,14 +263,10 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 		delete(sub, "tags")
 		nb, err := json.Marshal(sub)
 		if err != nil {
-			return nil, false, err
+			return false, err
 		}
-		top[k] = nb
+		m[k] = nb
 		changed = true
 	}
-	if !changed {
-		return raw, false, nil
-	}
-	out, err = json.Marshal(top)
-	return out, true, err
+	return changed, nil
 }
