@@ -11,12 +11,14 @@ import (
 	"testing"
 )
 
-// selfCallRe matches a string literal naming the forwarder's model list route
-// itself (not /v1/models/<id>) — a call, not a comment that mentions it.
-var selfCallRe = regexp.MustCompile("[\"'`]/v1/models[?\"'`]")
+// selfCallRe matches the forwarder's model list route inside a literal: after
+// a quote, a template `}` or a Sprintf `%s`, with an optional trailing slash
+// (the forwarder trims it). /v1/models/<id> is a different route and not matched.
+var selfCallRe = regexp.MustCompile("[\"'`}s]/v1/models(?:/?[\"'`]|\\?)")
 
-// typesAllRe is the accepted form: types=all as a query param of that literal.
-var typesAllRe = regexp.MustCompile("[\"'`]/v1/models\\?(?:[^\"'`]*&)?types=all(?:[&\"'`])")
+// typesAllRe is the accepted form: types=all (any case, alone or in a comma
+// list) as a query param of the same literal.
+var typesAllRe = regexp.MustCompile("(?i)[?&]types=(?:[^&,]*,)*all(?:[,&]|$)")
 
 // TestNoInternalModelListWithoutTypesAll guards FUTURE internal callers. Today
 // no ACH view lists models through the forwarder (console, env describe and
@@ -27,14 +29,17 @@ var typesAllRe = regexp.MustCompile("[\"'`]/v1/models\\?(?:[^\"'`]*&)?types=all(
 // url.JoinPath and SDK calls are not caught.
 func TestNoInternalModelListWithoutTypesAll(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
-	cmd := exec.Command("git", "ls-files", "*.go", "*.ts", "*.tsx")
+	cmd := exec.Command("git", "ls-files", "-z", "*.go", "*.ts", "*.tsx")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		t.Skipf("git ls-files unavailable: %v", err)
+		t.Fatalf("git ls-files: %v", err)
 	}
 	skipPrefix := []string{"test/", "docs/", "internal/platformapi/console/dist/", "internal/forwarder/proxy/models.go"}
-	for _, f := range strings.Fields(string(out)) {
+	for _, f := range strings.Split(string(out), "\x00") {
+		if f == "" {
+			continue
+		}
 		skip := strings.HasSuffix(f, "_test.go") || strings.Contains(f, ".test.")
 		for _, p := range skipPrefix {
 			skip = skip || strings.HasPrefix(f, p)
@@ -47,8 +52,18 @@ func TestNoInternalModelListWithoutTypesAll(t *testing.T) {
 			continue // tracked but deleted in the working tree
 		}
 		for i, line := range strings.Split(string(b), "\n") {
-			if selfCallRe.MatchString(line) && !typesAllRe.MatchString(line) {
-				t.Errorf("%s:%d: internal /v1/models call without ?types=all: %s", f, i+1, strings.TrimSpace(line))
+			for _, m := range selfCallRe.FindAllStringIndex(line, -1) {
+				lit := line[m[0]+1 : m[1]]
+				if strings.HasSuffix(lit, "?") {
+					rest := line[m[1]:]
+					if j := strings.IndexAny(rest, "\"'`"); j >= 0 {
+						rest = rest[:j]
+					}
+					lit += rest
+				}
+				if !typesAllRe.MatchString(lit) {
+					t.Errorf("%s:%d: internal /v1/models call without ?types=all: %s", f, i+1, strings.TrimSpace(line))
+				}
 			}
 		}
 	}
