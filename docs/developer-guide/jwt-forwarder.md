@@ -553,7 +553,7 @@ that is not a 200 `{"data":[…]}` list passes through untouched.
 The filter is for external chat clients only. The views that list models in
 ACH never go through it: the console Models page shows every mode
 (`/model_group/info` as the user), the OpenCode config shows chat models only
-(its own `/model_group/info` read). No ACH-internal
+(its own `/model_group/info` read, which also drops mode-less models, unlike `/v1/models`). No ACH-internal
 caller of the forwarder's `/v1/models` exists today; a future one must send
 `?types=all`. `TestNoInternalModelListWithoutTypesAll`
 (`proxy/models_selfcall_test.go`) is a heuristic guard for that (literal
