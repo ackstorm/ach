@@ -550,12 +550,14 @@ when neither `model_info.mode` nor its cost map knows the model. The request
 drops `Accept-Encoding` so the Transport hands the hook plain JSON; any body
 that is not a 200 `{"data":[…]}` list passes through untouched.
 
-The filter is for external chat clients only. ACH's own views — the console
-Models page (`/model_group/info` as the user), the console Environment view and
-`ach-cli env describe` (the `environments` projection) — never go through it and
-list every mode. Any ACH-internal call to the forwarder's `/v1/models` must send
-`?types=all`; `TestNoInternalModelListWithoutTypesAll`
-(`proxy/models_selfcall_test.go`) fails the build otherwise.
+The filter is for external chat clients only. The views that list models in
+ACH — the console Models page (`/model_group/info` as the user) and the
+OpenCode config — never go through it and show every mode. No ACH-internal
+caller of the forwarder's `/v1/models` exists today; a future one must send
+`?types=all`. `TestNoInternalModelListWithoutTypesAll`
+(`proxy/models_selfcall_test.go`) is a heuristic guard for that (literal
+`"/v1/models…"` strings in tracked source only; `url.JoinPath`, base+path
+concatenation and SDK calls are not caught).
 
 ---
 

@@ -177,37 +177,15 @@ func TestBootstrapDegradesWhenAllowanceUnavailable(t *testing.T) {
 	}
 }
 
-// TestCapabilities_PersonalKeepsEveryMode: the console Models page is ACH's
-// own view and must list what the forwarder's GET /v1/models hides by default
-// (embedding, transcription, image…). It reads /model_group/info directly,
-// never the forwarder; this pins that it applies no mode filter of its own.
-func TestCapabilities_PersonalKeepsEveryMode(t *testing.T) {
-	d := testDeps(t)
-	modes := []string{"chat", "embedding", "audio_transcription", "image_generation"}
-	models := make([]litellm.ModelGroupInfo, 0, len(modes))
-	for _, m := range modes {
-		mode := m
-		models = append(models, litellm.ModelGroupInfo{Name: "m-" + m, Providers: []string{"openai"}, Mode: &mode})
-	}
-	d.AsUser = func(string) UserReads { return &fakeCatalog{models: models} }
-	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
-	if rec.Code != 200 {
-		t.Fatalf("%d %s", rec.Code, rec.Body)
-	}
-	for _, m := range models {
-		if !strings.Contains(rec.Body.String(), `"`+m.Name+`"`) {
-			t.Fatalf("%s missing from the console catalog: %s", m.Name, rec.Body)
-		}
-	}
-}
-
 func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	d := testDeps(t)
-	mode := "chat"
+	// Non-chat modes stay: the forwarder's GET /v1/models hides them, ACH's own
+	// console view reads /model_group/info directly and must not.
+	mode, embedMode, sttMode := "chat", "embedding", "audio_transcription"
 	cat := &fakeCatalog{
 		// The LEGACY sentinel on purpose: mid-upgrade a user shell still
 		// carries it, and it must be stripped exactly like the current one.
-		models: []litellm.ModelGroupInfo{{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}, {Name: "demo-model", Providers: []string{"openai"}, Mode: &mode}},
+		models: []litellm.ModelGroupInfo{{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}, {Name: "demo-model", Providers: []string{"openai"}, Mode: &mode}, {Name: "demo-embed", Providers: []string{"openai"}, Mode: &embedMode}, {Name: "demo-stt", Providers: []string{"openai"}, Mode: &sttMode}},
 		mcp:    []litellm.MCPServerEntry{{ServerID: "s1", ServerName: "demo-mcp", Transport: "http", AllowedTools: []string{"a"}}},
 		a2a:    []litellm.AgentEntry{{AgentID: "a1", AgentName: "demo-agent", AgentCardParams: map[string]any{"url": "http://x", "skills": []any{map[string]any{"name": "s"}}, "capabilities": map[string]any{"streaming": true}}}},
 	}
@@ -227,7 +205,7 @@ func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Scope != scopePersonal || len(got.Models) != 1 || got.Models[0]["name"] != "demo-model" || got.Provisioning {
+	if got.Scope != scopePersonal || len(got.Models) != 3 || got.Models[0]["name"] != "demo-model" || got.Models[1]["name"] != "demo-embed" || got.Models[2]["name"] != "demo-stt" || got.Provisioning {
 		t.Fatalf("%+v (deny-all sentinel must be stripped)", got)
 	}
 	if len(got.MCP) != 1 || got.MCP[0]["name"] != "demo-mcp" || got.MCP[0]["tool_count"] != float64(1) {

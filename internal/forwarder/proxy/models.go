@@ -19,7 +19,7 @@ import (
 // ?types=all turns the filter off. ACH's own views (console, env describe)
 // read LiteLLM / the projection directly and are never filtered; any future
 // ACH-internal call through here MUST pass ?types=all
-// (TestNoInternalModelListWithoutTypesAll enforces it).
+// (TestNoInternalModelListWithoutTypesAll is a heuristic guard for it).
 var textModes = []string{"chat", "completion"}
 
 type modelModesKey struct{}
