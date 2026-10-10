@@ -623,8 +623,44 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	if outer.Code != 200 || inner.Code != 400 || !strings.Contains(inner.Body.String(), "invalid_grant") {
 		t.Fatalf("want the first 200 and the racer invalid_grant: outer=%d inner=%d %s", outer.Code, inner.Code, inner.Body)
 	}
+	if !strings.Contains(inner.Body.String(), errRotating) {
+		t.Fatalf("the racer must be told a rotation is in progress (its client waits for the winner): %s", inner.Body)
+	}
 	if len(f.dexSeen) != 1 {
 		t.Fatalf("the losing racer must not reach Dex: %v", f.dexSeen)
+	}
+	// A late racer, after the winner answered, still learns the token rotated.
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("late racer: %d %s", w.Code, w.Body)
+	}
+}
+
+// A token nobody holds is dead: a bare invalid_grant, so the client fails
+// at once instead of waiting for a winner that does not exist. Racers of a
+// grant the IdP refused are told the same: the session is over.
+func TestToken_RefreshDeadTokenIsNotARotation(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(rt string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form("never-issued"), formHdr); w.Code != 400 || strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("unknown token: %d %s", w.Code, w.Body)
+	}
+
+	f.dexRefresh = func(string) (string, error) {
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr); w.Code != 400 {
+		t.Fatalf("IdP refusal: %d %s", w.Code, w.Body)
+	}
+	racer := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr)
+	if racer.Code != 400 || strings.Contains(racer.Body.String(), errRotating) {
+		t.Fatalf("after an IdP refusal the racer must fail at once: %d %s", racer.Code, racer.Body)
 	}
 }
 

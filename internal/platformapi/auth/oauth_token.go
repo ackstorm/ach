@@ -80,6 +80,11 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 // as "claimed twice" and ends every session. Losers get invalid_grant
 // without reaching Dex; the taken token is put back on any outcome that
 // does not hand out a new pair.
+//
+// While a grant holds the token, a racer is told so (errRotating) instead
+// of a bare invalid_grant: its client waits for the winner's tokens (the
+// opencode plugin's rotation.json) as long as Dex may take, while a dead
+// token still fails at once.
 func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID string) {
 	presented := r.PostForm.Get("refresh_token")
 	var rf oauthRefresh
@@ -89,7 +94,12 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		return
 	}
 	if !ok {
-		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token, or already rotated by a concurrent refresh", "client_id", clientID)
+		if rotating, _ := d.Store.Get(r.Context(), rotatingKind, presented, new(bool)); rotating {
+			d.Auth.Logger.Info("oauth: refresh refused: a concurrent refresh is rotating the token", "client_id", clientID)
+			oauthError(w, 400, "invalid_grant", errRotating)
+			return
+		}
+		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token", "client_id", clientID)
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
@@ -106,9 +116,13 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
+	if err := d.Store.Put(r.Context(), rotatingKind, presented, true, rotatingTTL); err != nil {
+		d.Auth.Logger.Warn("oauth: rotation marker not stored; a racer is told invalid_grant", "err", err)
+	}
 	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
 		if errors.Is(err, errIdPRefused) {
 			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
+			_ = d.Store.Del(context.WithoutCancel(r.Context()), rotatingKind, presented) // racers: the session is over, fail now
 			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
 			return
 		}
@@ -126,6 +140,18 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		restore()
 	}
 }
+
+// errRotating is the invalid_grant error_description a racer gets while a
+// concurrent grant holds its refresh token. A contract with the client
+// (opencode-oidc-provider matches it verbatim): keep it byte-stable.
+const errRotating = "refresh token rotation in progress"
+
+// rotatingKind marks a refresh token a grant has taken. rotatingTTL
+// outlives the slowest grant: the Dex call (dexRefreshTimeout) plus issue.
+const (
+	rotatingKind = "rotating"
+	rotatingTTL  = 2 * dexRefreshTimeout
+)
 
 // errIdPRefused: the identity provider no longer honours the user — every
 // session of that user is over (the Dex token and the oauth pk_ are gone).
