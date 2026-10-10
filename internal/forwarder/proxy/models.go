@@ -16,10 +16,24 @@ import (
 // what the console labels "chat". A chat client (LibreChat at
 // chat.<domain>) would otherwise offer embedding, transcription, image…
 // models it cannot use. ?types=<mode>[,<mode>…] adds LiteLLM modes on top;
-// ?types=all turns the filter off.
+// ?types=all turns the filter off. ACH's own views (console, env describe)
+// read LiteLLM / the projection directly and are never filtered; any future
+// ACH-internal call through here MUST pass ?types=all
+// (TestNoInternalModelListWithoutTypesAll is a heuristic guard for it).
 var textModes = []string{"chat", "completion"}
 
 type modelModesKey struct{}
+
+// wantsAllModels reports whether a ?types value (first param only, as
+// prepareModelList reads it) names "all" anywhere in its comma list.
+func wantsAllModels(types string) bool {
+	for _, t := range strings.Split(types, ",") {
+		if strings.ToLower(strings.TrimSpace(t)) == "all" {
+			return true
+		}
+	}
+	return false
+}
 
 // prepareModelList marks a GET /v1/models request for the response filter:
 // it consumes ?types (LiteLLM never sees it) and drops Accept-Encoding so
@@ -37,11 +51,11 @@ func prepareModelList(r *http.Request) *http.Request {
 	for _, m := range textModes {
 		allow[m] = true
 	}
+	if wantsAllModels(types) {
+		return r
+	}
 	for _, t := range strings.Split(types, ",") {
 		t = strings.ToLower(strings.TrimSpace(t))
-		if t == "all" {
-			return r
-		}
 		if t != "" {
 			allow[t] = true
 		}
