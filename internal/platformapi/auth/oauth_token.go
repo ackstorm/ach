@@ -73,26 +73,46 @@ func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
 // told invalid_grant, which sends it back to login (where the IdP says
 // no). Dex unreachable is a 503 and the presented token stays valid; so
 // does any failure to issue the new pair (LiteLLM down, pk_ ensure, store).
+//
+// The token is taken BEFORE Dex is asked: racing refreshes of one token
+// (several opencode processes waking up together) must not each replay the
+// user's single Dex token — one landing outside Dex's reuse interval reads
+// as "claimed twice" and ends every session. Losers get invalid_grant
+// without reaching Dex; the taken token is put back on any outcome that
+// does not hand out a new pair.
 func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID string) {
 	presented := r.PostForm.Get("refresh_token")
 	var rf oauthRefresh
-	ok, err := d.Store.Get(r.Context(), "refresh", presented, &rf)
+	ok, err := d.Store.Take(r.Context(), "refresh", presented, &rf)
 	if err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	if !ok || rf.ClientID != clientID {
-		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token or other client", "client_id", clientID)
+	if !ok {
+		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token, or already rotated by a concurrent refresh", "client_id", clientID)
+		oauthError(w, 400, "invalid_grant", "")
+		return
+	}
+	// restore hands the taken token back. Uncancelable: the client may have
+	// hung up during a slow Dex call, and its retry still needs the token.
+	restore := func() {
+		if err := d.Store.Put(context.WithoutCancel(r.Context()), "refresh", presented, rf, d.RefreshTTL); err != nil {
+			d.Auth.Logger.Error("oauth: restoring the refresh token after a failed grant failed", "err", err)
+		}
+	}
+	if rf.ClientID != clientID {
+		restore() // another client's token: refuse it without spending it
+		d.Auth.Logger.Info("oauth: refresh refused: token of another client", "client_id", clientID)
 		oauthError(w, 400, "invalid_grant", "")
 		return
 	}
 	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
 		if errors.Is(err, errIdPRefused) {
 			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
-			_ = d.Store.Del(r.Context(), "refresh", presented)
 			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
 			return
 		}
+		restore()
 		if errors.Is(err, ErrIdPUnreachable) {
 			oauthError(w, 503, "temporarily_unavailable", "identity provider unreachable")
 			return
@@ -100,18 +120,10 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	// rotation: the old one is gone; a concurrent refresh already took it
-	if ok, err := d.Store.Take(r.Context(), "refresh", presented, &rf); err != nil || !ok {
-		d.Auth.Logger.Info("oauth: refresh refused: token already rotated by a concurrent refresh", "sub", rf.Sub, "client_id", clientID, "err", err)
-		oauthError(w, 400, "invalid_grant", "")
-		return
-	}
 	if !d.issue(w, r, rf.oauthUser, clientID) {
-		// No new pair went out: hand the presented token back so the
-		// client's retry works instead of forcing a fresh login.
-		if err := d.Store.Put(r.Context(), "refresh", presented, rf, d.RefreshTTL); err != nil {
-			d.Auth.Logger.Error("oauth: restoring the refresh token after a failed grant failed", "err", err)
-		}
+		// No new pair went out: the client's retry works instead of
+		// forcing a fresh login.
+		restore()
 	}
 }
 

@@ -597,8 +597,10 @@ func TestToken_RefreshKeepsThePresentedTokenWhenIssueFails(t *testing.T) {
 }
 
 // Two refreshes racing on one token: exactly one gets a pair, the other
-// invalid_grant. The second request is fired from inside the first's IdP
-// check, i.e. after the first read the token and before it took it.
+// invalid_grant — without replaying the user's Dex token. The second request
+// is fired from inside the first's IdP check, after the first took the token.
+// Both reaching Dex is what turns a race into "claimed twice" and ends every
+// session of the user.
 func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	f := newAS(t)
 	installFakePKs(f)
@@ -608,17 +610,41 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
 	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
 
-	var inner int
+	var inner *httptest.ResponseRecorder
+	fired := false
 	f.dexRefresh = func(rt string) (string, error) {
-		if inner == 0 {
-			inner = -1
-			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr).Code
+		if !fired {
+			fired = true
+			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
 		}
 		return rt + "+", nil
 	}
 	outer := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
-	if inner != 200 || outer.Code != 400 || !strings.Contains(outer.Body.String(), "invalid_grant") {
-		t.Fatalf("want one 200 and one invalid_grant: inner=%d outer=%d %s", inner, outer.Code, outer.Body)
+	if outer.Code != 200 || inner.Code != 400 || !strings.Contains(inner.Body.String(), "invalid_grant") {
+		t.Fatalf("want the first 200 and the racer invalid_grant: outer=%d inner=%d %s", outer.Code, inner.Code, inner.Body)
+	}
+	if len(f.dexSeen) != 1 {
+		t.Fatalf("the losing racer must not reach Dex: %v", f.dexSeen)
+	}
+}
+
+// A refresh token presented by another client is refused without being
+// spent: its own client still refreshes with it.
+func TestToken_RefreshOfAnotherClientKeepsTheToken(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid, other := registerClient(t, f), registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(c string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {c}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(other), formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("other client: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(cid), formHdr); w.Code != 200 {
+		t.Fatalf("own client after the refusal: %d %s", w.Code, w.Body)
 	}
 }
 
