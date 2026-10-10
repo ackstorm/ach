@@ -2389,10 +2389,21 @@ substituted.</p>
 <p><strong><code>ModifyResponse</code> is header-only.</strong> It was previously <code>nil</code>, documented
 as deliberate "for streaming pass-through (D-05)". The constraint that
 comment encoded is that the <strong>body</strong> is never touched, and it still is
-not: <code>ModifyResponse</code> runs before the body is copied and buffers nothing,
+not (except <code>GET /v1/models</code>, below): <code>ModifyResponse</code> runs before the body is copied and buffers nothing,
 so SSE and streamable-http pass-through are unaffected. The proxy suite's
 streaming test runs with the hook installed precisely to keep that honest.</p>
 </blockquote>
+<p><strong>The one body rewrite: <code>GET /v1/models</code>.</strong> That list is small JSON, never a
+stream, so the hook filters it (<code>proxy/models.go</code>): by default only items
+whose LiteLLM <code>mode</code> is <code>chat</code> or <code>completion</code> are kept, which is what the
+console labels "chat", so a chat client (LibreChat) offers no embedding,
+transcription, image or rerank model. <code>?types=&lt;mode&gt;[,&lt;mode&gt;…]</code> adds
+LiteLLM's own mode names on top (<code>embedding</code>, <code>audio_transcription</code>,
+<code>image_generation</code>, <code>responses</code>…), <code>?types=all</code> turns the filter off, and
+<code>types</code> never reaches LiteLLM. An item with no <code>mode</code> stays: LiteLLM omits it
+when neither <code>model_info.mode</code> nor its cost map knows the model. The request
+drops <code>Accept-Encoding</code> so the Transport hands the hook plain JSON; any body
+that is not a 200 <code>{"data":[…]}</code> list passes through untouched.</p>
 <hr />
 <h2 id="16-oauth-consent-is-declared-by-the-backend-policy">1.6 OAuth consent is declared by the backend policy<a class="headerlink" href="#16-oauth-consent-is-declared-by-the-backend-policy" title="Permanent link">&para;</a></h2>
 <p>OAuth access tokens carry identity only; they do not carry service scopes and
