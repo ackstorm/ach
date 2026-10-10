@@ -177,6 +177,30 @@ func TestBootstrapDegradesWhenAllowanceUnavailable(t *testing.T) {
 	}
 }
 
+// TestCapabilities_PersonalKeepsEveryMode: the console Models page is ACH's
+// own view and must list what the forwarder's GET /v1/models hides by default
+// (embedding, transcription, image…). It reads /model_group/info directly,
+// never the forwarder; this pins that it applies no mode filter of its own.
+func TestCapabilities_PersonalKeepsEveryMode(t *testing.T) {
+	d := testDeps(t)
+	modes := []string{"chat", "embedding", "audio_transcription", "image_generation"}
+	models := make([]litellm.ModelGroupInfo, 0, len(modes))
+	for _, m := range modes {
+		mode := m
+		models = append(models, litellm.ModelGroupInfo{Name: "m-" + m, Providers: []string{"openai"}, Mode: &mode})
+	}
+	d.AsUser = func(string) UserReads { return &fakeCatalog{models: models} }
+	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	for _, m := range models {
+		if !strings.Contains(rec.Body.String(), `"`+m.Name+`"`) {
+			t.Fatalf("%s missing from the console catalog: %s", m.Name, rec.Body)
+		}
+	}
+}
+
 func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
 	d := testDeps(t)
 	mode := "chat"
