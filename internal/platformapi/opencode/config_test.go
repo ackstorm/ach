@@ -188,7 +188,7 @@ func TestConfig_OK(t *testing.T) {
 	if _, has := cfg["mcp"]; has {
 		t.Fatalf("mcp %v", cfg["mcp"])
 	}
-	if sk := m["skills"].([]any); len(sk) != 1 || sk[0].(map[string]any)["name"] != "acme-api" {
+	if sk := m["skills"].([]any); len(sk) != 1 || sk[0].(map[string]any)["name"] != "acme-ach" {
 		t.Fatalf("skills %v", sk)
 	}
 	if strings.Contains(w.Body.String(), "secret.model") {
@@ -232,7 +232,7 @@ func TestConfig_UpstreamDownServesCacheThenBareFallback(t *testing.T) {
 		mut(f)
 		w, m := f.get(t, "Bearer "+goodTok)
 		if w.Code != 200 || m["auth"] != "ok" || m["user"] != userEmail || m["stale"] != true ||
-			len(m["config"].(map[string]any)) != 0 || m["skills"].([]any)[0].(map[string]any)["name"] != "acme-api" {
+			len(m["config"].(map[string]any)) != 0 || m["skills"].([]any)[0].(map[string]any)["name"] != "acme-ach" {
 			t.Fatalf("%s: %d %s", name, w.Code, w.Body)
 		}
 	}
@@ -321,7 +321,7 @@ func TestConfig_SkillDefaultEnvironment(t *testing.T) {
 		_, m := newFixtureWith(t, "", "", env).get(t, "Bearer "+goodTok)
 		sk := m["skills"].([]any)[0].(map[string]any)
 		md := sk["files"].(map[string]any)["SKILL.md"].(string)
-		if sk["name"] != "acme-api" || strings.Contains(md, "ach-cli env hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
+		if sk["name"] != "acme-ach" || strings.Contains(md, "ach-cli env hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
 			t.Fatalf("%q: skill %v", env, sk)
 		}
 	}

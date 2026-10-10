@@ -17,11 +17,11 @@ var skillTemplate string
 // dropped on the user's machine.
 var skillNameRE = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
-// SkillName is the name of ACH's OpenCode skill for provider: "<provider>-api".
+// SkillName is the name of ACH's OpenCode skill for provider: "<provider>-ach".
 // The provider rule (≤64 chars, any '-' placement) is looser than the plugin's
 // skill-name rule, so platform-api refuses to start on an error here.
 func SkillName(provider string) (string, error) {
-	name := provider + "-api"
+	name := provider + "-ach"
 	if len(name) > 64 || !skillNameRE.MatchString(name) {
 		return "", fmt.Errorf("skill name %q: want kebab-case (%s), at most 64 chars", name, skillNameRE)
 	}

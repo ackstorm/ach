@@ -10,7 +10,7 @@ import (
 func TestAPISkill(t *testing.T) {
 	s := apiSkill("https://ach.test/", "ackstorm", "ackstorm")
 	md := s["files"].(map[string]string)["SKILL.md"]
-	if s["name"] != "ackstorm-api" || !strings.HasPrefix(md, "---\nname: ackstorm-api\n") ||
+	if s["name"] != "ackstorm-ach" || !strings.HasPrefix(md, "---\nname: ackstorm-ach\n") ||
 		!strings.Contains(md, "ach-cli login https://ach.test\n") ||
 		!strings.Contains(md, "`https://ach.test/v1`") || !strings.Contains(md, "opencode auth login ackstorm") ||
 		!strings.Contains(md, "opencode auth login https://ach.test`") ||
@@ -30,7 +30,7 @@ func TestAPISkill(t *testing.T) {
 }
 
 func TestSkillName(t *testing.T) {
-	for p, want := range map[string]string{"ackstorm": "ackstorm-api", "ai-platform": "ai-platform-api", strings.Repeat("a", 60): strings.Repeat("a", 60) + "-api"} {
+	for p, want := range map[string]string{"ackstorm": "ackstorm-ach", "ai-platform": "ai-platform-ach", strings.Repeat("a", 60): strings.Repeat("a", 60) + "-ach"} {
 		if got, err := SkillName(p); err != nil || got != want {
 			t.Fatalf("%q: %q %v", p, got, err)
 		}

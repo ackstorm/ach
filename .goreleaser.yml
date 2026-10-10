@@ -277,6 +277,18 @@ release:
     kubectl apply -k https://github.com/ackstorm/ach/config/default
     ```
 
+    #### ach-cli (user CLI)
+
+    Linux and macOS:
+
+    ```bash
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]'); ARCH=$(uname -m); case "$ARCH" in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
+    curl -fsSL "https://github.com/ackstorm/ach/releases/download/v{{ .Version }}/ach-cli_{{ .Version }}_${OS}_${ARCH}.tar.gz" | tar -xz ach-cli
+    mkdir -p ~/.local/bin && mv ach-cli ~/.local/bin/ && ach-cli --version
+    ```
+
+    Windows: download `ach-cli_{{ .Version }}_windows_amd64.zip` below. Verify any download against the cosign-signed `checksums.txt`.
+
 # HRD-09: Cosign keyless OIDC signatures for checksums + container images.
 # Requires id-token: write in the workflow + cosign on PATH (release.yml
 # installs via sigstore/cosign-installer).

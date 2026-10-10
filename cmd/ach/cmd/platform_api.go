@@ -410,7 +410,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if !genaiProviderID.MatchString(genaiProvider) {
 		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: want lowercase letters, digits and '-' (%s)", genaiProvider, genaiProviderID)
 	}
-	// The skill is named after the provider ("<provider>-api"), under the
+	// The skill is named after the provider ("<provider>-ach"), under the
 	// plugin's stricter skill-name rule: an invalid name is dropped silently.
 	if _, err := opencode.SkillName(genaiProvider); err != nil {
 		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: %w", genaiProvider, err)
