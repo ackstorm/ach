@@ -1,7 +1,7 @@
 # Acknowledged govulncheck residuals
 
-**Date:** 2026-08-26
-**Toolchain at acknowledgement:** Go 1.26.6 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.53.0`
+**Date:** 2026-10-11
+**Toolchain at acknowledgement:** Go 1.26.9 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.60.0`
 **Scanner:** `govulncheck@v1.3.0` (pinned in `Dockerfile.devtools::GOVULNCHECK_VERSION`)
 **Invocation:** `./scripts/dev.sh govulncheck ./...`
 
@@ -31,6 +31,16 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-10-11: Bumped Go toolchain 1.26.6 → **1.26.9** (`go.mod` `toolchain` +
+  `Dockerfile.devtools` pinned to `golang:1.26.9-bookworm`) and
+  `golang.org/x/net` v0.58.0 → **v0.60.0** (which lifts x/crypto, x/sync,
+  x/sys, x/term and x/text to their matching releases). Cleared twelve advisories a
+  govulncheck DB refresh surfaced on PR #194's security job (not caused by
+  it): `GO-2026-6599`, `-6600` (html/template), `-6603`, `-6605`, `-6609`,
+  `-6610`, `-6611`, `-6612`, `-6613`, `-6617` (net/http + x/net/http2),
+  `-6607` (crypto/tls ECH) and `-6608` (net/textproto). All reachable, all
+  fixed upstream; `govulncheck ./...` now reports 0 reachable. Ack-list stays
+  empty; gate expects 0.
 - 2026-09-23: Bumped six Dependabot-flagged **indirect** dependencies —
   `google.golang.org/grpc` 1.83.1 → 1.83.2 (GHSA-2v4p-qf9q-27wj, high),
   `github.com/moby/go-archive` 0.2.0 → 0.3.0 (GHSA-hfg8-hc9c-6c3h, high),
@@ -90,5 +100,5 @@ reviewer-approved row + justification before merge.
   one-directionally (new reachable advisories block; cleared rows only warn)
   as a pre-push gate (gate 13 in `scripts/pre-push-check.sh`).
 - `Dockerfile.devtools` — pinned `GOVULNCHECK_VERSION` + base Go version.
-- `go.mod` — `toolchain go1.26.6` directive pins CI's Go runtime to
+- `go.mod` — `toolchain go1.26.9` directive pins CI's Go runtime to
   match the devtools image.
