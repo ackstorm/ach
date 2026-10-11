@@ -1360,6 +1360,21 @@ revokes the oauth `pk_`. `revalidateAtIdP` now runs detached
 (`opencode auth login -p <provider>`). Every refused refresh logs an
 `oauth: refresh refused: …` line with `sub`/`client_id`.
 
+Racing refreshes of ONE ACH refresh token (several opencode processes waking
+up after an expiry) were a second path to the same outcome: the grant read the
+token, asked Dex, and only then took it, so every racer replayed the shared Dex
+token, and one outside Dex's reuse interval was "claimed twice". Since
+2026-10-10 the grant takes the token FIRST (`GETDEL`): losers get
+`invalid_grant` without reaching Dex, and the token is put back on a 503/500
+or a failed issue. While a grant holds it, a short-lived `rotating` marker
+(Valkey `ach:oauth:rotating:<token>`, 60 s) makes a racer's answer carry
+`error_description: "refresh token rotation in progress"` — a contract with
+opencode-oidc-provider ≥ v0.4.9, which then waits up to 35 s for the winner's
+tokens in its `rotation.json` (a slow Dex no longer costs the racer its turn)
+and retries once if none appear. A bare `invalid_grant` is a dead token: the
+plugin signs out after 2.5 s. An IdP refusal deletes the marker so racers of
+a session that just ended fail at once.
+
 Dex facts (`dexidp/dex` `grants/refresh.go`): reuse, an unknown token and an
 expired one all answer 400 with the same "invalid or already claimed" family —
 not distinguishable; an upstream connector refusal (user disabled at Google)

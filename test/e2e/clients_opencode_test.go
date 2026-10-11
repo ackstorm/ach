@@ -99,10 +99,10 @@ func TestClientsOpenCode(t *testing.T) {
 		t.Fatalf("config carries mcp: %v", mcp)
 	}
 	sk, _ := m["skills"].([]any)
-	if len(sk) != 1 || sk[0].(map[string]any)["name"] != "ai-platform-api" {
+	if len(sk) != 1 || sk[0].(map[string]any)["name"] != "ai-platform-ach" {
 		t.Fatalf("skills = %v", m["skills"])
 	}
-	if md, _ := sk[0].(map[string]any)["files"].(map[string]any)["SKILL.md"].(string); !strings.HasPrefix(md, "---\nname: ai-platform-api\n") || strings.Contains(md, "{{") {
+	if md, _ := sk[0].(map[string]any)["files"].(map[string]any)["SKILL.md"].(string); !strings.HasPrefix(md, "---\nname: ai-platform-ach\n") || strings.Contains(md, "{{") {
 		t.Fatalf("SKILL.md = %q", md)
 	}
 

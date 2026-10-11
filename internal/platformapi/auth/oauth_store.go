@@ -14,7 +14,8 @@ import (
 // OAuthStore keeps the authorization server's transient state in Redis,
 // namespaced "ach:oauth:<kind>:<id>". Kinds: client (DCR registration),
 // pending (an /authorize or device confirmation waiting on Dex), code
-// (single use), refresh (rotated on use), device + device_user (RFC 8628). A Redis flush logs every
+// (single use), refresh (rotated on use), rotating (a refresh a grant holds),
+// device + device_user (RFC 8628). A Redis flush logs every
 // OAuth client out — they re-run the browser flow. Accepted for v1.
 type OAuthStore struct {
 	RDB *redis.Client

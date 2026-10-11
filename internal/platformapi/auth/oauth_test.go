@@ -597,8 +597,10 @@ func TestToken_RefreshKeepsThePresentedTokenWhenIssueFails(t *testing.T) {
 }
 
 // Two refreshes racing on one token: exactly one gets a pair, the other
-// invalid_grant. The second request is fired from inside the first's IdP
-// check, i.e. after the first read the token and before it took it.
+// invalid_grant — without replaying the user's Dex token. The second request
+// is fired from inside the first's IdP check, after the first took the token.
+// Both reaching Dex is what turns a race into "claimed twice" and ends every
+// session of the user.
 func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	f := newAS(t)
 	installFakePKs(f)
@@ -608,17 +610,77 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
 	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
 
-	var inner int
+	var inner *httptest.ResponseRecorder
+	fired := false
 	f.dexRefresh = func(rt string) (string, error) {
-		if inner == 0 {
-			inner = -1
-			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr).Code
+		if !fired {
+			fired = true
+			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
 		}
 		return rt + "+", nil
 	}
 	outer := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
-	if inner != 200 || outer.Code != 400 || !strings.Contains(outer.Body.String(), "invalid_grant") {
-		t.Fatalf("want one 200 and one invalid_grant: inner=%d outer=%d %s", inner, outer.Code, outer.Body)
+	if outer.Code != 200 || inner.Code != 400 || !strings.Contains(inner.Body.String(), "invalid_grant") {
+		t.Fatalf("want the first 200 and the racer invalid_grant: outer=%d inner=%d %s", outer.Code, inner.Code, inner.Body)
+	}
+	if !strings.Contains(inner.Body.String(), errRotating) {
+		t.Fatalf("the racer must be told a rotation is in progress (its client waits for the winner): %s", inner.Body)
+	}
+	if len(f.dexSeen) != 1 {
+		t.Fatalf("the losing racer must not reach Dex: %v", f.dexSeen)
+	}
+	// A late racer, after the winner answered, still learns the token rotated.
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("late racer: %d %s", w.Code, w.Body)
+	}
+}
+
+// A token nobody holds is dead: a bare invalid_grant, so the client fails
+// at once instead of waiting for a winner that does not exist. Racers of a
+// grant the IdP refused are told the same: the session is over.
+func TestToken_RefreshDeadTokenIsNotARotation(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(rt string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form("never-issued"), formHdr); w.Code != 400 || strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("unknown token: %d %s", w.Code, w.Body)
+	}
+
+	f.dexRefresh = func(string) (string, error) {
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr); w.Code != 400 {
+		t.Fatalf("IdP refusal: %d %s", w.Code, w.Body)
+	}
+	racer := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr)
+	if racer.Code != 400 || strings.Contains(racer.Body.String(), errRotating) {
+		t.Fatalf("after an IdP refusal the racer must fail at once: %d %s", racer.Code, racer.Body)
+	}
+}
+
+// A refresh token presented by another client is refused without being
+// spent: its own client still refreshes with it.
+func TestToken_RefreshOfAnotherClientKeepsTheToken(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid, other := registerClient(t, f), registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(c string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {c}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(other), formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("other client: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(cid), formHdr); w.Code != 200 {
+		t.Fatalf("own client after the refusal: %d %s", w.Code, w.Body)
 	}
 }
 
