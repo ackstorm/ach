@@ -2404,6 +2404,15 @@ LiteLLM's own mode names on top (<code>embedding</code>, <code>audio_transcripti
 when neither <code>model_info.mode</code> nor its cost map knows the model. The request
 drops <code>Accept-Encoding</code> so the Transport hands the hook plain JSON; any body
 that is not a 200 <code>{"data":[…]}</code> list passes through untouched.</p>
+<p>The filter is for external chat clients only. The views that list models in
+ACH never go through it: the console Models page shows every mode
+(<code>/model_group/info</code> as the user), the OpenCode config shows chat models only
+(its own <code>/model_group/info</code> read, which also drops mode-less models, unlike <code>/v1/models</code>). No ACH-internal
+caller of the forwarder's <code>/v1/models</code> exists today; a future one must send
+<code>?types=all</code>. <code>TestNoInternalModelListWithoutTypesAll</code>
+(<code>proxy/models_selfcall_test.go</code>) is a heuristic guard for that (literal
+<code>"/v1/models…"</code> strings in tracked source only; <code>url.JoinPath</code>, base+path
+concatenation and SDK calls are not caught).</p>
 <hr />
 <h2 id="16-oauth-consent-is-declared-by-the-backend-policy">1.6 OAuth consent is declared by the backend policy<a class="headerlink" href="#16-oauth-consent-is-declared-by-the-backend-policy" title="Permanent link">&para;</a></h2>
 <p>OAuth access tokens carry identity only; they do not carry service scopes and
