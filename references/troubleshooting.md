@@ -722,6 +722,9 @@ admin; they are not routable through ACH.
 (any LiteLLM mode, comma-separated) or `?types=all`. A chat model that is
 missing has the wrong `mode` in LiteLLM: set `model_info.mode: chat` on its
 deployment. A model with no `mode` at all is always listed.
+The console Models page and `ach-cli env describe` are not affected — they do
+not read `/v1/models`; if a model is missing THERE, it is a grant/projection
+problem, not this filter.
 
 ### ❌ LibreChat (trusted IdP / Dex token): 403 `ach_login_required`
 
