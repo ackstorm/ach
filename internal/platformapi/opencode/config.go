@@ -165,8 +165,8 @@ func buildConfig(base, provider, defModel, defSmall string, groups []litellm.Mod
 	deps map[string]litellm.ModelCaps, aliases map[string]string) map[string]any {
 	models := map[string]any{}
 	for _, g := range groups {
-		if g.Name == "" || g.Mode == nil || *g.Mode != "chat" {
-			continue // OpenCode cannot use embeddings, TTS, image, transcription
+		if g.Name == "" {
+			continue
 		}
 		if strings.HasPrefix(g.Name, "a2a/") {
 			// An A2A agent, not a model: LiteLLM lists it once the agent is granted, but
@@ -178,7 +178,15 @@ func buildConfig(base, provider, defModel, defSmall string, groups []litellm.Mod
 		if a, ok := aliases[g.Name]; ok {
 			target = a
 		}
-		models[g.Name] = model(g.Name, overlay(capsFromGroup(g), deps[target]))
+		caps := overlay(capsFromGroup(g), deps[target])
+		// OpenCode cannot use embeddings, TTS, image, transcription. A model
+		// with no mode stays, as on GET /v1/models: LiteLLM leaves it unset
+		// when neither its config nor its cost map knows the model, which is
+		// common for a custom chat model.
+		if caps.Mode != nil && *caps.Mode != "" && *caps.Mode != "chat" {
+			continue
+		}
+		models[g.Name] = model(g.Name, caps)
 	}
 	config := map[string]any{}
 	if len(models) > 0 {

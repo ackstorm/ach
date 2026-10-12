@@ -20,6 +20,8 @@ const modelListBody = `{"object":"list","data":[
 	{"id":"ackstorm.smart","object":"model","mode":"chat"},
 	{"id":"legacy","object":"model","mode":"completion"},
 	{"id":"custom","object":"model"},
+	{"id":"nulled","object":"model","mode":null},
+	{"id":"blank","object":"model","mode":""},
 	{"id":"embed","object":"model","mode":"embedding"},
 	{"id":"whisper","object":"model","mode":"audio_transcription"},
 	{"id":"veo","object":"model","mode":"video_generation"}]}`
@@ -48,10 +50,10 @@ func TestModelList_FiltersByMode(t *testing.T) {
 		path, wantQuery string
 		want            []string
 	}{
-		{"/v1/models", "", []string{"ackstorm.smart", "legacy", "custom"}},
-		{"/v1/models/?user=u1", "user=u1", []string{"ackstorm.smart", "legacy", "custom"}},
-		{"/v1/models?types=embedding,%20Audio_Transcription&user=u1", "user=u1", []string{"ackstorm.smart", "legacy", "custom", "embed", "whisper"}},
-		{"/v1/models?types=all", "", []string{"ackstorm.smart", "legacy", "custom", "embed", "whisper", "veo"}},
+		{"/v1/models", "", []string{"ackstorm.smart", "legacy", "custom", "nulled", "blank"}},
+		{"/v1/models/?user=u1", "user=u1", []string{"ackstorm.smart", "legacy", "custom", "nulled", "blank"}},
+		{"/v1/models?types=embedding,%20Audio_Transcription&user=u1", "user=u1", []string{"ackstorm.smart", "legacy", "custom", "nulled", "blank", "embed", "whisper"}},
+		{"/v1/models?types=all", "", []string{"ackstorm.smart", "legacy", "custom", "nulled", "blank", "embed", "whisper", "veo"}},
 	} {
 		r := requestWithKC(t, http.MethodGet, tc.path, kc, "")
 		r.Header.Set("Accept-Encoding", "gzip")

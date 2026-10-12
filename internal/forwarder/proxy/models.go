@@ -65,7 +65,7 @@ func prepareModelList(r *http.Request) *http.Request {
 }
 
 // filterModelList drops the /v1/models items whose `mode` is not allowed.
-// An item without a mode stays: LiteLLM omits it when neither the config nor
+// An item without a mode (absent, null or "") stays: LiteLLM omits it when neither the config nor
 // its cost map knows the model, which is common for a custom chat model. A
 // body that is not an OpenAI model list (Anthropic format, an error) passes
 // through as it came.
@@ -93,7 +93,7 @@ func filterModelList(resp *http.Response) error {
 		var m struct {
 			Mode *string `json:"mode"`
 		}
-		if json.Unmarshal(it, &m) != nil || m.Mode == nil || allow[*m.Mode] {
+		if json.Unmarshal(it, &m) != nil || m.Mode == nil || *m.Mode == "" || allow[*m.Mode] {
 			kept = append(kept, it)
 		}
 	}

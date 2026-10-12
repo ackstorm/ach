@@ -216,6 +216,22 @@ func TestConfig_ModelMapping(t *testing.T) {
 	}
 }
 
+// A model LiteLLM leaves without a mode (absent or "") is listed, as on
+// GET /v1/models; the deployment's mode, when LiteLLM knows it, decides.
+func TestConfig_ModelWithoutModeIsListed(t *testing.T) {
+	groups := []litellm.ModelGroupInfo{
+		{Name: "custom.chat"},
+		{Name: "blank.mode", Mode: ptr("")},
+		{Name: "embed.unknown"},
+		{Name: "text-embedding", Mode: ptr("embedding")},
+	}
+	deps := map[string]litellm.ModelCaps{"embed.unknown": {Mode: ptr("embedding")}}
+	ms := buildConfig("https://ach.test", "acme", "", "", groups, deps, nil)["provider"].(map[string]any)["acme"].(map[string]any)["models"].(map[string]any)
+	if len(ms) != 2 || ms["custom.chat"] == nil || ms["blank.mode"] == nil {
+		t.Fatalf("models %v", ms)
+	}
+}
+
 func TestConfig_UpstreamDownServesCacheThenBareFallback(t *testing.T) {
 	f := newFixture(t)
 	_, first := f.get(t, "Bearer "+goodTok)
