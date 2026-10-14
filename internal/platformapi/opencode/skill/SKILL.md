@@ -176,12 +176,9 @@ A teammate who has the same folder (with its `ach.yaml`) runs a bare
   `ach-cli env uninstall <environment> -g`). `--dry-run` previews; only what hydrate
   wrote is removed, the user's own settings in shared files stay.
 
-Do not restart OpenCode after a hydrate or uninstall: it reloads its config by itself, and
-restarting it from inside a session breaks that session. Check with `opencode mcp list`;
-if a server is missing, wait 5 seconds (`sleep 5`) and check once more. Only if it is
-still missing, offer to restart it yourself (`opencode service restart`), warning the
-user first that the chat may then show an error message they can ignore; restart only
-with their go-ahead.
+Do not restart OpenCode after a hydrate or uninstall: it picks up new and removed MCP
+servers by itself within seconds, and restarting it from inside a session breaks that
+session. Never run `opencode service restart`.
 
 ### Sign in to MCP servers on first use
 
@@ -199,8 +196,23 @@ nohup opencode mcp auth <name> </dev/null >"$LOG" 2>&1 &
 for i in $(seq 1 20); do grep -q 'https://' "$LOG" && break; sleep 1; done; grep -o 'https://[^ ]*' "$LOG"
 ```
 
-Give the user that link, wait for them to say they signed in, then check with
-`opencode mcp list` and move on to the next server. Or the user can use a tool of that
+Give the user that link and wait for them to say they signed in. The sign-in lands in
+OpenCode's credential store, but the OpenCode server this chat runs on keeps the server
+as `needs authentication` until it reloads. Reload it (no restart, the chat survives) and
+print each server's status:
+
+```bash
+P=$(pgrep -f 'opencode serve --hostname' | head -1)
+PORT=$(tr '\0' ' ' </proc/$P/cmdline | grep -o -E 'port [0-9]+' | cut -d' ' -f2)
+PW=$(tr '\0' '\n' </proc/$P/environ | sed -n 's/^OPENCODE_SERVER_PASSWORD=//p')
+code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$PW" -X POST "http://127.0.0.1:$PORT/api/location/reload")
+[ "$code" = 204 ] && sleep 3 && curl -s -u "opencode:$PW" "http://127.0.0.1:$PORT/api/mcp" | python3 -c 'import json,sys; [print(m["name"], m["status"]["status"]) for m in json.load(sys.stdin)["data"]]'
+echo "reload: $code"
+```
+
+Never print `$PW`. `connected` means done: move on to the next server. If the reload is not
+`204`, ask the user for a go-ahead, warn them the chat will reconnect, and restart that
+server with `kill -HUP $P` (OpenChamber starts it again). Or the user can use a tool of that
 server in chat and open the sign-in link OpenCode shows.
 
 On a remote machine (a Coder workspace: `CODER=true`; or an SSH session: `SSH_CONNECTION`
