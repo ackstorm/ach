@@ -227,14 +227,18 @@ expires in minutes: if the delivery fails, sign in again.
 ## MCP servers
 
 Hydrating an Environment (globally or into a folder, as above) writes its MCP servers
-into OpenCode's config, enabled. One server can also be added by hand, by its ACH URL
+into OpenCode's config, enabled. Always run `opencode mcp list` first: a server it lists
+is already configured, even when it says `needs authentication`. Only sign in to it
+(see "Sign in to MCP servers on first use"); never `opencode mcp add` it again, that
+creates a duplicate under another name.
+
+Only for a server `opencode mcp list` does not show, add it by hand by its ACH URL
 `{{base}}/mcp/<server>`:
 
 ```bash
 ach-cli env describe <environment>    # the MCP servers an Environment provides (<server>)
-opencode mcp add <name> --url {{base}}/mcp/<server> --global   # drop --global: this project only
-opencode mcp auth <name>              # sign in; with no name it lists every server to pick from
-opencode mcp list
+opencode mcp add <server> --url {{base}}/mcp/<server> --global   # drop --global: this project only
+opencode mcp auth <server>
 ```
 
 Take `<server>` from `ach-cli env describe` (or `opencode mcp list`); if the server the
