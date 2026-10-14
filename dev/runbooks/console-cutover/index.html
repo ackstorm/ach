@@ -1467,7 +1467,7 @@ within a day — no gitops commit, no diff, no human.</strong></p>
       and rollback is <code>git revert</code>. The gitops repo's own <code>CLAUDE.md</code> already
       says <em>"PRODUCCIÓN: fijar versiones exactas"</em>, so the range is out of policy
       — <strong>but this is the owner's decision, not ours.</strong></p>
-<p>decision: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  by: <strong><em>_</em></strong><strong><em>_</em>  date: </strong><strong><em>_</em></strong>___</p>
+<p>decision: ______________________  by: ____________  date: ____________</p>
 </li>
 <li>
 <p>[ ] If declined: note in Step 2 that there is <strong>no gitops artifact</strong> for the
@@ -1480,7 +1480,7 @@ within a day — no gitops commit, no diff, no human.</strong></p>
 <li>
 <p>[ ] <strong>Snapshot</strong> the ACH Postgres (<code>ach-postgresql</code>, ns <code>ach</code>). <strong>Last restore
       point below the D-29 boundary.</strong></p>
-<p>snapshot id: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  taken: <strong><em>_</em></strong><strong><em>_</em>  by: </strong><strong><em>_</em></strong>___</p>
+<p>snapshot id: ______________________  taken: ____________  by: ____________</p>
 </li>
 <li>
 <p>[ ] <strong>gitops edit</strong> — apply the Step 1 decision in <code>apps/ach/base/helm.yaml</code>.
@@ -1554,7 +1554,7 @@ nothing else provides:</p>
 <p>[ ] For each of the four, record: <em>keep alitellm-auth headless for it</em> /
       <em>move it to ACH (name the feature, say whether it exists)</em> / <em>drop it and
       accept the consequence</em>.</p>
-<p>1: <strong><em>_</em></strong><strong><em>_</em>  2: </strong><strong><em>_</em></strong><strong><em>  3: </em></strong><strong><em>_</em></strong>__  4: <strong><em>_</em></strong>_____</p>
+<p>1: ____________  2: ____________  3: ____________  4: ____________</p>
 </li>
 <li>
 <p>[ ] The <code>api.</code> host keeps an authorizer. If ext_authz goes, LiteLLM's own key
@@ -1608,7 +1608,7 @@ users have been told the old login is going away and their standalone keys will 
   Gateway access logs for that exact path across the soak window are the
   evidence — <code>exemptPaths</code> makes it reachable unauthenticated today, so
   anything could be using it.</p>
-<p>confirmed no consumers by: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  at: <strong><em>_</em></strong>_____</p>
+<p>confirmed no consumers by: ______________________  at: ____________</p>
 </li>
 <li>
 <p>[ ] <strong>Verify</strong></p>
@@ -1646,7 +1646,7 @@ printed for review only.</p>
 <li>
 <p>[ ] <strong>Owner gate.</strong> Paste the candidate list — <strong>count, aliases, users only,
       never token values.</strong> <strong>STOP until the owner says go.</strong></p>
-<p>owner go given by: <strong><em>_</em></strong><strong><em>_</em></strong><strong><em>_</em></strong>_  at: <strong><em>_</em></strong>_____</p>
+<p>owner go given by: ______________________  at: ____________</p>
 </li>
 <li>
 <p>[ ] <strong>Apply + verify</strong></p>
