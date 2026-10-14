@@ -189,6 +189,24 @@ with their go-ahead.
 servers, the provider's own consent screen). Or use a tool of that server in chat and
 open the sign-in link OpenCode shows. Check with `opencode mcp list`.
 
+On a remote machine (a Coder workspace: `CODER=true`; or an SSH session: `SSH_CONNECTION`
+is set) this sign-in ends on `http://127.0.0.1:<port>/…callback?code=…` in the user's own
+browser, which shows "127.0.0.1 refused to connect": OpenCode waits on the remote machine's
+localhost, not the user's (OpenCode issue
+<https://github.com/anomalyco/opencode/issues/54495>). Tell the user before they start, then
+offer, in this order:
+- Coder: the workspace's "OAuth Callback" app, if it has one (Coder dashboard; its address
+  is `https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.<coder domain>`,
+  the domain as in `$VSCODE_PROXY_URI`): paste the failed address there and it delivers it
+  to OpenCode.
+- Forward the port before signing in, from the user's own machine, taking `<port>` from the
+  failed address (OpenCode's MCP default is 19876): Coder,
+  `coder port-forward $CODER_WORKSPACE_NAME --tcp <port>:<port>`; SSH,
+  `ssh -L <port>:localhost:<port> <host>`. Then run the sign-in again.
+
+The user runs these on their machine, not you. The code in that address is single-use and
+expires in minutes: if the delivery fails, sign in again.
+
 ## MCP servers
 
 Hydrating an Environment (globally or into a folder, as above) writes its MCP servers
