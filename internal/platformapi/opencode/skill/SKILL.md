@@ -187,16 +187,29 @@ authentication`, offer to sign the user in, one server at a time.
 
 `opencode mcp auth <name>` signs in (ACH single sign-on, then, for some servers, the
 provider's own consent screen). Like `ach-cli login`, it prints a link and then waits for
-the browser, so never run it in the foreground: start it in the background and read the
-link from its log.
+the browser, so never run it in the foreground. Run this block as is (replace only
+`<name>`): it starts the sign-in in the background and prints, already filled in,
+everything the user needs, including what to do on a remote machine (Coder or SSH).
 
 ```bash
+NAME=<name>
 LOG="${TMPDIR:-/tmp}/mcp-auth.log"
-nohup opencode mcp auth <name> </dev/null >"$LOG" 2>&1 &
-for i in $(seq 1 20); do grep -q 'https://' "$LOG" && break; sleep 1; done; grep -o 'https://[^ ]*' "$LOG"
+nohup opencode mcp auth "$NAME" </dev/null >"$LOG" 2>&1 &
+for i in $(seq 1 20); do grep -q 'https://' "$LOG" && break; sleep 1; done
+URL=$(grep -o 'https://[^ ]*' "$LOG" | head -1)
+PORT=$(printf '%s' "$URL" | sed -n 's/.*127\.0\.0\.1%3A\([0-9]*\).*/\1/p')
+echo "1. Open this link and approve: $URL"
+if [ -n "$CODER" ] && pgrep -f '^python3? .*callback_relay[.]py' >/dev/null; then
+  echo "2. The browser then shows \"127.0.0.1 refused to connect\". Copy that address from the address bar and paste it at https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.${VSCODE_PROXY_URI#*.} (open it in the browser where you are signed in to Coder)."
+elif [ -n "$CODER" ]; then
+  echo "2. BEFORE approving, run this on your own computer and leave it running: coder port-forward $CODER_WORKSPACE_NAME --tcp $PORT:$PORT"
+elif [ -n "$SSH_CONNECTION" ]; then
+  echo "2. BEFORE approving, run this on your own computer and leave it running: ssh -L $PORT:localhost:$PORT $(hostname)"
+fi
 ```
 
-Give the user that link and wait for them to say they signed in. The sign-in lands in
+Give the user every line it prints, word for word: do not rewrite it, shorten it or
+replace it with your own advice. Then wait for them to say they signed in. The sign-in lands in
 OpenCode's credential store, but the OpenCode server this chat runs on keeps the server
 as `needs authentication` until it reloads. Reload it (no restart, the chat survives) and
 print each server's status:
@@ -215,26 +228,11 @@ Never print `$PW`. `connected` means done: move on to the next server. If the re
 server with `kill -HUP $P` (OpenChamber starts it again). Or the user can use a tool of that
 server in chat and open the sign-in link OpenCode shows.
 
-On a remote machine (a Coder workspace: `CODER=true`; or an SSH session: `SSH_CONNECTION`
-is set) this sign-in ends on `http://127.0.0.1:<port>/…callback?code=…` in the user's own
-browser, which shows "127.0.0.1 refused to connect": OpenCode waits on the remote machine's
-localhost, not the user's (OpenCode issue
-<https://github.com/anomalyco/opencode/issues/54495>). Tell the user before they start, then
-offer, in this order:
-- Coder: check whether the workspace runs the callback helper (`pgrep -f '^python3? .*callback_relay[.]py'`).
-  If it does, offer its "OAuth Callback" app at
-  `https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.<coder domain>`
-  (the domain as in `$VSCODE_PROXY_URI`): the user opens it in the browser where they are
-  signed in to Coder (it asks for a Coder login otherwise; you cannot open it with curl),
-  pastes the failed address, and it delivers it to OpenCode. Not running: skip to the next
-  option.
-- Forward the port, from the user's own machine, while the sign-in still waits. The port
-  changes on every sign-in: take it from `redirect_uri` in the link (`127.0.0.1%3A<port>`).
-  Coder, `coder port-forward $CODER_WORKSPACE_NAME --tcp <port>:<port>`; SSH,
-  `ssh -L <port>:localhost:<port> <host>`. Then the user reloads the failed address.
-
-The user runs these on their machine, not you. The code in that address is single-use and
-expires in minutes: if the delivery fails, sign in again.
+Why step 2: on a remote machine the sign-in ends on `http://127.0.0.1:<port>/…callback`
+in the user's own browser, while OpenCode waits on the remote machine's localhost (OpenCode
+issue <https://github.com/anomalyco/opencode/issues/54495>). The user runs step 2, not you;
+you cannot open the callback app with curl (it needs the user's Coder login). The code in
+that address works once and expires in minutes: if delivering it fails, run the block again.
 
 ## MCP servers
 
