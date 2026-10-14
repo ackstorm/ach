@@ -19,11 +19,20 @@ once, on the user's terminal, and stay there.
 
 ## Onboarding, step by step
 
-Walk the user through these steps in this order. Skip a step that is already done (check
-first: `ach-cli --version`, `ach-cli whoami`, `ach-cli env status`). If `ach-cli` is
-missing, offer to install it before anything else. Run each command
-only with the user's go-ahead, show its output, and stop to fix any error before moving
-on.
+Walk the user through these steps in this order.
+
+1. Check this machine yourself, without asking: `command -v ach-cli`, `ach-cli --version`,
+   `ach-cli whoami`, `ach-cli env status`. They only read.
+2. Ask once whether the user is setting up THIS machine (the one you run on) or another
+   one (their laptop, a server, CI).
+   - This machine: run every step yourself. Ask for a go-ahead before each command that
+     changes something (install, login, hydrate, uninstall), never before a read.
+   - Another machine: you cannot reach it. Show each command for the user to run there,
+     and ask them to paste back its output.
+3. Skip a step that is already done. If `ach-cli` is missing, install it before anything
+   else. Show each command's output, and stop to fix any error before moving on.
+4. Never end a reply by announcing a next step ("now let me list…"). Either run it in that
+   same reply, or end with a question for the user.
 
 ### Install ach-cli
 
@@ -75,6 +84,24 @@ On a remote or headless machine (SSH, container, no browser), add `--no-browser`
 `ach-cli login {{base}} --no-browser` prints a code to enter in a browser on any other
 device.
 
+When YOU run the login (this machine), never run it in the foreground: it prints the link
+and then waits up to 10 minutes for the user to sign in, so your shell tool shows nothing
+until it times out. Start it in the background, read the link from its log, and give it to
+the user:
+
+```bash
+LOG="${TMPDIR:-/tmp}/ach-login.log"
+nohup ach-cli login {{base}} --no-browser --profile default </dev/null >"$LOG" 2>&1 &
+for i in $(seq 1 20); do grep -q 'Waiting for you' "$LOG" && break; sleep 1; done; cat "$LOG"
+```
+
+Give the user the URL and the code from that output, then wait for them to say they
+signed in (do not poll). Check with `ach-cli whoami`; if it is not signed in yet,
+`cat "${TMPDIR:-/tmp}/ach-login.log"` shows why (an expired code: run it again). The URL,
+`--profile default` and `--no-browser` keep `ach-cli` from asking anything on a stdin it
+does not have; it exits on its own when the code expires. On Windows, run it from Git
+Bash.
+
 ### See your Environments
 
 An Environment is what a tool may use: models, MCP servers, skills, plugins, prompts.
@@ -99,7 +126,7 @@ ach-cli env hydrate {{default_env}} -g --target opencode
 ```
 
 This writes into `~/.config/opencode/` (its MCP servers, enabled, and its skills,
-commands and agents). Restart OpenCode afterwards.
+commands and agents).
 
 {{/default_env}}
 ### Lay out a workspace: one folder per Environment
@@ -149,7 +176,12 @@ A teammate who has the same folder (with its `ach.yaml`) runs a bare
   `ach-cli env uninstall <environment> -g`). `--dry-run` previews; only what hydrate
   wrote is removed, the user's own settings in shared files stay.
 
-Restart OpenCode after any hydrate or uninstall: config is only read at startup.
+Do not restart OpenCode after a hydrate or uninstall: it reloads its config by itself, and
+restarting it from inside a session breaks that session. Check with `opencode mcp list`;
+if a server is missing, wait 5 seconds (`sleep 5`) and check once more. Only if it is
+still missing, offer to restart it yourself (`opencode service restart`), warning the
+user first that the chat may then show an error message they can ignore; restart only
+with their go-ahead.
 
 ### Sign in to MCP servers on first use
 
@@ -172,8 +204,7 @@ opencode mcp list
 
 Take `<server>` from `ach-cli env describe` (or `opencode mcp list`); if the server the
 user wants is in none of their Environments, it is not available to them: say so and
-stop, do not invent a URL. An ACH administrator can add it to an Environment. Restart
-OpenCode after adding or hydrating.
+stop, do not invent a URL. An ACH administrator can add it to an Environment.
 
 Do not add `--header`, a key, or `"oauth": false` to an MCP entry (that last one
 disables the sign-in), and do not edit the entries hydrate wrote.
@@ -182,7 +213,7 @@ Troubleshooting:
 - 401 after signing in: `opencode mcp logout <name>`, then `opencode mcp auth <name>`.
 - 403: the user's account lacks access to that server. An ACH administrator grants it
   (through an Environment); signing in again will not help.
-- A server missing after a change to the Environment: hydrate again, then restart.
+- A server missing after a change to the Environment: hydrate again, then `opencode mcp list`.
 
 ## Environment keys (ek-)
 
