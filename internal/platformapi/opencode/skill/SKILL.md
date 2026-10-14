@@ -188,51 +188,78 @@ authentication`, offer to sign the user in, one server at a time.
 `opencode mcp auth <name>` signs in (ACH single sign-on, then, for some servers, the
 provider's own consent screen). Like `ach-cli login`, it prints a link and then waits for
 the browser, so never run it in the foreground. Run this block as is (replace only
-`<name>`): it starts the sign-in in the background and prints, already filled in,
-everything the user needs, including what to do on a remote machine (Coder or SSH).
+`<name>`): it starts the sign-in in the background and prints, already filled in, what the
+user must do.
 
 ```bash
 NAME=<name>
-LOG="${TMPDIR:-/tmp}/mcp-auth.log"
+LOG="${TMPDIR:-/tmp}/mcp-auth-$NAME.log"
 nohup opencode mcp auth "$NAME" </dev/null >"$LOG" 2>&1 &
 for i in $(seq 1 20); do grep -q 'https://' "$LOG" && break; sleep 1; done
-URL=$(grep -o 'https://[^ ]*' "$LOG" | head -1)
-PORT=$(printf '%s' "$URL" | sed -n 's/.*127\.0\.0\.1%3A\([0-9]*\).*/\1/p')
-echo "1. Open this link and approve: $URL"
-if [ -n "$CODER" ] && pgrep -f '^python3? .*callback_relay[.]py' >/dev/null; then
-  echo "2. The browser then shows \"127.0.0.1 refused to connect\". Copy that address from the address bar and paste it at https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.${VSCODE_PROXY_URI#*.} (open it in the browser where you are signed in to Coder)."
-elif [ -n "$CODER" ]; then
-  echo "2. BEFORE approving, run this on your own computer and leave it running: coder port-forward $CODER_WORKSPACE_NAME --tcp $PORT:$PORT"
-elif [ -n "$SSH_CONNECTION" ]; then
-  echo "2. BEFORE approving, run this on your own computer and leave it running: ssh -L $PORT:localhost:$PORT $(hostname)"
+echo "1. Open this link and approve: $(grep -o 'https://[^ ]*' "$LOG" | head -1)"
+if [ -n "$CODER" ] || [ -n "$SSH_CONNECTION" ]; then
+  echo "2. The browser then shows \"127.0.0.1 refused to connect\". Copy that whole address from the address bar and paste it here in the chat right away: it expires in minutes."
 fi
 ```
 
 Give the user every line it prints, word for word: do not rewrite it, shorten it or
-replace it with your own advice. Then wait for them to say they signed in. The sign-in lands in
-OpenCode's credential store, but the OpenCode server this chat runs on keeps the server
-as `needs authentication` until it reloads. Reload it (no restart, the chat survives) and
-print each server's status:
+replace it with your own advice. Then wait.
+
+On a remote machine (Coder, SSH) the browser cannot reach OpenCode, which waits on this
+machine's localhost (OpenCode issue <https://github.com/anomalyco/opencode/issues/54495>),
+so the user pastes the failed address to you and you deliver it from here. Do it as soon
+as it arrives (replace `<name>` and the address; nothing else):
 
 ```bash
+NAME=<name>
+CB='<the address the user pasted>'
+LOG="${TMPDIR:-/tmp}/mcp-auth-$NAME.log"
+case "$CB" in
+  http://127.0.0.1:*/callback\?*|http://localhost:*/callback\?*)
+    curl -s -o /dev/null --max-time 15 "$CB"
+    for i in $(seq 1 15); do grep -q -E 'Connected to|Failed' "$LOG" && break; sleep 1; done
+    if grep -q 'Connected to' "$LOG"; then echo "$NAME: signed in"
+    else echo "$NAME: sign-in failed (the code expired or was already used): run the sign-in block again"; fi ;;
+  *) echo "Not an OpenCode callback address: nothing was sent" ;;
+esac
+```
+
+It only ever calls a `127.0.0.1`/`localhost` callback. The page that address shows always
+says "Authorization successful", even when the sign-in fails, so trust only this block's
+last line.
+
+Once signed in, the OpenCode server this chat runs on still shows the server as
+`needs authentication` until it reloads. Reload it (no restart, the chat survives) and read
+the verdict:
+
+```bash
+NAME=<name>
 P=$(pgrep -f 'opencode serve --hostname' | head -1)
 PORT=$(tr '\0' ' ' </proc/$P/cmdline | grep -o -E 'port [0-9]+' | cut -d' ' -f2)
 PW=$(tr '\0' '\n' </proc/$P/environ | sed -n 's/^OPENCODE_SERVER_PASSWORD=//p')
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "opencode:$PW" -X POST "http://127.0.0.1:$PORT/api/location/reload")
-[ "$code" = 204 ] && sleep 3 && curl -s -u "opencode:$PW" "http://127.0.0.1:$PORT/api/mcp" | python3 -c 'import json,sys; [print(m["name"], m["status"]["status"]) for m in json.load(sys.stdin)["data"]]'
-echo "reload: $code"
+if [ "$code" != 204 ]; then echo "reload failed (HTTP $code): ask the user before restarting anything"
+else
+  for i in $(seq 1 10); do
+    sleep 1
+    st=$(curl -s -u "opencode:$PW" "http://127.0.0.1:$PORT/api/mcp" | python3 -c 'import json,sys; print({m["name"]: m["status"]["status"] for m in json.load(sys.stdin)["data"]}.get(sys.argv[1], "missing"))' "$NAME")
+    [ "$st" != missing ] && break
+  done
+  if [ "$st" = connected ]; then echo "$NAME: connected, done"
+  else echo "$NAME: $st. The sign-in did not complete: run the sign-in block again. Do not restart anything."; fi
+fi
 ```
 
-Never print `$PW`. `connected` means done: move on to the next server. If the reload is not
-`204`, ask the user for a go-ahead, warn them the chat will reconnect, and restart that
-server with `kill -HUP $P` (OpenChamber starts it again). Or the user can use a tool of that
-server in chat and open the sign-in link OpenCode shows.
+Never print `$PW`. `connected` means done: move on to the next server. A server that is
+still `needs_auth` after a reload is a sign-in that did not complete, never a reason to
+restart. Only if the reload itself failed, ask the user for a go-ahead, warn them the chat
+will reconnect, and restart that server with `kill -HUP $P` (OpenChamber starts it again).
 
-Why step 2: on a remote machine the sign-in ends on `http://127.0.0.1:<port>/…callback`
-in the user's own browser, while OpenCode waits on the remote machine's localhost (OpenCode
-issue <https://github.com/anomalyco/opencode/issues/54495>). The user runs step 2, not you;
-you cannot open the callback app with curl (it needs the user's Coder login). The code in
-that address works once and expires in minutes: if delivering it fails, run the block again.
+If the user signed in with the browser on their own machine without you (no address to
+paste), they can instead forward the port while the sign-in waits, taking `<port>` from
+`redirect_uri` in the link (`127.0.0.1%3A<port>`): `coder port-forward <workspace> --tcp
+<port>:<port>` on Coder, `ssh -L <port>:localhost:<port> <host>` over SSH. Coder workspaces
+may also have an "OAuth Callback" app that takes the failed address.
 
 ## MCP servers
 
