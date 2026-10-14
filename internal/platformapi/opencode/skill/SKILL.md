@@ -185,9 +185,23 @@ with their go-ahead.
 
 ### Sign in to MCP servers on first use
 
-`opencode mcp auth <name>` opens the browser (ACH single sign-on, then, for some
-servers, the provider's own consent screen). Or use a tool of that server in chat and
-open the sign-in link OpenCode shows. Check with `opencode mcp list`.
+After a hydrate, run `opencode mcp list` yourself. If any server says `needs
+authentication`, offer to sign the user in, one server at a time.
+
+`opencode mcp auth <name>` signs in (ACH single sign-on, then, for some servers, the
+provider's own consent screen). Like `ach-cli login`, it prints a link and then waits for
+the browser, so never run it in the foreground: start it in the background and read the
+link from its log.
+
+```bash
+LOG="${TMPDIR:-/tmp}/mcp-auth.log"
+nohup opencode mcp auth <name> </dev/null >"$LOG" 2>&1 &
+for i in $(seq 1 20); do grep -q 'https://' "$LOG" && break; sleep 1; done; grep -o 'https://[^ ]*' "$LOG"
+```
+
+Give the user that link, wait for them to say they signed in, then check with
+`opencode mcp list` and move on to the next server. Or the user can use a tool of that
+server in chat and open the sign-in link OpenCode shows.
 
 On a remote machine (a Coder workspace: `CODER=true`; or an SSH session: `SSH_CONNECTION`
 is set) this sign-in ends on `http://127.0.0.1:<port>/…callback?code=…` in the user's own
@@ -202,10 +216,10 @@ offer, in this order:
   signed in to Coder (it asks for a Coder login otherwise; you cannot open it with curl),
   pastes the failed address, and it delivers it to OpenCode. Not running: skip to the next
   option.
-- Forward the port before signing in, from the user's own machine, taking `<port>` from the
-  failed address (OpenCode's MCP default is 19876): Coder,
-  `coder port-forward $CODER_WORKSPACE_NAME --tcp <port>:<port>`; SSH,
-  `ssh -L <port>:localhost:<port> <host>`. Then run the sign-in again.
+- Forward the port, from the user's own machine, while the sign-in still waits. The port
+  changes on every sign-in: take it from `redirect_uri` in the link (`127.0.0.1%3A<port>`).
+  Coder, `coder port-forward $CODER_WORKSPACE_NAME --tcp <port>:<port>`; SSH,
+  `ssh -L <port>:localhost:<port> <host>`. Then the user reloads the failed address.
 
 The user runs these on their machine, not you. The code in that address is single-use and
 expires in minutes: if the delivery fails, sign in again.
