@@ -195,10 +195,13 @@ browser, which shows "127.0.0.1 refused to connect": OpenCode waits on the remot
 localhost, not the user's (OpenCode issue
 <https://github.com/anomalyco/opencode/issues/54495>). Tell the user before they start, then
 offer, in this order:
-- Coder: the workspace's "OAuth Callback" app, if it has one (Coder dashboard; its address
-  is `https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.<coder domain>`,
-  the domain as in `$VSCODE_PROXY_URI`): paste the failed address there and it delivers it
-  to OpenCode.
+- Coder: check whether the workspace runs the callback helper (`pgrep -f '^python3? .*callback_relay[.]py'`).
+  If it does, offer its "OAuth Callback" app at
+  `https://callback-relay--$CODER_WORKSPACE_NAME--$CODER_WORKSPACE_OWNER_NAME.<coder domain>`
+  (the domain as in `$VSCODE_PROXY_URI`): the user opens it in the browser where they are
+  signed in to Coder (it asks for a Coder login otherwise; you cannot open it with curl),
+  pastes the failed address, and it delivers it to OpenCode. Not running: skip to the next
+  option.
 - Forward the port before signing in, from the user's own machine, taking `<port>` from the
   failed address (OpenCode's MCP default is 19876): Coder,
   `coder port-forward $CODER_WORKSPACE_NAME --tcp <port>:<port>`; SSH,
