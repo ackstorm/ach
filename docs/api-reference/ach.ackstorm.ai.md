@@ -803,6 +803,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `forwardEnv` _string array_ | ForwardEnv selects literal-valued names from the merged env to the engine subprocess<br />(contract §5). Only literal values are permitted — a name resolving to a secretKeyRef,<br />a reserved name or a name absent from the merged env is a configuration error<br />(agentrender.Render), not a silent drop. |  |  |
+| `denyTools` _string array_ | DenyTools names native OpenCode tools (e.g. question, execute, websearch, webfetch)<br />hidden from the managed agent's model. MCP tools are governed by<br />ach.capability.filter.exclude.tools; a dotted name is MCP syntax and is rejected. |  | items:Pattern: ^[A-Za-z0-9_-]+$ <br /> |
 | `startupTimeoutSeconds` _integer_ |  |  | Minimum: 1 <br /> |
 | `compaction` _[CompactionSpec](#compactionspec)_ | Compaction configures OpenCode's native context compaction (contract §4). Replaces the<br />retired session.maxTokens/overflow knobs. |  |  |
 
