@@ -459,6 +459,16 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  denyTools:
+                    description: |-
+                      DenyTools names native OpenCode tools (e.g. question, execute, websearch, webfetch)
+                      hidden from the managed agent's model. MCP tools are governed by
+                      ach.capability.filter.exclude.tools; a dotted name is MCP syntax and is rejected.
+                    items:
+                      pattern: ^[A-Za-z0-9_-]+$
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
                   forwardEnv:
                     description: |-
                       ForwardEnv selects literal-valued names from the merged env to the engine subprocess
