@@ -74,6 +74,8 @@ spec.engine.compaction.auto	boolean
 spec.engine.compaction.buffer	integer
 spec.engine.compaction.keep	object
 spec.engine.compaction.keep.tokens	integer
+spec.engine.denyTools	array
+spec.engine.denyTools[]	string
 spec.engine.forwardEnv	array
 spec.engine.forwardEnv[]	string
 spec.engine.startupTimeoutSeconds	integer
