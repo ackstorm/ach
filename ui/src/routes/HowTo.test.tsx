@@ -109,6 +109,7 @@ describe('HowTo — OpenCode install', () => {
     expect(text).toContain('opencode auth login https://api.ackstorm.ai');
     expect(text).toContain('opencode auth login acme');
     expect(text).toContain('opencode service restart');
+    expect(text).toContain(`export OPENCODE_CONFIG_CONTENT='{"websearch":{"provider":"exa"}}'`);
     expect(text).not.toContain('/clients/opencode/plugin');
   });
 });
@@ -125,5 +126,18 @@ describe('HowTo — OpenCode only', () => {
     expect(text).toContain('opencode mcp auth google-drive');
     expect(text).toContain('OpenCode Desktop');
     expect(text).not.toContain('opencode.json');
+  });
+});
+
+// Login is the default path: editors + MCP lead, the key-based API section
+// comes after them and starts collapsed (not every account may mint keys).
+describe('HowTo — section order', () => {
+  it('leads with editors and MCP, with API keys collapsed after them', () => {
+    setModels([]);
+    const { container } = render(<HowTo />);
+    const ids = Array.from(container.querySelectorAll('section[id], details[id]')).map((el) => el.id);
+    expect(ids).toEqual(['tools', 'mcp', 'api', 'chat', 'troubleshooting']);
+    const api = container.querySelector('details#api') as HTMLDetailsElement;
+    expect(api.open).toBe(false);
   });
 });

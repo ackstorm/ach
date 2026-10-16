@@ -1,16 +1,17 @@
 // HowTo.tsx — the "How-to" onboarding guide (nav: KEYS | STATS | HOW-TO).
 //
-// Answers the "I just logged in and minted a key — now what?" question for a
-// corporate user. Three sections, all STATIC (no backend, no fetch):
+// Answers the "I just logged in — now what?" question for a corporate user.
+// Login (SSO) is the default path, keys come last. All STATIC (no backend, no fetch):
 //
-//   §1 Quickstart  — mint a key (link to the Keys tab) + a copy-paste `curl` to
-//                    the `ackstorm.fast` model alias against the user's gateway.
-//   §2 Editors/CLI — OpenCode only (SSO plugin install). The other tools (Pi,
+//   §1 Editors/CLI — OpenCode only (SSO plugin install). The other tools (Pi,
 //                    Claude Code, Codex, Qwen, Gemini, Copilot) stay in TOOL_GROUPS
 //                    with `enabled: false`: kept in source, not rendered.
-//   §3 MCP servers — `opencode mcp add/auth` against /mcp/<server>, plus a curl
-//                    JSON-RPC smoke test. The generic-client tabs (Cursor, Claude
-//                    Desktop, VS Code, JSON, x-mcp-servers) are kept but hidden.
+//   §2 MCP servers — `opencode mcp add/auth` against /mcp/<server>. The
+//                    generic-client tabs (Cursor, Claude Desktop, VS Code, JSON,
+//                    x-mcp-servers) are kept but hidden.
+//   §3 API keys    — COLLAPSED by default (not every account may mint keys):
+//                    mint a key (link to the Keys tab) + curl/Python/TypeScript
+//                    to the `ackstorm.fast` model alias against the user's gateway.
 //   §4 No terminal — chat-UI cards (ACKstorm Chat, hosted; OpenCode Desktop, coming soon).
 //
 // PERSONALIZATION (no rebuild): the gateway base URL is read live from the
@@ -35,8 +36,8 @@
 import { useState } from 'react';
 import {
   AlertCircle,
-  ArrowRight,
   Check,
+  ChevronRight,
   Copy,
   ExternalLink,
   KeyRound,
@@ -63,17 +64,19 @@ const MODEL_ALIAS = 'ackstorm.fast';
 // belongs to react-router — we must NOT use `<a href="#id">` anchors (that would
 // hijack the route hash). Instead each item scrolls its section into view.
 const TOC = [
-  { id: 'quickstart', label: 'Quickstart' },
   { id: 'tools', label: 'Editors & CLIs' },
   { id: 'mcp', label: 'MCP servers' },
+  { id: 'api', label: 'Using API keys' },
   { id: 'chat', label: 'No terminal?' },
   { id: 'troubleshooting', label: 'Troubleshooting' },
 ] as const;
 
+// A collapsed <details> target (the API-keys section) is opened first, so the
+// jump lands on its content rather than a closed summary.
 function scrollToSection(id: string): void {
-  document
-    .getElementById(id)
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el = document.getElementById(id);
+  if (el instanceof HTMLDetailsElement) el.open = true;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── CodeBlock ──────────────────────────────────────────────────────────────—─
@@ -252,26 +255,7 @@ console.log(resp.choices[0].message.content);`;
     }
   }
 }`;
-  // MCP over plain curl: streamable-HTTP JSON-RPC against ONE server at
-  // /mcp/<server>/ (the forwarder routes nothing else — LiteLLM's /mcp-rest is
-  // not reachable through ACH). initialize returns the Mcp-Session-Id the next
-  // calls carry; same flow as test/e2e/oauth_frontdoor_test.go serverOutcome.
   const MCP_EXAMPLE = 'mcp-google-drive';
-  const mcpCurl = `MCP=${apiBase}/mcp/${MCP_EXAMPLE}/
-H=(-H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream")
-
-# 1. Open a session (keeps the Mcp-Session-Id response header)
-SID=$(curl -si "$MCP" "\${H[@]}" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}' \\
-  | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}' | tr -d '\\r')
-
-# 2. List the server's tools
-curl -s "$MCP" "\${H[@]}" -H "Mcp-Session-Id: $SID" \\
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-
-# 3. Call one (tool name + arguments from the list)
-curl -s "$MCP" "\${H[@]}" -H "Mcp-Session-Id: $SID" \\
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"<tool>","arguments":{}}}'`;
 
   // OpenCode: register a server by URL, then sign in (ACH SSO, then the
   // provider's own consent screen for some servers). OAuth, no key.
@@ -301,7 +285,8 @@ opencode mcp auth`;
   // Installs the platform's OpenCode plugin (engines v1 and v2) from
   // <origin>/.well-known/opencode, then signs in with it.
   const provider = me?.provider_name || '<provider>';
-  const opencodeSsoCmd = `opencode auth login ${apiBase}
+  const opencodeSsoCmd = `export OPENCODE_CONFIG_CONTENT='{"websearch":{"provider":"exa"}}'   # web search via Exa; add to your shell profile to keep it
+opencode auth login ${apiBase}
 opencode auth login ${provider}   # opencode v1: opencode auth login -p ${provider}
 opencode service restart          # opencode v2: the running service loads the plugin only at start`;
   // Tools are grouped by family (top-level tab). A family with more than one
@@ -642,9 +627,10 @@ gemini`,
           How-to
         </h1>
         <p className="mt-1 font-sans text-sm text-text-secondary">
-          You have a key — here is how to make your first call to{' '}
-          <span className="font-mono text-text-primary">{brandShort}</span>,
-          wire up your editor, or skip the terminal entirely.
+          Sign in to{' '}
+          <span className="font-mono text-text-primary">{brandShort}</span> once
+          with your company account, then connect your editor and MCP servers.
+          No key needed.
         </p>
       </div>
 
@@ -675,14 +661,204 @@ gemini`,
 
         {/* Content column */}
         <div className="flex min-w-0 flex-col gap-12 lg:order-1">
-          {/* §1 Quickstart */}
+          {/* §1 Editors & CLIs */}
           <Section
-            id="quickstart"
+            id="tools"
             icon={Terminal}
-            title="Quickstart"
-            sub="Two steps to your first response: mint a key, then call the gateway."
+            title="Editors & CLIs"
+            sub="Connect OpenCode to the gateway with single sign-on. This is the quickest way to start."
           >
-            <div className="flex flex-col gap-5">
+            <Tabs value={toolGroup} onValueChange={setToolGroup}>
+              <TabsList variant="line" className="flex-wrap">
+                {VISIBLE_TOOLS.map((g) => (
+                  <TabsTrigger key={g.id} value={g.id}>
+                    {g.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {VISIBLE_TOOLS.map((g) => (
+                <TabsContent key={g.id} value={g.id} className="mt-4">
+                  {g.intro && (
+                    <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <p className="mb-2 font-sans text-xs leading-relaxed text-text-secondary">
+                        {g.intro.text}
+                      </p>
+                      <CodeBlock code={g.intro.code} caption={g.intro.caption} />
+                    </div>
+                  )}
+                  {g.variants.length > 1 ? (
+                    <Tabs
+                      value={toolVariant[g.id]}
+                      onValueChange={(v) =>
+                        setToolVariant((prev) => ({ ...prev, [g.id]: v }))
+                      }
+                    >
+                      <TabsList className={TAB_PILL_LIST}>
+                        {g.variants.map((v) => (
+                          <TabsTrigger key={v.id} value={v.id} className={TAB_PILL}>
+                            {v.subLabel}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      {g.variants.map((v) => (
+                        <TabsContent key={v.id} value={v.id} className="mt-4">
+                          {renderToolBody(v, g.label)}
+                        </TabsContent>
+                      ))}
+                    </Tabs>
+                  ) : (
+                    renderToolBody(g.variants[0], g.label)
+                  )}
+                </TabsContent>
+              ))}
+            </Tabs>
+            {/* Key-based tools only (hidden above): kept, not shown. */}
+            <p className="hidden mt-3 font-sans text-xs leading-relaxed text-text-secondary">
+              Swap {KEY_PLACEHOLDER} for your key (mint it on the Keys tab). The
+              base URL is your live gateway; only the key differs per user.
+            </p>
+            <p className="hidden mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
+              A tool that only supports the plain OPENAI_API_KEY convention sends it
+              via Authorization: Bearer, which ACH does not resolve — it needs a way
+              to set{' '}
+              <span className="text-text-secondary">{AUTH_HEADER}</span> as a custom
+              header instead (see the Codex and Pi tabs above for two ways to do
+              that).
+            </p>
+          </Section>
+
+          {/* §2 MCP servers */}
+          <Section
+            id="mcp"
+            icon={Server}
+            title="MCP servers"
+            sub="Add the gateway's MCP servers to OpenCode and sign in to each one. Every server lives on the same gateway host, at /mcp/<server>."
+          >
+            <Tabs value={mcpTab} onValueChange={setMcpTab}>
+              <TabsList variant="line" className="flex-wrap">
+                <TabsTrigger value="opencode">OpenCode</TabsTrigger>
+                {/* Generic MCP clients (Cursor, Claude Desktop, VS Code, JSON) and
+                    x-mcp-servers scoping: kept, not shown (OpenCode only). */}
+                <TabsTrigger value="access" className="hidden">MCP Access</TabsTrigger>
+                <TabsTrigger value="group" className="hidden">MCP Group access</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="opencode" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Add a server by its URL,{' '}
+                  <span className="font-mono text-text-primary">
+                    {`${apiBase}/mcp/<server>`}
+                  </span>
+                  , then sign in with{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  — single sign-on, no key. Restart OpenCode after adding one.
+                </p>
+                <CodeBlock code={opencodeMcpCmd} caption="opencode" />
+                <p className="mt-4 mb-2 font-sans text-sm text-text-secondary">
+                  Without a name,{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  lists every configured server to pick from:
+                </p>
+                <CodeBlock code={opencodeMcpList} caption="opencode mcp auth" />
+              </TabsContent>
+
+              <TabsContent value="access" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Every tool you can reach. URL{' '}
+                  <span className="font-mono text-text-primary">{mcpUrl}</span>,
+                  auth header{' '}
+                  <span className="font-mono text-text-primary">
+                    {AUTH_HEADER}
+                  </span>{' '}
+                  (the same key as chat — no Bearer prefix).
+                </p>
+                <Tabs defaultValue="cursor">
+                  <TabsList className={TAB_PILL_LIST}>
+                    <TabsTrigger value="cursor" className={TAB_PILL}>Cursor</TabsTrigger>
+                    <TabsTrigger value="claude" className={TAB_PILL}>Claude Desktop</TabsTrigger>
+                    <TabsTrigger value="vscode" className={TAB_PILL}>VS Code</TabsTrigger>
+                    <TabsTrigger value="generic" className={TAB_PILL}>Generic JSON</TabsTrigger>
+                  </TabsList>
+                  {[
+                    ['cursor', '~/.cursor/mcp.json'],
+                    ['claude', '~/Library/Application Support/Claude/claude_desktop_config.json'],
+                    ['vscode', '.vscode/mcp.json (workspace)'],
+                    ['generic', "your client's MCP config"],
+                  ].map(([id, path]) => (
+                    <TabsContent key={id} value={id} className="mt-3">
+                      <CodeBlock code={mcpConfig} caption={path} />
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="group" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Scope to specific servers and/or groups with the{' '}
+                  <span className="font-mono text-text-primary">
+                    x-mcp-servers
+                  </span>{' '}
+                  header (comma-separated) — or target a group straight from the
+                  URL,{' '}
+                  <span className="font-mono text-text-primary">
+                    {`${mcpUrl}/dev-group`}
+                  </span>
+                  .
+                </p>
+                <CodeBlock
+                  code={mcpFilteredConfig}
+                  caption="MCP client config · scoped"
+                />
+              </TabsContent>
+
+            </Tabs>
+
+            <a
+              href="https://docs.litellm.ai/docs/mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1 font-sans text-xs font-medium text-primary hover:underline"
+            >
+              LiteLLM MCP gateway guide
+              <ExternalLink className="size-3" aria-hidden="true" />
+            </a>
+          </Section>
+
+          {/* §3 Using API keys — collapsed by default: login is the default
+              path and not every account may mint keys. The `id` sits on the
+              <details> so the TOC can open it before scrolling. */}
+          <details
+            id="api"
+            className="group scroll-mt-8 rounded-xl border border-border bg-surface"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-xl px-4 py-4 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-border">
+                <KeyRound className="size-4 text-primary" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <h2 className="font-sans text-lg font-semibold leading-tight text-text-primary">
+                  Using API keys
+                </h2>
+                <span className="mt-0.5 block font-sans text-sm text-text-secondary">
+                  For scripts and SDKs that call the gateway directly. Only some
+                  accounts can create keys.
+                </span>
+              </span>
+              <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+                Advanced
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-text-tertiary transition-transform group-open:rotate-90 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </summary>
+            <div className="flex flex-col gap-5 border-t border-border px-4 pt-4 pb-5">
+              <p className="font-sans text-sm leading-relaxed text-text-secondary">
+                Most people don't need this: your editor and MCP servers sign in
+                with your account. Use a key when a script or service has to call
+                the gateway without you logged in. If you can't create keys on the
+                Keys tab, ask your admin.
+              </p>
               {/* Step 1 — mint a key */}
               <div className="flex gap-3">
                 <StepBadge n={1} />
@@ -764,189 +940,14 @@ gemini`,
                 </div>
               </div>
             </div>
-          </Section>
-
-          {/* §2 Editors & CLIs */}
-          <Section
-            id="tools"
-            icon={ArrowRight}
-            title="Editors & CLIs"
-            sub="Connect OpenCode to the gateway with single sign-on."
-          >
-            <Tabs value={toolGroup} onValueChange={setToolGroup}>
-              <TabsList variant="line" className="flex-wrap">
-                {VISIBLE_TOOLS.map((g) => (
-                  <TabsTrigger key={g.id} value={g.id}>
-                    {g.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {VISIBLE_TOOLS.map((g) => (
-                <TabsContent key={g.id} value={g.id} className="mt-4">
-                  {g.intro && (
-                    <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                      <p className="mb-2 font-sans text-xs leading-relaxed text-text-secondary">
-                        {g.intro.text}
-                      </p>
-                      <CodeBlock code={g.intro.code} caption={g.intro.caption} />
-                    </div>
-                  )}
-                  {g.variants.length > 1 ? (
-                    <Tabs
-                      value={toolVariant[g.id]}
-                      onValueChange={(v) =>
-                        setToolVariant((prev) => ({ ...prev, [g.id]: v }))
-                      }
-                    >
-                      <TabsList className={TAB_PILL_LIST}>
-                        {g.variants.map((v) => (
-                          <TabsTrigger key={v.id} value={v.id} className={TAB_PILL}>
-                            {v.subLabel}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                      {g.variants.map((v) => (
-                        <TabsContent key={v.id} value={v.id} className="mt-4">
-                          {renderToolBody(v, g.label)}
-                        </TabsContent>
-                      ))}
-                    </Tabs>
-                  ) : (
-                    renderToolBody(g.variants[0], g.label)
-                  )}
-                </TabsContent>
-              ))}
-            </Tabs>
-            {/* Key-based tools only (hidden above): kept, not shown. */}
-            <p className="hidden mt-3 font-sans text-xs leading-relaxed text-text-secondary">
-              Swap {KEY_PLACEHOLDER} for your key (mint it on the Keys tab). The
-              base URL is your live gateway; only the key differs per user.
-            </p>
-            <p className="hidden mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
-              A tool that only supports the plain OPENAI_API_KEY convention sends it
-              via Authorization: Bearer, which ACH does not resolve — it needs a way
-              to set{' '}
-              <span className="text-text-secondary">{AUTH_HEADER}</span> as a custom
-              header instead (see the Codex and Pi tabs above for two ways to do
-              that).
-            </p>
-          </Section>
-
-          {/* §3 MCP servers */}
-          <Section
-            id="mcp"
-            icon={Server}
-            title="MCP servers"
-            sub="Add the gateway's MCP servers to OpenCode and sign in to each one. Every server lives on the same gateway host, at /mcp/<server>."
-          >
-            <Tabs value={mcpTab} onValueChange={setMcpTab}>
-              <TabsList variant="line" className="flex-wrap">
-                <TabsTrigger value="opencode">OpenCode</TabsTrigger>
-                {/* Generic MCP clients (Cursor, Claude Desktop, VS Code, JSON) and
-                    x-mcp-servers scoping: kept, not shown (OpenCode only). */}
-                <TabsTrigger value="access" className="hidden">MCP Access</TabsTrigger>
-                <TabsTrigger value="group" className="hidden">MCP Group access</TabsTrigger>
-                <TabsTrigger value="curl">Try with curl</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="opencode" className="mt-4">
-                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
-                  Add a server by its URL,{' '}
-                  <span className="font-mono text-text-primary">
-                    {`${apiBase}/mcp/<server>`}
-                  </span>
-                  , then sign in with{' '}
-                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
-                  — single sign-on, no key. Restart OpenCode after adding one.
-                </p>
-                <CodeBlock code={opencodeMcpCmd} caption="opencode" />
-                <p className="mt-4 mb-2 font-sans text-sm text-text-secondary">
-                  Without a name,{' '}
-                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
-                  lists every configured server to pick from:
-                </p>
-                <CodeBlock code={opencodeMcpList} caption="opencode mcp auth" />
-              </TabsContent>
-
-              <TabsContent value="access" className="mt-4">
-                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
-                  Every tool you can reach. URL{' '}
-                  <span className="font-mono text-text-primary">{mcpUrl}</span>,
-                  auth header{' '}
-                  <span className="font-mono text-text-primary">
-                    {AUTH_HEADER}
-                  </span>{' '}
-                  (the same key as chat — no Bearer prefix).
-                </p>
-                <Tabs defaultValue="cursor">
-                  <TabsList className={TAB_PILL_LIST}>
-                    <TabsTrigger value="cursor" className={TAB_PILL}>Cursor</TabsTrigger>
-                    <TabsTrigger value="claude" className={TAB_PILL}>Claude Desktop</TabsTrigger>
-                    <TabsTrigger value="vscode" className={TAB_PILL}>VS Code</TabsTrigger>
-                    <TabsTrigger value="generic" className={TAB_PILL}>Generic JSON</TabsTrigger>
-                  </TabsList>
-                  {[
-                    ['cursor', '~/.cursor/mcp.json'],
-                    ['claude', '~/Library/Application Support/Claude/claude_desktop_config.json'],
-                    ['vscode', '.vscode/mcp.json (workspace)'],
-                    ['generic', "your client's MCP config"],
-                  ].map(([id, path]) => (
-                    <TabsContent key={id} value={id} className="mt-3">
-                      <CodeBlock code={mcpConfig} caption={path} />
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              </TabsContent>
-
-              <TabsContent value="group" className="mt-4">
-                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
-                  Scope to specific servers and/or groups with the{' '}
-                  <span className="font-mono text-text-primary">
-                    x-mcp-servers
-                  </span>{' '}
-                  header (comma-separated) — or target a group straight from the
-                  URL,{' '}
-                  <span className="font-mono text-text-primary">
-                    {`${mcpUrl}/dev-group`}
-                  </span>
-                  .
-                </p>
-                <CodeBlock
-                  code={mcpFilteredConfig}
-                  caption="MCP client config · scoped"
-                />
-              </TabsContent>
-
-              <TabsContent value="curl" className="mt-4">
-                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
-                  List and call a server's tools over plain JSON-RPC — no client,
-                  no LLM (bash). Swap{' '}
-                  <span className="font-mono text-text-primary">
-                    {KEY_PLACEHOLDER}
-                  </span>{' '}
-                  for your key and the server/tool names for real ones.
-                </p>
-                <CodeBlock code={mcpCurl} caption="curl" />
-              </TabsContent>
-            </Tabs>
-
-            <a
-              href="https://docs.litellm.ai/docs/mcp"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-1 font-sans text-xs font-medium text-primary hover:underline"
-            >
-              LiteLLM MCP gateway guide
-              <ExternalLink className="size-3" aria-hidden="true" />
-            </a>
-          </Section>
+          </details>
 
           {/* §4 No terminal? */}
           <Section
             id="chat"
             icon={MessageSquare}
             title="No terminal?"
-            sub="Prefer a chat window over a shell? Use a browser UI — paste your key once and start chatting."
+            sub="Prefer a chat window over a shell? Use a browser UI and sign in with your company account."
           >
             <div className="grid gap-4 sm:grid-cols-2">
               {/* ACKstorm Chat — hosted; only when a chat URL is configured */}
@@ -1022,11 +1023,11 @@ gemini`,
           >
             <div className="flex flex-col gap-3">
               {[
-                ['401 Unauthorized', 'Your API key is missing, invalid, expired, or copied incorrectly. Mint a fresh key on the Keys tab.'],
+                ['401 Unauthorized', `Your session expired, or your key is missing or invalid. Sign in again (opencode auth login ${provider}); with a key, mint a fresh one on the Keys tab.`],
                 ['404 Model not found', 'The model alias is not enabled for your team or does not exist. Check the Models tab for available aliases.'],
                 ['429 Rate limited', 'Your key, team, or the upstream provider hit a rate limit. Retry with backoff or check your limits.'],
                 ['MCP: no tools discovered', 'The MCP server is reachable but returned no tools. Check the server health and your access group on the MCP tab.'],
-                ['MCP: authentication failed', 'In OpenCode: opencode mcp logout <name>, then opencode mcp auth <name>. With curl: send the ' + AUTH_HEADER + ' header with your key (no Bearer prefix).'],
+                ['MCP: authentication failed', 'In OpenCode: opencode mcp logout <name>, then opencode mcp auth <name>.'],
               ].map(([code, body]) => (
                 <div key={code} className="rounded-lg border border-border bg-surface p-4">
                   <div className="font-mono text-sm font-semibold text-text-primary">{code}</div>
