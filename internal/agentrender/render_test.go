@@ -5,6 +5,7 @@ package agentrender
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -274,6 +275,19 @@ func TestResolveEngine(t *testing.T) {
 		agent := &achv1alpha1.EngineSpec{StartupTimeoutSeconds: ptr(int64(10))}
 		if got := ResolveEngine(agent, nil); got != agent {
 			t.Errorf("ResolveEngine(a, nil) = %+v, want agent", got)
+		}
+	})
+	t.Run("agent denyTools replaces profile denyTools as a whole", func(t *testing.T) {
+		p := &achv1alpha1.EngineSpec{DenyTools: []string{"question"}}
+		a := &achv1alpha1.EngineSpec{DenyTools: []string{"webfetch"}}
+		if got := ResolveEngine(a, p); !reflect.DeepEqual(got.DenyTools, []string{"webfetch"}) {
+			t.Errorf("DenyTools = %v, want [webfetch]", got.DenyTools)
+		}
+	})
+	t.Run("agent without denyTools inherits profile denyTools", func(t *testing.T) {
+		p := &achv1alpha1.EngineSpec{DenyTools: []string{"question"}}
+		if got := ResolveEngine(&achv1alpha1.EngineSpec{}, p); !reflect.DeepEqual(got.DenyTools, []string{"question"}) {
+			t.Errorf("DenyTools = %v, want profile's", got.DenyTools)
 		}
 	})
 	t.Run("nil engine on both sides", func(t *testing.T) {

@@ -5,6 +5,7 @@ package agentrender
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -407,6 +408,30 @@ func testPartialForwardEnv(t *testing.T) {
 	}
 	if len(got.Env) != 0 {
 		t.Fatalf("engine.env = %v, want empty — nothing forwarded", got.Env)
+	}
+}
+
+func TestWorkspaceV1_EngineBlock_DenyTools(t *testing.T) {
+	engine := &achv1alpha1.EngineSpec{
+		Compaction: &achv1alpha1.CompactionSpec{Auto: ptr(true), Keep: &achv1alpha1.CompactionKeepSpec{Tokens: ptr(int64(8000))}, Buffer: ptr(int64(20000))},
+	}
+	render := func() string {
+		b, err := RenderEngineV1(engine, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	if got := render(); strings.Contains(got, "denyTools") {
+		t.Fatalf("empty denyTools must be omitted (keeps configVersion stable), got %s", got)
+	}
+	engine.DenyTools = []string{"question"}
+	if got := render(); !strings.Contains(got, `"denyTools":["question"]`) {
+		t.Fatalf("denyTools missing from %s", got)
 	}
 }
 

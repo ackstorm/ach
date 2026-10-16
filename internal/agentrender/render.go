@@ -355,6 +355,9 @@ func ResolveEngine(agent, profile *achv1alpha1.EngineSpec) *achv1alpha1.EngineSp
 	if agent.ForwardEnv != nil {
 		out.ForwardEnv = agent.ForwardEnv
 	}
+	if agent.DenyTools != nil {
+		out.DenyTools = agent.DenyTools
+	}
 	if agent.StartupTimeoutSeconds != nil {
 		out.StartupTimeoutSeconds = agent.StartupTimeoutSeconds
 	}
