@@ -959,6 +959,11 @@ func (in *EngineSpec) DeepCopyInto(out *EngineSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.DenyTools != nil {
+		in, out := &in.DenyTools, &out.DenyTools
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.StartupTimeoutSeconds != nil {
 		in, out := &in.StartupTimeoutSeconds, &out.StartupTimeoutSeconds
 		*out = new(int64)

@@ -763,6 +763,13 @@
         },
         "compaction": {
           "$ref": "#/$defs/CompactionBlock"
+        },
+        "denyTools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Denytools",
+          "type": "array"
         }
       },
       "required": [

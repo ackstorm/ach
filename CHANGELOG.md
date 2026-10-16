@@ -11,6 +11,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   suffix keeps a control name from ever equalling another agent's workspace name.
 
 ### Added
+- `engine.denyTools` on `AgentProfile` and `ACHAgent` (list of native OpenCode tool names,
+  e.g. `question`, `execute`, `websearch`, `webfetch`): each becomes a permission deny rule on
+  the managed agent, hiding the tool from the model. Atomic like `engine.forwardEnv` (an agent
+  list replaces the profile's). MCP tools stay under `ach.capability.filter.exclude.tools`; a
+  dotted name is rejected by the CRD pattern. **Requires ach-runtime >= 0.1.22**; unset, the
+  key is omitted from the rendered config so older runtimes are unaffected. Vendored
+  workspace-v1 schema re-synced from ach-runtime v0.1.22.
 - `ACHAgent.spec.hooks.workspaceStart` / `workspaceStop` ({script, timeoutSeconds}): run once
   per workspace in the execution pod — after restore/create before any session, and before
   the snapshot/close. Best-effort (alarms `workspace_start_failed` / `workspace_stop_failed`).

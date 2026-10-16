@@ -206,7 +206,7 @@ parity checklist: `references/adding-a-cr-kind.md`.
   per-AgentProfile, never in the rendered wire config. Profile defaults under
   `spec.achagent` (image, ach, model, engine, limits, health, workspace, artifacts)
   deep-merge per-field with the agent's flat overrides (set agent field wins;
-  `engine.forwardEnv`/`model.params`/`model.thinking` atomic; `workspace.persistence`/
+  `engine.forwardEnv`/`engine.denyTools`/`model.params`/`model.thinking` atomic; `workspace.persistence`/
   `workspace.session`/`artifacts` merge recursively per field — an agent overriding just
   one leaf, e.g. `workspace.persistence.enabled`, still inherits every untouched sibling
   from the profile, never a wholesale sub-block replace). Profile-only infra (not

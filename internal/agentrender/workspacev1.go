@@ -134,12 +134,13 @@ type WSCompactionBlock struct {
 	Buffer int64                 `json:"buffer"`
 }
 
-// WSEngineBlock is engine{env,startupTimeoutSeconds,compaction} (schema EngineBlock —
-// compaction required; env/startupTimeoutSeconds optional).
+// WSEngineBlock is engine{env,startupTimeoutSeconds,compaction,denyTools} (schema EngineBlock —
+// compaction required; env/startupTimeoutSeconds/denyTools optional).
 type WSEngineBlock struct {
 	Env                   map[string]string `json:"env,omitempty"`
 	StartupTimeoutSeconds *int64            `json:"startupTimeoutSeconds,omitempty"`
 	Compaction            WSCompactionBlock `json:"compaction"`
+	DenyTools             []string          `json:"denyTools,omitempty"`
 }
 
 // RenderEngineV1 maps the resolved EngineSpec to the wire engine block. This is the field
@@ -160,6 +161,7 @@ func RenderEngineV1(e *achv1alpha1.EngineSpec, resolvedEnv []corev1.EnvVar) (WSE
 	b := WSEngineBlock{
 		StartupTimeoutSeconds: e.StartupTimeoutSeconds,
 		Compaction:            WSCompactionBlock{Auto: *e.Compaction.Auto, Keep: WSCompactionKeepBlock{Tokens: *e.Compaction.Keep.Tokens}, Buffer: *e.Compaction.Buffer},
+		DenyTools:             e.DenyTools,
 	}
 	if len(e.ForwardEnv) > 0 {
 		env := indexEnv(resolvedEnv)

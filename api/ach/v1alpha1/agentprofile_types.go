@@ -117,6 +117,13 @@ type EngineSpec struct {
 	// (agentrender.Render), not a silent drop.
 	// +optional
 	ForwardEnv []string `json:"forwardEnv,omitempty"`
+	// DenyTools names native OpenCode tools (e.g. question, execute, websearch, webfetch)
+	// hidden from the managed agent's model. MCP tools are governed by
+	// ach.capability.filter.exclude.tools; a dotted name is MCP syntax and is rejected.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9_-]+$`
+	DenyTools []string `json:"denyTools,omitempty"`
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	StartupTimeoutSeconds *int64 `json:"startupTimeoutSeconds,omitempty"`
