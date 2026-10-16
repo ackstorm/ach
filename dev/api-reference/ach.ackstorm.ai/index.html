@@ -5266,6 +5266,12 @@ select, and tool-call counting is replaced by limits.maxSteps.</p>
 <td></td>
 </tr>
 <tr>
+<td><code>denyTools</code> <em>string array</em></td>
+<td>DenyTools names native OpenCode tools (e.g. question, execute, websearch, webfetch)<br />hidden from the managed agent's model. MCP tools are governed by<br />ach.capability.filter.exclude.tools; a dotted name is MCP syntax and is rejected.</td>
+<td></td>
+<td>items:Pattern: ^[A-Za-z0-9_-]+$ <br /></td>
+</tr>
+<tr>
 <td><code>startupTimeoutSeconds</code> <em>integer</em></td>
 <td></td>
 <td></td>
