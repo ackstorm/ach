@@ -2494,6 +2494,10 @@ shared master key.</p>
   sets the caller's material as <strong>bare <code>x-goog-api-key</code></strong> and DROPS
   <code>x-litellm-api-key</code> so exactly one auth header is sent. Any client-supplied
   <code>x-goog-api-key</code> is stripped first (§2 strip pass — no credential smuggling).</li>
+<li><strong><code>/v1/realtime</code> WebSocket upgrade:</strong> LiteLLM's realtime auth reads
+  <code>Authorization</code>, not <code>x-litellm-api-key</code>, so on an upgrade to that path the
+  Director ALSO sets <code>Authorization: Bearer &lt;material&gt;</code> (no JWT is ever minted
+  on <code>/v1</code>, so the jwt-LAST write cannot overwrite it).</li>
 <li>LiteLLM therefore attributes the request <strong>1:1 to the user</strong> (their own key,
   their own budget/tags), and the master key never enters the data path — so it
   can no longer leak to an MCP backend that echoes inbound headers.</li>
