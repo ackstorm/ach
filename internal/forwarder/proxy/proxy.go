@@ -108,7 +108,8 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// ReverseProxy deletes every header the client names in Connection
 			// AFTER Director runs, so "Connection: X-Litellm-Tags" would strip
 			// the budget tags set below (review #13). Keep only an upgrade.
-			if hasUpgradeToken(req.Header["Connection"]) {
+			upgrade := hasUpgradeToken(req.Header["Connection"])
+			if upgrade {
 				req.Header.Set("Connection", "Upgrade")
 			} else {
 				req.Header.Del("Connection")
@@ -143,6 +144,10 @@ func New(deps Deps) *httputil.ReverseProxy {
 				}
 			}
 			stripAndRewrite(req.Header, material)
+			if upgrade && req.URL.Path == "/v1/realtime" && material != "" {
+				// LiteLLM's realtime WebSocket auth reads Authorization, not x-litellm-api-key.
+				req.Header.Set("Authorization", "Bearer "+material)
+			}
 			// MCP route only: LiteLLM's MCP key parser (user_api_key_auth_mcp.py)
 			// requires a "Bearer " prefix; /v1, /gemini, /a2a take the bare value.
 			if routeFor(req.URL.Path) == "/mcp" {

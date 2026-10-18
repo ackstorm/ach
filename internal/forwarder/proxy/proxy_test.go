@@ -139,6 +139,33 @@ func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	}
 }
 
+func TestDirector_RealtimeUpgradeAddsBearerKey(t *testing.T) {
+	deps := Deps{
+		LiteLLMUpstream:  mustParseURL(t, "http://litellm.svc.cluster.local:4000"),
+		Logger:           slog.Default(),
+		KeyEncryptionKey: testProxyDEK(),
+	}
+	rp := New(deps)
+	sealed := sealMaterial(t, "sk-user-1")
+	kc := middleware.KeyContext{KeyType: keys.PrefixPk, LiteLLMKeyMaterial: &sealed}
+
+	upgrade := httptest.NewRequest(http.MethodGet, "/v1/realtime?model=gemini.gemini-3.8-live", nil)
+	upgrade.Header.Set("Connection", "keep-alive, Upgrade")
+	upgrade.Header.Set("Upgrade", "websocket")
+	upgrade = upgrade.WithContext(ctxWithKeyAndJWT(kc, ""))
+	rp.Director(upgrade)
+	if got := upgrade.Header.Get("Authorization"); got != "Bearer sk-user-1" {
+		t.Errorf("realtime Authorization = %q; want bearer key", got)
+	}
+
+	ordinary := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ordinary = ordinary.WithContext(ctxWithKeyAndJWT(kc, ""))
+	rp.Director(ordinary)
+	if got := ordinary.Header.Get("Authorization"); got != "" {
+		t.Errorf("ordinary Authorization = %q; want none", got)
+	}
+}
+
 // Issue #41: the "Bearer " prefix on x-litellm-api-key is MCP-only. /mcp
 // gets "Bearer <material>"; /v1 gets the bare value (asserted in
 // TestDirector_ForwardsUserMaterial).

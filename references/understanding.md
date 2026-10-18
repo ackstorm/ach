@@ -317,7 +317,8 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
 - **LiteLLM auth (post-migration 000011, TESTING-PHASE)**: forwarder
   authenticates with the **caller's own** virtual key — bare
   `x-litellm-api-key` on `/v1`+`/a2a`, `Bearer`-prefixed on `/mcp`, bare
-  `x-goog-api-key` on `/gemini` (native passthrough reads only that). Master
+  `x-goog-api-key` on `/gemini` (native passthrough reads only that), plus
+  `Authorization: Bearer` on a `/v1/realtime` WebSocket upgrade. Master
   key OUT of the data path (survives only for teams precheck + admin ops).
   `x-litellm-key-id` delegation no longer sent; pre-000011 keys have NULL
   material → 401, re-mint. Director collapses `/mcp/<n>/…` to the bare
