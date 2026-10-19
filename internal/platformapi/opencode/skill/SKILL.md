@@ -109,7 +109,12 @@ An Environment is what a tool may use: models, MCP servers, skills, plugins, pro
 ```bash
 ach-cli env list
 ach-cli env describe <environment>    # what one Environment contains
+ach-cli env search <text>             # find a plugin, skill, MCP server… by name, in all of them
 ```
+
+`env search finops` matches each Environment's name and description and the name of
+everything it serves (plugins, skills, prompts, artifacts, MCP servers, models, agents);
+several words must all match. It searches names, not what a skill or plugin says inside.
 
 If the one the user needs is not listed, they do not have access to it: an ACH
 administrator grants it.

@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -168,6 +169,63 @@ func TestEnv_List_JSON(t *testing.T) {
 
 	if _, _, code, err := executeEnv(t, "list", "-o", "yaml"); err == nil || code != exit.General {
 		t.Errorf("-o yaml: code=%d err=%v; want exit 1", code, err)
+	}
+}
+
+// TestEnv_Search asserts env search reads the env list, joins its words
+// into one query, honours --admin, and prints [] (not null) for no match.
+func TestEnv_Search(t *testing.T) {
+	dir := envTestEnv(t)
+	var gotAll atomic.Value
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAll.Store(r.URL.Query().Get("all"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{
+				"name":    "design",
+				"context": map[string]any{"skills": []string{"web-design", "threejs-animation"}},
+				"runtime": map[string]any{"mcpServers": []string{"figma"}},
+			}},
+			"next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+	seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "search", "WEB", "design")
+	if err != nil || code != exit.OK {
+		t.Fatalf("env search: code=%d err=%v", code, err)
+	}
+	if !strings.Contains(stdout, "web-design") || strings.Contains(stdout, "threejs") ||
+		!strings.Contains(stdout, "--only <kind>/<name>") {
+		t.Errorf("table:\n%s", stdout)
+	}
+	if got, _ := gotAll.Load().(string); got != "" {
+		t.Errorf("all = %q without --admin", got)
+	}
+
+	stdout, _, _, err = executeEnv(t, "search", "figma", "--admin", "-o", "json")
+	if err != nil {
+		t.Fatalf("env search -o json: %v", err)
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(stdout)); err != nil ||
+		compact.String() != `[{"kind":"mcp","name":"figma","environment":"design"}]` {
+		t.Errorf("json = %s (err %v)", stdout, err)
+	}
+	if got, _ := gotAll.Load().(string); got != "true" {
+		t.Errorf("all = %q with --admin; want true", got)
+	}
+
+	if stdout, _, _, _ = executeEnv(t, "search", "nope", "-o", "json"); strings.TrimSpace(stdout) != "[]" {
+		t.Errorf("no match json = %q; want []", stdout)
+	}
+	if stdout, _, _, _ = executeEnv(t, "search", "nope"); stdout != "No matches.\n" {
+		t.Errorf("no match table = %q", stdout)
+	}
+	if _, _, code, err := executeEnv(t, "search"); err == nil || code == exit.OK {
+		t.Errorf("no args: code=%d err=%v; want an error", code, err)
 	}
 }
 

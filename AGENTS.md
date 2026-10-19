@@ -185,7 +185,10 @@ User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
 Environments the caller's teams are authorized for — admins included (`GET
 /platform/environments` filters every caller); `env list --admin` sends `?all=true`,
 the admin-only full inventory (403 `not_admin` otherwise), and `admin list
-environments` always does. `env describe <env>` reads `GET
+environments` always does. `env search <text>` reads that same list and matches
+client-side, case-insensitively, against each Environment's name + description and
+every context/runtime item NAME (no frontmatter, no server endpoint; every word must
+match; `--admin` like `env list`). `env describe <env>` reads `GET
 /platform/environments/{name}`, where admins still read any Environment (as do
 hydrate and the console reads); `keys create` stays team-scoped — the ek_ mint
 has no admin bypass. The console's Environments tab mirrors this (admin-only
@@ -195,7 +198,7 @@ name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
 (`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;
 `admin keys revoke --owner <email>`. Every network command takes `--profile`,
 `--key <name|ek-…>`, `--verbose`; only the list/read commands (`env list`,
-`env status`, `keys list`, `admin list` (also `yaml`), `admin keys list`) also
+`env search`, `env status`, `keys list`, `admin list` (also `yaml`), `admin keys list`) also
 take `-o table|json`. Env vars: `ACH_PROFILE`,
 `ACH_KEY`, `ACH_URL` (login prefill), `ACH_URL`+`ACH_KEY` = synthetic mode (no
 config file), `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config profiles

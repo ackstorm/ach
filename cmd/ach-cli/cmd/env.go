@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // `ach env` is the read-only environments surface (CLI-12 / spec
-// §5.5). Two children:
+// §5.5). Read-only children:
 //
 //   - list      GET /platform/environments, paginating next_cursor
 //               automatically. --limit caps the per-page request;
 //               --admin adds ?all=true (admin-only full inventory).
+//   - search    The same list, matched client-side against each
+//               Environment's name + description and every item name.
 //   - describe  Two-call: GET /platform/environments/{name} (admins
 //               read any Environment, others need a shared team),
 //               then POST /platform/hydrate {environment:<name>} for
@@ -27,6 +29,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -67,6 +70,7 @@ describe gracefully degrades on 403 unauthorized_team — printing
 	}
 	parent.AddCommand(
 		newEnvListCmd(),
+		newEnvSearchCmd(),
 		newEnvDescribeCmd(),
 		newHydrateCmd(),
 		newEnvStatusCmd(),
@@ -107,6 +111,55 @@ func newEnvListCmd() *cobra.Command {
 	}
 	c.Flags().IntVar(&flagLimit, "limit", defaultEnvListLimit, "Per-page limit (server cap is 500)")
 	c.Flags().BoolVar(&flagAdmin, "admin", false, "List every environment, not only your teams' (admins only)")
+	registerCredFlags(c, &f)
+	registerOutputFlag(c, &out, "table", "json")
+	return c
+}
+
+// newEnvSearchCmd returns the `ach-cli env search <text>` leaf. It reads the
+// same list as `env list` — names only, no new endpoint — and matches it here.
+func newEnvSearchCmd() *cobra.Command {
+	var (
+		flagAdmin bool
+		f         credFlags
+		out       outputFlag
+	)
+	c := &cobra.Command{
+		Use:   "search <text>",
+		Short: "Find plugins, skills, MCP servers and more across your environments",
+		Long: `Find what your environments offer by name.
+
+Matches <text>, case-insensitively, against each environment's name and
+description and the name of every plugin, skill, prompt, artifact, MCP
+server, model and A2A agent it serves. Several words must all match.
+Only names are searched, not what is written inside a skill or plugin.
+`,
+		Example: `  ach-cli env search finops
+  ach-cli env search web design -o json`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			hc, err := buildEnvHTTPClient(cmd, f)
+			if err != nil {
+				return err
+			}
+			envs, err := fetchAll[render.CatalogView](cmd.Context(), hc, "", func(c string) string {
+				return buildEnvListPath(defaultEnvListLimit, c, flagAdmin)
+			})
+			if err != nil {
+				return err
+			}
+			hits := render.Search(envs, strings.Join(args, " "))
+			if out.v == outputJSON {
+				if hits == nil {
+					hits = []render.SearchHit{}
+				}
+				return writeJSON(cmd.OutOrStdout(), hits)
+			}
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatSearch(hits))
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&flagAdmin, "admin", false, "Search every environment, not only your teams' (admins only)")
 	registerCredFlags(c, &f)
 	registerOutputFlag(c, &out, "table", "json")
 	return c

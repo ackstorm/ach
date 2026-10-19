@@ -49,7 +49,7 @@ ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
 ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
 
 # governed remote object (CR-defined, server-mediated)
-ach-cli env list [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
+ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
 ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli env status [env] [-g] [--dir d] [--files] [-o] | save [--dir d] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
@@ -66,7 +66,7 @@ ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-
 
 Every network command takes `--profile`, `--key <name|ek-…>`, `--verbose`
 (`registerCredFlags`, cred.go). Only the list/read commands also take
-`-o table|json` (`registerOutputFlag`): `env list`, `env status`, `keys list`,
+`-o table|json` (`registerOutputFlag`): `env list`, `env search`, `env status`, `keys list`,
 `admin list` (also `yaml`), `admin keys list`.
 Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
 prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
