@@ -526,10 +526,14 @@ tag must be **deleted and recreated** to receive one — which
 `UpsertTagBudget` does. **Spend survives the rebind**: enforcement counts
 `LiteLLM_DailyTagSpend`, keyed by tag name in its own table.
 
-The resulting upsert, in order: `POST /budget/new` (fallback
-`POST /budget/update`) → `POST /tag/info` → return if already bound → else
-`POST /tag/delete` → `POST /tag/new {name, budget_id}`. Steady state is
-three calls.
+The resulting upsert, in order: `POST /tag/info` → return if already bound to
+an identical ceiling → `POST /budget/update` alone if bound with a different
+one → else `POST /budget/new` (fallback `POST /budget/update`) →
+`POST /tag/delete` (only when the tag exists) → `POST /tag/new {name,
+budget_id}`. Steady state is ONE read: the operator re-asserts every
+Environment budget on each 5-minute resync, and the former write-first order
+paid a `/budget/new` 400 + `/budget/update` per budgeted Environment per tick
+(measured in prod 2026-10-20).
 
 ### Lifecycle
 

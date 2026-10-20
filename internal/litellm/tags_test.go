@@ -39,12 +39,12 @@ func TestUpsertTagBudgetCreatesAndBinds(t *testing.T) {
 	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 10, BudgetDuration: "30d"}); err != nil {
 		t.Fatalf("UpsertTagBudget: %v", err)
 	}
-	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/new" {
+	if got := strings.Join(paths(captured), ","); got != "/tag/info,/budget/new,/tag/new" {
 		t.Fatalf("request sequence = %s", got)
 	}
 	for _, want := range []string{`"budget_id":"user:a@b"`, `"max_budget":10`, `"budget_duration":"30d"`} {
-		if !strings.Contains(string(captured[0].Body), want) {
-			t.Errorf("/budget/new body %s missing %s", captured[0].Body, want)
+		if !strings.Contains(string(captured[1].Body), want) {
+			t.Errorf("/budget/new body %s missing %s", captured[1].Body, want)
 		}
 	}
 	if body := string(captured[2].Body); !strings.Contains(body, `"name":"user:a@b"`) ||
@@ -53,16 +53,13 @@ func TestUpsertTagBudgetCreatesAndBinds(t *testing.T) {
 	}
 }
 
-// TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag — /budget/new
-// 400s on an existing id, so the ceiling is written with /budget/update;
-// a tag already pointing at that budget is left alone (no delete/recreate).
+// TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag — a tag already
+// bound to its own budget with a different ceiling takes ONE /budget/update;
+// no /budget/new (it would 400 on the existing id) and no delete/recreate.
 func TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag(t *testing.T) {
 	var captured []capturedRequest
 	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
 		switch captured[i].Path {
-		case "/budget/new":
-			w.WriteHeader(400)
-			fmt.Fprint(w, `{"detail":{"error":"Budget with id 'user:a@b' already exists."}}`)
 		case "/tag/info":
 			w.WriteHeader(200)
 			fmt.Fprint(w, `{"user:a@b":{"spend":1,"litellm_budget_table":{"budget_id":"user:a@b","max_budget":5}}}`)
@@ -74,14 +71,36 @@ func TestUpsertTagBudgetUpdatesExistingBudgetAndKeepsBoundTag(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 5}); err != nil {
+	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 7}); err != nil {
 		t.Fatalf("UpsertTagBudget: %v", err)
 	}
-	if got := strings.Join(paths(captured), ","); got != "/budget/new,/budget/update,/tag/info" {
+	if got := strings.Join(paths(captured), ","); got != "/tag/info,/budget/update" {
 		t.Fatalf("request sequence = %s", got)
 	}
-	if strings.Contains(string(captured[1].Body), "budget_duration") {
-		t.Errorf("empty duration must be omitted, got %s", captured[1].Body)
+	if body := string(captured[1].Body); strings.Contains(body, "budget_duration") || !strings.Contains(body, `"max_budget":7`) {
+		t.Errorf("/budget/update body = %s (want max_budget 7, no empty duration)", body)
+	}
+}
+
+// TestUpsertTagBudgetUnchangedIsReadOnly — the operator re-asserts every
+// Environment budget on each resync; an identical, already-bound ceiling
+// must cost exactly one /tag/info and no write.
+func TestUpsertTagBudgetUnchangedIsReadOnly(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.WriteHeader(200)
+		fmt.Fprint(w, `{"environment:demo":{"spend":1,"litellm_budget_table":`+
+			`{"budget_id":"environment:demo","max_budget":50,"budget_duration":"30d"}}}`)
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if err := c.UpsertTagBudget(context.Background(), "environment:demo",
+		TagBudget{MaxBudget: 50, BudgetDuration: "30d"}); err != nil {
+		t.Fatalf("UpsertTagBudget: %v", err)
+	}
+	if got := strings.Join(paths(captured), ","); got != "/tag/info" {
+		t.Fatalf("request sequence = %s, want only /tag/info", got)
 	}
 }
 
@@ -106,7 +125,7 @@ func TestUpsertTagBudgetRebindsForeignTag(t *testing.T) {
 	if err := c.UpsertTagBudget(context.Background(), "environment:demo", TagBudget{MaxBudget: 3}); err != nil {
 		t.Fatalf("UpsertTagBudget: %v", err)
 	}
-	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/delete,/tag/new" {
+	if got := strings.Join(paths(captured), ","); got != "/tag/info,/budget/new,/tag/delete,/tag/new" {
 		t.Fatalf("request sequence = %s", got)
 	}
 }
@@ -121,7 +140,7 @@ func TestUpsertTagBudgetUpdateErrorSurfaces(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	if err := c.UpsertTagBudget(context.Background(), "user:a@b", TagBudget{MaxBudget: 5}); err == nil {
-		t.Fatal("want an error when both /tag/new and /tag/update fail")
+		t.Fatal("want an error when LiteLLM fails")
 	}
 }
 
@@ -219,7 +238,7 @@ func TestUpsertTagBudgetCreatesTagLiteLLMNeverSaw(t *testing.T) {
 	if err := c.UpsertTagBudget(context.Background(), "key:ek_new", TagBudget{MaxBudget: 0}); err != nil {
 		t.Fatalf("UpsertTagBudget on a never-seen tag: %v", err)
 	}
-	if got := strings.Join(paths(captured), ","); got != "/budget/new,/tag/info,/tag/new" {
+	if got := strings.Join(paths(captured), ","); got != "/tag/info,/budget/new,/tag/new" {
 		t.Fatalf("request sequence = %s", got)
 	}
 }
