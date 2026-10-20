@@ -105,15 +105,40 @@ func TestUserInfoByEmailHappyPath(t *testing.T) {
 	if len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "ops" {
 		t.Errorf("UserInfoByEmail: want Teams=[default ops] (team_id flattened), got %+v", got.Teams)
 	}
-	if len(captured) != 1 || captured[0].Method != "GET" {
-		t.Fatalf("wire method: want GET, got %+v", captured)
+	// The by-id try answers for u-1, not a@b.c — a miss — so the email
+	// lookup is the second request.
+	if len(captured) != 2 || captured[1].Method != "GET" {
+		t.Fatalf("wire: want by-id miss then GET by email, got %+v", captured)
 	}
 	// Path must be /user/info with url-escaped user_email parameter.
-	if !strings.HasPrefix(captured[0].Path, "/user/info?") {
-		t.Errorf("path prefix: want /user/info?, got %q", captured[0].Path)
+	if !strings.HasPrefix(captured[1].Path, "/user/info?") {
+		t.Errorf("path prefix: want /user/info?, got %q", captured[1].Path)
 	}
-	if !strings.Contains(captured[0].Path, "user_email=a%40b.c") {
-		t.Errorf("path must url-escape email (@ → %%40), got %q", captured[0].Path)
+	if !strings.Contains(captured[1].Path, "user_email=a%40b.c") {
+		t.Errorf("path must url-escape email (@ → %%40), got %q", captured[1].Path)
+	}
+}
+
+// TestUserInfoByEmailByIDHitIsOneRequest — ACH users have user_id=email, so
+// the by-id try answers them in ONE request; the three-call email chain
+// (placeholder → /user/list → by-id) is never reached.
+func TestUserInfoByEmailByIDHitIsOneRequest(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"user_id":"a@b.c","user_info":{"user_email":"a@b.c","user_alias":"A"},` +
+			`"teams":[{"team_id":"t1","team_alias":"default"}]}`))
+	}))
+	defer srv.Close()
+
+	got, err := newTestClient(t, srv.URL).UserInfoByEmail(context.Background(), "a@b.c")
+	if err != nil || got.UserID != "a@b.c" || got.UserEmail != "a@b.c" || got.UserAlias != "A" ||
+		len(got.Teams) != 1 || got.Teams[0] != "default" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if len(captured) != 1 || captured[0].Path != "/user/info?user_id=a%40b.c" {
+		t.Fatalf("want exactly one by-id request, got %+v", paths(captured))
 	}
 }
 
@@ -289,11 +314,13 @@ func TestUserInfoByEmailEscapesPlus(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	_, _ = c.UserInfoByEmail(context.Background(), "a+tag@b.c")
-	if len(captured) != 1 {
-		t.Fatalf("want 1 request, got %d", len(captured))
+	if len(captured) != 2 {
+		t.Fatalf("want 2 requests (by-id miss, by-email), got %d", len(captured))
 	}
-	if !strings.Contains(captured[0].Path, "user_email=a%2Btag%40b.c") {
-		t.Errorf("want url.QueryEscape result (a%%2Btag%%40b.c), got %q", captured[0].Path)
+	for _, want := range []string{"user_id=a%2Btag%40b.c", "user_email=a%2Btag%40b.c"} {
+		if !strings.Contains(strings.Join(paths(captured), " "), want) {
+			t.Errorf("want url.QueryEscape result %s, got %v", want, paths(captured))
+		}
 	}
 }
 
