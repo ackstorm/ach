@@ -368,7 +368,10 @@ WHY IT FAILS: the legacy `POST /access_group/new` rejected empty
 empty resource sets, but every ID in `access_mcp_server_ids` /
 `access_agent_ids` / `assigned_team_ids` must exist upstream. The
 reconciler converts names → IDs on-demand each reconcile (no
-Snapshotter cache), so the condition reflects fresh upstream state.
+Snapshotter cache), so the condition reflects fresh upstream state —
+at most `operatorReadCacheTTL` (10 s) old: the operator's LiteLLM client
+caches master-key GETs that long so the Environments sharing one resync
+tick read each catalog once, and any write drops the cache.
 
 ### ❌ Environment declaring guardrails stuck with a 403 on the shell team — no Enterprise licence
 
