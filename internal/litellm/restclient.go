@@ -59,6 +59,7 @@ type RESTClient struct {
 	httpClient *http.Client
 	log        logr.Logger
 	authHeader authHeaderKind
+	cache      *readCache // nil unless EnableReadCache (operator only)
 }
 
 // NewRESTClient constructs a *RESTClient wired to the redacting RoundTripper.
@@ -108,7 +109,25 @@ func (c *RESTClient) setAuth(req *http.Request, key string) {
 //
 // On 5xx / network: returns nil with a transient fmt.Errorf.
 func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
-	return c.makeRequestAs(ctx, c.masterKey, method, path, body)
+	if c.cache == nil {
+		return c.makeRequestAs(ctx, c.masterKey, method, path, body)
+	}
+	if method == http.MethodGet {
+		cached, gen, ok := c.cache.get(path)
+		if ok {
+			return cached, nil
+		}
+		raw, err := c.makeRequestAs(ctx, c.masterKey, method, path, body)
+		if err == nil {
+			c.cache.put(path, gen, raw)
+		}
+		return raw, err
+	}
+	raw, err := c.makeRequestAs(ctx, c.masterKey, method, path, body)
+	if !readOnlyPOST[path] {
+		c.cache.drop() // even on error: a failed write may still have landed
+	}
+	return raw, err
 }
 
 // makeRequestAs is makeRequest with an explicit bearer: the console's

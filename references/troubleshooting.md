@@ -368,7 +368,10 @@ WHY IT FAILS: the legacy `POST /access_group/new` rejected empty
 empty resource sets, but every ID in `access_mcp_server_ids` /
 `access_agent_ids` / `assigned_team_ids` must exist upstream. The
 reconciler converts names → IDs on-demand each reconcile (no
-Snapshotter cache), so the condition reflects fresh upstream state.
+Snapshotter cache), so the condition reflects fresh upstream state —
+at most `operatorReadCacheTTL` (10 s) old: the operator's LiteLLM client
+caches master-key GETs that long so the Environments sharing one resync
+tick read each catalog once, and any write drops the cache.
 
 ### ❌ Environment declaring guardrails stuck with a 403 on the shell team — no Enterprise licence
 
@@ -1388,7 +1391,8 @@ A LiteLLM user created out-of-band (token-factory) with `user_id=<email>` but a
 NULL `user_email` was invisible to `UserInfoByEmail` (`/user/info?user_email=`
 answers the `default_user_id` placeholder, `/user/list?user_email=` has no
 match) → zero teams everywhere (env list, hydrate, `ek_` create, forwarder
-`/mcp`/`/a2a` precheck). `UserInfoByEmail` now falls back to
-`/user/info?user_id=<email>`, trusting only an answer for exactly that id (the
-placeholder carries the admin's teams), and the SSO login backfills
-`user_email` on the record.
+`/mcp`/`/a2a` precheck). `UserInfoByEmail` now asks
+`/user/info?user_id=<email>` FIRST (one round-trip for every ACH-provisioned
+user, where the email chain costs three), trusting only an answer for exactly
+that id (the placeholder carries the admin's teams); only a miss falls through
+to the email chain. The SSO login backfills `user_email` on the record.

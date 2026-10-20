@@ -5,6 +5,7 @@ package litellm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 )
@@ -52,7 +53,17 @@ func (c *RESTClient) UserNew(ctx context.Context, req *UserNewRequest) (*UserInf
 // decodes as space per RFC 3986 query semantics) and encodes `@` as
 // `%40` (LiteLLM tolerates either form but ACH uses QueryEscape for
 // determinism across all per-domain helpers).
+//
+// ACH keys users by user_id=email (provisionUser), so the by-id lookup is
+// tried first: one round-trip for every ACH-provisioned user, where the
+// email chain below costs three (/user/info placeholder → /user/list →
+// /user/info?user_id). Only a miss (404, or an answer for another id) falls
+// through to that chain, which still finds a user created out-of-band with
+// a different user_id.
 func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserInfo, error) {
+	if info, err := c.userInfoByID(ctx, email); !errors.Is(err, ErrNotFound) {
+		return info, err
+	}
 	path := "/user/info?user_email=" + url.QueryEscape(email)
 	raw, err := c.makeRequest(ctx, "GET", path, nil)
 	if err != nil {
@@ -150,7 +161,7 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 				}, nil
 			}
 		}
-		return c.userInfoByID(ctx, email)
+		return nil, ErrNotFound // the by-id lookup already missed above
 	}
 	out := &UserInfo{
 		UserID:    env.UserID,
@@ -168,13 +179,12 @@ func (c *RESTClient) UserInfoByEmail(ctx context.Context, email string) (*UserIn
 	return out, nil
 }
 
-// userInfoByID is UserInfoByEmail's last resort: no /user/list row carries
-// the email. A user whose user_email is NULL (created out-of-band with
-// user_id=email, e.g. by token-factory) is invisible to both email lookups,
-// and every team check then sees zero teams. ACH keys users by
-// user_id=email, so ask by id — but only an answer for exactly that id
-// counts: LiteLLM may answer with its default_user_id placeholder, which
-// carries the admin's teams.
+// userInfoByID is UserInfoByEmail's first try. It also covers a user whose
+// user_email is NULL (created out-of-band with user_id=email, e.g. by
+// token-factory), who is invisible to both email lookups — every team check
+// then saw zero teams. Only an answer for exactly that id counts: LiteLLM
+// may answer with its default_user_id placeholder, which carries the
+// admin's teams.
 func (c *RESTClient) userInfoByID(ctx context.Context, email string) (*UserInfo, error) {
 	raw, err := c.makeRequest(ctx, "GET", "/user/info?user_id="+url.QueryEscape(email), nil)
 	if err != nil {

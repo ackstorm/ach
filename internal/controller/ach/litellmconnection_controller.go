@@ -37,6 +37,12 @@ const litellmConnectionsChannel = "ach_litellm_connections_changed"
 
 const litellmConnectionFinalizer = "litellmconnections.ach.ackstorm.ai/finalizer"
 
+// operatorReadCacheTTL bounds how stale a LiteLLM catalog read may be when
+// every Environment reconciles on the same resync tick (see
+// litellm.readCache). Long enough to cover one tick's burst (~1 s in prod),
+// short enough that an out-of-band LiteLLM edit is seen on the next pass.
+const operatorReadCacheTTL = 10 * time.Second
+
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=litellmconnections,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=litellmconnections/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=litellmconnections/finalizers,verbs=update
@@ -153,6 +159,7 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	client := litellm.NewRESTClient(conn.Spec.Endpoint, string(masterKey), r.Log.WithName("probe"))
+	client.EnableReadCache(operatorReadCacheTTL)
 	if err := client.ProbeConnection(ctx); err != nil {
 		var auth401 *litellm.Auth401Error
 		if errors.As(err, &auth401) {

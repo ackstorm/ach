@@ -22,20 +22,31 @@ import (
 //
 // §9.1: only the tag name is logged by callers — never a budget amount tied
 // to an identity beyond what the caller already holds.
+//
+// The tag is read FIRST: the operator re-asserts every Environment budget on
+// each 5-minute resync, and a tag already bound to an identical budget needs
+// no write at all (before, every pass paid a /budget/new 400 + /budget/update).
 func (c *RESTClient) UpsertTagBudget(ctx context.Context, name string, b TagBudget) error {
 	b.BudgetID = name
+	info, err := c.TagInfo(ctx, name)
+	if err != nil {
+		return fmt.Errorf("litellm: read tag %s: %w", name, err)
+	}
+	bound := info != nil && info.Budget != nil && info.Budget.BudgetID == name
+	if bound && info.Budget.MaxBudget == b.MaxBudget && info.Budget.BudgetDuration == b.BudgetDuration {
+		return nil // already bound to this exact ceiling
+	}
+	if bound {
+		if _, err := c.makeRequest(ctx, "POST", "/budget/update", b); err != nil {
+			return fmt.Errorf("litellm: update budget %s: %w", name, err)
+		}
+		return nil
+	}
 	// New first: /budget/update on a missing id returns 200 null and does nothing.
 	if _, err := c.makeRequest(ctx, "POST", "/budget/new", b); err != nil {
 		if _, err := c.makeRequest(ctx, "POST", "/budget/update", b); err != nil {
 			return fmt.Errorf("litellm: upsert budget %s: %w", name, err)
 		}
-	}
-	info, err := c.TagInfo(ctx, name)
-	if err != nil {
-		return fmt.Errorf("litellm: read tag %s: %w", name, err)
-	}
-	if info != nil && info.Budget != nil && info.Budget.BudgetID == name {
-		return nil // already bound
 	}
 	if info != nil {
 		if err := c.DeleteTagByName(ctx, name); err != nil {
