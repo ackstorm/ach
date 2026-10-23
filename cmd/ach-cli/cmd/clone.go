@@ -99,7 +99,7 @@ func prepareCloneDir(dir string) (created bool, err error) {
 	entries, err := os.ReadDir(dir)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return false, &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 		}
 		return true, nil

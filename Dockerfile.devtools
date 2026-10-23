@@ -9,11 +9,12 @@
 # Used by every phase of the project.
 
 # Pinned to the exact patch (not the floating 1.26 tag, which lags behind the
-# latest patch): go1.26.9 ships the fixes for GO-2026-6599..6613 (net/http,
+# latest patch): go1.26.10 ships the GO-2026-6809 (crypto/x509) fix on top of
+# go1.26.9's GO-2026-6599..6613 (net/http,
 # crypto/tls, html/template, net/textproto) on top of go1.26.6's — keeps the
 # govulncheck ack-list empty. Bump in lock-step with go.mod's `toolchain`
 # directive.
-FROM golang:1.26.9-bookworm
+FROM golang:1.26.10-bookworm
 
 # Use bash with pipefail for all RUN directives — abort on any failure in a pipeline
 # (e.g. `curl ... | tar ...`). POSIX sh swallows the curl exit code otherwise.
