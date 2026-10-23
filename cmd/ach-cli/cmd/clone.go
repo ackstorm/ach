@@ -9,14 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ackstorm/ach/internal/cli/achfile"
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
 // newEnvCloneCmd builds `ach-cli env clone <env> [dir]`: git-clone semantics
 // over the hydrate engine. It creates <dir> (default ./<env>), refuses a
-// non-empty destination, hydrates into it and writes ach.yaml, so a later bare
-// `ach-cli env hydrate` inside the folder updates it (the "pull").
+// non-empty destination and hydrates into it. A later bare `ach-cli env hydrate`
+// inside the folder updates it (the "pull") from what .ach/ records.
 func newEnvCloneCmd() *cobra.Command {
 	var (
 		flagNoWarnings  bool
@@ -30,9 +29,9 @@ func newEnvCloneCmd() *cobra.Command {
 		Use:   "clone <env> [dir]",
 		Args:  cobra.RangeArgs(1, 2),
 		Short: "Create a folder for an Environment and hydrate it (like git clone)",
-		Long: `Create <dir> (default: ./<env>), hydrate the Environment into it and write
-ach.yaml. Refuses a destination that exists and is not empty. On failure the
-folder is removed if clone created it.
+		Long: `Create <dir> (default: ./<env>) and hydrate the Environment into it. Refuses
+a destination that exists and is not empty. On failure the folder is removed
+if clone created it.
 
 To update later: cd <dir> && ach-cli env hydrate
 
@@ -66,9 +65,6 @@ Example:
 				platform:    flagTarget,
 				models:      flagModels,
 			})
-			if err == nil {
-				err = writeCloneManifest(dir)
-			}
 			if err != nil {
 				if created {
 					_ = os.RemoveAll(dir)
@@ -110,17 +106,4 @@ func prepareCloneDir(dir string) (created bool, err error) {
 			Msg: fmt.Sprintf("destination path '%s' already exists and is not an empty directory", dir)}
 	}
 	return false, nil
-}
-
-// writeCloneManifest writes ach.yaml from the state the hydrate just realized,
-// exactly as `ach-cli env save --dir <dir>` would.
-func writeCloneManifest(dir string) error {
-	m, err := deriveManifest(dir)
-	if err == nil {
-		err = m.WriteTo(dir)
-	}
-	if err != nil {
-		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("write %s: %v", achfile.FileName, err), Wrapped: err}
-	}
-	return nil
 }

@@ -543,8 +543,9 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 }
 
 // runHydrateManifest drives the manifest path: with no positional <name> and
-// no ACH_ENVIRONMENT, it loads ach.yaml from the workspace root and hydrates
-// each listed environment best-effort (a failing env is recorded and the run
+// no ACH_ENVIRONMENT, it loads ach.yaml from the workspace root — or, without
+// one, the environments + targets already hydrated under .ach/ (what
+// `env clone` leaves behind) — and hydrates each listed environment best-effort (a failing env is recorded and the run
 // continues). It reuses runHydrateEngine per env, so each env hydrates exactly
 // as a standalone `env hydrate <name>` would. Exits non-zero if any env failed.
 func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
@@ -556,8 +557,13 @@ func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer st
 		}
 		root = wd
 	}
+	source := achfile.FileName
 	m, err := achfile.Load(root)
 	if errors.Is(err, os.ErrNotExist) {
+		source = ".ach/"
+		m, err = deriveManifest(root)
+	}
+	if errors.Is(err, errNothingHydrated) {
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: "<name> positional argument is required: the hydrate engine " +
@@ -587,7 +593,7 @@ func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer st
 
 	failed := 0
 	stderr := cmd.ErrOrStderr()
-	_, _ = fmt.Fprintf(stderr, "\nHydrated %d environment(s) from ach.yaml:\n", len(results))
+	_, _ = fmt.Fprintf(stderr, "\nHydrated %d environment(s) from %s:\n", len(results), source)
 	for _, r := range results {
 		if r.err != nil {
 			failed++

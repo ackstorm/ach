@@ -151,8 +151,8 @@ cd ~/Projects && ach-cli env clone gmail --target opencode   # creates ~/Project
 ```
 
 Like `git clone`: it creates the folder (default: the Environment name; pass a second
-argument to pick another), refuses a folder that exists and is not empty, hydrates
-into it and writes `ach.yaml` there.
+argument to pick another), refuses a folder that exists and is not empty, and hydrates
+into it.
 
 Every project under that folder gets the Environment: OpenCode merges the
 `.opencode/opencode.json` of every parent folder of the directory it starts in, git
@@ -169,9 +169,8 @@ merged into one OpenCode.
 
 ### Keep the folder reproducible
 
-`env clone` already wrote `ach.yaml` (Environment names + targets, no secrets): commit
-it. After hydrating more Environments into the same folder, refresh it with
-`ach-cli env save --dir ~/Projects/gmail`.
+To share the folder with a teammate, write `ach.yaml` (Environment names + targets, no
+secrets) and commit it: `ach-cli env save --dir ~/Projects/gmail`.
 
 A teammate who has the same folder (with its `ach.yaml`) runs a bare
 `ach-cli env hydrate` in it: it hydrates every Environment listed there.
