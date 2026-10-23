@@ -167,13 +167,7 @@ directory. Confirm the folder with the user first.
 Do not hydrate two Environments into the same folder chain unless the user wants both
 merged into one OpenCode.
 
-### Keep the folder reproducible
-
-To share the folder with a teammate, write `ach.yaml` (Environment names + targets, no
-secrets) and commit it: `ach-cli env save --dir ~/Projects/gmail`.
-
-A teammate who has the same folder (with its `ach.yaml`) runs a bare
-`ach-cli env hydrate` in it: it hydrates every Environment listed there.
+### Keep it up to date
 
 - Pick up changes to the Environment: `cd ~/Projects/gmail && ach-cli env hydrate`; add
   `--sync` to also remove what the Environment no longer contains.

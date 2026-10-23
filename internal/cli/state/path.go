@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -44,7 +43,7 @@ func ResolvePath(workspaceCwd, environment string, global bool) (string, error) 
 	if environment == "" {
 		return "", fmt.Errorf("%w: a non-empty environment is required (state is namespaced by environment per spec §8.1)", ErrInvalidPath)
 	}
-	// The name can come from a committed ach.yaml: a ".." or a separator
+	// The name can come from a .ach/ dir name: a ".." or a separator
 	// would put <ach-dir> — and every RemoveAll under it — outside the
 	// workspace (review #14).
 	if err := validateSegment("environment", environment); err != nil {
@@ -89,28 +88,15 @@ func ResolvePlatformPath(workspaceCwd, environment, platform string, global bool
 	return filepath.Join(filepath.Dir(base), "state-"+platform+".json"), nil
 }
 
-// ListStatePaths enumerates every state file for an environment: each
-// per-platform state-<platform>.json plus a legacy flat state.json if present
-// (pre-per-platform layout — still tracked so `env status`/`env uninstall` see
-// it). Returns absolute paths sorted for determinism; an absent env dir yields
-// an empty slice (not an error).
+// ListStatePaths enumerates every per-platform state-<platform>.json for an
+// environment, sorted (filepath.Glob order); an absent env dir yields none
+// (not an error).
 func ListStatePaths(workspaceCwd, environment string, global bool) ([]string, error) {
 	base, err := ResolvePath(workspaceCwd, environment, global)
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Dir(base)
-	matches, err := filepath.Glob(filepath.Join(dir, "state-*.json"))
-	if err != nil {
-		return nil, err
-	}
-	out := append([]string{}, matches...)
-	// Include the legacy flat state.json (no platform suffix) when present.
-	if _, statErr := os.Stat(base); statErr == nil {
-		out = append(out, base)
-	}
-	sort.Strings(out)
-	return out, nil
+	return filepath.Glob(filepath.Join(filepath.Dir(base), "state-*.json"))
 }
 
 // validateSegment rejects a value that is not a single, safe path segment.

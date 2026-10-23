@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ackstorm/ach/internal/cli/achfile"
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 )
@@ -39,19 +38,16 @@ func setupClone(t *testing.T, fail bool) string {
 	return cwd
 }
 
-// The clone hydrates into ./<env> and leaves no ach.yaml at the folder root:
-// .ach/ already records what a bare `env hydrate` needs to update it.
-func TestEnvClone_DefaultDirNoRootManifest(t *testing.T) {
+// The clone hydrates into ./<env>; .ach/ records what a bare `env hydrate`
+// needs to update it.
+func TestEnvClone_DefaultDir(t *testing.T) {
 	cwd := setupClone(t, false)
 	if _, _, _, err := executeCommand(t, newEnvCloneCmd(), "aws-rw", "--target", "claude-code"); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
-	dest := filepath.Join(cwd, "aws-rw")
-	if _, err := os.Stat(achfile.Path(dest)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("clone must not write ach.yaml, stat err = %v", err)
-	}
-	if _, err := deriveManifest(dest); err != nil {
-		t.Fatalf("hydrated state missing under .ach/: %v", err)
+	envs, err := hydratedEnvs(filepath.Join(cwd, "aws-rw"))
+	if err != nil || len(envs) != 1 || envs[0].name != "aws-rw" || envs[0].targets[0] != "claude-code" {
+		t.Fatalf("hydrated state under .ach/ = %+v, %v", envs, err)
 	}
 }
 

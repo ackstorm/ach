@@ -51,8 +51,8 @@ ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U 
 # governed remote object (CR-defined, server-mediated)
 ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
 ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
-ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` there updates from .ach/ (no ach.yaml needed)
-ach-cli env status [env] [-g] [--dir d] [--files] [-o] | save [--dir d] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` updates every env recorded under .ach/
+ach-cli env status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
 ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
@@ -159,17 +159,16 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
 ### Multi-Environment workspaces — cross-env skill de-collision
 
 Several specialist Environments (slides / sheets / images / frontend) hydrated
-into ONE workspace is a supported, intended shape: `ach-cli env save` writes
-`ach.yaml` and a bare `ach-cli env hydrate` hydrates each listed env
-best-effort. State is per-env (`.ach/<env>/state-<platform>.json`) but the
+into ONE workspace is a supported, intended shape: a bare `ach-cli env
+hydrate` re-hydrates every env recorded under `.ach/` best-effort. State is per-env (`.ach/<env>/state-<platform>.json`) but the
 adapter tree is single-path by construction, so the envs **union** in the same
 `.claude/` (`state.ResolvePath`'s doc comment is the contract).
 
 The union only collides on one axis: two envs shipping a skill of the SAME
 name project to the same `.claude/skills/<name>/`. `state.ForeignSkillNames`
 reads the sibling envs' per-platform state and `projectSkills` stages a
-claimed name as `<env>-<name>` instead — the incumbent (first hydrated, so
-`ach.yaml` order) keeps the bare name. Two properties worth not re-deriving:
+claimed name as `<env>-<name>` instead — the incumbent (first hydrated)
+keeps the bare name. Two properties worth not re-deriving:
 
 - **Prefixing is at SKILL granularity, not per file** — it is applied to
   `skillstage.Nest`'s name argument, so every file of the skill moves

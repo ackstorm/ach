@@ -115,8 +115,8 @@ func TestResolvePlatformPath(t *testing.T) {
 	}
 }
 
-// TestListStatePaths enumerates every per-platform state-<platform>.json plus a
-// legacy flat state.json for an environment — this is what `env status` /
+// TestListStatePaths enumerates every per-platform state-<platform>.json for an
+// environment (a non-platform state.json is ignored) — this is what `env status` /
 // `env uninstall` use so a multi-target hydrate's targets are all visible and
 // none is orphaned.
 func TestListStatePaths(t *testing.T) {
@@ -125,7 +125,7 @@ func TestListStatePaths(t *testing.T) {
 	if err := os.MkdirAll(envDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Two per-platform states + a legacy flat state + an unrelated file.
+	// Two per-platform states + a non-platform state.json + an unrelated file.
 	for _, n := range []string{"state-codex.json", "state-opencode.json", "state.json", "notes.txt"} {
 		if err := os.WriteFile(filepath.Join(envDir, n), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
@@ -138,7 +138,6 @@ func TestListStatePaths(t *testing.T) {
 	want := []string{
 		filepath.Join(envDir, "state-codex.json"),
 		filepath.Join(envDir, "state-opencode.json"),
-		filepath.Join(envDir, "state.json"),
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ListStatePaths = %v, want %v", got, want)
@@ -159,7 +158,7 @@ func TestListStatePaths(t *testing.T) {
 	}
 }
 
-// Review #14: an Environment name from a committed ach.yaml must not move
+// Review #14: an Environment name (from a .ach/ dir name) must not move
 // <ach-dir> (and every RemoveAll under it) outside the workspace.
 func TestResolvePath_RejectsUnsafeEnvironment(t *testing.T) {
 	for _, env := range []string{"..", ".", "../../victim", "a/b", `a\b`, "/abs"} {

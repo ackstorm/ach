@@ -75,7 +75,6 @@ describe gracefully degrades on 403 unauthorized_team — printing
 		newHydrateCmd(),
 		newEnvCloneCmd(),
 		newEnvStatusCmd(),
-		newEnvSaveCmd(),
 		newUninstallCmd(),
 		newEnvFetchCmd(),
 	)

@@ -586,9 +586,9 @@ The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
 `--global`) per CLI spec §8.1. So the positional `<name>` (or `ACH_ENVIRONMENT`) is
 REQUIRED for any single-env engine run — including the `ek_` credential path, which
 used to treat it as optional. Two exemptions: `--raw` (it short-circuits before the
-engine), and a committed `ach.yaml` — a **bare** `ach-cli env hydrate` (no `<name>`,
-no `ACH_ENVIRONMENT`) reads `ach.yaml` and hydrates each listed Environment
-best-effort (exit ≠0 if any fails). Create it with `ach-cli env save`.
+engine), and a **bare** `ach-cli env hydrate` (no `<name>`, no `ACH_ENVIRONMENT`)
+inside a folder that already has `.ach/<env>/`: it re-hydrates each recorded
+Environment best-effort (exit ≠0 if any fails).
 
 Two Environments hydrated into ONE project therefore get isolated caches +
 state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
@@ -597,8 +597,9 @@ construction — agents read fixed config locations — so two Environments UNIO
 the same `.claude/` (each surgically tracked + independently uninstallable via
 `ach-cli env uninstall <env>`).
 
-A pre-namespacing flat `<cwd>/.ach/state.json` is auto-migrated into
-`.ach/<env>/` on the next hydrate (a one-line stderr `notice:`). `ach-cli env status`
+A pre-namespacing flat `<cwd>/.ach/state.json` (or a pre-per-platform
+`.ach/<env>/state.json`) is NOT migrated any more and is ignored: re-hydrate
+from scratch. `ach-cli env status`
 with no `<env>` argument (project scope) enumerates ALL `.ach/<env>/` so a
 multi-env project lists every installed set.
 
@@ -607,15 +608,6 @@ Environment's runtime block (the bearer is injected ONLY into the adapter
 config, never the cache) — recorded in `state.runtimeFiles` so `--sync` /
 uninstall and drift cover runtime entries (incl. models, which have no adapter
 destination).
-
-### ❌ `ach-cli env hydrate` (bare, via ach.yaml) → an env "not found" though it exists
-`ach.yaml` is **hub-agnostic** — it lists Environment names only, never which
-hub they live on. Bare `env hydrate` resolves the hub from your **active
-profile**. If your active profile points at a different hub than the one where
-those Environments live, the names won't resolve and you get a per-env
-`FAIL: … not found` in the summary (best-effort: other envs still hydrate).
-Fix: point your active profile at the right hub (`ach-cli profile use <profile>`
-or `ach-cli login` against the correct hub), then re-run `ach-cli env hydrate`.
 
 ### ❌ `ach-cli login` fails `not available in synthetic mode` ✅ unset ACH_KEY (ACH_URL alone is the login prefill)
 `ACH_URL` + `ACH_KEY` set TOGETHER is **synthetic/headless mode**: the CLI runs

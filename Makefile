@@ -312,7 +312,7 @@ _qa-lint-changed: golangci-lint
 		git rev-parse --verify "$$BASE" >/dev/null 2>&1 || { \
 			echo "ERROR: neither origin/main nor main exists; pass BASE_REF=<ref>" >&2; exit 1; }; \
 	fi; \
-	CHANGED=$$( { git diff --name-only "$$(git merge-base "$$BASE" HEAD)" -- '*.go'; \
+	CHANGED=$$( { git diff --name-only --diff-filter=d "$$(git merge-base "$$BASE" HEAD)" -- '*.go'; \
 		git ls-files --others --exclude-standard -- '*.go'; } \
 		| xargs -r -n1 dirname | sort -u | sed 's|^|./|; s|$$|/...|'); \
 	if [ -z "$$CHANGED" ]; then \
