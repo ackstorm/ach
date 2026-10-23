@@ -144,12 +144,15 @@ Recommended layout:
     <project>/          the actual work; may or may not be its own git repo
 ```
 
-Hydrate each Environment into its own folder, NOT globally:
+Clone each Environment into its own folder, NOT globally:
 
 ```bash
-mkdir -p ~/Projects/gmail
-ach-cli env hydrate gmail --dir ~/Projects/gmail --target opencode
+cd ~/Projects && ach-cli env clone gmail --target opencode   # creates ~/Projects/gmail
 ```
+
+Like `git clone`: it creates the folder (default: the Environment name; pass a second
+argument to pick another), refuses a folder that exists and is not empty, hydrates
+into it and writes `ach.yaml` there.
 
 Every project under that folder gets the Environment: OpenCode merges the
 `.opencode/opencode.json` of every parent folder of the directory it starts in, git
@@ -166,14 +169,14 @@ merged into one OpenCode.
 
 ### Keep the folder reproducible
 
-```bash
-ach-cli env save --dir ~/Projects/gmail   # writes ach.yaml (Environment names + targets, no secrets): commit it
-```
+`env clone` already wrote `ach.yaml` (Environment names + targets, no secrets): commit
+it. After hydrating more Environments into the same folder, refresh it with
+`ach-cli env save --dir ~/Projects/gmail`.
 
 A teammate who has the same folder (with its `ach.yaml`) runs a bare
 `ach-cli env hydrate` in it: it hydrates every Environment listed there.
 
-- Pick up changes to the Environment: run the same `ach-cli env hydrate …` again; add
+- Pick up changes to the Environment: `cd ~/Projects/gmail && ach-cli env hydrate`; add
   `--sync` to also remove what the Environment no longer contains.
 - See what is installed: `ach-cli env status --dir ~/Projects/gmail` (`--files` lists
   every file); for the global install, `ach-cli env status <environment> -g`.

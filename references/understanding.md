@@ -478,8 +478,9 @@ marker-block (covers credential-bearing files) → cleanup.
   `$HOME/.ach/<env>/` global); per-platform `state-<platform>.json`;
   legacy flat state auto-migrated. Runtime mirrors
   (`runtime-<platform>/{mcp,a2a,model}.json`) credential-free.
-- `ach.yaml` (`env save`) = committed, hub-agnostic env-name manifest; bare
-  `env hydrate` reads it, best-effort per env. `env uninstall` reuses Sync.
+- `ach.yaml` (`env save`, also written by `env clone`) = committed, hub-agnostic
+  env-name manifest; bare `env hydrate` reads it, best-effort per env.
+  `env clone <env> [dir]` = mkdir + hydrate + save (git-clone shape). `env uninstall` reuses Sync.
 - Exit codes (closed matrix, `internal/cli/exit`): 0 ok · 1 general ·
   2 drift · 3 auth · 4 env-mismatch · 5 schema-mismatch · 6 network/503 ·
   7 collision-refuse (auto-claim differing bytes) · 8 config file.
