@@ -85,6 +85,30 @@ func TestRunHydrateManifest_AllOK(t *testing.T) {
 	}
 }
 
+// With no ach.yaml, a bare hydrate updates what .ach/ already records (the
+// `env clone` folder), each env with its recorded targets.
+func TestRunHydrateManifest_FallsBackToAchState(t *testing.T) {
+	cwd := t.TempDir()
+	seedState(t, cwd, "aws-rw", "opencode")
+	restore := chdir(t, cwd)
+	defer restore()
+
+	var got []hydrate.Opts
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		got = append(got, opts)
+		return hydrate.Result{Environment: opts.Environment, PlatformID: opts.Platform}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+
+	if err := runHydrateManifest(testCmd(t), hydrateInputs{output: cwd}, "https://hub.example", "pk_x"); err != nil {
+		t.Fatalf("fallback should hydrate: %v", err)
+	}
+	if len(got) != 1 || got[0].Environment != "aws-rw" || got[0].Platform != "opencode" {
+		t.Fatalf("want aws-rw/opencode from .ach/, got %+v", got)
+	}
+}
+
 func TestRunHydrateManifest_NoManifest_RequiredArgError(t *testing.T) {
 	cwd := t.TempDir()
 	restore := chdir(t, cwd)

@@ -208,10 +208,11 @@ hold `url`/`key`/`keys: {name: {id, key}}`/`oauth`; a pre-redesign file
 bare `ach-cli env hydrate` reproduces the workspace. `env clone <env> [dir]`
 is the git-clone shape: creates `./<env>` (or `dir`), refuses a non-empty
 destination, hydrates into it (`--target` required — nothing to autodetect),
-writes `ach.yaml`, and removes the folder it created on failure; `env hydrate`
-stays the in-place reconcile (the "pull"). Bare `ach-cli env hydrate`
-(no `<name>`, no `ACH_ENVIRONMENT`) reads that `ach.yaml` and hydrates each
-listed Environment best-effort (exit ≠0 if any fails).
+and removes the folder it created on failure — no `ach.yaml` at the root;
+`env hydrate` stays the in-place reconcile (the "pull"). Bare `ach-cli env hydrate`
+(no `<name>`, no `ACH_ENVIRONMENT`) reads that `ach.yaml` — or, without one, the
+Environments + targets already recorded under `.ach/` (a cloned folder) — and
+hydrates each best-effort (exit ≠0 if any fails).
 Plus the **serverless local package manager** under `ach-cli local` — `repo` (register a GitHub/git
 marketplace or direct plugin/skill source), `plugin` and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs

@@ -51,7 +51,7 @@ ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U 
 # governed remote object (CR-defined, server-mediated)
 ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
 ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
-ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate, write ach.yaml; rm the dir it created on failure
+ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` there updates from .ach/ (no ach.yaml needed)
 ach-cli env status [env] [-g] [--dir d] [--files] [-o] | save [--dir d] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X

@@ -16,8 +16,7 @@ import (
 )
 
 // setupClone wires a profile + mock hub and stubs the engine: on success it
-// seeds the per-platform state the real engine would write (so ach.yaml can be
-// derived), on fail it returns an error. Returns a fresh cwd.
+// seeds the per-platform state the real engine would write, on fail it returns an error. Returns a fresh cwd.
 func setupClone(t *testing.T, fail bool) string {
 	t.Helper()
 	dir := whoamiTestEnv(t)
@@ -40,18 +39,19 @@ func setupClone(t *testing.T, fail bool) string {
 	return cwd
 }
 
-func TestEnvClone_DefaultDirWritesManifest(t *testing.T) {
+// The clone hydrates into ./<env> and leaves no ach.yaml at the folder root:
+// .ach/ already records what a bare `env hydrate` needs to update it.
+func TestEnvClone_DefaultDirNoRootManifest(t *testing.T) {
 	cwd := setupClone(t, false)
 	if _, _, _, err := executeCommand(t, newEnvCloneCmd(), "aws-rw", "--target", "claude-code"); err != nil {
 		t.Fatalf("clone: %v", err)
 	}
-	m, err := achfile.Load(filepath.Join(cwd, "aws-rw"))
-	if err != nil {
-		t.Fatalf("ach.yaml: %v", err)
+	dest := filepath.Join(cwd, "aws-rw")
+	if _, err := os.Stat(achfile.Path(dest)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("clone must not write ach.yaml, stat err = %v", err)
 	}
-	if len(m.Environments) != 1 || m.Environments[0].Name != "aws-rw" ||
-		len(m.Environments[0].Targets) != 1 || m.Environments[0].Targets[0] != "claude-code" {
-		t.Fatalf("manifest = %+v", m.Environments)
+	if _, err := deriveManifest(dest); err != nil {
+		t.Fatalf("hydrated state missing under .ach/: %v", err)
 	}
 }
 
