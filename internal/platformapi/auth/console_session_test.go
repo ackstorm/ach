@@ -267,6 +267,10 @@ func TestConsole_SessionLookupWithoutAPinnedClock(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
 	installFakePKs(f)
 	f.mountConsole()
+	// Log in at wall-clock time: the unpinned lookup below reads the wall
+	// clock, so a session minted at the fixed fixture date expires once the
+	// real date passes it + the cookie lifetime.
+	f.now = time.Now()
 	c := consoleLogin(t, f, "/")
 	unpinned := f.deps
 	unpinned.Now = nil
