@@ -49,8 +49,8 @@ func swapUninstallSyncFn(t *testing.T, rec *recordedSync, stats hydrate.SyncStat
 	t.Cleanup(func() { uninstallSyncFn = prevFn })
 }
 
-// writeState writes a minimal valid v2 state.json into the per-environment
-// <dir>/.ach/<f.Environment>/ layout (env required — namespaced per spec §8.1).
+// writeState writes a minimal valid state file into the per-environment
+// <dir>/.ach/<f.Environment>/state-claude-code.json layout (env required — namespaced per spec §8.1).
 func writeState(t *testing.T, workspace string, f *state.File) string {
 	t.Helper()
 	if f.Environment == "" {
@@ -60,7 +60,7 @@ func writeState(t *testing.T, workspace string, f *state.File) string {
 	if err := os.MkdirAll(achDir, 0o755); err != nil {
 		t.Fatalf("mkdir .ach/%s: %v", f.Environment, err)
 	}
-	statePath := filepath.Join(achDir, "state.json")
+	statePath := filepath.Join(achDir, "state-claude-code.json")
 	if err := state.Save(statePath, f); err != nil {
 		t.Fatalf("save state: %v", err)
 	}

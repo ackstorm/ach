@@ -110,7 +110,7 @@ empty JSON array under -o json) and exits 0.`,
 				files = all
 			} else {
 				// One env may now hold several per-platform state-<platform>.json
-				// files (+ a legacy state.json) — enumerate and show them all.
+				// files — enumerate and show them all.
 				paths, err := state.ListStatePaths(cwd, env, flagGlobal)
 				if err != nil {
 					return &exit.CodedError{
@@ -192,8 +192,8 @@ func loadAllWorkspaceStates(cwd string) ([]*state.File, error) {
 		if !d.IsDir() {
 			continue
 		}
-		// Each env dir may hold several per-platform state-<platform>.json files
-		// (+ a legacy state.json); load them all.
+		// Each env dir may hold several per-platform state-<platform>.json files;
+		// load them all.
 		paths, perr := state.ListStatePaths(cwd, d.Name(), false)
 		if perr != nil {
 			continue

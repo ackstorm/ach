@@ -54,7 +54,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ackstorm/ach/internal/cli/achfile"
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -167,7 +166,8 @@ Credentials:
                       session (ach-cli login) is used.
 
 The positional <name> is the environment; with a key it is optional (the
-key is already scoped to one environment).
+key is already scoped to one environment). Without <name>, every environment
+already hydrated in this folder (.ach/) is updated with its recorded targets.
 
 Example:
   ach-cli env hydrate frontend-dev --only plugin/code-review -g --target claude-code
@@ -349,14 +349,13 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	if effectiveEnv == "" {
 		effectiveEnv = in.envEnvironment
 	}
-	// --raw has no ach.yaml manifest path and no per-env state namespacing;
+	// --raw has no workspace path and no per-env state namespacing;
 	// a pk- key additionally needs the env name to scope the verbatim stream
 	// (an ek- binds its own Environment, so ek-/--raw/empty stays allowed).
 	// The non-raw (engine) path no longer errors on an empty env here: when
 	// BOTH the positional <name> and ACH_ENVIRONMENT are absent it falls
-	// through to the ach.yaml manifest dispatch (runHydrateManifest), which
-	// supplies a non-empty env per listed entry — and emits its own
-	// required-arg error when no manifest exists.
+	// through to runHydrateWorkspace, which re-hydrates every env recorded
+	// under .ach/ — and emits its own required-arg error when there is none.
 	if in.raw && prefix == keys.PrefixPk && effectiveEnv == "" {
 		return &exit.CodedError{
 			Code: exit.General,
@@ -386,7 +385,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	} else if effectiveEnv != "" {
 		runErr = runHydrateEngine(cmd, in, baseURL, bearer, effectiveEnv)
 	} else {
-		runErr = runHydrateManifest(cmd, in, baseURL, bearer)
+		runErr = runHydrateWorkspace(cmd, in, baseURL, bearer)
 	}
 	return runErr
 }
@@ -542,13 +541,14 @@ func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, eff
 	return nil
 }
 
-// runHydrateManifest drives the manifest path: with no positional <name> and
-// no ACH_ENVIRONMENT, it loads ach.yaml from the workspace root — or, without
-// one, the environments + targets already hydrated under .ach/ (what
-// `env clone` leaves behind) — and hydrates each listed environment best-effort (a failing env is recorded and the run
-// continues). It reuses runHydrateEngine per env, so each env hydrates exactly
-// as a standalone `env hydrate <name>` would. Exits non-zero if any env failed.
-func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
+// runHydrateWorkspace drives the bare `env hydrate` (no positional <name>, no
+// ACH_ENVIRONMENT): it re-hydrates every environment already recorded under
+// <root>/.ach/ (what `env clone` or an earlier `env hydrate` left behind), each
+// with its recorded targets, best-effort (a failing env is recorded and the
+// run continues). It reuses runHydrateEngine per env, so each env hydrates
+// exactly as a standalone `env hydrate <name>` would. Exits non-zero if any
+// env failed.
+func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
 	root := in.output
 	if root == "" {
 		wd, err := os.Getwd()
@@ -557,43 +557,37 @@ func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer st
 		}
 		root = wd
 	}
-	source := achfile.FileName
-	m, err := achfile.Load(root)
-	if errors.Is(err, os.ErrNotExist) {
-		source = ".ach/"
-		m, err = deriveManifest(root)
-	}
-	if errors.Is(err, errNothingHydrated) {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: "<name> positional argument is required: the hydrate engine " +
-				"namespaces state by environment (.ach/<name>/); pass <name>, set " +
-				"ACH_ENVIRONMENT, or create ach.yaml with `ach-cli env save`",
-		}
-	}
+	envs, err := hydratedEnvs(root)
 	if err != nil {
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+	}
+	if len(envs) == 0 {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg: "nothing hydrated in this folder yet: pass <name> (or set " +
+				"ACH_ENVIRONMENT), or create the folder with `ach-cli env clone <name>`",
+		}
 	}
 
 	type envResult struct {
 		name string
 		err  error
 	}
-	results := make([]envResult, 0, len(m.Environments))
-	for _, e := range m.Environments {
+	results := make([]envResult, 0, len(envs))
+	for _, e := range envs {
 		perEnv := in
 		// Target precedence: --target flag and ACH_TARGET both override the
-		// manifest entry; the entry only fills in when neither is set.
-		if len(perEnv.platform) == 0 && perEnv.envTarget == "" && len(e.Targets) > 0 {
-			perEnv.platform = e.Targets
+		// recorded targets; those only fill in when neither is set.
+		if len(perEnv.platform) == 0 && perEnv.envTarget == "" && len(e.targets) > 0 {
+			perEnv.platform = e.targets
 		}
-		runErr := runHydrateEngine(cmd, perEnv, baseURL, bearer, e.Name)
-		results = append(results, envResult{name: e.Name, err: runErr})
+		runErr := runHydrateEngine(cmd, perEnv, baseURL, bearer, e.name)
+		results = append(results, envResult{name: e.name, err: runErr})
 	}
 
 	failed := 0
 	stderr := cmd.ErrOrStderr()
-	_, _ = fmt.Fprintf(stderr, "\nHydrated %d environment(s) from %s:\n", len(results), source)
+	_, _ = fmt.Fprintf(stderr, "\nHydrated %d environment(s) from .ach/:\n", len(results))
 	for _, r := range results {
 		if r.err != nil {
 			failed++
@@ -609,6 +603,45 @@ func runHydrateManifest(cmd *cobra.Command, in hydrateInputs, baseURL, bearer st
 		}
 	}
 	return nil
+}
+
+// hydratedEnv is one environment recorded under .ach/ with the sorted,
+// de-duplicated canonical adapter ids it was hydrated for.
+type hydratedEnv struct {
+	name    string
+	targets []string
+}
+
+// hydratedEnvs lists the environments hydrated under <cwd>/.ach/, sorted by
+// name, grouping each env's per-platform state files into its targets.
+func hydratedEnvs(cwd string) ([]hydratedEnv, error) {
+	files, err := loadAllWorkspaceStates(cwd)
+	if err != nil {
+		return nil, err
+	}
+	byEnv := map[string]map[string]bool{}
+	for _, f := range files {
+		if f == nil || f.Environment == "" {
+			continue
+		}
+		if byEnv[f.Environment] == nil {
+			byEnv[f.Environment] = map[string]bool{}
+		}
+		if f.Adapter.ID != "" {
+			byEnv[f.Environment][f.Adapter.ID] = true
+		}
+	}
+	out := make([]hydratedEnv, 0, len(byEnv))
+	for name, ids := range byEnv {
+		targets := make([]string, 0, len(ids))
+		for id := range ids {
+			targets = append(targets, id)
+		}
+		sort.Strings(targets)
+		out = append(out, hydratedEnv{name: name, targets: targets})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out, nil
 }
 
 // renderHydrateSummary picks the summary shape by target count: a single target

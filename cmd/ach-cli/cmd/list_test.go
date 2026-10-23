@@ -16,8 +16,8 @@ import (
 	"github.com/ackstorm/ach/internal/cli/render"
 )
 
-// writeListState writes a v2 state.json under the per-environment
-// <dir>/.ach/<environment>/state.json layout (env parsed from the body) and
+// writeListState writes a state file under the per-environment
+// <dir>/.ach/<environment>/state-claude-code.json layout (env parsed from the body) and
 // returns the workspace dir. body is the raw JSON document.
 func writeListState(t *testing.T, body string) string {
 	t.Helper()
@@ -32,8 +32,8 @@ func writeListState(t *testing.T, body string) string {
 	if err := os.MkdirAll(achDir, 0o755); err != nil {
 		t.Fatalf("mkdir .ach/%s: %v", meta.Environment, err)
 	}
-	if err := os.WriteFile(filepath.Join(achDir, "state.json"), []byte(body), 0o644); err != nil {
-		t.Fatalf("write state.json: %v", err)
+	if err := os.WriteFile(filepath.Join(achDir, "state-claude-code.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write state: %v", err)
 	}
 	return dir
 }
@@ -202,7 +202,8 @@ func TestStatus_PositionalEnvJSON(t *testing.T) {
 	if err := os.MkdirAll(other, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(other, "state.json"), []byte(`{"schemaVersion":"3","environment":"other",
+	otherState := filepath.Join(other, "state-claude-code.json")
+	if err := os.WriteFile(otherState, []byte(`{"schemaVersion":"3","environment":"other",
   "plugins":[{"target":".claude/plugins/z","hash":"xxh3:9","sourceHash":"xxh3:9"}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}

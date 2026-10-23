@@ -1002,56 +1002,6 @@ func mustRuntimeManifest() *manifest.Manifest {
 	}
 }
 
-// TestMigrateLegacyFlatState_RelocatesIntoEnvSubdir asserts the D3 migration:
-// a pre-namespacing flat <cwd>/.ach/state.json (+ content dirs) is relocated
-// into <cwd>/.ach/<env>/, is idempotent on a second call, and no-ops when no
-// flat state exists.
-func TestMigrateLegacyFlatState_RelocatesIntoEnvSubdir(t *testing.T) {
-	ws := t.TempDir()
-	achRoot := filepath.Join(ws, ".ach")
-	if err := os.MkdirAll(filepath.Join(achRoot, "plugin", "caveman"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(achRoot, "plugin", "caveman", "SKILL.md"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Legacy flat state bound to env "demo".
-	if err := state.Save(filepath.Join(achRoot, "state.json"), &state.File{
-		SchemaVersion: "3",
-		Environment:   "demo",
-		Plugins:       []state.FileEntry{{Target: ".claude/skills/caveman/SKILL.md", Hash: "h", SourceHash: "h"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := migrateLegacyFlatState(ws, nil); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	// Relocated into .ach/demo/.
-	if _, err := os.Stat(filepath.Join(achRoot, "demo", "state.json")); err != nil {
-		t.Errorf("state.json not relocated to .ach/demo/: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(achRoot, "demo", "plugin", "caveman", "SKILL.md")); err != nil {
-		t.Errorf("plugin dir not relocated to .ach/demo/plugin/: %v", err)
-	}
-	// Flat copies gone.
-	if _, err := os.Stat(filepath.Join(achRoot, "state.json")); !os.IsNotExist(err) {
-		t.Errorf("flat state.json should be gone after migration; stat err=%v", err)
-	}
-
-	// Idempotent: a second call is a clean no-op (target already present).
-	if err := migrateLegacyFlatState(ws, nil); err != nil {
-		t.Errorf("second migrate (idempotent) returned err: %v", err)
-	}
-
-	// No flat state → no-op.
-	fresh := t.TempDir()
-	if err := migrateLegacyFlatState(fresh, nil); err != nil {
-		t.Errorf("migrate on fresh workspace returned err: %v", err)
-	}
-}
-
 // TestRun_DryRun_SkipsExtractorAndAdapter asserts that --dry-run gates
 // every disk-touching call site introduced in 07-W5-01: extractor +
 // adapter MUST NOT be invoked. Result.FilesWritten stays at zero.

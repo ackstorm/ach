@@ -53,7 +53,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -1475,14 +1474,6 @@ func mergeKindToString(k adapter.MergeKind) string {
 	return ""
 }
 
-// genericMarkerRE matches the OLD single-marker composite form
-// "<!-- ach:begin -->...<!-- ach:end -->" (no per-plugin id). Retained
-// SOLELY for the syncComposite backward-compat fallback: a pre-Phase-2
-// state row carries no plugin id in Keys, so its inverse-merge must
-// target the generic region. All Phase-2 composite rows carry exactly
-// one Keys entry (the plugin name) and use merge.PluginMarkerRE instead.
-var genericMarkerRE = regexp.MustCompile(`(?s)<!-- ach:begin -->.*?<!-- ach:end -->\n?`)
-
 // SyncOptions packages the Sync handler's behavior toggles so the
 // signature stays narrow. Force overrides the drift-wins arm
 // (mismatch → delete anyway). Stderr is the channel for the
@@ -1666,7 +1657,7 @@ func (k syncKeep) uncovered(e state.FileEntry) (keys []string, drop bool) {
 }
 
 // compositeID is the marker id of a composite row: its plugin name, or ""
-// for a pre-Phase-2 row using the generic region.
+// when the row names none.
 func compositeID(e state.FileEntry) string {
 	if len(e.Keys) > 0 {
 		return e.Keys[0]
@@ -1700,15 +1691,14 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 		}
 		return h, true, nil
 	case mergeStrComposite:
+		if len(e.Keys) == 0 {
+			return "", false, nil
+		}
 		body, rerr := os.ReadFile(abs)
 		if rerr != nil {
 			return "", false, rerr
 		}
-		re := genericMarkerRE
-		if len(e.Keys) > 0 {
-			re = merge.PluginMarkerRE(e.Keys[0])
-		}
-		region := re.Find(body)
+		region := merge.PluginMarkerRE(e.Keys[0]).Find(body)
 		if region == nil {
 			return "", false, nil
 		}
@@ -1789,23 +1779,18 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 // block with empty (D-07: Phase-4 sync subtracts exactly ONE plugin's
 // block — the one named in e.Keys[0]). If the marker is absent the file
 // is preserved with a warning (the user must have authored the file
-// outside the engine's contract).
-//
-// Empty-Keys backward-compat (D-07): a pre-Phase-2 state row carries no
-// plugin id in Keys, so it targets the OLD generic single-marker region
-// via genericMarkerRE. All Phase-2 composite rows carry Keys=[plugin-name]
-// and use the per-id regex.
+// outside the engine's contract). A row without its plugin id in Keys has
+// no block to target and is preserved the same way.
 func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
+	if len(e.Keys) == 0 {
+		warnPreserved(opts.Stderr, abs, "composite row names no plugin block; refusing to inverse-merge")
+		return true, nil
+	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
 		return false, fmt.Errorf("sync read composite %s: %w", abs, err)
 	}
-	var markerRE *regexp.Regexp
-	if len(e.Keys) > 0 {
-		markerRE = merge.PluginMarkerRE(e.Keys[0])
-	} else {
-		markerRE = genericMarkerRE
-	}
+	markerRE := merge.PluginMarkerRE(e.Keys[0])
 	if !markerRE.Match(body) {
 		warnPreserved(opts.Stderr, abs,
 			"composite marker not found; refusing to inverse-merge")

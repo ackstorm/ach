@@ -533,19 +533,15 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 	}
 }
 
-// TestSync_CompositeBlock_RemovesMarkedRegion seeds a markdown file
-// with the OLD generic-marker form `<!-- ach:begin -->X<!-- ach:end -->Y`;
-// after Sync only Y should remain. The state row carries EMPTY Keys — under
-// the D-07 per-plugin contract an empty-Keys composite row is a pre-Phase-2
-// row whose inverse-merge falls back to the generic genericMarkerRE region
-// (Phase-2 rows carry Keys=[plugin-name] and a per-id <!-- ach:begin:<id> -->
-// marker instead). This case proves the backward-compat fallback path.
+// TestSync_CompositeBlock_RemovesMarkedRegion seeds a markdown file with a
+// per-plugin block `<!-- ach:begin:p -->X<!-- ach:end:p -->Y`; after Sync only
+// Y should remain (D-07: the row's Keys names the plugin block).
 func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
 	target := filepath.Join(achDir, "PROJECT.md")
-	original := "<!-- ach:begin -->XXX<!-- ach:end -->\nY tail content\n"
+	original := "<!-- ach:begin:p -->XXX<!-- ach:end:p -->\nY tail content\n"
 	if err := os.WriteFile(target, []byte(original), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -560,11 +556,10 @@ func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
 					Target: target,
 					// Realistic partial hash: publishFile stores the hash of
 					// ACH's marker-bounded region (incl. the trailing \n the
-					// genericMarkerRE captures), NOT the whole file. (#2)
-					Hash:  hash.HashBytes([]byte("<!-- ach:begin -->XXX<!-- ach:end -->\n")),
+					// marker regex captures), NOT the whole file. (#2)
+					Hash:  hash.HashBytes([]byte("<!-- ach:begin:p -->XXX<!-- ach:end:p -->\n")),
 					Merge: "composite",
-					// Empty Keys → genericMarkerRE backward-compat fallback (D-07).
-					Keys: nil,
+					Keys:  []string{"p"},
 				},
 			},
 		},
@@ -663,7 +658,7 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 
 	// (3) composite block entry.
 	compTarget := filepath.Join(achDir, "PROJECT.md")
-	compBody := "<!-- ach:begin -->XXX<!-- ach:end -->\nY tail content\n"
+	compBody := "<!-- ach:begin:p -->XXX<!-- ach:end:p -->\nY tail content\n"
 	if err := os.WriteFile(compTarget, []byte(compBody), 0o644); err != nil {
 		t.Fatalf("seed composite: %v", err)
 	}
@@ -678,7 +673,7 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubtreeHash: %v", err)
 	}
-	compRegionHash := hash.HashBytes([]byte("<!-- ach:begin -->XXX<!-- ach:end -->\n"))
+	compRegionHash := hash.HashBytes([]byte("<!-- ach:begin:p -->XXX<!-- ach:end:p -->\n"))
 
 	prev := &state.File{
 		SchemaVersion: "3",
@@ -690,7 +685,7 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 			ID: "claude-code",
 			Files: []state.FileEntry{
 				{Target: deepTarget, Hash: deepSubHash, Merge: "deep", Keys: []string{"mcpServers.foo"}},
-				{Target: compTarget, Hash: compRegionHash, Merge: "composite"},
+				{Target: compTarget, Hash: compRegionHash, Merge: "composite", Keys: []string{"p"}},
 			},
 		},
 	}

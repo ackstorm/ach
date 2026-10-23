@@ -184,7 +184,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	}
 
 	// (c) Enumerate every state file for the env — one per-platform
-	// state-<platform>.json per hydrated target (+ a legacy state.json). Missing
+	// state-<platform>.json per hydrated target. Missing
 	// → nothing installed, clean exit 0.
 	statePaths, err := state.ListStatePaths(workspaceCwd, in.environment, in.global)
 	if err != nil {

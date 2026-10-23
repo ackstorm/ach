@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -148,20 +147,6 @@ func newCommit(opts Opts) (*commit, error) {
 	}
 	achDir := filepath.Dir(statePath)
 
-	// D3 migration: relocate a legacy FLAT <cwd>/.ach/state.json (+ its content
-	// dirs) into the per-environment <cwd>/.ach/<env>/ layout introduced with
-	// namespacing. Project scope only — --global was always namespaced. Best-
-	// effort + idempotent: a no-op once migrated or when no legacy state exists.
-	if !opts.Global {
-		if err := migrateLegacyFlatState(workspaceCwd, opts.Stderr); err != nil {
-			return nil, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("migrate legacy flat .ach: %v", err),
-				Wrapped: err,
-			}
-		}
-	}
-
 	// Per-platform state file: the engine tracks each agent target in its own
 	// <ach-dir>/state-<platform>.json so a multi-target hydrate cannot let one
 	// platform's render overwrite another's projection buckets (step12WriteState
@@ -174,16 +159,6 @@ func newCommit(opts Opts) (*commit, error) {
 				Code:    exit.General,
 				Msg:     fmt.Sprintf("resolve per-platform state path: %v", perr),
 				Wrapped: perr,
-			}
-		}
-		// Adopt a pre-per-platform <ach-dir>/state.json that belongs to THIS
-		// platform (Adapter.ID match, or an untagged legacy state), carrying its
-		// file tracking forward so uninstall/--sync still manage those files.
-		if err := adoptLegacyEnvState(statePath, platformStatePath, opts.Platform); err != nil {
-			return nil, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("adopt legacy env state: %v", err),
-				Wrapped: err,
 			}
 		}
 		statePath = platformStatePath
@@ -245,103 +220,6 @@ func newCommit(opts Opts) (*commit, error) {
 	return c, nil
 }
 
-// legacyFlatMovableEntries is the closed set of flat <cwd>/.ach entries the D3
-// migration relocates into the per-environment subdir. `lock` is intentionally
-// excluded (recreated; may be held); existing env-namespace subdirs are never
-// in this set so a second env's dir is never swallowed.
-var legacyFlatMovableEntries = []string{"state.json", "plugin", "prompt", "artifact", "runtime", "tmp"}
-
-// migrateLegacyFlatState relocates a pre-namespacing flat
-// <workspaceCwd>/.ach/state.json (and its sibling content dirs) into
-// <workspaceCwd>/.ach/<legacyEnv>/, where legacyEnv is the Environment that
-// flat state was bound to. Idempotent + best-effort:
-//
-//   - no flat state.json present  → no-op (already namespaced, or fresh).
-//   - flat state has empty/unreadable Environment → left untouched (cannot
-//     choose a namespace safely).
-//   - target <legacyEnv>/state.json already exists → no-op (don't clobber).
-//
-// Only legacyFlatMovableEntries are moved (same-parent os.Rename, cheap), so a
-// sibling env-namespace dir from a prior migration is never relocated. Emits a
-// single stderr notice when it actually moves something.
-func migrateLegacyFlatState(workspaceCwd string, stderr io.Writer) error {
-	if workspaceCwd == "" {
-		return nil
-	}
-	achRoot := filepath.Join(workspaceCwd, ".ach")
-	flatState := filepath.Join(achRoot, "state.json")
-
-	loaded, err := state.Load(flatState)
-	if err != nil {
-		// A corrupt/legacy-schema flat state.json is not a migration blocker —
-		// leave it in place; the fresh namespaced hydrate proceeds independently.
-		return nil
-	}
-	if loaded == nil || loaded.Environment == "" {
-		return nil
-	}
-
-	statePath, err := state.ResolvePath(workspaceCwd, loaded.Environment, false)
-	if err != nil {
-		return nil // not a safe environment name: leave the flat state alone
-	}
-	targetDir := filepath.Dir(statePath)
-	if _, err := os.Stat(filepath.Join(targetDir, "state.json")); err == nil {
-		return nil // already migrated
-	}
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", targetDir, err)
-	}
-
-	moved := 0
-	for _, name := range legacyFlatMovableEntries {
-		src := filepath.Join(achRoot, name)
-		if _, err := os.Lstat(src); err != nil {
-			continue // entry absent — skip
-		}
-		dst := filepath.Join(targetDir, name)
-		if _, err := os.Lstat(dst); err == nil {
-			continue // already present at target — don't clobber
-		}
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("move %s -> %s: %w", src, dst, err)
-		}
-		moved++
-	}
-	if moved > 0 && stderr != nil {
-		_, _ = fmt.Fprintf(stderr,
-			"notice: migrated legacy flat .ach/ into .ach/%s/ (per-environment layout)\n",
-			loaded.Environment)
-	}
-	return nil
-}
-
-// adoptLegacyEnvState migrates a pre-per-platform <ach-dir>/state.json to the
-// per-platform <ach-dir>/state-<platform>.json so its file tracking carries
-// forward (uninstall/--sync keep working). It renames legacyPath → platformPath
-// ONLY when:
-//   - platformPath does not already exist (never clobber a real per-platform state), AND
-//   - the legacy state is readable AND belongs to THIS platform — its
-//     Adapter.ID == platform, or is empty (untagged legacy state predating
-//     platform tagging).
-//
-// A legacy state tagged for a DIFFERENT platform is left untouched (that
-// platform's own hydrate adopts it). All other conditions (missing/corrupt
-// legacy state) are silent no-ops — the fresh per-platform hydrate proceeds.
-func adoptLegacyEnvState(legacyPath, platformPath, platform string) error {
-	if _, err := os.Stat(platformPath); err == nil {
-		return nil // per-platform state already exists — nothing to adopt
-	}
-	loaded, err := state.Load(legacyPath)
-	if err != nil || loaded == nil {
-		return nil // no/unreadable legacy state
-	}
-	if loaded.Adapter.ID != "" && loaded.Adapter.ID != platform {
-		return nil // belongs to a different platform
-	}
-	return os.Rename(legacyPath, platformPath)
-}
-
 // run executes the §6.7 14-step commit sequence. Each stepN is an
 // unexported method on *commit; the dispatch loop here checks the
 // TEST-ONLY SIGKILL seam after each step returns AND before stepN+1
@@ -371,19 +249,6 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// Step 2: sweep tmp.
 	c.step2SweepTmp()
 	c.maybeKill(2)
-
-	// Drop the legacy persistent plugin projection-cache. Pre-ephemeral builds
-	// extracted plugins to <achDir>/plugin and kept the tree across runs, which
-	// let a plugin removed from the Environment linger on disk and be
-	// re-projected (the cross-plugin destination-collision bug). The projection
-	// source is now the per-run <achDir>/tmp stage (swept at steps 2 + 13), so
-	// the old dir is both dead weight and a stale source — remove it. Scoped to
-	// context hydrations (plugins are out of scope under --only-runtime) and
-	// skipped under --dry-run (read-only). Prompts/artifacts are hydrator-core
-	// deliverables (CLI §6.4), never touched here.
-	if !c.opts.DryRun && !c.opts.OnlyRuntime {
-		c.dropLegacyPluginCache()
-	}
 
 	// Step 3: read state + GuardEnvironment.
 	existingState, err := c.step3ReadState()
@@ -745,16 +610,6 @@ func (c *commit) pluginStageRoot() string {
 // every run.
 func (c *commit) skillStageRoot() string {
 	return c.pluginStageRoot()
-}
-
-// dropLegacyPluginCache removes the pre-ephemeral persistent plugin
-// projection-cache at <achDir>/plugin. Best-effort + idempotent: a missing dir
-// is a no-op and any error is swallowed (a residual cache dir never blocks a
-// hydrate, matching SweepTmp's benign-cleanup contract). ONLY the plugin cache
-// is removed — <achDir>/{prompt,artifact} hold hydrator-core deliverables
-// (CLI §6.4), not projection cache, and are left intact.
-func (c *commit) dropLegacyPluginCache() {
-	_ = os.RemoveAll(filepath.Join(c.achDir, "plugin"))
 }
 
 // step3ReadState — state.Load + GuardEnvironment. Schema mismatch

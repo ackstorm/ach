@@ -235,12 +235,10 @@ func TestPublishFile_Composite_Drift(t *testing.T) {
 	}
 }
 
-// TestSyncComposite_EmptyKeys_GenericFallback (backward-compat): syncComposite
-// over a host memory file containing ONLY a generic
-// <!-- ach:begin -->...<!-- ach:end --> region, invoked with a FileEntry whose
-// Keys is empty, removes that generic-marker region while preserving user
-// prose outside it (D-07 empty-Keys fallback via genericMarkerRE).
-func TestSyncComposite_EmptyKeys_GenericFallback(t *testing.T) {
+// TestSyncComposite_EmptyKeys_Preserved: a composite row that names no plugin
+// block in Keys has nothing to target, so syncComposite preserves the file
+// untouched instead of guessing a region.
+func TestSyncComposite_EmptyKeys_Preserved(t *testing.T) {
 	dir := t.TempDir()
 	abs := filepath.Join(dir, "CLAUDE.md")
 	seed := "# top prose\n<!-- ach:begin -->OLD BLOCK<!-- ach:end -->\nbottom prose\n"
@@ -248,27 +246,15 @@ func TestSyncComposite_EmptyKeys_GenericFallback(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// Empty Keys → generic fallback.
 	preserved, err := syncComposite(state.FileEntry{Target: abs, Merge: mergeStrComposite}, abs, SyncOptions{})
 	if err != nil {
 		t.Fatalf("syncComposite empty-keys: %v", err)
 	}
-	if preserved {
-		t.Errorf("syncComposite empty-keys: preserved=true; want pruned (generic region removed)")
+	if !preserved {
+		t.Errorf("syncComposite empty-keys: preserved=false; want true")
 	}
-	got := readFileT(t, abs)
-	if fi, serr := os.Stat(abs); serr != nil {
-		t.Fatalf("stat: %v", serr)
-	} else if fi.Mode().Perm() != 0o644 {
-		t.Errorf("post-sync mode: got %o, want 0644 (composite memory file must not downgrade)", fi.Mode().Perm())
-	}
-	if strings.Contains(got, "OLD BLOCK") || strings.Contains(got, "ach:begin") {
-		t.Errorf("generic region not removed:\n%s", got)
-	}
-	for _, want := range []string{"# top prose\n", "bottom prose\n"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("user prose %q lost:\n%s", want, got)
-		}
+	if got := readFileT(t, abs); got != seed {
+		t.Errorf("file changed:\n%s", got)
 	}
 }
 
