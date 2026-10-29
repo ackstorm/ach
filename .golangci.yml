@@ -1,0 +1,178 @@
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+  # Pin the analysed Go version so golangci-lint v1.62.2 (built with Go 1.23)
+  # does not refuse to lint code whose go.mod targets Go 1.26. The runtime
+  # toolchain still compiles against 1.26; this only narrows the language
+  # features the linter assumes available.
+  go: "1.23"
+
+issues:
+  # don't skip warning about doc comments
+  # don't exclude the default set of lint
+  exclude-use-default: false
+  # restore some of the defaults
+  # (fill in the rest as needed)
+  exclude-rules:
+    # SA1019 scheme.Builder is deprecated in upstream sigs.k8s.io/runtime
+    # but kubebuilder's `init` scaffold still emits it in
+    # api/<group>/<version>/groupversion_info.go. There is no
+    # non-deprecated replacement in controller-runtime v0.24.x. Revisit
+    # when controller-runtime ships a migration target.
+    - path: "api/*"
+      linters:
+        - staticcheck
+      text: "SA1019.*scheme.Builder"
+    # Long-line allowance for kubebuilder marker comments (verbose by
+    # design, e.g. // +kubebuilder:rbac:groups=...;verbs=get;list;watch;...).
+    - path: "api/*"
+      linters:
+        - lll
+    # Reconciler scaffolds carry boilerplate that trips dupl + lll until
+    # the bodies are filled in (TODO.md item 2 — domain port from ach-old).
+    - path: "(internal|ee)/*"
+      linters:
+        - dupl
+        - lll
+    # Test files routinely trip these lints in ways that hurt readability
+    # without surfacing real defects: ad-hoc string fixtures (goconst),
+    # always-same param values (unparam), test-only credential-like
+    # literals like "ll-token-xx" / sk-stub keys that gosec G101 flags as
+    # potential secrets, and Go 1.22+ copyloopvar that is harmless to leave
+    # per-loop for explicit closure capture. The ported test corpus came
+    # from ach-old where these were tolerated.
+    - path: "_test\\.go$"
+      linters:
+        - goconst
+        - unparam
+        - gosec
+        - copyloopvar
+        - unused
+        - errcheck
+    # internal/sources/{github,bitbucket}/fetcher.go expose
+    # setHTTPClientForTesting helpers that are referenced only in tests via
+    # build-tagged paths; default build still considers them unused. Same
+    # idiom in both fetchers.
+    - path: "internal/sources/(github|bitbucket)/fetcher\\.go"
+      linters:
+        - unused
+      text: "setHTTPClientForTesting"
+    # cloud.google.com/go/storage's WithCredentialsJSON is deprecated
+    # upstream pending a replacement that does not require passing the JSON
+    # in the constructor; current alternative (per-call OAuth2 source)
+    # does not fit the operator's secret-mounted SA pattern. Acknowledged
+    # until upstream ships a documented migration target.
+    - path: "internal/sources/gcs/fetcher\\.go"
+      linters:
+        - staticcheck
+      text: "SA1019.*WithCredentialsJSON"
+    # external_ref_refresh.go uses "http" as a literal source-kind
+    # discriminator in a switch alongside "github", "s3", etc. — naming
+    # them as a const set would actually hurt readability (the switch
+    # body is the source of truth for the kind enum).
+    - path: "internal/controller/ach/external_ref_refresh\\.go"
+      linters:
+        - goconst
+    # PluginMarketplaceReconciler.Reconcile is a single linear orchestration
+    # body (fetch → parse → filter → conflict-detect → UPSERT) that resists
+    # decomposition without obscuring the state-machine. The ach-old
+    # codebase ships with cyclomatic 52; mark the function as audited.
+    - path: "internal/controller/ach/pluginmarketplace_controller\\.go"
+      linters:
+        - gocyclo
+    # Long log line in operator.go:175 is a single human-readable startup
+    # banner that should not be split mid-message.
+    - path: "cmd/ach/cmd/operator\\.go"
+      linters:
+        - lll
+    # cmd/ach/cmd/{forwarder,content_service}.go are two near-identical
+    # Phase 1 /healthz stub subcommands. They share the same goroutine +
+    # signal-handler + graceful-shutdown skeleton because that IS the
+    # stub. Real divergence comes in Phase 4/5 when the proxy and
+    # sendfile bodies land — the dupl finding will resolve itself then.
+    - path: "cmd/ach/cmd/(forwarder|content_service)\\.go"
+      linters:
+        - dupl
+    # res.Body.Close / fetchResult.Body.Close at upstream-fetch sites:
+    # closing the response body is best-effort cleanup; if it fails the
+    # request already succeeded and the next GC sweep handles the fd.
+    # Tracking these as errcheck adds noise without surfacing a real bug.
+    - path: "internal/controller/ach/(external_ref_refresh|pluginmarketplace_controller)\\.go"
+      linters:
+        - errcheck
+      text: "Body.Close"
+    # "url" / "local-path" / "npm" / "active" are short enum-like literals
+    # (source-kind discriminator, status value); naming them as consts would
+    # not improve readability. marketplace_parse.go moved to internal/contentkit
+    # in the Phase 1B extraction — keep the exclusion at its new path.
+    - path: "internal/(contentkit/marketplace_parse|platformapi/admin/handler)\\.go"
+      linters:
+        - goconst
+linters:
+  disable-all: true
+  enable:
+    - dupl
+    - errcheck
+    - copyloopvar
+    - ginkgolinter
+    - goconst
+    - gocyclo
+    - gofmt
+    - goimports
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+
+linters-settings:
+  revive:
+    rules:
+      - name: comment-spacings
+  # gosec — Phase 13 HRD-01 (HIGH-only gate).
+  # Locked decision (13-SPEC.md): HIGH findings block CI; MEDIUM/LOW reported
+  # but non-blocking. The explicit `includes` list pins the rule subset
+  # reviewed in the Wave 1 audit so adding a new gosec rule upstream cannot
+  # silently turn the gate red.
+  #
+  # G105 (modular exponentiation without modulus) is omitted because it is
+  # reserved / withdrawn upstream.
+  # G115 (integer-overflow conversion) is omitted from the HIGH gate per the
+  # 13-01 audit: the 4 reachable findings already carry `// #nosec G115`
+  # annotations with documented upper bounds.
+  gosec:
+    severity: high
+    confidence: low
+    includes:
+      - G101
+      - G102
+      - G103
+      - G104
+      - G106
+      - G107
+      - G108
+      - G109
+      - G110
+      - G201
+      - G202
+      - G203
+      - G204
+      - G304
+      - G401
+      - G402
+      - G403
+      - G404
+      - G501
+      - G502
+      - G503
+      - G504
+      - G505

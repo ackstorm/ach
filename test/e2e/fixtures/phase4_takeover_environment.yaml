@@ -1,0 +1,30 @@
+# Throwaway Environment for the §11g GitOps-wins takeover e2e test ONLY (G2).
+#
+# Same shape as phase4_drain_environment.yaml but named ui-takeover-demo. The
+# test first seeds an origin='ui' DRAFT row of this name directly in Postgres,
+# then applies this CR; the operator must TAKE OVER the row (origin 'ui'->'cr').
+# The execution resources it references are pre-synced by cluster.sh (stage 04 +
+# reconcile_litellm), so this only adds + removes the Environment itself.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: ui-takeover-demo
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - demo-model
+    mcpServers:
+      - demo-mcp-jwt
+      - demo-mcp-nojwt
+    a2aAgents:
+      - demo-agent
+  context:
+    prompts:
+      - claude-code-system-prompt
+    plugins:
+      - caveman
+    artifacts:
+      - openclaw-templates

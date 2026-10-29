@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package adapter
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// globalScope describes how one adapter's --global destinations resolve.
+//
+// Each supported agent CLI exposes its own config-dir environment variable, and
+// they are not the same shape: CLAUDE_CONFIG_DIR / CODEX_HOME /
+// PI_CODING_AGENT_DIR name the config dir itself, while GEMINI_CLI_HOME and
+// XDG_CONFIG_HOME name a parent under which the tool creates its own subdir
+// (.gemini and opencode respectively). envSuffix encodes that difference.
+type globalScope struct {
+	envVar     string
+	fromPrefix string
+	envSuffix  string
+	fallback   string
+	// subdirs, when set, limits the remap to these project subdirs under
+	// fromPrefix: pi reads project resources from .pi/{skills,prompts} but
+	// global ones from ~/.pi/agent/{skills,prompts}, and .pi/mcp.json is
+	// outside that layout either way.
+	subdirs []string
+}
+
+// globalScopes is the closed per-adapter table, keyed by canonical adapter ID.
+var globalScopes = map[string]globalScope{
+	"claude-code": {envVar: "CLAUDE_CONFIG_DIR", fromPrefix: ".claude/"},
+	"codex":       {envVar: "CODEX_HOME", fromPrefix: ".codex/"},
+	"gemini-cli":  {envVar: "GEMINI_CLI_HOME", fromPrefix: ".gemini/", envSuffix: ".gemini"},
+	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"skills/", "prompts/"}},
+	"opencode": {
+		envVar:     "XDG_CONFIG_HOME",
+		fromPrefix: ".opencode/",
+		envSuffix:  "opencode",
+		fallback:   ".config/opencode/",
+	},
+}
+
+// RemapGlobalPath adjusts a workspace-relative path for --global scope, given
+// home (the $HOME the caller would otherwise join against).
+//
+// The result remains relative to home for the default location, or becomes an
+// absolute path when the adapter's config-dir environment variable redirects it.
+// Callers must resolve the result with ResolveDest rather than bare
+// filepath.Join.
+func RemapGlobalPath(adapterID, home, path string) string {
+	s, ok := globalScopes[adapterID]
+	if !ok || !strings.HasPrefix(path, s.fromPrefix) {
+		return path
+	}
+	rest := strings.TrimPrefix(path, s.fromPrefix)
+	if s.subdirs != nil && !hasAnyPrefix(rest, s.subdirs) {
+		return path
+	}
+
+	relative := path
+	if s.fallback != "" {
+		relative = s.fallback + rest
+	}
+
+	root := GlobalRoot(adapterID, home)
+	if root == home {
+		return relative
+	}
+	abs := filepath.Join(root, rest)
+	if home != "" && abs == filepath.Join(home, relative) {
+		return relative
+	}
+	return abs
+}
+
+// GlobalRoot returns the adapter-owned root used by a --global destination.
+// It is also the boundary for conflict namespacing when a remapped path is
+// absolute, which may differ from the process-wide $HOME root.
+func GlobalRoot(adapterID, home string) string {
+	s, ok := globalScopes[adapterID]
+	if !ok {
+		return home
+	}
+	dir := configDir(s.envVar)
+	if dir == "" {
+		return home
+	}
+	return filepath.Join(dir, s.envSuffix)
+}
+
+// configDir returns a usable absolute config directory, or "" when the
+// variable is unset, empty, or relative. Relative values are deliberately
+// ignored because the agent CLI resolves them against its own working
+// directory, not ach-cli's.
+func configDir(envVar string) string {
+	v := strings.TrimSpace(os.Getenv(envVar))
+	if v == "" || !filepath.IsAbs(v) {
+		return ""
+	}
+	return filepath.Clean(v)
+}
+
+// ResolveDest joins a recorded destination against root, passing an already
+// absolute destination (an env-var-redirected --global destination) through
+// unchanged.
+func ResolveDest(root, dest string) string {
+	if filepath.IsAbs(dest) {
+		return dest
+	}
+	return filepath.Join(root, dest)
+}
+
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,619 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// `ach platform-api` boots the ACH Hub Platform REST API. Issue #34 made
+// Postgres the source of truth: platform-api no longer constructs a
+// controller-runtime manager, no longer watches Secret or any ACH CRD, and
+// no longer holds a K8s client at all. The read path goes through the
+// pgxpool-backed store (Phase B1), and /admin/refresh signals the operator
+// via NOTIFY ach_refresh (Phase B2).
+//
+// The remaining bootstrap wires env-vars (D-06 / D-08 / D-09), Postgres pool,
+// Redis client (D-09), LiteLLM REST client (D-25), OIDC provider + OAuth2
+// PKCE config (D-04 / D-06), admin allowlist (D-22 / D-23), and the chi.Mux
+// server — then blocks on the stdlib http.Server under a SetupSignalHandler
+// for graceful shutdown.
+
+package cmd
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-logr/logr"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/redis/go-redis/v9"
+	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/ackstorm/ach/internal/audit"
+	"github.com/ackstorm/ach/internal/config"
+	"github.com/ackstorm/ach/internal/credhash/pepperenv"
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/edition"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/keycrypt/dekenv"
+	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/metrics"
+	"github.com/ackstorm/ach/internal/observability/evidence"
+	"github.com/ackstorm/ach/internal/platformapi"
+	"github.com/ackstorm/ach/internal/platformapi/admin"
+	"github.com/ackstorm/ach/internal/platformapi/auth"
+	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/opencode"
+	"github.com/ackstorm/ach/internal/platformapi/openwork"
+	"github.com/ackstorm/ach/internal/platformapi/store"
+)
+
+// genaiProviderID is the OpenCode plugin's PROVIDER_ID pattern.
+var genaiProviderID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+func init() {
+	rootCmd.AddCommand(platformAPICmd)
+}
+
+var platformAPICmd = &cobra.Command{
+	Use:   "platform-api",
+	Short: "Run the ACH Platform REST API server (chi + Dex SSO)",
+	Long: `Boot the chi-backed REST API exposing the ACH platform surface (Login,
+EnvKey lifecycle, hydration, marketplace, teams, admin). Refuses to start
+without ACH_BASE_URL (http(s)://...), ACH_DB_URL, the credential-hash
+pepper, ACH_KEY_ENCRYPTION_KEY (the AES-256 DEK for at-rest key material),
+the three Dex OAuth2 vars, ACH_JWT_SECRET_DIR (the OAuth signing seed),
+ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY, ACH_REDIS_ADDR, and POD_NAMESPACE.`,
+	RunE: runPlatformAPI,
+}
+
+// platformAPIConfig holds the validated env-var surface; never mutated
+// after validatePlatformAPIConfig returns.
+type platformAPIConfig struct {
+	Enterprise        bool // ACH_ENTERPRISE
+	BaseURL           string
+	CredentialHeaders []pamw.CredentialHeader // ACH_CREDENTIAL_HEADERS (resolve only)
+	DBURL             string
+	Pepper            []byte
+	KeyEncryptionKey  []byte
+	LiteLLMBaseURL    string
+	LiteLLMMasterKey  string
+	DexIssuerURL      string
+	DexClientID       string
+	DexClientSecret   string
+	RedisAddr         string
+	RedisPassword     string
+	RedisTLS          bool
+	RedisDB           int
+	AllowlistPath     string
+	BindAddr          string
+	Namespace         string
+	InsecureCookie    bool
+	// UserBudget is the default per-user spend ceiling (ACH_USER_MAX_BUDGET
+	// + ACH_USER_BUDGET_DURATION, chart platformApi.userDefaults). nil =
+	// unset = users are uncapped.
+	UserBudget *litellm.TagBudget
+	// Teams is the login team enrolment (ACH_TEAMS_DEFAULT / ACH_TEAMS_USER /
+	// ACH_TEAMS_SSO, chart platformApi.teams).
+	Teams auth.TeamPolicy
+	// DefaultMaxKeys is the chart-wide fallback ek_ ceiling. Zero is
+	// deny-by-default; explicit per-user allowances live in Postgres.
+	DefaultMaxKeys int
+	// ConsoleChatURL is the hosted chat UI the console's Chat button opens
+	// (ACH_CONSOLE_CHAT_URL, chart platformApi.console.chatUrl). Empty hides
+	// the button.
+	ConsoleChatURL string
+	// Observability is the read-only Langfuse ClickHouse endpoint behind
+	// /platform/observability/* (ACH_OBSERVABILITY_CLICKHOUSE_{URL,USER,PASSWORD}).
+	// nil = URL unset = the routes answer 503 not_ready.
+	Observability *evidence.Config
+	// ObservabilityProjects is the Langfuse project allow-list
+	// (ACH_OBSERVABILITY_LANGFUSE_PROJECT_IDS, comma-separated); never discovered at runtime.
+	ObservabilityProjects []string
+	// OAuth front door (docs/plans/2026-09-17-oauth-front-door.md).
+	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
+	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
+	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
+}
+
+func validatePlatformAPIConfig() (*platformAPIConfig, error) {
+	cfg := &platformAPIConfig{}
+	baseURL, err := config.MustEnvNonEmpty("ACH_BASE_URL")
+	if err != nil {
+		return nil, fmt.Errorf("ACH_BASE_URL required: %w", err)
+	}
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return nil, errors.New("ACH_BASE_URL must be http(s)://")
+	}
+	cfg.BaseURL = baseURL
+	if cfg.CredentialHeaders, err = pamw.ParseCredentialHeaders(os.Getenv("ACH_CREDENTIAL_HEADERS")); err != nil {
+		return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %w", err)
+	}
+	for _, h := range cfg.CredentialHeaders {
+		if h.Mode != pamw.ModeResolve {
+			return nil, fmt.Errorf("ACH_CREDENTIAL_HEADERS: %s: platform-api only resolves (passthrough is a forwarder mode)", h.Name)
+		}
+	}
+
+	if cfg.DBURL, err = config.MustEnvNonEmpty("ACH_DB_URL"); err != nil {
+		return nil, err
+	}
+	pepper, err := pepperenv.Load()
+	if err != nil {
+		return nil, err
+	}
+	cfg.Pepper = pepper
+	dek, err := dekenv.Load()
+	if err != nil {
+		return nil, err
+	}
+	cfg.KeyEncryptionKey = dek
+	if cfg.LiteLLMBaseURL, err = config.MustEnvNonEmpty("ACH_LITELLM_BASE_URL"); err != nil {
+		return nil, err
+	}
+	if cfg.LiteLLMMasterKey, err = config.MustEnvNonEmpty("ACH_LITELLM_MASTER_KEY"); err != nil {
+		return nil, err
+	}
+	if cfg.DexIssuerURL, err = config.MustEnvNonEmpty("ACH_DEX_ISSUER_URL"); err != nil {
+		return nil, err
+	}
+	if cfg.DexClientID, err = config.MustEnvNonEmpty("ACH_DEX_CLIENT_ID"); err != nil {
+		return nil, err
+	}
+	if cfg.DexClientSecret, err = config.MustEnvNonEmpty("ACH_DEX_CLIENT_SECRET"); err != nil {
+		return nil, err
+	}
+	if cfg.RedisAddr, err = config.MustEnvNonEmpty("ACH_REDIS_ADDR"); err != nil {
+		return nil, err
+	}
+	cfg.RedisPassword = os.Getenv("ACH_REDIS_PASSWORD")
+	cfg.RedisTLS = config.EnvBool("ACH_REDIS_TLS", false)
+	// ACH_REDIS_DB=0 is the default Redis logical DB and a legitimate value;
+	// EnvIntNonNeg permits 0 (MustEnvIntPositive would reject) and the error
+	// is surfaced, not dropped.
+	if cfg.RedisDB, err = config.EnvIntNonNeg("ACH_REDIS_DB", 0); err != nil {
+		return nil, err
+	}
+	if cfg.Namespace, err = config.MustEnvNonEmpty("POD_NAMESPACE"); err != nil {
+		return nil, err
+	}
+	cfg.AllowlistPath = config.EnvOr("ACH_ADMIN_ALLOWLIST_PATH", "/etc/ach/admins/admins.txt")
+	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8080")
+	// The SSO state cookie's hardening is DERIVED from the externally-
+	// visible scheme (ACH_BASE_URL) — no separate flag. An https base
+	// (production / TLS-terminating ingress) gets the hardened
+	// __Host-/Secure cookie; a plain-http base (internal or dev, e.g. the
+	// kind gateway on http://localhost:8080) gets a working non-Secure
+	// cookie. ACH_BASE_URL is the scheme the BROWSER sees on the SSO
+	// round-trip, which is exactly what governs whether a Secure cookie
+	// survives — so it is the single correct source of truth (the
+	// platform-api itself always listens plain http behind the ingress).
+	cfg.InsecureCookie = !strings.HasPrefix(cfg.BaseURL, "https://")
+	if cfg.JWTSecretDir, err = config.MustEnvNonEmpty("ACH_JWT_SECRET_DIR"); err != nil {
+		return nil, err
+	}
+	if cfg.OAuthAccessTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_ACCESS_TTL", time.Hour, time.Minute); err != nil {
+		return nil, err
+	}
+	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
+		return nil, err
+	}
+	if cfg.Teams, err = teamPolicyFromEnv(); err != nil {
+		return nil, err
+	}
+	if raw := os.Getenv("ACH_USER_MAX_BUDGET"); raw != "" {
+		maxBudget, perr := strconv.ParseFloat(raw, 64)
+		if perr != nil {
+			return nil, fmt.Errorf("ACH_USER_MAX_BUDGET %q: %w", raw, perr)
+		}
+		cfg.UserBudget = &litellm.TagBudget{
+			MaxBudget:      maxBudget,
+			BudgetDuration: os.Getenv("ACH_USER_BUDGET_DURATION"),
+		}
+	}
+	// ACH_USER_MAX_KEYS: chart-wide fallback ek_ ceiling for anyone without
+	// a user_limits row. Unset or empty means 0 — deny-by-default.
+	if raw := os.Getenv("ACH_USER_MAX_KEYS"); raw != "" {
+		n, perr := strconv.Atoi(raw)
+		if perr != nil || n < 0 {
+			return nil, fmt.Errorf("ACH_USER_MAX_KEYS %q: must be a non-negative integer", raw)
+		}
+		cfg.DefaultMaxKeys = n
+	}
+	chatURL, err := consoleChatURL()
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConsoleChatURL = chatURL
+	if cfg.Observability, cfg.ObservabilityProjects, err = observabilityConfig(); err != nil {
+		return nil, err
+	}
+	if err := enterpriseFromEnv(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// enterpriseFromEnv reads ACH_ENTERPRISE into cfg and refuses Enterprise-only
+// configuration while it is off.
+func enterpriseFromEnv(cfg *platformAPIConfig) (err error) {
+	if cfg.Enterprise, err = edition.Enabled(os.Getenv); err != nil {
+		return err
+	}
+	return edition.CheckEnv(os.Getenv)
+}
+
+// observabilityConfig reads the ClickHouse endpoint. Unset URL disables the
+// feature; a set URL needs every other variable so a half-configured pod fails
+// at startup instead of serving 503s.
+func observabilityConfig() (*evidence.Config, []string, error) {
+	raw := os.Getenv("ACH_OBSERVABILITY_CLICKHOUSE_URL")
+	if raw == "" {
+		return nil, nil, nil
+	}
+	if u, err := url.Parse(raw); err != nil || !slices.Contains([]string{"http", "https"}, u.Scheme) || u.Host == "" {
+		return nil, nil, fmt.Errorf("ACH_OBSERVABILITY_CLICKHOUSE_URL: must be an absolute http(s) URL")
+	}
+	c := &evidence.Config{URL: strings.TrimRight(raw, "/")}
+	var err error
+	if c.User, err = config.MustEnvNonEmpty("ACH_OBSERVABILITY_CLICKHOUSE_USER"); err != nil {
+		return nil, nil, err
+	}
+	if c.Password, err = config.MustEnvNonEmpty("ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD"); err != nil {
+		return nil, nil, err
+	}
+	var projects []string
+	for _, p := range strings.Split(os.Getenv("ACH_OBSERVABILITY_LANGFUSE_PROJECT_IDS"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			projects = append(projects, p)
+		}
+	}
+	if len(projects) == 0 {
+		return nil, nil, fmt.Errorf("ACH_OBSERVABILITY_LANGFUSE_PROJECT_IDS: required when ACH_OBSERVABILITY_CLICKHOUSE_URL is set")
+	}
+	return c, projects, nil
+}
+
+// consoleChatURL reads ACH_CONSOLE_CHAT_URL: empty (the console hides its
+// Chat button) or an absolute http(s) URL.
+func consoleChatURL() (string, error) {
+	raw := os.Getenv("ACH_CONSOLE_CHAT_URL")
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return "", fmt.Errorf("ACH_CONSOLE_CHAT_URL %q: must be an absolute http(s) URL", raw)
+	}
+	return raw, nil
+}
+
+type platformAPIProcessDeps struct {
+	pool   *pgxpool.Pool
+	redis  *redis.Client
+	server platformapi.Deps
+	// signer is the OAuth access-token signer, loaded from the mounted
+	// ach-jwt-signing-keys Secret; nil when the AS is disabled.
+	signer *jwt.Ed25519Signer
+	// Plan 05-06 D-10: metricsReg holds the process-local Registry +
+	// metricsHandler is the corresponding /metrics http.Handler that
+	// runPlatformAPIServer composes onto the chi router. litellmUnreachable
+	// is the shared §18.5 counter registered with caller="platform_api"
+	// dimension pre-declared — registered-but-unused at end of Phase 5
+	// (see Plan 05-06 spec_divergence: Phase 3 handlers emit
+	// audit.OutcomeLitellmUnreachable as a response body code via
+	// render.Error, NOT as a counter Inc; per-call-site Inc retrofit is
+	// out of scope for Phase 5).
+	metricsReg         *prometheus.Registry
+	metricsHandler     http.Handler
+	litellmUnreachable *prometheus.CounterVec
+}
+
+func (p *platformAPIProcessDeps) close() {
+	if p == nil {
+		return
+	}
+	if p.redis != nil {
+		_ = p.redis.Close()
+	}
+	if p.pool != nil {
+		p.pool.Close()
+	}
+}
+
+// teamPolicyFromEnv reads the login team enrolment. ACH_TEAMS_DEFAULT is a
+// JSON list and must name at least one team: every user belongs to a default
+// team, so an install without one is misconfigured. ACH_TEAMS_USER and
+// ACH_TEAMS_SSO are JSON maps (email / Dex group -> team aliases), optional;
+// keys are lower-cased because matching is case-insensitive.
+func teamPolicyFromEnv() (auth.TeamPolicy, error) {
+	var p auth.TeamPolicy
+	if err := json.Unmarshal([]byte(os.Getenv("ACH_TEAMS_DEFAULT")), &p.Default); err != nil {
+		return p, fmt.Errorf("ACH_TEAMS_DEFAULT: want a JSON list of team aliases: %w", err)
+	}
+	if len(p.Default) == 0 {
+		return p, errors.New("ACH_TEAMS_DEFAULT: at least one default team required")
+	}
+	for _, v := range []struct {
+		env string
+		dst *map[string][]string
+	}{{"ACH_TEAMS_USER", &p.ByUser}, {"ACH_TEAMS_SSO", &p.BySSOGroup}} {
+		raw := os.Getenv(v.env)
+		if raw == "" {
+			continue
+		}
+		var m map[string][]string
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			return p, fmt.Errorf("%s: want a JSON map of key to team aliases: %w", v.env, err)
+		}
+		*v.dst = make(map[string][]string, len(m))
+		for k, teams := range m {
+			(*v.dst)[strings.ToLower(k)] = teams
+		}
+	}
+	return p, nil
+}
+
+//nolint:gocyclo // single bootstrap function intentionally linear
+func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *slog.Logger) (*platformAPIProcessDeps, error) {
+	out := &platformAPIProcessDeps{}
+
+	// Fulfill controller-runtime's global logr root from platform-api's slog
+	// handler. The shared litellm client logs via ctrl.Log (NewRESTClient
+	// below); without a fulfilled root, the first litellm request dumps a
+	// one-time "log.SetLogger(...) was never called" stack and drops the log
+	// line. operator.go / forwarder.go set this via zap — platform-api bridges
+	// slog so litellm logs land in the same JSON stream.
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
+
+	// ─── Phase 5 D-09 / D-10 / OBS-05: process-local Prometheus
+	//     Registry + shared ach_litellm_unreachable_total counter (caller
+	//     dimension pre-declared with all four §18.5 values). Platform
+	//     API does NOT receive a typed PlatformAPICollectors struct in
+	//     §18.5 — only Forwarder and Content Service have typed
+	//     collectors. The /metrics endpoint here exposes the shared
+	//     litellm_unreachable counter (registered-but-unused at end of
+	//     Phase 5; see Plan 05-06 spec_divergence) and any future
+	//     additive metrics that land here.
+	out.metricsReg = prometheus.NewRegistry()
+	registerRuntimeCollectors(out.metricsReg)
+	out.litellmUnreachable = metrics.MustRegisterLitellmUnreachable(out.metricsReg)
+	out.litellmUnreachable.WithLabelValues("platform_api").Add(0) // expose family at 0 (§18.5)
+	// /metrics is unauthenticated on the main traffic listener (D-10);
+	// internal cluster network only — see Helm values.yaml metricsAuth
+	// note in Plan 05-07. T-05-06-01 (Information Disclosure) accepted.
+	out.metricsHandler = metrics.Handler(out.metricsReg)
+
+	// G7: typed platform-api collectors (hydrate duration + login total)
+	// + key-resolution cache hit/miss counters, registered on the same
+	// process-local Registry.
+	platformAPICollectors := metrics.NewPlatformAPICollectors(out.metricsReg)
+	keystoreCollectors := metrics.NewKeystoreCollectors(out.metricsReg)
+
+	pool, err := db.Open(ctx, cfg.DBURL)
+	if err != nil {
+		return nil, fmt.Errorf("db.Open: %w", err)
+	}
+	out.pool = pool
+
+	out.redis = newRedisClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisTLS)
+
+	liteLLM := litellm.NewRESTClient(cfg.LiteLLMBaseURL, cfg.LiteLLMMasterKey, ctrl.Log.WithName("litellm"))
+	auditLog := audit.NewLogger(os.Stdout)
+
+	oidcProvider, err := oidc.NewProvider(ctx, cfg.DexIssuerURL)
+	if err != nil {
+		return out, fmt.Errorf("oidc.NewProvider: %w", err)
+	}
+	oauth2Cfg := &oauth2.Config{
+		ClientID:     cfg.DexClientID,
+		ClientSecret: cfg.DexClientSecret,
+		Endpoint:     oidcProvider.Endpoint(),
+		// offline_access: Dex hands ACH a refresh token, and every ACH
+		// refresh asks Dex (and through it the IdP) again — a user disabled
+		// at the IdP is out at the next refresh, not 30 days later.
+		// groups: the Dex `groups` claim feeds platformApi.teams.sso. Dex only
+		// emits it when the upstream connector supplies groups.
+		Scopes: []string{oidc.ScopeOpenID, "email", "profile", oidc.ScopeOfflineAccess, "groups"},
+	}
+	idTokenVerifier := oidcProvider.Verifier(&oidc.Config{ClientID: cfg.DexClientID})
+
+	allowlist, err := admin.LoadAllowlist(cfg.AllowlistPath, logger)
+	if err != nil {
+		return out, fmt.Errorf("admin.LoadAllowlist: %w", err)
+	}
+
+	platformStore := store.New(pool, cfg.Namespace, logr.Discard())
+
+	dbResolver, err := keystore.NewDBResolver(pool, cfg.Pepper,
+		keystore.NewLiteLLMPkExtendHook(liteLLM, db.PkSlidingWindow, ctrl.Log.WithName("pk-extend")))
+	if err != nil {
+		return out, fmt.Errorf("keystore.NewDBResolver: %w", err)
+	}
+	// OAuth AS — the only login: the signer is loaded from the mounted Secret.
+	signer := jwt.NewEd25519Signer()
+	if err := jwt.LoadFromDir(signer, cfg.JWTSecretDir); err != nil {
+		return out, fmt.Errorf("oauth signer: %w", err) // fail closed: no key, no login
+	}
+	go jwt.WatchDir(ctx, signer, cfg.JWTSecretDir, jwt.DirReloadInterval, logger)
+	out.signer = signer
+	var redirectHosts []string
+	if err := json.Unmarshal([]byte(cmp.Or(os.Getenv("ACH_OAUTH_REDIRECT_HOSTS"), "[]")), &redirectHosts); err != nil {
+		return out, fmt.Errorf("ACH_OAUTH_REDIRECT_HOSTS: want a JSON list of hostnames: %w", err)
+	}
+	oauthDeps := &auth.OAuthDeps{
+		Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
+		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
+		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
+		RedirectHosts: redirectHosts,
+	}
+	// The OpenCode plugin (github.com/ackstorm/opencode-oidc-provider) only accepts a
+	// provider id matching its PROVIDER_ID and silently falls back to
+	// "ai-platform" otherwise — which would no longer match the provider the
+	// config names. Refuse to start instead.
+	genaiProvider := config.EnvOr("ACH_GENAI_PROVIDER_NAME", "ai-platform")
+	if !genaiProviderID.MatchString(genaiProvider) {
+		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: want lowercase letters, digits and '-' (%s)", genaiProvider, genaiProviderID)
+	}
+	// The skill is named after the provider ("<provider>-ach"), under the
+	// plugin's stricter skill-name rule: an invalid name is dropped silently.
+	if _, err := opencode.SkillName(genaiProvider); err != nil {
+		return out, fmt.Errorf("ACH_GENAI_PROVIDER_NAME %q: %w", genaiProvider, err)
+	}
+	// Extra provider ids /.well-known/opencode allows (comma-separated), under
+	// the same id rule: OpenCode would never match a malformed one.
+	extraIDs := strings.Split(os.Getenv("ACH_OPENCODE_EXTRA_PROVIDERS"), ",")
+	extraProviders := make([]string, 0, len(extraIDs))
+	for _, p := range extraIDs {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		if !genaiProviderID.MatchString(p) {
+			return out, fmt.Errorf("ACH_OPENCODE_EXTRA_PROVIDERS %q: want lowercase letters, digits and '-' (%s)", p, genaiProviderID)
+		}
+		extraProviders = append(extraProviders, p)
+	}
+	extra, err := observabilityRoutes(cfg, liteLLM)
+	if err != nil {
+		return out, err
+	}
+	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, signer, cfg.BaseURL, "ach", pool)
+	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
+		keystore.WithCacheMetrics(keystoreCollectors))
+	if err != nil {
+		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
+	}
+
+	out.server = platformapi.Deps{
+		Enterprise: cfg.Enterprise,
+		OAuth:      oauthDeps,
+		AuthnOptions: pamw.AuthnOptions{
+			Challenge: func(*http.Request) string {
+				return `Bearer resource_metadata="` + strings.TrimRight(cfg.BaseURL, "/") + `/.well-known/oauth-protected-resource"`
+			},
+			Headers: cfg.CredentialHeaders,
+		},
+		Pool:                    pool,
+		Redis:                   out.redis,
+		LiteLLM:                 liteLLM,
+		LiteLLMREST:             liteLLM,
+		OpenWork:                openwork.FromEnv(),
+		GenAIProvider:           genaiProvider,
+		GenAIDefaultModel:       os.Getenv("ACH_GENAI_DEFAULT_MODEL"),
+		GenAIDefaultSmallModel:  os.Getenv("ACH_GENAI_DEFAULT_SMALL_MODEL"),
+		GenAIDefaultEnvironment: os.Getenv("ACH_GENAI_DEFAULT_ENVIRONMENT"),
+		OpenCodePluginSpec:      os.Getenv("ACH_OPENCODE_PLUGIN_SPEC"),
+		OpenCodeExtraProviders:  extraProviders,
+		// Same issuer/audience as the OAuth resolver above.
+		VerifyAccessToken:  func(tok string) (string, error) { return signer.Verify(tok, cfg.BaseURL, "ach") },
+		Pepper:             cfg.Pepper,
+		KeyEncryptionKey:   cfg.KeyEncryptionKey,
+		Allowlist:          allowlist,
+		IDTokenVerifier:    idTokenVerifier,
+		OAuth2Cfg:          oauth2Cfg,
+		Store:              platformStore,
+		Resolver:           cachedResolver,
+		Audit:              auditLog,
+		Logger:             logger,
+		BaseURL:            cfg.BaseURL,
+		Namespace:          cfg.Namespace,
+		InsecureCookie:     cfg.InsecureCookie,
+		UserBudget:         cfg.UserBudget,
+		Teams:              cfg.Teams,
+		DefaultMaxKeys:     cfg.DefaultMaxKeys,
+		ConsoleChatURL:     cfg.ConsoleChatURL,
+		ObservabilityExtra: extra,
+		Metrics:            platformAPICollectors,
+	}
+	return out, nil
+}
+
+// runPlatformAPIServer wires the chi handler + /metrics endpoint behind the
+// shared ServerRunnable (which already encodes the D-03 timeouts + graceful
+// shutdown semantics) and waits on the supplied context. Issue #34 dropped
+// the controller-runtime manager — the runnable now starts directly on its
+// own goroutine and the signal context drives shutdown.
+func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bindAddr string) error {
+	httpHandler := platformapi.New(deps.server)
+
+	// Plan 05-06 Task 4 / D-10: /metrics is served on the SAME port as
+	// the traffic listener. A tiny stdlib ServeMux fronts the chi-built
+	// platform-api handler so /metrics has its own dedicated path
+	// (precedence by path-specificity per net/http ServeMux semantics)
+	// while every other request falls through to the platform-api
+	// router. The metrics handler is unauthenticated; production
+	// scrape clients access it via the in-cluster Service IP / Pod IP.
+	composed := http.NewServeMux()
+	composed.Handle("/metrics", deps.metricsHandler)
+	composed.Handle("/", httpHandler)
+
+	runnable := platformapi.NewRunnable(bindAddr, composed, deps.server.Logger)
+	return runnable.Start(ctx)
+}
+
+func runPlatformAPI(_ *cobra.Command, _ []string) error {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil {
+		return fmt.Errorf("validateConfig: %w", err)
+	}
+
+	ctx := ctrl.SetupSignalHandler()
+	deps, err := buildPlatformAPIDeps(ctx, cfg, logger)
+	if err != nil {
+		if deps != nil {
+			deps.close()
+		}
+		return fmt.Errorf("buildDeps: %w", err)
+	}
+	defer deps.close()
+
+	logger.Info("platform-api starting",
+		"bind", cfg.BindAddr,
+		"namespace", cfg.Namespace,
+		"baseURL", cfg.BaseURL,
+	)
+
+	if err := runPlatformAPIServer(ctx, deps, cfg.BindAddr); err != nil {
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("runServer: %w", err)
+		}
+	}
+	logger.Info("platform-api shutdown complete")
+	return nil
+}
+
+// observabilityRoutes runs the edition's platform-api hooks with the ClickHouse
+// client (nil when not configured); each returns the routes the edition adds.
+// The list prices Enterprise reports use come from the admin LiteLLM client:
+// they only describe models, the caller's usage is scoped by ClickHouse.
+func observabilityRoutes(cfg *platformAPIConfig, liteLLM *litellm.RESTClient) ([]func(chi.Router), error) {
+	env := edition.PlatformAPIEnv{Enterprise: cfg.Enterprise, Projects: cfg.ObservabilityProjects, LiteLLM: liteLLM}
+	if cfg.Observability != nil {
+		env.ClickHouse = evidence.NewClickHouse(*cfg.Observability, nil)
+	}
+	hooks := edition.PlatformAPIHooks()
+	extra := make([]func(chi.Router), 0, len(hooks))
+	for _, h := range hooks {
+		mount, err := h(env)
+		if err != nil {
+			return nil, err
+		}
+		extra = append(extra, mount)
+	}
+	return extra, nil
+}

@@ -1,0 +1,26 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ach-forwarder-role
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+rules:
+# Forwarder reads ONLY the two kinds below. It never reads the four
+# external-reference kinds — those cache files live on the PVC, not on
+# the K8s API (T-09-02 mitigation).
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - environments
+  - backendidentitypolicies
+  verbs: ["get", "list", "watch"]
+# Phase 4 D-22 + FWD-09 SC#4: read ONLY ach-jwt-signing-keys Secret.
+# resourceNames carve-out enforces "only the Forwarder ServiceAccount
+# can read the signing material". Namespace-scoped (Role, not
+# ClusterRole) per MULTI-01.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["ach-jwt-signing-keys"]
+  verbs: ["get", "list", "watch"]

@@ -1,0 +1,89 @@
+# Phase 02.1 — Development-only Postgres for kind e2e.
+#
+# emptyDir → data dies with the Pod, which is the intended behavior for a
+# per-e2e-run cluster. Image postgres:16-alpine.
+#
+# Labels: `app: postgres` is the PRIMARY label probed by findPostgresPod
+# (test/e2e/phase1_invariants_test.go:213). Keeping this label keeps
+# Phase 1 SC#4 (Postgres reachable) green when the e2e overlay is applied.
+#
+# Volume: subPath: pgdata avoids the `lost+found` directory that some
+# emptyDir backends create — Postgres 16 refuses to initialize a non-empty
+# PGDATA directory.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-postgres
+  namespace: system                         # kustomize rewrites to ach-system
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate                          # single-replica DB cannot RollingUpdate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: ach
+            - name: POSTGRES_USER
+              value: ach
+            - name: POSTGRES_PASSWORD
+              value: ach
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - ach
+                - -d
+                - ach
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - ach
+                - -d
+                - ach
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          emptyDir: {}

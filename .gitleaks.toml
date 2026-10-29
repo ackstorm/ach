@@ -1,0 +1,60 @@
+# gitleaks v8 config — extends the default ruleset with a project-scoped
+# allowlist for synthetic test fixtures and vendored upstream sample tokens.
+#
+# ⚠ SINGULAR [allowlist] ONLY. gitleaks v8.21.2 (pinned in
+# scripts/pre-push-check.sh) honors exactly one top-level [allowlist] table.
+# The array-of-tables form [[allowlists]] is SILENTLY IGNORED by this version
+# — a config written with it scans with NO allowlist at all, and every
+# fixture token false-positives. Do NOT split this back into [[allowlists]]
+# blocks unless you also bump the pinned gitleaks image to a version that
+# honors them (verify with a fixture-token probe against the new image first).
+#
+# Surgical scope: a finding is allowed only if the extracted secret matches
+# one of the fixture SHAPES below (fully anchored) or the file lives in a
+# gitignored cache path. A real-looking secret — an sk- key WITHOUT a
+# fake-marker word, an AWS key, any random high-entropy blob — still fails,
+# and trufflehog's verified-live-secret gate is the second net regardless.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ACH synthetic fixtures + upstream LiteLLM sample tokens + gitignored caches"
+
+# Build-time / scratch paths (gitignored, never committed). The git-history
+# gate never reaches these; they matter only for a developer's --no-git scan.
+paths = [
+    '''(^|/)\.gocache/''',
+    '''(^|/)vendor/''',
+    '''(^|/)\.superpowers/''',
+]
+
+# Fixture token SHAPES, matched against the extracted secret (default
+# regexTarget), fully anchored so a substring of a real secret cannot slip:
+#   ^sk-1234$                     LiteLLM smoke key
+#   ^sk-…<fake-marker>…$          any LiteLLM virtual key carrying an explicit
+#                                 test/canary/example/fake/dummy/wrong marker;
+#                                 a real leaked key (sk-<random>) has no marker
+#                                 → still caught
+#   ^ach-<identifier>$            ACH access-group / team names (ach-env-<env>,
+#                                 ach-user-<email>, ach-test-env-…) — k8s-style
+#                                 identifiers quoted in code, tests, and docs,
+#                                 never secrets, but long enough to trip the
+#                                 generic-api-key entropy rule
+#   ^(pk|ek)id_<id>$              ACH opaque key_id values. These are public
+#                                 identifiers — they are the {id} path segment
+#                                 of /platform/keys/{id} and the
+#                                 personal_keys/environment_keys.key_id column,
+#                                 and internal/keys/doc.go makes it a load-
+#                                 bearing invariant that they are NOT bearer
+#                                 values (ClassifyBearer rejects pkid_*/ekid_*).
+#                                 Key MATERIAL uses pk-/ek- — a different prefix
+#                                 AND separator — so this shape can never match
+#                                 a real secret. The 26-char ULID body trips the
+#                                 generic-api-key entropy rule.
+regexes = [
+    '''^sk-1234$''',
+    '''(?i)^sk-[a-z0-9]*-?(test|canary|example|fake|dummy|wrong)[a-z0-9-]*$''',
+    '''^ach-[a-z0-9-]+$''',
+    '''^(pk|ek)id_[0-9a-z]+$''',
+]

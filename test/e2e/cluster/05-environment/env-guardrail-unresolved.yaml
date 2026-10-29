@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# An Environment naming a guardrail that does not exist on the proxy.
+#
+# Exercises the P0-A provisioning barrier: LiteLLM accepts unknown guardrail
+# names and silently never runs them, so ACH refuses to mint NEW ek_ keys
+# rather than hand out a key believing it is protected.
+#
+# Deliberately NOT part of the shared happy-path set. The e2e LiteLLM carries no
+# Enterprise licence, and a guardrail WRITE would 403 — this fixture never gets
+# that far, because the unresolved name makes reconcileAccessGroup bail before
+# ensureShellTeam runs. Do not "fix" it by using a real guardrail name.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: guardrail-unresolved
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - demo-model
+    guardrails:
+      - this-guardrail-does-not-exist
+  context: {}

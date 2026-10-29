@@ -1,0 +1,30 @@
+# Runtime image consumed by goreleaser's `dockers:` blocks.
+#
+# Base must ship `git` because internal/sources/git/Fetcher exec's the
+# git CLI to clone external upstreams referenced by Plugin / Prompt /
+# Artifact / PluginMarketplace CRs. distroless/static lacks git, so we
+# use alpine + apk add git ca-certificates. CGO_ENABLED=0 in the build,
+# so musl is not exercised. nonroot uid 65532 matches the chart's
+# securityContext.runAsNonRoot=true.
+FROM alpine:3.20
+
+RUN apk add --no-cache git ca-certificates && \
+    addgroup -g 65532 -S nonroot && \
+    adduser -u 65532 -S nonroot -G nonroot
+
+WORKDIR /
+
+# Copy the pre-built binary from GoReleaser build context.
+COPY ach .
+
+# Bake the SQL migrations into the image at /db/migrations so `ach migrate`
+# (default ACH_MIGRATIONS_PATH=/db/migrations) finds them. goreleaser stages
+# db/migrations into the build context via each docker block's `extra_files:`.
+# Migrations are tiny, static, and version-locked to this binary — they ship
+# with it rather than drifting via a separate ConfigMap. Mirrors the in-tree
+# Dockerfile used for local/e2e builds.
+COPY db/migrations /db/migrations
+
+USER 65532:65532
+
+ENTRYPOINT ["/ach"]

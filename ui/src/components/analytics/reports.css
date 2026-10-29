@@ -1,0 +1,118 @@
+.console-ledger .report-filters{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.console-ledger .report-filters select{display:block;width:100%;background:transparent;color:var(--text);border:0;margin-top:3px;font:inherit;font-size:11px;min-height:20px}
+.console-ledger .report-filters option{background:var(--panel);color:var(--text)}
+.console-ledger .report-unavailable{padding:20px 17px;margin:0;color:var(--muted);line-height:1.6;min-height:95px}
+.console-ledger .report-table-scroll{overflow-x:auto}
+.console-ledger .report-table-scroll table{min-width:660px}
+.console-ledger .report-gap{margin-top:13px}
+.console-ledger .analytics-layout>div,.console-ledger .perf-grid>section,.console-ledger .breakdown>section{min-width:0}
+.console-ledger .report-source-note{font-size:11px;color:var(--muted);margin:13px 0;line-height:1.6}
+.console-ledger .panel .report-source-note{margin:13px 16px}
+.console-ledger .analytics-layout .metric-grid{margin-top:13px}
+.console-ledger .report-preview-note{color:var(--amber);font:10px var(--mono);margin:0 0 13px}
+@media(max-width:760px){.console-ledger .report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.console-ledger .perf-grid{grid-template-columns:1fr}.console-ledger .hero-top{gap:16px;flex-wrap:wrap}.console-ledger .hero-number{margin-left:0;text-align:left}}
+
+.console-ledger section.table{display:block}
+.console-ledger .report-table-scroll tbody tr{cursor:default}
+
+.console-ledger .latency-distribution{display:grid;grid-template-rows:auto minmax(145px,1fr) auto}
+.console-ledger .latency-distribution .panel-title{align-items:flex-start;flex-direction:column;gap:4px}
+.console-ledger .latency-distribution .panel-title p{display:block;font-size:11px}
+.console-ledger .latency-distribution .dist{height:100%;min-height:145px}
+
+.console-ledger .latency-buckets{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:3px;padding:0 17px 15px;font:9px var(--mono);color:var(--muted);text-align:center}
+.console-ledger .latency-buckets b{display:block;color:var(--text);margin-top:4px}
+@media(max-width:760px){.console-ledger .latency-buckets{font-size:8px;overflow-wrap:anywhere}}
+.console-ledger .report-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:0 17px}
+.console-ledger .report-foot .report-source-note{margin:10px 0}
+.console-ledger .report-pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-left:auto;padding:10px 0;font:11px var(--mono);color:var(--muted)}
+.console-ledger .report-coverage{font-size:11px;color:var(--muted);margin:0;padding:11px 17px;border-top:1px solid var(--line);line-height:1.6}
+
+/* Spacing and small-data fixes found in the live review */
+.console-ledger .perf-grid{margin-top:13px}
+.console-ledger .perf-grid>.insights{align-self:start}
+.console-ledger .panel-title h2{white-space:nowrap}
+.console-ledger .panel-title p{flex:1 1 0;min-width:0}
+.console-ledger .panel>.scoregrid{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 17px 17px}
+.console-ledger .panel>.scoregrid p{margin:6px 0 0;color:var(--muted);font-size:11px}
+.console-ledger .hero-metric>.scoregrid{margin-top:16px}
+.console-ledger .spark i{max-width:10px}
+.console-ledger .spark{justify-content:flex-end}
+@media(max-width:760px){.console-ledger .panel>.scoregrid{grid-template-columns:1fr}.console-ledger .panel-title h2{white-space:normal}}
+
+/* Filters: controls must look clickable at rest; the fixed range is a label, not a field */
+.console-ledger .filter:has(select:not(:disabled)){background:var(--panel);border-color:var(--text);box-shadow:0 1px 0 var(--line2);cursor:pointer}
+.console-ledger .filter:has(select:not(:disabled)):hover{border-color:var(--green)}
+.console-ledger .filter:has(select:not(:disabled)) select{cursor:pointer;font-weight:600}
+.console-ledger .filter:not(:has(select)){background:transparent;border-style:dashed;cursor:default}
+.console-ledger .perf-grid{align-items:start}
+@media(max-width:480px){.console-ledger .report-filters{grid-template-columns:minmax(0,1fr)}}
+
+/* Header period picker (RangePicker): trigger + popover with presets or the custom calendar */
+.console-ledger .range-trigger svg{width:14px;height:14px}
+.console-ledger .range-pop{z-index:40;width:236px;max-width:calc(100vw - 32px);padding:6px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--radius);box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.console-ledger .range-presets{display:flex;flex-direction:column}
+.console-ledger .range-presets button{display:flex;justify-content:space-between;padding:7px 9px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font-size:12px}
+.console-ledger .range-presets button:hover{background:var(--panel2)}
+.console-ledger .range-presets button[aria-pressed=true]{color:var(--green);background:color-mix(in srgb,var(--green) 7%,transparent)}
+.console-ledger .range-cal{padding:4px}
+.console-ledger .range-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px}
+.console-ledger .range-cal-head button{width:28px;height:28px;border:1px solid var(--line2);border-radius:6px;background:transparent}
+.console-ledger .range-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font:11px var(--mono)}
+.console-ledger .range-cal-grid>span{color:var(--faint);padding:3px 0}
+.console-ledger .range-cal-grid button{height:28px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text);font:inherit}
+.console-ledger .range-cal-grid button:hover{border-color:var(--green)}
+.console-ledger .range-cal-grid button.in{background:color-mix(in srgb,var(--green) 10%,transparent);color:var(--green)}
+.console-ledger .range-cal-grid button.on{background:var(--green);color:var(--on-accent)}
+.console-ledger .range-error{margin:8px 0 0;color:var(--red);font-size:11px}
+.console-ledger .range-cal-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}
+
+/* Metric selector (Segmented): Top apps row and Work classification */
+.console-ledger .insight-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.console-ledger .segmented{flex:none}.console-ledger .segmented button{padding:3px 8px;font-size:10px}
+.console-ledger .panel-title .segmented{margin-left:auto}
+
+/* Table + donut (TableDonut): slice colour = --wc from .wc-c-* (work category) or .wc-s-<rank> */
+.console-ledger .wc-grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;align-items:start}
+.console-ledger .wc-side{display:flex;justify-content:center;align-self:stretch;align-items:center;padding:12px 17px;border-left:1px solid var(--line)}
+@media(max-width:1100px){.console-ledger .wc-grid{grid-template-columns:minmax(0,1fr)}.console-ledger .wc-side{border-left:0;border-top:1px solid var(--line);padding-top:18px}}
+.console-ledger .wc-svg{width:340px;height:340px;max-width:100%}
+.console-ledger .table.wc-table table{min-width:560px}
+.console-ledger .table.wc-table :is(th,td){padding-inline:10px}
+.console-ledger .table.wc-table tr.muted td{color:var(--faint)}
+.console-ledger .wc-grid .table tr.on td{background:var(--panel2)}
+/* Rank colours for any other donut: primary, then the series tokens; 7 = the rest. */
+.console-ledger .wc-s-0{--wc:var(--green)}.console-ledger .wc-s-1{--wc:var(--blue)}.console-ledger .wc-s-2{--wc:var(--purple)}.console-ledger .wc-s-3{--wc:var(--cyan)}.console-ledger .wc-s-4{--wc:var(--amber)}.console-ledger .wc-s-5{--wc:var(--red)}.console-ledger .wc-s-6{--wc:color-mix(in oklch,var(--purple),var(--red))}.console-ledger .wc-s-7{--wc:var(--muted)}
+.console-ledger .tag .wc-swatch{margin-right:2px}
+.console-ledger .wc-swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:9px;vertical-align:-1px;background:var(--wc)}
+.console-ledger .wc-track{fill:none;stroke:var(--line);stroke-width:16}
+.console-ledger .wc-slice{fill:none;stroke-width:16;stroke:var(--wc);cursor:pointer;transition:stroke-width .12s,opacity .12s}.console-ledger .wc-svg.hovering .wc-slice{opacity:.35}.console-ledger .wc-svg.hovering .wc-slice.on{opacity:1;stroke-width:19}
+.console-ledger .wc-total{fill:var(--text);font:600 15px var(--mono)}.console-ledger .wc-name{fill:var(--text);font:600 6px var(--sans)}.console-ledger .wc-svg.hovering .wc-total{font-size:12px}.console-ledger .wc-svg.hovering .wc-noun{font-size:5px;letter-spacing:.04em}.console-ledger .wc-noun{fill:var(--muted);font:9px var(--mono);text-transform:uppercase;letter-spacing:.1em}
+.console-ledger .wc-d-technology{--wc:var(--blue)}.console-ledger .wc-d-data{--wc:var(--cyan)}.console-ledger .wc-d-sales{--wc:var(--green)}.console-ledger .wc-d-marketing{--wc:var(--purple)}.console-ledger .wc-d-business{--wc:var(--amber)}.console-ledger .wc-d-general{--wc:var(--red)}.console-ledger .wc-d-other{--wc:var(--muted)}.console-ledger .wc-trivial{--wc:var(--faint)}
+/* Category colours: series tokens plus two-token mixes, one hue each. */
+.console-ledger .wc-c-technology-software_engineering{--wc:var(--blue)}.console-ledger .wc-c-technology-genai_development{--wc:var(--purple)}.console-ledger .wc-c-technology-infrastructure_ops{--wc:var(--cyan)}.console-ledger .wc-c-technology-security{--wc:var(--red)}
+.console-ledger .wc-c-data-analytics{--wc:color-mix(in oklch,var(--cyan),var(--green))}.console-ledger .wc-c-sales-proposals{--wc:var(--green)}.console-ledger .wc-c-sales-customer_support{--wc:color-mix(in oklch,var(--green),var(--amber))}
+.console-ledger .wc-c-marketing-content_design{--wc:color-mix(in oklch,var(--purple),var(--red))}.console-ledger .wc-c-business-operations{--wc:var(--amber)}.console-ledger .wc-c-general-research_learning{--wc:color-mix(in oklch,var(--amber),var(--red))}
+.console-ledger .wc-c-general-personal{--wc:color-mix(in oklch,var(--blue),var(--green))}.console-ledger .wc-c-other{--wc:var(--muted)}.console-ledger .wc-c-trivial{--wc:var(--faint)}
+/* Overview ratio hero: ratio · cache share · average input · facts */
+.console-ledger .ratio-hero{grid-template-columns:minmax(245px,1fr) minmax(0,1.2fr) minmax(200px,.8fr) minmax(220px,.8fr)}
+@media(max-width:1100px){.console-ledger .ratio-hero{grid-template-columns:1fr 1fr}}
+.console-ledger .nav-disabled.nav-soon{display:flex;align-items:center;gap:10px;padding:8px;font-size:inherit}
+/* Cost detail change: spend up is red, down is green. */
+.console-ledger .chg.up{color:var(--red)}.console-ledger .chg.down{color:var(--green)}
+/* Overview verified signals: a mark is tinted only when the signal needs a look. */
+.console-ledger .status-band{grid-template-columns:170px repeat(var(--signals,4),minmax(0,1fr)) 130px}
+.console-ledger .status-item .mark.red{color:var(--red)}.console-ledger .status-item .mark.amber{color:var(--amber)}
+.console-ledger .status-action .btn{width:100%;display:flex;gap:6px}
+/* Core Overview: the right column beside the allowance and token charts. */
+/* The last panel stretches so the column ends level with the charts. */
+.console-ledger .overview-side{display:flex;flex-direction:column;gap:13px;min-width:0}.console-ledger .overview-side>.panel:last-child{flex:1}
+.console-ledger .overview-side .wc-grid{grid-template-columns:minmax(0,1fr) 210px;align-items:center}
+.console-ledger .overview-side .wc-side{border-left:0;padding:6px 14px 12px 4px}
+.console-ledger .overview-side .wc-svg{width:196px;height:196px}
+/* Success is the skin's success tone: never the primary, which is red in some skins. */
+.console-ledger .wc-ok{--wc:var(--success)}
+.console-ledger .outcome-legend{width:calc(100% - 16px);border-collapse:collapse;margin-left:16px;font-size:12px}
+.console-ledger .outcome-legend td{padding:6px 0}.console-ledger .outcome-legend td+td{text-align:right;font:11px var(--mono);color:var(--muted)}
+.console-ledger .outcome-legend tr.on td{font-weight:600}
+.console-ledger .panel>.runway-chart{margin:4px 18px 14px}

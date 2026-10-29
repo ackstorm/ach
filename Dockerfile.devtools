@@ -1,0 +1,146 @@
+# syntax=docker/dockerfile:1.7
+#
+# Devtools image — provides Go + kubebuilder + controller-gen + kustomize +
+# setup-envtest + docker CLI + docker-compose. The host runs no Go toolchain
+# itself; every `go`, `kubebuilder`, `make`, etc. invocation goes through
+# scripts/dev.sh, which mounts the workspace and the host Docker socket into
+# this image.
+#
+# Used by every phase of the project.
+
+# Pinned to the exact patch (not the floating 1.26 tag, which lags behind the
+# latest patch): go1.26.10 ships the GO-2026-6809 (crypto/x509) fix on top of
+# go1.26.9's GO-2026-6599..6613 (net/http,
+# crypto/tls, html/template, net/textproto) on top of go1.26.6's — keeps the
+# govulncheck ack-list empty. Bump in lock-step with go.mod's `toolchain`
+# directive.
+FROM golang:1.26.10-bookworm
+
+# Use bash with pipefail for all RUN directives — abort on any failure in a pipeline
+# (e.g. `curl ... | tar ...`). POSIX sh swallows the curl exit code otherwise.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG KUBEBUILDER_VERSION=v4.4.0
+ARG CONTROLLER_GEN_VERSION=v0.16.5
+ARG KUSTOMIZE_VERSION=v5.4.3
+ARG SETUP_ENVTEST_VERSION=release-0.24
+ARG ENVTEST_K8S_VERSION=1.36.0
+ARG KIND_VERSION=v0.25.0
+ARG HELM_VERSION=v3.16.3
+ARG GOVULNCHECK_VERSION=v1.3.0
+ARG NODE_VERSION=22.20.0
+
+# GOFLAGS=-mod=readonly (the Go >=1.16 default, pinned here so it survives a
+# stray environment): under -mod=mod any module-graph-walking command silently
+# rewrites go.sum. `go list -m all` alone appended ~279 pruned-graph /go.mod
+# hashes that `go mod tidy` does not record — arming the pre-push `go mod tidy`
+# drift gate from an ordinary dev command, with no signal at the time it
+# happened. readonly makes such a command fail loudly instead; the fix is then
+# an explicit `go mod tidy`. Verified no-op for build/vet/test across every
+# build tag (integration, e2e, longidempotency), golangci-lint and govulncheck.
+ENV DEBIAN_FRONTEND=noninteractive \
+    GOTOOLCHAIN=local \
+    GOFLAGS=-mod=readonly \
+    GOBIN=/usr/local/bin
+
+# OS deps: docker CLI + compose v1 (matches host's docker-compose), build essentials.
+# Note: docker.io brings only the client; the host socket is mounted at runtime so
+# containers created from inside are siblings on the host daemon, not nested.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl make git jq gnupg lsb-release xz-utils \
+        bash-completion \
+        docker.io docker-compose \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 22 (official tarball, pinned) — the OpenCode auth plugin's test
+# (internal/platformapi/opencodeauth) and the console's `make ui-build` /
+# `make test-ui` (Vite 6 + vitest 4 need >= 20; Debian's nodejs is 18 and
+# ships no npm). Same major as the Dockerfile `ui` stage (node:22-alpine).
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in amd64) NARCH=x64 ;; arm64) NARCH=arm64 ;; *) echo "unsupported arch $ARCH" >&2; exit 1 ;; esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NARCH}.tar.xz" \
+       | tar -xJ -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md' \
+    && node --version && npm --version
+
+# kubebuilder v4 — pinned binary
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://github.com/kubernetes-sigs/kubebuilder/releases/download/${KUBEBUILDER_VERSION}/kubebuilder_linux_${ARCH}" \
+         -o /usr/local/bin/kubebuilder \
+    && chmod +x /usr/local/bin/kubebuilder \
+    && kubebuilder version
+
+# kind — local Kubernetes-in-Docker, used for the E2E layer above envtest.
+# Runs sibling docker containers via the mounted host socket; KUBECONFIG is
+# written under /workspace/.gocache/kube so it persists across wrapper invocations.
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-${ARCH}" \
+         -o /usr/local/bin/kind \
+    && chmod +x /usr/local/bin/kind \
+    && kind version
+
+# helm 3 — required for local cluster hydration. Pulls upstream OCI charts
+# and installs our own chart.
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz" \
+         | tar -xz -C /tmp \
+    && mv "/tmp/linux-${ARCH}/helm" /usr/local/bin/helm \
+    && rm -rf "/tmp/linux-${ARCH}" \
+    && chmod +x /usr/local/bin/helm \
+    && helm version --short
+
+# kubectl — sourced from kubebuilder's bundled assets or fetched separately.
+# kubebuilder v4 doesn't bundle kubectl; install it pinned to the envtest k8s version.
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -fsSL "https://dl.k8s.io/release/v${ENVTEST_K8S_VERSION}/bin/linux/${ARCH}/kubectl" \
+         -o /usr/local/bin/kubectl \
+    && chmod +x /usr/local/bin/kubectl \
+    && kubectl version --client
+
+# controller-gen, kustomize, setup-envtest via go install -> /usr/local/bin (GOBIN)
+RUN go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_VERSION} \
+    && go install sigs.k8s.io/kustomize/kustomize/v5@${KUSTOMIZE_VERSION} \
+    && go install sigs.k8s.io/controller-runtime/tools/setup-envtest@${SETUP_ENVTEST_VERSION} \
+    && go clean -cache -modcache
+# ^ The installed binaries land in /usr/local/bin (GOBIN); the Go build +
+#   module caches under /go and /root/.cache are dead weight in the image
+#   (scripts/dev.sh overrides GOCACHE/GOMODCACHE to /workspace/.gocache at
+#   runtime, so the baked-in caches are never read). Clean them in the SAME
+#   layer so the saving actually lands — a later `RUN clean` cannot shrink an
+#   earlier layer.
+
+# govulncheck — installed straight under the image's pinned toolchain.
+# (Previously needed GOTOOLCHAIN=auto when the base image was Go 1.24
+# because v1.3.0 of golang.org/x/vuln requires Go >= 1.25. With the base
+# bumped to golang:1.26-bookworm the bootstrap toolchain already satisfies
+# the requirement, so the workaround is dropped.)
+RUN go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
+    && go clean -cache -modcache
+
+# Pre-download envtest assets for k8s ${ENVTEST_K8S_VERSION} so test runs don't
+# fetch them on first use. Path is content-addressed under /opt/envtest;
+# setup-envtest -p path resolves it. The Makefile points --bin-dir at
+# $(ENVTEST_BIN_DIR), which the ENV below sets to /opt/envtest — so every
+# in-container envtest run reads these baked assets with ZERO download.
+#
+# chmod 1777: the container runs as the host's UID:GID (scripts/dev.sh
+# --user), not root. Read-resolve of the baked version works at any mode,
+# but if go.mod bumps k8s.io/api to a version NOT baked here (drift before
+# the image is rebuilt), setup-envtest must DOWNLOAD into this dir — which a
+# non-root user cannot do against a root-owned 0755 dir. Sticky-world-writable
+# lets the drift case fall back to a download instead of a hard permission
+# failure, while the matched-version case still reads instantly.
+RUN mkdir -p /opt/envtest \
+    && setup-envtest use ${ENVTEST_K8S_VERSION} --bin-dir /opt/envtest \
+    && chmod -R 1777 /opt/envtest \
+    && go clean -cache -modcache
+# ^ Keep the k8s control-plane binaries under /opt/envtest; only the Go
+#   build/module caches are cleaned (go clean never touches /opt/envtest).
+
+ENV ENVTEST_K8S_VERSION=${ENVTEST_K8S_VERSION} \
+    ENVTEST_BIN_DIR=/opt/envtest
+
+# Workspace mount target — scripts/dev.sh sets cwd here.
+WORKDIR /workspace
+
+# Default: drop into bash. Wrapper script overrides with the actual command.
+CMD ["bash"]

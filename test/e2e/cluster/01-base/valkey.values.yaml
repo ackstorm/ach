@@ -1,0 +1,31 @@
+# Valkey for the forwarder cache (Redis-protocol-compatible).
+#
+# Used by:  scripts/cluster.sh hydrate_valkey
+# Chart:    oci://registry-1.docker.io/bitnamicharts/valkey
+#
+# Same docker.io/bitnamilegacy redirect as postgres.values.yaml (Bitnami
+# 2025 prune workaround — public.ecr.aws/bitnami is now empty too). Chart
+# defaults pull bitnami/* image paths; we point the registry at docker.io
+# and override image.repository to bitnamilegacy/valkey.
+
+chartVersion: 2.4.1
+
+# Standalone topology (one primary, no replicas, no sentinel) — e2e
+# tests exercise the forwarder cache path, not HA failover. Replica
+# StatefulSet wastes ~600Mi + adds ~30s readiness time per cluster-up.
+architecture: standalone
+
+auth:
+  enabled: false
+
+primary:
+  persistence:
+    size: 1Gi
+
+image:
+  repository: bitnamilegacy/valkey
+
+global:
+  imageRegistry: docker.io
+  security:
+    allowInsecureImages: true

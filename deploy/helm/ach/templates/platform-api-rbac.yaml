@@ -1,0 +1,45 @@
+{{- if .Values.platformApi.enabled }}
+---
+# ClusterRole — platform-api needs NO K8s API access after issue #34.
+#
+# Pre-issue-34 the platform-api held a controller-runtime informer cache for
+# Secret (Dex client-secret hot-reload) and six ACH CRD Kinds (environments,
+# plugins, prompts, artifacts, pluginmarketplaces, backendidentitypolicies),
+# plus a `patch` verb on the four external-reference kinds for the
+# ach.ackstorm.ai/force-refresh annotation write path.
+#
+# Issue #34 makes Postgres the source of truth:
+#   - Environment reads go through the pgxpool-backed store (Phase B1).
+#   - /admin/refresh signals the operator via NOTIFY ach_refresh + the
+#     force_refresh_requested_at column (Phase B2).
+#   - Dex client-secret is read from env at boot; no Secret informer.
+#
+# Result: platform-api holds zero K8s privileges. The ServiceAccount stays
+# bound to an empty ClusterRole so any leftover client-go credential lookup
+# (e.g. accidental in-cluster config use by a dependency) cannot reach
+# anything sensitive.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-platform-api
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-platform-api
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-platform-api
+subjects:
+- kind: ServiceAccount
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+{{- end }}

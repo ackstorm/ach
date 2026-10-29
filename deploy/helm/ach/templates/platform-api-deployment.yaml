@@ -1,0 +1,249 @@
+{{- if .Values.platformApi.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+---
+# Admin allowlist (one email per line, # for comments). Empty by default
+# — populate via .Values.platformApi.admins to enable admin endpoints
+# (otherwise platform-api logs "parsed to zero admins" and returns 403
+# not_admin from every admin route, which is the safe default-deny).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ach-platform-api-admins
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+data:
+  admins.txt: |
+    {{- range .Values.platformApi.admins | default list }}
+    {{ . }}
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+spec:
+  replicas: {{ .Values.platformApi.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: platform-api
+  template:
+    metadata:
+      annotations:
+        # Phase 5 OBS-03 + D-12 — scrape platform-api /metrics on the
+        # main traffic listener. Plan 05-06 mounts GET /metrics on the
+        # chi mux. Shared ach_litellm_unreachable_total counter registered
+        # here for caller="platform_api".
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
+        {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
+        # The taxonomy file is read once at startup: a new one restarts the pod.
+        ach.ackstorm.ai/taxonomy-checksum: {{ toYaml .Values.classifier.taxonomy | sha256sum }}
+        {{- end }}
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: platform-api
+    spec:
+      serviceAccountName: ach-platform-api
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.platformApi.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: admins
+          configMap:
+            name: ach-platform-api-admins
+        # The OAuth AS — the only login — signs access tokens with the same
+        # Ed25519 seed the forwarder verifies with; platform-api reads it as
+        # files (no k8s client). The operator mints the Secret on boot.
+        - name: jwt-signing-keys
+          secret:
+            secretName: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" }}
+        {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
+        # The classifier's taxonomy: the console reads only the version it labels with.
+        - name: classifier-taxonomy
+          configMap:
+            name: ach-classifier-taxonomy
+        {{- end }}
+      containers:
+        - name: platform-api
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.platformApi.args | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
+            # rest; sourced from the security.* Secret refs (do NOT also set
+            # them in extraEnv, or you get duplicate env entries).
+            {{- include "ach.securityEnv" . | nindent 12 }}
+            # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY derived from the
+            # single litellmConnection block — do NOT also set them in extraEnv.
+            {{- include "ach.litellmConnectionEnv" . | nindent 12 }}
+            - name: ACH_CREDENTIAL_HEADERS
+              value: {{ .Values.platformApi.headers | toJson | quote }}
+            - name: ACH_JWT_SECRET_DIR
+              value: /etc/ach/jwt
+            - name: ACH_TEAMS_DEFAULT
+              value: {{ .Values.platformApi.teams.default | toJson | quote }}
+            - name: ACH_TEAMS_USER
+              value: {{ .Values.platformApi.teams.users | default dict | toJson | quote }}
+            - name: ACH_TEAMS_SSO
+              value: {{ .Values.platformApi.teams.sso | default dict | toJson | quote }}
+            - name: ACH_USER_MAX_KEYS
+              value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
+            - name: ACH_OAUTH_REDIRECT_HOSTS
+              value: {{ (.Values.platformApi.oauth).redirectHosts | default list | toJson | quote }}
+            {{- with (.Values.platformApi.console).chatUrl }}
+            - name: ACH_CONSOLE_CHAT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.platformApi.userDefaults }}
+            {{- if ne (toString .maxBudget) "" }}
+            - name: ACH_USER_MAX_BUDGET
+              value: {{ .maxBudget | quote }}
+            - name: ACH_USER_BUDGET_DURATION
+              value: {{ .budgetDuration | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.platformApi.observability }}
+            {{- if and $.Values.enterprise.enabled .clickhouseUrl }}
+            # Personal traces. The credentials come from a Secret with the keys
+            # ACH_OBSERVABILITY_CLICKHOUSE_USER / _PASSWORD (read-only user,
+            # metadata columns only), so the password never reaches the other
+            # Deployments the way extraEnv would.
+            - name: ACH_OBSERVABILITY_CLICKHOUSE_URL
+              value: {{ .clickhouseUrl | quote }}
+            - name: ACH_OBSERVABILITY_LANGFUSE_PROJECT_IDS
+              {{- if not .projectIds }}{{ fail "platformApi.observability.projectIds is required with clickhouseUrl" }}{{ end }}
+              value: {{ join "," .projectIds | quote }}
+            - name: ACH_OBSERVABILITY_CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "platformApi.observability.secretName is required with clickhouseUrl" .secretName }}
+                  key: ACH_OBSERVABILITY_CLICKHOUSE_USER
+            - name: ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD
+            {{- with .thanosUrl }}
+            - name: ACH_OBSERVABILITY_THANOS_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
+            - name: ACH_CLASSIFIER_TAXONOMY_FILE
+              value: /etc/ach-classifier/taxonomy.yaml
+            {{- end }}
+            - name: ACH_ENTERPRISE
+              value: {{ .Values.enterprise.enabled | quote }}
+            - name: ACH_GENAI_PROVIDER_NAME
+              value: {{ .Values.genai.providerName | quote }}
+            - name: ACH_OPENCODE_PLUGIN_SPEC
+              value: {{ .Values.genai.opencodePluginSpec | quote }}
+            {{- with .Values.genai.opencodeExtraProviders }}
+            - name: ACH_OPENCODE_EXTRA_PROVIDERS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .Values.genai.defaultModel }}
+            - name: ACH_GENAI_DEFAULT_MODEL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.genai.defaultSmallModel }}
+            - name: ACH_GENAI_DEFAULT_SMALL_MODEL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.genai.defaultEnvironment }}
+            - name: ACH_GENAI_DEFAULT_ENVIRONMENT
+              value: {{ . | quote }}
+            {{- end }}
+            - name: ACH_OPENWORK_ENABLED
+              value: {{ .Values.openwork.enabled | quote }}
+            {{- if .Values.openwork.enabled }}
+            - name: ACH_OPENWORK_ORG_NAME
+              value: {{ .Values.openwork.orgName | quote }}
+            - name: ACH_OPENWORK_ORG_SLUG
+              value: {{ .Values.openwork.orgSlug | quote }}
+            - name: ACH_OPENWORK_BRAND_APP_NAME
+              value: {{ .Values.openwork.brandAppName | quote }}
+            - name: ACH_OPENWORK_BRAND_LOGO_URL
+              value: {{ .Values.openwork.brandLogoUrl | quote }}
+            - name: ACH_OPENWORK_BRAND_ICON_URL
+              value: {{ .Values.openwork.brandIconUrl | quote }}
+            - name: ACH_OPENWORK_ACCENT_COLOR
+              value: {{ .Values.openwork.accentColor | quote }}
+            - name: ACH_OPENWORK_BLOCKED_COMMANDS
+              value: {{ join "," .Values.openwork.blockedCommands | quote }}
+            - name: ACH_OPENWORK_BLOCK_BROWSER_UPLOADS
+              value: {{ .Values.openwork.blockBrowserUploads | quote }}
+            {{- end }}
+          resources: {{ toYaml .Values.platformApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: admins
+              mountPath: /etc/ach/admins
+              readOnly: true
+            - name: jwt-signing-keys
+              mountPath: /etc/ach/jwt
+              readOnly: true
+            {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
+            - name: classifier-taxonomy
+              mountPath: /etc/ach-classifier
+              readOnly: true
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: platform-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+{{- end }}

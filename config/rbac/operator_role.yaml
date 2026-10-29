@@ -1,0 +1,49 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ach-operator-role
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: operator
+rules:
+# OP-01: sole writer on the six ach.ackstorm.ai kinds.
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts
+  - backendidentitypolicies
+  - environments
+  - litellmconnections
+  - pluginmarketplaces
+  - plugins
+  - prompts
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# Finalizer removal on §6.5 / §10.3 deletion drain.
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts/finalizers
+  - backendidentitypolicies/finalizers
+  - environments/finalizers
+  - litellmconnections/finalizers
+  - pluginmarketplaces/finalizers
+  - plugins/finalizers
+  - prompts/finalizers
+  verbs: ["update"]
+# Status subresource writes (condition updates).
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - artifacts/status
+  - backendidentitypolicies/status
+  - environments/status
+  - litellmconnections/status
+  - pluginmarketplaces/status
+  - plugins/status
+  - prompts/status
+  verbs: ["get", "patch", "update"]
+# Reserved: read the credential-hash pepper Secret if ever moved from env to K8s API.
+# Phase 1 reads pepper from ACH_CREDENTIAL_HASH_PEPPER env (D-09); this rule is
+# forward-compat and harmless under the namespace-scoped Role.
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]

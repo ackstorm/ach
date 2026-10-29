@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Phase 5 content-service SC2 error-matrix exercise — the unauthorized_team
+# negative fixture. Identical context to env-valid (plugin-valid / prompt-valid
+# / artifact-valid resolve, so ExecutionResourcesResolved=True and the
+# projection row lands), but authorizedTeams names a SENTINEL team that exists
+# neither in LiteLLM nor on the SSO-provisioned e2e user (who joins `default`).
+#
+# Consequences (intentional):
+#   - AccessGroupSynced=False/UnresolvedReferences (sentinel team has no LiteLLM
+#     ID) → Available=False. This Environment is therefore NOT gated on
+#     Available in verify_all; it is gated on ExecutionResourcesResolved=True,
+#     which the operator sets in the SAME reconcile that writes the projection
+#     row (projection is written BEFORE the K8s Status subresource,
+#     unconditionally — see environment_controller.go writeEnvironmentProjection).
+#   - The content-service projection row carries authorized_teams=[sentinel], so
+#     a pk_ request (whose owner is in `default`) yields an empty team
+#     intersection → 403 unauthorized_team. No LiteLLM membership is mutated.
+#
+# Part of the SYNCED set (cluster.sh applies it via the 05-environment
+# kustomization; verify_all waits ExecutionResourcesResolved=True). The e2e
+# suite (TestPhase5Invariants/SC2_ErrorMatrix/UnauthorizedTeam) asserts against
+# it.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: env-team-denied
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - ach-e2e-sentinel-unauthorized
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    plugins:
+      - plugin-valid
+    prompts:
+      - prompt-valid
+    artifacts:
+      - artifact-valid

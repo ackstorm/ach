@@ -1,0 +1,13 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: LiteLLMConnection
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: default
+  namespace: ach-system
+spec:
+  endpoint: http://litellm.litellm-system.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: masterKey

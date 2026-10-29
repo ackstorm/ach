@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package render
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/ackstorm/ach/internal/cli/config"
+)
+
+// ConditionView is a k8s-free mirror of one metav1.Condition as serialized by
+// the platform-api environments handler (json keys match the wire shape). The
+// CLI decodes conditions into this so `env describe` can explain WHY an
+// environment is not ready, without importing k8s.io/apimachinery.
+type ConditionView struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// EnvView is the per-row shape rendered by FormatEnvList +
+// FormatEnvDescribe. Matches the per-row projection of the server's
+// /platform/environments handler (internal/platformapi/store.EnvironmentView's
+// caller-visible subset: name, namespace, status). We intentionally
+// define a lean local copy so this package does NOT pull
+// internal/platformapi (which transitively imports k8s.io/* + chi).
+// json tags are present so callers can decode the wire payload
+// directly into []EnvView when convenient.
+type EnvView struct {
+	Name        string          `json:"name"`
+	Namespace   string          `json:"namespace,omitempty"`
+	Status      string          `json:"status,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Conditions  []ConditionView `json:"conditions,omitempty"`
+}
+
+// KeyRowView + the key tables live in ek.go.
+
+// HydrateView is the lean local copy of the server's HydrateResponse
+// that render needs to format a describe block. Defined here (NOT
+// imported from internal/platformapi/hydrate) so the CLI binary does
+// not pull k8s.io/* via the API types. Field tags match the
+// on-the-wire JSON keys verbatim so callers decode straight into
+// HydrateView without a separate mapping layer.
+type HydrateView struct {
+	SchemaVersion string    `json:"schemaVersion"`
+	Environment   string    `json:"environment"`
+	Runtime       BlockView `json:"runtime"`
+	Context       BlockView `json:"context"`
+}
+
+// BlockView unifies the runtime + context sub-blocks. The wire shape
+// puts {models, mcpServers, a2aAgents} under "runtime" and
+// {prompts, plugins, artifacts} under "context"; a single struct
+// holds both axes because BlockView's zero-value omits the irrelevant
+// slices via omitempty.
+type BlockView struct {
+	Models     []RuntimeItem `json:"models,omitempty"`
+	MCPServers []RuntimeItem `json:"mcpServers,omitempty"`
+	A2AAgents  []RuntimeItem `json:"a2aAgents,omitempty"`
+	// Guardrails are plain names: LiteLLM applies them server-side, so unlike
+	// the other runtime axes there is no endpoint to surface.
+	Guardrails []string      `json:"guardrails,omitempty"`
+	Prompts    []ContextItem `json:"prompts,omitempty"`
+	Plugins    []ContextItem `json:"plugins,omitempty"`
+	Artifacts  []ContextItem `json:"artifacts,omitempty"`
+	Skills     []ContextItem `json:"skills,omitempty"`
+}
+
+// RuntimeItem is one entry under runtime.{models,mcpServers,a2aAgents}.
+// Endpoint surfaces the per-runtime `endpoint` JSON key emitted by the
+// server's hydrate handler — the W3 contract anchors here: every
+// rendered runtime row exposes this string verbatim so the user can
+// inspect runtime wiring via `ach-cli env describe`. The Name field is a
+// local convenience (the server emits {id, endpoint} only — Name is
+// populated by the caller from the same source as ID when present).
+type RuntimeItem struct {
+	Name     string `json:"name,omitempty"`
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint"`
+}
+
+// ContextItem is one entry under context.{prompts,plugins,artifacts}.
+// DownloadURL surfaces the per-context-entry `downloadUrl` JSON key
+// emitted by the server's hydrate handler — the W3 contract anchors
+// here: every rendered context row exposes this string verbatim so
+// the user can inspect content routing via `ach-cli env describe`.
+type ContextItem struct {
+	Name        string `json:"name"`
+	ID          string `json:"id"`
+	DownloadURL string `json:"downloadUrl"`
+}
+
+// profileAuth is the AUTH cell for a profile: session (OAuth login), key
+// (a machine profile's Key) or none.
+func profileAuth(dep *config.Profile) string {
+	switch {
+	case dep.OAuth != nil:
+		return "session"
+	case dep.Key != "":
+		return "key"
+	default:
+		return "none"
+	}
+}
+
+// FormatProfileList renders `profile list`: CURRENT (* on the default),
+// NAME, URL, AUTH (session|key|none) and SAVED KEYS (keys saved in this
+// profile — not the server-side count `whoami` reports as Keys), sorted by name.
+func FormatProfileList(f *config.File) string {
+	if f == nil || len(f.Profiles) == 0 {
+		return "No profiles configured\n"
+	}
+	names := make([]string, 0, len(f.Profiles))
+	for n := range f.Profiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	var sb strings.Builder
+	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH\tSAVED KEYS")
+	for _, name := range names {
+		dep := f.Profiles[name]
+		if dep == nil {
+			dep = &config.Profile{}
+		}
+		current := ""
+		if name == f.Default {
+			current = "*"
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, dep.URL, profileAuth(dep), len(dep.Keys))
+	}
+	_ = tw.Flush()
+	return sb.String()
+}
+
+// FormatProfileShow renders `profile show`: URL, Auth and every saved key
+// as `name  ek-****abcd  (ekid_…)`. Key plaintext is masked unless reveal.
+func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
+	mask := func(s string) string {
+		if reveal {
+			return s
+		}
+		return config.Mask(s)
+	}
+	var sb strings.Builder
+	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintf(tw, "Profile\t%s\n", name)
+	_, _ = fmt.Fprintf(tw, "URL\t%s\n", dep.URL)
+	auth := profileAuth(dep)
+	if auth == "key" {
+		auth += " " + mask(dep.Key)
+	}
+	_, _ = fmt.Fprintf(tw, "Auth\t%s\n", auth)
+	if len(dep.Keys) == 0 {
+		_, _ = fmt.Fprintln(tw, "Keys\t(none)")
+	}
+	_ = tw.Flush()
+	if len(dep.Keys) > 0 {
+		_, _ = fmt.Fprintln(&sb, "Keys")
+		kw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+		names := make([]string, 0, len(dep.Keys))
+		for n := range dep.Keys {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			k := dep.Keys[n]
+			_, _ = fmt.Fprintf(kw, "  %s\t%s\t(%s)\n", n, mask(k.Key), k.ID)
+		}
+		_ = kw.Flush()
+	}
+	return sb.String()
+}
+
+// FormatEnvList renders the per-env table for `ach-cli env list`. Empty
+// input → stable "No environments visible" stub.
+func FormatEnvList(envs []EnvView) string {
+	if len(envs) == 0 {
+		return "No environments visible\n"
+	}
+	var sb strings.Builder
+	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
+	// No NAMESPACE column: every Environment lives in the release namespace,
+	// so it only took the width the description needs (`env describe` shows it).
+	_, _ = fmt.Fprintln(tw, "NAME\tSTATUS\tDESCRIPTION")
+	for _, e := range envs {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Status, truncateField(e.Description, 80))
+	}
+	_ = tw.Flush()
+	return sb.String()
+}
+
+// orEM returns s unchanged when non-empty, or emDash when empty — matches the
+// keys list empty-cell convention so env describe looks consistent.
+func orEM(s string) string {
+	if s == "" {
+		return emDash
+	}
+	return s
+}
+
+// FormatEnvDescribe returns the full describe block for `ach env
+// describe <name>`. When hydrateAvailable=false (CLI-12 graceful
+// admin-403 fallback), the body prints `Runtime: (unavailable)\n
+// Context: (unavailable)\n` and omits the runtime/context sub-tables.
+// When hydrateAvailable=true, both sub-tables render — each Runtime
+// row surfaces the item's Endpoint (W3 contract) and each Context row
+// surfaces the item's DownloadURL (W3 contract).
+func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) string {
+	var sb strings.Builder
+	// Header — env metadata regardless of hydrate availability.
+	_, _ = fmt.Fprintf(&sb, "Environment: %s\n", env.Name)
+	if env.Namespace != "" {
+		_, _ = fmt.Fprintf(&sb, "Namespace: %s\n", env.Namespace)
+	}
+	if env.Status != "" {
+		_, _ = fmt.Fprintf(&sb, "Status: %s\n", env.Status)
+	}
+	// Surface WHY when not all conditions are satisfied (U4). Only non-True
+	// conditions are listed — a healthy env prints nothing extra here.
+	var problems []ConditionView
+	for _, c := range env.Conditions {
+		if c.Status != "True" {
+			problems = append(problems, c)
+		}
+	}
+	if len(problems) > 0 {
+		_, _ = fmt.Fprintln(&sb, "Not ready:")
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  CONDITION\tREASON\tMESSAGE")
+		for _, c := range problems {
+			_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\n", c.Type, orEM(c.Reason), orEM(c.Message))
+		}
+		_ = tw.Flush()
+	}
+	if env.Description != "" {
+		_, _ = fmt.Fprintf(&sb, "Description:\n  %s\n", strings.ReplaceAll(env.Description, "\n", "\n  "))
+	}
+
+	if !hydrateAvailable || h == nil {
+		_, _ = fmt.Fprintln(&sb, "Runtime: (unavailable)")
+		_, _ = fmt.Fprintln(&sb, "Context: (unavailable)")
+		return sb.String()
+	}
+
+	// Runtime block (3 axes — each row surfaces the per-runtime
+	// `endpoint` per W3 phase-goal sentence).
+	_, _ = fmt.Fprintln(&sb, "Runtime:")
+	rt := h.Runtime
+	if len(rt.Models)+len(rt.MCPServers)+len(rt.A2AAgents)+len(rt.Guardrails) == 0 {
+		_, _ = fmt.Fprintln(&sb, "  (none)")
+	} else {
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tID\tENDPOINT")
+		for _, m := range rt.Models {
+			_, _ = fmt.Fprintf(tw, "  model\t%s\t%s\t%s\n", orEM(m.Name), orEM(m.ID), orEM(m.Endpoint))
+		}
+		for _, s := range rt.MCPServers {
+			_, _ = fmt.Fprintf(tw, "  mcpServer\t%s\t%s\t%s\n", orEM(s.Name), orEM(s.ID), orEM(s.Endpoint))
+		}
+		for _, a := range rt.A2AAgents {
+			_, _ = fmt.Fprintf(tw, "  a2aAgent\t%s\t%s\t%s\n", orEM(a.Name), orEM(a.ID), orEM(a.Endpoint))
+		}
+		for _, g := range rt.Guardrails {
+			// No endpoint: a guardrail is applied by LiteLLM, never called.
+			_, _ = fmt.Fprintf(tw, "  guardrail\t%s\t%s\t%s\n", g, g, emDash)
+		}
+		_ = tw.Flush()
+	}
+
+	// Context block (3 axes — each row surfaces the per-context-entry
+	// `downloadUrl` per W3 phase-goal sentence).
+	_, _ = fmt.Fprintln(&sb, "Context:")
+	cx := h.Context
+	if len(cx.Prompts)+len(cx.Plugins)+len(cx.Artifacts)+len(cx.Skills) == 0 {
+		_, _ = fmt.Fprintln(&sb, "  (none)")
+	} else {
+		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tDOWNLOADURL")
+		for _, p := range cx.Prompts {
+			_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
+		}
+		for _, pl := range cx.Plugins {
+			_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\n", pl.Name, orEM(pl.DownloadURL))
+		}
+		for _, ar := range cx.Artifacts {
+			_, _ = fmt.Fprintf(tw, "  artifact\t%s\t%s\n", ar.Name, orEM(ar.DownloadURL))
+		}
+		for _, sk := range cx.Skills {
+			_, _ = fmt.Fprintf(tw, "  skill\t%s\t%s\n", sk.Name, orEM(sk.DownloadURL))
+		}
+		_ = tw.Flush()
+	}
+
+	return sb.String()
+}
+
+// truncateField collapses a field to its first non-empty line and caps it at
+// max runes (appending "…" when truncated) so it fits one table cell.
+func truncateField(s string, max int) string {
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) > max {
+		return string(r[:max-1]) + "…"
+	}
+	return s
+}

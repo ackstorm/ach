@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal session detail response",
+  "type": "object",
+  "required": [
+    "session_id",
+    "project_id",
+    "started_at",
+    "last_activity_at",
+    "duration_ms",
+    "turns",
+    "generations",
+    "input_tokens",
+    "output_tokens",
+    "cost",
+    "status",
+    "classification",
+    "turns_list",
+    "turns_truncated",
+    "provenance"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_activity_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "turns": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "generations": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "input_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "cost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "error",
+        "unknown"
+      ],
+      "description": "error: any generation logged ERROR; otherwise unknown (the gateway does not observe task success)."
+    },
+    "classification": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "category",
+        "domain",
+        "confidence",
+        "state"
+      ],
+      "properties": {
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "classified",
+            "not_classified",
+            "no_session",
+            "unavailable"
+          ]
+        }
+      },
+      "description": "Work category of the trace's session (taxonomy v3). Only classified carries category, domain and confidence; no_session = the trace has no session id; unavailable = the scores read failed (the detail still answers)."
+    },
+    "turns_list": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "started_at",
+          "ended_at",
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cost",
+          "duration_ms",
+          "status",
+          "tools"
+        ],
+        "properties": {
+          "trace_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "cost": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "enum": [
+              "error",
+              "unknown"
+            ],
+            "description": "error: any generation logged ERROR; otherwise unknown (the gateway does not observe task success)."
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "description": "Tools the model asked for in this turn (tool_call_names), in order, first 20."
+          }
+        }
+      },
+      "description": "One row per trace, oldest first, capped like the trace detail."
+    },
+    "turns_truncated": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

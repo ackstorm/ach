@@ -1,0 +1,316 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package keys
+
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// ---------------------------------------------------------------------
+// NewBearer tests (Task 2)
+// ---------------------------------------------------------------------
+
+// bearerPkRe / bearerEkRe match the new pk-/ek- bearer shape.
+//
+// base64url alphabet is [A-Za-z0-9_-]; 48 random bytes → 64 no-pad chars.
+var bearerPkRe = regexp.MustCompile(`^pk-[A-Za-z0-9_-]{64}$`)
+var bearerEkRe = regexp.MustCompile(`^ek-[A-Za-z0-9_-]{64}$`)
+
+func TestNewBearer_PkShape(t *testing.T) {
+	got, err := NewBearer(PrefixPk)
+	if err != nil {
+		t.Fatalf("NewBearer(PrefixPk) returned err: %v", err)
+	}
+	if !bearerPkRe.MatchString(got) {
+		t.Fatalf("NewBearer(PrefixPk) = %q; want match %s", got, bearerPkRe)
+	}
+	if !strings.HasPrefix(got, "pk-") {
+		t.Fatalf("NewBearer(PrefixPk) = %q; want pk- prefix", got)
+	}
+	if len(got) != 3+64 {
+		t.Fatalf("NewBearer(PrefixPk) len = %d; want %d", len(got), 3+64)
+	}
+}
+
+func TestNewBearer_EkShape(t *testing.T) {
+	got, err := NewBearer(PrefixEk)
+	if err != nil {
+		t.Fatalf("NewBearer(PrefixEk) returned err: %v", err)
+	}
+	if !bearerEkRe.MatchString(got) {
+		t.Fatalf("NewBearer(PrefixEk) = %q; want match %s", got, bearerEkRe)
+	}
+	if !strings.HasPrefix(got, "ek-") {
+		t.Fatalf("NewBearer(PrefixEk) = %q; want ek- prefix", got)
+	}
+	if len(got) != 3+64 {
+		t.Fatalf("NewBearer(PrefixEk) len = %d; want %d", len(got), 3+64)
+	}
+}
+
+func TestNewBearer_Uniqueness(t *testing.T) {
+	const n = 1000
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		v, err := NewBearer(PrefixPk)
+		if err != nil {
+			t.Fatalf("iter %d: NewBearer err: %v", i, err)
+		}
+		if _, dup := seen[v]; dup {
+			t.Fatalf("iter %d: NewBearer returned duplicate %q (entropy bug?)", i, v)
+		}
+		seen[v] = struct{}{}
+	}
+	if len(seen) != n {
+		t.Fatalf("got %d unique bearers; want %d", len(seen), n)
+	}
+}
+
+func TestNewBearer_InvalidPrefix(t *testing.T) {
+	// Use a value that is NOT one of the two exported BearerPrefix constants.
+	_, err := NewBearer(BearerPrefix("xx_"))
+	if err == nil {
+		t.Fatalf("NewBearer(\"xx_\") returned nil err; want ErrInvalidPrefix")
+	}
+	if !errors.Is(err, ErrInvalidPrefix) {
+		t.Fatalf("NewBearer(\"xx_\") err = %v; want ErrInvalidPrefix", err)
+	}
+	// Also reject the keyID prefixes (pkid_/ekid_) at the bearer entrypoint.
+	if _, err := NewBearer(BearerPrefix(PkidKeyIDPrefix)); !errors.Is(err, ErrInvalidPrefix) {
+		t.Fatalf("NewBearer(pkid_) err = %v; want ErrInvalidPrefix", err)
+	}
+	if _, err := NewBearer(BearerPrefix(EkidKeyIDPrefix)); !errors.Is(err, ErrInvalidPrefix) {
+		t.Fatalf("NewBearer(ekid_) err = %v; want ErrInvalidPrefix", err)
+	}
+	if _, err := NewBearer(BearerPrefix("")); !errors.Is(err, ErrInvalidPrefix) {
+		t.Fatalf("NewBearer(\"\") err = %v; want ErrInvalidPrefix", err)
+	}
+}
+
+func TestNewBearer_AlphabetIsBase64URL(t *testing.T) {
+	// First char alphanumeric: "pk--…"/"ek-_…" reads as a typo.
+	allowed := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]+$`)
+	for i := 0; i < 1000; i++ {
+		v, err := NewBearer(PrefixPk)
+		if err != nil {
+			t.Fatalf("iter %d: NewBearer err: %v", i, err)
+		}
+		suffix := strings.TrimPrefix(v, "pk-")
+		if len(suffix) != 64 {
+			t.Fatalf("iter %d: suffix len = %d; want 64", i, len(suffix))
+		}
+		if !allowed.MatchString(suffix) {
+			t.Fatalf("iter %d: suffix %q has chars outside [A-Za-z0-9_-] or a symbol first", i, suffix)
+		}
+	}
+}
+
+func TestNewBearer_ConstantsHaveExpectedValues(t *testing.T) {
+	if PkBearerPrefix != "pk-" {
+		t.Errorf("PkBearerPrefix = %q; want %q", PkBearerPrefix, "pk-")
+	}
+	if EkBearerPrefix != "ek-" {
+		t.Errorf("EkBearerPrefix = %q; want %q", EkBearerPrefix, "ek-")
+	}
+	if PkidKeyIDPrefix != "pkid_" {
+		t.Errorf("PkidKeyIDPrefix = %q; want %q", PkidKeyIDPrefix, "pkid_")
+	}
+	if EkidKeyIDPrefix != "ekid_" {
+		t.Errorf("EkidKeyIDPrefix = %q; want %q", EkidKeyIDPrefix, "ekid_")
+	}
+	if string(PrefixPk) != PkBearerPrefix {
+		t.Errorf("PrefixPk = %q; want %q", PrefixPk, PkBearerPrefix)
+	}
+	if string(PrefixEk) != EkBearerPrefix {
+		t.Errorf("PrefixEk = %q; want %q", PrefixEk, EkBearerPrefix)
+	}
+}
+
+// ---------------------------------------------------------------------
+// NewKeyID tests (Task 3)
+// ---------------------------------------------------------------------
+
+// keyIDPkidRe / keyIDEkidRe match the lowercased Crockford base32 ULID.
+// Crockford base32 alphabet is [0123456789abcdefghjkmnpqrstvwxyz] when
+// lowercased (excludes i, l, o, u); we use [0-9a-z] as a permissive
+// upper bound — the ulid library guarantees Crockford output.
+var keyIDPkidRe = regexp.MustCompile(`^pkid_[0-9a-z]{26}$`)
+var keyIDEkidRe = regexp.MustCompile(`^ekid_[0-9a-z]{26}$`)
+
+func TestNewKeyID_PkidShape(t *testing.T) {
+	got, err := NewKeyID(PrefixPkid)
+	if err != nil {
+		t.Fatalf("NewKeyID(PrefixPkid) returned err: %v", err)
+	}
+	if !keyIDPkidRe.MatchString(got) {
+		t.Fatalf("NewKeyID(PrefixPkid) = %q; want match %s", got, keyIDPkidRe)
+	}
+	if len(got) != 5+26 {
+		t.Fatalf("NewKeyID(PrefixPkid) len = %d; want %d", len(got), 5+26)
+	}
+}
+
+func TestNewKeyID_EkidShape(t *testing.T) {
+	got, err := NewKeyID(PrefixEkid)
+	if err != nil {
+		t.Fatalf("NewKeyID(PrefixEkid) returned err: %v", err)
+	}
+	if !keyIDEkidRe.MatchString(got) {
+		t.Fatalf("NewKeyID(PrefixEkid) = %q; want match %s", got, keyIDEkidRe)
+	}
+	if len(got) != 5+26 {
+		t.Fatalf("NewKeyID(PrefixEkid) len = %d; want %d", len(got), 5+26)
+	}
+}
+
+func TestNewKeyID_TimeOrdering(t *testing.T) {
+	// ULID's leading 48 bits are a wall-clock timestamp; within the same
+	// millisecond ULID's monotonic entropy ensures the second draw
+	// lexicographically >= the first. We compare suffix-only (strip the
+	// pkid_ prefix) so the prefix doesn't dominate the ordering check.
+	a, err := NewKeyID(PrefixPkid)
+	if err != nil {
+		t.Fatalf("first NewKeyID err: %v", err)
+	}
+	b, err := NewKeyID(PrefixPkid)
+	if err != nil {
+		t.Fatalf("second NewKeyID err: %v", err)
+	}
+	aSuffix := strings.TrimPrefix(a, "pkid_")
+	bSuffix := strings.TrimPrefix(b, "pkid_")
+	if !(bSuffix >= aSuffix) {
+		t.Fatalf("ULID monotonicity broken: a=%q b=%q (b should be >= a)", a, b)
+	}
+}
+
+func TestNewKeyID_Uniqueness(t *testing.T) {
+	const n = 1000
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		v, err := NewKeyID(PrefixEkid)
+		if err != nil {
+			t.Fatalf("iter %d: NewKeyID err: %v", i, err)
+		}
+		if _, dup := seen[v]; dup {
+			t.Fatalf("iter %d: NewKeyID returned duplicate %q", i, v)
+		}
+		seen[v] = struct{}{}
+	}
+	if len(seen) != n {
+		t.Fatalf("got %d unique keyIDs; want %d", len(seen), n)
+	}
+}
+
+func TestNewKeyID_InvalidPrefix(t *testing.T) {
+	for _, p := range []KeyIDPrefix{KeyIDPrefix(""), KeyIDPrefix("foo_"), KeyIDPrefix(PkBearerPrefix), KeyIDPrefix(EkBearerPrefix)} {
+		_, err := NewKeyID(p)
+		if !errors.Is(err, ErrInvalidPrefix) {
+			t.Errorf("NewKeyID(%q) err = %v; want ErrInvalidPrefix", p, err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// ClassifyBearer tests (Task 3)
+// ---------------------------------------------------------------------
+
+func TestClassifyBearer_PkAccept(t *testing.T) {
+	// Generate a real plaintext so the alphabet is guaranteed correct.
+	plaintext, err := NewBearer(PrefixPk)
+	if err != nil {
+		t.Fatalf("NewBearer: %v", err)
+	}
+	got, err := ClassifyBearer(plaintext)
+	if err != nil {
+		t.Fatalf("ClassifyBearer(%q) err = %v; want nil", plaintext, err)
+	}
+	if got != PrefixPk {
+		t.Fatalf("ClassifyBearer(%q) = %q; want PrefixPk", plaintext, got)
+	}
+}
+
+func TestClassifyBearer_EkAccept(t *testing.T) {
+	plaintext, err := NewBearer(PrefixEk)
+	if err != nil {
+		t.Fatalf("NewBearer: %v", err)
+	}
+	got, err := ClassifyBearer(plaintext)
+	if err != nil {
+		t.Fatalf("ClassifyBearer(%q) err = %v; want nil", plaintext, err)
+	}
+	if got != PrefixEk {
+		t.Fatalf("ClassifyBearer(%q) = %q; want PrefixEk", plaintext, got)
+	}
+}
+
+func TestClassifyBearer_KeyIDsRejected(t *testing.T) {
+	// keyIDs are NOT bearer plaintexts; ClassifyBearer must reject them
+	// even when their lengths happen to be valid base32 candidates.
+	for _, in := range []string{
+		"pkid_01h7azv3jryr2gh3kdpr3y0rkw",
+		"ekid_01h7azv3jryr2gh3kdpr3y0rkw",
+	} {
+		got, err := ClassifyBearer(in)
+		if !errors.Is(err, ErrInvalidBearer) {
+			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)
+		}
+		if got != "" {
+			t.Errorf("ClassifyBearer(%q) prefix = %q; want zero", in, got)
+		}
+	}
+}
+
+func TestClassifyBearer_EmptyRejected(t *testing.T) {
+	got, err := ClassifyBearer("")
+	if !errors.Is(err, ErrInvalidBearer) {
+		t.Fatalf("ClassifyBearer(\"\") err = %v; want ErrInvalidBearer", err)
+	}
+	if got != "" {
+		t.Fatalf("ClassifyBearer(\"\") prefix = %q; want zero", got)
+	}
+}
+
+func TestClassifyBearer_WrongLengthRejected(t *testing.T) {
+	for _, in := range []string{
+		"pk-abc",
+		"ek-abc",
+		"pk-",
+		"pk-" + strings.Repeat("a", 65), // 65 chars after prefix
+		"pk-" + strings.Repeat("a", 63), // 63 chars after prefix
+	} {
+		got, err := ClassifyBearer(in)
+		if !errors.Is(err, ErrInvalidBearer) {
+			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)
+		}
+		if got != "" {
+			t.Errorf("ClassifyBearer(%q) prefix = %q; want zero", in, got)
+		}
+	}
+}
+
+func TestClassifyBearer_OutOfAlphabetRejected(t *testing.T) {
+	// 64-char suffix but one char outside [A-Za-z0-9_-].
+	base := strings.Repeat("a", 63)
+	for _, bad := range []string{".", "!", "@", "+", "/", "=", " "} {
+		in := "pk-" + base + bad
+		got, err := ClassifyBearer(in)
+		if !errors.Is(err, ErrInvalidBearer) {
+			t.Errorf("ClassifyBearer(%q) err = %v; want ErrInvalidBearer", in, err)
+		}
+		if got != "" {
+			t.Errorf("ClassifyBearer(%q) prefix = %q; want zero", in, got)
+		}
+	}
+}
+
+func TestKeyIDPrefixConstantsHaveExpectedValues(t *testing.T) {
+	if string(PrefixPkid) != PkidKeyIDPrefix {
+		t.Errorf("PrefixPkid = %q; want %q", PrefixPkid, PkidKeyIDPrefix)
+	}
+	if string(PrefixEkid) != EkidKeyIDPrefix {
+		t.Errorf("PrefixEkid = %q; want %q", PrefixEkid, EkidKeyIDPrefix)
+	}
+}

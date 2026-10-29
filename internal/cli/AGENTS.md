@@ -1,0 +1,534 @@
+# CLAUDE.md — `ach-cli` (internal/cli + cmd/ach-cli)
+
+Navigation hub for the **user-facing CLI**. Read this before touching any
+`internal/cli/**` or `cmd/ach-cli/**` code. The repo-root `CLAUDE.md` is the
+project hub; this is the CLI subsystem hub. Keep it lean; update it IN THE SAME
+COMMIT when CLI behavior/contracts change (same hygiene rule as the root doc).
+
+> **Why this file exists:** the CLI's architecture (unified projection,
+> adapter transforms, the local package manager) is non-obvious and we kept
+> re-deriving it every session. This captures the hard-won detail + the
+> external reference provenance so we stop losing it.
+
+## What the CLI is
+
+Two binaries are built from this tree:
+
+| Binary | Built from | Purpose | k8s deps? |
+|--------|-----------|---------|-----------|
+| `ach`     | `cmd/ach` | long-running services (operator/platform-api/…) | yes |
+| `ach-cli` | `cmd/ach-cli` | user CLI (login, env, repo/plugin/skill) | **NO** |
+
+Both share `internal/cli/*`. `make build-cli` → `bin/ach-cli`.
+
+### ⚠ Hard dependency boundary (the reason `internal/gitfetch` + `internal/contentkit` exist)
+
+`ach-cli` MUST NOT import `k8s.io/*` or `sigs.k8s.io/controller-runtime`.
+`sigs.k8s.io/yaml` IS allowed (used in `admin.go`). Go resolves imports
+per-package, so any code shared with the operator must live in a package whose
+WHOLE import closure is k8s-free:
+
+- `internal/gitfetch` — the git clone/checkout/subtree/auth engine (shared with
+  the operator; extracted from `internal/sources/git`).
+- `internal/contentkit` — marketplace parse, skill discovery, plugin/skill
+  verify, tar safety (extracted from the k8s-tainted `internal/controller/ach`).
+- `internal/sourceserr` — k8s-free sentinel errors.
+
+Boundary regression test: `go list -deps ./cmd/ach-cli` must show no
+`k8s.io/api` / controller-runtime.
+
+## Command surface
+
+Four noun groups. `--target` is the platform selector everywhere: a
+StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
+`env hydrate` and `local`, ids + aliases from `adapter.Lookup`.
+
+```
+# session + profiles
+ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
+ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
+
+# governed remote object (CR-defined, server-mediated)
+ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
+ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
+ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` updates every env recorded under .ach/
+ach-cli env status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
+ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
+ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
+ach-cli admin keys list [--owner e] [--type pk|ek] [--status …] | revoke <id> | revoke --owner <email>
+ach-cli admin users budget <email> --max-budget X | limits <email> --max-keys N | admin refresh <kind> <name>
+
+# local-first serverless package manager (no k8s, no CRD)
+ach-cli local repo   add <source> --name <n> [--token] [--auth bearer|basic-oauth2] [--path] | list | remove | update
+ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [--dir d] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
+ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
+```
+
+Every network command takes `--profile`, `--key <name|ek-…>`, `--verbose`
+(`registerCredFlags`, cred.go). Only the list/read commands also take
+`-o table|json` (`registerOutputFlag`): `env list`, `env search`, `env status`, `keys list`,
+`admin list` (also `yaml`), `admin keys list`.
+Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
+prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
+`ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config `~/.config/ach/config.yaml`
+profiles carry `url`, `key` (a machine profile's ek-), `keys: {name: {id, key}}`
+(saved by `keys create`) and `oauth`; an old file with `pk:`/`ek:` fails to load
+with a "delete and re-login" hint (no migration).
+
+`keys list` shows the caller's own ek- keys only (`NAME ENVIRONMENT STATUS
+EXPIRES ID`), `--status active` by default (`suspended|expired|invalid|revoked|all`).
+`keys revoke|suspend|resume|budget` take a saved name or an `ekid_…`; revoke
+also deletes the saved copy. Personal (pk-) keys are not a user concept: they
+come from `login` and only `admin keys` sees them. `TestHelp_Vocabulary`
+(help_jargon_test.go) fails the build if pk-/pk_/pkid_/ek_ appear in help
+outside `admin`, or an example says `ach <cmd>` instead of `ach-cli`.
+
+**Errors say what to do next.** Two shared hooks, use them instead of
+per-command text: `exit.DispatchAndRender` prints a `hint:` line for a server
+error code in `serverHints` (e.g. `environment_not_found` → `env list`), and
+`withUsageOnArgErrors` (root.go) appends the usage line to every bare cobra
+arity error (a validator returning a `*exit.CodedError` is left alone).
+
+`env*` = the governed path (platform-api → Dex → hydrate). `local repo`/`plugin`/
+`skill` = the local quick path. Files: `cmd/ach-cli/cmd/{env,local,repo,plugin,skill}.go`
+(parents) + `pkgcmd.go` (shared install/uninstall/update/outdated RunE for plugin+skill).
+
+**Read-only verbs (mirror the governed path's preview/drift affordances):**
+`install`/`uninstall --dry-run` resolve + project (or classify) and print the
+plan — written/removed nothing. `outdated` re-resolves each installed ref's SHA
+(`manager.ResolveWithCache`, read-only — discards the stage) and reports
+`up to date` vs `outdated`. Uninstall's act/preview share one classifier:
+`manager.classifyUninstall` → `Uninstall` (acts) and `UninstallPlan` (reports the
+per-file `remove`/`modify`/`skip`/`absent` verdict), so the `--dry-run` preview
+can never drift from the real removal.
+
+### Output of the workspace verbs (`env clone`/`hydrate`/`status`/`uninstall`)
+
+One voice, rendered only through `cmd/ach-cli/cmd/ui.go`: a cargo-style
+right-aligned 12-col verb column (`Cloning`, `Hydrating`, `Removing`,
+`Finished`, `Environment`) framing a git-style per-item list (`+` added, `~`
+updated, `-` removed, `!` kept/edited, `✓` installed in status), collapsed to
+`… N more (--verbose)` after 8. `Finished` closes every successful run with the
+result + elapsed time; the Environment's notice, the engine's `note:`/`warning:`
+lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
+AFTER it. Hints only on a first hydrate of that Environment+target (or a clone).
+Color only on a TTY without `NO_COLOR`. Errors from every command are
+`error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
+The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
+derives it from the state before/after (`FileEntry.Source` per
+plugin/skill/prompt/artifact; MCP/A2A from the adapter deep-merge keys, so an
+MCP server is only ever `+`/`-`, never `~`). `--dry-run` extracts plugins/skills
+to the stage (swept on every dry-run exit, failures included, so a dry run
+leaves no `.ach/` behind) and renders through a no-write dispatcher (`withDryRun` →
+`publishFile` classifies, writes nothing), so its list is the real run's —
+`~` included (#205). With several targets, each target's list is printed under
+its name unless all are identical (`ui.targetItems`, shared by hydrate and
+`env uninstall`, #204); a target with no change gets its own row (`up to date`,
+or `nothing to remove` on uninstall), so the others stay labelled.
+
+## Architecture: the UNIFIED projection engine
+
+**Both** paths converge on `route.Project`:
+
+- `env hydrate` → `internal/cli/hydrate/wiring.go` type-asserts the adapter to
+  `route.RuleProvider` → `route.ProjectPlugin(adapter.ProjectionRules(), stageDir, plugin)`
+  for a plugin, `route.Project(…)` for a standalone Skill.
+- local `plugin/skill install` → `manager.Project` (`localpkg/manager/manager.go`)
+  → the same two calls (`plugin` = the plugin name, `""` for a skill).
+
+There is essentially ONE transform engine. The only real duplication is the
+disk-write mechanics: `hydrate/commit.go` vs `manager/commit.go`. A fix in a
+rule/transform corrects BOTH paths at once (this is how the `.toml`-leak and
+`.mcp.json`-routing fixes landed in one change).
+
+### The rule model — `internal/cli/adapter/route/`
+
+`route.Rule{FromGlob, ToGlob, Merge, Transform, Prefix, Sep, NameSep,
+UserOnlyCommandDir}`. `route.Project` flow (`route.go`):
+
+1. For each staged file, `topLevel := parts[0]` of its source-relative path.
+2. `matchRule(rules, topLevel)` → first matching rule (glob on FromGlob).
+3. If `rule.Transform != nil`, run it: `(srcRel, in) -> (out, keys, err)`.
+4. Write to `ToGlob` destination with `rule.Merge`.
+5. Unrouted top-level kinds in `KnownComponentKinds` (`route/kinds.go`) are
+   recorded as **dropped** (reported to the user); anything else is silently
+   skipped (manifests, README, LICENSE).
+
+`Merge` kinds (`adapter.MergeKind`): `MergeReplace` (file-owned, default),
+`MergeDeep` (keyed JSON/TOML merge — settings/MCP), `MergeComposite`
+(marker-bounded prose, e.g. `AGENTS.md`→`CLAUDE.md`).
+
+**Plugin namespacing** (`route/prefix.go`). `ProjectPlugin` gives every
+plugin command and skill the plugin's name (the part before `@<marketplace>`),
+so `bro`'s `ladder` cannot shadow a tool built-in or another source's
+`ladder` (a git plugin's `branch` did). Standalone Skills and agents are never
+prefixed, and `skill == plugin` is not special-cased (`/bro:bro`). A skill's
+directory is renamed AND its `SKILL.md` `name:` rewritten (that one line
+only): Claude Code registers the frontmatter name as an alias too, so
+renaming the dir alone still answered `/ladder`. The form per tool was
+measured, not guessed (2026-10-26):
+
+| | claude-code | opencode | codex | gemini-cli | pi |
+|---|---|---|---|---|---|
+| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (it rewrites `:` to `-`) | `bro-ladder` (`:` warns) |
+| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `commands/bro/x.toml` → `/bro:x` | `bro-x.md` (no subdirs read) |
+
+opencode ignores `disable-model-invocation` and has no slash invocation for
+skills, so its skill rule also emits each such user-only skill as a command
+(`UserOnlyCommandDir`) — the skill stays too, so the model may still pick it.
+
+**Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin STILL
+in the Environment that it no longer writes (`keptPluginRows` in
+`hydrate/commit.go` → `Sync`), so the pre-namespacing paths are removed, never
+orphaned; an edited file is kept with a warning. A plugin that LEFT the
+Environment stays `--sync`'s call.
+
+`KnownComponentKinds`: `rules, commands, agents, skills, mcp, .mcp.json,
+prompts, AGENTS.md, hooks`. **INVARIANT** (`kinds_test.go`): every FromGlob
+first-segment across all adapters MUST appear here; add in the same commit.
+
+### Containment + conflict policies (local installer only)
+
+Enforced in `manager.Project`, NOT in the shared adapter rules:
+
+- **Containment** (`projection_containment_test.go`): write NOTHING outside the
+  target's dot-dir. Any project-root destination (the `AGENTS.md`→`CLAUDE.md`
+  composite) is DROPPED — the local installer never touches the user's own root
+  files. We deliberately DROP OpenPackage's `root/**/*` catch-all fallback.
+- **Read rule**: our inputs start at `plugins/`…`skills/`; a repo-root
+  `CLAUDE.md`/`README.md` is NOT a component. A `README.md` INSIDE a skill
+  (`skills/<n>/README.md`) IS part of it and rides through.
+- **`.md` command scoping**: claude/opencode commands are markdown; a multi-tool
+  plugin shipping `commands/*.toml` (gemini format) must not leak `.toml` into
+  `.claude/`/`.opencode/`. The `commands/**/*.md` glob enforces this.
+- **Conflict** (`manager/conflict.go`): `--conflict` ∈
+  {namespace(default), refuse, replace, skip}; only `MergeReplace` clashes
+  count. `namespace` renames via `internal/cli/namespace.Leaf`. With plugin
+  namespacing two DIFFERENT plugins no longer clash; only the same plugin name
+  from two repos/marketplaces can.
+
+### Multi-Environment workspaces — cross-env skill de-collision
+
+Several specialist Environments (slides / sheets / images / frontend) hydrated
+into ONE workspace is a supported, intended shape: a bare `ach-cli env
+hydrate` re-hydrates every env recorded under `.ach/` best-effort. State is per-env (`.ach/<env>/state-<platform>.json`) but the
+adapter tree is single-path by construction, so the envs **union** in the same
+`.claude/` (`state.ResolvePath`'s doc comment is the contract).
+
+The union only collides on one axis: two envs shipping a skill of the SAME
+name project to the same `.claude/skills/<name>/`. `state.ForeignSkillNames`
+reads the sibling envs' per-platform state and `projectSkills` stages a
+claimed name as `<env>-<name>` instead — the incumbent (first hydrated)
+keeps the bare name. Two properties worth not re-deriving:
+
+- **Prefixing is at SKILL granularity, not per file** — it is applied to
+  `skillstage.Nest`'s name argument, so every file of the skill moves
+  together. A per-file check would split a skill across two dirs when the
+  incumbent's copy has fewer files.
+- **Sticky via our own state** (`s.Skills[].Source`): a name we already
+  project prefixed stays prefixed after the other env drops its copy, so the
+  name a user types does not flap between hydrates.
+
+Only the per-platform `state-<platform>.json` is consulted — a claim for a
+different target writes a different tree. NOT covered: `Plugin` (same problem);
+prompts/artifacts extract
+to the per-env `<achDir>` so they cannot collide; adapter runtime files are
+key-owned deep merges, which co-own safely by design. There is still no
+cross-env reference counting, so `env uninstall <a>` removes a file `<b>` also
+projected (self-heals on `<b>`'s next hydrate).
+
+### Hydrate state invariants — `Sync` keep set + `--only` merge
+
+- **`hydrate.Sync`'s keep set is per CONTRIBUTION, not per Target**
+  (`syncKeep` in `wiring.go`). A prev row survives when the next state still
+  records it: any row on the Target for a whole-file row, the same marker id
+  for a composite row, EVERY key for a deep row (else only the uncovered keys
+  are pruned; the drift gate still hashes the row's recorded key set). Keying
+  on Target alone (before 2026-09-30) skipped a row dropped from a SHARED file,
+  so `hydrate --sync` left a removed plugin's `CLAUDE.md` block / `.mcp.json`
+  keys behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
+  GREW would then prune keys Render just wrote.
+- **Adapter runtime keys are pruned on EVERY hydrate, `--sync` or not**
+  (`commit.step11Sync`): without `--sync` it runs `Sync` over the
+  `Adapter` bucket only, so keys the render stopped emitting (the `--models`
+  helper after a run without `--models`, an MCP server dropped from the
+  Environment) leave the file. They are ACH-generated, never user content.
+  `--sync` widens it to every bucket (plugins/skills/prompts files).
+- **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
+  at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
+  codex (empty `[a2a_agents]` table) report a phantom edit on every
+  re-hydrate/uninstall. A drift verdict is also dropped when disk already
+  equals what we write (heals rows recorded with an older hash scope).
+- **`env hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
+  off, extracts just that item, and `composeNextState` MERGES — carries every
+  bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
+  or `<env>-<name>` for a de-collided skill; plus any Source the fresh render
+  carries — the per-run stage holds only that item). Prompts/artifacts are refused:
+  they are never recorded in state, so they could not be removed again.
+  `env uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
+  item's rows) to the same `Sync`, skipping per-platform states without it.
+  Under `--only`, other items' installed replace-files are collision claims
+  (`installedClaims`: raw or namespaced Target) — namespace/refuse act as in a
+  full hydrate, skip/overwrite keep the incumbent; a plugin only takes its OWN
+  row as publish prior; the runtime-wins MCP drop uses the prior state's
+  `Adapter.Files` keys since runtime is not written. An `--only` reinstall
+  whose new version drops/renames a file leaves the old file on disk
+  untracked (same as a non-sync hydrate); run a full `env hydrate --sync` to
+  clean it.
+- `env uninstall` default removes EVERYTHING hydrate wrote
+  (`BuildScopedEmpty(prev, !onlyRuntime, onlyRuntime)`); `--only-runtime` keeps
+  context.
+
+### Credential safety — the `.gitignore` block (`internal/cli/gitignore`)
+
+The projected adapter config carries the forwarder bearer / LiteLLM key in
+plaintext (project-root `.mcp.json`, `.codex/config.toml`,
+`.opencode/opencode.json`, `.gemini/settings.json`, `.pi/mcp.json`). mode `0600`
+guards other local users; a `.gitignore` entry guards against an accidental
+`git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
+in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
+
+- `env hydrate` → `commit.go` `step12bGitignore` (entries = `.ach/` + the
+  top-level dir/file of every projected/written file).
+- local `plugin/skill install`/`update` → `pkgcmd.go` `ensureProjectGitignore`
+  (entries = the top-level dir/file of every installed file).
+
+`gitignore.Ensure` maintains a marker-bounded block (`# BEGIN ach-cli …` / `#
+END ach-cli`), preserving any pre-existing `.gitignore` verbatim and
+accumulating the sorted, deduped union across runs (idempotent — no rewrite of a
+byte-identical file). It ignores **whole hydrated dirs** (`.claude/`, …), not
+just credential files, so e.g. `.claude/skills/` is also covered. Best-effort:
+a write failure warns but never fails the command. `TopLevelEntry` maps a
+written path to its pattern (`.claude/agents/x.md` → `.claude/`; `.mcp.json` →
+`.mcp.json`). NOT removed on uninstall (an ignored absent dir is harmless;
+removal would need cross-env reference counting). The hydrate engine guards
+`toolRoot == ""` so direct-struct unit tests never pollute cwd.
+
+## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
+
+Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
+MCP/A2A runtime config), `ProjectionRules()` (the plugin→tool routing). The
+`RenderRuntime` path (remote MCP via the ACH forwarder: `httpUrl`/`url` +
+`x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
+merge) — don't conflate them.
+
+| input kind | claude-code | codex | gemini-cli | opencode | pi |
+|---|---|---|---|---|---|
+| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.gemini/commands` **(T→.toml)** | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` |
+| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | →`.gemini/agents` | `.md`→`.opencode/agents` (T) | drop |
+| skills | →`.claude/skills` | →`.agents/skills` | →`.gemini/skills` | →`.opencode/skills` | →`.pi/skills` |
+| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.gemini/settings.json` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
+| rules | →`.claude/rules` | drop | drop | drop | drop |
+| AGENTS.md | →`CLAUDE.md` (composite) | drop | →`GEMINI.md` (composite) | drop | drop |
+| hooks | drop | drop | drop | drop | drop |
+
+(T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
+asserted in e2e — not a bug).
+
+**Model-endpoint helper wiring (opt-in `--models`, person hydrate only).**
+Off by default — the tool keeps its own model login (and a helper that names
+`ach-cli` breaks the tool when the binary is only a shell alias, not on PATH).
+With `env hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
+`commit.renderContext` → `adapter.WithHelperBaseURL`), claude-code additionally deep-merges
+`.claude/settings.json` (`apiKeyHelper: "ach-cli token"` +
+`env.ANTHROPIC_BASE_URL: <hub>`) and codex adds `model_provider = "ach"` +
+`[model_providers.ach]` (`base_url <hub>/v1`, `wire_api responses`,
+`[auth] command = "ach-cli token"`, `refresh_interval_ms 300000`) to its
+`config.toml` — keys tracked, so `env uninstall` prunes them. An `ek-` bearer
+(agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
+token` prints the OAuth access token (refresh under `<configDir>/token.lock`
+— the AS rotates refresh tokens, so two concurrent helpers must not both
+refresh) or, for a machine profile, its `key`.
+
+### Global-scope root resolution (`--global`)
+
+`--global` does NOT mean "$HOME-relative". Each agent CLI exposes its own
+config-dir env var, and `ach-cli` honors it so installed content lands where
+that tool actually reads it. One table drives both write paths:
+`internal/cli/adapter/globalpath.go` (`globalScopes` + `RemapGlobalPath`).
+
+| adapter | env var | shape | redirected prefix | NOT redirected |
+|---|---|---|---|---|
+| claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json`, `CLAUDE.md` |
+| codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
+| gemini-cli | `GEMINI_CLI_HOME` | **parent** (`$VAR/.gemini/`) | `.gemini/` | `GEMINI.md` |
+| opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
+| pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/{skills,prompts}/` → `.pi/agent/…` | `.pi/mcp.json` |
+
+Hard-won details — do NOT re-derive:
+
+- **Gemini's var is `GEMINI_CLI_HOME`, and it is a PARENT.** `GEMINI_CONFIG_DIR`
+  was proposed upstream (gemini-cli #2815) and never shipped. A `settings.json`
+  written at `$GEMINI_CLI_HOME/settings.json` is silently ignored (#23622) — it
+  must go to `$GEMINI_CLI_HOME/.gemini/settings.json`.
+- **Pi's config dir defaults to `~/.pi/agent`, not `~/.pi` — but only
+  globally.** In a project pi reads `.pi/skills` and `.pi/prompts`
+  (pi 0.83 `core/skills.js`, `core/prompt-templates.js`); `.pi/agent/` there is
+  read by nothing. So the rules write the project layout and `--global` maps
+  just those two subdirs to `.pi/agent/` (`globalScope.subdirs`);
+  `.pi/mcp.json` is outside both. (Until 2026-10-26 project hydrates wrote
+  `.pi/agent/…`, which pi never loaded. `ackstorm/agent-profile` documents
+  `~/.pi` — off by one level.)
+- **Redirection is keyed on the PATH PREFIX, not the adapter.** `.agents/` is a
+  cross-tool convention dir that `CODEX_HOME` does not own, so codex's skills
+  stay under `$HOME/.agents/skills/`. One adapter can therefore write to two
+  roots in a single run.
+- **A relative env value is IGNORED** (falls back to `$HOME`). The real tools
+  resolve it against their own cwd, which is not ach-cli's.
+- **Anti-churn rule:** when an override resolves to the location the relative
+  form already names (`XDG_CONFIG_HOME=$HOME/.config` — very common), the
+  RELATIVE form is returned. Recorded destinations are what `Sync`'s
+  set-difference compares, and Render (write) precedes Sync (delete), so
+  flipping relative→absolute for the same file would make Sync delete what
+  Render just wrote.
+- **Recorded destinations MAY be absolute under `--global`.** Join them with
+  `adapter.ResolveDest`, NEVER bare `filepath.Join`. Applies to
+  `state.FileEntry.Target` and `store.FileRec.RelPath`.
+- **Conflict namespacing is rooted to the configured destination.** An absolute
+  config root whose name contains `skills` must not be mistaken for the
+  adapter's `skills/<name>/` route when the resource leaf is prefixed.
+- **Sync cleanup is boundary-safe.** `env hydrate --sync` prunes empty
+  directories only beneath its known ACH and tool roots. Redirected external
+  config roots remain intact after managed files are removed; stale empty
+  directories there are harmless and are not traversed.
+- The remap MUST stay downstream of `route.Project` — its T-01-01 guard rejects
+  absolute destinations and is what proves the path is `..`-free before a root
+  is prepended.
+- **Known ceilings:** `OPENCODE_CONFIG` (a file) and `OPENCODE_CONFIG_DIR` (a
+  dir, additive per `paths.ts` but replacing per `global.ts` — verify against
+  the real binary first) are NOT honored. Changing the var between runs without
+  `env hydrate --sync` leaves the old files as orphans.
+- `ach-cli` only READS these vars; it never sets them. If your shell does not
+  export the var, `--global` behaves exactly as before.
+
+### Transform provenance — WHO is the reference
+
+Every transform is written against the TARGET TOOL'S OWN documentation and
+verified against the real binary. **Never port code from a third-party
+project** (copying one in means honouring its license in `NOTICE`). The codex transforms (`codex/transform.go`)
+were rewritten clean-room from the Codex docs on 2026-10-28 for that reason.
+
+- **Codex** — https://developers.openai.com/codex/config-reference
+  (`[mcp_servers]`: `bearer_token_env_var`, `http_headers`, `env_http_headers`,
+  `startup_timeout_sec`) and the Codex custom-agent TOML docs.
+- **ccplugin** — `~/workspace/local/ccplugin`, ACKstorm's own Python project, supports
+  claude/opencode/**gemini**. `transforms.py` / `paths.py` / `mcp_config.py`.
+  The ONLY reference for gemini (TOML commands, `Tool`-suffix tool names).
+
+### Status vs the references (audited 2026-06)
+
+**Faithful:** claude (no-op canonical), codex (field-lift + bearer/header
+surgery per the Codex config reference).
+
+**opencode MCP — CONVERTS per-entry shape (`opencodeMCPConvert`), NOT a bare
+rename.** ⚠ Hard-won: OpenPackage's opencode export is just
+`{mcpServers→mcp}`, and trusting it shipped invalid config — real opencode
+(1.16.0) `ConfigInvalidError`: it validates each entry against a CLOSED
+`local|remote` schema. **ccplugin's `transform_mcp_entry_to_opencode` is the
+correct reference, not OpenPackage.** Conversion (schema
+https://opencode.ai/docs/mcp-servers/, verified against the real binary):
+stdio `{command,args,env}` → `{type:"local", command:[cmd,…args], enabled:true,
+environment}`; remote `{url|type:streamable-http,…}` →
+`{type:"remote", url, enabled:true, headers}`. Non-schema fields (description,
+…) dropped; `type` normalized (streamable-http→remote); header/`environment`
+values have env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` —
+opencode does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
+un-interpolated; ACH rewrites only the wrapper, never reads the secret).
+**Lesson: validate adapter output against the real tool — OpenPackage ≠ ground
+truth for opencode's strict schema.**
+
+**Deliberate divergences (keep):**
+- codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage
+  lifts it) — security hardening WR-01 (no plugin-injected MCP registrations).
+- opencode color→hex (`normalizeOpencodeColorField`) + command-frontmatter
+  whitelist (`opencodeCommandFrontmatter`) — NOT in OpenPackage; added because
+  opencode *strictly* validates `color` and chokes on claude's
+  `argument-hint: [a] [b]` (invalid YAML). Verified empirically.
+- containment: drop OpenPackage's `root/**/*` fallback.
+
+**Closed gaps (hand-ported 2026-06-09 — user chose hand-port over full data-driven adoption):**
+- ✅ **opencode agent tools** lowercase + rename map (`AskUserQuestion→question`,
+  `NotebookEdit→notebook`, `ExitPlanMode→exitplan`) — `normalizeOpencodeToolName`
+  in `opencode.go`. opencode's tool registry is lowercase; a PascalCase `Read`
+  would not resolve. Verified live.
+- ✅ **gemini commands → TOML**: `commands/**/*.md` → `.gemini/commands/**/*.toml`
+  via `geminiCommandTOML` (description lifted, body→`prompt`, `$ARGUMENTS`→
+  `{{args}}`); gemini-native `commands/*.toml` pass through. gemini-cli reads
+  commands ONLY as TOML (https://geminicli.com/docs/cli/custom-commands/).
+
+**Remaining GAPS (lower priority):**
+- **gemini plugin MCP shape** — likely the SAME latent bug opencode had:
+  `mcpDeepKeys` passes a plugin's `.mcp.json` entry verbatim into
+  `.gemini/settings.json` `mcpServers`, but gemini-cli wants `httpUrl` for an
+  HTTP server (a plain `url` = SSE). A streamable-http plugin MCP would project
+  wrong. Not yet hit (no one installs gemini MCP); verify gemini-cli's schema
+  before writing the transform. (RenderRuntime/governed-env already uses
+  `httpUrl` correctly — only the local plugin-install path is suspect.)
+- **gemini frontmatter strip** (`color`, `allowed-tools`) per ccplugin — gemini
+  agents/skills still route verbatim; no strong reference, not clearly broken.
+
+**Deliberately NOT doing** (fragile): OpenPackage/ccplugin body-regex rewrites
+(`~/.claude/`→`~/.gemini/`, `Bash`→`BashTool` via word-boundary regex over
+arbitrary markdown) — mutates prose, edge-case-prone.
+
+## `internal/cli/localpkg/` — the local package manager
+
+- `source/source.go` — `Parse(ref)` over `github:owner/repo[#ref]`,
+  `git:https://…[#ref]` (local paths are rejected — not yet supported). Derives clone URL + default `AuthScheme`
+  (GitLab host → `AuthBasicOAuth2`, else `AuthBearer`).
+- `store/store.go` — local state under `~/.config/ach/local/`:
+  `repos.json` (`hasToken:true` only — **token NEVER stored here**),
+  `credentials.json` (mode `0600`, `{repo: token}`), `installed.json`
+  (`{ref, repo, name, kind, target, resolvedSHA, files:[{relPath,hash}]}` — the
+  files ledger drives clean uninstall; designed as a superset of an Environment
+  CR for future GitOps export).
+- `discover/discover.go` — repo capability detection (the 4 lenses:
+  plugin-marketplace / skill-marketplace / direct-plugin / direct-skill),
+  reusing `contentkit` parsers.
+- `manager/manager.go` — install/uninstall/update orchestrator:
+  `source → gitfetch → discover/contentkit verify → extract → route.Project →
+  store`. `FetchCache` (`NewFetchCache`) memoizes git fetches per-invocation
+  (keyed url+ref+subtree+scheme) — whole-repo cloned ONCE, then plugin/skill
+  subtrees sliced from the cached tar (`contentkit.SliceSubtree`,
+  `keepLeafDir=false` plugin / `true` skill). Measured 5.8× on the 17-plugin
+  ackstorm install. `ResolveWithCache` is the cached entry; `Resolve` is the
+  nil-cache wrapper.
+
+## Build / test / gotchas
+
+- Host has NO Go — `make build-cli`, `make test-unit`, `make qa-lint-changed`
+  auto-route into the `ach-devtools` container. golangci is NOT on raw PATH; use
+  `make qa-lint-changed` (don't call `golangci-lint` via `./scripts/dev.sh`).
+- **Host `bin/ach-cli` reads host `~/.config/ach/local/`; the devtools
+  container does NOT see host config.** Smoke-test the local package manager with
+  the HOST binary, not inside the container.
+- SPDX header on every new `*.go`: `// SPDX-License-Identifier: Apache-2.0`.
+- Memory rule: smoke-test the built `ach-cli` before any release — the gates
+  miss the localpkg path.
+
+### Failure modes we have actually hit
+
+- **`.mcp.json` not installing** ("doesn't install mcp"): root `.mcp.json`
+  (Claude Code's standard MCP location, distinct from the `mcp/` dir) needs its
+  own rule in every adapter → runtime-config deep-merge. For **claude** the
+  target IS the project-root `.mcp.json` (the file claude actually reads — NOT
+  `.claude/settings.json`); the local-installer containment filter
+  (`manager.Project`) allows exactly that one root file. Fixed; pinned by
+  `TestProject_RootMcpJson_Routed`.
+- **`.toml` leaking into `.claude`/`.opencode` commands**: fixed by the
+  `commands/**/*.md` glob (claude/opencode); gemini keeps `commands/**/*`.
+- **`slice subtree "." empty`**: a whole-repo plugin entry (`source: "."`) must
+  serve the cached repo tar directly, not slice — see the `path.Clean(Subtree)`
+  switch in `resolvePluginMarketplace`.
+- **Root-file overwrite**: containment drops project-root destinations; never
+  overwrite the user's `CLAUDE.md`/`README.md`.
+
+## Future: GitOps CR export (design note, not built)
+
+`installed.json` is a superset of what an `Environment` CR needs (`repo`+
+`resolvedSHA` = external-ref pin, `target` = adapter, `files` = manifest). A
+future `ach-cli env export` can SERIALIZE local state → Environment/Plugin/Skill
+CR YAML for gitops — this is a state serializer and does NOT require adopting
+OpenPackage's universal-format import/export hub. The hub would only be needed to
+*capture* arbitrary pre-existing tool configs (the `import` direction).

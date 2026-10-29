@@ -1,0 +1,45 @@
+# Top-level Postgres for ach state (operator + platform-api).
+#
+# Used by:  scripts/cluster.sh hydrate_postgres
+# Chart:    oci://registry-1.docker.io/bitnamicharts/postgresql
+#
+# Bitnami pruned pinned image tags from docker.io/bitnami/* AND the
+# public.ecr.aws/bitnami/* mirror in 2025 (the ECR repo now lists zero
+# tags; the chart-referenced tag 404s on a fresh pull). The surviving
+# source for the pinned tags is docker.io/bitnamilegacy/*, so we point
+# global.imageRegistry at docker.io and override image.repository to the
+# bitnamilegacy/<name> path (the chart default is bitnami/<name>).
+# `allowInsecureImages: true` disables the chart's "approved containers"
+# guard (the legacy namespace lacks the upstream signature chain).
+
+chartVersion: 15.5.38
+
+# fullnameOverride pins every chart-rendered name (primary Service,
+# StatefulSet, headless Service) to `ach-postgres` so e2e tests can
+# reach `svc/ach-postgres` and `sts/ach-postgres` without per-release
+# name munging. Without this, the primary Service would be
+# `<release-name>-postgresql` (e.g. postgres-postgresql) and every
+# kubectl/DSN reference would have to chase the chart's prefix scheme.
+fullnameOverride: ach-postgres
+
+auth:
+  # Non-admin app user expected by e2e tests + the ACH_DB_URL secret
+  # cluster.sh writes (phase2_sc5_orphan_test.go uses ach/ach against
+  # `ach` database). postgresPassword is the superuser fallback —
+  # untouched in normal app flows but required by Bitnami chart schema.
+  username: ach
+  password: ach
+  database: ach
+  postgresPassword: achdev
+
+primary:
+  persistence:
+    size: 1Gi
+
+image:
+  repository: bitnamilegacy/postgresql
+
+global:
+  imageRegistry: docker.io
+  security:
+    allowInsecureImages: true

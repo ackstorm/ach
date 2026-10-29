@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal selected-period Thanos metrics",
+  "description": "The selected-window route returns requests in addition to the three historical metrics. Durations describe observed seconds; optional series preserves gaps and excludes an additional current-partial-day bucket. UI currently shows period scalars.",
+  "type": "object",
+  "required": [
+    "latency_p95",
+    "failures",
+    "mcp_calls",
+    "queue_p95",
+    "failure_causes"
+  ],
+  "properties": {
+    "latency_p95": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metric"
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "seconds"
+            }
+          }
+        }
+      ]
+    },
+    "failures": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metric"
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "extrapolated_events"
+            }
+          }
+        }
+      ]
+    },
+    "mcp_calls": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metric"
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "extrapolated_events"
+            }
+          }
+        }
+      ]
+    },
+    "requests": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/metric"
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "extrapolated_events"
+            }
+          }
+        }
+      ]
+    },
+    "queue_p95": {
+      "description": "95th percentile time a request waited in the gateway queue before it was sent upstream.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/metric"
+        },
+        {
+          "properties": {
+            "unit": {
+              "const": "seconds"
+            }
+          }
+        }
+      ]
+    },
+    "failure_causes": {
+      "description": "Gateway failures by exception class and status, each mapped to who can act on it. Values are extrapolated increases. No series is partial/no_series, never an empty derived list.",
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "causes"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "causes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "owner",
+              "class",
+              "status",
+              "value"
+            ],
+            "properties": {
+              "owner": {
+                "enum": [
+                  "you",
+                  "provider",
+                  "tool",
+                  "unattributed"
+                ]
+              },
+              "class": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "required": [
+        "value",
+        "unit",
+        "window",
+        "source",
+        "evaluated_at",
+        "state",
+        "reason"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "enum": [
+            "seconds",
+            "extrapolated_events"
+          ]
+        },
+        "window": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*[smhd]$"
+        },
+        "source": {
+          "const": "thanos"
+        },
+        "evaluated_at": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "timestamp",
+              "value"
+            ],
+            "properties": {
+              "timestamp": {
+                "type": "string"
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "series_window": {
+          "type": "string"
+        },
+        "series_state": {
+          "enum": [
+            "derived",
+            "partial"
+          ]
+        },
+        "series_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

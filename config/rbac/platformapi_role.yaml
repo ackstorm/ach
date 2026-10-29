@@ -1,0 +1,18 @@
+---
+# Issue #34 (Postgres source of truth): platform-api holds zero K8s
+# privileges. The pre-issue-34 informer-cache + force-refresh-annotation
+# verbs are gone — environment reads go through pgxpool, and
+# /admin/refresh signals the operator via NOTIFY ach_refresh.
+#
+# The empty Role + RoleBinding stay in place so any leftover client-go
+# credential lookup (e.g. accidental in-cluster config use by a
+# dependency) cannot reach anything sensitive.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ach-platform-api-role
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: platform-api
+rules: []

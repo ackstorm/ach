@@ -1,0 +1,153 @@
+// App.tsx — the shell DRIVER, ported from src/ui/app.js App().
+//
+// On mount it kicks off ONE loadSession() (the boot fetch). It then feeds
+// {status, hasLoaded} through the pure resolveState()
+// to pick which of the five shell states to render:
+//
+//   loading | signin | authed | error | expired
+//
+// Render is a PURE function of state; side effects (boot fetches, the
+// mid-session expiry redirect) live in effects.
+//
+// Carry-forwards applied:
+//   C1 — ErrorCard gets `retrying={status === null}` so the retry button is
+//        disabled while a loadSession is in flight (no stacked reloads).
+//   C2 — the `authed` view falls through to ErrorCard when me === null; the
+//        shell is NEVER rendered against a null me.
+//   C3 — selector discipline: every store read is a narrow selector
+//        (useSessionStore(s => s.x)), never a bare useSessionStore().
+
+import { useEffect, useMemo } from 'react';
+import { createHashRouter, Navigate, RouterProvider } from 'react-router';
+import { resolveState } from '@/lib/resolve-state';
+import { loginUrl } from '@/lib/urls';
+import { setUnauthorizedHandler } from '@/lib/on-unauthorized';
+import { useEnterprise } from '@/lib/edition';
+import { useSessionStore } from '@/stores/session';
+import { useConfigStore } from '@/stores/config';
+import type { AppConfig, SessionMe } from '@/lib/api-types';
+import { AppShell } from '@/components/layout/AppShell';
+import { LoadingCard } from '@/components/layout/LoadingCard';
+import { ErrorCard } from '@/components/layout/ErrorCard';
+import { Login } from '@/routes/Login';
+import { Dashboard } from '@/routes/Dashboard';
+import { Overview } from '@/routes/Overview';
+import { EeOverview, eeRoutes } from '@ee/routes';
+import { EnterpriseOnly } from '@/components/EnterpriseOnly';
+import { Models } from '@/routes/Models';
+import { Mcp } from '@/routes/Mcp';
+import { A2a } from '@/routes/A2a';
+import { Environments } from '@/routes/Environments';
+import { HowTo } from '@/routes/HowTo';
+
+// Mid-session expiry redirects straight to the console login (no landing
+// card), returning to the current in-app location afterwards. `next` is
+// built ONLY from window.location (path + hash), never from a prop/query.
+
+// The authenticated hash router. Built ONCE per mount of the authed view so
+// route state survives re-renders; `me`/`config` are threaded into AppShell as
+// props (not closed over here — AuthedRouter re-reads them per render).
+function PageError() {
+  return <div role="alert" className="report-source-note">This page could not be displayed. <button type="button" onClick={() => window.location.reload()}>Reload</button></div>;
+}
+
+// The retired Usage & Spend page: old #/stats bookmarks land on Cost, or on Overview when Enterprise is disabled.
+function StatsRedirect() {
+  return <Navigate to={useEnterprise() ? '/analytics/cost' : '/'} replace />;
+}
+
+// The landing page: the Enterprise Overview with Enterprise on, the core one otherwise.
+export function Landing() {
+  return useEnterprise() ? <EeOverview /> : <Overview />;
+}
+
+function makeRouter(me: SessionMe, config: AppConfig) {
+  return createHashRouter([
+    {
+      path: '/',
+      element: <AppShell me={me} config={config} />,
+      children: [{
+        // A page that throws while rendering shows this inside the shell,
+        // instead of react-router's default screen replacing the console.
+        errorElement: <PageError />,
+        children: [
+        { index: true, element: <Landing /> },
+        ...eeRoutes.map((r) => ({ ...r, element: <EnterpriseOnly>{r.element}</EnterpriseOnly> })),
+        { path: 'keys', element: <Dashboard /> },
+        { path: 'stats', element: <StatsRedirect /> },
+        { path: 'models', element: <Models /> },
+        { path: 'mcp', element: <Mcp /> },
+        { path: 'a2a', element: <A2a /> },
+        { path: 'environments', element: <Environments /> },
+        { path: 'howto', element: <HowTo /> },
+        ],
+      }],
+    },
+    // Any unknown hash falls back to the dashboard (allow-list parity with the
+    // old hash router; the hash never becomes a redirect target). Without this
+    // redirect an unknown hash matched AppShell with NO children -> an empty
+    // <Outlet/> -> topbar with a BLANK main region.
+    { path: '*', element: <Navigate to="/" replace /> },
+  ]);
+}
+
+// AuthedRouter — mounts the hash router for the authed view. The router instance
+// is memoized so route navigation persists; `me`/`config` are stable references
+// from the stores within a single authed session, so re-deriving the router only
+// when they change is safe and keeps AppShell props fresh.
+function AuthedRouter({ me, config }: { me: SessionMe; config: AppConfig }) {
+  const router = useMemo(() => makeRouter(me, config), [me, config]);
+  return <RouterProvider router={router} />;
+}
+
+export function App() {
+  // C3: narrow selectors only — never a bare useSessionStore().
+  const status = useSessionStore((s) => s.status);
+  const hasLoaded = useSessionStore((s) => s.hasLoaded);
+  const me = useSessionStore((s) => s.me);
+  const loadSession = useSessionStore((s) => s.loadSession);
+  const markExpired = useSessionStore((s) => s.markExpired);
+  const config = useConfigStore((s) => s.config);
+
+  // Boot: register the mid-session 401 handler, then ONE loadSession on mount.
+  // Any /platform/* 401 after load (e.g. a Models/Stats fetch once the cookie
+  // expired) marks the session expired -> resolveState maps that to 'expired'
+  // -> the redirect effect below navigates to login.
+  useEffect(() => {
+    setUnauthorizedHandler(() => markExpired());
+    loadSession();
+    return () => setUnauthorizedHandler(null);
+  }, [loadSession, markExpired]);
+
+  const view = resolveState(status, hasLoaded);
+
+  // Mid-session expiry: silent redirect, no card. Done as an effect so render
+  // stays a pure function of state. The `expired` view renders the loading card
+  // as a brief placeholder while the browser navigates.
+  useEffect(() => {
+    if (view === 'expired') {
+      window.location.href = loginUrl(window.location.pathname + window.location.hash);
+    }
+  }, [view]);
+
+  if (view === 'authed') {
+    // C2: never render the shell against a null me — fall through to ErrorCard.
+    if (me == null) {
+      return <ErrorCard onRetry={loadSession} retrying={status === null} />;
+    }
+    return <AuthedRouter me={me} config={config} />;
+  }
+
+  if (view === 'signin') {
+    return <Login config={config} />;
+  }
+
+  if (view === 'error') {
+    // C1: disable retry while a reload is in flight (status === null).
+    return <ErrorCard onRetry={loadSession} retrying={status === null} />;
+  }
+
+  // "loading" and "expired" both render the loading card (expired also triggers
+  // the redirect effect above, so the card is only a brief placeholder).
+  return <LoadingCard />;
+}

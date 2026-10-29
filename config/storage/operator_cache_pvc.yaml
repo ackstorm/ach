@@ -1,0 +1,30 @@
+# Phase 1 — Operator + Content Service shared cache PVC (Hub §10.3 / OP-05 / OP-10 / D-13).
+#
+# OP-05 mandates ReadWriteOnce: the Operator Pod is single-replica and uses
+# `strategy: Recreate` so the old Pod releases the claim before the new Pod
+# attaches. RWO (not RWX) is the canonical pattern for a single-writer cache.
+#
+# Mounted at /var/cache/ach by both containers in the Operator + Content
+# Service Pod (config/manager/manager.yaml). Sub-directories prompt/, plugin/,
+# marketplace/, artifact/, .tmp/ are created on operator startup by
+# internal/cachefs.EnsureLayout (D-13). The .tmp/ staging directory keeps
+# rename(2) atomic on the same filesystem (Hub §10.3, OP-10).
+#
+# 10Gi default; Phase 7 Helm chart will allow operator override.
+# storageClassName intentionally unset — cluster default applies.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ach-operator-cache
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

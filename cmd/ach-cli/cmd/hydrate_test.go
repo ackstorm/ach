@@ -1,0 +1,1050 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ackstorm/ach/internal/cli/config"
+	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/hydrate"
+)
+
+// executeCommand moved to helpers_test.go (06-04) — single shared driver
+// for the entire cmd/ach/cmd package. This file consumes it directly.
+
+// canonicalHydrateJSON is the canonical wire payload the test mock
+// serves for `ach hydrate` byte-for-byte assertions. The CLI MUST emit
+// these bytes verbatim to stdout (no re-marshal, no whitespace fixup).
+// Shape matches the §15.2 contract — verified against
+// examples/hydrate.json (the W3-P3 e2e golden artifact). The literal
+// is split across lines purely to keep the source file under the
+// 120-column lll cap; the runtime value is a single uninterrupted
+// JSON document followed by a trailing newline.
+const canonicalHydrateJSON = `{"schemaVersion":"v1alpha1","environment":"demo",` +
+	`"runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},` +
+	`"context":{"prompts":[],"plugins":[],"artifacts":[]}}` + "\n"
+
+// executeHydrate runs newHydrateCmd with args and returns stdout,
+// stderr, exit code, raw error. Drives the same dispatch path that
+// cmd/ach/main.go would in production. Structurally similar to
+// executeWhoami / executeLogout by design — the test harness mirrors
+// the production main-entry typed-error mapping.
+//
+// Note: as of 07-W3-05 the cobra layer ALSO accepts engine flags
+// (--only-runtime / --sync / --force / --dry-run / --wait /
+// --lock-timeout / --dir / --allow-symlinks / --target / --global).
+// The existing Phase 6 tests below were authored against the surface-only
+// --raw path; we prepend "--raw" here so the legacy
+// suite exercises the Phase 6 POST+stream byte-for-byte contract
+// (D-04). New engine tests use executeHydrateEngine which does NOT
+// prepend --raw.
+func executeHydrate(t *testing.T, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	rawArgs := append([]string{"--raw"}, args...)
+	return executeCommand(t, newHydrateCmd(), rawArgs...)
+}
+
+// executeHydrateEngine drives the same dispatch path as executeHydrate
+// but WITHOUT injecting --raw, so the engine code path is exercised.
+// New Phase 7 tests use this helper.
+func executeHydrateEngine(t *testing.T, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	return executeCommand(t, newHydrateCmd(), args...)
+}
+
+// hydrateMockServer spins up an httptest.NewTLSServer that records the
+// last request and serves the canonical hydrate JSON on /platform/hydrate.
+// Returns the server (caller closes), a *int32 counter, and a *string
+// captured x-ach-key header value.
+type hydrateMock struct {
+	server   *httptest.Server
+	calls    *int32
+	lastKey  *string
+	lastBody *string
+	lastEnv  *string
+}
+
+func newHydrateMock(t *testing.T, body []byte) *hydrateMock {
+	t.Helper()
+	var calls int32
+	var key, body0, envH string
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		key = r.Header.Get("x-ach-key")
+		envH = r.Header.Get("x-ach-environment")
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		body0 = string(buf[:n])
+		if r.URL.Path != "/platform/hydrate" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(ts.Close)
+	return &hydrateMock{server: ts, calls: &calls, lastKey: &key, lastBody: &body0, lastEnv: &envH}
+}
+
+// Test 11 / Test 1: byte-for-byte stdout equals the canned response body.
+func TestHydrate_PK_ByteForByte_Stdout(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("exit code = %d; want 0", code)
+	}
+	if !bytes.Equal([]byte(stdout), []byte(canonicalHydrateJSON)) {
+		t.Errorf("stdout != canonical bytes\nwant: %q\ngot:  %q", canonicalHydrateJSON, stdout)
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 1 {
+		t.Errorf("HTTP calls = %d; want 1", got)
+	}
+	if *mock.lastKey != "h.p.s" {
+		t.Errorf("x-ach-key = %q; want the session token", *mock.lastKey)
+	}
+	// Body should be {"environment":"demo"}
+	var sent map[string]string
+	if jerr := json.Unmarshal([]byte(*mock.lastBody), &sent); jerr != nil {
+		t.Fatalf("server-seen body not JSON: %q (err=%v)", *mock.lastBody, jerr)
+	}
+	if sent["environment"] != "demo" {
+		t.Errorf("body environment = %q; want demo", sent["environment"])
+	}
+}
+
+// Test 2: pk_ + default flags emits the §6.6 stderr warning after success.
+func TestHydrate_PK_EmitsWarning(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, stderr, code, err := executeHydrate(t, "demo")
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if !strings.Contains(stderr, "not Environment-scoped") {
+		t.Errorf("stderr missing §6.6 warning; stderr: %q", stderr)
+	}
+	if !strings.Contains(stderr, "ek-") {
+		t.Errorf("stderr missing ek- hint; stderr: %q", stderr)
+	}
+}
+
+// Test 3: pk_ + --no-warnings suppresses the §6.6 warning.
+func TestHydrate_PK_NoWarnings_Suppresses(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, stderr, code, err := executeHydrate(t, "demo", "--no-warnings")
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if strings.Contains(stderr, "not Environment-scoped") {
+		t.Errorf("stderr leaked §6.6 warning under --no-warnings: %q", stderr)
+	}
+}
+
+// Test 4: pk_ WITHOUT --environment (no ACH_ENVIRONMENT) → exit 1
+// BEFORE any HTTP call.
+func TestHydrate_PK_MissingEnvironment_Exit1_NoHTTP(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "--no-warnings")
+	if err == nil {
+		t.Fatal("expected error on missing --environment with pk_")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+	if !strings.Contains(err.Error(), "positional argument is required") {
+		t.Errorf("err missing 'positional argument is required': %q", err.Error())
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 0 {
+		t.Errorf("HTTP calls = %d; want 0 (client-side gate)", got)
+	}
+}
+
+// seedHTTPProfile writes a config.yaml with an http:// profile DIRECTLY (a
+// config.Save would itself refuse it now), so the command under test sees an
+// on-disk http:// profile to gate.
+func seedHTTPProfile(t *testing.T, dir, url string) {
+	t.Helper()
+	path := filepath.Join(dir, "ach", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	yaml := "default: prod\nprofiles:\n  prod:\n    url: " + url +
+		"\n    key: " + testEK + "\n"
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("seed http profile: %v", err)
+	}
+}
+
+// TestHydrate_RefusesHTTP_ByDefault_NoHTTP asserts G19 decision B: a plaintext
+// http:// profile URL is refused before any HTTP call, citing ACH_INSECURE.
+func TestHydrate_RefusesHTTP_ByDefault_NoHTTP(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedHTTPProfile(t, dir, "http://localhost:8080")
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "demo")
+	if code == exit.OK {
+		t.Fatalf("hydrate(http) succeeded; want refusal")
+	}
+	if err == nil || !strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("error should cite the ACH_INSECURE opt-in; got %v", err)
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 0 {
+		t.Errorf("HTTP calls = %d; want 0 (refused before any call)", got)
+	}
+}
+
+// TestHydrate_AllowsHTTP_WithInsecureFlag asserts --insecure passes the URL
+// gate (hydrate then fails later on transport — NOT on the insecure refusal).
+func TestHydrate_AllowsHTTP_WithInsecureFlag(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedHTTPProfile(t, dir, "http://127.0.0.1:1")
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, _, err := executeHydrate(t, "demo", "--insecure")
+	if err != nil && strings.Contains(err.Error(), "ACH_INSECURE") {
+		t.Fatalf("--insecure should pass the URL gate, got refusal: %v", err)
+	}
+}
+
+// Test 5: ek_ via --key WITHOUT --environment → POSTs without
+// environment in body, returns 200, exit 0. No pk_ warning emitted.
+func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL: mock.server.URL,
+		Keys: map[string]config.SavedKey{"local-laptop": {
+			ID: "ekid_local-laptop", Key: "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"}},
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	stdout, stderr, code, err := executeHydrate(t, "--key", "local-laptop")
+	if err != nil {
+		t.Fatalf("hydrate ek_: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "schemaVersion") {
+		t.Errorf("stdout missing response payload: %q", stdout)
+	}
+	if strings.Contains(stderr, "not Environment-scoped") {
+		t.Errorf("stderr emitted pk_ warning for an ek_ run: %q", stderr)
+	}
+	if *mock.lastKey != "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij" {
+		t.Errorf("x-ach-key = %q; want ek_ resolved from label", *mock.lastKey)
+	}
+	// Body should be either empty struct or omit environment entirely.
+	if strings.Contains(*mock.lastBody, `"environment"`) {
+		t.Errorf("ek_ + no --environment sent environment field: %q", *mock.lastBody)
+	}
+}
+
+// Test 6: ek_ + --environment → both sent. Server-side mismatch (403
+// wrong_environment) → exit 3 per CLI exit-code map for 403/AuthN
+// gated reasons. The plan calls for exit 3 on the 403; the closed
+// switch in exit.MapServerError reserves AuthN for `not_admin` and
+// `unauthorized_team`. `wrong_environment` falls into General (1).
+// We assert the test against the actual mapping: 403 with non-AuthN
+// code → General (1). This documents the real exit-code surface.
+func TestHydrate_EK_WrongEnvironment_403_Exit1(t *testing.T) {
+	// 403 wrong_environment is NOT in the AuthN closed set
+	// (not_admin / unauthorized_team) → maps to General (1).
+	runExitCodeMatrixCase(t, http.StatusForbidden,
+		"wrong_environment", "ek bound elsewhere", "req_x",
+		exit.General, "--key", "l", "demo", "--no-warnings")
+}
+
+// Test 8: no credential resolvable at all → exit 1 with `ach login`
+// hint. NO HTTP.
+func TestHydrate_NoCredential_Exit1(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	// Seed config with URL only — no pk_, no ek_.
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL: mock.server.URL,
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "demo")
+	if err == nil {
+		t.Fatal("expected no-credential error")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+	if !strings.Contains(err.Error(), "ach-cli login") {
+		t.Errorf("err missing hint: %q", err.Error())
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 0 {
+		t.Errorf("HTTP calls = %d; want 0", got)
+	}
+}
+
+// Test 9a: synthetic mode (ACH_URL + ACH_KEY) → POSTs with the env key; exit 0.
+func TestHydrate_SyntheticMode_Works(t *testing.T) {
+	whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	t.Setenv("ACH_URL", mock.server.URL)
+	t.Setenv("ACH_KEY", testEK)
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	stdout, _, code, err := executeHydrate(t, "demo", "--no-warnings")
+	if err != nil || code != exit.OK {
+		t.Fatalf("synthetic hydrate: code=%d err=%v", code, err)
+	}
+	if !bytes.Equal([]byte(stdout), []byte(canonicalHydrateJSON)) {
+		t.Errorf("stdout != canonical bytes; got %q", stdout)
+	}
+	if *mock.lastKey != testEK {
+		t.Errorf("x-ach-key = %q; want ACH_KEY", *mock.lastKey)
+	}
+}
+
+// Test 9b: synthetic mode + --key <name> → exit 1 (a name needs a profile).
+func TestHydrate_SyntheticMode_KeyName_Exit1(t *testing.T) {
+	whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	t.Setenv("ACH_URL", mock.server.URL)
+	t.Setenv("ACH_KEY", testEK)
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "--key", "demo", "demo")
+	if err == nil || code != exit.General {
+		t.Fatalf("code=%d err=%v; want exit 1", code, err)
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 0 {
+		t.Errorf("HTTP calls = %d; want 0", got)
+	}
+}
+
+// newErrorServer is the shared mock-server constructor for the
+// 503/401/400/403 exit-code tests. The handler emits the §15.5
+// envelope at `status` with the supplied (code, message, reqID).
+func newErrorServer(t *testing.T, status int, code, message, reqID string) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      map[string]string{"code": code, "message": message},
+			"request_id": reqID,
+		})
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// runExitCodeMatrixCase exercises one row of the §9.3 exit-code matrix
+// against a fresh mock server. Used by the 503/401/400 tests so each
+// adds just three lines.
+func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID string,
+	wantExit exit.Code, hydrateArgs ...string) {
+	t.Helper()
+	dir := whoamiTestEnv(t)
+	ts := newErrorServer(t, status, errCode, errMsg, reqID)
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   ts.URL,
+		OAuth: testOAuth(),
+		Keys: map[string]config.SavedKey{"l": {
+			ID: "ekid_l", Key: "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"}},
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, ts.Client())
+
+	_, _, code, err := executeHydrate(t, hydrateArgs...)
+	if err == nil {
+		t.Fatalf("expected error for HTTP %d", status)
+	}
+	if code != wantExit {
+		t.Errorf("code = %d; want %d (HTTP %d / %s)", code, wantExit, status, errCode)
+	}
+}
+
+// Test 10a: 503 from server → exit 6 (Network).
+func TestHydrate_503_Exit6(t *testing.T) {
+	runExitCodeMatrixCase(t, http.StatusServiceUnavailable,
+		"upstream_unavailable", "try again", "req_y",
+		exit.Network, "demo", "--no-warnings")
+}
+
+// Test 10b: 401 from server → exit 3 (AuthN).
+func TestHydrate_401_Exit3(t *testing.T) {
+	runExitCodeMatrixCase(t, http.StatusUnauthorized,
+		"invalid_key", "no", "req_z",
+		exit.AuthN, "demo", "--no-warnings")
+}
+
+// Test 10c: 400 missing_environment from server → exit 1 (General).
+func TestHydrate_400_Exit1(t *testing.T) {
+	// Use ek_ so the client-side --environment gate doesn't trip.
+	runExitCodeMatrixCase(t, http.StatusBadRequest,
+		"missing_environment", "env required", "req_q",
+		exit.General, "--key", "l")
+}
+
+// Test: ACH_ENVIRONMENT env-var satisfies the pk_ --environment
+// requirement (D-12: required-via-flag-OR-env).
+func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	t.Setenv("ACH_ENVIRONMENT", "demo")
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrate(t, "--no-warnings")
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	// Confirm body carried environment.
+	if !strings.Contains(*mock.lastBody, `"environment":"demo"`) {
+		t.Errorf("body missing env from ACH_ENVIRONMENT: %q", *mock.lastBody)
+	}
+}
+
+// ============================================================================
+// Phase 7 W3-05 engine-path tests
+// ============================================================================
+
+// TestNewHydrateCmd_FlagsRegistered pins the env hydrate flag surface.
+func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
+	cmd := newHydrateCmd()
+	wantFlags := []string{
+		"only-runtime", "sync", "force", "dry-run",
+		"wait", "lock-timeout", "dir", "allow-symlinks", "target",
+		"global", "raw", "conflict", "insecure",
+		"no-warnings", "verbose", "key", "profile",
+	}
+	for _, name := range wantFlags {
+		if f := cmd.Flags().Lookup(name); f == nil {
+			t.Errorf("flag --%s not registered", name)
+		}
+	}
+	for _, name := range []string{"output", "include-runtime", "api-key", "env-key"} {
+		if cmd.Flags().Lookup(name) != nil {
+			t.Errorf("flag --%s must be removed", name)
+		}
+	}
+	if f := cmd.Flags().ShorthandLookup("g"); f == nil || f.Name != "global" {
+		t.Errorf("-g must be the shorthand for --global, got %v", f)
+	}
+	if got := cmd.Flags().Lookup("target").Value.Type(); got != "stringSlice" {
+		t.Errorf("--target type = %q; want stringSlice", got)
+	}
+}
+
+// captureHydratePlatforms swaps hydrateRunFn for a recorder and returns the
+// slice the recorder appends each Opts.Platform to.
+func captureHydratePlatforms(t *testing.T) *[]string {
+	t.Helper()
+	var got []string
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		got = append(got, opts.Platform)
+		return hydrate.Result{}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+	return &got
+}
+
+// TestRunHydrate_TargetSliceAndEnv asserts --target is a string slice
+// (comma OR repeat), ACH_TARGET is honoured, and ACH_PLATFORM is ignored.
+func TestRunHydrate_TargetSliceAndEnv(t *testing.T) {
+	setup := func(t *testing.T) *[]string {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		withCleanHomeEngine(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{URL: mock.server.URL, OAuth: testOAuth()})
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+		return captureHydratePlatforms(t)
+	}
+	want := []string{"codex", "opencode"}
+	for name, args := range map[string][]string{
+		"repeat": {"--target", "codex", "--target", "opencode"},
+		"comma":  {"--target", "codex,opencode"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := setup(t)
+			_, _, code, err := executeHydrateEngine(t, append([]string{"demo", "--no-warnings"}, args...)...)
+			if err != nil || code != exit.OK {
+				t.Fatalf("code=%d err=%v", code, err)
+			}
+			if !slices.Equal(*got, want) {
+				t.Errorf("platforms = %v; want %v", *got, want)
+			}
+		})
+	}
+	t.Run("ACH_TARGET honoured", func(t *testing.T) {
+		got := setup(t)
+		t.Setenv("ACH_TARGET", "codex")
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--dir", t.TempDir())
+		if err != nil || code != exit.OK {
+			t.Fatalf("code=%d err=%v", code, err)
+		}
+		if !slices.Equal(*got, []string{"codex"}) {
+			t.Errorf("platforms = %v; want [codex]", *got)
+		}
+	})
+	t.Run("ACH_PLATFORM ignored", func(t *testing.T) {
+		got := setup(t)
+		t.Setenv("ACH_PLATFORM", "codex")
+		// An empty --dir has no agent markers: with ACH_PLATFORM ignored,
+		// autodetect finds nothing and fails.
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--dir", t.TempDir())
+		if err == nil || code != exit.General || !strings.Contains(err.Error(), "no agent target detected") {
+			t.Fatalf("code=%d err=%v; want autodetect failure", code, err)
+		}
+		if len(*got) != 0 {
+			t.Errorf("engine ran for %v; want no run", *got)
+		}
+	})
+}
+
+// TestNewHydrateCmd_RawFlag_Hidden asserts the --raw flag is registered
+// (so callers can pass it) AND hidden (so --help does not advertise
+// it) per D-04.
+func TestNewHydrateCmd_RawFlag_Hidden(t *testing.T) {
+	cmd := newHydrateCmd()
+	f := cmd.Flags().Lookup("raw")
+	if f == nil {
+		t.Fatal("--raw flag not registered")
+	}
+	if !f.Hidden {
+		t.Error("--raw flag should be hidden in --help")
+	}
+}
+
+// TestRunHydrate_RawDispatchesToLegacy asserts the --raw path produces
+// byte-for-byte identical stdout to the Phase 6 contract — the W3-P3
+// golden-diff anchor depends on this.
+func TestRunHydrate_RawDispatchesToLegacy(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	stdout, _, code, err := executeHydrateEngine(t, "--raw",
+		"demo", "--no-warnings")
+	if err != nil {
+		t.Fatalf("hydrate --raw: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if !bytes.Equal([]byte(stdout), []byte(canonicalHydrateJSON)) {
+		t.Errorf("--raw stdout != canonical bytes\nwant: %q\ngot:  %q",
+			canonicalHydrateJSON, stdout)
+	}
+	if got := atomic.LoadInt32(mock.calls); got != 1 {
+		t.Errorf("HTTP calls = %d; want 1", got)
+	}
+}
+
+// TestRunHydrate_EngineDispatch asserts the engine path is invoked
+// when --raw is absent. Swap hydrateRunFn with a recorder and assert
+// it is called with Opts carrying the resolved platform + environment.
+func TestRunHydrate_EngineDispatch(t *testing.T) {
+	withCleanHomeEngine(t)
+	dir := whoamiTestEnv(t)
+
+	// Seed the workspace cwd with a .claude/ signal so autodetect
+	// resolves to claude-code.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude", ".mcp.json"),
+		[]byte("{}"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Server returns canonical hydrate JSON for the manifest fetch
+	// (engine reads it during step 5).
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	// Swap hydrateRunFn with a recorder. The fake returns
+	// (Result{}, nil) so the cobra layer's downstream rendering is
+	// satisfied.
+	var (
+		called       atomic.Bool
+		capturedOpts hydrate.Opts
+	)
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		called.Store(true)
+		capturedOpts = opts
+		return hydrate.Result{}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+
+	// --output overrides cwd → autodetect against the seeded root.
+	_, _, code, err := executeHydrateEngine(t,
+		"demo", "--no-warnings", "--dir", root)
+	if err != nil {
+		t.Fatalf("hydrate engine: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if !called.Load() {
+		t.Fatal("hydrateRunFn was not invoked — engine dispatch broken")
+	}
+	if capturedOpts.Environment != "demo" {
+		t.Errorf("Opts.Environment = %q; want demo", capturedOpts.Environment)
+	}
+	if capturedOpts.Platform != "claude-code" {
+		t.Errorf("Opts.Platform = %q; want claude-code", capturedOpts.Platform)
+	}
+	if capturedOpts.Output != root {
+		t.Errorf("Opts.Output = %q; want %q", capturedOpts.Output, root)
+	}
+	if capturedOpts.Bearer != "h.p.s" {
+		t.Errorf("Opts.Bearer = %q; want pk_…", capturedOpts.Bearer)
+	}
+}
+
+// TestRunHydrate_ScopeHeader: the Hydrating header names where files land —
+// project by default, global under --global, the folder under --dir.
+func TestRunHydrate_ScopeHeader(t *testing.T) {
+	setup := func(t *testing.T) {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{
+			URL:   mock.server.URL,
+			OAuth: testOAuth(),
+		})
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+		prev := hydrateRunFn
+		hydrateRunFn = func(_ context.Context, _ hydrate.Opts) (hydrate.Result, error) {
+			return hydrate.Result{}, nil
+		}
+		t.Cleanup(func() { hydrateRunFn = prev })
+	}
+	out := t.TempDir()
+	for args, want := range map[string]string{
+		"":         "Hydrating demo → claude-code (project)",
+		"--global": "Hydrating demo → claude-code (global)",
+		"--dir":    "Hydrating demo → claude-code (output " + out + ")",
+	} {
+		setup(t)
+		argv := []string{"demo", "--target", "claude-code"}
+		switch args {
+		case "--global":
+			argv = append(argv, args)
+		case "--dir":
+			argv = append(argv, args, out)
+		}
+		stdout, _, code, err := executeHydrateEngine(t, argv...)
+		if err != nil || code != exit.OK {
+			t.Fatalf("%q: code=%d err=%v", args, code, err)
+		}
+		if !strings.Contains(stdout, want) {
+			t.Errorf("%q: stdout = %q, want %q", args, stdout, want)
+		}
+	}
+}
+
+// TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive asserts the
+// locking-flag conflict surfaces as exit 1 BEFORE any HTTP call.
+func TestRunHydrate_WaitAndLockTimeout_MutuallyExclusive(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrateEngine(t,
+		"--wait", "--lock-timeout", "5s",
+		"demo", "--no-warnings")
+	if err == nil {
+		t.Fatal("expected lock-flag conflict error")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("err missing 'mutually exclusive': %q", err.Error())
+	}
+}
+
+// TestRunHydrate_UnknownPlatform asserts --target <bogus> surfaces
+// as exit 1 via hydrate.ResolvePlatform.
+func TestRunHydrate_UnknownPlatform(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	_, _, code, err := executeHydrateEngine(t,
+		"--target", "clade-code",
+		"demo", "--no-warnings")
+	if err == nil {
+		t.Fatal("expected unknown-target error")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+	if !strings.Contains(err.Error(), "unknown target") {
+		t.Errorf("err missing 'unknown target': %q", err.Error())
+	}
+}
+
+// TestRunHydrate_AliasPlatform asserts --target claude (an alias
+// for claude-code) resolves correctly to the canonical id passed
+// down into Opts.Platform.
+func TestRunHydrate_AliasPlatform(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL:   mock.server.URL,
+		OAuth: testOAuth(),
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	var capturedOpts hydrate.Opts
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		capturedOpts = opts
+		return hydrate.Result{}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+
+	_, _, code, err := executeHydrateEngine(t,
+		"--target", "claude",
+		"demo", "--no-warnings")
+	if err != nil {
+		t.Fatalf("hydrate engine: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if capturedOpts.Platform != "claude-code" {
+		t.Errorf("Opts.Platform = %q; want claude-code (canonical id)",
+			capturedOpts.Platform)
+	}
+}
+
+// withCleanHomeEngine scrubs $HOME for the lifetime of t so global-
+// mode hints in codex's Detect (e.g. $HOME/.codex/) do not leak
+// cross-test signals. Engine-path tests that exercise autodetect on
+// a controlled --output root use this to avoid surprise multi-match
+// from the agent's actual $HOME.
+func withCleanHomeEngine(t *testing.T) {
+	t.Helper()
+	scratch := t.TempDir()
+	t.Setenv("HOME", scratch)
+}
+
+// TestValidateEnvHeaderValue exercises security 2.10 — CRLF / NUL /
+// control-byte rejection on the x-ach-environment header value.
+func TestValidateEnvHeaderValue(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "empty", input: "", wantErr: true},
+		{name: "valid_simple", input: "demo", wantErr: false},
+		{name: "valid_with_dash", input: "demo-prod", wantErr: false},
+		{name: "valid_with_underscore", input: "demo_env", wantErr: false},
+		{name: "crlf_injection", input: "demo\r\nX-Injected: yes", wantErr: true},
+		{name: "lf_only", input: "demo\nfoo", wantErr: true},
+		{name: "cr_only", input: "demo\rfoo", wantErr: true},
+		{name: "nul_byte", input: "demo\x00foo", wantErr: true},
+		{name: "tab", input: "demo\tfoo", wantErr: true},
+		{name: "delete_byte", input: "demo\x7ffoo", wantErr: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateEnvHeaderValue(tc.input)
+			if tc.wantErr && err == nil {
+				t.Fatalf("input %q: want error, got nil", tc.input)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("input %q: want nil, got %v", tc.input, err)
+			}
+		})
+	}
+}
+
+func TestHydrate_ConflictFlag_Default(t *testing.T) {
+	cmd := newHydrateCmd()
+	f := cmd.Flags().Lookup("conflict")
+	if f == nil {
+		t.Fatal("--conflict flag not registered")
+	}
+	if f.DefValue != "namespace" {
+		t.Errorf("--conflict default = %q; want namespace", f.DefValue)
+	}
+}
+
+func TestHydrate_Help_MentionsConflict(t *testing.T) {
+	cmd := newHydrateCmd()
+	if !strings.Contains(cmd.Flag("conflict").Usage, "namespace") {
+		t.Errorf("--conflict usage missing policy list: %q", cmd.Flag("conflict").Usage)
+	}
+}
+
+// TestResolvePlatformList covers the multi-target --target parser: comma-split,
+// whitespace trimming, alias resolution, dedup (order-preserving), and the
+// unknown-id / empty-value error paths. This is the asymmetry fix that lets
+// `env hydrate --target codex,opencode` mirror local `plugin install`.
+func TestResolvePlatformList(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    []string
+		wantErr bool
+	}{
+		{"single", "codex", []string{"codex"}, false},
+		{"two", "codex,opencode", []string{"codex", "opencode"}, false},
+		{"alias", "claude", []string{"claude-code"}, false},
+		{"whitespace", " codex , opencode ", []string{"codex", "opencode"}, false},
+		{"dedup-order", "opencode,codex,opencode", []string{"opencode", "codex"}, false},
+		{"empty-parts-skipped", "codex,,opencode", []string{"codex", "opencode"}, false},
+		{"unknown", "codex,bogus-xyz", nil, true},
+		{"all-blank", " , ", nil, true},
+		{"empty", "", nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseTargets([]string{tc.raw})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseTargets(%q) = %v, want error", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseTargets(%q): unexpected error: %v", tc.raw, err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseTargets(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("parseTargets(%q)[%d] = %q, want %q", tc.raw, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// An OAuth profile authenticates the hydrate call with its access token in
+// x-ach-key (Authn accepts a JWS there) and the summary says so; the
+// adapters render no credential (see internal/cli/hydrate/commit.go +
+// adapter.HeadersWithCredential).
+func TestHydrate_OAuthProfile_UsesAccessToken(t *testing.T) {
+	dir := whoamiTestEnv(t)
+	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+	seedConfig(t, dir, "prod", &config.Profile{
+		URL: mock.server.URL,
+		OAuth: &config.OAuthCreds{
+			ClientID: "oc_1", AccessToken: "aaa.bbb.ccc", RefreshToken: "r1", ExpiresAt: time.Now().Add(time.Hour),
+		},
+	})
+	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+
+	if _, _, code, err := executeHydrate(t, "demo", "--no-warnings"); err != nil || code != exit.OK {
+		t.Fatalf("hydrate: code=%d err=%v", code, err)
+	}
+	if *mock.lastKey != "aaa.bbb.ccc" {
+		t.Errorf("x-ach-key = %q; want the OAuth access token", *mock.lastKey)
+	}
+
+	var seen hydrate.Opts
+	prev := hydrateRunFn
+	hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+		seen = opts
+		// A first run that adds an MCP server: the sign-in hint is only about MCP.
+		return hydrate.Result{PlatformID: "claude-code", FirstRun: true, Changes: []hydrate.ItemChange{
+			{Op: hydrate.OpAdd, Kind: "mcp", Name: "github"}}}, nil
+	}
+	t.Cleanup(func() { hydrateRunFn = prev })
+	stdout, _, _, err := executeHydrateEngine(t, "demo", "--target", "claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen.Bearer != "aaa.bbb.ccc" || !strings.Contains(stdout, "claude mcp login") {
+		t.Errorf("bearer=%q stdout=%q", seen.Bearer, stdout)
+	}
+}
+
+// TestRunHydrate_Only threads --only into Opts.Only and rejects the
+// combinations the brief forbids before any engine run.
+func TestRunHydrate_Only(t *testing.T) {
+	setup := func(t *testing.T) *[]hydrate.Opts {
+		t.Helper()
+		dir := whoamiTestEnv(t)
+		mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
+		seedConfig(t, dir, "prod", &config.Profile{URL: mock.server.URL, OAuth: testOAuth()})
+		swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
+		var got []hydrate.Opts
+		prev := hydrateRunFn
+		hydrateRunFn = func(_ context.Context, opts hydrate.Opts) (hydrate.Result, error) {
+			got = append(got, opts)
+			return hydrate.Result{}, nil
+		}
+		t.Cleanup(func() { hydrateRunFn = prev })
+		return &got
+	}
+
+	t.Run("threads Opts.Only", func(t *testing.T) {
+		got := setup(t)
+		_, _, code, err := executeHydrateEngine(t, "demo", "--no-warnings", "--target", "claude-code", "--only", "skill/x")
+		if err != nil || code != exit.OK {
+			t.Fatalf("code=%d err=%v", code, err)
+		}
+		if len(*got) != 1 || (*got)[0].Only == nil || *(*got)[0].Only != (hydrate.Item{Kind: "skill", Name: "x"}) {
+			t.Fatalf("Opts.Only = %+v; want skill/x", *got)
+		}
+	})
+	for name, args := range map[string][]string{
+		"bad item":     {"demo", "--only", "prompt/x"},
+		"sync":         {"demo", "--only", "plugin/x", "--sync"},
+		"only-runtime": {"demo", "--only", "plugin/x", "--only-runtime"},
+		"raw":          {"demo", "--only", "plugin/x", "--raw"},
+		"no env":       {"--only", "plugin/x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := setup(t)
+			_, _, code, err := executeHydrateEngine(t, append(args, "--target", "claude-code")...)
+			if err == nil || code != exit.General {
+				t.Fatalf("code=%d err=%v; want exit 1", code, err)
+			}
+			if len(*got) != 0 {
+				t.Errorf("engine ran; want rejection first")
+			}
+		})
+	}
+}
+
+// TestRenderHydrate pins the post-header output: items, Finished, Models,
+// notice, relayed engine notes, and hints on a first run only.
+func TestRenderHydrate(t *testing.T) {
+	person := summaryMeta{global: true, oauth: true}
+	r := hydrate.Result{
+		PlatformID: "claude-code", FirstRun: true, FilesWritten: 41, Notice: "read me",
+		RuntimeSummary: hydrate.RuntimeSummary{Models: 5},
+		Changes: []hydrate.ItemChange{
+			{Op: hydrate.OpAdd, Kind: "mcp", Name: "github"},
+			{Op: hydrate.OpAdd, Kind: "plugin", Name: "superpowers", Files: 17},
+		},
+	}
+	render := func(meta summaryMeta, rs ...hydrate.Result) string {
+		var b bytes.Buffer
+		u := newUI(&b, false)
+		renderHydrate(u, u, rs, meta, 1400*time.Millisecond,
+			bytes.NewBufferString("note: claude-code: x\n"))
+		return b.String()
+	}
+
+	want := "" +
+		"             + mcp     github\n" +
+		"             + plugin  superpowers      17 files\n" +
+		"    Finished 2 items, 41 files in 1.4s\n" +
+		"      Models 5 available, not routed — add --models\n" +
+		"      Notice read me\n" +
+		"        Note claude-code: x\n" +
+		"        hint MCP servers sign in on first use: claude mcp login <name>\n"
+	if got := render(person, r); got != want {
+		t.Fatalf("first run:\n%s\nwant:\n%s", got, want)
+	}
+
+	again := hydrate.Result{PlatformID: "claude-code", Unchanged: 7, Changes: []hydrate.ItemChange{
+		{Op: hydrate.OpUpdate, Kind: "plugin", Name: "superpowers", Files: 17}}}
+	if got := render(summaryMeta{global: true}, again); !strings.Contains(got,
+		"    Finished 1 changed, 7 unchanged in 1.4s\n") || strings.Contains(got, "hint") {
+		t.Fatalf("re-run:\n%s", got)
+	}
+
+	multi := render(summaryMeta{dryRun: true},
+		hydrate.Result{PlatformID: "codex"}, hydrate.Result{PlatformID: "opencode", Changes: r.Changes})
+	if !strings.Contains(multi, "       codex up to date\n    opencode + mcp     github\n") ||
+		!strings.Contains(multi, "Finished nothing written (dry run)") {
+		t.Fatalf("multi/dry run:\n%s", multi)
+	}
+}

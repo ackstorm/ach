@@ -1,0 +1,33 @@
+# Artifact — pulls the docs/reference/templates/ tree from openclaw/
+# openclaw and packages it as a .tar.gz under the operator cache PVC.
+# Demonstrates the `directory` scope: ACH materializes the upstream
+# subtree as a single archive that the Content Service serves on
+# /content/artifact/<name>.
+#
+# (Scope `object` would serve a single file verbatim; `directory`
+# tar-gzs the whole subdirectory at refresh time per CRD-05.)
+#
+# Public repo — no GitHub PAT needed.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Artifact
+metadata:
+  name: openclaw-templates
+  namespace: ach-system
+spec:
+  type: github
+  scope: directory
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: openclaw/openclaw
+    # Pinned to an IMMUTABLE release tag (NOT the moving `main` branch).
+    # openclaw/openclaw commits to main every few minutes, which made SC11a's
+    # force-refresh rev-stability assertion race the live upstream. A synced
+    # TEST fixture must be reproducible. A bare commit SHA can't be resolved by
+    # the git transport (it resolves `ref` via `git ls-remote`, which only
+    # advertises refs, not arbitrary SHAs) — a tag is the immutable,
+    # ls-remote-resolvable equivalent. docs/reference/templates exists at this
+    # tag. Bump deliberately, never to "latest"/a branch.
+    ref: v2026.5.7
+    path: docs/reference/templates

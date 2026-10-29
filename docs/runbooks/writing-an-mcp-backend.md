@@ -1,0 +1,92 @@
+# Writing an MCP backend that validates ACH JWTs
+
+> **Context first:** the end-to-end trust path (forwarder mint →
+> LiteLLM gateway → backend verify, including the
+> `extra_headers: ["authorization"]` opt-in LiteLLM requires) is
+> documented in [JWT Forwarder](../developer-guide/jwt-forwarder.md).
+> This runbook focuses on the backend-side verifier.
+
+ACH's Forwarder mints a short-lived Ed25519 JWT on `/mcp/<name>` when
+a `BackendIdentityPolicy` (BIP) with `spec.forwardIdentityJWT=true`
+targets the named MCP server. This page describes how a backend
+operator implements the verifying side.
+
+## The contract
+
+| Aspect | Value | Reference |
+|---|---|---|
+| Signing algorithm | EdDSA (Ed25519) | FWD-07 |
+| Header `kid` | Stable id of the signing slot | FWD-08 |
+| `iss` | Forwarder `ACH_BASE_URL` (HTTPS-only) | FWD-10 |
+| `sub` | `<owner-email>` | Hub §9.1 |
+| `email` | Mirrors `sub`; additive, omitted when empty | Hub §9.1 |
+| `groups` | LiteLLM team aliases; additive, omitted entirely when the resolved set is empty — see [The `groups` claim](../developer-guide/jwt-forwarder.md#the-groups-claim) | Hub §9.1 |
+| `aud` | `mcp:<bare-name>` on `/mcp/<bare-name>` | Hub §9.1 |
+| `exp - iat` | 120 seconds | FWD-07 |
+| `nbf` | Not emitted | Hub §9.1 |
+| `jti` | Not emitted | Hub §9.1 + §20 |
+| JWKS endpoint | `<iss>/.well-known/jwks.json` | Hub §9.2 |
+| JWKS `Content-Type` | `application/jwk-set+json` | RFC 7517 §8.5.1 |
+| JWKS `Cache-Control` | `public, max-age=3600` | Hub §9.2 |
+| JWK shape | `kty=OKP, crv=Ed25519, alg=EdDSA, use=sig` | RFC 8037 |
+
+## Recommended verification posture
+
+1. **Pin the algorithm.** Reject anything other than `alg=EdDSA` on
+   the JWS header. Never accept `alg=none`. Never trust the token's
+   own `alg` value to pick a verifier — pin it before parsing.
+2. **Resolve `kid` against a fresh-enough JWKS.** Cache the JWK Set
+   but refresh on `kid` miss; the Forwarder rotates with a publish-
+   overlap-revoke flow (≥24h overlap), so a backend that holds a stale
+   view of the JWKS for up to 1h is correct by design.
+3. **Validate `iss`, `aud`, `exp`.** `iss` is fixed per Forwarder
+   install. `aud` is fixed per route (a backend that serves multiple
+   `<name>`s accepts a small allowlist).
+
+   > ACH does NOT emit `nbf` (intentionally — with a 120 s `exp` it adds only
+   > clock-skew risk; `exp` is the sole time bound). Verify `iss`, `aud`, `exp`
+   > only — do NOT require `nbf`. ACH also emits no `jti`.
+4. **Do NOT trust `sub` as identity** unless your security model
+   matches ACH's. `sub` carries the bare `<owner-email>` (no namespace
+   prefix) — useful for audit, NOT authorization. The legacy
+   `<namespace>/<email>` form is gone (pre-release hard-cut); do not split
+   `sub` on `/`. Key on `iss` + `sub`.
+
+## Handling the `groups` claim
+
+`groups` is optional — read it as an array of strings and treat an absent
+claim as an empty set, never as a verification failure. Don't fail
+verification if the claim is present but malformed; drop it and treat the
+caller as ungrouped instead. Key authorization decisions on the team-alias
+values themselves. For how `pk_`/`ek_` resolve into the set, see the
+[`groups` claim table](../developer-guide/jwt-forwarder.md#the-groups-claim)
+in the developer guide — this runbook does not restate the resolution rules.
+
+## Reference implementation
+
+A runnable, stdlib-only Go reference lives at
+[`test/e2e/mcp-echo/`](https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo).
+The verifier is in `test/e2e/mcp-echo/jwt/verify.go`; the JWKS cache is
+in `test/e2e/mcp-echo/jwt/jwks.go`. Both files are ~150 lines and ship
+with their unit tests next to them — copy-and-adapt rather than
+import-as-library.
+
+## Common pitfalls
+
+- **`kid` missing from header** — the Forwarder always emits one;
+  a missing `kid` means you parsed a JWT minted by someone else.
+- **Backend hot-loop on JWKS endpoint** — refresh on miss, not on
+  every request. The Forwarder's `Cache-Control: public, max-age=3600`
+  is your hint.
+- **Accepting `alg=none`** — `jwt.Parse(...)` defaults vary by
+  library; pin the algorithm explicitly.
+- **LiteLLM strips `Authorization` by default** — when ACH proxies
+  through LiteLLM's MCP gateway (the default `/mcp/<name>` route),
+  the gateway drops the caller's `Authorization` header before
+  calling the backend. Register the backend with
+  `extra_headers: ["authorization"]` so LiteLLM propagates the
+  forwarder-minted JWT through to your MCP server. Without this the
+  backend sees no token and 401s every request, and LiteLLM
+  surfaces `tools=[]` even on healthy servers. ACH's
+  `scripts/cluster.sh hydrate_fixtures` registers the e2e
+  `demo-mcp-echo` server with this opt-in already in place.

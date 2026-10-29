@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal full-window generation latency",
+  "description": "GET /api/session/observability/latency?start=&end=. Complete retained scoped generation aggregate, independent from raw SpendLogs. Window end is exclusive. Timing values are milliseconds except tokens_per_sec_p50. Model requests field counts generations.",
+  "type": "object",
+  "required": [
+    "available",
+    "sampled",
+    "row_count",
+    "window",
+    "latency",
+    "outcomes",
+    "by_model",
+    "by_model_truncated",
+    "histogram",
+    "eligibility",
+    "provenance",
+    "finish",
+    "guardrails"
+  ],
+  "properties": {
+    "available": {
+      "type": "boolean"
+    },
+    "sampled": {
+      "const": false
+    },
+    "row_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "start",
+        "end",
+        "days"
+      ],
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        }
+      }
+    },
+    "latency": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "p50_ms",
+        "p95_ms",
+        "p99_ms",
+        "avg_ms",
+        "ttft_p50_ms",
+        "ttft_p95_ms",
+        "tokens_per_sec_p50"
+      ],
+      "properties": {
+        "p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p99_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "avg_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ttft_p50_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ttft_p95_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tokens_per_sec_p50": {
+          "description": "End-to-end output tokens per second (output / start_time..end_time wall time), not streaming throughput.",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "status",
+          "count"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "error",
+              "unknown"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "by_model": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": [
+          "model",
+          "requests",
+          "failed",
+          "p50_ms",
+          "p95_ms"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "requests": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "p50_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "p95_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tokens_per_sec_p50": {
+            "description": "End-to-end output tokens per second, not streaming throughput.",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ttft_p50_ms": {
+            "description": "Median time to first streamed chunk; null when no call in the group streamed.",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "by_model_truncated": {
+      "type": "boolean"
+    },
+    "by_model_reason": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "histogram": {
+      "type": "array",
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "lower_ms",
+          "upper_ms",
+          "count"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "lower_ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "upper_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "source_coverage": {
+      "type": "object",
+      "required": [
+        "generation_count",
+        "timing",
+        "ttft"
+      ],
+      "properties": {
+        "generation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttft": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tokens_per_sec": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "eligibility": {
+      "const": "observed_generations_not_logical_requests"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "finish": {
+      "description": "Generations whose finish reasons include length (output limit) or content_filter, out of those reporting any. Null when none report.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "coverage",
+        "truncated",
+        "content_filtered"
+      ],
+      "properties": {
+        "coverage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_filtered": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "guardrails": {
+      "description": "Guardrail executions on the caller's calls, owner taken from the key. Null when unread (see guardrails_reason); empty when none ran.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "checked",
+          "intervened"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "intervened": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "guardrails_reason": {
+      "type": "string"
+    }
+  }
+}

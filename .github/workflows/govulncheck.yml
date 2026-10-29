@@ -1,0 +1,33 @@
+name: govulncheck
+on:
+  # NO `pull_request:` trigger — `ci.yml`'s security job already runs
+  # `make qa-security`, which runs this same `scripts/govulncheck-gate.sh` on
+  # every PR. Both triggers meant the identical whole-module analysis ran twice
+  # per PR. This workflow exists for the weekly cron, which catches advisories
+  # that a vuln-DB refresh surfaces against an unchanged `main`.
+  schedule: # Mondays at 05:08 UTC
+    - cron: '08 05 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    env:
+      GOVULNCHECK_VERSION: v1.3.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install pinned govulncheck
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run gate (ack-list 1:1 match)
+        run: bash scripts/govulncheck-gate.sh

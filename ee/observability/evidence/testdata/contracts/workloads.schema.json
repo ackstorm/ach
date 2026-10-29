@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal workloads response",
+  "type": "object",
+  "required": [
+    "window",
+    "provenance",
+    "generation_count",
+    "eligibility",
+    "runtimes",
+    "runtime_parser_version",
+    "business_classification",
+    "task_outcomes"
+  ],
+  "properties": {
+    "window": {
+      "type": "object",
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ],
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "timezone": {
+          "const": "UTC"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "generation_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "eligibility": {
+      "const": "observed_generations_not_logical_requests"
+    },
+    "runtimes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "count",
+          "input_tokens",
+          "output_tokens",
+          "cost"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cost": {
+            "type": "number",
+            "minimum": 0
+          },
+          "median_input": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Median input tokens of this client's generations that report input."
+          },
+          "cache_read_share": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Cache-read tokens over input, generations that report both."
+          },
+          "cost_per_generation": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Recorded cost over priced (cost > 0) generations."
+          }
+        }
+      }
+    },
+    "runtime_parser_version": {
+      "const": 1
+    },
+    "business_classification": {
+      "type": "null"
+    },
+    "task_outcomes": {
+      "type": "null"
+    },
+    "runtime_attribution": {
+      "enum": [
+        "same_event",
+        "same_trace"
+      ]
+    },
+    "source_coverage": {
+      "type": "object",
+      "required": [
+        "generation_count",
+        "runtime"
+      ],
+      "properties": {
+        "generation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

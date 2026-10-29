@@ -1,0 +1,221 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Package db helpers for the backend_identity_policies projection table
+// (issue #34).
+//
+// One row per BackendIdentityPolicy CR. The operator's BIP reconciler writes
+// the projection so the forwarder can resolve per-target JWT mint policy
+// without an informer. ResolveWinner semantics (alphabetically FIRST BIP per
+// (targetKind, targetName) wins; an alpha-FIRST opt-out row returns nil)
+// live in internal/forwarder/bipcache — this package surfaces the raw rows
+// ordered by name ASC and the cache implements the winner-picking logic.
+//
+// SQL discipline mirrors environments.go: origin-gated UPSERT, ErrOriginConflict
+// on UI-row collision, transient pgconn 08/57 raw, other errors wrapped with
+// non-secret (namespace, name).
+
+package db
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// BIPRow mirrors the backend_identity_policies row schema after migration
+// 000021. (Namespace, Name) form the PRIMARY KEY; (TargetKind, TargetName)
+// is the bipcache lookup key.
+type BIPRow struct {
+	Namespace          string
+	Name               string
+	TargetKind         string // "MCPServer" | "A2AAgent"
+	TargetName         string
+	ForwardIdentityJWT bool
+	ConsentBroker      string
+	ConsentAudience    string
+	ObservedGeneration int64
+	DeletionTimestamp  *time.Time
+	ResourceVersion    string
+	UpdatedAt          time.Time
+	Origin             string
+	Locked             bool
+}
+
+const upsertBIPSQL = `
+	INSERT INTO backend_identity_policies
+	    (namespace, name, target_kind, target_name,
+	     forward_identity_jwt, observed_generation,
+	     resource_version, updated_at, origin, locked,
+	     consent_broker, consent_audience)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE, $8, $9)
+	ON CONFLICT (namespace, name) DO UPDATE SET
+	    target_kind          = EXCLUDED.target_kind,
+	    target_name          = EXCLUDED.target_name,
+	    forward_identity_jwt = EXCLUDED.forward_identity_jwt,
+	    observed_generation  = EXCLUDED.observed_generation,
+	    resource_version     = EXCLUDED.resource_version,
+	    consent_broker       = EXCLUDED.consent_broker,
+	    consent_audience     = EXCLUDED.consent_audience,
+	    updated_at           = now(),
+	    -- Resurrection: a re-applied CR is LIVE. Unlike environments.go (which
+	    -- preserves deletion_timestamp for the CS-09 content-drain window), a
+	    -- BIP soft-delete is purely a forwarder cache-eviction signal with no
+	    -- drain consumer, so a delete-then-recreate of the SAME (namespace,name)
+	    -- MUST clear the tombstone. Otherwise the resurrected policy stays
+	    -- invisible to ListAllBIPs (which filters deletion_timestamp IS NULL)
+	    -- and the forwarder never sees it again.
+	    deletion_timestamp   = NULL,
+	    locked               = TRUE
+	WHERE backend_identity_policies.origin = 'cr'
+	RETURNING namespace
+`
+
+// UpsertBIP inserts-or-updates the row keyed by (Namespace, Name). Returns
+// ErrOriginConflict on UI-owned-row collision.
+func UpsertBIP(ctx context.Context, pool *pgxpool.Pool, row BIPRow) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertBIP(%s/%s): begin: %w", row.Namespace, row.Name, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := UpsertBIPTx(ctx, tx, row); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertBIP(%s/%s): commit: %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+// UpsertBIPTx exposes the tx-form upsert for callers inside db.WithTxNotify.
+func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
+	var ns string
+	err := tx.QueryRow(ctx, upsertBIPSQL,
+		row.Namespace, row.Name, row.TargetKind, row.TargetName,
+		row.ForwardIdentityJWT, row.ObservedGeneration, row.ResourceVersion,
+		row.ConsentBroker, row.ConsentAudience,
+	).Scan(&ns)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrOriginConflict
+		}
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: UpsertBIP(%s/%s): %w", row.Namespace, row.Name, err)
+	}
+	return nil
+}
+
+// scanBIPRow scans one BIP row in the canonical 13-field order. The single-
+// row error contract (ErrNoRows / transient / wrap) stays with each caller —
+// this helper shares ONLY the Scan column order, which must match every
+// SELECT below.
+func scanBIPRow(row pgx.Row, r *BIPRow) error {
+	return row.Scan(
+		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
+		&r.ForwardIdentityJWT, &r.ConsentBroker, &r.ConsentAudience,
+		&r.ObservedGeneration,
+		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
+	)
+}
+
+// scanBIPRows drains a multi-row BIP query into a slice, applying the
+// shared transient-guard + rows.Err classification. Returns a non-nil empty
+// slice on zero rows (preserving the original list contract).
+func scanBIPRows(rows pgx.Rows) ([]BIPRow, error) {
+	defer rows.Close()
+	out := []BIPRow{}
+	for rows.Next() {
+		var r BIPRow
+		if err := scanBIPRow(rows, &r); err != nil {
+			return nil, fmt.Errorf("db: scan BIP row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: iterate BIP rows: %w", err)
+	}
+	return out, nil
+}
+
+// ListAllBIPs returns every live row in the namespace, ordered by name ASC.
+// Used by the forwarder bipcache 5-minute periodic refresh.
+func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, error) {
+	const sql = `
+		SELECT namespace, name, target_kind, target_name,
+		       forward_identity_jwt, consent_broker, consent_audience,
+		       observed_generation,
+		       deletion_timestamp, resource_version, updated_at, origin, locked
+		  FROM backend_identity_policies
+		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+	`
+	rows, err := pool.Query(ctx, sql, ns)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListAllBIPs(%s): %w", ns, err)
+	}
+	return scanBIPRows(rows)
+}
+
+// ConsentBIP returns the alpha-first live MCPServer policy for targetName
+// when it opts into JWT forwarding and declares a consent broker.
+func ConsentBIP(ctx context.Context, pool *pgxpool.Pool, ns, targetName string) (*BIPRow, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT namespace, name, target_kind, target_name,
+		       forward_identity_jwt, consent_broker, consent_audience, observed_generation,
+		       deletion_timestamp, resource_version, updated_at, origin, locked
+		  FROM backend_identity_policies
+		 WHERE namespace = $1 AND target_kind = 'MCPServer' AND target_name = $2
+		   AND deletion_timestamp IS NULL
+		 ORDER BY name ASC
+		 LIMIT 1`, ns, targetName)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ConsentBIP(%s/%s): %w", ns, targetName, err)
+	}
+	out, err := scanBIPRows(rows)
+	if err != nil || len(out) == 0 {
+		return nil, err
+	}
+	if !out[0].ForwardIdentityJWT || out[0].ConsentBroker == "" {
+		return nil, nil
+	}
+	return &out[0], nil
+}
+
+const softDeleteBIPSQL = `
+	UPDATE backend_identity_policies
+	   SET deletion_timestamp = now(),
+	       updated_at         = now()
+	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
+`
+
+// SoftDeleteBIPTx exposes the tx-form for callers inside db.WithTxNotify.
+func SoftDeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, softDeleteBIPSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: SoftDeleteBIP(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}

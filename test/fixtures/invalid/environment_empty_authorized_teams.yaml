@@ -1,0 +1,23 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Environment.spec.authorizedTeams MinItems=1 (Hub §6 / CRD-02)
+# Expected error substring: "authorizedTeams"
+#
+# This manifest sets authorizedTeams: [] which violates both:
+#   - the kubebuilder MinItems=1 marker (OpenAPI minItems)
+#   - the CEL rule size(self.spec.authorizedTeams) >= 1
+# Either gate produces an admission error mentioning authorizedTeams.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: invalid-empty-teams
+  namespace: ach-system
+spec:
+  authorizedTeams: []
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

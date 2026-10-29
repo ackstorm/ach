@@ -1,0 +1,1002 @@
+// HowTo.tsx — the "How-to" onboarding guide (nav: Help → How-to).
+//
+// Answers the "I just logged in — now what?" question for a corporate user.
+// Login (SSO) is the default path, keys come last. All STATIC (no backend, no fetch):
+//
+//   §1 Editors/CLI — OpenCode only (SSO plugin install). The other tools (Pi,
+//                    Claude Code, Codex, Qwen, Gemini, Copilot) stay in TOOL_GROUPS
+//                    with `enabled: false`: kept in source, not rendered.
+//   §2 MCP servers — `opencode mcp add/auth` against /mcp/<server>. The
+//                    generic-client tabs (Cursor, Claude Desktop, VS Code, JSON,
+//                    x-mcp-servers) are kept but hidden.
+//   §3 API keys    — COLLAPSED by default (not every account may mint keys):
+//                    mint a key (link to the Keys tab) + curl/Python/TypeScript
+//                    to the `ackstorm.fast` model alias against the user's gateway.
+//   §4 No terminal — chat-UI cards (ACKstorm Chat, hosted; OpenCode Desktop, coming soon).
+//
+// PERSONALIZATION (no rebuild): the gateway base URL is read live from the
+// session (`me.endpoint` === settings.api_public_url, e.g. https://api.<domain>);
+// the hosted-chat card renders only when the deployment configures a chat URL
+// (bootstrap `chat_url`, chart platformApi.console.chatUrl).
+//
+// SECURITY (T-10-01 / info disclosure): this page NEVER renders a real key. The
+// curl/exports show the literal `ek_...` placeholder; minting (and the one-time
+// key reveal) happens only on the Keys tab. Copy buttons write exactly the
+// shown text on an explicit click (useCopyFeedback) — no auto-copy, no logging.
+//
+// AUTH (ground truth, do not re-derive): ACH keys are `ek_…`/`pk_…` — there is
+// no `sk-` key. The forwarder resolves the declared credential header slots
+// (x-ach-key / x-api-key, chart default) VERBATIM — no `Bearer ` prefix, ever.
+// `Authorization: Bearer` is resolved ONLY for ACH's own OAuth JWT; a raw
+// ek_/pk_ there is forwarded untouched and LiteLLM rejects it. So every SDK
+// snippet here sets a custom header (default_headers/defaultHeaders) instead
+// of the SDK's own `api_key`, and every third-party tool without a
+// custom-header option gets an honest caveat instead of a snippet that 401s.
+
+import { useState } from 'react';
+import {
+  AlertCircle,
+  ChevronRight,
+  ExternalLink,
+  KeyRound,
+  MessageSquare,
+  Server,
+  Terminal,
+} from 'lucide-react';
+import { useNavigate } from 'react-router';
+
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CodeBlock } from '@/components/ui/CodeBlock';
+import { useCopyFeedback } from '@/hooks/use-copy-feedback';
+import { useModels } from '@/hooks/use-capabilities';
+import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
+import { TAB_PILL, TAB_PILL_LIST } from '@/lib/ui';
+import { useConfigStore } from '@/stores/config';
+import { useSessionStore } from '@/stores/session';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { COMING_SOON } from '@/lib/status';
+
+// Featured model alias for the quickstart (locked copy — the standard alias).
+const MODEL_ALIAS = 'ackstorm.fast';
+
+// ── TOC ──────────────────────────────────────────────────────────────────────
+// Sticky in-page nav. NOTE: this app is a HASH router (#/howto), so the URL hash
+// belongs to react-router — we must NOT use `<a href="#id">` anchors (that would
+// hijack the route hash). Instead each item scrolls its section into view.
+const TOC = [
+  { id: 'tools', label: 'Editors & CLIs' },
+  { id: 'mcp', label: 'MCP servers' },
+  { id: 'api', label: 'Using API keys' },
+  { id: 'chat', label: 'No terminal?' },
+  { id: 'troubleshooting', label: 'Troubleshooting' },
+] as const;
+
+// A collapsed <details> target (the API-keys section) is opened first, so the
+// jump lands on its content rather than a closed summary.
+function scrollToSection(id: string): void {
+  const el = document.getElementById(id);
+  if (el instanceof HTMLDetailsElement) el.open = true;
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Section ──────────────────────────────────────────────────────────────────
+// A titled content block with a scroll anchor (`id`) the TOC targets. `scroll-mt`
+// keeps the heading clear of the top edge when scrolled into view.
+function Section({
+  id,
+  icon: Icon,
+  title,
+  sub,
+  children,
+}: {
+  id: string;
+  icon: typeof Terminal;
+  title: string;
+  sub: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} className="scroll-mt-8">
+      <div className="flex items-center gap-2.5">
+        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-border">
+          <Icon className="size-4 text-primary" aria-hidden="true" />
+        </span>
+        <h2 className="font-sans text-lg font-semibold leading-tight text-text-primary">
+          {title}
+        </h2>
+      </div>
+      <p className="mt-2 font-sans text-sm leading-relaxed text-text-secondary">
+        {sub}
+      </p>
+      <div className="mt-5">{children}</div>
+    </section>
+  );
+}
+
+// ── EndpointChip ─────────────────────────────────────────────────────────────
+// The gateway base URL with a Copy button (moved here from the Keys page). It
+// shows apiBase, the same value every snippet uses. Copy writes only that public
+// URL, on an explicit click.
+function EndpointChip({ endpoint }: { endpoint: string }) {
+  const { copied, copy } = useCopyFeedback();
+  return (
+    <div className="flex min-w-0 items-center gap-3 panel px-4 py-2">
+      <div className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">endpoint</div>
+      <div className="min-w-0 break-all font-mono text-xs text-text-primary">{endpoint}</div>
+      <button
+        type="button"
+        onClick={() => void copy(endpoint)}
+        className={copied ? 'btn sm is-done' : 'btn sm'}
+      >
+        {copied ? 'copied!' : 'Copy'}
+      </button>
+    </div>
+  );
+}
+
+// A small numbered step marker (the quickstart 1·2 sequence).
+function StepBadge({ n }: { n: number }) {
+  return (
+    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-primary/40 bg-primary/10 font-mono text-[11px] font-semibold text-primary">
+      {n}
+    </span>
+  );
+}
+
+export function HowTo() {
+  const me = useSessionStore((s) => s.me);
+  const config = useConfigStore((s) => s.config);
+  const navigate = useNavigate();
+
+  // Model picker: personalize the quickstart snippets with a real alias from the
+  // catalog. Defaults to the standard MODEL_ALIAS; the picked value is always
+  // kept as a valid option.
+  const modelsQuery = useModels();
+  const catalogAliases = (modelsQuery.data?.models ?? [])
+    .map((m) => m.name)
+    .filter((n): n is string => typeof n === 'string' && n.length > 0);
+  const [pickedModel, setPickedModel] = useState<string>(MODEL_ALIAS);
+  const modelOptions = Array.from(new Set([pickedModel, ...catalogAliases]));
+
+  // Live gateway base (api_public_url). Falls back to a neutral placeholder so
+  // the page reads sensibly before the session resolves.
+  const apiBase = me?.endpoint || FALLBACK_API_BASE;
+  const chatUrl = me?.chat_url;
+  const brandShort = config.brand_short || 'ACH';
+
+  // The quickstart curl — the featured first call. Header is ACH's declared
+  // credential slot, value taken VERBATIM — no `Bearer ` prefix.
+  const curlSnippet = `curl ${apiBase}/v1/chat/completions \\
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${pickedModel}",
+    "messages": [{ "role": "user", "content": "Hello!" }]
+  }'`;
+
+  // Same first call from the official OpenAI SDKs (the gateway is OpenAI-compatible).
+  // The SDK's own `api_key` lands in `Authorization: Bearer`, which ACH does NOT
+  // resolve for a raw key — so the key goes in an explicit custom header instead,
+  // via the SDK's default-headers option. `api_key` is a required-but-unused dummy.
+  const pySnippet = `from openai import OpenAI
+
+client = OpenAI(
+    api_key="unused",
+    base_url="${apiBase}/v1",
+    default_headers={"${AUTH_HEADER}": "${KEY_PLACEHOLDER}"},
+)
+
+resp = client.chat.completions.create(
+    model="${pickedModel}",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(resp.choices[0].message.content)`;
+
+  const tsSnippet = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "unused",
+  baseURL: "${apiBase}/v1",
+  defaultHeaders: { "${AUTH_HEADER}": "${KEY_PLACEHOLDER}" },
+});
+
+const resp = await client.chat.completions.create({
+  model: "${pickedModel}",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+console.log(resp.choices[0].message.content);`;
+
+  const expectedResponse = `{
+  "choices": [
+    { "message": { "role": "assistant", "content": "Hello!" } }
+  ]
+}`;
+
+  // ── MCP gateway ────────────────────────────────────────────────────────────────
+  // The gateway exposes MCP on the SAME host, under /mcp, authenticated with
+  // the SAME ACH credential header (verbatim, no Bearer prefix). An optional
+  // `x-mcp-servers` header (or a /mcp/<group> URL) scopes the exposed tools to
+  // named servers and/or groups.
+  const mcpUrl = `${apiBase}/mcp`;
+  const mcpConfig = `{
+  "mcpServers": {
+    "litellm": {
+      "url": "${mcpUrl}",
+      "headers": {
+        "${AUTH_HEADER}": "${KEY_PLACEHOLDER}"
+      }
+    }
+  }
+}`;
+  const mcpFilteredConfig = `{
+  "mcpServers": {
+    "litellm": {
+      "url": "${mcpUrl}",
+      "headers": {
+        "${AUTH_HEADER}": "${KEY_PLACEHOLDER}",
+        "x-mcp-servers": "Zapier_Gmail,dev-group"
+      }
+    }
+  }
+}`;
+  const MCP_EXAMPLE = 'mcp-google-drive';
+
+  // OpenCode: register a server by URL, then sign in (ACH SSO, then the
+  // provider's own consent screen for some servers). OAuth, no key.
+  const opencodeMcpCmd = `# Add a server (drop --global to add it to this project only)
+opencode mcp add google-drive --url ${apiBase}/mcp/${MCP_EXAMPLE} --global
+
+# Sign in to it (opens the browser)
+opencode mcp auth google-drive
+
+# Or pick from every configured server
+opencode mcp auth`;
+  const opencodeMcpList = `Authenticate an MCP server
+│
+◆  Select MCP server
+│  Search: _
+│
+│  MCP
+│  ● google-drive (disabled)
+│  ○ mcp-context7 (disabled)
+│  ○ mcp-aws-documentation ✓ (disabled)`;
+
+  // ── Editor / CLI setup ───────────────────────────────────────────────────────
+  // Live setup for Claude Code, Gemini CLI, opencode, and codex. The base URL is
+  // the user's live gateway (apiBase); the key is the `ek_...` placeholder (mint
+  // it on Keys). `caption` overrides the code-box label (e.g. a config-file path);
+  // `note` adds a one-line instruction; `guide` links the authoritative doc.
+  // Installs the platform's OpenCode plugin (engines v1 and v2) from
+  // <origin>/.well-known/opencode, then signs in with it.
+  const provider = me?.provider_name || '<provider>';
+  const opencodeSsoCmd = `export OPENCODE_CONFIG_CONTENT='{"websearch":{"provider":"exa"}}'   # web search via Exa; add to your shell profile to keep it
+opencode auth login ${apiBase}
+opencode auth login ${provider}   # opencode v1: opencode auth login -p ${provider}
+opencode service restart          # opencode v2: the running service loads the plugin only at start`;
+  // Tools are grouped by family (top-level tab). A family with more than one
+  // variant (e.g. OpenCode → Gemini / OpenAI, Claude Code → API / Pro·Max)
+  // renders a second row of pill sub-tabs; single-variant families render the
+  // body directly. `subLabel` is the sub-tab label within a family.
+  type ToolVariant = {
+    id: string;
+    subLabel?: string;
+    ready: boolean;
+    code: string;
+    caption?: string;
+    note?: string;
+    guide?: { url: string; label: string };
+    // Optional trailing note with its own copyable snippet — a caveat (e.g.
+    // disabling Anthropic server-side tools that can't run through the gateway)
+    // or a follow-up config file (e.g. pi's settings.json next to models.json).
+    caveat?: { note: string; caption: string; code: string };
+  };
+  const TOOL_GROUPS: {
+    id: string;
+    label: string;
+    // `false` keeps the entry in source (deprecated / unmaintained setups stay
+    // documented here) but hides it from the page — see VISIBLE_TOOLS below.
+    enabled?: boolean;
+    // Rendered above the variant tabs — used by OpenCode to lead with the SSO
+    // plugin (no key to copy/export) ahead of the pasted-key fallback below.
+    intro?: { text: string; code: string; caption: string };
+    variants: ToolVariant[];
+  }[] = [
+    {
+      id: 'opencode',
+      label: 'OpenCode',
+      variants: [
+        {
+          id: 'opencode',
+          ready: true,
+          caption: 'install',
+          code: opencodeSsoCmd,
+          note: 'Signs in with your company account through the ACH SSO plugin — no key to copy or export. Your models appear under the provider above.',
+        },
+      ],
+    },
+    // Hidden from the page (OpenCode only), kept for reference: `enabled: false`.
+    {
+      id: 'pi',
+      enabled: false,
+      label: 'Pi agent',
+      variants: [
+        {
+          id: 'pi',
+          ready: true,
+          caption: '~/.pi/agent/models.json',
+          // Pi is configured by JSON, not env vars: providers keyed by name, each
+          // pointing at the gateway. `apiKey` would send an Authorization: Bearer
+          // header, which ACH does not resolve for a raw key — pi's `headers`
+          // field sends the ACH credential header directly instead.
+          // `$ACH_API_KEY` is pi's own env interpolation, so the key never lands
+          // in the file.
+          code: `{
+  "providers": {
+    "google": {
+      "api": "google-generative-ai",
+      "baseUrl": "${apiBase}/v1beta",
+      "headers": { "${AUTH_HEADER}": "$ACH_API_KEY" }
+    },
+    "litellm": {
+      "api": "openai-completions",
+      "baseUrl": "${apiBase}/v1",
+      "headers": { "${AUTH_HEADER}": "$ACH_API_KEY" },
+      "models": [
+        {
+          "id": "ackstorm.fast",
+          "name": "ACKstorm Fast",
+          "reasoning": false,
+          "input": ["text", "image"]
+        },
+        {
+          "id": "ackstorm.smart",
+          "name": "ACKstorm Smart",
+          "reasoning": true,
+          "input": ["text", "image"]
+        },
+        {
+          "id": "gemini-flash-latest",
+          "name": "Gemini Flash Latest",
+          "reasoning": true,
+          "input": ["text", "image"]
+        }
+      ]
+    }
+  }
+}`,
+          note: 'Install with npm install -g --ignore-scripts @earendil-works/pi-coding-agent (or curl -fsSL https://pi.dev/install.sh | sh), export the key pi interpolates — export ACH_API_KEY="ek_..." — then run pi. An openai-completions provider needs an explicit models array: pi ships no catalog for custom gateways, so add one entry per alias you use. The google provider needs no list — it reuses pi’s built-in Gemini catalog against the gateway.',
+          guide: {
+            url: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md',
+            label: 'Pi providers doc',
+          },
+          caveat: {
+            note: 'Pick the default and which models show up in the model picker. Entries in enabledModels are namespaced provider/model-id:',
+            caption: '~/.pi/agent/settings.json',
+            code: `{
+  "defaultProvider": "litellm",
+  "defaultModel": "ackstorm.fast",
+  "enabledModels": [
+    "litellm/ackstorm.fast",
+    "litellm/ackstorm.smart",
+    "litellm/gemini-flash-latest",
+    "google/gemini-flash-latest"
+  ]
+}`,
+          },
+        },
+      ],
+    },
+    {
+      id: 'claude',
+      enabled: false,
+      label: 'Claude Code',
+      variants: [
+        {
+          id: 'claude-api',
+          subLabel: 'API',
+          ready: true,
+          // ANTHROPIC_API_KEY (not ANTHROPIC_AUTH_TOKEN) — Claude Code sends it as
+          // `x-api-key`, one of ACH's resolved credential slots by chart default.
+          // ANTHROPIC_AUTH_TOKEN sends `Authorization: Bearer`, which ACH does NOT
+          // resolve for a raw key.
+          code: `# Claude Code → ACH gateway
+export ANTHROPIC_BASE_URL="${apiBase}"
+export ANTHROPIC_API_KEY=${KEY_PLACEHOLDER}
+export ANTHROPIC_MODEL="ackstorm.smart"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="ackstorm.smart"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="ackstorm.fast"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="ackstorm.lite"
+export CLAUDE_CODE_SUBAGENT_MODEL="ackstorm.fast"
+
+claude`,
+          note: 'Bills against your gateway key — no Claude subscription required. Models are gateway aliases.',
+          caveat: {
+            note: "WebSearch is an Anthropic server-side tool — it only runs on Anthropic's own API, so through the gateway it fails. You don't lose web search, though: plug in an external search MCP server (see the MCP servers section below) to add it back. Disable the built-in tool in Claude Code settings (~/.claude/settings.json for all projects, or .claude/settings.json in a project); add WebFetch too if it also errors:",
+            caption: '~/.claude/settings.json',
+            code: `{
+  "permissions": {
+    "deny": ["WebSearch"]
+  }
+}`,
+          },
+        },
+        {
+          id: 'claude-sub',
+          subLabel: 'Pro/Max',
+          ready: true,
+          // MAX/Pro subscription flow (NOT an API key): ANTHROPIC_API_KEY is left empty
+          // so Claude Code authenticates with your Claude subscription OAuth token. The
+          // gateway key rides in ANTHROPIC_CUSTOM_HEADERS (ACH's credential header,
+          // value verbatim — no Bearer prefix) purely for budget/limit tracking.
+          // ANTHROPIC_MODEL must be a real model your gateway maps.
+          code: `# Claude Code → ACH gateway (MAX/Pro subscription)
+export ANTHROPIC_API_KEY=""
+export ANTHROPIC_BASE_URL="${apiBase}"
+export ANTHROPIC_CUSTOM_HEADERS="${AUTH_HEADER}: ${KEY_PLACEHOLDER}"
+export ANTHROPIC_MODEL="claude-opus-4-8"
+
+claude`,
+          note: 'Uses your Claude MAX/Pro subscription, not an API key. On first run pick "Claude account with subscription" and authorize in the browser — Claude Code sends its OAuth token, while the gateway key only tracks budget/limits.',
+        },
+      ],
+    },
+    {
+      id: 'codex',
+      enabled: false,
+      label: 'Codex',
+      variants: [
+        {
+          id: 'codex',
+          ready: true,
+          caption: '~/.codex/config.toml',
+          // Codex is configured by a TOML provider (NOT endpoint env vars): a named
+          // OpenAI-compatible provider pointed at the gateway. `env_key` would send
+          // the key as `Authorization: Bearer`, which ACH does not resolve for a raw
+          // key — `env_http_headers` sends it as ACH's own credential header instead,
+          // read from the named env var.
+          code: `model = "ackstorm.router"
+model_provider = "ackstorm"
+model_reasoning_effort = "medium"
+
+[model_providers.ackstorm]
+name = "ACKstorm"
+base_url = "${apiBase}/v1"
+env_http_headers = { "${AUTH_HEADER}" = "ACH_API_KEY" }
+wire_api = "responses"
+supports_websockets = false`,
+          note: 'Export the key named in env_http_headers first: `export ACH_API_KEY="ek_..."`, then run `codex`.',
+          guide: {
+            url: 'https://openrouter.ai/docs/cookbook/coding-agents/codex-cli',
+            label: 'Codex CLI provider config',
+          },
+        },
+      ],
+    },
+    {
+      id: 'qwen',
+      enabled: false,
+      label: 'Qwen Code',
+      variants: [
+        {
+          id: 'qwen',
+          ready: true,
+          code: `# Qwen Code CLI → ACH gateway (OpenAI-compatible)
+export OPENAI_BASE_URL="${apiBase}/v1"
+export OPENAI_API_KEY="${KEY_PLACEHOLDER}"
+export OPENAI_MODEL="${MODEL_ALIAS}"
+
+qwen`,
+          // Qwen Code has no custom-header option — OPENAI_API_KEY is sent as
+          // `Authorization: Bearer`, which ACH does not resolve for a raw key. Say
+          // so plainly rather than presenting this as a working setup.
+          note: "Qwen Code sends this key via Authorization: Bearer, which ACH does not resolve by default — this snippet will 401 unless your admin has added Authorization to the forwarder's credential headers. Prefer a tool above with a custom-header option (Codex, Pi, the Python/TypeScript SDK snippets).",
+        },
+      ],
+    },
+    {
+      id: 'gemini',
+      label: 'Gemini CLI',
+      // Deprecated upstream — use the Pi agent `google` provider instead.
+      enabled: false,
+      variants: [
+        {
+          id: 'gemini',
+          ready: true,
+          code: `# Gemini CLI → ACH gateway
+export GOOGLE_GEMINI_BASE_URL=${apiBase}/gemini
+export GEMINI_BASE_URL=${apiBase}/gemini/v1beta
+export GEMINI_API_KEY=${KEY_PLACEHOLDER}
+
+gemini`,
+          // GEMINI_API_KEY is Gemini CLI's own credential slot, not ACH's declared
+          // header — verify how it sends the key before re-enabling this tab; the Pi
+          // `google` provider (above) sends it via an explicit custom header instead.
+          note: 'GEMINI_API_KEY is Gemini CLI’s own credential mechanism, not ACH’s declared header slot — confirm it sends the key in a header ACH resolves before relying on this. The Pi agent’s `google` provider (above) is the verified path.',
+        },
+      ],
+    },
+    {
+      id: 'copilot',
+      label: 'GitHub Copilot',
+      enabled: false,
+      variants: [
+        {
+          id: 'copilot',
+          ready: true,
+          caption: 'VS Code settings.json',
+          // GitHub Copilot (VS Code) is pointed at the gateway by overriding its proxy
+          // URL in settings.json; reload the window afterwards.
+          code: `{
+  "github.copilot.advanced": {
+    "debug.overrideProxyUrl": "${apiBase}",
+    "debug.testOverrideProxyUrl": "${apiBase}"
+  }
+}`,
+          note: "Reload VS Code after saving. Copilot's own key prompt sends the key via Authorization: Bearer, which ACH does not resolve by default — confirm with the guide below whether Copilot supports a custom header before relying on this.",
+        },
+      ],
+    },
+  ];
+  const VISIBLE_TOOLS = TOOL_GROUPS.filter((g) => g.enabled !== false);
+  const [toolGroup, setToolGroup] = useState<string>('opencode');
+  const [toolVariant, setToolVariant] = useState<Record<string, string>>(() =>
+    Object.fromEntries(TOOL_GROUPS.map((g) => [g.id, g.variants[0].id])),
+  );
+
+  // Body of one tool variant: the config code box plus its note / guide link.
+  // Reused for both single-variant families and each pill sub-tab.
+  const renderToolBody = (v: ToolVariant, groupLabel: string) => (
+    <>
+      <CodeBlock
+        code={v.code}
+        caption={
+          v.caption ??
+          `${groupLabel}${v.subLabel ? ` · ${v.subLabel}` : ''} · setup`
+        }
+      />
+      {v.note && (
+        <p className="mt-2 font-sans text-xs leading-relaxed text-text-secondary">
+          {v.note}
+        </p>
+      )}
+      {v.guide && (
+        <a
+          href={v.guide.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex items-center gap-1 font-sans text-xs font-medium text-primary hover:underline"
+        >
+          {v.guide.label}
+          <ExternalLink className="size-3" aria-hidden="true" />
+        </a>
+      )}
+      {v.caveat && (
+        <div className="mt-4 rounded-lg border border-border bg-surface/50 p-3">
+          <p className="mb-2 font-sans text-xs leading-relaxed text-text-secondary">
+            {v.caveat.note}
+          </p>
+          <CodeBlock code={v.caveat.code} caption={v.caveat.caption} />
+        </div>
+      )}
+      {!v.ready && (
+        <p className="mt-2 font-sans text-xs text-text-secondary">
+          Placeholder — tested {v.subLabel ?? groupLabel} values land here soon.
+        </p>
+      )}
+    </>
+  );
+  const [mcpTab, setMcpTab] = useState<string>('opencode');
+
+  return (
+    <div className="catalog-page flex flex-col gap-6">
+      {/* Page header, with the gateway endpoint every snippet below uses */}
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div>
+          <h1 className="text-[23px] font-semibold leading-tight tracking-tight text-text-primary">
+            How-to
+          </h1>
+          <p className="mt-1 font-sans text-sm text-text-secondary">
+            Sign in to{' '}
+            <span className="font-mono text-text-primary">{brandShort}</span> once
+            with your company account, then connect your editor and MCP servers.
+            No key needed.
+          </p>
+        </div>
+        <EndpointChip endpoint={apiBase} />
+      </div>
+
+      <div className="grid gap-10 lg:grid-cols-[1fr_180px]">
+        {/* Sticky in-page TOC (desktop only) — placed on the RIGHT via order
+            (DOM order keeps it readable). Buttons, not hash anchors — the hash
+            belongs to the router. */}
+        <aside className="hidden lg:order-2 lg:block">
+          <nav
+            aria-label="On this page"
+            className="sticky top-8 flex flex-col gap-1"
+          >
+            <div className="mb-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-text-primary">
+              On this page
+            </div>
+            {TOC.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => scrollToSection(item.id)}
+                className="cursor-pointer rounded-md px-2.5 py-1.5 text-left font-sans text-sm text-text-primary transition-colors hover:bg-primary/5 hover:text-primary"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Content column */}
+        <div className="flex min-w-0 flex-col gap-12 lg:order-1">
+          {/* §1 Editors & CLIs */}
+          <Section
+            id="tools"
+            icon={Terminal}
+            title="Editors & CLIs"
+            sub="Connect OpenCode to the gateway with single sign-on. This is the quickest way to start."
+          >
+            <Tabs value={toolGroup} onValueChange={setToolGroup}>
+              <TabsList variant="line" className="flex-wrap">
+                {VISIBLE_TOOLS.map((g) => (
+                  <TabsTrigger key={g.id} value={g.id}>
+                    {g.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {VISIBLE_TOOLS.map((g) => (
+                <TabsContent key={g.id} value={g.id} className="mt-4">
+                  {g.intro && (
+                    <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <p className="mb-2 font-sans text-xs leading-relaxed text-text-secondary">
+                        {g.intro.text}
+                      </p>
+                      <CodeBlock code={g.intro.code} caption={g.intro.caption} />
+                    </div>
+                  )}
+                  {g.variants.length > 1 ? (
+                    <Tabs
+                      value={toolVariant[g.id]}
+                      onValueChange={(v) =>
+                        setToolVariant((prev) => ({ ...prev, [g.id]: v }))
+                      }
+                    >
+                      <TabsList className={TAB_PILL_LIST}>
+                        {g.variants.map((v) => (
+                          <TabsTrigger key={v.id} value={v.id} className={TAB_PILL}>
+                            {v.subLabel}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      {g.variants.map((v) => (
+                        <TabsContent key={v.id} value={v.id} className="mt-4">
+                          {renderToolBody(v, g.label)}
+                        </TabsContent>
+                      ))}
+                    </Tabs>
+                  ) : (
+                    renderToolBody(g.variants[0], g.label)
+                  )}
+                </TabsContent>
+              ))}
+            </Tabs>
+            {/* Key-based tools only (hidden above): kept, not shown. */}
+            <p className="hidden mt-3 font-sans text-xs leading-relaxed text-text-secondary">
+              Swap {KEY_PLACEHOLDER} for your key (mint it on the Keys tab). The
+              base URL is your live gateway; only the key differs per user.
+            </p>
+            <p className="hidden mt-2 font-mono text-xs leading-relaxed text-text-tertiary">
+              A tool that only supports the plain OPENAI_API_KEY convention sends it
+              via Authorization: Bearer, which ACH does not resolve — it needs a way
+              to set{' '}
+              <span className="text-text-secondary">{AUTH_HEADER}</span> as a custom
+              header instead (see the Codex and Pi tabs above for two ways to do
+              that).
+            </p>
+          </Section>
+
+          {/* §2 MCP servers */}
+          <Section
+            id="mcp"
+            icon={Server}
+            title="MCP servers"
+            sub="Add the gateway's MCP servers to OpenCode and sign in to each one. Every server lives on the same gateway host, at /mcp/<server>."
+          >
+            <Tabs value={mcpTab} onValueChange={setMcpTab}>
+              <TabsList variant="line" className="flex-wrap">
+                <TabsTrigger value="opencode">OpenCode</TabsTrigger>
+                {/* Generic MCP clients (Cursor, Claude Desktop, VS Code, JSON) and
+                    x-mcp-servers scoping: kept, not shown (OpenCode only). */}
+                <TabsTrigger value="access" className="hidden">MCP Access</TabsTrigger>
+                <TabsTrigger value="group" className="hidden">MCP Group access</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="opencode" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Add a server by its URL,{' '}
+                  <span className="font-mono text-text-primary">
+                    {`${apiBase}/mcp/<server>`}
+                  </span>
+                  , then sign in with{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  — single sign-on, no key. Restart OpenCode after adding one.
+                </p>
+                <CodeBlock code={opencodeMcpCmd} caption="opencode" />
+                <p className="mt-4 mb-2 font-sans text-sm text-text-secondary">
+                  Without a name,{' '}
+                  <span className="font-mono text-text-primary">opencode mcp auth</span>{' '}
+                  lists every configured server to pick from:
+                </p>
+                <CodeBlock code={opencodeMcpList} caption="opencode mcp auth" />
+              </TabsContent>
+
+              <TabsContent value="access" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Every tool you can reach. URL{' '}
+                  <span className="font-mono text-text-primary">{mcpUrl}</span>,
+                  auth header{' '}
+                  <span className="font-mono text-text-primary">
+                    {AUTH_HEADER}
+                  </span>{' '}
+                  (the same key as chat — no Bearer prefix).
+                </p>
+                <Tabs defaultValue="cursor">
+                  <TabsList className={TAB_PILL_LIST}>
+                    <TabsTrigger value="cursor" className={TAB_PILL}>Cursor</TabsTrigger>
+                    <TabsTrigger value="claude" className={TAB_PILL}>Claude Desktop</TabsTrigger>
+                    <TabsTrigger value="vscode" className={TAB_PILL}>VS Code</TabsTrigger>
+                    <TabsTrigger value="generic" className={TAB_PILL}>Generic JSON</TabsTrigger>
+                  </TabsList>
+                  {[
+                    ['cursor', '~/.cursor/mcp.json'],
+                    ['claude', '~/Library/Application Support/Claude/claude_desktop_config.json'],
+                    ['vscode', '.vscode/mcp.json (workspace)'],
+                    ['generic', "your client's MCP config"],
+                  ].map(([id, path]) => (
+                    <TabsContent key={id} value={id} className="mt-3">
+                      <CodeBlock code={mcpConfig} caption={path} />
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </TabsContent>
+
+              <TabsContent value="group" className="mt-4">
+                <p className="mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                  Scope to specific servers and/or groups with the{' '}
+                  <span className="font-mono text-text-primary">
+                    x-mcp-servers
+                  </span>{' '}
+                  header (comma-separated) — or target a group straight from the
+                  URL,{' '}
+                  <span className="font-mono text-text-primary">
+                    {`${mcpUrl}/dev-group`}
+                  </span>
+                  .
+                </p>
+                <CodeBlock
+                  code={mcpFilteredConfig}
+                  caption="MCP client config · scoped"
+                />
+              </TabsContent>
+
+            </Tabs>
+          </Section>
+
+          {/* §3 Using API keys — collapsed by default: login is the default
+              path and not every account may mint keys. The `id` sits on the
+              <details> so the TOC can open it before scrolling. */}
+          <details
+            id="api"
+            className="group scroll-mt-8 panel"
+          >
+            <summary className="flex cursor-pointer list-none items-center gap-2.5 rounded-xl px-4 py-4 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg border border-border">
+                <KeyRound className="size-4 text-primary" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <h2 className="font-sans text-lg font-semibold leading-tight text-text-primary">
+                  Using API keys
+                </h2>
+                <span className="mt-0.5 block font-sans text-sm text-text-secondary">
+                  For scripts and SDKs that call the gateway directly. Only some
+                  accounts can create keys.
+                </span>
+              </span>
+              <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+                Advanced
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-text-tertiary transition-transform group-open:rotate-90 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </summary>
+            <div className="flex flex-col gap-5 border-t border-border px-4 pt-4 pb-5">
+              <p className="font-sans text-sm leading-relaxed text-text-secondary">
+                Most people don't need this: your editor and MCP servers sign in
+                with your account. Use a key when a script or service has to call
+                the gateway without you logged in. If you can't create keys on the
+                Keys tab, ask your admin.
+              </p>
+              {/* Step 1 — mint a key */}
+              <div className="flex gap-3">
+                <StepBadge n={1} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-sans text-sm font-medium text-text-primary">
+                    Mint a virtual key
+                  </div>
+                  <p className="mt-1 font-sans text-sm leading-relaxed text-text-secondary">
+                    Create one on the{' '}
+                    <button
+                      type="button"
+                      onClick={() => navigate('/keys')}
+                      className="inline-flex cursor-pointer items-center gap-1 font-medium text-primary hover:underline"
+                    >
+                      <KeyRound className="size-3.5" aria-hidden="true" />
+                      Keys
+                    </button>{' '}
+                    tab. The{' '}
+                    <span className="font-mono text-text-primary">ek_</span> value
+                    is shown <span className="text-text-primary">once</span>, at
+                    creation — copy it then; it is never displayed again.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2 — call the gateway */}
+              <div className="flex gap-3">
+                <StepBadge n={2} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-sans text-sm font-medium text-text-primary">
+                    Call the gateway
+                  </div>
+                  <p className="mt-1 mb-3 font-sans text-sm leading-relaxed text-text-secondary">
+                    Swap{' '}
+                    <span className="font-mono text-text-primary">
+                      {KEY_PLACEHOLDER}
+                    </span>{' '}
+                    for your key and run it. The endpoint is OpenAI-compatible —{' '}
+                    <span className="font-mono text-text-primary">
+                      {pickedModel}
+                    </span>{' '}
+                    is a standard model alias.
+                  </p>
+                  <label className="mb-3 flex items-center gap-2 font-sans text-xs text-text-secondary">
+                    Model
+                    <select
+                      aria-label="Model"
+                      value={pickedModel}
+                      onChange={(e) => setPickedModel(e.target.value)}
+                      className="cursor-pointer rounded-md border border-border bg-transparent px-2 py-1 font-mono text-xs text-text-primary outline-none focus-visible:border-primary"
+                    >
+                      {modelOptions.map((alias) => (
+                        <option key={alias} value={alias}>
+                          {alias}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Tabs defaultValue="curl">
+                    <TabsList variant="line" className="flex-wrap">
+                      <TabsTrigger value="curl">cURL</TabsTrigger>
+                      <TabsTrigger value="python">Python</TabsTrigger>
+                      <TabsTrigger value="typescript">TypeScript</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="curl" className="mt-3">
+                      <CodeBlock code={curlSnippet} caption="curl" />
+                    </TabsContent>
+                    <TabsContent value="python" className="mt-3">
+                      <CodeBlock code={pySnippet} caption="python" />
+                    </TabsContent>
+                    <TabsContent value="typescript" className="mt-3">
+                      <CodeBlock code={tsSnippet} caption="typescript" />
+                    </TabsContent>
+                  </Tabs>
+                  <p className="mt-4 mb-2 font-sans text-sm text-text-secondary">
+                    A successful call returns:
+                  </p>
+                  <CodeBlock code={expectedResponse} caption="200 OK" />
+                </div>
+              </div>
+            </div>
+          </details>
+
+          {/* §4 No terminal? */}
+          <Section
+            id="chat"
+            icon={MessageSquare}
+            title="No terminal?"
+            sub="Prefer a chat window over a shell? Use a browser UI and sign in with your company account."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* ACKstorm Chat — hosted; only when a chat URL is configured */}
+              {chatUrl && (
+              <a
+                href={chatUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex flex-col gap-2 panel p-5 transition-colors hover:border-primary"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-sans text-sm font-semibold text-text-primary">
+                    ACKstorm Chat
+                  </span>
+                  {/* Hosted + ready -> the open-in-new icon is accent green
+                      (OpenCode Desktop's stays muted since it is not wired yet). */}
+                  <ExternalLink
+                    className="size-4 text-primary"
+                    aria-hidden="true"
+                  />
+                </div>
+                <p className="font-sans text-sm leading-relaxed text-text-secondary">
+                  Hosted chat UI, ready to use — sign in and pick{' '}
+                  <span className="font-mono text-text-primary">
+                    {MODEL_ALIAS}
+                  </span>
+                  . Nothing to install.
+                </p>
+                <span className="mt-1 break-all font-mono text-[11px] text-text-tertiary">
+                  {chatUrl}
+                </span>
+              </a>
+              )}
+
+              {/* OpenCode Desktop (the openwork app) — coming soon (not yet wired to the gateway) */}
+              <a
+                href="https://github.com/different-ai/openwork"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex flex-col gap-2 panel p-5 transition-colors hover:border-primary"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <span className="font-sans text-sm font-semibold text-text-primary">
+                      OpenCode Desktop
+                    </span>
+                    <StatusPill tone={COMING_SOON.tone}>{COMING_SOON.label}</StatusPill>
+                  </span>
+                  <ExternalLink
+                    className="size-4 text-text-tertiary transition-colors group-hover:text-primary"
+                    aria-hidden="true"
+                  />
+                </div>
+                <p className="font-sans text-sm leading-relaxed text-text-secondary">
+                  OpenCode as a desktop app. Gateway support is on the way — not
+                  available yet.
+                </p>
+                <span className="hidden mt-1 break-all font-mono text-[11px] text-text-tertiary">
+                  github.com/different-ai/openwork
+                </span>
+              </a>
+            </div>
+          </Section>
+
+          {/* §5 Troubleshooting */}
+          <Section
+            id="troubleshooting"
+            icon={AlertCircle}
+            title="Troubleshooting"
+            sub="The most common onboarding errors and what they mean."
+          >
+            <div className="flex flex-col gap-3">
+              {[
+                ['401 Unauthorized', `Your session expired, or your key is missing or invalid. Sign in again (opencode auth login ${provider}); with a key, mint a fresh one on the Keys tab.`],
+                ['404 Model not found', 'The model alias is not enabled for your team or does not exist. Check the Models tab for available aliases.'],
+                ['429 Rate limited', 'Your key, team, or the upstream provider hit a rate limit. Retry with backoff or check your limits.'],
+                ['MCP: no tools discovered', 'The MCP server is reachable but returned no tools. Check the server health and your access group on the MCP tab.'],
+                ['MCP: authentication failed', 'In OpenCode: opencode mcp logout <name>, then opencode mcp auth <name>.'],
+              ].map(([code, body]) => (
+                <div key={code} className="rounded-lg border border-border bg-surface p-4">
+                  <div className="font-mono text-sm font-semibold text-text-primary">{code}</div>
+                  <p className="mt-1 font-sans text-sm leading-relaxed text-text-secondary">{body}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}

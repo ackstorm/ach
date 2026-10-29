@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package hydrate
+
+import (
+	"slices"
+
+	"github.com/ackstorm/ach/internal/cli/state"
+)
+
+// BuildScopedEmpty constructs the "new" state.File that the uninstall
+// command (D-25/D-26) feeds to Sync as its set-difference target.
+//
+// Sync computes the to-delete set as the set-difference of prev's
+// Targets minus newFile's Targets: a Target present in newFile SURVIVES,
+// a Target absent from newFile is pruned. So to express "remove bucket
+// X, keep bucket Y", the returned File must RETAIN the rows of bucket Y
+// verbatim and leave bucket X empty. The returned File is therefore the
+// scope-filtered SURVIVOR set, not the removal set.
+//
+// Scope semantics derive from the hydrate orchestrator's context/runtime
+// split seam (commit.go:636-637), but INVERTED: this is the survivor set,
+// so includeContext here means "context survives", which is the opposite
+// of the forward orchestrator's "context is (re)hydrated" sense. The
+// implemented derivation is:
+//
+//   - includeContext := onlyRuntime          (context survives only when removing runtime)
+//   - removeRuntime  := onlyRuntime || includeRuntime
+//
+// where context buckets are Prompts/Plugins/Artifacts and runtime is
+// RuntimeFiles + Adapter.Files. A bucket being REMOVED is left empty in
+// the returned File; a bucket being RETAINED is copied through verbatim.
+// The three flag combinations therefore map to:
+//
+//   - includeRuntime=true (full teardown): every bucket removed →
+//     all-empty File → Sync prunes everything.
+//   - default (both false, context-only): context removed, runtime
+//     retained → returned File carries RuntimeFiles + Adapter.Files.
+//   - onlyRuntime=true: runtime removed, context retained → returned
+//     File carries Prompts/Plugins/Artifacts.
+//
+// The returned File always carries SchemaVersion "3" and prev's
+// Environment/Profile so a subsequent state.Save round-trips a valid
+// v2 document. The Adapter.ID is preserved whenever runtime survives
+// (so the retained adapter section stays addressable). prev is never
+// mutated — every retained slice is shallow-copied into a fresh File.
+func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state.File {
+	out := &state.File{
+		SchemaVersion: "3",
+	}
+	if prev == nil {
+		return out
+	}
+	out.Environment = prev.Environment
+	out.Profile = prev.Profile
+
+	// includeContext: context buckets are RETAINED (only runtime is
+	// being removed). removeRuntime: runtime buckets are REMOVED.
+	includeContext := onlyRuntime
+	removeRuntime := onlyRuntime || includeRuntime
+
+	if includeContext {
+		out.Prompts = slices.Clone(prev.Prompts)
+		out.Plugins = slices.Clone(prev.Plugins)
+		out.Artifacts = slices.Clone(prev.Artifacts)
+		out.Skills = slices.Clone(prev.Skills)
+	}
+	if !removeRuntime {
+		out.RuntimeFiles = slices.Clone(prev.RuntimeFiles)
+		out.Adapter = state.AdapterSection{
+			ID:    prev.Adapter.ID,
+			Files: slices.Clone(prev.Adapter.Files),
+		}
+	}
+
+	return out
+}
+
+// BuildItemRemoved returns prev minus the item's rows (plugin: Plugins where
+// Source==name; skill: Skills where Source==name) — the survivor set
+// `env uninstall --only` feeds to Sync. ok=false when no row matched. prev
+// is never mutated.
+func BuildItemRemoved(prev *state.File, it Item) (out *state.File, ok bool) {
+	cp := *prev
+	cp.SchemaVersion = "3"
+	b := it.bucket(&cp)
+	kept := slices.DeleteFunc(slices.Clone(*b), func(e state.FileEntry) bool { return it.owns(e, prev.Environment) })
+	ok = len(kept) != len(*b)
+	*b = kept
+	return &cp, ok
+}
+
+// owns reports whether state row e belongs to the item: its Source is the
+// item's name or — for a skill de-collided across environments (see
+// projectSkills) — "<env>-<name>".
+func (it Item) owns(e state.FileEntry, env string) bool {
+	return e.Source == it.Name || (it.Kind == kindSkill && e.Source == env+"-"+it.Name)
+}
+
+// bucket returns the item's state bucket in f.
+func (it Item) bucket(f *state.File) *[]state.FileEntry {
+	if it.Kind == kindSkill {
+		return &f.Skills
+	}
+	return &f.Plugins
+}

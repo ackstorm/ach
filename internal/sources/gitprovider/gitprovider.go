@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Package gitprovider holds the shared git-transport flow used by the
+// github / gitlab / bitbucket source fetchers. It composes internal/sources
+// (for FetchResult) and internal/gitfetch (for the git clone engine).
+package gitprovider
+
+import (
+	"context"
+	"fmt"
+
+	gitsrc "github.com/ackstorm/ach/internal/gitfetch"
+	"github.com/ackstorm/ach/internal/sources"
+)
+
+// schemeForProvider maps a git provider literal to the HTTP auth scheme
+// its git-smart-http endpoint expects. GitLab (gitlab.com AND self-hosted)
+// authenticates with HTTP Basic "oauth2:<token>" — its documented PAT
+// git-http method and the only one self-hosted instances that reject
+// Bearer will accept. github.com and bitbucket.org keep Bearer.
+func schemeForProvider(provider string) gitsrc.AuthScheme {
+	if provider == "gitlab" {
+		return gitsrc.AuthBasicOAuth2
+	}
+	return gitsrc.AuthBearer
+}
+
+// FetchViaProvider runs the shared git transport flow: ls-remote to
+// resolve the SHA, short-circuit on NotModified when priorRev matches,
+// then full clone+fetch. provider is the error-prefix literal; cloneURL is
+// the per-provider-built https clone URL.
+//
+// subtree is spec.<git>.path: when non-empty the produced tarball is
+// narrowed on-disk to that sub-directory (git.tarSubtree strips the subtree
+// prefix entirely, so the archive is re-rooted at the subtree's contents).
+// Empty → whole worktree. The narrowing happens at the tar step from the
+// checked-out worktree, so no whole-repo tarball is buffered to re-slice
+// (F1). A subtree that resolves to a non-directory (e.g. an Artifact path
+// pointing at a single file) surfaces as a tar.tarSubtree error wrapped by
+// the caller's classification.
+func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, priorRev, subtree string) (*sources.FetchResult, error) {
+	scheme := schemeForProvider(provider)
+	sha, err := gitsrc.LsRemote(ctx, cloneURL, ref, token, scheme)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", provider, err)
+	}
+	if priorRev != "" && priorRev == sha {
+		return &sources.FetchResult{NotModified: true, UpstreamRev: sha}, nil
+	}
+	gitRes, err := gitsrc.New(gitsrc.Spec{
+		URL:        cloneURL,
+		Ref:        ref,
+		SHA:        sha,
+		Token:      token,
+		AuthScheme: scheme,
+		Subtree:    subtree,
+	}).Fetch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", provider, err)
+	}
+	return &sources.FetchResult{
+		Body:        gitRes.Body,
+		UpstreamRev: gitRes.UpstreamRev,
+	}, nil
+}

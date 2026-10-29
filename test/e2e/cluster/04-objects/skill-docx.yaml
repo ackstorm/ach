@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Standalone Skill (no marketplace) — a second monorepo skill (skills/docx)
+# alongside skill-pdf, so the standalone path is exercised with more than one
+# skill. Re-rooted from skills/docx/ → stored skill/docx.tar.gz → hydrate
+# delivers .claude/skills/docx/SKILL.md. The demo Environment references the
+# bare name `docx`. Part of the SYNCED set; verify_all gates SourceReachable=True.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Skill
+metadata:
+  name: docx
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: anthropics/skills
+    ref: main
+    path: skills/docx
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

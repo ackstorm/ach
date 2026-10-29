@@ -1,0 +1,21 @@
+# BackendIdentityPolicy — demo-mcp-nojwt route, JWT minting OFF.
+#
+# Other half of the demo Environment's BIP closed-loop (examples/04). On a
+# request routed to /mcp/demo-mcp-nojwt the forwarder forwards WITHOUT an
+# Authorization header (forwardIdentityJWT: false — operationally
+# indistinguishable from no BIP at all). The ach-mcp-echo backend runs with
+# ACH_REQUIRE_JWT=false so it accepts the tokenless request and records
+# jwt_present=false; the BIP closed-loop e2e asserts that absence.
+#
+# Pairs with examples/11 (demo-mcp-jwt, forwardIdentityJWT: true). Both
+# target the SAME ach-mcp-echo backend — the only difference is this policy.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-demo-mcp-nojwt
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp-nojwt
+  forwardIdentityJWT: false

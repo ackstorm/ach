@@ -1,0 +1,25 @@
+# BackendIdentityPolicy — opt-in switch that tells the Forwarder to mint
+# and attach the ACH-signed JWT (§9.1) on /mcp/context7 requests.
+#
+# Without this CR, the Forwarder strips the client Authorization header
+# and forwards anonymously. With forwardIdentityJWT=true, the Forwarder
+# signs the §9.1 claim set (`sub`, `aud=context7`, `iat`, `exp`) using
+# its operator-side key and attaches `Authorization: Bearer <jwt>`.
+#
+# Target.Kind picks the route prefix: MCPServer → /mcp/<name>;
+# A2AAgent → /a2a/<name>. The Forwarder enforces DNS-1123 on name at
+# admission (CRD-08); the route segment is consumed verbatim.
+#
+# The target backend (MCPServer/A2AAgent CR) does NOT need to exist for
+# this CR to apply — the policy is a static attach-or-not switch keyed
+# by (kind, bare-name) without a foreign-key check.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-context7-jwt-on
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: context7
+  forwardIdentityJWT: true

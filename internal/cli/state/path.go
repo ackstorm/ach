@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package state
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// ResolvePath computes the canonical <ach-dir>/state.json location per
+// CLI spec §8.1. BOTH scopes namespace the directory by Environment so a
+// single project (or $HOME) can hold multiple Environments side-by-side
+// without their caches/state colliding:
+//
+//   - Workspace scope (global=false): <workspaceCwd>/.ach/<environment>/state.json.
+//     workspaceCwd is the directory `ach-cli env hydrate` was invoked from
+//     (the caller resolves it via os.Getwd at the cobra layer); this
+//     function does not call os.Getwd itself so tests can inject any
+//     path without chdir.
+//
+//   - Global scope (global=true): $HOME/.ach/<environment>/state.json.
+//
+// The environment string MUST be non-empty in BOTH scopes — it is the
+// per-environment namespace segment. An empty environment returns
+// ErrInvalidPath (the caller layer gates --environment before reaching the
+// engine; see cmd/ach-cli/cmd/hydrate.go).
+//
+// NOTE: only the <ach-dir> (cache + state.json) is per-environment. The
+// adapter-native projection (toolRoot: <workspaceCwd>/.claude, …, or $HOME
+// under --global) is single-path by construction — agents read fixed config
+// locations — so two Environments hydrated into one project UNION in the
+// same .claude/ (each surgically tracked + independently uninstallable). The
+// §8.3 environment guard still protects any shared <ach-dir>.
+//
+// Both branches keep <ach-dir>'s sibling artifacts (lock, tmp/, runtime/,
+// prompt/, plugin/, artifact/) at the same parent — the §8.7 atomic-rename
+// invariant assumes state.json and its tmp-staged sibling live on the same
+// filesystem. Callers should not separately resolve the parent directory;
+// <ach-dir> is filepath.Dir(returned path).
+func ResolvePath(workspaceCwd, environment string, global bool) (string, error) {
+	if environment == "" {
+		return "", fmt.Errorf("%w: a non-empty environment is required (state is namespaced by environment per spec §8.1)", ErrInvalidPath)
+	}
+	// The name can come from a .ach/ dir name: a ".." or a separator
+	// would put <ach-dir> — and every RemoveAll under it — outside the
+	// workspace (review #14).
+	if err := validateSegment("environment", environment); err != nil {
+		return "", err
+	}
+	if global {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, ".ach", environment, "state.json"), nil
+	}
+
+	if workspaceCwd == "" {
+		return "", fmt.Errorf("%w: workspace scope requires a non-empty workspaceCwd", ErrInvalidPath)
+	}
+	return filepath.Join(workspaceCwd, ".ach", environment, "state.json"), nil
+}
+
+// ResolvePlatformPath is ResolvePath narrowed to ONE platform: it returns
+// <ach-dir>/state-<platform>.json, the per-platform state file. The hydrate
+// engine tracks each agent target in its own state file so a multi-target
+// hydrate (`--target codex,opencode`) does not let one platform's render
+// overwrite another's projection bucket (step12WriteState replaces buckets
+// wholesale). <ach-dir> stays the per-environment dir (filepath.Dir of the
+// returned path == filepath.Dir(ResolvePath(...))), so the platform-independent
+// content cache (prompt/, artifact/, plugin/) is shared across targets.
+//
+// platform MUST be a single non-empty path segment (no separators, not "."/"..");
+// callers pass a canonical adapter id from hydrate.ResolvePlatform.
+func ResolvePlatformPath(workspaceCwd, environment, platform string, global bool) (string, error) {
+	if platform == "" {
+		return "", fmt.Errorf("%w: a non-empty platform is required for a per-platform state path", ErrInvalidPath)
+	}
+	if err := validateSegment("platform", platform); err != nil {
+		return "", err
+	}
+	base, err := ResolvePath(workspaceCwd, environment, global)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(base), "state-"+platform+".json"), nil
+}
+
+// MigrateLegacyPiState renames <ach-dir>/state-pimono.json to statePath when
+// statePath is the pi target's state-pi.json and does not exist yet. The
+// pimono target was renamed to pi; without this a workspace hydrated before
+// the rename loses its prior state, so the next hydrate cannot prune what the
+// old run wrote.
+//
+// ponytail: one-time migration for the pimono→pi rename; remove after a
+// release or two.
+func MigrateLegacyPiState(statePath string) error {
+	if filepath.Base(statePath) != "state-pi.json" {
+		return nil
+	}
+	if _, err := os.Lstat(statePath); err == nil {
+		return nil
+	}
+	legacy := filepath.Join(filepath.Dir(statePath), "state-pimono.json")
+	if err := os.Rename(legacy, statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// ListStatePaths enumerates every per-platform state-<platform>.json for an
+// environment, sorted (filepath.Glob order); an absent env dir yields none
+// (not an error).
+func ListStatePaths(workspaceCwd, environment string, global bool) ([]string, error) {
+	base, err := ResolvePath(workspaceCwd, environment, global)
+	if err != nil {
+		return nil, err
+	}
+	return filepath.Glob(filepath.Join(filepath.Dir(base), "state-*.json"))
+}
+
+// validateSegment rejects a value that is not a single, safe path segment.
+func validateSegment(what, v string) error {
+	if v == "." || v == ".." || strings.ContainsAny(v, `/\`) || v != filepath.Base(v) {
+		return fmt.Errorf("%w: invalid %s segment %q", ErrInvalidPath, what, v)
+	}
+	return nil
+}

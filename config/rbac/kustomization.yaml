@@ -1,0 +1,65 @@
+resources:
+# All RBAC will be applied under this service account in
+# the deployment namespace. You may comment out this resource
+# if your manager will use a service account that exists at
+# runtime. Be sure to update RoleBinding and ClusterRoleBinding
+# subjects if changing service account names.
+- service_account.yaml
+- role.yaml
+- role_binding.yaml
+- leader_election_role.yaml
+- leader_election_role_binding.yaml
+# The following RBAC configurations are used to protect
+# the metrics endpoint with authn/authz. These configurations
+# ensure that only authorized users and service accounts
+# can access the metrics endpoint. Comment the following
+# permissions if you want to disable this protection.
+# More info: https://book.kubebuilder.io/reference/metrics.html
+- metrics_auth_role.yaml
+- metrics_auth_role_binding.yaml
+- metrics_reader_role.yaml
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the {{ .ProjectName }} itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- ach_litellmconnection_admin_role.yaml
+- ach_litellmconnection_editor_role.yaml
+- ach_litellmconnection_viewer_role.yaml
+- ach_backendidentitypolicy_admin_role.yaml
+- ach_backendidentitypolicy_editor_role.yaml
+- ach_backendidentitypolicy_viewer_role.yaml
+- ach_prompt_admin_role.yaml
+- ach_prompt_editor_role.yaml
+- ach_prompt_viewer_role.yaml
+- ach_artifact_admin_role.yaml
+- ach_artifact_editor_role.yaml
+- ach_artifact_viewer_role.yaml
+- ach_pluginmarketplace_admin_role.yaml
+- ach_pluginmarketplace_editor_role.yaml
+- ach_pluginmarketplace_viewer_role.yaml
+- ach_plugin_admin_role.yaml
+- ach_plugin_editor_role.yaml
+- ach_plugin_viewer_role.yaml
+- ach_environment_admin_role.yaml
+- ach_environment_editor_role.yaml
+- ach_environment_viewer_role.yaml
+
+# Per-binary RBAC (operator, platform-api, forwarder, content-service).
+# Each binary gets its own ServiceAccount + Role + RoleBinding sized for
+# the cobra subcommand it runs. The kubebuilder ClusterRole at role.yaml
+# is the manager's overarching RBAC; these namespaced Roles bound to
+# per-binary SAs provide the principle-of-least-privilege guard rails
+# the per-mode Deployments rely on (Helm templates land in Task 9.3).
+- operator_role.yaml
+- operator_role_binding.yaml
+- operator_service_account.yaml
+- platformapi_role.yaml
+- platformapi_role_binding.yaml
+- platformapi_service_account.yaml
+- forwarder_role.yaml
+- forwarder_role_binding.yaml
+- forwarder_service_account.yaml
+- contentservice_role.yaml
+- contentservice_role_binding.yaml
+- contentservice_service_account.yaml
+

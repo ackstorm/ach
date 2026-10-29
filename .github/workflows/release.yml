@@ -1,0 +1,362 @@
+name: Release and Publish
+run-name: Release ${{ github.event.head_commit.message }}
+
+# Commit-message-driven release (Y2).
+#
+# A push to main whose head commit message starts with
+#   chore(release): v<MAJOR>.<MINOR>.<PATCH>[-<prerelease>]
+# triggers the release pipeline. The commit itself does NOT need to
+# carry the manifest bumps — this workflow:
+#   1. parses the version from the commit message,
+#   2. runs the full test gate (make test-unit + make test-envtest-fast),
+#   3. runs `make release-bump VERSION=<X.Y.Z>` and commits the bumps back to
+#      main as github-actions[bot] with a [skip ci] marker,
+#   4. creates and pushes the annotated v<X.Y.Z> git tag at the bot-bump
+#      commit — BEFORE goreleaser, which needs a real tag at HEAD (see the
+#      "Create + push release tag" step for why it cannot come after),
+#   5. runs goreleaser (image cross-build, sign, SBOM),
+#   6. pushes the Helm chart to GHCR's OCI registry.
+#
+# Because the tag precedes the build, a failure in goreleaser or the chart
+# push DOES leave origin with a tag but no artifacts (v0.6.13 hit exactly
+# this when the runner ran out of disk). Recovery is another
+# `chore(release): vX.Y.Z` push: the bump step no-ops on an already-bumped
+# tree, and the tag step force-repoints the tag at the new HEAD. Both
+# recovery paths — `gh run rerun --failed` (HEAD unchanged) and a fresh
+# marker push (HEAD moved) — are re-runnable.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  GO_VERSION: '1.26'
+
+jobs:
+  parse:
+    name: Parse release intent
+    runs-on: ubuntu-latest
+    # Job-level filter: only release commits proceed. Non-release pushes
+    # see this workflow as "skipped" (cheap).
+    if: "startsWith(github.event.head_commit.message, 'chore(release): v')"
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - name: Extract version from commit message
+        id: extract
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          FIRST=$(printf '%s' "$MSG" | head -n1)
+          VERSION=$(printf '%s' "$FIRST" | sed -nE 's/^chore\(release\): v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?).*$/\1/p')
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: could not parse semver from commit message" >&2
+            echo "First line: $FIRST" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected release version: v$VERSION"
+
+  # Unit and envtest run as two parallel jobs, both gating build-and-release.
+  # Splitting the former single run-tests job takes the test phase off the
+  # critical path at max(unit, envtest) instead of unit + envtest — envtest-fast
+  # (~3m, etcd+apiserver) dominates, so unit overlaps it for free. Either job
+  # failing stops the pipeline before any manifest mutation, build, or tag.
+  test-unit:
+    name: Unit tests
+    needs: parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Pull the pre-baked devtools image from GHCR (Go + setup-envtest +
+      # pre-downloaded envtest assets all baked) instead of cold-building it.
+      # Mirrors ci.yml. Removes the per-release docker.io cold build AND the
+      # per-run envtest-asset fetch — make test-* run inside the pulled image.
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
+
+      - name: Run unit tests
+        run: make test-unit
+
+  test-envtest:
+    name: Envtest
+    needs: parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Same pre-baked devtools image as the unit job (envtest assets baked in).
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
+
+      - name: Run envtest
+        # envtest-fast (no -race): the race detector adds 2-5x overhead and
+        # inflates AC_CF2b adoption-recognition's reconciler-converge time past
+        # the in-test poll budget. Mirrors ci.yml to avoid CI/release skew on
+        # the same commit.
+        run: make test-envtest-fast
+
+  build-and-release:
+    name: Build + release
+    needs: [parse, test-unit, test-envtest]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+          # contents:write on the workflow's GITHUB_TOKEN lets us push
+          # the bot bump commit (and later the tag) back to main.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ubuntu-latest preinstalls ~25GB of toolchains this build never touches
+      # (Android SDK, CodeQL, ghcup/Haskell, dotnet, swift). Downstream this
+      # job cross-compiles 7 binaries, builds 4 buildx images with --pull, and
+      # runs cyclonedx-gomod — all on the same disk. v0.6.13 died mid-compile
+      # with "no space left on device" (mkdir /tmp/go-build.../: no space).
+      # Reclaim first: this is pure runner fat, nothing built or shipped here
+      # depends on it. Runs before setup-devtools/setup-go/buildx so every
+      # later step gets the headroom.
+      #
+      # Inline rm rather than a free-disk-space action: this repo gates its
+      # supply chain (gitleaks, trufflehog, cosign, SBOM), so a handful of rm
+      # lines beats adding a third-party action to the release path.
+      # NOTE: only /opt/hostedtoolcache/CodeQL is removed, never the whole
+      # hostedtoolcache — setup-go installs Go there later in this job.
+      - name: Free runner disk space
+        run: |
+          echo "before: $(df -h --output=avail / | tail -1) avail"
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/dotnet \
+            /usr/share/swift || true
+          # Preinstalled images only — devtools and the buildx bases are
+          # pulled fresh after this step.
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          echo "after:  $(df -h --output=avail / | tail -1) avail"
+
+      # Pull the pre-baked devtools image so `make gen-code helm-sync-check`
+      # (controller-gen) runs inside it instead of cold-building the devtools
+      # container from docker.io. setup-go below stays — goreleaser +
+      # cyclonedx-gomod run natively on the runner.
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump manifests via make release-bump
+        env:
+          VERSION: ${{ needs.parse.outputs.version }}
+        run: make release-bump VERSION=$VERSION
+
+      - name: Commit + push manifest bumps to main
+        id: bump_push
+        env:
+          VERSION: ${{ needs.parse.outputs.version }}
+        run: |
+          # If the user happened to bump locally already, `make release-bump`
+          # was a no-op and the working tree is clean. Skip the commit.
+          if git diff --quiet; then
+            echo "no manifest changes — already at v$VERSION"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add deploy/helm/ach/Chart.yaml \
+                  deploy/helm/ach/values.yaml \
+                  config/manager/kustomization.yaml
+          git commit -m "chore(release): bump manifests to v$VERSION [skip ci]"
+          git push origin main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Determine GoReleaser config
+        id: release_type
+        env:
+          VERSION: ${{ needs.parse.outputs.version }}
+        run: |
+          if echo "$VERSION" | grep -Eq '-(alpha|beta|rc)'; then
+            echo "config_file=.goreleaser.prerelease.yml" >> "$GITHUB_OUTPUT"
+          else
+            echo "config_file=.goreleaser.yml" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # Manage the cache explicitly below — setup-go's built-in cache keys
+          # on a single go.sum hash with no prefix fallback, so any go.sum
+          # change is a full cold miss. We want restore-keys partial reuse.
+          cache: false
+
+      # Persist the NATIVE runner Go build + module caches that goreleaser
+      # uses for the linux/amd64 + linux/arm64 cross-compiles. Each GOOS/GOARCH
+      # combo recompiles the full k8s.io + controller-runtime dep tree; without
+      # a warm GOCACHE every release rebuilds it cold (~9m of binary builds).
+      # NOTE: this is the runner's native cache (~/.cache/go-build), distinct
+      # from devtools' per-worktree .gocache/ used by `make` targets — only the
+      # native one feeds goreleaser. restore-keys gives partial reuse even when
+      # go.sum shifts: unchanged deps still hit by content hash, so the heavy
+      # k8s tree stays warm across releases.
+      - name: Cache Go build + module caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-goreleaser-go${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-goreleaser-go${{ env.GO_VERSION }}-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker-container
+          driver-opts: |
+            image=moby/buildkit:v0.12.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: v3.12.0
+
+      # Issue #44: regenerate code + CRDs, then HARD-FAIL if anything drifts
+      # from what's committed. helm-sync-check covers the chart's crd-sources/
+      # and catches added/deleted files, not just modified ones; the trailing
+      # `git diff --exit-code` also catches
+      # gen-code (zz_generated) and config/crd/bases drift, so a release can
+      # never ship stale generated artifacts. (Previously this step only
+      # regenerated and never gated.)
+      - name: Regenerate code + CRDs and gate on drift
+        run: |
+          make gen-code helm-sync-check
+          git diff --exit-code
+
+      # HRD-09: install cosign for keyless OIDC signing of release artifacts.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: v2.4.1
+
+      # HRD-09: install cyclonedx-gomod for CycloneDX SBOM generation.
+      - name: Install cyclonedx-gomod
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.10.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # The React console is embedded by go build (go:embed all:dist), and
+      # goreleaser builds the binaries on this runner — so dist/ must be
+      # populated BEFORE goreleaser runs (Dockerfile.goreleaser only copies
+      # the finished binaries).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build the console (embedded by go build)
+        run: npm --prefix ui ci && npm --prefix ui run build
+
+      # goreleaser refuses to run on a dirty tree, and it runs AFTER the tag is
+      # already pushed (see the tag step below) — so a build step that dirties
+      # the tree burns the version number and strands a public tag with no
+      # artifacts behind it. v0.9.11 died exactly here: `vite build`'s
+      # emptyOutDir deleted the tracked dist/.gitkeep. Fail while the tag is still private,
+      # and name the offending paths.
+      - name: Assert a clean tree before tagging
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::working tree is dirty before tagging — goreleaser would abort AFTER the tag is public. Offending paths:"
+            git status --porcelain
+            exit 1
+          fi
+          echo "working tree clean"
+
+      # Install goreleaser directly. goreleaser-action@v7 verifies the
+      # downloaded binary against a sigstore bundle that the cosign on
+      # the runner cannot parse — we trust the official release tarball
+      # over TLS instead.
+      - name: Install GoReleaser
+        run: |
+          GORELEASER_VERSION=v2.14.0
+          curl -sSL -o /tmp/goreleaser.tar.gz \
+            "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_x86_64.tar.gz"
+          tar -xzf /tmp/goreleaser.tar.gz -C /tmp goreleaser
+          sudo install -m 0755 /tmp/goreleaser /usr/local/bin/goreleaser
+          goreleaser --version
+
+      # GoReleaser requires a real git tag at HEAD AND its release-create
+      # API call implicitly pushes the tag to origin once goreleaser
+      # succeeds. To avoid the race with that implicit push (which
+      # rejected our post-goreleaser push as 'already exists'), create
+      # AND push the tag here before goreleaser runs.
+      #
+      # Idempotency contract — BOTH recovery paths must work:
+      #   a) `gh run rerun --failed` — HEAD is unchanged, so any tag from
+      #      the failed attempt already points at the right commit.
+      #   b) a fresh `chore(release): vX.Y.Z` push after a failed attempt —
+      #      HEAD has MOVED, and the previous attempt's tag still points at
+      #      the OLD commit.
+      # The previous `git tag -a ... || true` handled only (a): it swallowed
+      # "already exists" and left the stale tag alone, so in case (b)
+      # goreleaser aborted with "git tag vX.Y.Z was not made against commit
+      # <HEAD>" and v0.6.13 needed a hand-deleted tag to get unstuck.
+      # Force-repointing the tag at HEAD covers both: a no-op in (a), the
+      # fix in (b). fetch-depth: 0 means the stale tag IS in the local
+      # checkout, so -f is what makes the local tag move too.
+      #
+      # Guard: never move a tag whose GitHub release already exists — that
+      # would silently re-point a shipped release at new code. A marker
+      # re-push for an already-published version is a mistake, so fail loud
+      # and let the human cut a new version.
+      - name: Create + push release tag
+        env:
+          VERSION: ${{ needs.parse.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::release v$VERSION is already published — refusing to re-point its tag at $(git rev-parse --short HEAD). Cut a new version instead."
+            exit 1
+          fi
+          git tag -f -a "v$VERSION" -m "v$VERSION"
+          git push -f origin "refs/tags/v$VERSION"
+
+      - name: Run GoReleaser
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          DOCKER_BUILDKIT: 1
+        run: goreleaser release --clean --config ${{ steps.release_type.outputs.config_file }}
+
+      - name: Push Helm chart to OCI registry
+        uses: appany/helm-oci-chart-releaser@v0.5.0
+        with:
+          name: ach
+          repository: ${{ github.repository_owner }}/charts/
+          tag: ${{ needs.parse.outputs.version }}
+          path: deploy/helm/ach
+          registry: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+          update_dependencies: 'false'
+

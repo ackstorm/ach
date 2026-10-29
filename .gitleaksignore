@@ -1,0 +1,2 @@
+# gitleaks fingerprints for known false positives (commit:file:rule:line).
+# Add one only for a synthetic value, with the reason above it.

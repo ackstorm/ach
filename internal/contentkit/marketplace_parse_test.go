@@ -1,0 +1,461 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Unit tests for the Claude Code real-schema parser + UnmarshalJSON
+// union. Pure-Go (no envtest); runs with `go test ./internal/contentkit/...`.
+
+package contentkit
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/ackstorm/ach/internal/sourceserr"
+)
+
+// ─── Union UnmarshalJSON tests ────────────────────────────────────────
+
+func TestClaudeCodeMarketplaceSource_UnmarshalString(t *testing.T) {
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal([]byte(`"./plugins/agent-sdk-dev"`), &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "local-path" {
+		t.Errorf("Kind = %q; want local-path", s.Kind)
+	}
+	if s.Path != "./plugins/agent-sdk-dev" {
+		t.Errorf("Path = %q; want ./plugins/agent-sdk-dev", s.Path)
+	}
+}
+
+func TestClaudeCodeMarketplaceSource_UnmarshalGitSubdir(t *testing.T) {
+	body := []byte(`{"source":"git-subdir","url":"https://github.com/42Crunch-AI/claude-plugins.git","path":"plugins/api-security-testing","ref":"v1.5.5","sha":"a175b24f7b34852b70c78c21545cce8037eb3112"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "git-subdir" {
+		t.Errorf("Kind = %q; want git-subdir", s.Kind)
+	}
+	if s.URL != "https://github.com/42Crunch-AI/claude-plugins.git" {
+		t.Errorf("URL = %q", s.URL)
+	}
+	if s.Path != "plugins/api-security-testing" {
+		t.Errorf("Path = %q", s.Path)
+	}
+	if s.SHA != "a175b24f7b34852b70c78c21545cce8037eb3112" {
+		t.Errorf("SHA = %q", s.SHA)
+	}
+}
+
+func TestClaudeCodeMarketplaceSource_UnmarshalURL(t *testing.T) {
+	body := []byte(`{"source":"url","url":"https://github.com/AikidoSec/aikido-claude-plugin.git","sha":"79ac524f87c9faa9a356ff3d495b8a5b77e01bbd"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "url" || s.URL == "" || s.SHA == "" || s.Path != "" {
+		t.Errorf("got %+v", s)
+	}
+}
+
+func TestClaudeCodeMarketplaceSource_UnmarshalUnknownDiscriminator(t *testing.T) {
+	body := []byte(`{"source":"npm","package":"left-pad"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "" {
+		t.Errorf("Kind = %q; want \"\" for unknown discriminator", s.Kind)
+	}
+}
+
+func TestClaudeCodeMarketplaceSource_UnmarshalMalformed(t *testing.T) {
+	body := []byte(`[1,2,3]`) // neither string nor object
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal should not error on malformed; got %v", err)
+	}
+	if s.Kind != "" {
+		t.Errorf("Kind = %q; want \"\"", s.Kind)
+	}
+}
+
+// ─── Parser tests ─────────────────────────────────────────────────────
+
+const validRealSchemaMarketplace = `{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-plugins-official",
+  "owner": {"name": "Anthropic", "email": "support@anthropic.com"},
+  "plugins": [
+    {
+      "name": "agent-sdk-dev",
+      "source": "./plugins/agent-sdk-dev"
+    },
+    {
+      "name": "42crunch-api-security-testing",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/42Crunch-AI/claude-plugins.git",
+        "path": "plugins/api-security-testing",
+        "ref": "v1.5.5",
+        "sha": "a175b24f7b34852b70c78c21545cce8037eb3112"
+      }
+    },
+    {
+      "name": "aikido",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/AikidoSec/aikido-claude-plugin.git",
+        "sha": "79ac524f87c9faa9a356ff3d495b8a5b77e01bbd"
+      }
+    }
+  ]
+}`
+
+func TestParseClaudeCodeMarketplace_RealSchemaValid(t *testing.T) {
+	mkt, err := ParseClaudeCodeMarketplace([]byte(validRealSchemaMarketplace))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mkt.Plugins) != 3 {
+		t.Fatalf("want 3 plugins; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "local-path" {
+		t.Errorf("plugin[0] Kind = %q; want local-path", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[1].Source.Kind != "git-subdir" {
+		t.Errorf("plugin[1] Kind = %q; want git-subdir", mkt.Plugins[1].Source.Kind)
+	}
+	if mkt.Plugins[2].Source.Kind != "url" {
+		t.Errorf("plugin[2] Kind = %q; want url", mkt.Plugins[2].Source.Kind)
+	}
+	if mkt.Owner.Email != "support@anthropic.com" {
+		t.Errorf("owner.email = %q", mkt.Owner.Email)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_MalformedJSON(t *testing.T) {
+	_, err := ParseClaudeCodeMarketplace([]byte("{not json"))
+	if err == nil {
+		t.Fatal("expected err on malformed JSON; got nil")
+	}
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_ZeroPlugins(t *testing.T) {
+	body := `{"name":"m","owner":{"name":"o","url":""},"plugins":[]}`
+	_, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err == nil {
+		t.Fatal("expected err on zero plugins; got nil")
+	}
+	if !errors.Is(err, sourceserr.ErrUpstreamInvalid) {
+		t.Errorf("err should wrap ErrUpstreamInvalid; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "zero plugins") {
+		t.Errorf("err message should mention 'zero plugins'; got %q", err.Error())
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameTraversalDemoted(t *testing.T) {
+	// T-02-06-08 mitigation: '../etc/passwd' as a plugin name MUST be
+	// rejected because entry.Name is used as a filename segment. The
+	// rejection is now per-entry (demote to Kind="") instead of a
+	// catalog-wide hard fail — one adversarial name in a large catalog
+	// shouldn't doom every other valid entry.
+	body := `{
+      "name": "m",
+      "owner": {"name": "o", "url": ""},
+      "plugins": [{
+        "name": "../etc/passwd",
+        "source": "./safe"
+      }]
+    }`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (path-traversal should demote, not abort catalog)", err)
+	}
+	if len(mkt.Plugins) != 1 {
+		t.Fatalf("want 1 plugin (demoted in-place); got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\" for path-traversal name", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameUppercaseAccepted(t *testing.T) {
+	// "Notion", "API-Reference" and similar mixed-case names ship in
+	// real upstream catalogs (anthropic/claude-plugins-official has
+	// `name: "Notion"` as of 2026-05). Plugin names live in the Postgres
+	// `marketplace_plugins.name` text column + a filename segment — they
+	// are NEVER used as Kubernetes resource identifiers, so the historical
+	// DNS-1123 lowercase constraint was wrong. #15 follow-up: accept.
+	body := `{
+      "name": "m",
+      "owner": {"name": "o", "url": ""},
+      "plugins": [{
+        "name": "Notion",
+        "source": {"source": "github", "repo": "o/r"}
+      }]
+    }`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mkt.Plugins) != 1 {
+		t.Fatalf("want 1 plugin; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Name != "Notion" {
+		t.Errorf("Name = %q; want %q preserved", mkt.Plugins[0].Name, "Notion")
+	}
+	if mkt.Plugins[0].Source.Kind != "github" {
+		t.Errorf("Kind = %q; want \"github\" preserved", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameLeadingSeparatorDemoted(t *testing.T) {
+	// A leading '-' could be confused with a CLI flag in downstream
+	// tools; a leading '.' is a hidden-file/dotfile pattern. Both demote.
+	body := `{
+      "name": "m", "owner": {"name": "o"},
+      "plugins": [
+        {"name": "-leading-hyphen", "source": {"source": "github", "repo": "o/r"}},
+        {"name": ".hidden", "source": {"source": "github", "repo": "o/r"}}
+      ]
+    }`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for i, p := range mkt.Plugins {
+		if p.Source.Kind != "" {
+			t.Errorf("plugin[%d].Kind = %q; want demoted to \"\"", i, p.Source.Kind)
+		}
+	}
+}
+
+func TestParseClaudeCodeMarketplace_PluginNameCatalogContinuesAfterBadEntry(t *testing.T) {
+	// Issue #15's headline symptom: one bad entry (here: a name with '/')
+	// must NOT prevent every other entry from being parsed. Verifies the
+	// catalog still returns all plugins (bad ones demoted) so Stage-2
+	// reports per-entry failures while flowing the good ones through.
+	body := `{
+      "name": "m", "owner": {"name": "o"},
+      "plugins": [
+        {"name": "good-one", "source": {"source": "github", "repo": "o/r"}},
+        {"name": "with/slash", "source": {"source": "github", "repo": "o/r"}},
+        {"name": "Notion", "source": {"source": "github", "repo": "o/r"}}
+      ]
+    }`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (catalog must not abort)", err)
+	}
+	if len(mkt.Plugins) != 3 {
+		t.Fatalf("want 3 plugins (demoted in-place); got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "github" {
+		t.Errorf("plugin[0] (good-one).Kind = %q; want preserved", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[1].Source.Kind != "" {
+		t.Errorf("plugin[1] (with/slash).Kind = %q; want demoted", mkt.Plugins[1].Source.Kind)
+	}
+	if mkt.Plugins[2].Source.Kind != "github" {
+		t.Errorf("plugin[2] (Notion).Kind = %q; want preserved (mixed-case is fine)", mkt.Plugins[2].Source.Kind)
+	}
+}
+
+// ─── Per-entry demote tests (issue #15 / Phase 1) ─────────────────────
+
+func TestParseClaudeCodeMarketplace_UrlMissingShaNotDemoted(t *testing.T) {
+	// A url-Kind entry without sha MUST NOT be demoted at parse time —
+	// Phase 2 pre-resolves ref→sha at dispatch time. The parser only
+	// demotes on missing url (the truly-required field for git fetch).
+	// Issue #15 acceptance: Anthropic catalog entries without sha keep
+	// flowing into Stage-2.
+	body := `{
+	  "name": "mkt",
+	  "owner": {"name": "o"},
+	  "plugins": [
+	    {
+	      "name": "no-sha-but-ok",
+	      "source": {"source": "url", "url": "https://example.com/p.git", "ref": "main"}
+	    },
+	    {
+	      "name": "valid-git-subdir",
+	      "source": {
+	        "source": "git-subdir",
+	        "url": "https://github.com/o/r.git",
+	        "path": "plugins/x",
+	        "ref": "v1",
+	        "sha": "0123456789abcdef0123456789abcdef01234567"
+	      }
+	    }
+	  ]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v (whole-catalog abort is the bug)", err)
+	}
+	if len(mkt.Plugins) != 2 {
+		t.Fatalf("want 2 plugins; got %d", len(mkt.Plugins))
+	}
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("plugin[0].Kind = %q; want \"url\" preserved (Phase 2 resolves sha)", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.URL != "https://example.com/p.git" {
+		t.Errorf("plugin[0].URL = %q; want preserved", mkt.Plugins[0].Source.URL)
+	}
+	if mkt.Plugins[1].Source.Kind != "git-subdir" {
+		t.Errorf("plugin[1].Kind = %q; want git-subdir", mkt.Plugins[1].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlMissingUrlFieldDemoted(t *testing.T) {
+	// url-Kind entry without the `url` field cannot be fetched —
+	// demote to Kind="".
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "url", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitSubdirMissingUrlDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "git-subdir", "path": "p", "sha": "0123456789abcdef0123456789abcdef01234567"}
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitSubdirMissingPathDemoted(t *testing.T) {
+	// Independent of the URL-missing branch: a git-subdir entry with
+	// url present but path absent must also demote. Path is required by
+	// git-subdir semantics (subtree to tar) — without it we can't fetch.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "no-path",
+	    "source": {
+	      "source": "git-subdir",
+	      "url": "https://github.com/o/r.git",
+	      "sha": "0123456789abcdef0123456789abcdef01234567"
+	    }
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\" (path missing)", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_LocalPathTraversalDemotedPerEntry(t *testing.T) {
+	// local-path with `..` segment must NOT abort the catalog (#4 (b)
+	// decision: demote per-entry, T-02-06-01 mitigation still applies
+	// because the traversal path never reaches the filesystem — the
+	// dispatcher short-circuits on Kind="").
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "evil",
+	    "source": "../etc/passwd"
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want \"\" (demoted)", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+// ─── Phase 3: github Kind + url+path normalization ────────────────────
+
+func TestClaudeCodeMarketplaceSource_UnmarshalGitHub(t *testing.T) {
+	body := []byte(`{"source":"github","repo":"owner/name","ref":"v1","sha":"0123456789abcdef0123456789abcdef01234567"}`)
+	var s ClaudeCodeMarketplaceSource
+	if err := json.Unmarshal(body, &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if s.Kind != "github" {
+		t.Errorf("Kind = %q; want github", s.Kind)
+	}
+	if s.Repo != "owner/name" {
+		t.Errorf("Repo = %q", s.Repo)
+	}
+	if s.Ref != "v1" || s.SHA == "" {
+		t.Errorf("got %+v", s)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_GitHubMissingRepoDemoted(t *testing.T) {
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "bad",
+	    "source": {"source": "github", "ref": "main"}
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "" {
+		t.Errorf("Kind = %q; want demoted to \"\"", mkt.Plugins[0].Source.Kind)
+	}
+}
+
+func TestParseClaudeCodeMarketplace_UrlWithPathAccepted(t *testing.T) {
+	// Upstream schema says `url` has no path. Real-world catalogs (e.g.
+	// the zilliz entry in claude-plugins-official) ship url+path. We
+	// accept the drift: url with non-empty path is parsed as-is and the
+	// dispatcher treats it like git-subdir.
+	body := `{
+	  "name": "mkt", "owner": {"name": "o"},
+	  "plugins": [{
+	    "name": "zilliz",
+	    "source": {
+	      "source": "url",
+	      "url": "https://github.com/zilliztech/zilliz-plugin.git",
+	      "path": "plugins/zilliz",
+	      "sha": "e960396da0bd0b1cb219fa97e3bcbb425ee1abbd"
+	    }
+	  }]
+	}`
+	mkt, err := ParseClaudeCodeMarketplace([]byte(body))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if mkt.Plugins[0].Source.Kind != "url" {
+		t.Errorf("Kind = %q; want url", mkt.Plugins[0].Source.Kind)
+	}
+	if mkt.Plugins[0].Source.Path != "plugins/zilliz" {
+		t.Errorf("Path = %q; want path preserved", mkt.Plugins[0].Source.Path)
+	}
+}

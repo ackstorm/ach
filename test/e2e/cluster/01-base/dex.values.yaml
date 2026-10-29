@@ -1,0 +1,15 @@
+# Dex OIDC IdP for the ach-platform-api login flow.
+#
+# Used by:  scripts/cluster.sh hydrate_dex
+# Chart:    https://charts.dexidp.io  (https://github.com/dexidp/helm-charts)
+#
+# The actual Dex configuration (issuer, staticClients, connectors) lives
+# in scripts/dex-config.yaml so it stays docker-run-compatible for the
+# local UAT path documented in that file's header. hydrate_dex wraps the
+# raw config under `config:` at install time (the dex chart requires
+# that key) AND rewrites the issuer line so the in-cluster discovery URL
+# matches what oidc.NewProvider in platform-api fetches.
+#
+# Apply changes: scripts/cluster.sh hydrate
+
+chartVersion: 0.19.1

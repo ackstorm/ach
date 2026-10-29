@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Throwaway duplicate-target BIP pair for §11b (BIP admission + finalizer).
+#
+# Two BackendIdentityPolicy CRs with the SAME (target.kind, target.name) but
+# distinct metadata.names — asserts the CRD admits the duplicate and both carry
+# the finalizer with empty status.conditions (no shadow DuplicateTarget logic).
+# Named so they NEVER collide with the synced bip-context7-jwt-on /
+# zz-bip-context7-jwt-off (deleting these does not touch the synced set).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-throwaway-jwt-on
+  namespace: ach-system
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  target:
+    kind: MCPServer
+    name: throwaway-dup-target
+  forwardIdentityJWT: true
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: zz-bip-throwaway-jwt-off
+  namespace: ach-system
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  target:
+    kind: MCPServer
+    name: throwaway-dup-target
+  forwardIdentityJWT: false

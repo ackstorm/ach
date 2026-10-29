@@ -1,0 +1,28 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Environment.spec.runtime.mcpServers element-level Pattern
+#   (S2 CRD validation, S2 review fix). MCP server names are used as chi
+#   route parameters at the forwarder (/mcp/{name}); a slash-containing name
+#   would be admitted but always 403 (chi matches raw "%2F"-encoded segment
+#   against the decoded DB value — never matches). The strict deny-pattern
+#   forbids "/" (and "\") in addition to ? # % whitespace/control chars/DEL.
+# Expected error substring: "mcpServers"
+#
+# "demo/server" contains a slash and must be rejected by the items:Pattern marker.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: invalid-runtime-mcp-slash
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - "gpt-4o"
+    mcpServers:
+      - "demo/server"
+    a2aAgents: []
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

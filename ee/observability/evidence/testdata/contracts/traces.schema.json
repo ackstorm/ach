@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal traces response",
+  "type": "object",
+  "required": [
+    "window",
+    "traces",
+    "next_cursor",
+    "provenance",
+    "total_count"
+  ],
+  "properties": {
+    "window": {
+      "type": "object",
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ]
+    },
+    "traces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trace"
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "total_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "All matching project/trace groups after server filters, before pagination; null when source unavailable."
+    }
+  },
+  "$defs": {
+    "trace": {
+      "type": "object",
+      "required": [
+        "trace_id",
+        "project_id",
+        "started_at",
+        "ended_at",
+        "span_count",
+        "status"
+      ],
+      "properties": {
+        "trace_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "span_count": {
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "error",
+            "success",
+            "unknown"
+          ],
+          "description": "error: any span logged ERROR. success: completed root span and no ERROR (matches LiteLLM's Success for requests; verified 25/25 on LLM traces). unknown: no completed root span."
+        },
+        "kind": {
+          "enum": [
+            "llm",
+            "mcp",
+            null
+          ],
+          "description": "From the root gateway span: POST /mcp is mcp, anything else llm."
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "LiteLLM request id (gen_ai.response.id of the chat span); joins to LiteLLM's request log."
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "description": "Trace extent: first span start to last span end."
+        },
+        "input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "From the chat span; null when the trace has no chat span."
+        },
+        "output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "cost_details.total of the chat span, USD."
+        },
+        "key_alias": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The session the trace's generation belongs to; null when it has none."
+        }
+      }
+    }
+  },
+  "description": "Complete retained scoped trace groups, then offset pagination. status=all|error|unknown; search=case-insensitive trace-ID substring up to 200 characters; limit=1..50, default25. Pagination is not sampling."
+}

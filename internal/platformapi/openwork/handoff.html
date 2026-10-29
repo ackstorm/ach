@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+{{- /* Desktop sign-in handoff (openwork.handoff). Ported from alitellm-auth
+    templates/openwork_handoff.html: the desktop never reads this body, it only
+    needs the openwork:// link put in front of the human. */ -}}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Brand}} — Sign in to OpenWork</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #000000;
+    --surface: #0b101e;
+    --inset:   #070b15;
+    --border:  #1e2233;
+    --dim:     #4a5173;
+    --text:    #c4cbe3;
+    --bright:  #e8ecf7;
+    --accent:  #16c47f;
+    --accent2: #4ade80;
+    --accent-ink: #052e1c;
+    --glow:    rgba(22, 196, 127, 0.08);
+    --glow2:   rgba(22, 196, 127, 0.15);
+    --mono:    'JetBrains Mono', monospace;
+    --sans:    'Outfit', system-ui, sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg); color: var(--text);
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, var(--glow2), transparent),
+      radial-gradient(circle at 80% 80%, rgba(22,196,127,0.03), transparent);
+  }
+
+  .card {
+    width: 100%; max-width: 620px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+    animation: slideUp .5s ease-out;
+    box-shadow: 0 0 80px -20px rgba(22,196,127,0.10);
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .header { padding: 32px 32px 24px; border-bottom: 1px solid var(--border); }
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .status-label {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 2px; color: var(--accent);
+  }
+
+  .brand-lockup { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .brand-lockup .mark { width: 22px; height: 22px; flex: none; }
+  .brand-lockup .mark svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .brand-lockup img.mark { object-fit: contain; }
+  .brand-lockup .name { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--bright); letter-spacing: -.2px; }
+
+  .greeting { font-size: 24px; font-weight: 600; color: var(--bright); line-height: 1.3; }
+  .greeting .who { color: var(--accent2); }
+  .sub { margin-top: 6px; font-size: 14px; color: var(--dim); }
+
+  .body { padding: 24px 32px 28px; display: grid; gap: 24px; }
+  .section-label {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 2.5px;
+    color: var(--dim); margin-bottom: 12px;
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    padding: 11px 18px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent; text-decoration: none; transition: background .15s, border-color .15s, color .15s;
+  }
+  .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); padding: 8px 14px; font-size: 13px; }
+  .btn-ghost:hover { border-color: var(--dim); color: var(--bright); }
+
+  .hint { font-size: 13px; color: var(--dim); margin-top: 10px; line-height: 1.5; }
+  .hint em { color: var(--text); font-style: normal; }
+
+  .link-row { display: flex; gap: 8px; align-items: stretch; }
+  .link-box {
+    flex: 1; min-width: 0;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    background: var(--inset); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 10px 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    outline: none;
+  }
+  .link-box:focus { border-color: var(--accent); }
+  .copied { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-left: 8px; }
+
+  .footer {
+    padding: 16px 32px; border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    font-size: 12px;
+  }
+  .lock-icon {
+    display: inline-flex; align-items: center; gap: 5px;
+    color: var(--dim); font-family: var(--mono); font-size: 11px;
+  }
+  .lock-icon svg { width: 12px; height: 12px; fill: none; stroke: var(--dim); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .close-hint { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  .close-hint a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .close-hint a:hover { text-decoration: underline; }
+  .expiry { font-family: var(--mono); font-size: 11px; color: var(--dim); text-align: right; white-space: nowrap; }
+  .expiry b { color: var(--text); font-weight: 600; }
+
+  @media (max-width: 520px) {
+    .header, .body, .footer { padding-left: 20px; padding-right: 20px; }
+    .footer { flex-direction: column; align-items: flex-start; }
+    .expiry { text-align: left; }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="status-row">
+        <div class="dot"></div>
+        <div class="status-label">Desktop sign-in</div>
+      </div>
+      <div class="brand-lockup">
+        {{if .LogoURL}}<img class="mark" src="{{.LogoURL}}" alt="">{{else}}<div class="mark"><svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/><path d="m9 12 2 2 4-4"/></svg></div>{{end}}
+        <div class="name">{{.Brand}}</div>
+      </div>
+      <div class="greeting">Signed in as <span class="who">{{.Email}}</span></div>
+      <div class="sub">Hand this session to the OpenWork desktop app.</div>
+    </div>
+
+    <div class="body">
+      <div>
+        <div class="section-label">Open in OpenWork</div>
+        <a class="btn btn-primary" id="open" href="{{.DeepLink}}">
+          <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+          Open in OpenWork
+        </a>
+        <div class="hint">Your browser may ask to open the <em>openwork://</em> link.</div>
+      </div>
+
+      <div>
+        <div class="section-label">Nothing happened?</div>
+        <div class="link-row">
+          <input class="link-box" id="link" readonly value="{{.DeepLink}}">
+          <button class="btn btn-ghost" id="copy">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy<span class="copied" id="copied"></span>
+          </button>
+        </div>
+        <div class="hint">Paste it in OpenWork under <em>account menu → Paste sign-in code</em>.</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>
+        <div class="lock-icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          single-use grant · no key in this page
+        </div>
+        <div class="close-hint">Once OpenWork is signed in you can <a onclick="window.close()">close this window</a>.</div>
+      </div>
+      <div class="expiry">expires in <b>{{.TTLMinutes}} min</b></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById("copy").onclick = async () => {
+      const field = document.getElementById("link");
+      field.focus(); field.select();
+      try { await navigator.clipboard.writeText(field.value); } catch { document.execCommand("copy"); }
+      document.getElementById("copied").textContent = "copied";
+    };
+  </script>
+</body>
+</html>

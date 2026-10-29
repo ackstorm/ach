@@ -1,0 +1,307 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package proxy
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/forwarder/metrics"
+	"github.com/ackstorm/ach/internal/forwarder/precheck"
+	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/ackstorm/ach/internal/platformapi/render"
+	"github.com/go-chi/chi/v5"
+)
+
+// BIPResolver is the narrow contract handlers consume from the
+// Postgres-backed BIP cache (internal/forwarder/bipcache). Returning
+// nil collapses both "no policy" and "explicit opt-out" into the
+// no-JWT path, matching bipcache.Cache.Resolve and the legacy
+// bip.ResolveWinner contract.
+type BIPResolver interface {
+	Resolve(targetKind, targetName string) *db.BIPRow
+}
+
+// HandlerDeps extends proxy.Deps with the per-route dependencies
+// (signer, BIP resolver, precheck deps, base URL).
+type HandlerDeps struct {
+	// Deps wires the shared *httputil.ReverseProxy.
+	Deps Deps
+	// Signer mints per-request ACH JWTs for /mcp + /a2a routes.
+	Signer jwt.Signer
+	// BIPResolver is the Postgres-backed BIP cache (C4). Resolve returns
+	// nil for "no policy" AND for explicit opt-out (alpha-FIRST winner
+	// has ForwardIdentityJWT=false).
+	BIPResolver BIPResolver
+	// PrecheckDeps wires precheck.CheckMCP / CheckA2A.
+	PrecheckDeps precheck.Deps
+	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
+	BaseURL string
+}
+
+// taggedPassthrough builds the no-precheck passthrough handler shared by
+// /v1 and /gemini: strip client body tags (the JSON request body is read once
+// for that, review #5; responses still stream untouched), forward, and let the
+// Director stamp the budget tags. routeLabel is the metrics route dimension.
+func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
+	rp := New(deps.Deps)
+	inner := func(w http.ResponseWriter, r *http.Request) {
+		if !stripTagsOrReject(w, r, routeLabel) {
+			return
+		}
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
+		rp.ServeHTTP(w, prepareModelList(r))
+	}
+	return observeDuration(routeLabel, inner)
+}
+
+// stripTagsOrReject runs stripBodyTags and renders its 400/413 on failure
+// (false: the request was answered and must not be forwarded).
+func stripTagsOrReject(w http.ResponseWriter, r *http.Request, routeLabel string) bool {
+	err := stripBodyTags(r)
+	if err == nil {
+		return true
+	}
+	reqID := middleware.RequestIDFromCtx(r.Context())
+	switch {
+	case errors.Is(err, errBodyTooLarge):
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "request_too_large")
+		render.Error(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body too large", reqID)
+	case errors.Is(err, errClientTags):
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_tags_not_allowed")
+		render.Error(w, http.StatusBadRequest, "client_tags_not_allowed",
+			"budget tags and metadata cannot be sent in form bodies through ACH", reqID)
+	default:
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
+		render.Error(w, http.StatusBadRequest, "invalid_request", "request body is not valid", reqID)
+	}
+	return false
+}
+
+// HandlerModelInfo returns the GET /v2/model/info proxy handler — the one
+// route outside the four families (D-18 exception): ach-agent's
+// litellm_usage cost source reads model prices there with its ek_. Same
+// shape as /v1: credential required upstream of here, no precheck, no JWT.
+func HandlerModelInfo(deps HandlerDeps) http.HandlerFunc {
+	return taggedPassthrough(deps, "/v2/model/info")
+}
+
+// HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
+// handles model-level auth via the shared key + key_id headers.
+func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v1") }
+
+// HandlerGemini mirrors HandlerV1 for /gemini/*.
+func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/gemini") }
+
+// HandlerMCP returns the /mcp/{name}/* handler — runs precheck.CheckMCP,
+// optional BIP lookup + JWT attach, then proxies. See FWD-03, FWD-05,
+// FWD-07.
+func HandlerMCP(deps HandlerDeps) http.HandlerFunc {
+	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp", false)
+}
+
+// HandlerA2A returns the /a2a/{name}/* handler. Same shape as HandlerMCP
+// but consults Environment.spec.runtime.a2aAgents and emits "a2a:<name>"
+// as the JWT audience.
+func HandlerA2A(deps HandlerDeps) http.HandlerFunc {
+	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a", true)
+}
+
+type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) ([]string, error)
+
+func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool) http.HandlerFunc {
+	rp := New(deps.Deps)
+	inner := func(w http.ResponseWriter, r *http.Request) {
+		// /a2a: LiteLLM merges JSON-RPC body (and params.*) tags like /v1's.
+		if stripTags && !stripTagsOrReject(w, r, routeLabel) {
+			return
+		}
+		name := chi.URLParam(r, "name")
+		reqID := middleware.RequestIDFromCtx(r.Context())
+		keyTypeLabel := keyTypeFor(r.Context())
+
+		// 0. No ACH identity — a raw LiteLLM key, or a credential ACH does
+		//    not read (a foreign Authorization): no precheck, no per-target
+		//    JWT. LiteLLM decides; the backend's own requirements are the
+		//    backend's business.
+		kc, ok := middleware.KeyContextFromCtx(r.Context())
+		if !ok {
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			rp.ServeHTTP(w, r)
+			return
+		}
+
+		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
+		//    JWT "groups" claim (filtered at the mint below).
+		granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
+		if err != nil {
+			outcome, status, code := classifyPrecheckErr(err)
+			metrics.IncRequests(routeLabel, keyTypeLabel, outcome)
+			if errors.Is(err, precheck.ErrLiteLLMUnreachable) {
+				metrics.IncLiteLLMUnreachable()
+			}
+			render.Error(w, status, code, codeMessage(code), reqID)
+			return
+		}
+
+		// 1b. Agent keys identify themselves to the backend through LiteLLM,
+		// never through the human identity JWT.
+		if kc.KeyType == keys.PrefixEk {
+			r.Header.Del("Authorization")
+			metrics.IncJWTSuppressed(kind, "agent_key")
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			rp.ServeHTTP(w, r)
+			return
+		}
+
+		// 2. BIP resolve. BIPResolver.Resolve returns nil for no-policy
+		//    AND for explicit opt-out (winner.ForwardIdentityJWT == false);
+		//    both collapse to "no_policy" at the metrics layer per
+		//    CONTEXT D-Discretion. The cache itself reads from Postgres
+		//    (internal/forwarder/bipcache, issue #34 C1).
+		winner := deps.BIPResolver.Resolve(kind, name)
+		if winner == nil {
+			metrics.IncJWTSuppressed(kind, "no_policy")
+			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+			if deps.Deps.Logger != nil {
+				deps.Deps.Logger.Debug("forwarder: no backend identity policy; forwarding without JWT",
+					"kind", kind,
+					"target", name,
+					"request_id", reqID,
+				)
+			}
+			rp.ServeHTTP(w, r)
+			return
+		}
+
+		// 3. Sign + stash for Director.
+		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
+			Iss:    deps.BaseURL,
+			Sub:    kc.OwnerEmail,
+			Aud:    audPrefix + name,
+			Email:  kc.OwnerEmail,
+			Groups: filterShellTeams(granted),
+		})
+		if err != nil {
+			metrics.IncJWTSuppressed(kind, "signing_failure")
+			metrics.IncRequests(routeLabel, keyTypeLabel, "internal_error")
+			render.Error(w, http.StatusInternalServerError, "internal_error", "jwt sign failed", reqID)
+			return
+		}
+		metrics.IncJWTSigned(kind)
+		metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
+		if deps.Deps.Logger != nil {
+			// BFI event: the forwarder minted + is attaching the ACH identity
+			// JWT for this backend. Info-level (a meaningful trust-path event,
+			// same verbosity as the per-request AccessLog) so operators can
+			// confirm identity forwarding without raising the log level.
+			deps.Deps.Logger.Info("forwarder: backend identity forwarded (JWT minted)",
+				"kind", kind,
+				"target", name,
+				"aud", audPrefix+name,
+				"owner", kc.OwnerEmail,
+				"request_id", reqID,
+			)
+		}
+
+		// 4. Hand off — Director reads jwtCtxKey and writes Authorization
+		//    AFTER stripAndRewrite (jwt-LAST ordering, D-05).
+		r = r.WithContext(WithJWT(r.Context(), token))
+		rp.ServeHTTP(w, r)
+	}
+	return observeDuration(routeLabel, inner)
+}
+
+// Precheck outcome / envelope-code constants per Hub §15.5.
+const (
+	outcomeUnauthorizedResource = "unauthorized_resource"
+	outcomeUnauthorizedTeam     = "unauthorized_team"
+	outcomeLitellmUnreachable   = "litellm_unreachable"
+	outcomeInvalidKeyType       = "invalid_key_type"
+	outcomeInternalError        = "internal_error"
+)
+
+// precheckOutcomes binds each precheck outcome to its HTTP status + stable
+// message (Hub §15.5). Keyed by the outcome* constants so the taxonomy
+// lives in ONE place — classifyPrecheckErr and codeMessage both read it.
+var precheckOutcomes = map[string]struct {
+	status int
+	msg    string
+}{
+	outcomeUnauthorizedResource: {http.StatusForbidden, "name not authorized for bound environment"},
+	outcomeUnauthorizedTeam:     {http.StatusForbidden, "caller's teams do not grant access to this resource"},
+	outcomeLitellmUnreachable:   {http.StatusServiceUnavailable, "litellm reachability failure during teams resolve"},
+	outcomeInvalidKeyType:       {http.StatusUnauthorized, "invalid or missing key type for this route"},
+	outcomeInternalError:        {http.StatusInternalServerError, "internal error"},
+}
+
+// classifyPrecheckErr maps typed sentinels to outcome + HTTP status +
+// envelope code per Hub §15.5. code is identical to outcome (the
+// outcome constant doubles as the envelope code).
+func classifyPrecheckErr(err error) (outcome string, status int, code string) {
+	oc := outcomeInternalError
+	switch {
+	case errors.Is(err, precheck.ErrUnauthorizedResource):
+		oc = outcomeUnauthorizedResource
+	case errors.Is(err, precheck.ErrUnauthorizedTeam):
+		oc = outcomeUnauthorizedTeam
+	case errors.Is(err, precheck.ErrLiteLLMUnreachable):
+		oc = outcomeLitellmUnreachable
+	case errors.Is(err, precheck.ErrInvalidKeyType):
+		oc = outcomeInvalidKeyType
+	}
+	return oc, precheckOutcomes[oc].status, oc
+}
+
+// codeMessage returns the stable human-readable message for an outcome
+// code (Hub §15.5). Unknown codes return "". v1alpha1 ships English
+// literals; localization is v1beta1.
+func codeMessage(code string) string {
+	return precheckOutcomes[code].msg
+}
+
+// statusRecorder captures the first WriteHeader for the duration metric.
+// Unwrap keeps http.ResponseController (and ReverseProxy's flush path)
+// working through the wrapper — same pattern as the platformapi
+// statusCapturingWriter.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) {
+	if s.status == 0 {
+		s.status = code
+	}
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// statusClass buckets a status code into the §18.5 status_class enum.
+// An implicit 200 (handler never called WriteHeader) counts as 2xx.
+func statusClass(code int) string {
+	if code == 0 {
+		code = http.StatusOK
+	}
+	return strconv.Itoa(code/100) + "xx"
+}
+
+// observeDuration wraps h, emitting
+// ach_forwarder_request_duration_seconds{route, key_type, status_class}
+// per Hub §18.5 once the response completes.
+func observeDuration(routeLabel string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		h(rec, r)
+		metrics.ObserveRequestDuration(routeLabel, keyTypeFor(r.Context()),
+			statusClass(rec.status), time.Since(start).Seconds())
+	}
+}

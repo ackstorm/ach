@@ -1,0 +1,29 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Plugin.spec.<type> matching subobject MUST be present (CRD-03 / Plan 02 Task 2)
+# Expected error substring: "subobject"
+#
+# This manifest sets spec.type=github but provides spec.s3:{...} (not
+# spec.github). The discriminator CEL rule requires the subobject that
+# matches spec.type to be present:
+#   (self.spec.type == 'github' && has(self.spec.github)) ||
+#   (self.spec.type == 'gitlab' && has(self.spec.gitlab)) || ...
+# Admission rejects with:
+#   "Plugin.spec must include the subobject matching spec.type (CRD-03)"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: invalid-type-mismatch
+  namespace: ach-system
+spec:
+  type: github
+  s3:
+    bucket: ach-example-bucket
+    key: plugins/example/
+    region: us-east-1
+    authSecretRef:
+      name: ach-example-s3
+      accessKeyIdKey: accessKeyId
+      secretAccessKeyKey: secretAccessKey
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

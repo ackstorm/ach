@@ -1,0 +1,223 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package state_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	"github.com/ackstorm/ach/internal/cli/state"
+)
+
+// TestLoad_AbsentFile_ReturnsNilNil asserts the fresh-workspace
+// branch: an on-disk absence is not an error; it just means "no
+// prior state". Callers proceed as if the File were empty.
+func TestLoad_AbsentFile_ReturnsNilNil(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent", "state.json")
+	f, err := state.Load(path)
+	if err != nil {
+		t.Fatalf("Load on absent path: err = %v, want nil", err)
+	}
+	if f != nil {
+		t.Fatalf("Load on absent path: f = %+v, want nil", f)
+	}
+}
+
+// TestLoad_SchemaV1_ReturnsErrSchemaMismatch asserts the §8.2 +
+// D-13 clean-break: schemaVersion "1" is rejected — no v1 reader
+// code ships. Maps to exit 5 at the caller layer.
+func TestLoad_SchemaV1_ReturnsErrSchemaMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":"1"}`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := state.Load(path)
+	if !errors.Is(err, state.ErrSchemaMismatch) {
+		t.Fatalf("Load(v1 state): err = %v, want errors.Is(..., ErrSchemaMismatch)", err)
+	}
+}
+
+// TestLoad_SchemaV2_RoundTrip asserts the happy path: a v2 state
+// written by Save round-trips through Load with the same field
+// values. Validates JSON tags + struct shape against §8.2.
+func TestLoad_SchemaV2_RoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	want := &state.File{
+		SchemaVersion: "3",
+		Environment:   "engineering-prod",
+		Profile:       "ackstorm-prod",
+		Prompts: []state.FileEntry{
+			{Target: ".ach/prompts/foo.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},
+		},
+		Plugins: []state.FileEntry{
+			{Target: ".claude/plugins/p/.claude-plugin/plugin.json", Hash: "xxh3:bb", SourceHash: "xxh3:bb"},
+		},
+		Artifacts: []state.FileEntry{
+			{Target: ".ach/artifacts/x/profile.md", Hash: "xxh3:cc", SourceHash: "xxh3:cc"},
+		},
+		RuntimeFiles: []state.FileEntry{
+			{Target: ".claude/.mcp.json", Hash: "xxh3:dd", SourceHash: "xxh3:dd1", Merge: "deep", Keys: []string{"mcpServers.github"}},
+		},
+		Adapter: state.AdapterSection{
+			ID: "claude-code",
+			Files: []state.FileEntry{
+				{Target: ".claude/settings.json", Hash: "xxh3:ee", SourceHash: "xxh3:ee1", Merge: "deep", Keys: []string{"mcp.servers.github"}},
+			},
+		},
+	}
+	if err := state.Save(path, want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := state.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got == nil {
+		t.Fatalf("Load returned nil File")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("round-trip mismatch\n got: %+v\nwant: %+v", got, want)
+	}
+}
+
+// TestLoad_UnknownField_ReturnsErrStateParse asserts the strict
+// schema gate: DisallowUnknownFields catches both v1 leftover
+// fields (e.g. `contentHashes`) and forward-compat drift. Wraps
+// ErrStateParse so callers can grep the error chain.
+func TestLoad_UnknownField_ReturnsErrStateParse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	body := `{"schemaVersion":"3","contentHashes":{"foo":"bar"}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := state.Load(path)
+	if !errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(unknown-field): err = %v, want errors.Is(..., ErrStateParse)", err)
+	}
+}
+
+// TestLoad_V1FileReturnsErrSchemaMismatch is the WR-03 closure:
+// a v1 state.json carrying the legacy `contentHashes` field MUST
+// return ErrSchemaMismatch (exit 5 at caller) — NOT ErrStateParse
+// (exit 1). Before 07-W5-06, `dec.DisallowUnknownFields()` ran first
+// and the unknown `contentHashes` triggered ErrStateParse, leaving
+// the user with no documented recovery path: the caller's --force
+// arm in commit.go:step3ReadState only gates on
+// errors.Is(err, state.ErrSchemaMismatch).
+//
+// This test pins the new two-phase ordering: phase 1's best-effort
+// schemaVersion gate catches non-"2" files BEFORE the strict decode
+// runs, so a v1 file with legacy fields maps to exit 5 and `--force`
+// overrides correctly. The integration contract is documented in
+// internal/cli/hydrate/commit.go:step3ReadState.
+func TestLoad_V1FileReturnsErrSchemaMismatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	body := `{"schemaVersion":"1","environment":"demo","contentHashes":{"foo":"bar"}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := state.Load(path)
+	if err == nil {
+		t.Fatalf("Load(v1 file): err = nil, want non-nil")
+	}
+	if !errors.Is(err, state.ErrSchemaMismatch) {
+		t.Fatalf("Load(v1 file): err = %v, want errors.Is(..., ErrSchemaMismatch)", err)
+	}
+	if errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(v1 file): err = %v, must NOT be ErrStateParse (would deny --force recovery)", err)
+	}
+	if f != nil {
+		t.Fatalf("Load(v1 file): f = %+v, want nil", f)
+	}
+}
+
+// TestLoad_V2FileWithUnknownFieldReturnsErrStateParse pins the other
+// arm of the 07-W5-06 two-phase ordering: a CURRENT-version state.json
+// with an unknown top-level field is NOT a user-recoverable migration;
+// it is a bug (corruption, forward-compat drift, out-of-tree writer).
+// The strict-decode arm fires after phase 1 admits the schemaVersion,
+// and ErrStateParse (exit 1, no --force escape) is the correct
+// posture. `--force` does NOT have special handling for this arm —
+// see commit.go:step3ReadState, which only gates --force on
+// ErrSchemaMismatch.
+func TestLoad_V2FileWithUnknownFieldReturnsErrStateParse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	body := `{"schemaVersion":"3","environment":"demo","futureField":"x"}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := state.Load(path)
+	if err == nil {
+		t.Fatalf("Load(v2+unknown): err = nil, want non-nil")
+	}
+	if !errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(v2+unknown): err = %v, want errors.Is(..., ErrStateParse)", err)
+	}
+	if errors.Is(err, state.ErrSchemaMismatch) {
+		t.Fatalf("Load(v2+unknown): err = %v, must NOT be ErrSchemaMismatch (would silently allow --force overwrite of corrupt v2 file)", err)
+	}
+	if f != nil {
+		t.Fatalf("Load(v2+unknown): f = %+v, want nil", f)
+	}
+}
+
+// TestLoad_CorruptJSON_ReturnsErrStateParse asserts the parse
+// failure path: non-JSON bytes wrap ErrStateParse so callers can
+// distinguish "file is broken" from "schema is wrong".
+func TestLoad_CorruptJSON_ReturnsErrStateParse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{not json`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_, err := state.Load(path)
+	if !errors.Is(err, state.ErrStateParse) {
+		t.Fatalf("Load(corrupt): err = %v, want errors.Is(..., ErrStateParse)", err)
+	}
+}
+
+// TestSave_NilFile_Errors asserts the defensive nil guard. A nil
+// File is a programmer bug, not a recoverable state — surface it
+// immediately rather than writing an empty struct.
+func TestSave_NilFile_Errors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := state.Save(path, nil); err == nil {
+		t.Fatalf("Save(nil) returned nil error; want non-nil")
+	}
+}
+
+// TestSave_WritesValidJSON asserts Save produces JSON parseable by
+// encoding/json (no html-escape on `<` `>` `&`, indent applied for
+// human diffability).
+func TestSave_WritesValidJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	f := &state.File{
+		SchemaVersion: "3",
+		Environment:   "prod",
+		Profile:       "ackstorm-prod",
+		Prompts: []state.FileEntry{
+			// Path includes `<`/`>`/`&` to assert SetEscapeHTML(false).
+			{Target: ".ach/prompts/<weird>&name.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},
+		},
+	}
+	if err := state.Save(path, f); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	// Assert literal `<` is preserved (not `<`).
+	if !bytes.Contains(raw, []byte("<weird>&name.md")) {
+		t.Fatalf("expected literal HTML chars; got %s", string(raw))
+	}
+	// Assert indent applied.
+	var anyVal map[string]any
+	if err := json.Unmarshal(raw, &anyVal); err != nil {
+		t.Fatalf("written file is not valid JSON: %v\n%s", err, string(raw))
+	}
+}

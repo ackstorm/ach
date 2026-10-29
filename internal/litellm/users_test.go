@@ -1,0 +1,402 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package litellm
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// TestUserNewHappyPath asserts that UserNew issues POST /user/new with the
+// supplied body and decodes the response into *UserInfo (Phase 3 D-25).
+func TestUserNewHappyPath(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","teams":["default"]}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserNew(context.Background(), &UserNewRequest{
+		UserEmail: "a@b.c",
+		Teams:     []string{"default"},
+	})
+	if err != nil {
+		t.Fatalf("UserNew: %v", err)
+	}
+	if got == nil {
+		t.Fatal("UserNew: nil response")
+	}
+	if got.UserID != "u-1" || got.UserEmail != "a@b.c" {
+		t.Errorf("UserNew: want {u-1, a@b.c}, got %+v", got)
+	}
+	if len(got.Teams) != 1 || got.Teams[0] != "default" {
+		t.Errorf("UserNew: want Teams=[default], got %+v", got.Teams)
+	}
+	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/user/new" {
+		t.Errorf("wire: want POST /user/new, got %+v", captured)
+	}
+}
+
+// TestUserInfoByEmailNotFound asserts that UserInfoByEmail returns a
+// non-nil error when LiteLLM responds 404. The exact wrapping is the
+// makeRequest convention (generic 4xx error string with the status code) —
+// caller-side (Plan 03-07 SSO handler) uses strings.Contains("404") to
+// branch into the UserNew path per Phase 3 D-25.
+func TestUserInfoByEmailNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte(`{"error":{"message":"User not found","type":"not_found","param":"user_email","code":"404"}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "missing@x")
+	if err == nil {
+		t.Fatalf("want error on 404, got nil; result=%+v", got)
+	}
+	if got != nil {
+		t.Errorf("want nil *UserInfo on 404, got %+v", got)
+	}
+	// makeRequest formats 4xx as "litellm: 404 on GET <path> (code=404)".
+	if !strings.Contains(err.Error(), "404") {
+		t.Errorf("error should mention 404 status, got: %v", err)
+	}
+}
+
+// TestUserInfoByEmailHappyPath asserts that UserInfoByEmail issues GET
+// /user/info?user_email=<email> and decodes the body into *UserInfo with
+// the Teams field populated (BLK-01).
+func TestUserInfoByEmailHappyPath(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		// LiteLLM v1.83 /user/info top-level `teams` is an array of
+		// team objects (each with team_id + team_alias), NOT strings.
+		// The test fixture mirrors the real wire shape so the envelope
+		// decode added for FIX01 §A.1 stays honest.
+		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a@b.c","user_info":{"user_alias":"A B"},"teams":[` +
+			`{"team_id":"default","team_alias":"default"},` +
+			`{"team_id":"ops","team_alias":"ops"}` +
+			`]}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "a@b.c")
+	if err != nil {
+		t.Fatalf("UserInfoByEmail: %v", err)
+	}
+	if got == nil {
+		t.Fatal("UserInfoByEmail: nil response")
+	}
+	if got.UserID != "u-1" || got.UserEmail != "a@b.c" || got.UserAlias != "A B" {
+		t.Errorf("UserInfoByEmail: want {u-1, a@b.c, A B}, got %+v", got)
+	}
+	if len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "ops" {
+		t.Errorf("UserInfoByEmail: want Teams=[default ops] (team_id flattened), got %+v", got.Teams)
+	}
+	// The by-id try answers for u-1, not a@b.c — a miss — so the email
+	// lookup is the second request.
+	if len(captured) != 2 || captured[1].Method != "GET" {
+		t.Fatalf("wire: want by-id miss then GET by email, got %+v", captured)
+	}
+	// Path must be /user/info with url-escaped user_email parameter.
+	if !strings.HasPrefix(captured[1].Path, "/user/info?") {
+		t.Errorf("path prefix: want /user/info?, got %q", captured[1].Path)
+	}
+	if !strings.Contains(captured[1].Path, "user_email=a%40b.c") {
+		t.Errorf("path must url-escape email (@ → %%40), got %q", captured[1].Path)
+	}
+}
+
+// TestUserInfoByEmailByIDHitIsOneRequest — ACH users have user_id=email, so
+// the by-id try answers them in ONE request; the three-call email chain
+// (placeholder → /user/list → by-id) is never reached.
+func TestUserInfoByEmailByIDHitIsOneRequest(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"user_id":"a@b.c","user_info":{"user_email":"a@b.c","user_alias":"A"},` +
+			`"teams":[{"team_id":"t1","team_alias":"default"}]}`))
+	}))
+	defer srv.Close()
+
+	got, err := newTestClient(t, srv.URL).UserInfoByEmail(context.Background(), "a@b.c")
+	if err != nil || got.UserID != "a@b.c" || got.UserEmail != "a@b.c" || got.UserAlias != "A" ||
+		len(got.Teams) != 1 || got.Teams[0] != "default" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if len(captured) != 1 || captured[0].Path != "/user/info?user_id=a%40b.c" {
+		t.Fatalf("want exactly one by-id request, got %+v", paths(captured))
+	}
+}
+
+// TestUserInfoByEmailLiteLLM183Placeholder — FIX01 §A.2.
+// LiteLLM v1.83 returns user_id="default_user_id" with null user_email
+// when the requested email is not on file (no 404). UserInfoByEmail
+// must fall back to /user/list and return ErrNotFound if that's also
+// empty.
+func TestUserInfoByEmailLiteLLM183Placeholder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			_, _ = w.Write([]byte(`{"users":[]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "missing@example.com")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got err=%v result=%+v", err, got)
+	}
+	if got != nil {
+		t.Errorf("want nil *UserInfo, got %+v", got)
+	}
+}
+
+// TestUserInfoByEmailLiteLLM183Fallback — FIX01 §A.5.
+// /user/info returns the placeholder even for EXISTING users (the
+// upstream email-keyed lookup is broken). UserInfoByEmail must fall
+// back to /user/list and surface the real user_id from there.
+func TestUserInfoByEmailLiteLLM183Fallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			if strings.Contains(r.URL.RawQuery, "user_id") {
+				_, _ = w.Write([]byte(`{"user_id":"u-real","user_email":"existing@example.com","teams":[{"team_id":"default","team_alias":"default"}]}`))
+			} else {
+				// Placeholder catch-all (LiteLLM 1.83 quirk).
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+			}
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			// The user DOES exist — /user/list returns the real row.
+			_, _ = w.Write([]byte(`{"users":[{"user_id":"u-real","user_email":"existing@example.com","teams":["default"]}]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "existing@example.com")
+	if err != nil {
+		t.Fatalf("UserInfoByEmail with /user/list fallback: %v", err)
+	}
+	if got == nil || got.UserID != "u-real" || got.UserEmail != "existing@example.com" {
+		t.Errorf("want {u-real, existing@example.com}, got %+v", got)
+	}
+}
+
+// TestUserInfoByEmailByIDPlaceholderGuard — issue #36.
+// In the /user/list fallback path the second /user/info?user_id= call may
+// ALSO return the default_user_id placeholder. The authoritative user_id
+// from /user/list must win; only the team-alias mapping is taken from the
+// by-id response.
+func TestUserInfoByEmailByIDPlaceholderGuard(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/user/info"):
+			if strings.Contains(r.URL.RawQuery, "user_id") {
+				// by-id path ALSO returns the placeholder (the #36 bug
+				// scenario) but carries a usable team alias.
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","teams":[{"team_id":"t-uuid-001","team_alias":"default"}]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+			}
+		case strings.HasPrefix(r.URL.Path, "/user/list"):
+			_, _ = w.Write([]byte(`{"users":[{"user_id":"u-real","user_email":"existing@example.com","teams":["default"]}]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	got, err := c.UserInfoByEmail(context.Background(), "existing@example.com")
+	if err != nil {
+		t.Fatalf("UserInfoByEmail: %v", err)
+	}
+	if got == nil || got.UserID != "u-real" {
+		t.Errorf("UserID = %+v; want authoritative u-real (not default_user_id)", got)
+	}
+	if len(got.Teams) != 1 || got.Teams[0] != "default" {
+		t.Errorf("Teams = %v; want [default] from by-id alias mapping", got.Teams)
+	}
+}
+
+// TestUserInfoByEmailNullEmailFallsBackToUserID — incident 2026-10-08:
+// a user created out-of-band with user_id=email but a NULL user_email is
+// invisible to both email lookups; every team check saw zero teams. The
+// last resort asks /user/info?user_id=<email>, trusting only an answer
+// for exactly that id.
+func TestUserInfoByEmailNullEmailFallsBackToUserID(t *testing.T) {
+	cases := []struct {
+		name   string
+		byID   func(w http.ResponseWriter)
+		wantID string
+	}{
+		{"null-email user found by id", func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"user_id":"jp@example.com","user_info":{"user_email":null},"teams":[{"team_id":"t1","team_alias":"default"},{"team_id":"t2"}]}`))
+		}, "jp@example.com"},
+		{"placeholder by id is not the user", func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"user_id":"default_user_id","teams":[{"team_id":"t9","team_alias":"admin"}]}`))
+		}, ""},
+		{"404 by id is not found", func(w http.ResponseWriter) {
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"error":{"message":"not found"}}`))
+		}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/user/info" && r.URL.Query().Get("user_id") == "jp@example.com":
+					tc.byID(w)
+				case r.URL.Path == "/user/info":
+					_, _ = w.Write([]byte(`{"user_id":"default_user_id","user_email":null,"teams":[]}`))
+				case r.URL.Path == "/user/list":
+					_, _ = w.Write([]byte(`{"users":[{"user_id":"other@example.com","user_email":"other@example.com"}]}`))
+				default:
+					t.Errorf("unexpected path: %s", r.URL)
+				}
+			}))
+			defer srv.Close()
+
+			got, err := newTestClient(t, srv.URL).UserInfoByEmail(context.Background(), "jp@example.com")
+			if tc.wantID == "" {
+				if !errors.Is(err, ErrNotFound) {
+					t.Fatalf("want ErrNotFound, got %+v, %v", got, err)
+				}
+				return
+			}
+			if err != nil || got.UserID != tc.wantID || got.UserEmail != "" ||
+				len(got.Teams) != 2 || got.Teams[0] != "default" || got.Teams[1] != "t2" {
+				t.Fatalf("got %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+// TestUserInfoByEmailEscapesPlus asserts that the email url-escape uses
+// QueryEscape semantics — the `+` in `a+tag@b.c` MUST become `%2B`, not
+// stay literal (literal `+` in a query string decodes as space).
+func TestUserInfoByEmailEscapesPlus(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"user_id":"u-1","user_email":"a+tag@b.c"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	_, _ = c.UserInfoByEmail(context.Background(), "a+tag@b.c")
+	if len(captured) != 2 {
+		t.Fatalf("want 2 requests (by-id miss, by-email), got %d", len(captured))
+	}
+	for _, want := range []string{"user_id=a%2Btag%40b.c", "user_email=a%2Btag%40b.c"} {
+		if !strings.Contains(strings.Join(paths(captured), " "), want) {
+			t.Errorf("want url.QueryEscape result %s, got %v", want, paths(captured))
+		}
+	}
+}
+
+// TestTeamMemberAddHappyPath asserts wire shape (POST /team/member_add)
+// and body content (team_id + nested member).
+func TestTeamMemberAddHappyPath(t *testing.T) {
+	var captured []capturedRequest
+	srv := httptest.NewServer(captureMock(t, &captured, func(i int, w http.ResponseWriter) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"team_id":"default"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	if err := c.TeamMemberAdd(context.Background(), "default", "u-1", "user"); err != nil {
+		t.Fatalf("TeamMemberAdd: %v", err)
+	}
+	if len(captured) != 1 || captured[0].Method != "POST" || captured[0].Path != "/team/member_add" {
+		t.Errorf("wire: want POST /team/member_add, got %+v", captured)
+	}
+
+	// Decode and assert the body shape.
+	var body TeamMemberAddRequest
+	if err := json.Unmarshal(captured[0].Body, &body); err != nil {
+		t.Fatalf("body decode: %v", err)
+	}
+	if body.TeamID != "default" {
+		t.Errorf("TeamID: want default, got %q", body.TeamID)
+	}
+	if body.Member.UserID != "u-1" || body.Member.Role != "user" {
+		t.Errorf("Member: want {u-1, user}, got %+v", body.Member)
+	}
+}
+
+// TestTeamMemberAddDuplicate4xx asserts that TeamMemberAdd propagates a
+// 4xx error from the upstream (LiteLLM treats duplicate-add as 4xx).
+// Caller-side (Plan 03-07 SSO handler) decides whether to swallow.
+func TestTeamMemberAddDuplicate4xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":{"message":"already a member","type":"already_exists","param":null,"code":"400"}}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	err := c.TeamMemberAdd(context.Background(), "default", "u-1", "user")
+	if err == nil {
+		t.Fatalf("want error on 400, got nil")
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Errorf("error should mention 400 status, got: %v", err)
+	}
+}
+
+// TestUserHelpers401Propagation — REL-06 typed-error propagation through
+// the three new user-helper methods. Same shape as TestTeamHelpers401Propagation.
+func TestUserHelpers401Propagation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(litellmAuth401Body))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	check := func(name string, err error) {
+		t.Helper()
+		var a *Auth401Error
+		if !errors.As(err, &a) {
+			t.Errorf("%s: want *Auth401Error, got %T: %v", name, err, err)
+		}
+	}
+
+	_, err := c.UserNew(context.Background(), &UserNewRequest{UserEmail: "x@y"})
+	check("UserNew", err)
+	_, err = c.UserInfoByEmail(context.Background(), "x@y")
+	check("UserInfoByEmail", err)
+	err = c.TeamMemberAdd(context.Background(), "default", "u", "user")
+	check("TeamMemberAdd", err)
+}

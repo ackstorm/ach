@@ -1,0 +1,108 @@
+# ach itself — installed last by scripts/cluster.sh hydrate_ach against
+# the in-cluster postgres / valkey / dex / litellm services hydrated
+# earlier in the same `cluster.sh up` invocation.
+#
+# Used by:  scripts/cluster.sh hydrate_ach
+# Chart:    deploy/helm/ach  (in-tree)
+#
+# Image coordinates:
+#   The image.repo + image.tag are NOT pinned here because hydrate_ach
+#   overrides them via --set (ACH_IMAGE_REPO + ACH_IMAGE_TAG env vars
+#   are the canonical source — CI sets them when it builds the image
+#   immediately before `cluster.sh up`).
+
+enterprise:
+  enabled: true
+
+extraEnv:
+  - name: ACH_DB_URL
+    valueFrom:
+      secretKeyRef:
+        name: ach-db-url
+        key: url
+  # ACH_CREDENTIAL_HASH_PEPPER + ACH_KEY_ENCRYPTION_KEY are NOT set here
+  # anymore — they are injected into platform-api + forwarder by the chart's
+  # ach.securityEnv helper from the top-level `security` block, whose defaults
+  # (ach-credential-hash-pepper/pepper, ach-key-encryption-key/dek) match the
+  # Secrets seeded by 02-ach/secrets. Exercising the single-source path real
+  # deployments use; setting them in extraEnv too would duplicate the env vars.
+  - name: ACH_BASE_URL
+    # ONE origin reachable from the host (devtools --add-host → 127.0.0.1 → kind
+    # hostPort 8080) AND from pods (CoreDNS rewrite → ach-local-gateway:8080), so
+    # the hydrate manifest's download URLs work for agent pods too.
+    value: "http://ach.e2e.local:8080"
+  # ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY are NOT set here anymore.
+  # They are derived from the litellmConnection block below (the chart's
+  # ach.litellmConnectionEnv helper injects them into platform-api +
+  # content-service), exercising the single-source path real deployments use.
+  # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
+  # injects into scripts/dex-config.yaml (in-cluster URL, not the
+  # localhost one Dex ships with for the docker-run UAT path).
+  - name: ACH_DEX_ISSUER_URL
+    value: "http://dex.dex-system.svc.cluster.local:5556/dex"
+  - name: ACH_DEX_CLIENT_ID
+    value: "ach-platform-api"
+  - name: ACH_DEX_CLIENT_SECRET
+    # Must match the `secret:` value in scripts/dex-config.yaml's
+    # staticClient for the ach-platform-api OAuth client. Plaintext
+    # dev value — production reads from a Secret.
+    value: "dev-secret-not-for-prod"
+  - name: ACH_REDIS_ADDR
+    value: "valkey-primary.ach-system.svc.cluster.local:6379"
+  # The OAuth binding cookie hardening is derived from the ACH_BASE_URL
+  # scheme: http://ach.e2e.local:8080 (above) makes the platform-api emit
+  # the plain-named, non-Secure cookie so the kind gateway's plain-http
+  # round-trip works. An https base auto-hardens to __Host-/Secure.
+
+# Single-source LiteLLM config (the path real deployments use). The chart
+# renders LiteLLMConnection/default (operator reconciles it; forwarder +
+# Environment read the projection) AND derives ACH_LITELLM_* env into
+# platform-api + content-service from this block. masterKeySecretRef points
+# at the litellm-master-key Secret seeded by 02-ach/secrets (key masterKey).
+# The hand-applied 04-objects/litellmconnection.yaml fixture is therefore
+# gone — the chart owns the CR now.
+litellmConnection:
+  enabled: true
+  endpoint: http://litellm.litellm-system.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: masterKey
+
+# Admin allowlist for the e2e suite. The mock SSO user (kilgore@kilgore.trout,
+# minted by the phase4/phase6 login helpers) must be an admin to exercise the
+# admin-only runtime catalog endpoints (GET /platform/admin/runtime/*). Without
+# this the chart parses zero admins and every admin route 403s (safe default).
+# The existing phase3 SC#5 admin-gate test only probes the UNAUTHENTICATED path
+# (401 at Authn, before the allowlist check), so populating this is inert for it.
+platformApi:
+  admins:
+    - kilgore@kilgore.trout
+  # e2e-full keeps the cluster and mints a non-revoked demo-ek on each run.
+  # Keep this fixture ceiling well above the accumulated run count; product
+  # default remains 0 (deny-by-default).
+  userDefaults:
+    maxKeys: 1000
+
+# Declared credential slots (chart defaults, spelled out so the e2e values
+# document what the suite exercises): x-ach-key (ach-cli, hydrate, ach-agent)
+# and x-api-key (Claude Code apiKeyHelper), both resolved. The identity
+# release (identity.values.yaml) adds a passthrough header.
+forwarder:
+  headers:
+    - {name: x-ach-key, mode: resolve}
+    - {name: x-api-key, mode: resolve}
+  # The in-cluster Dex issuer (scripts/cluster.sh rewrites dex-config.yaml's
+  # issuer to this) — the token's iss must match byte for byte.
+  trustedIdP:
+    issuer: http://dex.dex-system.svc.cluster.local:5556/dex
+    audiences: [e2e-chat]
+
+# NOTE: the e2e test backends are NO LONGER chart toggles. They moved out of
+# the Helm chart into test/e2e/cluster/03-test-backends/ (applied by cluster.sh
+# post-ach):
+#   - ach-mcp-echo.yaml     JWT-validating MCP backend (issue #35 + BIP loop);
+#                           expectedIss/expectedAud/requireJwt are literals.
+#   - ach-mock-model.yaml LiteLLM-shaped data-plane capture backend
+#                           (/v1/* + /__capture) for ek_ tag-injection asserts.
+# The legacy ach-mock-mcp sibling was dropped (unused; the JWT MCP path uses
+# ach-mcp-echo). There is intentionally no testMocks: block here anymore.

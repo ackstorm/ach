@@ -1,0 +1,397 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package console
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
+	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
+	"github.com/ackstorm/ach/internal/platformapi/middleware"
+)
+
+var testDEK = []byte("0123456789abcdef0123456789abcdef")
+
+type fakeCatalog struct {
+	models []litellm.ModelGroupInfo
+	mcp    []litellm.MCPServerEntry
+	a2a    []litellm.AgentEntry
+	err    error
+
+	// Task 4 fields — zero-valued for every pre-existing capabilities test.
+	// DailyActivity is called twice per stats request, concurrently: the
+	// window ending today gets daily, the earlier one prior.
+	daily          observability.DailyActivity
+	dailyErr       error
+	prior          observability.DailyActivity
+	priorErr       error
+	dailyCalls     int
+	mu             sync.Mutex
+	spendRows      []observability.SpendLogRow
+	spendTruncated bool
+	spendErr       error
+	lastSpendStart string
+	lastSpendEnd   string
+	lastSpendMax   int
+}
+
+func (f *fakeCatalog) ListModelGroups(context.Context) ([]litellm.ModelGroupInfo, error) {
+	return f.models, f.err
+}
+func (f *fakeCatalog) ListMCPServers(context.Context) ([]litellm.MCPServerEntry, error) {
+	return f.mcp, f.err
+}
+func (f *fakeCatalog) ListA2AAgents(context.Context) ([]litellm.AgentEntry, error) {
+	return f.a2a, f.err
+}
+func (f *fakeCatalog) DailyActivity(_ context.Context, _, end string) (observability.DailyActivity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dailyCalls++
+	// /stats reads both windows concurrently: the current one ends today.
+	if end >= time.Now().UTC().Format(dateLayout) {
+		return f.daily, f.dailyErr
+	}
+	return f.prior, f.priorErr
+}
+func (f *fakeCatalog) SpendLogsV2(_ context.Context, start, end string, maxPages int) ([]observability.SpendLogRow, bool, error) {
+	f.lastSpendStart, f.lastSpendEnd, f.lastSpendMax = start, end, maxPages
+	return f.spendRows, f.spendTruncated, f.spendErr
+}
+
+type fakeStore map[string]*db.EnvironmentRow
+
+func (s fakeStore) GetEnvironment(_ context.Context, name string) (*db.EnvironmentRow, error) {
+	return s[name], nil
+}
+
+// fakeLL: only the two methods LookupCallerTeams calls; the embedded nil
+// interface panics on anything else, which is the point.
+type fakeLL struct {
+	litellm.Client
+	teams map[string][]string
+	err   error
+	// tag drives the console's budget panel (the caller's user:<email>
+	// tag); tagErr forces the degraded "unknown" branch.
+	tag      *litellm.TagInfoEntry
+	tagErr   error
+	tagCalls int
+	// spend is the tag's /tag/daily/activity total; spendStart records the
+	// window start TagSpend was asked for.
+	spend      float64
+	series     []observability.DaySpend
+	spendErr   error
+	spendStart time.Time
+}
+
+func (f *fakeLL) TagInfo(_ context.Context, _ string) (*litellm.TagInfoEntry, error) {
+	f.tagCalls++
+	return f.tag, f.tagErr
+}
+
+func (f *fakeLL) TagSpend(_ context.Context, _ string, start, _ time.Time) (float64, []observability.DaySpend, error) {
+	f.spendStart = start
+	return f.spend, f.series, f.spendErr
+}
+
+func (f *fakeLL) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &litellm.UserInfo{UserID: email, Teams: f.teams[email]}, nil
+}
+func (f *fakeLL) ListAllTeams(context.Context) ([]litellm.TeamListEntry, error) {
+	return []litellm.TeamListEntry{{TeamID: "team-a", TeamAlias: "team-a"}}, nil
+}
+
+func testDeps(t *testing.T) Deps {
+	t.Helper()
+	return Deps{
+		Store:            fakeStore{"demo": {Name: "demo", AuthorizedTeams: []string{"team-a"}, RuntimeModels: []string{"demo-model"}}},
+		LiteLLM:          &fakeLL{teams: map[string][]string{"u@x.com": {"team-a"}, "v@x.com": {"team-z"}}},
+		AsUser:           func(string) UserReads { return &fakeCatalog{} },
+		KeyEncryptionKey: testDEK,
+		Audit:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func pkCtx(t *testing.T, email string, admin bool) context.Context {
+	t.Helper()
+	sealed, err := keycrypt.Seal(testDEK, []byte("sk-user"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return middleware.WithKeyContext(context.Background(),
+		&keystore.KeyInfo{KeyID: "pkid_1", KeyType: keys.PrefixPk, OwnerEmail: email, LiteLLMKeyMaterial: &sealed}, admin)
+}
+
+func ekCtx() context.Context {
+	return middleware.WithKeyContext(context.Background(),
+		&keystore.KeyInfo{KeyID: "ekid_1", KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "demo"}, false)
+}
+
+func do(t *testing.T, d Deps, path string, ctx context.Context) *httptest.ResponseRecorder {
+	t.Helper()
+	r := chi.NewRouter()
+	Mount(r, d)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil).WithContext(ctx))
+	return rec
+}
+
+func TestBootstrap(t *testing.T) {
+	d := testDeps(t)
+	d.OpenWorkEnabled = true
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", true))
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 || got["email"] != "u@x.com" || got["is_admin"] != true || got["openwork_enabled"] != true || got["suspend_propagation_seconds"] != float64(60) {
+		t.Fatalf("%d %v", rec.Code, got)
+	}
+	if got["enterprise"] != false {
+		t.Fatalf("enterprise = %v, want false by default", got["enterprise"])
+	}
+	d.Enterprise = true
+	rec = do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", true))
+	got = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["enterprise"] != true {
+		t.Fatalf("enterprise = %v, want true", got["enterprise"])
+	}
+}
+
+func TestBootstrapReportsKeyAllowance(t *testing.T) {
+	d := testDeps(t)
+	d.Allowance = func(_ context.Context, _ string) (int, int, error) { return 2, 5, nil }
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 || got["keys_used"] != float64(2) || got["max_keys"] != float64(5) {
+		t.Fatalf("%d %v", rec.Code, got)
+	}
+}
+
+func TestBootstrapDegradesWhenAllowanceUnavailable(t *testing.T) {
+	d := testDeps(t)
+	d.Allowance = func(_ context.Context, _ string) (int, int, error) {
+		return 0, 0, errors.New("boom")
+	}
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+	if rec.Code != 200 {
+		t.Fatalf("bootstrap must not fail on an allowance read error, got %d", rec.Code)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["max_keys"] != nil || got["keys_used"] != nil {
+		t.Fatalf("want both null when unreadable, got %v", got)
+	}
+}
+
+func TestCapabilities_PersonalUsesTheUsersOwnKey(t *testing.T) {
+	d := testDeps(t)
+	// Non-chat modes stay: the forwarder's GET /v1/models hides them, ACH's own
+	// console view reads /model_group/info directly and must not.
+	mode, embedMode, sttMode := "chat", "embedding", "audio_transcription"
+	cat := &fakeCatalog{
+		// The LEGACY sentinel on purpose: mid-upgrade a user shell still
+		// carries it, and it must be stripped exactly like the current one.
+		models: []litellm.ModelGroupInfo{{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}, {Name: "demo-model", Providers: []string{"openai"}, Mode: &mode}, {Name: "demo-embed", Providers: []string{"openai"}, Mode: &embedMode}, {Name: "demo-stt", Providers: []string{"openai"}, Mode: &sttMode}},
+		mcp:    []litellm.MCPServerEntry{{ServerID: "s1", ServerName: "demo-mcp", Transport: "http", AllowedTools: []string{"a"}}},
+		a2a:    []litellm.AgentEntry{{AgentID: "a1", AgentName: "demo-agent", AgentCardParams: map[string]any{"url": "http://x", "skills": []any{map[string]any{"name": "s"}}, "capabilities": map[string]any{"streaming": true}}}},
+	}
+	var usedKey string
+	d.AsUser = func(key string) UserReads { usedKey = key; return cat }
+	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
+	if rec.Code != 200 || usedKey != "sk-user" {
+		t.Fatalf("%d key=%q %s", rec.Code, usedKey, rec.Body)
+	}
+	var got struct {
+		Scope        string           `json:"scope"`
+		Models       []map[string]any `json:"models"`
+		MCP          []map[string]any `json:"mcp_servers"`
+		A2A          []map[string]any `json:"a2a_agents"`
+		Provisioning bool             `json:"provisioning"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Scope != scopePersonal || len(got.Models) != 3 || got.Models[0]["name"] != "demo-model" || got.Models[1]["name"] != "demo-embed" || got.Models[2]["name"] != "demo-stt" || got.Provisioning {
+		t.Fatalf("%+v (deny-all sentinel must be stripped)", got)
+	}
+	if len(got.MCP) != 1 || got.MCP[0]["name"] != "demo-mcp" || got.MCP[0]["tool_count"] != float64(1) {
+		t.Fatalf("mcp: %+v", got.MCP)
+	}
+	if len(got.A2A) != 1 || got.A2A[0]["name"] != "demo-agent" || got.A2A[0]["streaming"] != true || got.A2A[0]["skill_count"] != float64(1) {
+		t.Fatalf("a2a: %+v", got.A2A)
+	}
+	// Allow-list: nothing but the projected fields.
+	for _, forbidden := range []string{"litellm_params", "credentials", "static_headers", "api_key", "server_id"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("leaked %q: %s", forbidden, rec.Body)
+		}
+	}
+}
+
+// TestCapabilities_PersonalProvisioningState: an unattached shell reads as
+// provisioning in all three shapes it can arrive in — the current sentinel,
+// the legacy one a shell written by an older ACH still carries, and an empty
+// list (what LiteLLM returns once it filters "no-default-models" out of the
+// catalog).
+func TestCapabilities_PersonalProvisioningState(t *testing.T) {
+	for name, models := range map[string][]litellm.ModelGroupInfo{
+		"current sentinel": {{Name: litellm.ShellTeamDenyAllModel, Providers: []string{}}},
+		"legacy sentinel":  {{Name: litellm.ShellTeamDenyAllModelLegacy, Providers: []string{}}},
+		"empty list":       {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := testDeps(t)
+			d.AsUser = func(string) UserReads { return &fakeCatalog{models: models} }
+			rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
+			if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"provisioning":true`) || !strings.Contains(rec.Body.String(), `"models":[]`) {
+				t.Fatalf("%d %s", rec.Code, rec.Body)
+			}
+		})
+	}
+}
+
+func TestCapabilities_PersonalNeverRetriesAsMaster(t *testing.T) {
+	d := testDeps(t)
+	d.AsUser = func(string) UserReads { return &fakeCatalog{err: &litellm.Auth401Error{}} }
+	rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false))
+	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "litellm_rejected") {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	d.AsUser = func(string) UserReads { return &fakeCatalog{err: errors.New("dial tcp: refused")} }
+	if rec := do(t, d, "/platform/console/capabilities?scope=personal", pkCtx(t, "u@x.com", false)); rec.Code != 503 {
+		t.Fatalf("transport: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCapabilities_Environment(t *testing.T) {
+	d := testDeps(t)
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment&name=demo", pkCtx(t, "u@x.com", false)); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"scope":"environment"`) || !strings.Contains(rec.Body.String(), "demo-model") {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment&name=demo", pkCtx(t, "v@x.com", false)); rec.Code != 403 {
+		t.Fatalf("no access: %d", rec.Code)
+	}
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment&name=demo", pkCtx(t, "v@x.com", true)); rec.Code != 200 {
+		t.Fatalf("admin: %d", rec.Code)
+	}
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment&name=nope", pkCtx(t, "u@x.com", false)); rec.Code != 404 {
+		t.Fatalf("absent: %d", rec.Code)
+	}
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment", pkCtx(t, "u@x.com", false)); rec.Code != 400 {
+		t.Fatalf("no name: %d", rec.Code)
+	}
+	if rec := do(t, d, "/platform/console/capabilities?scope=bogus", pkCtx(t, "u@x.com", false)); rec.Code != 400 {
+		t.Fatalf("bad scope: %d", rec.Code)
+	}
+	d.LiteLLM = &fakeLL{err: errors.New("down")}
+	if rec := do(t, d, "/platform/console/capabilities?scope=environment&name=demo", pkCtx(t, "u@x.com", false)); rec.Code != 503 {
+		t.Fatalf("litellm down: %d", rec.Code)
+	}
+}
+
+func TestCapabilities_EkCallerRefused(t *testing.T) {
+	if rec := do(t, testDeps(t), "/platform/console/capabilities?scope=personal", ekCtx()); rec.Code != 401 {
+		t.Fatalf("ek_: %d", rec.Code)
+	}
+}
+
+func TestBootstrapReportsDisplayName(t *testing.T) {
+	d := testDeps(t)
+	d.DisplayName = func(*http.Request) string { return "John Doe" }
+	d.ChatURL = "https://chat.example.com"
+	d.ProviderName = "acme"
+	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 || got["name"] != "John Doe" || got["chat_url"] != "https://chat.example.com" || got["provider_name"] != "acme" {
+		t.Fatalf("%d %v", rec.Code, got)
+	}
+}
+
+// TestBootstrap_Budget: bootstrap reports the caller's user:<email> tag budget
+// (the ceiling ach-cli whoami prints); a failed or absent read is null, never
+// an HTTP error.
+func TestBootstrap_Budget(t *testing.T) {
+	cases := []struct {
+		name     string
+		tag      *litellm.TagInfoEntry
+		tagErr   error
+		spendErr error
+		want     string
+	}{
+		{"with ceiling", &litellm.TagInfoEntry{Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d", BudgetResetAt: "2026-10-31T23:00:00Z"}}, nil, nil,
+			`{"budget_duration":"30d","max_budget":100,"reset_at":"2026-10-31T23:00:00Z","spend":12.4}`},
+		{"no ceiling", &litellm.TagInfoEntry{CreatedAt: "2026-09-22T10:00:00Z"}, nil, nil, `{"budget_duration":null,"max_budget":null,"reset_at":null,"spend":12.4}`},
+		{"read error", nil, errors.New("boom"), nil, `null`},
+		{"tag absent", nil, nil, nil, `null`},
+		// The ceiling stays; only the spend is unknown (never a fake 0, never a lost ceiling).
+		{"spend read error", &litellm.TagInfoEntry{Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d", BudgetResetAt: "2026-10-31T23:00:00Z"}}, nil, errors.New("boom"),
+			`{"budget_duration":"30d","max_budget":100,"reset_at":"2026-10-31T23:00:00Z","spend":null}`},
+		{"spend window unreadable", &litellm.TagInfoEntry{Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d", BudgetResetAt: "soon"}}, nil, nil,
+			`{"budget_duration":"30d","max_budget":100,"reset_at":"soon","spend":null}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := testDeps(t)
+			ll := d.LiteLLM.(*fakeLL)
+			ll.tag, ll.tagErr, ll.spend, ll.spendErr = tc.tag, tc.tagErr, 12.4, tc.spendErr
+			rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", false))
+			var got map[string]json.RawMessage
+			_ = json.Unmarshal(rec.Body.Bytes(), &got)
+			raw, ok := got["budget"]
+			if rec.Code != 200 || !ok {
+				t.Fatalf("%d %s", rec.Code, rec.Body.String())
+			}
+			var norm any
+			_ = json.Unmarshal(raw, &norm)
+			b, _ := json.Marshal(norm)
+			if string(b) != tc.want {
+				t.Fatalf("budget = %s; want %s", b, tc.want)
+			}
+		})
+	}
+}
+
+// TestBootstrap_Budget_EkCallerNull: an ek- caller must not read the owner's
+// account-wide budget (mirrors /platform/console/stats, which 401s an ek-
+// outright) — bootstrap itself stays reachable, but "budget" is always null
+// and no /tag/info request is made.
+func TestBootstrap_Budget_EkCallerNull(t *testing.T) {
+	d := testDeps(t)
+	ll := d.LiteLLM.(*fakeLL)
+	ll.tag = &litellm.TagInfoEntry{Budget: &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}}
+
+	rec := do(t, d, "/platform/console/bootstrap", ekCtx())
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != 200 {
+		t.Fatalf("code = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if v, ok := got["budget"]; !ok || v != nil {
+		t.Errorf("budget = %v; want null for an ek- caller", v)
+	}
+	if ll.tagCalls != 0 {
+		t.Errorf("TagInfo called %d times; want 0 for an ek- caller", ll.tagCalls)
+	}
+}

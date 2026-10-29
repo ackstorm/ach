@@ -1,0 +1,21 @@
+# BackendIdentityPolicy — demo-mcp-jwt route, JWT minting ON.
+#
+# Half of the demo Environment's BIP closed-loop (examples/04). The
+# forwarder, on a request routed to /mcp/demo-mcp-jwt, mints the §9.1 ACH
+# JWT and attaches it as Authorization: Bearer. LiteLLM (registered with
+# extra_headers=[authorization]) forwards it to the ach-mcp-echo backend,
+# which verifies iss/aud/exp against the forwarder JWKS.
+#
+# Pairs with examples/16 (demo-mcp-nojwt, forwardIdentityJWT: false) — both
+# target the SAME ach-mcp-echo backend, so the demo proves the toggle is
+# what changes the wire behavior, not the backend.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-demo-mcp-jwt
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: demo-mcp-jwt
+  forwardIdentityJWT: true

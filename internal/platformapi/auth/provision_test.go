@@ -1,0 +1,601 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package auth
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/keycrypt"
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
+)
+
+// testDEK is a deterministic 32-byte data-encryption key for the callback
+// seal path (G3). The callback now encrypts the LiteLLM virtual-key material
+// at rest, so every Deps that drives a successful KeyGenerate+insert must
+// carry a valid DEK.
+func testDEK() []byte {
+	k := make([]byte, keycrypt.KeySize)
+	for i := range k {
+		k[i] = byte(i + 1)
+	}
+	return k
+}
+
+// callRecord captures the LiteLLM operations invoked during a single
+// CallbackHandler test invocation. The fake LiteLLM client mutates this
+// struct.
+type callRecord struct {
+	userInfoByEmailCalls  int
+	userNewCalls          int
+	teamMemberAddCalls    int
+	teamMemberAdds        []string
+	keyGenerateCalls      int
+	revokeKeyCalls        int
+	revokeKeyTokensSeen   []string
+	lastUserNewEmail      string
+	lastUserNewReq        *litellm.UserNewRequest
+	userUpdates           []litellm.UserUpdateRequest
+	lastTeamMemberAddTeam string
+	lastTeamMemberAddUser string
+	lastTeamMemberAddRole string
+	lastKeyGenerateKey    string
+	lastKeyGenerateUser   string
+	lastKeyGenerateBudget *float64
+	lastKeyGenerateReq    *litellm.KeyGenerateRequest
+	listTeamsCalls        int
+	lastListTeamsAlias    string
+	lastCreateTeamReq     *litellm.NewTeamRequest
+}
+
+// fakeLiteLLM is the test client implementing litellm.Client. Per-method
+// behaviour is configured by setter funcs the tests assign before
+// invoking CallbackHandler. Default behaviour is "first-time user happy
+// path": UserInfoByEmail returns ErrNotFound, UserNew succeeds, etc.
+type fakeLiteLLM struct {
+	rec *callRecord
+
+	// Behaviour switches (defaults match Test 1: first-time SSO happy).
+	userInfoBehaviour    func(email string) (*litellm.UserInfo, error)
+	userNewBehaviour     func(req *litellm.UserNewRequest) (*litellm.UserInfo, error)
+	userUpdateError      error
+	teamMemberAddError   func(teamID, userID, role string) error
+	keyGenerateBehaviour func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error)
+	revokeKeyError       func(keyID string) error
+	listTeamsBehaviour   func(alias string) ([]litellm.TeamListEntry, error)
+	listUserKeys         func(userID string) ([]litellm.UserKeyInfo, error)
+	createTeamBehaviour  func(req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error)
+
+	// upsertedTags records every tag budget written through
+	// UpsertTagBudget; upsertTagErr makes that write fail. upsertTagCalls
+	// counts the writes, so a test can assert that NONE happened.
+	upsertedTags   map[string]litellm.TagBudget
+	upsertTagErr   error
+	upsertTagCalls int
+
+	// tagInfoBehaviour answers TagInfo. The default is (nil, nil) — "LiteLLM
+	// does not know this tag", the first-login state.
+	tagInfoBehaviour func(name string) (*litellm.TagInfoEntry, error)
+
+	// getTeamInfoBehaviour / updateTeamErr + updateTeamReqs drive and record
+	// the user-shell repair MintPK runs when CreateTeam reports a duplicate.
+	getTeamInfoBehaviour func(teamID string) (*litellm.TeamListEntry, error)
+	updateTeamErr        error
+	updateTeamReqs       []*litellm.TeamUpdateRequest
+}
+
+func newFakeLiteLLM() *fakeLiteLLM {
+	return &fakeLiteLLM{
+		rec:          &callRecord{},
+		upsertedTags: map[string]litellm.TagBudget{},
+		userInfoBehaviour: func(string) (*litellm.UserInfo, error) {
+			return nil, litellm.ErrNotFound
+		},
+		userNewBehaviour: func(req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "litellm-user-" + req.UserEmail, UserEmail: req.UserEmail}, nil
+		},
+		teamMemberAddError: func(string, string, string) error { return nil },
+		keyGenerateBehaviour: func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+			return &litellm.KeyGenerateResponse{
+				// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM mints its own
+				// virtual-key plaintext (sk-…) in the response; ACH now
+				// persists it. Use a fixed sentinel so the mint test can
+				// assert the inserted row carries it.
+				Key:    "sk-test-pk-material",
+				Token:  "litellm-token-" + req.UserID,
+				UserID: req.UserID,
+			}, nil
+		},
+		revokeKeyError: func(string) error { return nil },
+		listTeamsBehaviour: func(string) ([]litellm.TeamListEntry, error) {
+			// Match production LiteLLM: alias "default" resolves to a UUID
+			// team_id. Tests asserting on team_id should override this.
+			return []litellm.TeamListEntry{
+				{TeamID: "team-uuid-default", TeamAlias: "default"},
+			}, nil
+		},
+	}
+}
+
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, alias string) ([]litellm.TeamListEntry, error) {
+	f.rec.listTeamsCalls++
+	f.rec.lastListTeamsAlias = alias
+	return f.listTeamsBehaviour(alias)
+}
+
+// ListAllTeams is a no-op shim — interface compliance only; the SSO
+// handler does not call it.
+func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
+func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
+
+// UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client interface
+// compliance. CreateTeam is recorded + configurable: mintAndPersistPK calls
+// it to ensure the caller's per-user shell before KeyGenerate.
+func (f *fakeLiteLLM) CreateTeam(_ context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	f.rec.lastCreateTeamReq = req
+	if f.createTeamBehaviour != nil {
+		return f.createTeamBehaviour(req)
+	}
+	return &litellm.TeamListEntry{TeamID: req.TeamID, TeamAlias: req.TeamAlias}, nil
+}
+func (f *fakeLiteLLM) UpdateTeam(_ context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	f.updateTeamReqs = append(f.updateTeamReqs, req)
+	if f.updateTeamErr != nil {
+		return nil, f.updateTeamErr
+	}
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
+	if f.getTeamInfoBehaviour != nil {
+		return f.getTeamInfoBehaviour(teamID)
+	}
+	return nil, nil
+}
+
+// Unused-method shims to satisfy the wider litellm.Client interface.
+func (f *fakeLiteLLM) DeleteAccessGroup(context.Context, string) error { return nil }
+func (f *fakeLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
+	f.upsertTagCalls++
+	if f.upsertTagErr != nil {
+		return f.upsertTagErr
+	}
+	f.upsertedTags[name] = b
+	return nil
+}
+func (f *fakeLiteLLM) TagInfo(_ context.Context, name string) (*litellm.TagInfoEntry, error) {
+	if f.tagInfoBehaviour != nil {
+		return f.tagInfoBehaviour(name)
+	}
+	return nil, nil
+}
+
+func (*fakeLiteLLM) TagSpend(context.Context, string, time.Time, time.Time) (float64, []observability.DaySpend, error) {
+	return 0, nil, nil
+}
+func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
+func (f *fakeLiteLLM) DeleteBudget(context.Context, string) error    { return nil }
+func (f *fakeLiteLLM) ListModels(context.Context) ([]litellm.ModelInfoResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListMCPServers(context.Context) ([]litellm.MCPServerEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListA2AAgents(context.Context) ([]litellm.AgentEntry, error) { return nil, nil }
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListUserKeys(_ context.Context, userID string) ([]litellm.UserKeyInfo, error) {
+	if f.listUserKeys != nil {
+		return f.listUserKeys(userID)
+	}
+	return nil, nil
+}
+
+func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	f.rec.userInfoByEmailCalls++
+	return f.userInfoBehaviour(email)
+}
+func (f *fakeLiteLLM) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+	f.rec.userNewCalls++
+	f.rec.lastUserNewEmail = req.UserEmail
+	f.rec.lastUserNewReq = req
+	return f.userNewBehaviour(req)
+}
+func (f *fakeLiteLLM) UserUpdate(_ context.Context, req *litellm.UserUpdateRequest) error {
+	f.rec.userUpdates = append(f.rec.userUpdates, *req)
+	return f.userUpdateError
+}
+func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, teamID, userID, role string) error {
+	f.rec.teamMemberAddCalls++
+	f.rec.teamMemberAdds = append(f.rec.teamMemberAdds, teamID)
+	f.rec.lastTeamMemberAddTeam = teamID
+	f.rec.lastTeamMemberAddUser = userID
+	f.rec.lastTeamMemberAddRole = role
+	return f.teamMemberAddError(teamID, userID, role)
+}
+func (f *fakeLiteLLM) KeyGenerate(_ context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	f.rec.keyGenerateCalls++
+	f.rec.lastKeyGenerateKey = req.Key
+	f.rec.lastKeyGenerateUser = req.UserID
+	f.rec.lastKeyGenerateBudget = req.MaxBudget
+	f.rec.lastKeyGenerateReq = req
+	return f.keyGenerateBehaviour(req)
+}
+func (f *fakeLiteLLM) RevokeKey(_ context.Context, keyID string) error {
+	f.rec.revokeKeyCalls++
+	f.rec.revokeKeyTokensSeen = append(f.rec.revokeKeyTokensSeen, keyID)
+	return f.revokeKeyError(keyID)
+}
+
+// dbInsertRecord captures the (last) PkInsertRow seen by the seam-injected
+// InsertPersonalKey, plus the count + an optional error.
+type dbInsertRecord struct {
+	calls       int
+	lastRow     db.PkInsertRow
+	failWith    error
+	rowsByKeyID map[string]db.PkInsertRow
+}
+
+func newDBInsertRecord() *dbInsertRecord {
+	return &dbInsertRecord{rowsByKeyID: map[string]db.PkInsertRow{}}
+}
+
+func (d *dbInsertRecord) insertFn(_ context.Context, row db.PkInsertRow) error {
+	d.calls++
+	d.lastRow = row
+	d.rowsByKeyID[row.KeyID] = row
+	return d.failWith
+}
+
+func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) GetAccessGroupByName(_ context.Context, _ string) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }
+
+// --- Phase 6 D-20 — LoginHandler + CallbackHandler session_id threading ---
+func provisionDeps(flm *fakeLiteLLM) Deps {
+	return Deps{LiteLLM: flm, Teams: TeamPolicy{Default: []string{"default"}}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+}
+
+// provisionUser is the LiteLLM side of every login (the AS calls it from
+// as-callback): resolve the "default" team by alias, create the user with
+// user_id=email and no auto key, enrol them — idempotently.
+func TestProvisionUser(t *testing.T) {
+	t.Run("first time: user_id=email, no auto key, enrolled in the resolved default team", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "", nil)
+		if err != nil || uid != "litellm-user-alice@example.com" {
+			t.Fatalf("uid=%q err=%v", uid, err)
+		}
+		req := flm.rec.lastUserNewReq
+		if req == nil || req.UserID != "alice@example.com" || req.AutoCreateKey == nil || *req.AutoCreateKey {
+			t.Fatalf("UserNew request: %+v", req)
+		}
+		if flm.rec.lastListTeamsAlias != "default" || flm.rec.lastTeamMemberAddTeam != "team-uuid-default" || flm.rec.lastTeamMemberAddRole != "user" {
+			t.Fatalf("team enrolment: %+v", flm.rec)
+		}
+	})
+
+	t.Run("first time: 409 duplicate user recovers with user_id=email", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userNewBehaviour = func(*litellm.UserNewRequest) (*litellm.UserInfo, error) {
+			return nil, &litellm.APIError{Method: "POST", Path: "/user/new", StatusCode: 409, Code: "409",
+				Body: []byte(`{"error":{"message":"User with id alice@example.com already exists","code":"409"}}`)}
+		}
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "", nil)
+		if err != nil || uid != "alice@example.com" {
+			t.Fatalf("uid=%q err=%v", uid, err)
+		}
+	})
+
+	t.Run("existing user: no UserNew, TeamMemberAdd still called, duplicate-add swallowed", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email}, nil
+		}
+		// LiteLLM returns 400 on duplicate-add and the 4xx wrapper drops the
+		// body (§9.1), so the status is the whole signal. Build the real
+		// *litellm.APIError the client produces rather than a hand-typed
+		// message: the classifier reads the typed status, so a test asserting
+		// against a literal string would keep passing through a format change
+		// that broke production login for every existing user.
+		flm.teamMemberAddError = func(string, string, string) error {
+			return &litellm.APIError{
+				Method: http.MethodPost, Path: "/team/member_add",
+				StatusCode: http.StatusBadRequest, Code: "400",
+			}
+		}
+		uid, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", "", nil)
+		if err != nil || uid != "litellm-existing" || flm.rec.userNewCalls != 0 || flm.rec.teamMemberAddCalls != 1 {
+			t.Fatalf("uid=%q err=%v rec=%+v", uid, err, flm.rec)
+		}
+	})
+
+	t.Run("default team alias missing in LiteLLM", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.listTeamsBehaviour = func(string) ([]litellm.TeamListEntry, error) { return nil, nil }
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", "", nil)
+		var pe *provisionErr
+		if !errors.As(err, &pe) || pe.kind != provisionKindDefaultTeamMissing || flm.rec.userNewCalls != 0 {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("TeamMemberAdd not-found on an existing user is default team missing", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "litellm-dave", UserEmail: email}, nil
+		}
+		flm.teamMemberAddError = func(string, string, string) error { return litellm.ErrNotFound }
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "dave@example.com", "", nil)
+		var pe *provisionErr
+		if !errors.As(err, &pe) || pe.kind != provisionKindDefaultTeamMissing {
+			t.Fatalf("err=%v", err)
+		}
+	})
+
+	t.Run("LiteLLM unreachable", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userInfoBehaviour = func(string) (*litellm.UserInfo, error) { return nil, errors.New("dial tcp: refused") }
+		_, err := provisionUser(context.Background(), provisionDeps(flm), "x@example.com", "", nil)
+		var pe *provisionErr
+		if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
+			t.Fatalf("err=%v", err)
+		}
+	})
+}
+
+func mintDeps(flm *fakeLiteLLM, rec *dbInsertRecord) Deps {
+	d := provisionDeps(flm)
+	d.Pepper, d.KeyEncryptionKey, d.InsertPKFn = []byte("test-pepper-32-bytes-long-aaaaaa"), testDEK(), rec.insertFn
+	return d
+}
+
+// provisionUser carries the IdP name into LiteLLM's user_alias.
+func TestProvisionUserAlias(t *testing.T) {
+	t.Run("first time: the IdP name becomes the user_alias", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		if _, err := provisionUser(context.Background(), provisionDeps(flm), "alice@example.com", "Alice A", nil); err != nil {
+			t.Fatal(err)
+		}
+		if req := flm.rec.lastUserNewReq; req == nil || req.UserAlias != "Alice A" {
+			t.Fatalf("UserNew request: %+v", req)
+		}
+	})
+
+	// The alias is backfilled only when empty — an admin-set alias wins — and
+	// a failed backfill never blocks the login.
+	aliasCases := []struct {
+		name, current, claim string
+		updateErr            error
+		wantUpdate           bool
+	}{
+		{"existing user without alias: backfilled", "", "Bob B", nil, true},
+		{"existing user with alias: left alone", "Robert", "Bob B", nil, false},
+		{"no name claim: no update", "", "", nil, false},
+		{"backfill failure: login still succeeds", "", "Bob B", errors.New("litellm down"), true},
+	}
+	for _, tc := range aliasCases {
+		t.Run(tc.name, func(t *testing.T) {
+			flm := newFakeLiteLLM()
+			flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+				return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email, UserAlias: tc.current}, nil
+			}
+			flm.userUpdateError = tc.updateErr
+			if _, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", tc.claim, nil); err != nil {
+				t.Fatal(err)
+			}
+			got := flm.rec.userUpdates
+			if !tc.wantUpdate {
+				if len(got) != 0 {
+					t.Fatalf("unexpected UserUpdate: %+v", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].UserID != "litellm-existing" || got[0].UserAlias != tc.claim {
+				t.Fatalf("UserUpdate: %+v", got)
+			}
+		})
+	}
+
+	// A user created out-of-band with a NULL user_email (found only through
+	// the by-id fallback) gets the email backfilled; a set alias is kept.
+	t.Run("existing user without email: email backfilled, alias kept", func(t *testing.T) {
+		flm := newFakeLiteLLM()
+		flm.userInfoBehaviour = func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "bob@example.com", UserAlias: "Robert"}, nil
+		}
+		if _, err := provisionUser(context.Background(), provisionDeps(flm), "bob@example.com", "Bob B", nil); err != nil {
+			t.Fatal(err)
+		}
+		got := flm.rec.userUpdates
+		if len(got) != 1 || got[0].UserEmail != "bob@example.com" || got[0].UserAlias != "" {
+			t.Fatalf("UserUpdate: %+v", got)
+		}
+	})
+}
+
+func TestMintPK_PutsKeyInUserShellWithExpiry(t *testing.T) {
+	flm := newFakeLiteLLM()
+	if _, _, err := mintDeps(flm, newDBInsertRecord()).MintPK(context.Background(), "alice@example.com", "uid", "oauth"); err != nil {
+		t.Fatal(err)
+	}
+	const wantShell = "ach-user-alice@example.com"
+	if flm.rec.lastCreateTeamReq == nil || flm.rec.lastCreateTeamReq.TeamID != wantShell {
+		t.Fatalf("user shell not ensured: %+v", flm.rec.lastCreateTeamReq)
+	}
+	if kg := flm.rec.lastKeyGenerateReq; kg == nil || kg.TeamID != wantShell || kg.Duration == "" || kg.MaxBudget != nil {
+		t.Fatalf("KeyGenerate: %+v", kg)
+	}
+}
+
+func TestMintPK_DuplicateShellIsSuccess(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.createTeamBehaviour = func(*litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+		return nil, &litellm.APIError{StatusCode: 400, Path: "/team/new", Body: []byte("Team id = x already exists")}
+	}
+	if _, _, err := mintDeps(flm, newDBInsertRecord()).MintPK(context.Background(), "alice@example.com", "uid", "oauth"); err != nil {
+		t.Fatal(err)
+	}
+	if flm.rec.keyGenerateCalls != 1 {
+		t.Fatal("KeyGenerate must run after a duplicate-shell 400")
+	}
+}
+
+func TestMintPK_ShellEnsureFailure_503_NoMint(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.createTeamBehaviour = func(*litellm.NewTeamRequest) (*litellm.TeamListEntry, error) { return nil, errors.New("litellm down") }
+	_, _, err := mintDeps(flm, newDBInsertRecord()).MintPK(context.Background(), "alice@example.com", "uid", "oauth")
+	var me *MintError
+	if !errors.As(err, &me) || me.Status != 503 || !errors.Is(err, ErrMintLiteLLM) || flm.rec.keyGenerateCalls != 0 {
+		t.Fatalf("err=%v keyGenerateCalls=%d", err, flm.rec.keyGenerateCalls)
+	}
+}
+
+// TestProvisionUserWritesUserBudgetTag — a configured default budget lands
+// on the user's own tag at first login, so every later pk_ and ek_ request
+// (which carries user:<email>) is capped.
+func TestProvisionUserWritesUserBudgetTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100, BudgetDuration: "30d"}
+
+	if _, err := provisionUser(context.Background(), deps, "Pepe@Example.com", "", nil); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	got, ok := flm.upsertedTags["user:pepe@example.com"]
+	if !ok {
+		t.Fatalf("no budget tag written; got %v", flm.upsertedTags)
+	}
+	if got.MaxBudget != 100 || got.BudgetDuration != "30d" {
+		t.Fatalf("tag budget = %+v, want {100 30d}", got)
+	}
+}
+
+// TestProvisionUserWritesUserBudgetTagForExistingUser — the second login
+// takes the existing-user branch; the ceiling must land there too.
+func TestProvisionUserWritesUserBudgetTagForExistingUser(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.userInfoBehaviour = func(email string) (*litellm.UserInfo, error) {
+		return &litellm.UserInfo{UserID: "litellm-existing", UserEmail: email}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if _, ok := flm.upsertedTags["user:pepe@example.com"]; !ok {
+		t.Fatalf("no budget tag written; got %v", flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserWithoutBudgetWritesNoTag — unset defaults stay unset.
+func TestProvisionUserWithoutBudgetWritesNoTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	deps := provisionDeps(flm)
+	deps.UserBudget = nil
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if len(flm.upsertedTags) != 0 {
+		t.Fatalf("want no tag writes, got %v", flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserLeavesAnExistingBudgetAlone — the default is a STARTING
+// value, not a per-login reassertion: a tag that already carries a budget
+// (an admin's PATCH /platform/admin/users/{email}/budget, say) must survive
+// the person's next login untouched — no write at all.
+func TestProvisionUserLeavesAnExistingBudgetAlone(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(name string) (*litellm.TagInfoEntry, error) {
+		return &litellm.TagInfoEntry{
+			Name:   name,
+			Budget: &litellm.TagBudget{BudgetID: name, MaxBudget: 7},
+		}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if flm.upsertTagCalls != 0 {
+		t.Fatalf("login rewrote an existing ceiling: %d writes, %v", flm.upsertTagCalls, flm.upsertedTags)
+	}
+}
+
+// TestProvisionUserSeedsABudgetlessTag — LiteLLM auto-creates a budgetless
+// tag row the first time the name rides x-litellm-tags (§15). That is "no
+// budget", not "already capped": the default applies.
+func TestProvisionUserSeedsABudgetlessTag(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(name string) (*litellm.TagInfoEntry, error) {
+		return &litellm.TagInfoEntry{Name: name, Budget: nil}, nil
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	if _, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil); err != nil {
+		t.Fatalf("provisionUser: %v", err)
+	}
+	if got, ok := flm.upsertedTags["user:pepe@example.com"]; !ok || got.MaxBudget != 100 {
+		t.Fatalf("budgetless tag not seeded: %+v (ok=%v)", got, ok)
+	}
+}
+
+// TestProvisionUserTagReadFailureIsLoud — a failed /tag/info cannot tell
+// "unbudgeted" from "already budgeted", and guessing either way is worse
+// than failing the login (seeding would clobber an admin's ceiling;
+// skipping would leave a new user uncapped).
+func TestProvisionUserTagReadFailureIsLoud(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.tagInfoBehaviour = func(string) (*litellm.TagInfoEntry, error) {
+		return nil, errors.New("litellm down")
+	}
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil)
+	var pe *provisionErr
+	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
+		t.Fatalf("want a litellm provisionErr, got %v", err)
+	}
+	if flm.upsertTagCalls != 0 {
+		t.Fatalf("a failed read must write nothing, got %d writes", flm.upsertTagCalls)
+	}
+}
+
+// TestProvisionUserTagFailureIsLoud — LiteLLM refusing the tag write must
+// not be swallowed: an uncapped user is a governance hole, not a detail.
+func TestProvisionUserTagFailureIsLoud(t *testing.T) {
+	flm := newFakeLiteLLM()
+	flm.upsertTagErr = errors.New("boom")
+	deps := provisionDeps(flm)
+	deps.UserBudget = &litellm.TagBudget{MaxBudget: 100}
+
+	_, err := provisionUser(context.Background(), deps, "pepe@example.com", "", nil)
+	var pe *provisionErr
+	if !errors.As(err, &pe) || pe.kind != provisionKindLitellm {
+		t.Fatalf("want a litellm provisionErr, got %v", err)
+	}
+}

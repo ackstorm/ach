@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal context response",
+  "type": "object",
+  "required": [
+    "window",
+    "provenance",
+    "generation_count",
+    "eligibility",
+    "tool_provenance",
+    "context_bands",
+    "input_coverage",
+    "cache_read_tokens",
+    "cache_coverage",
+    "invocations",
+    "execution_success",
+    "input_summary",
+    "token_ratio",
+    "cache_read_share"
+  ],
+  "properties": {
+    "window": {
+      "type": "object",
+      "required": [
+        "start",
+        "end",
+        "timezone"
+      ],
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "timezone": {
+          "const": "UTC"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "generation_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "eligibility": {
+      "const": "observed_generations_not_logical_requests"
+    },
+    "tool_provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "context_bands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "input_coverage": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cache_read_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "cache_coverage": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "invocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "execution_success": {
+      "type": "null"
+    },
+    "input_summary": {
+      "type": "object",
+      "required": [
+        "mean",
+        "median",
+        "max"
+      ],
+      "properties": {
+        "mean": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "median": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "token_ratio": {
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "value",
+        "coverage"
+      ],
+      "properties": {
+        "input_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "uncached_input_tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "uncached_value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coverage": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "cache_read_share": {
+      "type": "object",
+      "required": [
+        "value",
+        "coverage"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coverage": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "cache_creation_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Sum of observed input_cache_creation annotations; separate from cache-read and total tokens."
+    },
+    "cache_creation_coverage": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "invocation_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Full scoped invocation population before grouped-name truncation."
+    },
+    "skill_invocation_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Full count of case-insensitive tool names matching (^|:)skill$; invocation intent only."
+    },
+    "subagent_invocation_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Full count of case-insensitive tool names matching (^|:)(agent|task)$; invocation intent only."
+    },
+    "invocations_truncated": {
+      "type": "boolean"
+    },
+    "source_coverage": {
+      "type": "object",
+      "required": [
+        "generation_count",
+        "input",
+        "output",
+        "cache"
+      ],
+      "properties": {
+        "generation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "skills": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "description": "Top skills by loads, named from the Skill tool's call arguments; null when the read failed."
+    },
+    "subagents": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "description": "Top subagent types started through the Agent/Task tool; null when the read failed."
+    }
+  },
+  "description": "Monthly mode aggregates the complete retained scoped window; additional aggregate fields are absent in legacy capped mode. Consult provenance. Cache creation and read annotations are separate; missing remains null."
+}

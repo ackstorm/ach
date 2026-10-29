@@ -1,0 +1,25 @@
+# PluginMarketplace — pulls JuliusBrussee/caveman as a marketplace.
+# The same repo is referenced as a Plugin in 06-plugin-caveman.yaml
+# (the repo ships BOTH `.claude-plugin/plugin.json` at the root AND
+# `.claude-plugin/marketplace.json`). This CR exercises the
+# marketplace path: the operator fetches the repo tarball, extracts
+# `<root>/.claude-plugin/marketplace.json`, and upserts one
+# `marketplace_plugins` row per entry. Caveman's marketplace lists a
+# single plugin with `source: "./"` (same-repo subdir), the most common
+# real-world shape after `git` / `url` entries.
+#
+# No GitHub PAT required — public repo. No filters: the catalogue
+# already contains exactly one plugin.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: caveman
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: JuliusBrussee/caveman
+    ref: main
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

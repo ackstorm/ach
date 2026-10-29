@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Throwaway single BIP for §11f.BIP (finalizer-drain). Apply → assert finalizer
+# attaches → delete → assert clean teardown. Named so it never collides with
+# any synced BIP (deleting it does not touch the synced set).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: bip-throwaway-drain
+  namespace: ach-system
+  labels:
+    test.ach.ackstorm.ai/phase: "4"
+spec:
+  target:
+    kind: MCPServer
+    name: throwaway-drain-target
+  forwardIdentityJWT: true

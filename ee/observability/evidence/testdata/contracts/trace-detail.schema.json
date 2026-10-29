@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Personal trace-detail response",
+  "type": "object",
+  "required": [
+    "trace_id",
+    "project_id",
+    "provenance",
+    "spans"
+  ],
+  "properties": {
+    "trace_id": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "sampled"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "derived",
+            "partial",
+            "not_instrumented"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampled": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "required": [
+            "numerator",
+            "denominator"
+          ],
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
+        "observed_start": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "formula": {
+          "type": "string"
+        },
+        "grain": {
+          "type": "string"
+        }
+      }
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "span_id",
+          "parent_span_id",
+          "type",
+          "name",
+          "start_time",
+          "end_time",
+          "status",
+          "model"
+        ],
+        "properties": {
+          "span_id": {
+            "type": "string"
+          },
+          "parent_span_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "error",
+              "unknown"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "request_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "LiteLLM request id from the chat span."
+    },
+    "status": {
+      "enum": [
+        "error",
+        "success",
+        "unknown"
+      ],
+      "description": "error if any span level is ERROR; success if the root span completed; else unknown."
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Summed over chat generation spans; null when the trace has none."
+    },
+    "input_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Summed over chat generation spans; null when the trace has none."
+    },
+    "output_tokens": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Summed over chat generation spans; null when the trace has none."
+    },
+    "classification": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "category",
+        "domain",
+        "confidence",
+        "state"
+      ],
+      "properties": {
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "classified",
+            "not_classified",
+            "no_session",
+            "unavailable"
+          ]
+        }
+      },
+      "description": "Work category of the trace's session (taxonomy v3). Only classified carries category, domain and confidence; no_session = the trace has no session id; unavailable = the scores read failed (the detail still answers)."
+    }
+  },
+  "description": "Trace-filtered personal spans within the requested UTC window, with independent 500-span cap and provenance. Scope and compound project/trace identity are preserved."
+}

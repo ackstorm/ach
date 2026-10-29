@@ -1,0 +1,11 @@
+ACH — Agent Capability Hub
+Copyright (c) 2026 ACKstorm
+
+This product includes software developed by ACKstorm
+(https://github.com/ackstorm).
+
+Scaffolding patterns (CI workflows, release pipeline, mkdocs structure,
+goreleaser configuration, kustomize→helm sync) were adapted from the
+alitellm-operator project (Apache-2.0).
+
+Files under ee/ and ui/src/ee/, and cmd/ach/ee.go, are licensed under the ACKstorm Enterprise License (ee/LICENSE).

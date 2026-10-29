@@ -1,0 +1,155 @@
+{{- if .Values.forwarder.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+spec:
+  replicas: {{ .Values.forwarder.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: forwarder
+  template:
+    metadata:
+      annotations:
+        # Phase 5 OBS-03 + D-12 — scrape the forwarder's main traffic
+        # listener at :8080/metrics. Plan 05-06 mounts GET /metrics on
+        # the chi mux alongside /v1, /gemini, /mcp, /a2a route family.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: forwarder
+    spec:
+      serviceAccountName: ach-forwarder
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.forwarder.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      # W1 (REVIEW): the JWT signing-keys Secret is loaded via the K8s
+      # API client + controller-runtime informer (see
+      # cmd/ach/cmd/forwarder.go buildForwarderDeps), NOT via files on
+      # disk. A previous iteration mounted the Secret at /etc/ach/jwt as
+      # a defense-in-depth existence check, but it was dead weight: the
+      # loader never read those files, so an edit at the projected
+      # volume layer would not have triggered a Reload. The API client
+      # path is the single data plane; the RBAC carve-out
+      # (resourceNames: ["ach-jwt-signing-keys"]) keeps the SC#4
+      # contract intact without the file mount.
+      containers:
+        - name: forwarder
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.forwarder.args | nindent 12 }}
+          ports:
+            # D-03 dual-port topology.
+            - name: traffic
+              containerPort: 8080
+            - name: healthz
+              containerPort: 8081
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ACH_FORWARDER_BIND_ADDRESS
+              value: ":8080"
+            - name: FORWARDER_HEALTH_BIND_ADDRESS
+              value: ":8081"
+            - name: ACH_JWT_SECRET_NAME
+              value: {{ .Values.forwarder.jwtSecretName | default "ach-jwt-signing-keys" | quote }}
+            - name: ACH_CREDENTIAL_HEADERS
+              value: {{ .Values.forwarder.headers | toJson | quote }}
+            {{- with .Values.forwarder.gemini }}
+            {{- with .stripModelPrefixes }}
+            - name: ACH_GEMINI_STRIP_MODEL_PREFIXES
+              value: {{ . | toJson | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.forwarder.trustedIdP }}
+            {{- if .issuer }}
+            - name: ACH_TRUSTED_IDP_ISSUER
+              value: {{ .issuer | quote }}
+            - name: ACH_TRUSTED_IDP_AUDIENCES
+              value: {{ .audiences | default list | toJson | quote }}
+            - name: ACH_TRUSTED_IDP_CLAIM
+              value: {{ .claim | default "email" | quote }}
+            {{- end }}
+            {{- end }}
+            # ACH_KEY_ENCRYPTION_KEY + ACH_CREDENTIAL_HASH_PEPPER — required at
+            # rest (the forwarder opens sealed LiteLLM material with the DEK and
+            # resolves pk_ via the pepper). Sourced from the security.* Secret
+            # refs; do NOT also set them in extraEnv (duplicate env entries).
+            {{- include "ach.securityEnv" . | nindent 12 }}
+            {{- with .Values.forwarder.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: healthz
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            # /readyz gates on mgr cache sync AND signer.Loaded() so
+            # backends never see a Forwarder that races a Sign call to
+            # an empty signer.
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.forwarder.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: forwarder
+  ports:
+    - name: traffic
+      port: 80
+      targetPort: 8080
+    - name: healthz
+      port: 8081
+      targetPort: 8081
+{{- end }}

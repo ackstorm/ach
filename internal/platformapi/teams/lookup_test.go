@@ -1,0 +1,299 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package teams
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/observability"
+)
+
+// fakeLiteLLM is a minimal litellm.Client implementation for the
+// LookupCallerTeams unit tests. Only UserInfoByEmail is exercised; the
+// other 9 interface methods exist solely to satisfy the compile-time
+// canary `var _ litellm.Client = (*fakeLiteLLM)(nil)` below.
+type fakeLiteLLM struct {
+	userInfo     func(email string) (*litellm.UserInfo, error)
+	listAllTeams func() ([]litellm.TeamListEntry, error)
+	calls        atomic.Int64
+}
+
+func (f *fakeLiteLLM) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
+	f.calls.Add(1)
+	return f.userInfo(email)
+}
+
+// ListAllTeams returns the configured team list (or an empty slice when the
+// behaviour func is unset) — interface compliance plus alias-resolution
+// fixture for LookupCallerTeams.
+func (f *fakeLiteLLM) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
+	if f.listAllTeams != nil {
+		return f.listAllTeams()
+	}
+	return nil, nil
+}
+
+// Stubs for the rest of the litellm.Client interface — return zero
+// values; LookupCallerTeams must NOT invoke any of these.
+func (f *fakeLiteLLM) DeleteAccessGroup(_ context.Context, _ string) error              { return nil }
+func (f *fakeLiteLLM) UpsertTagBudget(context.Context, string, litellm.TagBudget) error { return nil }
+func (f *fakeLiteLLM) TagInfo(context.Context, string) (*litellm.TagInfoEntry, error) {
+	return nil, nil
+}
+
+func (*fakeLiteLLM) TagSpend(context.Context, string, time.Time, time.Time) (float64, []observability.DaySpend, error) {
+	return 0, nil, nil
+}
+func (f *fakeLiteLLM) DeleteTagByName(context.Context, string) error { return nil }
+func (f *fakeLiteLLM) DeleteBudget(context.Context, string) error    { return nil }
+func (f *fakeLiteLLM) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListGuardrails(context.Context) ([]litellm.GuardrailEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) ListUserKeys(_ context.Context, _ string) ([]litellm.UserKeyInfo, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) RevokeKey(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) UserNew(_ context.Context, _ *litellm.UserNewRequest) (*litellm.UserInfo, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UserUpdate(_ context.Context, _ *litellm.UserUpdateRequest) error { return nil }
+func (f *fakeLiteLLM) TeamMemberAdd(_ context.Context, _, _, _ string) error            { return nil }
+func (f *fakeLiteLLM) KeyGenerate(_ context.Context, _ *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
+	return nil, nil
+}
+
+// Compile-time canary — fakeLiteLLM satisfies litellm.Client. If
+// litellm.Client widens, this test file MUST add the new stub to keep
+// the package building (mirrors the Phase 02-01 fake catch-up
+// discipline established in 03-01-SUMMARY.md Rule-3 ripple).
+var _ litellm.Client = (*fakeLiteLLM)(nil)
+
+// TestLookupCallerTeamsHappy — mock returns *UserInfo with two teams (IDs);
+// ListAllTeams maps each to its alias and the helper returns BOTH the IDs
+// and the resolved aliases (order-independent set).
+func TestLookupCallerTeamsHappy(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c", Teams: []string{"team-a", "team-b"}}, nil
+		},
+		listAllTeams: func() ([]litellm.TeamListEntry, error) {
+			return []litellm.TeamListEntry{
+				{TeamID: "team-a", TeamAlias: "alias-a"},
+				{TeamID: "team-b", TeamAlias: "alias-b"},
+			}, nil
+		},
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	want := map[string]bool{"team-a": true, "alias-a": true, "team-b": true, "alias-b": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v, want keys %#v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected team token %q in %#v", g, got)
+		}
+	}
+}
+
+// TestLookupCallerTeamsResolvesAliases — user's teams are LiteLLM IDs; the
+// helper resolves each to its alias via ListAllTeams and returns BOTH forms
+// so HasIntersect matches authorized_teams whether they hold ids or aliases.
+func TestLookupCallerTeamsResolvesAliases(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c",
+				Teams: []string{"team-platform", "6a31a295"}}, nil
+		},
+		listAllTeams: func() ([]litellm.TeamListEntry, error) {
+			return []litellm.TeamListEntry{
+				{TeamID: "team-platform", TeamAlias: "platform"},
+				{TeamID: "6a31a295", TeamAlias: "default"},
+				{TeamID: "zzz", TeamAlias: "run"},
+			}, nil
+		},
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	want := map[string]bool{"team-platform": true, "platform": true, "6a31a295": true, "default": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v, want keys %#v", got, want)
+	}
+	for _, g := range got {
+		if !want[g] {
+			t.Fatalf("unexpected team token %q in %#v", g, got)
+		}
+	}
+}
+
+// TestLookupCallerTeamsEmpty — mock returns UserInfo with Teams=nil;
+// the helper normalizes to a zero-length slice (NOT nil).
+func TestLookupCallerTeamsEmpty(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c", Teams: nil}, nil
+		},
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	if got == nil {
+		t.Fatalf("expected zero-length slice, got nil")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected len 0, got %d (%#v)", len(got), got)
+	}
+}
+
+// TestLookupCallerTeamsErrNotFoundSentinel — mock returns the typed
+// ErrNotFound sentinel; the helper treats it as zero-intersection
+// (returns empty slice, no error).
+func TestLookupCallerTeamsErrNotFoundSentinel(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) { return nil, litellm.ErrNotFound },
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice on ErrNotFound, got %#v", got)
+	}
+}
+
+// TestLookupCallerTeamsErr404Wrapped — mock returns the legacy
+// makeRequest 4xx wrapper (string contains "404"); the helper still
+// treats it as zero-intersection. Covers the Phase 3 D-25 design where
+// UserInfoByEmail does NOT translate 404 → ErrNotFound at the type
+// level.
+func TestLookupCallerTeamsErr404Wrapped(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return nil, fmt.Errorf("litellm: GET /user/info?user_email=...: status=404 code=NOT_FOUND")
+		},
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if err != nil {
+		t.Fatalf("LookupCallerTeams: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty slice on 404 wrapper, got %#v", got)
+	}
+}
+
+// TestLookupCallerTeamsTransportErr — mock returns a non-404 error
+// (connection refused / 5xx); the helper propagates verbatim so the
+// caller emits 503 litellm_unreachable.
+func TestLookupCallerTeamsTransportErr(t *testing.T) {
+	wantErr := errors.New("connection refused")
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) { return nil, wantErr },
+	}
+	got, err := LookupCallerTeams(context.Background(), ll, "a@b.c")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected wantErr unwrapped, got %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil slice on transport error, got %#v", got)
+	}
+}
+
+// TestLookupCallerTeamsUncachedByDesign — two consecutive calls produce
+// TWO UserInfoByEmail invocations (proves Phase 3 is uncached; Phase 4
+// will add Redis caching). NOTE: this test must be updated when Phase 4
+// lands a cached implementation — at that point the expected call count
+// depends on the cache TTL.
+func TestLookupCallerTeamsUncachedByDesign(t *testing.T) {
+	ll := &fakeLiteLLM{
+		userInfo: func(string) (*litellm.UserInfo, error) {
+			return &litellm.UserInfo{UserID: "u-1", UserEmail: "a@b.c", Teams: []string{"t-1"}}, nil
+		},
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := LookupCallerTeams(context.Background(), ll, "a@b.c"); err != nil {
+			t.Fatalf("LookupCallerTeams (iter %d): %v", i, err)
+		}
+	}
+	if got := ll.calls.Load(); got != 2 {
+		t.Fatalf("expected 2 UserInfoByEmail calls (uncached), got %d", got)
+	}
+}
+
+// TestLookupTeamIDByAlias covers the happy resolve + the absent-alias case
+// (returns "", nil — absence is the caller's decision, not an error).
+func TestLookupTeamIDByAlias(t *testing.T) {
+	ll := &fakeLiteLLM{listAllTeams: func() ([]litellm.TeamListEntry, error) {
+		return []litellm.TeamListEntry{
+			{TeamID: "t-1", TeamAlias: "default"},
+			{TeamID: "t-2", TeamAlias: "ach-env-demo"},
+		}, nil
+	}}
+	got, err := LookupTeamIDByAlias(context.Background(), ll, "ach-env-demo")
+	if err != nil {
+		t.Fatalf("LookupTeamIDByAlias: %v", err)
+	}
+	if got != "t-2" {
+		t.Fatalf("id = %q, want t-2", got)
+	}
+
+	missing, err := LookupTeamIDByAlias(context.Background(), ll, "ach-env-nope")
+	if err != nil {
+		t.Fatalf("LookupTeamIDByAlias(absent): %v", err)
+	}
+	if missing != "" {
+		t.Fatalf("absent alias returned %q, want empty string", missing)
+	}
+}
+
+// ListTeamsByAlias is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) ListTeamsByAlias(_ context.Context, _ string) ([]litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
+// EnsureDefaultTeam is a no-op shim — Client interface compliance.
+func (f *fakeLiteLLM) EnsureDefaultTeam(_ context.Context) error { return nil }
+
+// CreateTeam/UpdateTeam/DeleteTeam/GetTeamInfo are no-op shims — Client
+// interface compliance.
+func (f *fakeLiteLLM) CreateTeam(_ context.Context, _ *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateTeam(_ context.Context, _ *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteTeam(_ context.Context, _ string) error { return nil }
+func (f *fakeLiteLLM) GetTeamInfo(_ context.Context, _ string) (*litellm.TeamListEntry, error) {
+	return nil, nil
+}
+
+// §7 stubs — interface satisfaction only (issue #17: /v1 surface).
+func (f *fakeLiteLLM) CreateAccessGroup(_ context.Context, _ litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) GetAccessGroupByName(_ context.Context, _ string) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) UpdateAccessGroup(_ context.Context, _ string, _ litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
+	return nil, nil
+}
+func (f *fakeLiteLLM) DeleteAccessGroupByID(_ context.Context, _ string) error { return nil }

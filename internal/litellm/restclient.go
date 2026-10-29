@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package litellm
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/go-logr/logr"
+)
+
+// authHeaderKind selects which HTTP header carries the master key.
+// Both `Authorization: Bearer` AND `x-litellm-api-key` are honored on
+// LiteLLM 1.83.10 across all 14 authenticated endpoints. ACH defaults
+// to `Authorization: Bearer` (spec §6.1-aligned).
+type authHeaderKind int
+
+const (
+	// AuthBearer sends `Authorization: Bearer <master-key>` — DEFAULT.
+	AuthBearer authHeaderKind = iota
+	// AuthXLiteLLMAPIKey sends `x-litellm-api-key: <master-key>`.
+	// Switch by setting ACH_LITELLM_AUTH_HEADER=x-litellm-api-key
+	// at pod startup. Retained as an escape hatch in case LiteLLM 1.83.11+
+	// changes behavior.
+	AuthXLiteLLMAPIKey
+)
+
+// EnvAuthHeader is the operator-pod env var that overrides the default
+// auth header at startup. Accepted values:
+//   - unset / empty / "authorization" / "bearer" → AuthBearer (default)
+//   - "x-litellm-api-key"                          → AuthXLiteLLMAPIKey
+const EnvAuthHeader = "ACH_LITELLM_AUTH_HEADER"
+
+// defaultAuthHeader is the canonical ACH choice. AuthBearer is preferred
+// per spec §6.1 and Open Question #1.
+const defaultAuthHeader = AuthBearer
+
+// respMaxBytes caps a LiteLLM response body. Sized well above the largest
+// real payload: GET /v1/model/info is ~1.9 MB at 433 models and grows with
+// the catalog. Over-cap is an explicit error — never a silent truncation,
+// which previously cut a valid model/info body mid-JSON and surfaced as a
+// decode failure blamed on the upstream.
+const respMaxBytes = 8 << 20 // 8 MiB
+
+// RESTClient is the operator's *http.Client wrapper for the LiteLLM REST
+// API. All per-domain helpers (model.go, team.go, mcp.go, agents.go,
+// keyinfo.go) call into RESTClient.makeRequest. RESTClient satisfies the
+// Client interface (see client.go) via the compile-time assertion at the
+// bottom of this file.
+type RESTClient struct {
+	endpoint   string
+	masterKey  string
+	httpClient *http.Client
+	log        logr.Logger
+	authHeader authHeaderKind
+	cache      *readCache // nil unless EnableReadCache (operator only)
+}
+
+// NewRESTClient constructs a *RESTClient wired to the redacting RoundTripper.
+// endpoint is the base URL (e.g. "http://litellm.ach-system.svc.cluster.local:4000");
+// masterKey is the LiteLLM master key (sk-...). The logger is wrapped in
+// the redacting RoundTripper — callers may safely log at any verbosity.
+func NewRESTClient(endpoint, masterKey string, log logr.Logger) *RESTClient {
+	c := &RESTClient{
+		endpoint:   strings.TrimRight(endpoint, "/"),
+		masterKey:  masterKey,
+		httpClient: newHTTPClient(log),
+		log:        log,
+		authHeader: defaultAuthHeader,
+	}
+	switch strings.ToLower(os.Getenv(EnvAuthHeader)) {
+	case "x-litellm-api-key":
+		c.authHeader = AuthXLiteLLMAPIKey
+	case "", "authorization", "bearer":
+		c.authHeader = AuthBearer
+	default:
+		c.authHeader = AuthBearer
+	}
+	return c
+}
+
+// setAuth attaches key to the request according to the configured
+// authHeader kind. Never logs the key (§9.1).
+func (c *RESTClient) setAuth(req *http.Request, key string) {
+	switch c.authHeader {
+	case AuthXLiteLLMAPIKey:
+		req.Header.Set("x-litellm-api-key", key)
+	default:
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+}
+
+// makeRequest is the central request path. Every per-domain helper
+// funnels through here so REL-04 (drain+close), REL-06 (typed 401), and
+// §9.1 (no body in error strings) are enforced once.
+//
+// On success: returns the response body bytes and nil.
+// On 401:     returns nil, *Auth401Error (errors.As resolvable).
+// On 404 + DELETE: returns the body and nil (treated as success per §7.7).
+// On other 4xx: returns nil with a fmt.Errorf describing status + parsed
+//
+//	error code (NEVER raw body — §9.1).
+//
+// On 5xx / network: returns nil with a transient fmt.Errorf.
+func (c *RESTClient) makeRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
+	if c.cache == nil {
+		return c.makeRequestAs(ctx, c.masterKey, method, path, body)
+	}
+	if method == http.MethodGet {
+		cached, gen, ok := c.cache.get(path)
+		if ok {
+			return cached, nil
+		}
+		raw, err := c.makeRequestAs(ctx, c.masterKey, method, path, body)
+		if err == nil {
+			c.cache.put(path, gen, raw)
+		}
+		return raw, err
+	}
+	raw, err := c.makeRequestAs(ctx, c.masterKey, method, path, body)
+	if !readOnlyPOST[path] {
+		c.cache.drop() // even on error: a failed write may still have landed
+	}
+	return raw, err
+}
+
+// makeRequestAs is makeRequest with an explicit bearer: the console's
+// user-scoped reads (UserView, spec §10.1) pass the user's own virtual key;
+// nothing ever mutates masterKey on the shared client.
+func (c *RESTClient) makeRequestAs(ctx context.Context, key, method, path string, body any) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		buf, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("litellm: marshal %s %s: %w", method, path, err)
+		}
+		reqBody = bytes.NewReader(buf)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("litellm: build %s %s: %w", method, path, err)
+	}
+	c.setAuth(req, key)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		// Network error: resp is nil — nothing to drain. Wrap as
+		// transient. Note we do NOT include err.Error() unredacted; the
+		// underlying URL/error wrapper from net/http may contain
+		// credential fragments. Keep the wrapper's %w semantics so
+		// errors.As / errors.Is still works without leaking text via
+		// the Error() string.
+		return nil, fmt.Errorf("litellm: %s %s: transport error: %w", method, path, err)
+	}
+	defer drainAndClose(resp.Body) // REL-04: every code path.
+
+	// Read cap+1 so an over-cap body is DETECTED rather than silently cut
+	// (the repo-wide LimitReader idiom). A read error is transport-level:
+	// a torn body means the payload cannot be trusted regardless of status.
+	respBody, rerr := io.ReadAll(io.LimitReader(resp.Body, respMaxBytes+1))
+	if rerr != nil {
+		return nil, fmt.Errorf("litellm: %s %s: read body: %w", method, path, rerr)
+	}
+	if len(respBody) > respMaxBytes {
+		return nil, fmt.Errorf("litellm: %s %s: response exceeds %d bytes", method, path, respMaxBytes)
+	}
+
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		return respBody, nil
+	case resp.StatusCode == http.StatusUnauthorized:
+		// REL-06: typed error for the §7.7 fast-path.
+		return nil, &Auth401Error{Path: path, Body: respBody}
+	case resp.StatusCode == http.StatusNotFound && strings.EqualFold(method, http.MethodDelete):
+		// §7.7: DELETE 404 is treated as success (idempotent delete).
+		return respBody, nil
+	case resp.StatusCode >= 400 && resp.StatusCode < 500:
+		_, _, code := processLitellmError(respBody)
+		if code == "" {
+			code = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody}
+	default:
+		// 5xx and anything else — transient. processLitellmError used
+		// only for the code field (NEVER the message — §9.1).
+		_, _, code := processLitellmError(respBody)
+		if code == "" {
+			code = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		return nil, &APIError{Method: method, Path: path, StatusCode: resp.StatusCode, Code: code, Body: respBody, Transient: true}
+	}
+}

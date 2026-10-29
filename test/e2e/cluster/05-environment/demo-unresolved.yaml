@@ -1,0 +1,30 @@
+# Environment — UNRESOLVED projection unit (issue #17 negative path).
+#
+# Deliberately references names that do NOT exist in LiteLLM:
+#   - Model:   nonexistent-model
+#   - MCP:     nonexistent-mcp
+#   - A2A:     nonexistent-agent
+#
+# Expected after apply: AccessGroupSynced=False reason=UnresolvedReferences
+# with all three names listed in the condition message. The Snapshotter
+# also flips ExecutionResourcesResolved=False reason=ResourceUnresolved
+# (separate condition, separate code path).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: demo-unresolved
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models:
+      - nonexistent-model
+    mcpServers:
+      - nonexistent-mcp
+    a2aAgents:
+      - nonexistent-agent
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

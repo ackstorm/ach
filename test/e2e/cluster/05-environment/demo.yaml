@@ -1,0 +1,75 @@
+# Environment — happy-path projection unit (issue #17) + BIP closed-loop.
+#
+# Every name in spec.runtime.* and spec.authorizedTeams resolves
+# against the seeds added by scripts/cluster.sh hydrate_litellm:
+#   - Model:   demo-model
+#   - MCP:     demo-mcp-jwt, demo-mcp-nojwt, demo-mcp-consent
+#   - A2A:     demo-agent
+#   - Team:    default (created by LiteLLMConnection.EnsureDefaultTeam)
+#
+# context.plugins carries both a bare CRD-backed plugin (caveman) and a
+# scoped marketplace plugin (feature-dev@conflict-mkt-a). The scoped ref
+# exercises the name@marketplace resolution path end-to-end: conflict-mkt-a
+# is a synced PluginMarketplace fixture that materializes `feature-dev`
+# from anthropics/claude-plugins-official. No Plugin CRD backs that name,
+# so the scoped reference is the only way to resolve it.
+#
+# The three MCP servers are ALL registered against the single ach-mcp-echo
+# backend, but each carries a different BackendIdentityPolicy:
+#   - demo-mcp-jwt   → BIP bip-demo-mcp-jwt   (forwardIdentityJWT: true)
+#                      forwarder mints + attaches the ACH JWT; the backend
+#                      verifies it (example 11).
+#   - demo-mcp-nojwt → BIP bip-demo-mcp-nojwt (forwardIdentityJWT: false)
+#                      forwarder forwards with no Authorization header; the
+#                      backend (ACH_REQUIRE_JWT=false) records its absence
+#                      (example 16).
+#   - demo-mcp-consent → BIP bip-demo-mcp-consent (JWT + chained consent)
+#                        provider grant is required before tools are exposed.
+#
+# Expected after apply: AccessGroupSynced=True reason=Synced within
+# ~10s on a freshly-bootstrapped cluster.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: demo
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  notice: "demo environment — re-login after key rotation"
+  # budget caps the POOLED spend of every ek_ issued for this Environment,
+  # through the "environment:demo" LiteLLM tag the forwarder stamps on each
+  # request. Left unset here on purpose: an always-on ceiling would make
+  # every other e2e's spend a shared resource. TestTagBudgets patches one in
+  # at runtime (an unreachable ceiling, restored afterwards) to prove the
+  # operator writes the tag budget and reports BudgetSynced.
+  #   budget:
+  #     maxBudget: 250        # USD, LiteLLM's spend unit
+  #     budgetDuration: 30d   # reset window; omit for a budget that never resets
+  description: "demo environment — data-team sandbox"
+  runtime:
+    models:
+      - demo-model
+    mcpServers:
+      - demo-mcp-jwt
+      - demo-mcp-nojwt
+      - demo-mcp-consent
+    a2aAgents:
+      - demo-agent
+  context:
+    prompts:
+      - claude-code-system-prompt
+    plugins:
+      - caveman
+      - feature-dev@conflict-mkt-a
+    artifacts:
+      - openclaw-templates
+    # Skills carries both bare (CRD-backed) standalone Skills (pdf, docx —
+    # pulled from anthropics/skills via spec.github.path) and a scoped
+    # marketplace skill (pdf@anthropic-skills, discovered by the
+    # SkillMarketplace). The scoped ref exercises the name@marketplace skill
+    # resolution path end-to-end, mirroring feature-dev@conflict-mkt-a above.
+    skills:
+      - pdf
+      - docx
+      - pdf@anthropic-skills

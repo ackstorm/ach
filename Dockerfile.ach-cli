@@ -1,0 +1,16 @@
+# Builds the ach-cli OCI image consumed by goreleaser (G4).
+#
+# ach-cli is fully static (CGO_ENABLED=0) and server-free: it needs neither
+# `git` (no upstream CR fetching) nor the SQL migrations (no DB). distroless
+# static:nonroot is therefore the right minimal base — smaller attack surface
+# than the alpine-based service image. uid 65532 matches the service image's
+# nonroot user.
+FROM gcr.io/distroless/static:nonroot
+
+# Copy the pre-built binary from the GoReleaser build context (single explicit
+# COPY — no `COPY . .`).
+COPY ach-cli /ach-cli
+
+USER 65532:65532
+
+ENTRYPOINT ["/ach-cli"]

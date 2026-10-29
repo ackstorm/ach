@@ -1,0 +1,26 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Environment.spec.context.prompts element-level Pattern
+#   (S2 CRD validation — defense-in-depth above the runtime escaping in
+#   the platform-api/CLI; see api/ach/v1alpha1/environment_types.go).
+# Expected error substring: "prompts"
+#
+# This manifest sets context.prompts to a path-traversal name ("../admin")
+# which violates the items:Pattern marker forbidding slash/backslash and
+# other URL/path-injection metacharacters on the content-name fields.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: invalid-context-traversal
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    prompts:
+      - "../admin"
+    plugins: []
+    artifacts: []

@@ -1,0 +1,205 @@
+{{- if .Values.operator.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ach-operator-cache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: cache
+spec:
+  accessModes:
+    - {{ .Values.operator.cache.accessMode | default "ReadWriteOnce" }}
+  {{- with .Values.operator.cache.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.operator.cache.size | default "10Gi" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ .Values.operator.replicas | default 1 }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        # Prometheus default scrape — Phase 5 OBS-03 + D-12.
+        # Drift flag #4 resolution: this Pod hosts TWO metrics ports
+        # (operator :8080, content-service :8082). Pod annotation here
+        # covers the OPERATOR port. The content-service port has its
+        # own scrape target via Service-level annotation on
+        # ach-content-service (see content-service-deployment.yaml).
+        # See examples/prometheus-servicemonitor.yaml for the
+        # ServiceMonitor alternative.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        {{- with .Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
+        {{- end }}
+      labels:
+        {{- include "ach.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: operator
+        {{- with .Values.operator.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: ach-operator
+      {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.operator.initContainers)) }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup makes the kubelet chown the ach-operator-cache PVC
+        # (mounted RWO at /var/cache/ach) to gid 65532 + setgid, so the
+        # nonroot user (uid/gid 65532, per both Dockerfiles' USER) can
+        # write the cache. Without it the PVC mounts root-owned and the
+        # operator fails with "permission denied" on first cache write
+        # (readOnlyRootFilesystem=true means there is no fallback path).
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: ach-operator-cache
+        # Writable /tmp for the git source fetcher (it shells out to
+        # `git clone` into an os.MkdirTemp directory under /tmp).
+        # readOnlyRootFilesystem: true on the manager container means
+        # /tmp must be mounted from an emptyDir or the fetcher fails
+        # with "mkdir /tmp/git-...: read-only file system".
+        - name: tmp
+          emptyDir: {}
+        {{- if not .Values.contentService.standalone }}
+        {{- include "ach.contentServiceJWTVolume" . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: manager
+          image: {{ include "ach.image" . }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" . }}
+          args: {{ toYaml .Values.operator.args | nindent 12 }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: healthz
+              containerPort: 8081
+          env:
+            - name: ACH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ACH_CACHE_ROOT
+              value: /var/cache/ach
+            {{- if .Values.litellmConnection.enabled }}
+            # LiteLLMConnection/default bootstrap coordinates (issue #34). The
+            # operator get-or-creates the canonical CR on boot from these —
+            # Helm cannot apply a CR of a templates-rendered CRD in the install
+            # release ("no matches for kind"), so the operator owns it. Only the
+            # Secret REFERENCE is passed; the master-key VALUE is never in env.
+            - name: ACH_LITELLM_CONNECTION_ENDPOINT
+              value: {{ required "litellmConnection.endpoint is required when litellmConnection.enabled" .Values.litellmConnection.endpoint | quote }}
+            - name: ACH_LITELLM_CONNECTION_SECRET_NAME
+              value: {{ required "litellmConnection.masterKeySecretRef.name is required" .Values.litellmConnection.masterKeySecretRef.name | quote }}
+            - name: ACH_LITELLM_CONNECTION_SECRET_KEY
+              value: {{ required "litellmConnection.masterKeySecretRef.key is required" .Values.litellmConnection.masterKeySecretRef.key | quote }}
+            {{- end }}
+            # ACH_CREDENTIAL_HASH_PEPPER — required by the operator
+            # (pepperenv.Load); sourced from the security block, do NOT also
+            # set it in extraEnv (duplicate env entry). The DEK is not used by
+            # the operator, so it is intentionally not injected here.
+            {{- include "ach.pepperEnv" . | nindent 12 }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ach
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.operator.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+        # Content-service co-located in the same Pod as the operator
+        # (Phase 1 SC#2 invariant per ROADMAP). Both containers share
+        # the RWO ach-operator-cache PVC: the operator writes via
+        # cachefs.PublishExternal (atomic rename) and the content-
+        # service reads-only via sendfile(2). RWO mandates single-Pod
+        # mounters, hence co-location. If the storage class is upgraded
+        # to RWX (EFS/NFS/CephFS) split content-service into its own
+        # Deployment with contentService.standalone=true (G16) — the
+        # sidecar below then drops out. The container spec is shared via
+        # the ach.contentServiceContainer helper so both paths match.
+        {{- if and .Values.contentService.enabled (not .Values.contentService.standalone) }}
+        {{- include "ach.contentServiceContainer" . | nindent 8 }}
+        {{- end }}
+---
+# Operator metrics Service. The operator Deployment ships no Service of
+# its own (it is a controller, not a request server), so the :8080
+# metrics port had no stable cluster DNS name. This Service exposes it
+# for (a) the e2e gateway's /metrics/operator route and (b) the
+# ServiceMonitor in examples/prometheus-servicemonitor.yaml. The
+# selector MUST match the operator Deployment's pod selector labels
+# exactly (app.kubernetes.io/name=ach + component=operator); it lands on
+# the operator container's :8080 metrics port (NOT the co-located
+# content-service :8082, which has its own Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-operator-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  selector:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: operator
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+{{- end }}

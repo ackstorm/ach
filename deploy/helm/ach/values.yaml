@@ -1,0 +1,651 @@
+# deploy/helm/ach/values.yaml
+#
+# Single-binary, multi-component design. One image (ghcr.io/ackstorm/ach)
+# carries operator, platform-api, forwarder, content-service, migrate modes
+# selected by `args:` on each Deployment. Per-mode toggles allow installs to
+# enable only the components they need (operator-only baseline, full hub, etc).
+#
+# CRDs are installed by default (helm.sh/resource-policy: keep). External
+# Postgres and Redis are assumed — embedded subcharts are out of scope for
+# the v0.0.1 baseline; use bitnami/postgresql + bitnami/valkey alongside.
+
+# installCRDs: when true (default), the chart ships every CRD in
+# crd-sources/ as a managed Helm resource. `helm upgrade` then upgrades
+# CRDs the same way it upgrades every other resource. Each CRD carries
+# `helm.sh/resource-policy: keep` so `helm uninstall` preserves them
+# (and the user's CRs) intact. Set false when CRDs are managed out-of-band
+# (Flux/ArgoCD Kustomization, kubectl apply in CD).
+installCRDs: true
+
+# ACH Enterprise features (ee/, ACKstorm Enterprise License): conversation
+# classification, observability analytics except the console Overview, and
+# traces. Off: their API routes answer 403 enterprise_only, the classifier
+# refuses to run and the console marks them "Enterprise only". Running them
+# in production requires an ACKstorm Enterprise licence agreement.
+enterprise:
+  enabled: false
+
+# image: the single ach binary, with per-mode args on each Deployment.
+# pullPolicy default is IfNotPresent so the kind workflow (cluster.sh /
+# `kind load docker-image`) uses the locally-loaded image — kind nodes
+# have no ghcr.io/ackstorm/* credentials, so `Always` would force an
+# anonymous pull that 401s into ImagePullBackOff (issue #38). Production
+# deploys that want re-tag hygiene override to `Always` via a values
+# overlay or `--set image.pullPolicy=Always`.
+image:
+  repo: ghcr.io/ackstorm/ach
+  tag: v0.14.2
+  pullPolicy: IfNotPresent
+  # rebuildId: a unique value per build (e.g. a timestamp) rendered as the
+  # `ach.ackstorm.ai/rebuild-id` pod annotation on every ach Deployment.
+  # When set, the podTemplate changes each `helm upgrade`, so Helm rolls
+  # all pods — needed because the kind dev loop rebuilds the SAME tag
+  # (`:e2e`) with pullPolicy=IfNotPresent, which otherwise yields a
+  # byte-identical spec and no rollout. Empty default = annotation absent
+  # = no spurious rolls in production. scripts/cluster.sh sets it to
+  # `$(date +%s)` on each hydrate_ach.
+  rebuildId: ""
+
+# watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
+# Maps to WATCH_NAMESPACE env var on operator Deployment.
+watchNamespace: ""
+
+# operator: reconciles the ACH CRDs (Environment, Plugin, Skill, etc).
+#
+# Default args bind the controller-runtime metricsserver on :8080
+# (HTTP, no auth) so the Pod-level prometheus.io/scrape annotation
+# in operator-deployment.yaml actually resolves to a live endpoint.
+# Phase 5 OBS-03..06 + SC#5 wiring — the operator's :8080/metrics
+# surfaces controller_runtime_reconcile_*, workqueue_*, plus the
+# shared ach_litellm_unreachable_total{caller="operator"} registered by
+# Plan 05-06 Task 5.
+#
+# To switch to secure metrics (TLS + authn/authz on :8443) for
+# deployers running cert-manager + Prometheus with bearer-token
+# auth, override operator.args via --set or values overlay:
+#   operator:
+#     args:
+#       - operator
+#       - --metrics-bind-address=:8443
+#       - --metrics-secure=true
+operator:
+  enabled: true
+  replicas: 1
+  # Extra labels on the operator Pod, e.g. istio.io/dataplane-mode: ambient.
+  podLabels: {}
+  resources: {}
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers` (see the top-level key). Raw container
+  # specs, passed through verbatim. NOTE: in the default topology
+  # content-service is a sidecar in this Pod, so these gate it too.
+  initContainers: []
+  args:
+    - operator
+    - --metrics-bind-address=:8080
+    - --metrics-secure=false
+  # cache: the ach-operator-cache PVC backing the artifact cache shared with
+  # content-service. Default is RWO single-mounter co-location (sidecar). To
+  # split content-service into its own Deployment for HA (G16), set
+  # accessMode=ReadWriteMany + an RWX storageClassName (efs-sc / nfs-client /
+  # cephfs) AND contentService.standalone=true.
+  cache:
+    size: 10Gi
+    accessMode: ReadWriteOnce
+    storageClassName: ""
+  # ─── orphan-cleanup loop (OP-15 / Hub §18.4) ───
+  # The loop revokes ONLY LiteLLM keys THIS release minted (metadata
+  # ach_key_id present AND ach_issuer == this ACH_BASE_URL) that it no
+  # longer tracks as active; foreign keys (manual / tf-* / token-factory)
+  # and keys of another ACH release on the same LiteLLM are never touched.
+  # ACH_BASE_URL is therefore required on the operator. Tune via the
+  # top-level `extraEnv` (these are operator-only; other modes ignore them):
+  #   ACH_ORPHAN_CLEANUP_INTERVAL   (default 1h; floor 5m) — tick cadence.
+  #       Emergency stop: set very high (e.g. 8760h) to neuter the loop for
+  #       the pod's lifetime without a rebuild (first tick fires at
+  #       t+interval, so a year-long interval never fires).
+  #   ACH_ORPHAN_CLEANUP_DRY_RUN    (default false) — B3 reversible neutralize:
+  #       logs "WOULD revoke" + skipped{dry_run} metric, never calls RevokeKey.
+  #       A malformed value (tru/yes/on) FAILS operator startup (parsed strictly),
+  #       so a typo can never silently re-enable real revocation.
+  #   ACH_ORPHAN_CLEANUP_MAX_REVOKE (default 10) — B2 circuit-breaker: a tick
+  #       with more true-orphan candidates than this aborts revocation entirely.
+  # Observability: /metrics exposes ach_orphan_cleanup_{candidates,revoked}_total
+  # and ach_orphan_cleanup_skipped_total{reason}.
+
+# platformApi: HTTP API surface for agent registry, config serving.
+platformApi:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["platform-api"]
+  # headers: the credential slots platform-api reads, in order (same shape as
+  # forwarder.headers). resolve only — platform-api does not proxy, so a
+  # passthrough entry is refused at start-up. Authorization: Bearer is
+  # accepted only as ACH's own OAuth token or a pk-/ek- key.
+  headers:
+    - name: x-ach-key
+      mode: resolve
+    - name: x-api-key
+      mode: resolve
+  # observability (Enterprise; rendered only with enterprise.enabled=true): serves
+  # each person's own traces under /platform/observability.
+  # Off while clickhouseUrl is empty (the routes answer 503 not_ready). secretName
+  # is a Secret holding ACH_OBSERVABILITY_CLICKHOUSE_USER and _PASSWORD for a
+  # read-only ClickHouse user; projectIds is the Langfuse project allow-list.
+  # thanosUrl (optional) is the Prometheus query API for the Performance
+  # gateway metrics; empty = those report not_instrumented.
+  # Without Enterprise every /platform/observability route answers 403
+  # enterprise_only and none of these values is rendered.
+  observability:
+    clickhouseUrl: ""
+    secretName: ""
+    projectIds: []
+    thanosUrl: ""
+  # userDefaults: the spend ceiling SEEDED onto each user's own LiteLLM tag
+  # ("user:<email>") at login. The tag is stamped on every forwarded request
+  # the user makes, so ONE budget covers their pk_ and all their ek_ across
+  # every Environment. It is a starting value, applied only while that tag has
+  # no budget: changing it here does NOT retune people already seeded (and a
+  # login never overwrites a ceiling an admin set). Retune one person with
+  # PATCH /platform/admin/users/{email}/budget. Budgets live only on tags — a LiteLLM
+  # user-object budget is not enforced (measured; see
+  # references/litellm-permission-model.md). Leave maxBudget unset for no cap.
+  # An empty maxBudget means no cap; 0 is a REAL ceiling that refuses every
+  # request once any spend lands (LiteLLM compares spend > max_budget).
+  userDefaults:
+    maxBudget: ""          # e.g. 100  (USD, LiteLLM's unit); "" = uncapped, 0 = refuse all
+    budgetDuration: "30d"  # reset window; "" = never resets
+    # maxKeys is the number of non-revoked ek_ keys one person may hold.
+    # 0 means deny-by-default; an admin grants an explicit allowance.
+    maxKeys: 0
+  # oauth.redirectHosts: hosts an OAuth client registered at /platform/oauth/register
+  # may redirect to over https (e.g. claude.ai for its web MCP connector).
+  # Loopback (http://127.0.0.1, localhost — ach-cli, OpenCode) is always allowed.
+  # Empty = loopback only. Registration is anonymous: never list a host you
+  # do not trust to receive your users' authorization codes.
+  oauth:
+    redirectHosts: []
+  # teams: LiteLLM teams (by alias) the USER — never a key — joins at every
+  # interactive login (browser or console). LiteLLM is the source of truth;
+  # ACH never creates these teams.
+  #   default: mandatory for everyone; a missing one fails the login.
+  #   users / sso: best-effort and additive — a team that does not exist yet is
+  #     skipped and retried at the next login; removing a mapping never
+  #     detaches anyone.
+  #   sso keys are Dex `groups` claim values (the upstream connector must emit
+  #     them). Matching is case-insensitive.
+  # Access to an Environment follows at that Environment's next reconcile.
+  teams:
+    default: [default]
+    users: {}   # { alice@example.com: [dream, run] }
+    sso: {}     # { projects@example.com: [run] }
+  # console: settings for the web console served at /.
+  console:
+    # chatUrl is the hosted chat UI the console's Chat button (and the How-to
+    # chat card) opens, e.g. https://chat.example.com. Empty hides both.
+    chatUrl: ""
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
+
+# forwarder: bridges in-cluster MCP servers and external clients.
+# §5.1 reverse-proxy plane + §9 JWT trust path. Boots two listeners:
+# traffic :8080 (D-04 WriteTimeout=0 for SSE) and health :8081.
+forwarder:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["forwarder"]
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
+  # jwtSecretName names the Secret holding current/next Ed25519 signing
+  # material per D-10 (data keys: current.kid, current.seed, next.kid?,
+  # next.seed?). The operator MINTS + persists this Secret on boot
+  # (internal/operator/jwtkeys.EnsureSigningKeys — random seed, mint-once),
+  # via a minimal namespaced `secrets: create` Role. The forwarder
+  # refuse-to-starts until it exists (FWD-09), then boots. The Secret is
+  # operator-owned (not Helm-managed), so it survives `helm uninstall` and a
+  # reinstall reuses the same key — no JWKS rotation. To force rotation,
+  # delete the Secret and let the operator re-mint.
+  jwtSecretName: ach-jwt-signing-keys
+  # The LiteLLM master-key Secret the forwarder reads at boot is sourced
+  # from the single litellmConnection.masterKeySecretRef block (name + key,
+  # plus an optional cross-namespace `namespace`). The forwarder RBAC scopes
+  # to it automatically — there is no longer a per-forwarder master-key knob
+  # to keep in sync (the deprecated litellmMasterSecretName + litellmMasterKey
+  # were removed; set litellmConnection.masterKeySecretRef.namespace for the
+  # cross-namespace case, issue #34 C7).
+  #
+  # extraEnv supplies env vars (ACH_BASE_URL, ACH_DB_URL, ACH_REDIS_ADDR,
+  # ACH_REDIS_PASSWORD via valueFrom). The DEK + pepper are sourced from the
+  # top-level `security` block, NOT here; the LiteLLM endpoint + master key
+  # flow from LiteLLMConnection/default + its MasterKeySecretRef at bootstrap
+  # (see internal/forwarder/litellmconn.Resolve).
+  extraEnv: []
+  # headers: the credential slots the forwarder reads, in order — the first
+  # one present on a request decides. mode: resolve → an ACH credential
+  # (pk_/ek_) resolved against ACH and forwarded as the caller's own LiteLLM
+  # key (x-litellm-api-key), header removed; mode: passthrough → the backend's
+  # own key, forwarded as it came and also mirrored to x-litellm-api-key, no
+  # ACH identity. A pk-/ek- value is resolved in ANY slot (passthrough and
+  # Authorization included) and removed: an ACH key never reaches LiteLLM.
+  # `authorization` cannot be listed: it is resolved only for ACH's own OAuth
+  # token or a pk-/ek- key; anything else there passes untouched.
+  headers:
+    - name: x-ach-key       # ach-cli, hydrate, ach-agent
+      mode: resolve
+    - name: x-api-key       # Anthropic SDKs / Claude Code apiKeyHelper
+      mode: resolve
+    # - name: x-genai-api-key   # a raw LiteLLM key under a customer-facing name
+    #   mode: passthrough
+  # gemini.stripModelPrefixes: vendor prefixes removed from the MODEL NAME on
+  # the /gemini route, in declared order, first match wins. LiteLLM registers
+  # a model as "<vendor>.<model>" while a native Gemini client addresses it by
+  # its bare Google name; a caller may send either, so the proxy normalises
+  # the path before forwarding. Empty (the default) = no rewrite.
+  #
+  # Only /gemini: on /v1 the model travels in the JSON body and the Director
+  # never reads req.Body (streaming, D-05) — use LiteLLM's own
+  # model_group_alias for that surface instead.
+  #
+  # The rewrite is anchored after the "/models/" path element, so an entry
+  # like "gemini/" cannot match ACH's own /gemini route prefix.
+  gemini:
+    stripModelPrefixes: []
+    # stripModelPrefixes: ["gemini.", "gemini/", "vertex_ai."]
+  # trustedIdP: accept an access token from ONE external OIDC issuer (e.g. the
+  # Dex that LibreChat signs in with) as `Authorization: Bearer`. Recognised
+  # only when the token's `iss` equals `issuer` byte for byte (trailing slash
+  # and path included); verified RS256 against the issuer's discovery JWKS,
+  # `exp`, `aud` in `audiences`, `claim` non-empty and `email_verified` not
+  # false. The claim value (lower-cased) must be a user who has signed in to
+  # ACH at least once: it resolves to that user's oauth pk_ — same budget,
+  # Environment access and revocation as an ACH login; each use slides that
+  # row 7 days, capped 90 days after it was minted (an ACH login near or past
+  # its expiry mints a fresh one). No live row →
+  # 403 ach_login_required (names the console); issuer down → 503
+  # idp_unreachable (the forwarder still starts). Empty issuer = off; an
+  # issuer without audiences refuses to start.
+  trustedIdP:
+    issuer: ""
+    audiences: []
+    claim: email
+
+# litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
+# Configure endpoint + master-key Secret ref here ONCE; the chart fans it
+# out to every consumer:
+#   - renders LiteLLMConnection/default (operator reconciles it → Postgres
+#     projection that the forwarder + Environment controller read), and
+#   - derives ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY env for
+#     platform-api + content-service (via the ach.litellmConnectionEnv
+#     helper), and
+#   - points the forwarder's master-key Secret RBAC at the same Secret.
+# Do NOT also set ACH_LITELLM_* in extraEnv — that is the duplication this
+# block removes. The Secret named here must exist in the release namespace
+# (create it out-of-band, e.g. a pre-install step).
+litellmConnection:
+  enabled: true
+  endpoint: http://litellm.litellm.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: master_key
+    # namespace: optional cross-namespace override (issue #34 C7). Empty
+    # resolves to the release namespace. Set this only when the master-key
+    # Secret lives in a different namespace from the release — the forwarder
+    # RBAC then renders a cross-namespace Role + RoleBinding scoped to
+    # masterKeySecretRef.name. (Replaces the removed forwarder.litellmMasterKey.)
+    namespace: ""
+
+# security — at-rest crypto material that platform-api AND the forwarder
+# REQUIRE at startup (validateConfig aborts the process otherwise). Both are
+# referenced from operator-supplied Secrets — the chart never generates or
+# inlines them, because they MUST stay stable across upgrades:
+#   - rotating the DEK orphans all sealed LiteLLM key material;
+#   - rotating the pepper invalidates every stored credential hash.
+# Create the Secrets out-of-band BEFORE install/upgrade, e.g.:
+#   kubectl -n <ns> create secret generic ach-key-encryption-key \
+#     --from-literal=dek="$(openssl rand -base64 32)"      # 32 raw bytes, base64
+#   kubectl -n <ns> create secret generic ach-credential-hash-pepper \
+#     --from-literal=pepper="$(openssl rand -base64 32)"   # random, ≥32 bytes
+security:
+  # keyEncryptionKey → ACH_KEY_ENCRYPTION_KEY. The referenced value MUST be
+  # base64 of exactly 32 bytes (AES-256). Used by platform-api (seal) and the
+  # forwarder (open) for LiteLLM key material at rest.
+  keyEncryptionKey:
+    secretRef:
+      name: ach-key-encryption-key
+      key: dek
+  # credentialHashPepper → ACH_CREDENTIAL_HASH_PEPPER. Server-side
+  # HMAC-SHA256 pepper for pk_/ek_ credential hashing; never persisted.
+  credentialHashPepper:
+    secretRef:
+      name: ach-credential-hash-pepper
+      key: pepper
+
+# genai: client-neutral naming for the GenAI clients ACH configures
+# (OpenCode today). providerName is the provider id users sign in with —
+# `opencode auth login -p <providerName>` — and the name the per-user client
+# config (/clients/opencode/config) and the plugin's options in
+# /.well-known/opencode carry.
+# Format: ^[a-z0-9][a-z0-9-]{0,63}$ (platform-api refuses to start otherwise).
+# It also names the onboarding skill the config ships, "<providerName>-api",
+# which must be kebab-case and at most 64 chars (also refused at start).
+# Keep it stable: the plugin keeps its data under ~/.local/share/opencode/<name>/
+# and OpenCode keys the user's credentials by it — changing it signs users out.
+genai:
+  providerName: ai-platform
+  # The plugin `opencode auth login https://<ach host>` installs (engines v1
+  # and v2) via /.well-known/opencode: an npm or git spec. Git at the repo
+  # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
+  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.9"
+  # Provider ids /.well-known/opencode allows next to providerName in
+  # enabled_providers (e.g. [claude-code] for @openchamber/opencode-claude).
+  # On OpenCode v2 a user's own config cannot widen that list, so a provider
+  # users add through their own plugins must be listed here. An id nobody has
+  # installed has no effect. Same format as providerName. Empty = providerName only.
+  opencodeExtraProviders: []
+  # Optional default models (bare names, no provider prefix) for GenAI clients;
+  # /clients/opencode/config uses them today: emitted as config.model /
+  # config.small_model only when the user's own model list holds that name.
+  # Empty = off.
+  defaultModel: ""
+  defaultSmallModel: ""
+  # The Environment the onboarding skill (<providerName>-api, shipped by
+  # /clients/opencode/config) tells users to hydrate globally:
+  # `ach-cli env hydrate <defaultEnvironment> -g`. Empty = no such step.
+  # (Replaces mcpEnabledEnvironments: the config no longer carries MCP
+  # servers, they come from a hydrated Environment; a leftover
+  # mcpEnabledEnvironments value is ignored.)
+  defaultEnvironment: ""
+  # defaultEnvironment: ackstorm
+
+# openwork: the OpenWork organization server ("Den") served by platform-api
+# at /openwork (handoff page + brand marks) and /api/den + /openwork/api/den
+# (the desktop API). Off by default. Connect MCP answers with an EMPTY
+# catalog (green Connect health only). The desktop deep-link target is
+# https://<ach host>/?desktopAuth=1.
+openwork:
+  enabled: false
+  orgName: ACH
+  orgSlug: ach
+  brandAppName: ACH
+  brandLogoUrl: ""
+  brandIconUrl: ""
+  accentColor: ""
+  # A non-empty list disables interactive terminals in the desktop outright.
+  blockedCommands: []
+  blockBrowserUploads: false
+
+# gateway: the ACH edge reverse proxy (ach gateway mode). Fronts the
+# platform-api, content-service, and forwarder HTTP surfaces behind one
+# origin so the public Ingress targets a single Service; "/" is the
+# console served by platform-api. The gateway fronts ACH surfaces ONLY:
+# nothing LiteLLM serves outside ACH's route families is reachable through
+# it (spec D-18), so LiteLLM MUST be published on its own host for /ui,
+# /key/*, /health and /model/* — point every consumer of those paths
+# there. It performs no auth and never routes
+# /metrics or /dex (see internal/gateway). ClusterIP by default; the
+# public Ingress (ingress.enabled) points here.
+gateway:
+  enabled: true
+  replicas: 1
+  resources: {}
+  args: ["gateway"]
+  # extraEnv supplies optional overrides (e.g. ACH_GATEWAY_BIND_ADDRESS).
+  # POD_NAMESPACE is injected via the downward API in the template.
+  extraEnv: []
+  # initContainers: extra init containers for THIS Deployment only, appended
+  # after any global `initContainers`. Raw container specs, verbatim.
+  initContainers: []
+
+# contentService: serves agent-rendered content (assets, snapshots).
+contentService:
+  enabled: true
+  # standalone: false (default) → content-service runs as a sidecar in the
+  # operator Pod (RWO cache PVC, co-located). true → run as its own
+  # Deployment with `replicas` replicas (G16 HA split). Requires an RWX
+  # cache: set operator.cache.accessMode=ReadWriteMany + a
+  # operator.cache.storageClassName so multiple Pods can mount the PVC.
+  standalone: false
+  replicas: 1
+  resources: {}
+  args: ["content-service"]
+  # initContainers: extra init containers for the STANDALONE content-service
+  # Deployment, appended after any global `initContainers`. Inert while
+  # standalone=false — as a sidecar it shares the operator Pod, so use
+  # operator.initContainers instead. Raw container specs, verbatim.
+  initContainers: []
+
+# classifier: labels idle Langfuse sessions with one taxonomy category and
+# writes a Langfuse score (docs/developer-guide/conversation-classifier.md).
+# Off by default. secretName is a Secret holding ACH_CLASSIFIER_CLICKHOUSE_USER,
+# ACH_CLASSIFIER_CLICKHOUSE_PASSWORD (a ClickHouse user granted input/output
+# on events_full and SELECT on scores, never the observability one), ACH_CLASSIFIER_MODEL_KEY (a gateway key) and,
+# to write scores, ACH_CLASSIFIER_LANGFUSE_PUBLIC_KEY/_SECRET_KEY. With
+# langfuseUrl empty it is a dry run: it classifies and logs (ids and labels
+# only), writes nothing. langfuseUrl set without the key pair refuses to start.
+# Enterprise: rendered only with enterprise.enabled=true; with it off these values are kept and nothing is rendered.
+classifier:
+  enabled: false
+  secretName: ""
+  clickhouseUrl: ""
+  projectId: default
+  # OpenAI-compatible base, e.g. https://api.example.com/v1
+  modelUrl: ""
+  model: ackstorm.smart
+  langfuseUrl: ""
+  # onlyUser: when set, label only this user's sessions (rollout).
+  onlyUser: ""
+  interval: 10m
+  idle: 30m
+  lookback: 72h
+  batch: 50
+  # taxonomy: the deployment's own categories; empty = the built-in taxonomy (v3).
+  # The prompt intro, its first three rules, the JSON output format and the
+  # categories other and trivial are the classifier's and always added; never
+  # list other or trivial here. ids are domain.name in [a-z0-9_]; rules are
+  # appended as rule 4, 5... Any change the model would see is a new taxonomy
+  # version (custom-<hash>): sessions inside lookback are labelled again.
+  # platform-api reads the same file, so the console shows that version's labels.
+  # docs/developer-guide/conversation-classifier.md has a full example.
+  #   taxonomy:
+  #     rules:
+  #       - "If the work is for a client account, classify by what was done, not by the client."
+  #     categories:
+  #       - id: operations.fleet_planning
+  #         fits: "Routes, vehicle assignment, load planning, delivery schedules."
+  #         notFits: "Planning software -> technology.software_engineering."
+  #       - id: technology.software_engineering
+  #         fits: "Code, scripts, automations."
+  taxonomy: {}
+  # One raw session input at a time, measured up to 22.5 MB.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# migrate: pre-install Job that runs schema migrations against Postgres.
+migrate:
+  enabled: true
+  args: ["migrate"]
+
+ingress:
+  enabled: false
+  # className -> spec.ingressClassName. Empty = the cluster's default
+  # IngressClass (the one annotated ingressclass.kubernetes.io/is-default-class).
+  className: ""
+  # host: public hostname. Empty = a catch-all rule (no host match). Set
+  # your domain in production.
+  host: ""
+  # annotations on the Ingress object (e.g. cert-manager.io/cluster-issuer,
+  # nginx.ingress.kubernetes.io/* tuning).
+  annotations: {}
+  # tls: passed through verbatim to spec.tls — list of {hosts: [...], secretName: ...}.
+  tls: []
+  # The Ingress sends ONE backend to the ach-gateway Service, which owns
+  # all path routing. Override path/service/port only for unusual edge
+  # topologies. /metrics is NOT routable through the gateway by design.
+  path: /
+  pathType: Prefix
+  service: ach-gateway
+  port: 80
+
+# metrics: Prometheus observability topology — Phase 5 OBS-03..06.
+#
+# Each long-running service exposes GET /metrics on its main traffic
+# listener:
+#   - operator:        :8080 (controller-runtime metricsserver)
+#   - platform-api:    :8080 (chi mux)
+#   - forwarder:       :8080 (chi mux)
+#   - content-service: :8082 (chi mux, co-located in operator Pod)
+#
+# /metrics is UNAUTHENTICATED — internal cluster network only.
+# DEPLOYERS MUST NOT expose /metrics through Ingress, LB, or external
+# routing. The operator's controller-runtime metricsserver may be
+# configured for TLS+auth via --metrics-secure (see operator subcommand
+# flags); the other three are plain HTTP.
+#
+# Scrape topology (drift flag #4 — operator Pod has two metric ports):
+#   - operator's :8080 → Pod-level prometheus.io/scrape annotation
+#     on the operator Pod template.
+#   - content-service's :8082 → Service-level prometheus.io/scrape
+#     annotation on the ach-content-service Service object (the Pod
+#     is shared with the operator container, so a single Pod-level
+#     annotation cannot name both ports).
+#   - forwarder + platform-api → Pod-level annotations on their own
+#     Pod templates.
+#
+# Prometheus Operator users: set metrics.serviceMonitor.enabled=true
+# (below) to render a ServiceMonitor as an alternative to the default
+# pod-scrape annotations. examples/prometheus-servicemonitor.yaml is the
+# equivalent standalone manifest for non-Helm / reference use.
+#
+# Spec v4 §5.2 RBAC reversal — Content Service no longer holds
+# informers over ACH CRDs (Phase 5 D-Discretion + Plan 05-06). The
+# contract is enforced AT THE GO CODE LEVEL: cmd/ach/cmd/content_service.go
+# does NOT construct a controller-runtime manager.Manager. At the
+# K8s RBAC level the CS container shares the ach-operator
+# ServiceAccount (RWO PVC co-location), so `kubectl auth can-i list
+# environments.ach.ackstorm.ai --as=system:serviceaccount:<ns>:ach-operator`
+# returns "yes" — that grant is needed by the OPERATOR reconcilers
+# (Phase 1 Plan 01-09); CS code never exercises it.
+#
+# metrics.serviceMonitor: render a prometheus-operator ServiceMonitor
+# (templates/servicemonitor.yaml) covering forwarder, platform-api,
+# content-service and operator metrics. enabled=false (default) → render
+# nothing and rely on the pod-level prometheus.io/scrape annotations above.
+# Set enabled=true ONLY when the Prometheus Operator CRDs are installed —
+# otherwise `helm install` fails with `no matches for kind "ServiceMonitor"`.
+metrics:
+  serviceMonitor:
+    enabled: false
+    # interval: scrape interval; empty → Prometheus global default.
+    interval: 30s
+    # scrapeTimeout: per-scrape timeout (must be ≤ interval); empty → default.
+    scrapeTimeout: ""
+    # labels: extra labels on the ServiceMonitor so your Prometheus's
+    # serviceMonitorSelector matches it (kube-prometheus-stack commonly
+    # requires `release: <prometheus-release-name>`).
+    labels: {}
+  # metrics.prometheusRule: render a prometheus-operator PrometheusRule
+  # (templates/prometheusrule.yaml) with the recommended ACH alert rules.
+  # enabled=false (default) → render nothing. Set enabled=true ONLY when the
+  # Prometheus Operator CRDs are installed — otherwise `helm install` fails
+  # with `no matches for kind "PrometheusRule"`.
+  prometheusRule:
+    enabled: false
+    # labels: extra labels so your Prometheus's ruleSelector matches it
+    # (kube-prometheus-stack commonly requires `release: <prometheus-release-name>`).
+    labels: {}
+    # includeP1Alerts: the two alerts on operator metrics
+    # (ACHExternalRefRefreshFailed, ACHEnvironmentUnavailable). Both metrics
+    # are exposed by the operator — ach_operator_external_ref_refresh_total
+    # (external_ref_driver.go) and ach_environment_available
+    # (environment_controller.go) — so these alerts are enabled by default.
+    includeP1Alerts: true
+  # metrics.dashboards: ship the ACH Grafana dashboards
+  # (templates/grafana-dashboards.yaml) as one ConfigMap per dashboard, labelled
+  # for the kube-prometheus-stack Grafana sidecar to auto-load. Needs NO
+  # Prometheus Operator CRD — plain ConfigMaps — so it works wherever that
+  # sidecar runs (sidecar.dashboards.enabled=true, the kube-prometheus-stack
+  # default). The JSON lives in the chart's own dashboards/ dir; see
+  # examples/grafana/README.md for what each dashboard shows and how to import
+  # one by hand.
+  #
+  # ⚠ THE SIDECAR MUST WATCH THE NAMESPACE THESE LAND IN. kube-prometheus-stack
+  # defaults sidecar.dashboards.searchNamespace to null = the sidecar's OWN
+  # namespace, so with ACH and Prometheus split across namespaces (the usual
+  # layout) nothing is picked up. Fix it on either side: set the sidecar's
+  # searchNamespace to ALL (or to the ACH namespace), or point
+  # metrics.dashboards.namespace at the sidecar's namespace. There is no error
+  # when this is wrong — the dashboards simply never appear in Grafana.
+  dashboards:
+    enabled: false
+    # namespace: where the dashboard ConfigMaps are created. Empty → the
+    # release namespace. Set it to the monitoring namespace when the sidecar
+    # runs with the default (own-namespace-only) searchNamespace.
+    namespace: ""
+    # label/labelValue: must match the sidecar's LABEL/LABEL_VALUE
+    # (kube-prometheus-stack defaults: grafana_dashboard / "1").
+    label: grafana_dashboard
+    labelValue: "1"
+    # folder: value of the grafana_folder annotation. Honoured only when the
+    # sidecar runs with BOTH sidecar.dashboards.folderAnnotation=grafana_folder
+    # AND sidecar.dashboards.provider.foldersFromFilesStructure=true (both are
+    # off by default); with either missing the annotation is inert and the
+    # dashboards land in the sidecar provider's folder.
+    # Empty → no annotation at all.
+    folder: ACH
+    # labels: extra labels on every dashboard ConfigMap. A key that collides
+    # with `label` above loses to it.
+    labels: {}
+
+# extraEnv: list of additional env vars to inject into every component's
+# main container. Each item is {name, value}.
+extraEnv: []
+
+# initContainers: init containers injected into EVERY ach Deployment
+# (operator — which also carries the content-service sidecar — plus
+# platform-api, forwarder, gateway, and the standalone content-service when
+# contentService.standalone=true). Each item is a raw container spec, passed
+# through verbatim; nothing inside it is templated, so reference concrete
+# values rather than expecting {{ ... }} to be evaluated.
+#
+# Per-Deployment lists live under the component's own key
+# (e.g. forwarder.initContainers) and are appended AFTER these. Init
+# containers run sequentially in list order, so global entries are the shared
+# preconditions every component waits on before its own.
+#
+# The migrate Job is deliberately NOT covered: it is the schema-migration
+# pre-install hook and gating it on the same preconditions as the services
+# risks a deadlock (a probe that waits for a migrated schema would wait on
+# the very Job it blocks).
+#
+# Example — hold every component until Postgres answers. Note the BOUNDED
+# retry with an explicit failure exit: a naked `until ...; do sleep N; done`
+# can never terminate if the target never appears, and the Pod would sit in
+# Init: forever instead of surfacing the fault. A failed init container is
+# retried by the kubelet under the Pod's restartPolicy, so exiting non-zero
+# is the correct way to give up.
+#
+#   initContainers:
+#     - name: wait-for-postgres
+#       image: postgres:16-alpine
+#       command:
+#         - sh
+#         - -c
+#         - |
+#           for i in $(seq 1 60); do
+#             pg_isready -h ach-postgresql -p 5432 && exit 0
+#             sleep 2
+#           done
+#           echo "postgres not ready after 120s" >&2; exit 1
+#       securityContext:
+#         allowPrivilegeEscalation: false
+#         runAsNonRoot: true
+#         capabilities:
+#           drop: ["ALL"]
+initContainers: []

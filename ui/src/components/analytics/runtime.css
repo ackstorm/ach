@@ -1,0 +1,4 @@
+.console-ledger .runtime-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}
+.console-ledger .runtime-gap{margin-top:13px}
+@media (max-width:1100px){.console-ledger .runtime-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){.console-ledger .runtime-metrics{grid-template-columns:minmax(0,1fr)}}

@@ -1,0 +1,63 @@
+ACKstorm Enterprise License
+
+DRAFT — pending legal review
+
+Copyright (c) 2026 ACKstorm
+
+This licence covers the files under ee/ and ui/src/ee/ and the file
+cmd/ach/ee.go (together, "the Software").
+
+1. Copyright
+
+All rights in this software are owned by ACKstorm and reserved, except for
+the rights expressly granted below.
+
+2. Grant
+
+You may read, copy, modify and run this software for development and
+testing. Any use in production requires a valid, signed ACKstorm Enterprise
+licence agreement that covers the number of users and deployments you run.
+
+3. Modifications
+
+With a valid agreement you may also run the Software and your modifications
+in production, and keep and use your modifications for your own
+organisation's internal purposes. ACKstorm keeps all rights in the original
+Software.
+
+4. Restrictions
+
+You may not:
+  - offer the software, or a modified version of it, to third parties as a
+    hosted or managed service;
+  - sell, sublicense or redistribute it outside your organisation;
+  - remove or alter any licence or copyright notice;
+  - circumvent or work around the terms of this licence.
+
+As an exception to the redistribution restriction, you may copy and
+redistribute the Software unmodified as part of the official ach binaries
+and container images published by ACKstorm, including mirrors of those
+images and products that ship them, provided this licence accompanies them.
+This exception grants no right to enable or run the Software in production
+without the agreement described in §2.
+
+5. Third-party components
+
+Third-party components are governed by their own licences. The rest of this
+repository, outside ee/, ui/src/ee/ and cmd/ach/ee.go, is licensed under Apache-2.0.
+
+The Software is included in the ach binary and container image published by
+ACKstorm. It runs only when the operator of a deployment enables it
+(Helm value enterprise.enabled, environment ACH_ENTERPRISE); enabling it in
+production requires the agreement described in §2.
+
+6. No warranty, limitation of liability
+
+The software is provided "as is", without warranty of any kind. To the
+extent the law allows, ACKstorm is not liable for any damages arising from
+its use.
+
+7. Termination
+
+Your rights under this licence end automatically if you breach any of its
+terms.

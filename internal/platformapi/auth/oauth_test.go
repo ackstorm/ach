@@ -1,0 +1,948 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package auth
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
+	"golang.org/x/oauth2"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/litellm"
+)
+
+func newOAuthStore(t *testing.T) *OAuthStore {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	return &OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
+}
+
+type sample struct{ Sub string }
+
+func TestOAuthStore_PutGetTakeAndKinds(t *testing.T) {
+	s := newOAuthStore(t)
+	ctx := context.Background()
+	if err := s.Put(ctx, "code", "abc", sample{"u@x"}, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	var got sample
+	ok, err := s.Get(ctx, "code", "abc", &got)
+	if err != nil || !ok || got.Sub != "u@x" {
+		t.Fatalf("get: ok=%v err=%v got=%+v", ok, err, got)
+	}
+	if ok, _ := s.Get(ctx, "client", "abc", &got); ok {
+		t.Fatal("kinds must not share a namespace")
+	}
+	if ok, _ = s.Take(ctx, "code", "abc", &got); !ok {
+		t.Fatal("take: expected hit")
+	}
+	if ok, _ = s.Get(ctx, "code", "abc", &got); ok {
+		t.Fatal("take must be single-use")
+	}
+}
+
+// asFixture is a bare chi router with only the AS mounted.
+type asFixture struct {
+	r     chi.Router
+	deps  OAuthDeps
+	store *OAuthStore
+	// dexRefresh plays Dex's refresh: rotates by default; tests swap it to
+	// refuse (the IdP disabled the user) or to be unreachable.
+	dexRefresh func(rt string) (string, error)
+	dexSeen    []string
+	// now is the fixture clock once mountConsole pinned deps.Now.
+	now time.Time
+}
+
+func newAS(t *testing.T) *asFixture {
+	t.Helper()
+	store := newOAuthStore(t)
+	signer := jwt.NewEd25519Signer()
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+	if err := jwt.LoadSeed(signer, "k1", seed); err != nil {
+		t.Fatal(err)
+	}
+	f := &asFixture{store: store, deps: OAuthDeps{
+		Auth:  Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		Store: store, Signer: signer,
+		Issuer: "https://ach.test", Audience: "ach",
+		AccessTTL: time.Hour, RefreshTTL: 30 * 24 * time.Hour,
+		ConsentBIP: func(context.Context, string) (*db.BIPRow, error) { return nil, nil },
+	}}
+	f.dexRefresh = func(rt string) (string, error) { return rt + "+", nil }
+	f.deps.DexRefresh = func(_ context.Context, rt string) (string, error) {
+		f.dexSeen = append(f.dexSeen, rt)
+		return f.dexRefresh(rt)
+	}
+	f.mount()
+	return f
+}
+
+func (f *asFixture) mount() {
+	f.r = chi.NewRouter()
+	f.r.Route("/platform/oauth", MountOAuth(f.deps))
+}
+
+func (f *asFixture) do(t *testing.T, method, path string, body any, hdr map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var rd *bytes.Reader
+	switch b := body.(type) {
+	case nil:
+		rd = bytes.NewReader(nil)
+	case string:
+		rd = bytes.NewReader([]byte(b))
+	default:
+		j, _ := json.Marshal(b)
+		rd = bytes.NewReader(j)
+	}
+	req := httptest.NewRequest(method, path, rd)
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	w := httptest.NewRecorder()
+	f.r.ServeHTTP(w, req)
+	return w
+}
+
+func TestASMetadata_NamesEveryEndpointUnderTheIssuer(t *testing.T) {
+	m := jwt.ASMetadata("https://ach.test/")
+	want := map[string]string{
+		"issuer":                 "https://ach.test",
+		"authorization_endpoint": "https://ach.test/platform/oauth/authorize",
+		"token_endpoint":         "https://ach.test/platform/oauth/token",
+		"registration_endpoint":  "https://ach.test/platform/oauth/register",
+		"jwks_uri":               "https://ach.test/.well-known/jwks.json",
+
+		"device_authorization_endpoint": "https://ach.test/platform/oauth/device_authorization",
+	}
+	for k, v := range want {
+		if m[k] != v {
+			t.Errorf("%s = %v, want %s", k, m[k], v)
+		}
+	}
+	if cc, _ := m["code_challenge_methods_supported"].([]string); len(cc) != 1 || cc[0] != "S256" {
+		t.Errorf("S256 must be advertised: %v", m["code_challenge_methods_supported"])
+	}
+	if ss, _ := m["scopes_supported"].([]string); len(ss) != 1 || ss[0] != "offline_access" {
+		t.Errorf("only offline_access must be advertised: %v", m["scopes_supported"])
+	}
+	if gt, _ := m["grant_types_supported"].([]string); len(gt) != 3 || gt[2] != deviceGrantType {
+		t.Errorf("device grant must be advertised: %v", m["grant_types_supported"])
+	}
+}
+
+func TestRegister(t *testing.T) {
+	f := newAS(t)
+	w := f.do(t, "POST", "/platform/oauth/register", map[string]any{
+		"client_name":   "OpenCode",
+		"redirect_uris": []string{"http://127.0.0.1:19876/mcp/oauth/callback", "http://localhost:53421/callback"},
+	}, map[string]string{"Content-Type": "application/json"})
+	if w.Code != 201 {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["client_id"] == "" || body["token_endpoint_auth_method"] != "none" {
+		t.Fatalf("body: %v", body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"http://evil.example/cb"}}, nil); w.Code != 400 {
+		t.Fatalf("http off loopback: %d", w.Code)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"client_name": "x"}, nil); w.Code != 400 {
+		t.Fatalf("no redirects: %d", w.Code)
+	}
+	// https only for an allowlisted host (review #1): anonymous DCR + silent
+	// Dex login would otherwise hand a victim's code to any https site.
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"https://evil.example/cb"}}, nil); w.Code != 400 {
+		t.Fatalf("https host not allowlisted: %d", w.Code)
+	}
+	f.deps.RedirectHosts = []string{"claude.ai"}
+	f.mount()
+	if w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": []string{"https://Claude.ai/api/mcp/auth_callback"}}, nil); w.Code != 201 {
+		t.Fatalf("allowlisted host: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestAuthorize_RejectsStoredClientWithDisallowedHost(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	c := oauthClient{ClientID: "legacy", RedirectURIs: []string{"https://evil.example/cb"}}
+	if err := f.store.Put(context.Background(), "client", "legacy", c, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	w := f.do(t, "GET", authorizeURL("legacy", map[string]string{"redirect_uri": "https://evil.example/cb"}), nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("stored client with disallowed host: %d %s", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func registerClient(t *testing.T, f *asFixture, uris ...string) string {
+	t.Helper()
+	if len(uris) == 0 {
+		uris = []string{"http://127.0.0.1:5000/cb"}
+	}
+	w := f.do(t, "POST", "/platform/oauth/register", map[string]any{"redirect_uris": uris}, nil)
+	var body struct {
+		ClientID string `json:"client_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	return body.ClientID
+}
+
+const (
+	testChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" // S256 of testVerifier (RFC 7636 App. B)
+	testVerifier  = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+)
+
+func authorizeURL(clientID string, over map[string]string) string {
+	q := url.Values{
+		"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {"http://127.0.0.1:5000/cb"},
+		"state": {"xyz"}, "code_challenge": {testChallenge}, "code_challenge_method": {"S256"},
+		"resource": {"https://ach.test/mcp/whatever"}, // RFC 8707: Claude Code and Codex send it; must be tolerated
+	}
+	for k, v := range over {
+		if v == "" {
+			q.Del(k)
+		} else {
+			q.Set(k, v)
+		}
+	}
+	return "/platform/oauth/authorize?" + q.Encode()
+}
+
+func withFakeDex(f *asFixture, email string) *asFixture {
+	f.deps.DexLogin = func(state, _ string) string { return "http://dex.test/auth?state=" + state }
+	f.deps.DexExchange = func(_ context.Context, code, _ string) (string, string, []string, string, error) {
+		if code != "dexcode" {
+			return "", "", nil, "", errors.New("bad code")
+		}
+		return email, "Test User", nil, "dex-rt-0", nil
+	}
+	f.deps.Provision = func(_ context.Context, _ string, _ []string) (string, error) { return "litellm-user-1", nil }
+	f.mount()
+	return f
+}
+
+func mustQuery(t *testing.T, raw, key string) string {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Query().Get(key)
+}
+
+func TestAuthorize(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	cid := registerClient(t, f)
+
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	if w.Code != 302 || !strings.HasPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=") {
+		t.Fatalf("happy: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	w = f.do(t, "GET", authorizeURL(cid, map[string]string{"redirect_uri": "https://evil.example/cb"}), nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("unregistered uri: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	w = f.do(t, "GET", authorizeURL(cid, map[string]string{"code_challenge": ""}), nil, nil)
+	loc := w.Header().Get("Location")
+	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "error=invalid_request") || !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("no pkce: %d %s", w.Code, loc)
+	}
+
+	cid2 := registerClient(t, f, "http://localhost:1/callback")
+	w = f.do(t, "GET", authorizeURL(cid2, map[string]string{"redirect_uri": "http://localhost:53421/callback"}), nil, nil)
+	if w.Code != 302 {
+		t.Fatalf("RFC 8252 §7.3 port change refused: %d %s", w.Code, w.Body)
+	}
+}
+
+// startAuthorize runs /authorize and returns Dex's state (= the pending id)
+// plus the Cookie header a real browser would send back on /as-callback.
+func startAuthorize(t *testing.T, f *asFixture, cid string) (state string, cookie map[string]string) {
+	t.Helper()
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	if w.Code != 302 {
+		t.Fatalf("authorize: %d %s", w.Code, w.Body)
+	}
+	state = strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	cs := w.Result().Cookies()
+	if len(cs) != 1 || cs[0].Name != "__Host-ach_oauth_"+state || !cs[0].Secure || !cs[0].HttpOnly || cs[0].SameSite != http.SameSiteLaxMode {
+		t.Fatalf("binding cookie: %+v", cs)
+	}
+	return state, map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value}
+}
+
+func TestASCallback(t *testing.T) {
+	f := withFakeDex(newAS(t), "U@X.com")
+	cid := registerClient(t, f)
+	state, cookie := startAuthorize(t, f, cid)
+	w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+	loc := w.Header().Get("Location")
+	if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || !strings.Contains(loc, "code=") || !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("%d %s", w.Code, loc)
+	}
+	if cs := w.Result().Cookies(); len(cs) != 1 || cs[0].Name != "__Host-ach_oauth_"+state || cs[0].MaxAge >= 0 {
+		t.Fatalf("binding cookie not cleared: %+v", cs)
+	}
+	code := mustQuery(t, loc, "code")
+	var rec oauthCode
+	ok, _ := f.store.Get(context.Background(), "code", code, &rec)
+	if !ok || rec.Sub != "u@x.com" || rec.UserID != "litellm-user-1" || rec.ClientID != cid {
+		t.Fatalf("code record: ok=%v %+v", ok, rec)
+	}
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=x&state=nope", nil, nil); w.Code != 400 {
+		t.Fatalf("no pending: %d", w.Code)
+	}
+	// pending is single-use
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie); w.Code != 400 {
+		t.Fatalf("pending replay: %d", w.Code)
+	}
+}
+
+// TestASCallback_RequiresTheBrowserThatStartedIt is the login-CSRF /
+// code-injection regression: an attacker starts /authorize for THEIR
+// client and hands the Dex URL to a victim. The victim's browser reaches
+// /as-callback with the attacker's `state` but without the binding cookie
+// (or with a stale one from its own flow) — no code may be minted, and the
+// pending must be burned so the link cannot be retried.
+func TestASCallback_RequiresTheBrowserThatStartedIt(t *testing.T) {
+	f := withFakeDex(newAS(t), "victim@x.com")
+	cid := registerClient(t, f)
+
+	// No cookie at all.
+	state, _ := startAuthorize(t, f, cid)
+	w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil)
+	if w.Code != 400 || w.Header().Get("Location") != "" {
+		t.Fatalf("no cookie: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if n := f.store.RDB.Keys(context.Background(), "ach:oauth:code:*").Val(); len(n) != 0 {
+		t.Fatalf("code minted without binding: %v", n)
+	}
+	// Burned: the same link cannot be replayed even with the right cookie now.
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, nil); w.Code != 400 {
+		t.Fatalf("pending survived a binding failure: %d", w.Code)
+	}
+
+	// A cookie from a DIFFERENT pending (the victim's own concurrent flow)
+	// does not satisfy the attacker's pending.
+	attackerState, _ := startAuthorize(t, f, cid)
+	_, victimCookie := startAuthorize(t, f, cid)
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+attackerState, nil, victimCookie)
+	if w.Code != 400 {
+		t.Fatalf("foreign cookie: %d %s", w.Code, w.Header().Get("Location"))
+	}
+
+	// Wrong value under the right name.
+	state, _ = startAuthorize(t, f, cid)
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil,
+		map[string]string{"Cookie": "__Host-ach_oauth_" + state + "=not-the-secret"})
+	if w.Code != 400 {
+		t.Fatalf("wrong cookie value: %d", w.Code)
+	}
+}
+
+func TestAuthorize_InsecureBaseUsesPlainCookieName(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	f.deps.Auth.InsecureCookie = true
+	f.mount()
+	cid := registerClient(t, f)
+	w := f.do(t, "GET", authorizeURL(cid, nil), nil, nil)
+	state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+	cs := w.Result().Cookies()
+	if len(cs) != 1 || cs[0].Name != "ach_oauth_"+state || cs[0].Secure {
+		t.Fatalf("insecure cookie: %+v", cs)
+	}
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil,
+		map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value})
+	if w.Code != 302 {
+		t.Fatalf("insecure happy path: %d %s", w.Code, w.Body)
+	}
+}
+
+// fakeOAuthPKs is the DB seam: the active oauth row per email + a revoke log.
+type fakeOAuthPKs struct {
+	rows    map[string]*db.PkKeyInfo
+	revoked []string
+	minted  int
+	// litellmLost: tokens LiteLLM no longer lists (deleted out-of-band).
+	litellmLost map[string]bool
+	litellmErr  error
+	mintErr     error
+}
+
+// installFakePKs wires the pk_ seams and a LiteLLM whose key list mirrors
+// the rows (minus litellmLost).
+func installFakePKs(f *asFixture) *fakeOAuthPKs {
+	p := &fakeOAuthPKs{rows: map[string]*db.PkKeyInfo{}, litellmLost: map[string]bool{}}
+	f.deps.Auth.LiteLLM = &fakeLiteLLM{listUserKeys: func(userID string) ([]litellm.UserKeyInfo, error) {
+		if p.litellmErr != nil {
+			return nil, p.litellmErr
+		}
+		var out []litellm.UserKeyInfo
+		for _, r := range p.rows {
+			if r.LiteLLMToken != nil && !p.litellmLost[*r.LiteLLMToken] {
+				out = append(out, litellm.UserKeyInfo{Token: *r.LiteLLMToken, UserID: userID})
+			}
+		}
+		return out, nil
+	}}
+	f.deps.OAuthPKLookup = func(_ context.Context, email string) (*db.PkKeyInfo, error) { return p.rows[email], nil }
+	f.deps.OAuthPKRevoke = func(_ context.Context, id string) error {
+		p.revoked = append(p.revoked, id)
+		for e, r := range p.rows {
+			if r.KeyID == id {
+				delete(p.rows, e)
+			}
+		}
+		return nil
+	}
+	f.deps.Mint = func(_ context.Context, email, userID, purpose string) (string, db.PkInsertRow, error) {
+		if p.mintErr != nil {
+			return "", db.PkInsertRow{}, p.mintErr
+		}
+		if p.rows[email] != nil {
+			return "", db.PkInsertRow{}, errors.New("unique index: one active oauth row per owner")
+		}
+		p.minted++
+		tok, mat := "lt-"+email, "sealed"
+		row := db.PkInsertRow{KeyID: fmt.Sprintf("pkid_%d", p.minted), OwnerEmail: email, ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+			LiteLLMUserID: &userID, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Purpose: purpose}
+		p.rows[email] = &db.PkKeyInfo{KeyID: row.KeyID, OwnerEmail: email, ExpiresAt: row.ExpiresAt, LiteLLMUserID: &userID, LiteLLMToken: &tok, LiteLLMKeyMaterial: &mat, Status: "active"}
+		return "pk-discarded", row, nil
+	}
+	f.mount()
+	return p
+}
+
+func seedCode(t *testing.T, f *asFixture, cid string) {
+	t.Helper()
+	err := f.store.Put(context.Background(), "code", "thecode", oauthCode{
+		oauthPending: oauthPending{ClientID: cid, RedirectURI: "http://127.0.0.1:5000/cb", State: "s", CodeChallenge: testChallenge},
+		oauthUser:    oauthUser{Sub: "u@x.com", UserID: "litellm-user-1"},
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Put(context.Background(), dexRefreshKind, "u@x.com", "dex-rt-0", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func tokenForm(cid string, over map[string]string) string {
+	v := url.Values{"grant_type": {"authorization_code"}, "code": {"thecode"}, "client_id": {cid},
+		"redirect_uri": {"http://127.0.0.1:5000/cb"}, "code_verifier": {testVerifier},
+		"resource": {"https://ach.test"}} // RFC 8707 on /token too — tolerated
+	for k, val := range over {
+		v.Set(k, val)
+	}
+	return v.Encode()
+}
+
+var formHdr = map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+
+type tokenBody struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+func TestToken_CodeExchangeMintsTheOAuthPKAndAJWT(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+
+	w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var body tokenBody
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body.TokenType != "Bearer" || body.ExpiresIn != 3600 || body.RefreshToken == "" {
+		t.Fatalf("body: %+v", body) // token_type + expires_in are hard client requirements
+	}
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("token responses must be no-store")
+	}
+	v, err := f.deps.Signer.Verify(body.AccessToken, "https://ach.test", "ach")
+	if err != nil || v != "u@x.com" {
+		t.Fatalf("sub=%+v err=%v", v, err)
+	}
+	if pks.minted != 1 || pks.rows["u@x.com"] == nil {
+		t.Fatalf("oauth pk_ not minted: %+v", pks)
+	}
+
+	// second login reuses the row
+	seedCode(t, f, cid)
+	f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr)
+	if pks.minted != 1 || len(pks.revoked) != 0 {
+		t.Fatalf("second login must reuse the row: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+// A row LiteLLM no longer knows (key deleted in its UI, another release on
+// a different LiteLLM sharing the DB) is replaced, not replayed.
+func TestToken_RemintsWhenLiteLLMLostTheKey(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	pks.litellmLost["lt-u@x.com"] = true
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 2 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_1" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+	// LiteLLM down at the check: 503, nothing revoked.
+	pks.litellmErr = errors.New("dial tcp: refused")
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("litellm down: %d %s", w.Code, w.Body)
+	}
+	if pks.minted != 2 || len(pks.revoked) != 1 {
+		t.Fatalf("no churn while LiteLLM is down: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+func TestToken_RotatesAnOAuthPKThatIsAboutToExpire(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	tok, uid := "lt-old", "u@x.com"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(30 * time.Minute), LiteLLMUserID: &uid, LiteLLMToken: &tok, Status: "active"}
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 1 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_old" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+// An active oauth row that already expired (the user idled through the
+// rotation window) is still the row the unique index counts: it is revoked
+// and replaced, never collided with. The fake lookup returns rows whatever
+// their expiry, like db.ActiveOAuthPKAnyExpiry.
+func TestToken_ReplacesAnOAuthPKThatAlreadyExpired(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	tok, uid := "lt-old", "u@x.com"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(-time.Minute), LiteLLMUserID: &uid, LiteLLMToken: &tok, Status: "active"}
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 1 || len(pks.revoked) != 1 || pks.revoked[0] != "pkid_old" {
+		t.Fatalf("expected revoke then mint: minted=%d revoked=%v", pks.minted, pks.revoked)
+	}
+}
+
+// A refresh whose new pair cannot be issued (LiteLLM down, the pk_ mint
+// failing) answers 5xx and leaves the presented refresh token valid: the
+// client retries instead of being sent back to login.
+func TestToken_RefreshKeepsThePresentedTokenWhenIssueFails(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	pks.litellmErr = errors.New("dial tcp: refused")
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 {
+		t.Fatalf("litellm down: %d %s", w.Code, w.Body)
+	}
+	pks.litellmErr = nil
+	pks.litellmLost["lt-u@x.com"] = true // forces revoke + mint
+	pks.mintErr = errors.New("insert: boom")
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 500 {
+		t.Fatalf("mint failing: %d %s", w.Code, w.Body)
+	}
+	pks.mintErr = nil
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 200 {
+		t.Fatalf("retry with the same refresh token: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("a successful refresh still consumes the token: %d", w.Code)
+	}
+}
+
+// Two refreshes racing on one token: exactly one gets a pair, the other
+// invalid_grant — without replaying the user's Dex token. The second request
+// is fired from inside the first's IdP check, after the first took the token.
+// Both reaching Dex is what turns a race into "claimed twice" and ends every
+// session of the user.
+func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	var inner *httptest.ResponseRecorder
+	fired := false
+	f.dexRefresh = func(rt string) (string, error) {
+		if !fired {
+			fired = true
+			inner = f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+		}
+		return rt + "+", nil
+	}
+	outer := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if outer.Code != 200 || inner.Code != 400 || !strings.Contains(inner.Body.String(), "invalid_grant") {
+		t.Fatalf("want the first 200 and the racer invalid_grant: outer=%d inner=%d %s", outer.Code, inner.Code, inner.Body)
+	}
+	if !strings.Contains(inner.Body.String(), errRotating) {
+		t.Fatalf("the racer must be told a rotation is in progress (its client waits for the winner): %s", inner.Body)
+	}
+	if len(f.dexSeen) != 1 {
+		t.Fatalf("the losing racer must not reach Dex: %v", f.dexSeen)
+	}
+	// A late racer, after the winner answered, still learns the token rotated.
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("late racer: %d %s", w.Code, w.Body)
+	}
+}
+
+// A token nobody holds is dead: a bare invalid_grant, so the client fails
+// at once instead of waiting for a winner that does not exist. Racers of a
+// grant the IdP refused are told the same: the session is over.
+func TestToken_RefreshDeadTokenIsNotARotation(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(rt string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form("never-issued"), formHdr); w.Code != 400 || strings.Contains(w.Body.String(), errRotating) {
+		t.Fatalf("unknown token: %d %s", w.Code, w.Body)
+	}
+
+	f.dexRefresh = func(string) (string, error) {
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr); w.Code != 400 {
+		t.Fatalf("IdP refusal: %d %s", w.Code, w.Body)
+	}
+	racer := f.do(t, "POST", "/platform/oauth/token", form(first.RefreshToken), formHdr)
+	if racer.Code != 400 || strings.Contains(racer.Body.String(), errRotating) {
+		t.Fatalf("after an IdP refusal the racer must fail at once: %d %s", racer.Code, racer.Body)
+	}
+}
+
+// A refresh token presented by another client is refused without being
+// spent: its own client still refreshes with it.
+func TestToken_RefreshOfAnotherClientKeepsTheToken(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid, other := registerClient(t, f), registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	form := func(c string) string {
+		return url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {c}}.Encode()
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(other), formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("other client: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", form(cid), formHdr); w.Code != 200 {
+		t.Fatalf("own client after the refusal: %d %s", w.Code, w.Body)
+	}
+}
+
+// The client hangs up while Dex is answering (incident 2026-10-08: Dex
+// took 15 s). Dex rotated anyway, so the rotated token must be stored;
+// otherwise the next refresh replays a consumed token, Dex says "claimed
+// twice", and every session of the user ends.
+func TestToken_RefreshStoresTheRotatedDexTokenWhenTheClientHangsUp(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	ctx, hangUp := context.WithCancel(context.Background())
+	f.dexRefresh = func(rt string) (string, error) {
+		if rt == "dex-rt-0" {
+			hangUp() // the client is gone; Dex has rotated regardless
+			return rt + "+", nil
+		}
+		if rt == "dex-rt-0+" {
+			return rt + "+", nil
+		}
+		// replaying a consumed token: Dex's "claimed twice"
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_request"}
+	}
+	req := httptest.NewRequest("POST", "/platform/oauth/token", strings.NewReader(refresh)).WithContext(ctx)
+	req.Header.Set("Content-Type", formHdr["Content-Type"])
+	f.r.ServeHTTP(httptest.NewRecorder(), req)
+
+	var stored string
+	if ok, err := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &stored); err != nil || !ok || stored != "dex-rt-0+" {
+		t.Fatalf("rotated Dex token must be stored: %q ok=%v err=%v", stored, ok, err)
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 200 {
+		t.Fatalf("next refresh after the hang-up: %d %s (dex saw %v)", w.Code, w.Body, f.dexSeen)
+	}
+}
+
+func TestToken_Rejects(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	a, b := registerClient(t, f), registerClient(t, f)
+
+	seedCode(t, f, a)
+	w := f.do(t, "POST", "/platform/oauth/token", tokenForm(a, map[string]string{"code_verifier": "wrong-wrong-wrong-wrong-wrong-wrong-wrong-wrong"}), formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("wrong verifier: %d %s", w.Code, w.Body)
+	}
+	if w = f.do(t, "POST", "/platform/oauth/token", tokenForm(a, nil), formHdr); w.Code != 400 {
+		t.Fatalf("code must be single-use: %d", w.Code)
+	}
+
+	seedCode(t, f, a)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(b, nil), formHdr); w.Code != 400 {
+		t.Fatalf("other client: %d", w.Code)
+	}
+
+	w = f.do(t, "POST", "/platform/oauth/token", "grant_type=password", formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "unsupported_grant_type") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestToken_RefreshRotatesAndTheOldOneDies(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var second tokenBody
+	_ = json.Unmarshal(w.Body.Bytes(), &second)
+	if second.RefreshToken == "" || second.RefreshToken == first.RefreshToken {
+		t.Fatal("refresh must rotate")
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("old refresh must be dead: %d", w.Code)
+	}
+	// Dex was asked with the token from login, and its rotated token is
+	// what the next refresh hands back.
+	third := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {second.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", third, formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if len(f.dexSeen) != 2 || f.dexSeen[0] != "dex-rt-0" || f.dexSeen[1] != "dex-rt-0+" {
+		t.Fatalf("dex refresh chain: %v", f.dexSeen)
+	}
+}
+
+// EndSessions (a pk_ revoke) kills the shared Dex token: the next refresh is
+// invalid_grant and Dex is never asked.
+func TestEndSessions_RefreshDies(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+
+	if err := f.deps.EndSessions(context.Background(), "u@x.com"); err != nil {
+		t.Fatal(err)
+	}
+	seen := len(f.dexSeen)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("refresh after EndSessions: %d %s", w.Code, w.Body)
+	}
+	if len(f.dexSeen) != seen {
+		t.Fatalf("Dex must not be asked: %v", f.dexSeen)
+	}
+}
+
+// Two tools, one user: Dex keeps one refresh token per (user, client) and
+// replaces it on a new login, so ACH keeps one per user too — the second
+// login must not strand the first tool, and both rotate the same token.
+func TestToken_SecondLoginDoesNotStrandTheFirstTool(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	installFakePKs(f)
+	a, b := registerClient(t, f), registerClient(t, f)
+	login := func(cid string) tokenBody {
+		state, cookie := startAuthorize(t, f, cid)
+		w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+		code := mustQuery(t, w.Header().Get("Location"), "code")
+		var tb tokenBody
+		_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, map[string]string{"code": code}), formHdr).Body.Bytes(), &tb)
+		return tb
+	}
+	first := login(a)
+	second := login(b)
+	refresh := func(cid, rt string) int {
+		return f.do(t, "POST", "/platform/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}.Encode(), formHdr).Code
+	}
+	if c := refresh(a, first.RefreshToken); c != 200 {
+		t.Fatalf("first tool after the second login: %d", c)
+	}
+	if c := refresh(b, second.RefreshToken); c != 200 {
+		t.Fatalf("second tool: %d", c)
+	}
+	if len(f.dexSeen) != 2 || f.dexSeen[0] != "dex-rt-0" || f.dexSeen[1] != "dex-rt-0+" {
+		t.Fatalf("one shared Dex token, rotated in turn: %v", f.dexSeen)
+	}
+}
+
+// The IdP refuses (user disabled at Google, Dex session gone): the refresh
+// is invalid_grant, the oauth pk_ is revoked, and the presented token is
+// dead — the client has to log in again, where the IdP says no.
+func TestToken_RefreshEndsTheSessionWhenTheIdPRefuses(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+
+	// Dex down: 503, nothing revoked, the token still works afterwards.
+	f.dexRefresh = func(string) (string, error) { return "", errors.New("dial tcp: connection refused") }
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+		t.Fatalf("dex down: %d %s", w.Code, w.Body)
+	}
+	if len(pks.revoked) != 0 {
+		t.Fatalf("dex down must not revoke: %v", pks.revoked)
+	}
+
+	// Our fault, not the user's: a rotated Dex client secret (401), a WAF
+	// (403) — retryable 503, nothing revoked, the token still works.
+	for _, code := range []int{401, 403} {
+		f.dexRefresh = func(string) (string, error) {
+			return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: code}, ErrorCode: "invalid_client"}
+		}
+		if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 503 || !strings.Contains(w.Body.String(), "temporarily_unavailable") {
+			t.Fatalf("dex %d: %d %s", code, w.Code, w.Body)
+		}
+		if len(pks.revoked) != 0 {
+			t.Fatalf("dex %d must not revoke: %v", code, pks.revoked)
+		}
+	}
+
+	f.dexRefresh = func(string) (string, error) {
+		return "", &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, ErrorCode: "invalid_grant"}
+	}
+	w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("idp refusal: %d %s", w.Code, w.Body)
+	}
+	if len(pks.revoked) != 1 || pks.revoked[0] != "pkid_1" || pks.rows["u@x.com"] != nil {
+		t.Fatalf("oauth pk_ must be revoked: revoked=%v rows=%v", pks.revoked, pks.rows)
+	}
+	f.dexRefresh = func(rt string) (string, error) { return rt, nil }
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 {
+		t.Fatalf("the refused refresh token must be gone: %d %s", w.Code, w.Body)
+	}
+	// Another session of the same user: no Dex token left → out without
+	// asking Dex.
+	seedCode(t, f, cid)
+	_ = f.store.Del(context.Background(), dexRefreshKind, "u@x.com")
+	var other tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &other)
+	dexCalls := len(f.dexSeen)
+	otherRefresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {other.RefreshToken}, "client_id": {cid}}.Encode()
+	if w := f.do(t, "POST", "/platform/oauth/token", otherRefresh, formHdr); w.Code != 400 || len(f.dexSeen) != dexCalls {
+		t.Fatalf("sibling session: %d %s dex calls %d→%d", w.Code, w.Body, dexCalls, len(f.dexSeen))
+	}
+}
+
+// TestASCallback_KeepsTheDexTokenWhenProvisioningFails: Dex rotated the
+// user's refresh token at the code exchange, so the previous one is dead
+// even if LiteLLM provisioning then fails. The fresh token must be stored
+// regardless — otherwise every other tool of the user replays the dead
+// one at its next refresh and gets logged out.
+func TestASCallback_KeepsTheDexTokenWhenProvisioningFails(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	f.deps.Provision = func(context.Context, string, []string) (string, error) { return "", errors.New("litellm down") }
+	f.mount()
+	_ = f.store.Put(context.Background(), dexRefreshKind, "u@x.com", "dex-rt-dead", time.Minute)
+	cid := registerClient(t, f)
+	state, cookie := startAuthorize(t, f, cid)
+	if w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie); w.Code < 500 {
+		t.Fatalf("provisioning failure: %d %s", w.Code, w.Body)
+	}
+	var rt string
+	if ok, _ := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &rt); !ok || rt != "dex-rt-0" {
+		t.Fatalf("dex refresh token must be the fresh one: ok=%v %q", ok, rt)
+	}
+}
+
+// A pk_ revoke (EndSessions) landing while Dex answers a refresh must not be
+// undone by the refresh storing the rotated token: no key resurrected, no
+// fresh pk_ minted.
+func TestToken_RefreshCannotResurrectEndedSessions(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	var first tokenBody
+	_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &first)
+	refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {first.RefreshToken}, "client_id": {cid}}.Encode()
+	minted := pks.minted
+
+	f.dexRefresh = func(rt string) (string, error) {
+		if err := f.deps.EndSessions(context.Background(), "u@x.com"); err != nil {
+			t.Fatal(err)
+		}
+		return rt + "+", nil
+	}
+	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_grant") {
+		t.Fatalf("refresh racing a revoke: %d %s", w.Code, w.Body)
+	}
+	var stored string
+	if ok, _ := f.store.Get(context.Background(), dexRefreshKind, "u@x.com", &stored); ok {
+		t.Fatalf("Dex token resurrected: %q", stored)
+	}
+	if pks.minted != minted {
+		t.Fatalf("a new pk_ was minted after the revoke")
+	}
+}

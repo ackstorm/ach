@@ -1,0 +1,375 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package auth
+
+import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/jwt"
+)
+
+// oauthPKMinRemaining: an OAuth row this close to expiry is replaced at the
+// next grant, so a 1h access token never outlives the row behind it.
+const oauthPKMinRemaining = 2 * time.Hour
+
+type oauthRefresh struct {
+	oauthUser
+	ClientID string `json:"client_id"`
+}
+
+func pkceOK(challenge, verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	got := base64.RawURLEncoding.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(got), []byte(challenge)) == 1
+}
+
+func (d OAuthDeps) token(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		oauthError(w, 400, "invalid_request", "form body required")
+		return
+	}
+	clientID := r.PostForm.Get("client_id")
+	switch r.PostForm.Get("grant_type") {
+	case "authorization_code":
+		var c oauthCode
+		ok, err := d.Store.Take(r.Context(), "code", r.PostForm.Get("code"), &c) // burned whatever follows
+		if err != nil {
+			oauthError(w, 500, "server_error", "")
+			return
+		}
+		if !ok || c.ClientID != clientID || !redirectMatches(c.RedirectURI, r.PostForm.Get("redirect_uri")) ||
+			!pkceOK(c.CodeChallenge, r.PostForm.Get("code_verifier")) {
+			oauthError(w, 400, "invalid_grant", "")
+			return
+		}
+		d.issue(w, r, c.oauthUser, clientID)
+	case "refresh_token":
+		d.refreshToken(w, r, clientID)
+	case deviceGrantType:
+		d.deviceToken(w, r, clientID)
+	default:
+		oauthError(w, 400, "unsupported_grant_type", "")
+	}
+}
+
+// refreshToken is the refresh_token grant. The identity provider is asked
+// first: the user's Dex refresh token (one per user, shared by all their
+// sessions) is replayed at Dex, and only a user the IdP still honours gets
+// a new pair. A refusal ends every session of that user — the Dex token
+// and the oauth pk_ go, so each JWT dies at its own expiry and each other
+// session fails its next refresh without asking Dex — and the client is
+// told invalid_grant, which sends it back to login (where the IdP says
+// no). Dex unreachable is a 503 and the presented token stays valid; so
+// does any failure to issue the new pair (LiteLLM down, pk_ ensure, store).
+//
+// The token is taken BEFORE Dex is asked: racing refreshes of one token
+// (several opencode processes waking up together) must not each replay the
+// user's single Dex token — one landing outside Dex's reuse interval reads
+// as "claimed twice" and ends every session. Losers get invalid_grant
+// without reaching Dex; the taken token is put back on any outcome that
+// does not hand out a new pair.
+//
+// While a grant holds the token, a racer is told so (errRotating) instead
+// of a bare invalid_grant: its client waits for the winner's tokens (the
+// opencode plugin's rotation.json) as long as Dex may take, while a dead
+// token still fails at once.
+func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID string) {
+	presented := r.PostForm.Get("refresh_token")
+	var rf oauthRefresh
+	ok, err := d.Store.Take(r.Context(), "refresh", presented, &rf)
+	if err != nil {
+		oauthError(w, 500, "server_error", "")
+		return
+	}
+	if !ok {
+		if rotating, _ := d.Store.Get(r.Context(), rotatingKind, presented, new(bool)); rotating {
+			d.Auth.Logger.Info("oauth: refresh refused: a concurrent refresh is rotating the token", "client_id", clientID)
+			oauthError(w, 400, "invalid_grant", errRotating)
+			return
+		}
+		d.Auth.Logger.Info("oauth: refresh refused: unknown refresh token", "client_id", clientID)
+		oauthError(w, 400, "invalid_grant", "")
+		return
+	}
+	// restore hands the taken token back. Uncancelable: the client may have
+	// hung up during a slow Dex call, and its retry still needs the token.
+	restore := func() {
+		if err := d.Store.Put(context.WithoutCancel(r.Context()), "refresh", presented, rf, d.RefreshTTL); err != nil {
+			d.Auth.Logger.Error("oauth: restoring the refresh token after a failed grant failed", "err", err)
+		}
+	}
+	if rf.ClientID != clientID {
+		restore() // another client's token: refuse it without spending it
+		d.Auth.Logger.Info("oauth: refresh refused: token of another client", "client_id", clientID)
+		oauthError(w, 400, "invalid_grant", "")
+		return
+	}
+	if err := d.Store.Put(r.Context(), rotatingKind, presented, true, rotatingTTL); err != nil {
+		d.Auth.Logger.Warn("oauth: rotation marker not stored; a racer is told invalid_grant", "err", err)
+	}
+	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
+		if errors.Is(err, errIdPRefused) {
+			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
+			_ = d.Store.Del(context.WithoutCancel(r.Context()), rotatingKind, presented) // racers: the session is over, fail now
+			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
+			return
+		}
+		restore()
+		if errors.Is(err, ErrIdPUnreachable) {
+			oauthError(w, 503, "temporarily_unavailable", "identity provider unreachable")
+			return
+		}
+		oauthError(w, 500, "server_error", "")
+		return
+	}
+	if !d.issue(w, r, rf.oauthUser, clientID) {
+		// No new pair went out: the client's retry works instead of
+		// forcing a fresh login.
+		restore()
+	}
+}
+
+// errRotating is the invalid_grant error_description a racer gets while a
+// concurrent grant holds its refresh token. A contract with the client
+// (opencode-oidc-provider matches it verbatim): keep it byte-stable.
+const errRotating = "refresh token rotation in progress"
+
+// rotatingKind marks a refresh token a grant has taken. rotatingTTL
+// outlives the slowest grant: the Dex call (dexRefreshTimeout) plus issue.
+const (
+	rotatingKind = "rotating"
+	rotatingTTL  = 2 * dexRefreshTimeout
+)
+
+// errIdPRefused: the identity provider no longer honours the user — every
+// session of that user is over (the Dex token and the oauth pk_ are gone).
+var errIdPRefused = errors.New("oauth: identity provider refused the user")
+
+// dexRefreshTimeout bounds the detached Dex refresh in revalidateAtIdP.
+const dexRefreshTimeout = 30 * time.Second
+
+// ErrIdPUnreachable: Dex did not answer; the presented credential stays valid.
+var ErrIdPUnreachable = errors.New("identity provider unreachable")
+
+// revalidateAtIdP replays the user's shared Dex refresh token (D-22) — the
+// one check both the /token refresh grant and the console session run.
+// nil: the IdP still honours the user and the rotated token is stored.
+// errIdPRefused: sessions ended (Dex token deleted, oauth pk_ revoked).
+// ErrIdPUnreachable: Dex did not answer — nothing changed, retry later.
+//
+// It runs on a context the client cannot cancel: Dex rotates the token
+// even when our caller hangs up mid-call, and a rotated token we never
+// stored is "claimed twice" at the next replay — which ends every session
+// of the user (incident 2026-10-08: a 15 s Dex answer, client gone).
+func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dexRefreshTimeout)
+	defer cancel()
+	var dexRefresh string
+	if ok, err := d.Store.Get(ctx, dexRefreshKind, sub, &dexRefresh); err != nil {
+		return err
+	} else if !ok {
+		d.Auth.Logger.Info("oauth: no Dex refresh token stored for the user; sessions ended", "sub", sub)
+		return errIdPRefused
+	}
+	rotated, err := d.dexRefresh(ctx, dexRefresh)
+	if err != nil {
+		if !dexDenied(err) {
+			d.Auth.Logger.Warn("oauth: dex refresh unreachable", "err", err)
+			return fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
+		}
+		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", sub, "err", err)
+		_ = d.Store.Del(ctx, dexRefreshKind, sub)
+		if cur, lerr := d.lookupOAuthPK(ctx, sub); lerr == nil && cur != nil {
+			if rerr := d.revokeOAuthPK(ctx, cur.KeyID); rerr != nil {
+				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)
+			}
+		}
+		return errIdPRefused
+	}
+	// PutIfExists: an EndSessions (pk_ revoke) landing during the Dex call
+	// must stay ended, not be undone by this rotation.
+	stored, err := d.Store.PutIfExists(ctx, dexRefreshKind, sub, rotated, d.RefreshTTL)
+	if err != nil {
+		return err
+	}
+	if !stored {
+		d.Auth.Logger.Info("oauth: sessions ended during the Dex refresh; refusing", "sub", sub)
+		return errIdPRefused
+	}
+	return nil
+}
+
+// issue answers the grant with a new token pair; false when it answered
+// an error instead and no pair went out.
+func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) bool {
+	sub, userID := u.Sub, u.UserID
+	var err error
+	if err := d.ensureOAuthPK(r.Context(), sub, userID); err != nil {
+		if errors.Is(err, ErrMintLiteLLM) {
+			oauthError(w, 503, "temporarily_unavailable", "litellm unreachable")
+			return false
+		}
+		d.Auth.Logger.Error("oauth: ensure pk_ failed", "err", err)
+		oauthError(w, 500, "server_error", "")
+		return false
+	}
+	access, err := d.Signer.Sign(r.Context(), jwt.Claims{Iss: d.Issuer, Sub: sub, Aud: d.Audience, Email: sub, TTL: d.AccessTTL})
+	if err != nil {
+		oauthError(w, 500, "server_error", "signer not loaded")
+		return false
+	}
+	refresh, err := NewSessionID()
+	if err != nil {
+		oauthError(w, 500, "server_error", "")
+		return false
+	}
+	if err := d.Store.Put(r.Context(), "refresh", refresh, oauthRefresh{oauthUser: u, ClientID: clientID}, d.RefreshTTL); err != nil {
+		oauthError(w, 500, "server_error", "")
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"access_token":  access,
+		"token_type":    "Bearer",
+		"expires_in":    int(d.AccessTTL / time.Second),
+		"refresh_token": refresh,
+	})
+	return true
+}
+
+// ensureOAuthPK guarantees one live purpose='oauth' row for sub: reuse it
+// when LiteLLM still has its key, or revoke the old and mint a fresh one —
+// in THAT order, because the partial unique index (migration 000020)
+// allows one active oauth row per owner. If the mint then fails the user
+// has no row until the next grant, which is the same state as a first
+// login. The pk_ plaintext is discarded — the forwarder resolves the row by
+// owner_email, never by presenting it.
+//
+// The LiteLLM check is one GET /key/list per token issue (login and each
+// refresh): a row whose key vanished from LiteLLM (deleted in its UI, a
+// second release on another LiteLLM sharing this DB, a reset) would
+// otherwise be replayed forever as "Invalid proxy server token".
+func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error {
+	d.seedUserBudgetTag(ctx, sub)
+	cur, err := d.lookupOAuthPK(ctx, sub)
+	if err != nil {
+		return err
+	}
+	if cur != nil && cur.ExpiresAt.After(d.now().Add(oauthPKMinRemaining)) {
+		live, err := d.liteLLMHasKey(ctx, cur)
+		if err != nil {
+			return err
+		}
+		if live {
+			return nil
+		}
+		d.Auth.Logger.Warn("oauth: litellm no longer has the oauth pk_ key; re-minting", "key_id", cur.KeyID)
+	}
+	if cur != nil {
+		if err := d.revokeOAuthPK(ctx, cur.KeyID); err != nil {
+			return err
+		}
+	}
+	_, _, err = d.mint(ctx, sub, userID, "oauth")
+	return err
+}
+
+// seedUserBudgetTag applies the chart-configured default spend ceiling to
+// the caller's user:<email> tag if that tag carries no budget yet.
+//
+// WHY it lives here and not only in the SSO callback: provisionUser seeds
+// at the Dex code exchange, which a user reaches once and then not again
+// for as long as their refresh token keeps rotating. Anyone who first
+// logged in before this feature shipped — or before the chart set a
+// default — would never be seeded at all, and would run with no ceiling
+// indefinitely. ensureOAuthPK is the single funnel every grant crosses:
+// login, /token refresh, the device grant, and console revalidation.
+//
+// Best-effort ON PURPOSE, unlike the callback's fail-loud seeding. This
+// path carries token refresh, so failing the request on a LiteLLM blip
+// would sign out every active user at once. What is missing on failure is
+// a ceiling, not a credential: the grant is still sound, and the next
+// refresh retries within the access-token lifetime. The no-clobber guard
+// (an existing budget is never overwritten) lives inside
+// upsertUserBudgetTag, so an admin-set ceiling is safe here too.
+func (d OAuthDeps) seedUserBudgetTag(ctx context.Context, email string) {
+	if err := upsertUserBudgetTag(ctx, d.Auth, email); err != nil {
+		d.Auth.Logger.Warn("oauth: user budget tag not seeded", "err", err)
+	}
+}
+
+// liteLLMHasKey reports whether LiteLLM still lists the row's key under
+// its user. A LiteLLM failure is ErrMintLiteLLM: the grant answers 503
+// like a failed mint.
+func (d OAuthDeps) liteLLMHasKey(ctx context.Context, row *db.PkKeyInfo) (bool, error) {
+	if row.LiteLLMUserID == nil || row.LiteLLMToken == nil {
+		return false, nil
+	}
+	keys, err := d.Auth.LiteLLM.ListUserKeys(ctx, *row.LiteLLMUserID)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrMintLiteLLM, err)
+	}
+	for _, k := range keys {
+		if k.Token == *row.LiteLLMToken {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// lookupOAuthPK returns the active oauth row whatever its expiry — the row
+// the unique index counts — so an expired one is revoked, not collided with.
+func (d OAuthDeps) lookupOAuthPK(ctx context.Context, email string) (*db.PkKeyInfo, error) {
+	if d.OAuthPKLookup != nil {
+		return d.OAuthPKLookup(ctx, email)
+	}
+	return db.ActiveOAuthPKAnyExpiry(ctx, d.Auth.Pool, email)
+}
+
+func (d OAuthDeps) revokeOAuthPK(ctx context.Context, keyID string) error {
+	if d.OAuthPKRevoke != nil {
+		return d.OAuthPKRevoke(ctx, keyID)
+	}
+	info, err := db.RevokePersonalKey(ctx, d.Auth.Pool, keyID)
+	if err != nil || info == nil || info.LiteLLMToken == nil {
+		return err
+	}
+	if err := d.Auth.LiteLLM.RevokeKey(ctx, *info.LiteLLMToken); err != nil {
+		// The row is revoked (fail-closed for ACH); the LiteLLM key lingers
+		// until its own expiry. Log, don't block the grant.
+		d.Auth.Logger.Warn("oauth: litellm revoke of the previous oauth pk_ failed", "key_id", keyID, "err", err)
+	}
+	return nil
+}
+
+func (d OAuthDeps) mint(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error) {
+	if d.Mint != nil {
+		return d.Mint(ctx, email, userID, purpose)
+	}
+	return d.Auth.MintPK(ctx, email, userID, purpose)
+}
+
+// EndSessions ends every OAuth session of the user: their shared Dex
+// refresh token goes, so each refresh and console revalidation fails
+// ("no Dex refresh token stored") and each access JWT dies with its
+// revoked pk_ row. A pk_ revoke calls it — without it the next refresh
+// re-minted the revoked credential. A refresh in flight cannot undo it: the
+// rotated Dex token is stored only while the key still exists
+// (OAuthStore.PutIfExists). Logging in again works.
+func (d OAuthDeps) EndSessions(ctx context.Context, email string) error {
+	return d.Store.Del(ctx, dexRefreshKind, email)
+}

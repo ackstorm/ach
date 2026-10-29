@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package platformapi
+
+import (
+	"context"
+	"errors"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+
+	"github.com/ackstorm/ach/internal/db"
+)
+
+// envkeysDBAdapter wires the internal/db package helpers behind the
+// envkeys.dbOps structural interface. The interface is unexported on
+// the envkeys package side but structural — Go's assignability lets
+// this concrete type satisfy it without an explicit declaration.
+type envkeysDBAdapter struct {
+	pool *pgxpool.Pool
+}
+
+func newEnvkeysDB(pool *pgxpool.Pool) *envkeysDBAdapter {
+	return &envkeysDBAdapter{pool: pool}
+}
+
+func (a *envkeysDBAdapter) InsertEnvironmentKey(ctx context.Context, row db.EkInsertRow) error {
+	return db.InsertEnvironmentKey(ctx, a.pool, row)
+}
+
+func (a *envkeysDBAdapter) GetEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.GetEnvironmentKey(ctx, a.pool, keyID)
+}
+
+func (a *envkeysDBAdapter) RevokeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.RevokeEnvironmentKey(ctx, a.pool, keyID)
+}
+
+func (a *envkeysDBAdapter) SuspendEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.SuspendEnvironmentKey(ctx, a.pool, keyID)
+}
+
+func (a *envkeysDBAdapter) ResumeEnvironmentKey(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+	return db.ResumeEnvironmentKey(ctx, a.pool, keyID)
+}
+
+func (a *envkeysDBAdapter) ListKeys(
+	ctx context.Context, f db.KeyListFilter, limit int, cursor string,
+) ([]db.KeyListItem, string, error) {
+	return db.ListKeys(ctx, a.pool, f, limit, cursor)
+}
+
+func (a *envkeysDBAdapter) RevokePersonalKeyByOwner(
+	ctx context.Context, keyID, owner string,
+) (*string, error) {
+	return db.RevokePersonalKeyByOwner(ctx, a.pool, keyID, owner)
+}
+
+func (a *envkeysDBAdapter) UserKeyAllowance(ctx context.Context, email string, defaultMax int) (int, int, error) {
+	return db.UserKeyAllowance(ctx, a.pool, email, defaultMax)
+}
+
+// redisDelAdapter wraps *redis.Client.Del to satisfy the envkeys.redisOps
+// interface (`Del(ctx, key) error`). The wrapper translates the
+// IntCmd's .Err() into a plain error for the handler's best-effort
+// invalidation path.
+type redisDelAdapter struct {
+	client *redis.Client
+}
+
+func newRedisDelAdapter(c *redis.Client) *redisDelAdapter {
+	return &redisDelAdapter{client: c}
+}
+
+func (a *redisDelAdapter) Del(ctx context.Context, key string) error {
+	if a.client == nil {
+		return errors.New("redisDelAdapter: nil client")
+	}
+	return a.client.Del(ctx, key).Err()
+}

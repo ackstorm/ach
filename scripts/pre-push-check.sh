@@ -1,0 +1,479 @@
+#!/usr/bin/env bash
+# Pre-push validation for public-repo publication.
+# Run from anywhere inside the repo. Exits 0 if safe to push.
+#
+# Hard checks (failure blocks push):
+#   1. gitleaks    (only commits being pushed; full history on first push)
+#   2. large tracked files (>2MB)
+#   3. sensitive file patterns (.env, *.pem, *.key, kubeconfig, ...)
+#   4. LICENSE + README presence
+#   5. origin remote matches expected
+#  12. go mod tidy   (go.mod / go.sum drift blocks push)
+#  13. license-header SPDX gate (every in-scope *.go starts with SPDX line)
+#  14. golangci-lint full sweep (full lint runs here; no pre-commit stage)
+#  15. make test-unit (pure-logic regression — ~5-10s warm)
+#  16. helm chart mirror drift (crd-sources/ — helm-sync-check)
+#  17. make test-ui (console tsc + vitest; skipped when ui/ is unchanged vs origin/main)
+#  18. make qa-edition (only cmd/ach links ee/: no other core package imports it, ach-cli links none; core UI imports ui/src/ee only via @ee)
+#
+# Fast lane: when origin/main..HEAD touches no Go-toolchain input (*.go,
+# go.mod/go.sum, api/, config/crd/, crd-sources/, Makefile, .golangci*,
+# Dockerfile.devtools, hack/), gates 12/14/16 are skipped and 15 runs only the
+# packages owning a changed file (an embedded page.html still gets its
+# package's tests). PREPUSH_FULL=1 forces every gate (release-cut sets it).
+# A push that only deletes remote branches exits 0 before any gate.
+#
+# Soft checks (warnings only):
+#   6. internal hostnames / private IPv4 in tracked files
+#   7. ackstorm.com emails outside LICENSE/NOTICE/AUTHORS
+#   8. .gitignore sanity (.env, .claude)
+#   9. commit author audit (informational)
+#  10. TODO/DO-NOT-COMMIT markers
+#  11. uncommitted working-tree changes (informational)
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "not inside a git repo" >&2; exit 1;
+}
+cd "$REPO_ROOT"
+
+# Git runs the hook as `pre-push <remote> <url>` and writes one
+# "<local ref> <local sha> <remote ref> <remote sha>" line per ref on stdin;
+# a deletion has an all-zero local sha. Nothing is published by a deletion.
+if [[ $# -ge 2 ]]; then
+  PUSH_LINES=$(cat)
+  if [[ -n $PUSH_LINES ]] && ! grep -qvE '^[^ ]+ 0+ ' <<<"$PUSH_LINES"; then
+    echo "pre-push: branch deletion only — no gates to run."
+    exit 0
+  fi
+fi
+
+# PUSH_HEAD is what's actually being pushed. Captured before any directory
+# switch below so it names the real commit regardless of which branch ends
+# up checked out in SCAN_ROOT.
+PUSH_HEAD="$(git rev-parse HEAD)"
+
+# SCAN_ROOT is the directory the dockerized gitleaks scan mounts. In a linked
+# worktree, REPO_ROOT/.git is a gitlink FILE
+# pointing at <primary>/.git/worktrees/<name>, which itself points back at
+# <primary>/.git via a "commondir" file — objects live there, not under
+# REPO_ROOT. Gitleaks' internal `git clone file:///...` cannot dereference
+# that chain from inside the container (the reference is an absolute host
+# path outside the single REPO_ROOT mount), so both silently or loudly
+# misbehave: gitleaks logs "fatal: not a git repository" then reports a
+# vacuous "no leaks found". Mounting the primary checkout's root instead —
+# which owns a real .git directory containing the full object database,
+# shared with every linked worktree — fixes it. Outside a
+# worktree, git-common-dir's parent IS REPO_ROOT, so this is a no-op.
+GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+case "$GIT_COMMON_DIR" in
+  /*) : ;;
+  *) GIT_COMMON_DIR="$REPO_ROOT/$GIT_COMMON_DIR" ;;
+esac
+SCAN_ROOT="$(cd "$(dirname "$GIT_COMMON_DIR")" && pwd)"
+
+EXPECTED_REMOTE="git@github.com:ackstorm/ach.git"
+
+if [[ -t 1 ]]; then
+  RED=$'\033[31m'; YEL=$'\033[33m'; GRN=$'\033[32m'; BLU=$'\033[34m'; RST=$'\033[0m'
+else
+  RED=""; YEL=""; GRN=""; BLU=""; RST=""
+fi
+
+FAIL=0
+WARN=0
+
+hdr()  { printf '\n%s== %s ==%s\n' "$BLU" "$*" "$RST"; }
+ok()   { printf '%sOK%s   %s\n' "$GRN" "$RST" "$*"; }
+warn() { printf '%sWARN%s %s\n' "$YEL" "$RST" "$*"; WARN=$((WARN+1)); }
+fail() { printf '%sFAIL%s %s\n' "$RED" "$RST" "$*"; FAIL=$((FAIL+1)); }
+
+# --- preflight: docker available ---
+if ! command -v docker >/dev/null 2>&1; then
+  echo "${RED}docker is required for secret scanning.${RST}" >&2
+  exit 2
+fi
+if ! docker info >/dev/null 2>&1; then
+  echo "${RED}docker daemon not reachable.${RST}" >&2
+  exit 2
+fi
+
+# --- scan scope: only new commits, full history on first push ---
+# Default branch on the public remote; override via PRE_PUSH_BASE_REF.
+BASE_REF="${PRE_PUSH_BASE_REF:-origin/main}"
+if git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
+  SCAN_BASE=$(git merge-base "$BASE_REF" HEAD 2>/dev/null || git rev-parse "$BASE_REF")
+  SCAN_LABEL="$BASE_REF..HEAD"
+  # PUSH_HEAD, not the literal "HEAD" — SCAN_ROOT may be a different
+  # checkout (primary repo) than the one this script was invoked from, so
+  # the container's own idea of "HEAD" would name the wrong commit.
+  GITLEAKS_LOG_OPTS="--log-opts=${SCAN_BASE}..${PUSH_HEAD}"
+else
+  SCAN_BASE=""
+  SCAN_LABEL="full history (no $BASE_REF tracking ref — first push bootstrap)"
+  GITLEAKS_LOG_OPTS=""
+fi
+
+# --- 1. gitleaks ---
+# SCAN_ROOT (mounted at /repo) owns the object DB and is scanned, but its
+# .gitleaks.toml is the PRIMARY checkout's — in a linked worktree that is a
+# different, possibly stale copy than the branch being pushed. Mount the
+# invoking worktree's config separately at /gitleaks.toml so the gate always
+# uses the ruleset from the branch it is gating. Outside a worktree
+# REPO_ROOT == SCAN_ROOT, so this is the same file — a no-op.
+hdr "1. gitleaks ($SCAN_LABEL)"
+if docker run --rm -v "$SCAN_ROOT:/repo:ro" -v "$REPO_ROOT/.gitleaks.toml:/gitleaks.toml:ro" zricethezav/gitleaks:v8.21.2@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 \
+     detect --source=/repo --redact --no-banner \
+     --config=/gitleaks.toml $GITLEAKS_LOG_OPTS; then
+  ok "no leaks detected"
+else
+  fail "gitleaks found secrets (see output above)"
+fi
+
+# --- 2. Large tracked files ---
+hdr "2. large tracked files (>2MB)"
+# 2 MB threshold inherited from alitellm (which bundled a ~1.2 MB
+# vendored LiteLLM OpenAPI spec). ACH does not currently track any
+# file near this limit; keep the threshold so future docs/generated
+# OpenAPI specs have headroom.
+LARGE=$(git ls-files -z | while IFS= read -r -d '' f; do
+  [[ -f $f ]] || continue
+  sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+  if (( sz > 2097152 )); then
+    printf '  %10d  %s\n' "$sz" "$f"
+  fi
+done)
+if [[ -z $LARGE ]]; then
+  ok "no tracked files over 2MB"
+else
+  fail "large tracked files:"
+  printf '%s\n' "$LARGE"
+fi
+
+# --- 3. Sensitive file patterns ---
+hdr "3. sensitive file patterns in tracked files"
+SENSITIVE_PATTERNS=(
+  '(^|/)\.env($|\..*)'
+  '\.pem$' '\.key$' '\.pfx$' '\.p12$' '\.pkcs12$'
+  '(^|/)id_rsa([^/]*)$' '(^|/)id_ed25519([^/]*)$' '(^|/)id_ecdsa([^/]*)$'
+  '(^|/)credentials\.json$'
+  '(^|/)kubeconfig$' '\.kubeconfig$'
+  '(^|/)service-account.*\.json$'
+  '(^|/)gcp-key.*\.json$'
+  '(^|/)aws-credentials($|\..*)'
+  '(^|/)\.npmrc$' '(^|/)\.pypirc$'
+)
+SENS_HITS=""
+for pat in "${SENSITIVE_PATTERNS[@]}"; do
+  m=$(git ls-files | grep -E "$pat" || true)
+  [[ -n $m ]] && SENS_HITS+="$m"$'\n'
+done
+if [[ -z $SENS_HITS ]]; then
+  ok "no sensitive file patterns tracked"
+else
+  fail "sensitive file patterns tracked:"
+  printf '%s' "$SENS_HITS"
+fi
+
+# --- 4. LICENSE + README ---
+hdr "4. LICENSE + README presence"
+[[ -f LICENSE ]]   && ok "LICENSE present"   || fail "LICENSE missing"
+[[ -f README.md ]] && ok "README.md present" || fail "README.md missing"
+
+# --- 5. Remote check ---
+hdr "5. origin remote"
+ACTUAL=$(git remote get-url origin 2>/dev/null || echo "")
+if [[ -z $ACTUAL ]]; then
+  warn "no 'origin' remote configured"
+  echo "  expected: $EXPECTED_REMOTE"
+  echo "  add with: git remote add origin $EXPECTED_REMOTE"
+elif [[ $ACTUAL != "$EXPECTED_REMOTE" ]]; then
+  fail "origin is '$ACTUAL', expected '$EXPECTED_REMOTE'"
+else
+  ok "origin = $EXPECTED_REMOTE"
+fi
+
+# --- 6. Internal hostnames / private IPs ---
+hdr "6. internal hostnames / private IPv4 (informational)"
+INTERNAL_RE='(ackstorm\.internal|\.ackstorm\.local|jira\.ackstorm|confluence\.ackstorm|gitlab\.ackstorm)'
+PRIVIP_RE='(^|[^0-9.])(10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+)'
+INT_HITS=$(git grep -EnI "$INTERNAL_RE" -- ':!*.lock' ':!go.sum' ':!*.svg' 2>/dev/null || true)
+IP_HITS=$(git grep -EnI  "$PRIVIP_RE"   -- ':!*.lock' ':!go.sum' ':!*.svg' 2>/dev/null || true)
+if [[ -z $INT_HITS && -z $IP_HITS ]]; then
+  ok "no internal hostname/private-IP matches"
+else
+  if [[ -n $INT_HITS ]]; then
+    warn "internal hostnames found:"
+    printf '%s\n' "$INT_HITS" | head -20
+  fi
+  if [[ -n $IP_HITS ]]; then
+    warn "private IPv4 found (test fixtures often legitimate — review):"
+    printf '%s\n' "$IP_HITS" | head -20
+  fi
+fi
+
+# --- 7. Personal/company email leak ---
+hdr "7. ackstorm emails in tracked files"
+MAIL_HITS=$(git grep -EnI '[a-zA-Z0-9._%+-]+@(ackstorm\.com|ackstorm\.es)' \
+              -- ':!LICENSE' ':!NOTICE' ':!AUTHORS' ':!CONTRIBUTORS*' 2>/dev/null || true)
+if [[ -z $MAIL_HITS ]]; then
+  ok "no ackstorm emails in code"
+else
+  warn "ackstorm emails in tracked files (review):"
+  printf '%s\n' "$MAIL_HITS" | head -20
+fi
+
+# --- 8. .gitignore sanity ---
+hdr "8. .gitignore sanity"
+if [[ ! -f .gitignore ]]; then
+  warn ".gitignore missing"
+else
+  for p in '.env' '.claude'; do
+    if grep -qE "(^|/)${p//./\\.}(/|$)" .gitignore; then
+      ok ".gitignore covers $p"
+    else
+      warn ".gitignore does not mention $p"
+    fi
+  done
+fi
+
+# --- 9. Author audit ---
+hdr "9. commit authors (informational — confirm all are intended)"
+git log --all --format='%aN <%aE>' | sort -u | sed 's/^/  /'
+
+# --- 10. Urgent TODO markers ---
+hdr "10. urgent TODO / DO-NOT-COMMIT markers"
+# Exclude this gate script itself (it names the literal markers in its
+# own comments) to avoid self-reflection false-positives.
+TODO_HITS=$(git grep -nE '(DO[ _-]?NOT[ _-]?COMMIT|XXX[ _-]?REMOVE|TODO:?[ ]?(remove|delete|drop|secret))' \
+              -- ':!scripts/pre-push-check.sh' 2>/dev/null || true)
+if [[ -z $TODO_HITS ]]; then
+  ok "no urgent TODO markers"
+else
+  warn "urgent TODO markers found:"
+  printf '%s\n' "$TODO_HITS"
+fi
+
+# --- 11. Uncommitted changes ---
+hdr "11. working tree status"
+DIRTY=$(git status --porcelain)
+if [[ -z $DIRTY ]]; then
+  ok "working tree clean"
+else
+  warn "uncommitted changes present — they will NOT be pushed:"
+  printf '%s\n' "$DIRTY" | head -20
+fi
+
+# --- fast lane: does this push touch the Go toolchain at all? ---
+GO_INPUTS='\.go$|(^|/)go\.(mod|sum)$|^api/|^config/crd/|^deploy/helm/ach/crd-sources/|^Makefile$|^\.golangci|^Dockerfile\.devtools$|^hack/'
+FAST_LANE=0
+if [[ ${PREPUSH_FULL:-0} != 1 ]] && CHANGED_FILES=$(git diff --name-only origin/main..HEAD 2>/dev/null) \
+  && ! grep -qE "$GO_INPUTS" <<<"$CHANGED_FILES"; then
+  FAST_LANE=1
+  # Package owning each changed file: nearest ancestor dir holding *.go
+  # (testdata/ and embedded assets belong to their parent package).
+  FAST_PKGS=$(while IFS= read -r f; do
+    d=$(dirname "$f")
+    while [[ $d != . ]]; do
+      if compgen -G "$d/*.go" >/dev/null; then echo "./$d"; break; fi
+      d=$(dirname "$d")
+    done
+  done <<<"$CHANGED_FILES" | grep -vE '^\./(internal/controller|test/e2e)' | sort -u)
+  printf '\n%sFast lane: no Go-toolchain input changed vs origin/main — gates 12/14/16 skipped, 15 scoped.%s\n' "$BLU" "$RST"
+fi
+
+# --- 12. go mod tidy drift ---
+hdr "12. go mod tidy drift"
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+else
+# Snapshot go.mod / go.sum BEFORE tidy so we can restore them on drift —
+# pre-push must not mutate the working tree. Use cp (not bash $(cat) +
+# printf '%s') because the latter strips trailing newlines, which then
+# manifests as a phantom 'No newline at end of file' diff on the next
+# run. The original file lives in /tmp until the gate exits.
+SNAP_DIR=$(mktemp -d)
+cp go.mod "$SNAP_DIR/go.mod" 2>/dev/null || true
+cp go.sum "$SNAP_DIR/go.sum" 2>/dev/null || true
+# Restore go.mod/go.sum on EVERY exit path — the drift branch, the
+# tidy-exited-non-zero branch, or any later-gate failure — so pre-push never
+# leaves the working tree mutated. Combined with snapshot cleanup in ONE EXIT
+# trap (bash keeps only one trap per signal; a second `trap ... EXIT` would
+# clobber the cleanup and leak $SNAP_DIR).
+restore_gomod() {
+  [[ -f "$SNAP_DIR/go.mod" ]] && cp "$SNAP_DIR/go.mod" go.mod
+  [[ -f "$SNAP_DIR/go.sum" ]] && cp "$SNAP_DIR/go.sum" go.sum
+  [[ -f "$SNAP_DIR/mcp-echo.go.mod" ]] && cp "$SNAP_DIR/mcp-echo.go.mod" test/e2e/mcp-echo/go.mod
+  [[ -f "$SNAP_DIR/mcp-echo.go.sum" ]] && cp "$SNAP_DIR/mcp-echo.go.sum" test/e2e/mcp-echo/go.sum
+  rm -rf "$SNAP_DIR"
+}
+trap restore_gomod EXIT
+if ./scripts/dev.sh go mod tidy >/tmp/gomod-tidy.txt 2>&1; then
+  if git diff --quiet -- go.mod go.sum 2>/dev/null; then
+    ok "go.mod / go.sum are tidy"
+  else
+    fail "go mod tidy produced uncommitted drift in go.mod / go.sum"
+    git --no-pager diff -- go.mod go.sum | head -40
+    # Working tree restored by the restore_gomod EXIT trap (covers this
+    # branch AND the tidy-exited-non-zero branch below).
+  fi
+else
+  fail "go mod tidy exited non-zero (see /tmp/gomod-tidy.txt)"
+  sed -n '1,20p' /tmp/gomod-tidy.txt
+fi
+# Nested module: test/e2e/mcp-echo has its own go.mod/go.sum that the root
+# tidy above does not touch. Same drift check, restored on exit like the root.
+cp test/e2e/mcp-echo/go.mod "$SNAP_DIR/mcp-echo.go.mod" 2>/dev/null || true
+cp test/e2e/mcp-echo/go.sum "$SNAP_DIR/mcp-echo.go.sum" 2>/dev/null || true
+if ./scripts/dev.sh sh -c 'cd test/e2e/mcp-echo && go mod tidy' >/tmp/gomod-tidy-mcp-echo.txt 2>&1; then
+  if git diff --quiet -- test/e2e/mcp-echo/go.mod test/e2e/mcp-echo/go.sum 2>/dev/null; then
+    ok "test/e2e/mcp-echo go.mod / go.sum are tidy"
+  else
+    fail "go mod tidy drift in test/e2e/mcp-echo"
+    git --no-pager diff -- test/e2e/mcp-echo/go.mod test/e2e/mcp-echo/go.sum | head -40
+  fi
+else
+  fail "go mod tidy (test/e2e/mcp-echo) exited non-zero (see /tmp/gomod-tidy-mcp-echo.txt)"
+  sed -n '1,20p' /tmp/gomod-tidy-mcp-echo.txt
+fi
+fi
+
+# --- 13. license-header SPDX gate (HRD-10) ---
+hdr "13. license-header SPDX gate (HRD-10)"
+# Every in-scope *.go file MUST carry `// SPDX-License-Identifier: Apache-2.0`
+# in its first 5 lines; files under ee/ (and cmd/ach/ee.go) carry
+# `LicenseRef-ACKstorm-EE` instead. Exempt: vendor/, zz_generated*, mock_*, .claude/.
+# Build-tag-first files have SPDX on line 3 (after //go:build + blank line).
+MISSING_SPDX=""
+while IFS= read -r f; do
+  [[ "$f" == */vendor/* ]] && continue
+  [[ "$f" == .claude/* ]] && continue
+  [[ "$(basename "$f")" == zz_generated* ]] && continue
+  [[ "$(basename "$f")" == mock_* ]] && continue
+  want="// SPDX-License-Identifier: Apache-2.0"
+  [[ "$f" == ee/* || "$f" == cmd/ach/ee.go ]] && want="// SPDX-License-Identifier: LicenseRef-ACKstorm-EE"
+  # Match SPDX in the first 5 lines of the file.
+  if ! head -5 "$f" 2>/dev/null | grep -qx "$want" \
+     || head -5 "$f" 2>/dev/null | grep '^// SPDX-License-Identifier:' | grep -qvx "$want"; then
+    MISSING_SPDX+="  $f"$'\n'
+  fi
+done < <(git ls-files '*.go')
+if [[ -z $MISSING_SPDX ]]; then
+  ok "every in-scope *.go file carries the SPDX header"
+else
+  fail "files missing SPDX header:"
+  printf '%s' "$MISSING_SPDX" | head -20
+fi
+
+# --- 14. golangci-lint full sweep ---
+# Full lint sweep over the whole module — there is no pre-commit stage, so
+# this gate is the local lint authority before a push leaves the host.
+# Runs in the devtools container.
+hdr "14. golangci-lint full sweep"
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+elif [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make qa-lint >/tmp/pre-push-lint.log 2>&1; then
+    ok "golangci-lint clean"
+  else
+    fail "golangci-lint reported issues — see /tmp/pre-push-lint.log"
+  fi
+else
+  warn "scripts/dev.sh missing — skipping lint gate (rebuild devtools image)"
+fi
+
+# --- 15. unit tests ---
+# Catches the simplest class of breakage that CI would otherwise flag.
+# Runs via devtools container; ~5-10s warm.
+hdr "15. unit tests"
+if (( FAST_LANE )) && [[ -z $FAST_PKGS ]]; then
+  ok "fast lane — no Go package owns a changed file, skipped"
+elif (( FAST_LANE )) && [[ -x scripts/dev.sh ]]; then
+  # shellcheck disable=SC2086 # word-split the package list on purpose
+  if ./scripts/dev.sh go test -race -count=1 $FAST_PKGS >/tmp/pre-push-unit.log 2>&1; then
+    ok "fast lane — unit tests clean for: $(tr '\n' ' ' <<<"$FAST_PKGS")"
+  else
+    fail "unit tests failed — see /tmp/pre-push-unit.log"
+  fi
+elif [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make test-unit >/tmp/pre-push-unit.log 2>&1; then
+    ok "make test-unit clean"
+  else
+    fail "make test-unit failed — see /tmp/pre-push-unit.log"
+  fi
+else
+  warn "scripts/dev.sh missing — skipping unit gate (rebuild devtools image)"
+fi
+
+# --- 16. helm chart mirror drift (crd-sources/) ---
+# `make helm-sync-check` runs controller-gen, copies the regenerated CRDs into
+# deploy/helm/ach/crd-sources/ (the chart's ONLY mirrored surface — per-mode
+# Deployments are hand-authored and the Grafana dashboards LIVE in the chart),
+# and fails if that leaves a diff. WHY: if a contributor edits a CRD in api/ but
+# forgets `make helm-sync`, the published Helm chart ships a STALE CRD schema
+# while the operator binary expects the new one — a `helm upgrade` then silently
+# drops/refuses the new field (issue #44).
+hdr "16. helm chart mirror drift (crd-sources/)"
+if (( FAST_LANE )); then
+  ok "fast lane — skipped"
+elif [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make helm-sync-check >/tmp/pre-push-helm-sync.log 2>&1; then
+    ok "chart CRDs in sync with config/crd/bases"
+  else
+    fail "chart mirror drift — run \`make helm-sync\` and commit (see /tmp/pre-push-helm-sync.log)"
+    sed -n '1,30p' /tmp/pre-push-helm-sync.log
+  fi
+  # helm-sync rewrites the tracked crd-sources/*.yaml in place; restore them to
+  # HEAD so the gate never mutates the working tree (mirrors gate 14's go.mod
+  # discipline). Non-destructive: `git checkout --` only touches tracked files,
+  # so an in-progress untracked new CRD is left alone. Scoped to crd-sources/
+  # ONLY — dashboards/ is hand-authored source, and reverting it here would
+  # silently throw away the dashboard edit being pushed.
+  git checkout -- deploy/helm/ach/crd-sources/ 2>/dev/null || true
+else
+  warn "scripts/dev.sh missing — skipping chart-mirror-drift gate (rebuild devtools image)"
+fi
+
+# --- 17. console unit tests (ui/) ---
+# tsc + vitest via devtools (nodejs is in the image). Skipped, with a notice,
+# when nothing under ui/ changed vs origin/main — npm ci alone is ~1 min cold.
+hdr "17. console unit tests (ui/)"
+if git diff --quiet origin/main..HEAD -- ui/ 2>/dev/null; then
+  ok "ui/ unchanged vs origin/main — skipped"
+elif [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh make test-ui >/tmp/pre-push-ui.log 2>&1; then
+    ok "make test-ui clean"
+  else
+    fail "make test-ui failed — see /tmp/pre-push-ui.log"
+  fi
+else
+  warn "scripts/dev.sh missing — skipping console unit gate (rebuild devtools image)"
+fi
+
+# --- 18. edition isolation ---
+hdr "18. edition isolation (make qa-edition)"
+if [[ -x scripts/dev.sh ]]; then
+  if make qa-edition >/tmp/pre-push-edition.log 2>&1; then
+    ok "make qa-edition clean"
+  else
+    fail "make qa-edition failed — see /tmp/pre-push-edition.log"
+  fi
+else
+  warn "scripts/dev.sh missing — skipping edition isolation gate (rebuild devtools image)"
+fi
+
+# --- Summary ---
+printf '\n%s== Summary ==%s\n' "$BLU" "$RST"
+printf 'Failures: %d\n' "$FAIL"
+printf 'Warnings: %d\n' "$WARN"
+echo
+if (( FAIL > 0 )); then
+  printf '%sBLOCKED: fix failures before pushing.%s\n' "$RED" "$RST"
+  exit 1
+fi
+if (( WARN > 0 )); then
+  printf '%sWarnings present — review each before pushing.%s\n' "$YEL" "$RST"
+fi
+printf '%sAll hard checks passed.%s\n' "$GRN" "$RST"
+exit 0

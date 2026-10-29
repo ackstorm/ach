@@ -1,0 +1,100 @@
+{{- if .Values.forwarder.enabled }}
+{{/* Single-source the master-key Secret off litellmConnection.masterKeySecretRef
+     — name plus an optional cross-namespace `namespace` (empty → release ns,
+     matching the CR resolver which reads the Secret in the connection's
+     namespace). The cross-namespace Role+RoleBinding below render only when
+     that namespace differs from the release namespace. */}}
+{{- $masterKeyNS := default .Release.Namespace .Values.litellmConnection.masterKeySecretRef.namespace -}}
+{{- $masterKeyName := .Values.litellmConnection.masterKeySecretRef.name -}}
+---
+# Forwarder reads (issue #34 C7 — Postgres-only trim):
+#   - ach-jwt-signing-keys Secret (FWD-09 JWT seed hot-reload via
+#     filtered informer in cmd/ach/cmd/forwarder.go).
+#   - the LiteLLM master-key Secret named by LiteLLMConnection/default's
+#     spec.masterKeySecretRef (one-shot read at boot via APIReader).
+#
+# All ACH CRD reads (Environment, BackendIdentityPolicy, LiteLLMConnection)
+# now flow through Postgres-backed caches (bipcache, envstore) +
+# db.GetDefaultLiteLLMConnection — the `apiGroups: ["ach.ackstorm.ai"]`
+# rules carried by pre-#34 charts are intentionally removed here.
+#
+# Namespace-scoped Role per MULTI-01 — multi-tenant deployments isolate
+# per-namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+# Forwarder reads two in-namespace Secrets at boot/runtime:
+#   - jwtSecretName (FWD-09 hot-reload)
+#   - the LiteLLM master-key Secret (whose name comes from
+#     LiteLLMConnection/default.spec.masterKeySecretRef and whose
+#     namespace defaults to the CR's own namespace, i.e. this one).
+# The resolver doesn't carry the chart-configured namespace, so it
+# always looks up in the connection CR's namespace. Granting read on
+# all secrets in {{ .Release.Namespace }} keeps the in-namespace
+# bootstrap path resilient to which secret the operator ends up
+# pointing at, without having to thread the resourceName through
+# every revision of LiteLLMConnection.
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-forwarder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-forwarder
+subjects:
+- kind: ServiceAccount
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+{{- if ne $masterKeyNS .Release.Namespace }}
+---
+# Cross-namespace master-key Secret: Role lives in the Secret's
+# namespace; the RoleBinding's subject references the forwarder
+# ServiceAccount in .Release.Namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ $masterKeyNS }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames:
+  - "{{ $masterKeyName }}"
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-forwarder-master-key
+  namespace: {{ $masterKeyNS }}
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: forwarder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-forwarder-master-key
+subjects:
+- kind: ServiceAccount
+  name: ach-forwarder
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

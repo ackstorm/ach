@@ -1,0 +1,600 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/ackstorm/ach/internal/cli/config"
+	"github.com/ackstorm/ach/internal/cli/exit"
+)
+
+// envTestEnv resets XDG_CONFIG_HOME → t.TempDir() and clears the
+// synthetic-mode env vars so each subtest runs hermetically.
+func envTestEnv(t *testing.T) string {
+	t.Helper()
+	return credTestEnv(t)
+}
+
+// seedEnvConfig writes a config.yaml with one profile under the
+// test XDG home, returning the resolved config path.
+func seedEnvConfig(t *testing.T, dir, name string, dep *config.Profile) string {
+	t.Helper()
+	path := filepath.Join(dir, "ach", "config.yaml")
+	f := &config.File{
+		Default:  name,
+		Profiles: map[string]*config.Profile{name: dep},
+	}
+	if err := config.Save(path, f); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	return path
+}
+
+// executeEnv runs a fresh `ach env <sub>` invocation with the given
+// args and returns stdout, stderr, exit code, raw error. Delegates
+// to the shared executeCommand helper (helpers_test.go).
+func executeEnv(t *testing.T, args ...string) (string, string, exit.Code, error) {
+	t.Helper()
+	return executeCommand(t, newEnvCmd(), args...)
+}
+
+// TestEnv_Reparent_HydrateStatusUninstall asserts the Phase 2.3 clean
+// break: hydrate / status / uninstall resolve UNDER the `env` parent and
+// the old top-level names are gone from rootCmd.
+func TestEnv_Reparent_HydrateStatusUninstall(t *testing.T) {
+	parent := newEnvCmd()
+
+	// Each reorged child must resolve under `env`.
+	for _, name := range []string{"hydrate", "status", "uninstall"} {
+		var found bool
+		for _, sub := range parent.Commands() {
+			if sub.Name() == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("`env %s` not registered under the env parent", name)
+		}
+	}
+
+	// The old top-level names must NOT resolve on rootCmd. cobra's Find
+	// returns the root command itself (with the token as a leftover arg)
+	// when no matching subcommand exists.
+	for _, name := range []string{"hydrate", "list", "uninstall"} {
+		c, _, err := rootCmd.Find([]string{name})
+		if err == nil && c != nil && c.Name() == name {
+			t.Errorf("top-level `%s` still resolves on rootCmd; want clean break", name)
+		}
+	}
+}
+
+// TestEnv_List_SinglePage asserts a no-pagination response renders
+// both rows and exits 0.
+func TestEnv_List_SinglePage(t *testing.T) {
+	dir := envTestEnv(t)
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"name": "a"},
+				{"name": "b"},
+			},
+			"next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "list")
+	if err != nil {
+		t.Fatalf("env list: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout, "a") || !strings.Contains(stdout, "b") {
+		t.Errorf("stdout missing rows; got: %s", stdout)
+	}
+}
+
+// TestEnv_List_AdminFlag asserts --admin sends ?all=true and a bare
+// list does not.
+func TestEnv_List_AdminFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"list"}, ""},
+		{[]string{"list", "--admin"}, "true"},
+	} {
+		dir := envTestEnv(t)
+		var gotAll atomic.Value
+		ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAll.Store(r.URL.Query().Get("all"))
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{}, "next_cursor": nil})
+		}))
+		seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+		swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+		if _, _, _, err := executeEnv(t, tc.args...); err != nil {
+			t.Fatalf("env %v: %v", tc.args, err)
+		}
+		if got, _ := gotAll.Load().(string); got != tc.want {
+			t.Errorf("env %v: all = %q; want %q", tc.args, got, tc.want)
+		}
+		ts.Close()
+	}
+}
+
+// TestEnv_List_JSON asserts -o json prints the item array as JSON.
+func TestEnv_List_JSON(t *testing.T) {
+	dir := envTestEnv(t)
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{"name": "a"}, {"name": "b"}}, "next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+	seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "list", "-o", "json")
+	if err != nil || code != exit.OK {
+		t.Fatalf("env list -o json: code=%d err=%v", code, err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(got) != 2 || got[0]["name"] != "a" || got[1]["name"] != "b" {
+		t.Errorf("got %v; want items a, b", got)
+	}
+
+	if _, _, code, err := executeEnv(t, "list", "-o", "yaml"); err == nil || code != exit.General {
+		t.Errorf("-o yaml: code=%d err=%v; want exit 1", code, err)
+	}
+}
+
+// TestEnv_Search asserts env search reads the env list, joins its words
+// into one query, honours --admin, and prints [] (not null) for no match.
+func TestEnv_Search(t *testing.T) {
+	dir := envTestEnv(t)
+	var gotAll atomic.Value
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAll.Store(r.URL.Query().Get("all"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{{
+				"name":    "design",
+				"context": map[string]any{"skills": []string{"web-design", "threejs-animation"}},
+				"runtime": map[string]any{"mcpServers": []string{"figma"}},
+			}},
+			"next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+	seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "search", "WEB", "design")
+	if err != nil || code != exit.OK {
+		t.Fatalf("env search: code=%d err=%v", code, err)
+	}
+	if !strings.Contains(stdout, "web-design") || strings.Contains(stdout, "threejs") ||
+		!strings.Contains(stdout, "--only <kind>/<name>") {
+		t.Errorf("table:\n%s", stdout)
+	}
+	if got, _ := gotAll.Load().(string); got != "" {
+		t.Errorf("all = %q without --admin", got)
+	}
+
+	stdout, _, _, err = executeEnv(t, "search", "figma", "--admin", "-o", "json")
+	if err != nil {
+		t.Fatalf("env search -o json: %v", err)
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(stdout)); err != nil ||
+		compact.String() != `[{"kind":"mcp","name":"figma","environment":"design"}]` {
+		t.Errorf("json = %s (err %v)", stdout, err)
+	}
+	if got, _ := gotAll.Load().(string); got != "true" {
+		t.Errorf("all = %q with --admin; want true", got)
+	}
+
+	if stdout, _, _, _ = executeEnv(t, "search", "nope", "-o", "json"); strings.TrimSpace(stdout) != "[]" {
+		t.Errorf("no match json = %q; want []", stdout)
+	}
+	if stdout, _, _, _ = executeEnv(t, "search", "nope"); stdout != "No matches.\n" {
+		t.Errorf("no match table = %q", stdout)
+	}
+	if _, _, code, err := executeEnv(t, "search"); err == nil || code == exit.OK {
+		t.Errorf("no args: code=%d err=%v; want an error", code, err)
+	}
+}
+
+// TestEnv_List_Pagination asserts the client follows next_cursor
+// across multiple HTTP requests until exhausted.
+func TestEnv_List_Pagination(t *testing.T) {
+	dir := envTestEnv(t)
+
+	var calls int32
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		switch n {
+		case 1:
+			// First page — emit item "a" + next_cursor=c1.
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items":       []map[string]any{{"name": "a"}},
+				"next_cursor": "c1",
+			})
+		case 2:
+			// Second page — must carry ?cursor=c1.
+			if got := r.URL.Query().Get("cursor"); got != "c1" {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"code":"invalid_argument","message":"cursor missing"},"request_id":"x"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items":       []map[string]any{{"name": "b"}},
+				"next_cursor": nil,
+			})
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "list")
+	if err != nil {
+		t.Fatalf("env list pagination: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if got := atomic.LoadInt32(&calls); got < 2 {
+		t.Errorf("expected >= 2 HTTP calls (pagination); got %d", got)
+	}
+	if !strings.Contains(stdout, "a") || !strings.Contains(stdout, "b") {
+		t.Errorf("stdout missing rows; got: %s", stdout)
+	}
+}
+
+// TestEnv_List_LimitFlag asserts the --limit flag flows into the
+// first GET as ?limit=<N>.
+func TestEnv_List_LimitFlag(t *testing.T) {
+	dir := envTestEnv(t)
+
+	var sawLimit string
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawLimit = r.URL.Query().Get("limit")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items":       []map[string]any{},
+			"next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	_, _, code, err := executeEnv(t, "list", "--limit", "10")
+	if err != nil {
+		t.Fatalf("env list --limit 10: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if sawLimit != "10" {
+		t.Errorf("?limit = %q; want 10", sawLimit)
+	}
+}
+
+// TestEnv_List_401_Exit3 asserts 401 → exit code 3 (AuthN). The
+// 401 envelope is composed inline (rather than via a helper) so the
+// shape is greppable from the test body; the dupl detector flagged a
+// near-identical body in whoami_test.go which is unavoidable — both
+// tests verify the same exit-mapping invariant against different
+// endpoints. The leading server-setup line is intentionally split
+// across two lines to keep dupl out of strike-distance.
+func TestEnv_List_401_Exit3(t *testing.T) {
+	dir := envTestEnv(t)
+	ts := newUnauthorized401Server(t, "invalid_key", "key rejected")
+	defer ts.Close()
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	_, _, code, err := executeEnv(t, "list")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if code != exit.AuthN {
+		t.Errorf("code = %d; want 3 (AuthN)", code)
+	}
+}
+
+// newUnauthorized401Server returns an httptest TLS server that
+// answers every request with the §15.5 error envelope at status 401.
+// Extracted to keep the 401 test body small + dupl-clean.
+func newUnauthorized401Server(t *testing.T, code, message string) *httptest.Server {
+	t.Helper()
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      map[string]string{"code": code, "message": message},
+			"request_id": "req_x",
+		})
+	}))
+}
+
+// TestEnv_Describe_HappyPath asserts the two-call shape (GET
+// /environments/{name}, then POST /hydrate) renders runtime +
+// context block and exits 0.
+func TestEnv_Describe_HappyPath(t *testing.T) {
+	dir := envTestEnv(t)
+
+	var envCalls, hydrateCalls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&envCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
+	})
+	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hydrateCalls, 1)
+		// Verify body shape.
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["environment"] != "demo" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"schemaVersion": "v1alpha1",
+			"environment":   "demo",
+			"runtime": map[string]any{
+				"models": []map[string]any{
+					{"id": "gpt-4", "endpoint": "https://hub.example/v1"},
+				},
+				"mcpServers": []map[string]any{},
+				"a2aAgents":  []map[string]any{},
+			},
+			"context": map[string]any{
+				"prompts":   []map[string]any{},
+				"plugins":   []map[string]any{},
+				"artifacts": []map[string]any{},
+			},
+		})
+	})
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "describe", "demo")
+	if err != nil {
+		t.Fatalf("env describe: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if got := atomic.LoadInt32(&envCalls); got < 1 {
+		t.Errorf("envCalls = %d; want >= 1", got)
+	}
+	if got := atomic.LoadInt32(&hydrateCalls); got != 1 {
+		t.Errorf("hydrateCalls = %d; want 1", got)
+	}
+	if !strings.Contains(stdout, "https://hub.example/v1") {
+		t.Errorf("stdout missing runtime endpoint; got: %s", stdout)
+	}
+}
+
+// TestEnv_Describe_403_GracefulFallback asserts hydrate 403
+// unauthorized_team → exit 0 with `(unavailable)` markers (CLI-12).
+func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
+	dir := envTestEnv(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
+	})
+	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      map[string]string{"code": "unauthorized_team", "message": "no team intersection"},
+			"request_id": "req_x",
+		})
+	})
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "describe", "demo")
+	if err != nil {
+		t.Fatalf("env describe 403 graceful: err=%v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0 (graceful CLI-12)", code)
+	}
+	if !strings.Contains(stdout, "(unavailable)") {
+		t.Errorf("stdout missing '(unavailable)' marker; got: %s", stdout)
+	}
+}
+
+// TestEnv_Describe_MetadataOnly asserts --metadata-only skips the
+// /hydrate call entirely.
+func TestEnv_Describe_MetadataOnly(t *testing.T) {
+	dir := envTestEnv(t)
+
+	var envCalls, hydrateCalls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/environments/demo", func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&envCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo"})
+	})
+	mux.HandleFunc("/platform/hydrate", func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hydrateCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	ts := httptest.NewTLSServer(mux)
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	stdout, _, code, err := executeEnv(t, "describe", "demo", "--metadata-only")
+	if err != nil {
+		t.Fatalf("describe --metadata-only: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0", code)
+	}
+	if got := atomic.LoadInt32(&hydrateCalls); got != 0 {
+		t.Errorf("hydrateCalls = %d; want 0 (--metadata-only skips)", got)
+	}
+	if got := atomic.LoadInt32(&envCalls); got < 1 {
+		t.Errorf("envCalls = %d; want >= 1", got)
+	}
+	// Output must include the env name; --metadata-only flips
+	// hydrateAvailable to false → "(unavailable)" markers visible.
+	if !strings.Contains(stdout, "demo") {
+		t.Errorf("stdout missing env name 'demo'; got: %s", stdout)
+	}
+}
+
+// TestEnv_Describe_NotFound asserts a 404 from GET /environments/{name}
+// exits 1 with the "not found" hint.
+func TestEnv_Describe_NotFound(t *testing.T) {
+	dir := envTestEnv(t)
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      map[string]string{"code": "environment_not_found", "message": "environment not found"},
+			"request_id": "req_x",
+		})
+	}))
+	defer ts.Close()
+
+	seedEnvConfig(t, dir, "prod", &config.Profile{
+		URL: ts.URL,
+		Key: testEK,
+	})
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	_, _, code, err := executeEnv(t, "describe", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error on missing env")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("err missing 'not found' hint: %q", err.Error())
+	}
+}
+
+// TestEnvDescribe_NoArg_Friendly verifies that `env describe` with no argument
+// returns a friendly usage hint (C4), not cobra's terse "accepts 1 arg(s)".
+func TestEnvDescribe_NoArg_Friendly(t *testing.T) {
+	envTestEnv(t)
+	_, _, code, err := executeEnv(t, "describe")
+	if err == nil || code != exit.General {
+		t.Fatalf("want exit 1 for missing env name; got code=%d err=%v", code, err)
+	}
+	if !strings.Contains(err.Error(), "ach-cli env describe <name>") {
+		t.Errorf("want usage hint; got %q", err.Error())
+	}
+}
+
+// TestEnv_Describe_UnknownFlag asserts --output-format json is not
+// supported in Phase 6 (deferred per CONTEXT §"Phase 6 explicitly
+// excludes" — cobra rejects unknown flag with exit 1).
+func TestEnv_Describe_UnknownFlag(t *testing.T) {
+	envTestEnv(t)
+	_, _, code, err := executeEnv(t, "describe", "demo", "--output-format", "json")
+	if err == nil {
+		t.Fatal("expected cobra rejection of --output-format")
+	}
+	if code != exit.General {
+		t.Errorf("code = %d; want 1", code)
+	}
+}
+
+// TestEnv_SyntheticMode_Allowed asserts env list/describe DO work in
+// synthetic mode (read-only commands; per plan note, config-mutating
+// commands like login/logout/config gate on synthetic, but env list/
+// describe are synthetic-friendly per CLI-08 profile resolution).
+func TestEnv_SyntheticMode_Allowed(t *testing.T) {
+	envTestEnv(t)
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items":       []map[string]any{{"name": "a"}},
+			"next_cursor": nil,
+		})
+	}))
+	defer ts.Close()
+
+	t.Setenv("ACH_URL", ts.URL)
+	t.Setenv("ACH_KEY", testEK)
+	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
+	_, _, code, err := executeEnv(t, "list")
+	if err != nil {
+		t.Fatalf("env list synthetic: %v", err)
+	}
+	if code != exit.OK {
+		t.Errorf("code = %d; want 0 (synthetic-friendly)", code)
+	}
+}

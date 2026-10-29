@@ -1,0 +1,21 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ach-content-service-role
+  namespace: system
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/component: content-service
+rules:
+# Content Service reads environments (authorizedTeams scope check) and the
+# four external-reference kinds (PVC cache path lookup by name). The
+# identity-policy kind is forwarder-only and intentionally excluded.
+- apiGroups: ["ach.ackstorm.ai"]
+  resources:
+  - environments
+  - plugins
+  - prompts
+  - artifacts
+  - pluginmarketplaces
+  verbs: ["get", "list", "watch"]

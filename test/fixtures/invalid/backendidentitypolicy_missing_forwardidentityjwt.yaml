@@ -1,0 +1,19 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: BackendIdentityPolicy.spec.forwardIdentityJWT REQUIRED with no default (CRD-08 / Plan 02 Task 2)
+# Expected error substring: "forwardIdentityJWT"
+#
+# This manifest omits spec.forwardIdentityJWT entirely. The field is
+# marked Required at the kubebuilder level AND the resource-root CEL rule
+#   has(self.spec.forwardIdentityJWT)
+# enforces a belt-and-braces no-default guarantee. Admission rejects with:
+#   "BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with no
+#    default (CRD-08)"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: BackendIdentityPolicy
+metadata:
+  name: invalid-no-jwt-field
+  namespace: ach-system
+spec:
+  target:
+    kind: MCPServer
+    name: example-mcp

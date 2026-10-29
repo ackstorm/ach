@@ -1,0 +1,286 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// Package claudecode is the pass-through reference Adapter
+// implementation per CONTEXT.md D-05 and CLI spec §7.4 (claude-code
+// adapter).
+//
+// The claude-code adapter is the canonical reference because:
+//
+//   - ADAPT-04 pins the Plugin canonical format to Claude Code. The
+//     pass-through path is therefore a verbatim copy of the plugin
+//     tree into .claude/plugins/<name>/ — no frontmatter rewrite, no
+//     directory remapping, no silent drops.
+//   - ADAPT-07 silent-drop accounting: claude-code has no source-tree
+//     component it cannot translate — route.Project's drop set is
+//     always empty for this adapter.
+//   - The MCP target is the project-root .mcp.json (mcpJSONPath) — the file
+//     Claude Code actually reads for MCP servers. Both plugin projection and
+//     the governed runtime MCP (RenderRuntime) deep-merge there;
+//     .claude/settings.json is NOT an MCP load path; it is written ONLY for
+//     the model-endpoint credential helper on a person hydrate.
+//
+// ADAPT-06 scope rule: this adapter emits .claude/-prefixed paths plus the
+// project-root .mcp.json (MCP) and CLAUDE.md (AGENTS.md composite).
+// Prompts and artifacts are written by the hydrator core directly (CLI
+// spec §6.4); the adapter never touches them.
+package claudecode
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"sort"
+
+	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/route"
+	"github.com/ackstorm/ach/internal/cli/manifest"
+	"github.com/ackstorm/ach/internal/cli/state"
+)
+
+// Target paths emitted by this adapter. Centralized as constants so
+// the test assertions and the production code stay in lock-step.
+const (
+	// mcpJSONPath is Claude Code's per-project MCP registry — the file claude
+	// actually READS for MCP servers (project-root .mcp.json). It is the SINGLE
+	// claude MCP target for BOTH paths: plugin projection (mcp/ dir + root
+	// .mcp.json) AND the governed env-hydrate runtime MCP (RenderRuntime).
+	// "todos son iguales" — same destination regardless of source. settings.json
+	// is NOT a claude MCP load path and is no longer written by this adapter.
+	mcpJSONPath = ".mcp.json"
+
+	// settingsJSONPath carries the model-endpoint wiring on a person
+	// hydrate (OAuth / pk_): `apiKeyHelper` + `env.ANTHROPIC_BASE_URL`, so
+	// `claude` sends model traffic through the Hub with a credential from
+	// `ach-cli token`. Never written for an ek_ (agents / CI).
+	settingsJSONPath = ".claude/settings.json"
+
+	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
+	// alias contract (plan must_haves: ["claude", "cc"]).
+	canonicalID = "claude-code"
+)
+
+// Adapter is the empty struct holding the claude-code Adapter impl.
+// Pass-through carries no state — every method is a pure function of
+// its arguments (and ctx for credential propagation).
+type Adapter struct{}
+
+// init registers the adapter with the package-level registry. The
+// cobra autodetection layer (plan 07-W3-05) blank-imports this
+// subpackage so the init() fires before main() reaches Lookup/Iter.
+func init() {
+	adapter.Register(&Adapter{})
+}
+
+// ID returns the canonical adapter ID per CLI spec §7.2.
+func (a *Adapter) ID() string { return canonicalID }
+
+// Aliases returns the case-folded alternate identifiers a user may
+// type at the CLI. Plan 07-W3-01 contract: ["claude", "cc"]. The
+// registry case-folds at registration + Lookup, so callers passing
+// "Claude" or "CC" resolve correctly.
+func (a *Adapter) Aliases() []string { return []string{"claude", "cc"} }
+
+// Detect scans root for claude-code signals. Each present signal
+// boosts confidence; 3+ → High, 2 → Medium, 1 → Low. Reasons
+// accumulate human-readable evidence the autodetection layer surfaces
+// on multi-match exit.
+//
+// Signals checked (subset of spec §7.2 + plan behavior):
+//   - .claude/ directory at root
+//   - .claude/.mcp.json file
+//   - .claude/agents/ directory
+//   - .mcp.json at root (Claude Code's per-project MCP registry)
+//
+// Returns an empty Match (zero ID + zero Confidence) when no signals
+// are seen — the autodetection layer treats that as a no-match.
+func (a *Adapter) Detect(root string) (adapter.Match, error) {
+	return adapter.DetectFromSignals(canonicalID, []adapter.Signal{
+		{Path: filepath.Join(root, ".claude"), Reason: "found .claude/ directory"},
+		{Path: filepath.Join(root, ".claude", ".mcp.json"), Reason: "found .claude/.mcp.json"},
+		{Path: filepath.Join(root, ".claude", "agents"), Reason: "found .claude/agents/ directory"},
+		{Path: filepath.Join(root, ".mcp.json"), Reason: "found .mcp.json at root"},
+	}), nil
+}
+
+// mcpJSONShape is the document Claude Code reads at mcpJSONPath
+// (project-root .mcp.json). The schema mirrors what .claude/.mcp.json
+// would carry — adapter renders one shape, surgical merge upserts it
+// under the configured runtime path.
+// We use ordered map types via explicit struct + json.Marshal sorting
+// at render time so the output is deterministic (byte-identical across
+// invocations with the same input) — important for FMT-05 deterministic
+// re-hydrate / drift no-op detection.
+//
+// MCPServers carries the per-server JSON shape Claude Code consumes
+// under the mcpServers key. Matches the upstream MCP server registry
+// format (Hub spec §11.6 carries the same shape inside plugin .mcp.json
+// files; the runtime location split is adapter-level only).
+//
+// A2AAgents mirrors the MCP server shape for A2A agents. CLI spec §7.4
+// claude-code does not pin a fixed A2A shape (Claude Code's A2A support
+// is recent + evolving), so we mirror the MCP shape under a parallel
+// "a2aAgents" key. The orchestrator's autodetection layer can refine
+// this later as the upstream contract solidifies.
+type mcpJSONShape struct {
+	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
+	A2AAgents  map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
+}
+
+// renderMcpJSON builds the JSON bytes the adapter writes to
+// mcpJSONPath (project-root .mcp.json) from a manifest +
+// credential. Returned bytes are deterministic: keys are emitted in
+// sorted order because encoding/json sorts map keys lexicographically.
+// The credential is embedded into each server's headers map under
+// "x-ach-key" — matching the on-disk plaintext discipline CLI-04 (D-04)
+// establishes.
+func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
+	shape := mcpJSONShape{
+		MCPServers: map[string]adapter.MCPServerEntry{},
+		A2AAgents:  map[string]adapter.A2AAgentEntry{},
+	}
+
+	// Track the contributed keys for state.adapter.files[*].keys[]
+	// (STATE-02 + ADAPT-05). Sorted lexicographically so the output
+	// stays stable across invocations.
+	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
+
+	for _, server := range m.Runtime.MCPServers {
+		entry := adapter.MCPServerEntry{
+			Type:    "http",
+			URL:     server.Endpoint,
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
+		}
+		shape.MCPServers[server.ID] = entry
+		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
+	}
+
+	for _, agent := range m.Runtime.A2AAgents {
+		entry := adapter.A2AAgentEntry{
+			Type:    "http",
+			URL:     agent.Endpoint,
+			Headers: adapter.HeadersWithCredential(credential, m.Environment),
+		}
+		shape.A2AAgents[agent.ID] = entry
+		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
+	}
+
+	// Drop the a2aAgents key entirely when empty so a manifest with no
+	// A2A agents round-trips to {"mcpServers": {...}} only. The
+	// omitempty tag handles this for us, but only when the map is nil
+	// — empty-map serializes to {} not absent. Convert empty → nil.
+	if len(shape.A2AAgents) == 0 {
+		shape.A2AAgents = nil
+	}
+
+	sort.Strings(contributedKeys)
+
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(shape); err != nil {
+		return nil, nil, fmt.Errorf("claudecode: encode mcpServers shape: %w", err)
+	}
+
+	return buf.Bytes(), contributedKeys, nil
+}
+
+// RenderRuntime emits the single project-root .mcp.json FileWrite — the same
+// file claude reads for MCP and the same target plugin projection uses, so a
+// governed runtime MCP and a locally-installed plugin MCP deep-merge into one
+// place. Merge=MergeDeep; Keys carries the contributed top-level keys for
+// STATE-02 + ADAPT-05 inverse-merge.
+//
+// ADAPT-03 credential propagation: the bearer is sourced from
+// adapter.CredentialFromContext(ctx) — never from env vars.
+func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *state.File) ([]adapter.FileWrite, error) {
+	if m == nil || m.Runtime == nil {
+		return nil, fmt.Errorf("claudecode: RenderRuntime called with nil manifest or runtime block")
+	}
+
+	cred := adapter.CredentialFromContext(ctx)
+	content, keys, err := renderMcpJSON(m, cred)
+	if err != nil {
+		return nil, err
+	}
+
+	writes := []adapter.FileWrite{
+		{
+			Path:    mcpJSONPath,
+			Content: content,
+			Merge:   adapter.MergeDeep,
+			Keys:    keys,
+		},
+	}
+	if hub := adapter.HelperBaseURLFromContext(ctx); hub != "" {
+		settings, err := json.MarshalIndent(map[string]any{
+			"apiKeyHelper": adapter.HelperCommand,
+			"env":          map[string]string{"ANTHROPIC_BASE_URL": hub},
+		}, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("claudecode: encode settings.json: %w", err)
+		}
+		writes = append(writes, adapter.FileWrite{
+			Path:    settingsJSONPath,
+			Content: append(settings, '\n'),
+			Merge:   adapter.MergeDeep,
+			Keys:    []string{"apiKeyHelper", "env.ANTHROPIC_BASE_URL"},
+		})
+	}
+	return writes, nil
+}
+
+// mcpDeepKeys is the claude-code adapter's only non-nil route.Rule.Transform
+// (D-03/D-09). It is wired onto the `mcp/**/*` ProjectionRules row and serves a
+// single purpose: enumerate the top-level MCP keys a plugin's mcp.{json,jsonc}
+// contributes so the deep-merge engine can record them in state.files[*].keys[]
+// (STATE-02 + ADAPT-05) and so the runtime-wins drop (plan 02, D-10) can drop
+// ids that clash with the runtime MCP set. Key shape (D-09): "mcpServers."+id
+// and "a2aAgents."+id, sorted like renderMcpJSON's contributedKeys loop.
+//
+// Phase-2 assumption: the plugin mcp source is treated as plain JSON. There is
+// no jsonc comment-stripping helper in this codebase today; if one is added
+// later (the source kind is mcp.{json,jsonc}) it should be reused here.
+func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
+	return route.MCPDeepKeys("claudecode", srcRel, in, "mcpServers", "a2aAgents")
+}
+
+// ProjectionRules returns the claude-code PASS-THROUGH projection table
+// satisfying route.RuleProvider (the D-06 seam). claude-code is the canonical
+// pass-through reference: the four file-owned resource kinds
+// (rules/commands/agents/skills) route verbatim into .claude/<kind>/ as
+// MergeReplace with NO field rewrite — FMT-03 is CUT (D-02): claude-code does
+// NOT rewrite model/tools/permissions or any agent frontmatter; the canonical
+// plugin format IS Claude Code format, so pass-through is byte-faithful.
+//
+// Two non-file rows complete the D-11 contract:
+//   - AGENTS.md → CLAUDE.md as MergeComposite: the plugin's top-level AGENTS.md
+//     prose is composited (marker-bounded) into the host CLAUDE.md memory file.
+//   - mcp/**/* → mcpJSONPath as MergeDeep with Transform=mcpDeepKeys: the
+//     plugin's MCP definitions deep-merge under mcpServers in the project-root
+//     .mcp.json (the file claude reads — same target as RenderRuntime; no
+//     mcp_servers rename). The Transform enumerates the contributed keys
+//     without altering the bytes.
+//
+// This method is pure data — no I/O. Projection runs through the Render leg
+// (ProjectionRules -> route.Project).
+func (a *Adapter) ProjectionRules() []route.Rule {
+	return []route.Rule{
+		{FromGlob: "rules/**/*", ToGlob: ".claude/rules/**/*", Merge: adapter.MergeReplace},
+		// commands are .md-scoped: Claude Code commands are markdown. A plugin
+		// authored for multiple tools may also ship gemini-format commands/*.toml
+		// in the same dir; those are NOT Claude commands and must not leak into
+		// .claude/commands/ (the verbatim "commands/**/*" glob used to copy them).
+		{FromGlob: "commands/**/*.md", ToGlob: ".claude/commands/**/*.md", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "/"},
+		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
+		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: route.SkillDirSep, NameSep: ":"},
+		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
+		{FromGlob: "mcp/**/*", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
+		// Root .mcp.json is Claude Code's standard plugin MCP location (alongside
+		// the mcp/ convention) — deep-merge it into the project-root .mcp.json,
+		// the file claude actually reads.
+		{FromGlob: ".mcp.json", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
+	}
+}

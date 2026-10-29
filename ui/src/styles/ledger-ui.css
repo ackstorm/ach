@@ -1,0 +1,148 @@
+/* Shared UI primitives for the console — the design system. Never hand-roll a
+   button, pill or tag; never use a raw colour (hex, rgba, Tailwind amber-500…).
+
+   Tokens: the index.css skins are the ONLY colour source; console-ledger.css
+     aliases them. Accent --green (=primary) · --on-accent (ink on an accent fill)
+     · text --text/--muted/--faint · lines --line/--line2 · surfaces
+     --bg/--panel/--panel2 · series --blue/--purple/--cyan/--amber/--red.
+     Semantic tones: --ok (success) · --warn (warning) · --danger (destructive)
+     · --info (blue).
+   Code: <CodeBlock> → .codeblock, always dark (fixed hex, by design).
+   Buttons: .btn (outline) · .btn.primary (accent fill) · .btn.sm (small, mono)
+     · .btn.danger (destructive confirm) · .is-done (copied state).
+   Pills (status): <StatusPill tone> → .pill.ok|warn|danger|info|neutral|muted —
+     tinted fill, no dot, no border, UPPER mono 10px. Labels and tones come
+     from the per-domain maps in lib/status.ts, so every page says the same.
+   Tags (category): <Tag> → .tag — neutral outline, no fill, mono 10px, case as
+     given. .tag.dim (dashed, empty), .tag.icon (square icon tile).
+   Filter chips (lib/chip.ts, <FilterChips>) are controls, not tags, but share
+     radius and font.
+   Accent = actions and selection only (buttons, active nav, links, focus,
+     selected chips/presets, brand). Labels and text use --text/--muted/--faint
+     (eyebrows: .label); status colour comes from StatusPill tones and
+     off-target values.
+   Charts: a single series uses the primary (--green), one colour per list;
+     multi-series is primary, then --blue, then --purple. Semantic colours
+     (failures red, tool uses purple) stay.
+   .btn.accent: soft-accent secondary call to action (e.g. external app links).
+   Dialogs portal into .console-ledger so all of this reaches them. */
+.console-ledger {
+  --fs-xs: 11px;     /* meta, pills, sub-lines */
+  --fs-sm: 12.5px;   /* table cells, buttons, body in dense views */
+  --fs-md: 14px;     /* page text */
+  --btn-h: 32px;
+  --btn-h-sm: 24px;
+}
+.console-ledger .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--btn-h); padding: 0 12px; flex: none; white-space: nowrap;
+  border: 1px solid var(--line2); border-radius: 7px; background: transparent; color: var(--text);
+  font: 500 var(--fs-sm) var(--sans, inherit); cursor: pointer; transition: border-color .12s, background .12s, color .12s;
+}
+.console-ledger .btn:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+.console-ledger .btn:disabled { opacity: .45; cursor: default; }
+.console-ledger .btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.console-ledger .btn.primary { background: var(--green); border-color: var(--green); color: var(--on-accent); font-weight: 600; }
+.console-ledger .btn.primary:hover:not(:disabled) { filter: brightness(1.08); color: var(--on-accent); }
+.console-ledger .btn.danger { background: var(--red); border-color: var(--red); color: var(--on-accent); font-weight: 600; }
+.console-ledger .btn.danger:hover:not(:disabled) { filter: brightness(1.08); color: var(--on-accent); }
+.console-ledger .btn.accent { background: color-mix(in srgb, var(--green) 12%, transparent); border-color: color-mix(in srgb, var(--green) 55%, transparent); color: var(--green); font-weight: 600; }
+.console-ledger .btn.accent:hover:not(:disabled) { background: color-mix(in srgb, var(--green) 20%, transparent); border-color: var(--green); }
+.console-ledger .btn.sm { height: var(--btn-h-sm); padding: 0 8px; border-radius: 6px; font: 600 var(--fs-xs) var(--mono); text-transform: lowercase; color: var(--muted); }
+.console-ledger .btn.is-done { border-color: var(--green); color: var(--green); background: color-mix(in srgb, var(--green) 15%, transparent); }
+.console-ledger .btn.hamb { display: none; }
+@media (max-width: 760px) { .console-ledger .btn.hamb { display: inline-flex; } }
+
+/* ---- Pills (status) and tags (category) ---- */
+.console-ledger .pill {
+  --tone: var(--muted);
+  display: inline-flex; align-items: center; height: 20px; padding: 0 8px; flex: none;
+  border-radius: 999px; background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: color-mix(in oklch, var(--tone) 72%, var(--text)); /* readable ink on every skin */
+  font: 600 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; vertical-align: middle;
+}
+.console-ledger .pill.ok { --tone: var(--ok); }
+.console-ledger .pill.warn { --tone: var(--warn); }
+.console-ledger .pill.danger { --tone: var(--danger); }
+.console-ledger .pill.info { --tone: var(--info); }
+.console-ledger .pill.neutral { --tone: var(--muted); }
+.console-ledger .pill.muted { --tone: var(--faint); }
+.console-ledger :is(h1, h2, h3) .pill { margin-left: 8px; }
+.console-ledger .tag {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 20px; padding: 2px 6px; max-width: 100%;
+  border: 1px solid var(--line2); border-radius: 6px; background: transparent; color: var(--muted);
+  font: 10px/1.3 var(--mono); overflow-wrap: anywhere; vertical-align: middle;
+}
+.console-ledger .tag .k { color: var(--faint); }
+.console-ledger .tag b { color: var(--text); font-weight: 600; }
+.console-ledger .tag svg { width: 12px; height: 12px; flex: none; }
+.console-ledger .tag.dim { border-style: dashed; color: var(--faint); }
+.console-ledger .tag.icon { width: 20px; height: 20px; padding: 0; justify-content: center; }
+.console-ledger .chip { border-radius: 6px; font: 600 10px/1.3 var(--mono); letter-spacing: .06em; }
+.console-ledger .filter-chips { display: grid; gap: 4px; }
+.console-ledger .filter-chips .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* ---- Tables: ONE component (<DataTable>) and ONE style for every table ----
+   Headers: plain (--muted, 600, --line rule, no fill); sortable ones are
+   buttons with a triangle (aria-sort), accent on hover/active.
+   Footer: .report-foot = note left, pager right. Pinned rows (totals) lead. */
+.console-ledger { --fs-th: 12px; --row-pad: 10px; }
+.console-ledger .table { display: block; }
+.console-ledger .table .table-scroll { overflow-x: auto; }
+.console-ledger .table table { width: 100%; min-width: 660px; border-collapse: collapse; }
+.console-ledger .table th {
+  height: 38px; padding: 0 15px; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid var(--line); color: var(--muted); font: 600 var(--fs-th) var(--sans);
+  letter-spacing: normal; text-transform: none;
+}
+.console-ledger .table .th-sort { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.console-ledger .table .th-sort:hover, .console-ledger .table .th-sort.on { color: var(--green); }
+.console-ledger .table .th-actions, .console-ledger .table .td-actions { width: 1px; text-align: right; white-space: nowrap; }
+.console-ledger .table .td-empty { padding: 24px 15px; text-align: center; color: var(--muted); }
+.console-ledger .table tr.pinned td { background: var(--panel2); font-weight: 600; }
+.console-ledger .table tr.clickable { cursor: pointer; }
+.console-ledger .table-caption { padding: 11px 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--fs-sm); }
+.console-ledger .table th button { text-transform: none; letter-spacing: normal; font: inherit; }
+.console-ledger .table td {
+  padding: var(--row-pad) 15px; border-bottom: 1px solid var(--line); vertical-align: middle;
+  font-size: var(--fs-sm); white-space: normal;
+}
+.console-ledger .table tr:last-child td { border-bottom: 0; }
+.console-ledger .table tbody tr:hover { background: var(--panel2); }
+.console-ledger .table td .text-sm, .console-ledger .table td .text-xs { font-size: var(--fs-sm); }
+.console-ledger .table td.clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.console-ledger .table > .btn { margin: 12px 15px; }
+.console-ledger .table + .table { margin-top: 13px; }
+.console-ledger .entity small { font-size: var(--fs-xs); }
+.console-ledger .table td { white-space: nowrap; }
+.console-ledger .table td.entity { white-space: normal; }
+/* Recent executions: the trace ID is the link (Overview v3), underlined and keyboard-focusable. */
+.console-ledger .trace-link { text-decoration:underline; text-underline-offset:2px; overflow:hidden; text-overflow:ellipsis; }
+/* Allowance without a resetting cycle has no chart to reserve height for. */
+.console-ledger .forecast.forecast-compact { min-height:0; }
+
+/* ---- Code: always dark, whatever the skin (the one deliberate fixed palette) ---- */
+.console-ledger .codeblock { --code-bg: #0b0f14; overflow: hidden; border: 1px solid #1f2630; border-radius: 10px; background: var(--code-bg); color: #e6edf3; }
+.console-ledger .codeblock-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #1f2630; background: #11161d; color: #8b949e; font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.console-ledger .codeblock pre { margin: 0; overflow-x: auto; padding: 12px 16px; font: 13px/1.6 var(--mono); }
+.console-ledger .codeblock.inline { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.console-ledger .codeblock.inline code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12px var(--mono); }
+.console-ledger .codeblock .prompt { color: #8b949e; }
+.console-ledger .codeblock .btn { color: #c9d1d9; border-color: #30363d; }
+.console-ledger .codeblock .btn:hover:not(:disabled), .console-ledger .codeblock .btn.is-done { color: var(--green); border-color: var(--green); }
+
+/* A panel's own filter: a compact select in the panel-title action slot. */
+.console-ledger .panel-select { margin-left: auto; height: var(--btn-h-sm); max-width: 220px; padding: 0 6px; border: 1px solid var(--line2); border-radius: 6px; background: var(--panel); color: var(--text); font: 500 var(--fs-xs) var(--sans); }
+.console-ledger .panel-select:hover { border-color: var(--green); }
+.console-ledger .panel-select option { background: var(--panel); color: var(--text); }
+
+/* ---- Loading: skeleton bodies and the top progress line (both still under reduced motion) ---- */
+.console-ledger .skel { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--panel2), var(--panel3), var(--panel2)); background-size: 200% 100%; animation: ledger-skel 1.2s ease infinite; }
+.console-ledger .skel + .skel { margin-top: 10px; }
+.console-ledger .skel-body { padding: 4px 17px 17px; }
+.console-ledger .top { position: relative; }
+.console-ledger .top-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; }
+.console-ledger .top-progress::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 30%; background: var(--green); animation: ledger-progress 1.1s ease-in-out infinite; }
+@keyframes ledger-skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes ledger-progress { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .console-ledger .skel { animation: none; } .console-ledger .top-progress::before { animation: none; width: 100%; opacity: .5; } }

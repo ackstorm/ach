@@ -1,0 +1,1390 @@
+# Troubleshooting — domain-deep failure modes
+
+> Relocated from `CLAUDE.md` to keep the hub lean. These are the
+> **service-specific** debugging entries (content-service, forwarder JWT,
+> external-ref refresh, Environment access-groups, mcp-echo, Postgres-SoT
+> conflicts, image-roll). Generic workflow failure modes (make routing,
+> polling loops, missing subcommand, push gates, kubectl context, relative
+> paths) stay inline in `CLAUDE.md`.
+>
+> Add a new `### ❌ ... ✅ ...` entry here when you hit a new
+> **service/domain** failure mode; add generic workflow ones to `CLAUDE.md`
+> (Documentation-hygiene rule).
+
+### ❌ `downloadUrl` from /platform/hydrate returns 404
+```bash
+curl https://ach.local.test/content/prompt/foo
+# HTTP 404 (or no handler registered at all → chi 404)
+```
+✅ Confirm the content-service sidecar in the operator Pod is on a
+build that includes `internal/contentservice` routes (not the Phase 1
+stub). **By default** (`contentService.standalone=false`) the
+content-service runs as the second container of the `ach-operator`
+Deployment (RWO PVC forces co-location); there is NO
+`ach-content-service` Deployment. Use the operator Deployment + the
+`content-service` container name when exec'ing:
+```bash
+kubectl -n ach-system exec deploy/ach-operator \
+  -c content-service -- ach content-service --help \
+  | grep -q "/content/{prompt,plugin,artifact}"
+```
+WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
+`/healthz`-only stub. The Service is healthy, the Pod is Ready, the
+hydrate URLs look right — and every GET 404s because the route doesn't
+exist. Fix is a rolling image update; no data migration.
+
+### ❌ OAuth login ends on `400 this browser did not start the authorization request`
+```bash
+# /platform/oauth/as-callback?code=…&state=<pendingID>  → 400 (HTML)
+```
+✅ Since v0.9.1 `/authorize` sets a per-pending browser-binding cookie
+(`__Host-ach_oauth_<pendingID>` on https, `ach_oauth_<pendingID>` on a
+plain-http base, `SameSite=Lax`, 10 min) and `/as-callback` requires it to
+match the pending record before minting a code. The 400 means the callback
+arrived without it: the user copied the login URL into a different
+browser/profile, cookies are blocked for the Hub origin, or a proxy in
+front of platform-api dropped `Set-Cookie`/`Cookie` on those two paths.
+Scripted flows (e2e `followToLoopback`, the fake-browser smoke) must carry
+the cookie jar across hops. The pending is burned on the failed attempt —
+restart from the tool.
+WHY IT EXISTS: without the binding, whoever completed the Dex login for a
+given `state` was the identity the code was minted for, so an attacker
+could start `/authorize` for THEIR DCR client, hand the Dex URL to a
+victim, and redeem the victim's code with their own PKCE verifier (login
+CSRF / code injection; v0.9.0 security review, fixed in v0.9.1).
+
+### ❌ `invalid_redirect_uri` registering an MCP web client (e.g. claude.ai)
+```bash
+# POST /platform/oauth/register -> 400 invalid_redirect_uri
+# GET /platform/oauth/authorize  -> 400 "redirect_uri is not registered for this client"
+```
+✅ Only loopback `http` redirects (ach-cli, OpenCode) are accepted by default.
+An `https` redirect needs its host in `platformApi.oauth.redirectHosts`
+(chart value -> `ACH_OAUTH_REDIRECT_HOSTS`, JSON list), e.g. `[claude.ai]`.
+The allowlist is also checked at `/authorize`, so a client registered before
+a host was removed stops working at once.
+WHY: registration is anonymous and Dex signs a logged-in user in silently, so
+any `https` redirect host could collect a victim's authorization code (review
+#1, 2026-10-09). Only list hosts you trust with your users' codes.
+
+### ❌ `ach-cli env hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
+```bash
+ach-cli env hydrate demo          # profile logged in via `ach-cli login` (OAuth)
+# /platform/hydrate succeeds, then the first /content/<kind>/<name> GET 400s
+```
+✅ Content-service must verify the OAuth access token hydrate sends in
+`x-ach-key`. Check the `content-service` container carries
+`ACH_JWT_SECRET_DIR=/etc/ach/jwt` and the `jwt-signing-keys` mount
+(operator Pod sidecar by default; the `ach-content-service` Deployment
+when `contentService.standalone=true`):
+```bash
+kubectl -n ach-system get deploy ach-operator -o jsonpath='{.spec.template.spec.containers[?(@.name=="content-service")].env[?(@.name=="ACH_JWT_SECRET_DIR")].value}'
+```
+WHY IT FAILS: the content-service authn gate accepts a `pk_`/`ek_` prefix
+or a compact JWS, and the JWS is resolved by the keystore OAuth resolver
+against the mounted signing seed — with the mount absent (chart <
+v0.9.0) the token cannot be verified; since 0.9.6 the chart always mounts
+it and content-service refuses to start without `ACH_JWT_SECRET_DIR`. A `pk_`/`ek_` hydrate is unaffected. Found by the pre-v0.9.0
+binary smoke; the forwarder + platform-api had the resolver, the
+content-service did not.
+
+> **HA / standalone split (G16).** The default single-replica content
+> path is co-located with the operator, so content availability is tied
+> to the operator Pod and cannot scale independently. To split it into
+> its own N-replica `ach-content-service` Deployment, set
+> `contentService.standalone=true` **and** give the cache an RWX class:
+> `operator.cache.accessMode=ReadWriteMany` +
+> `operator.cache.storageClassName=<efs-sc|nfs-client|cephfs>`. In that
+> mode the sidecar drops out, the `ach-content-service` Service selector
+> points at the new Deployment, and the operator Pod remains the sole
+> *writer* of the cache (content-service mounts it readOnly). Exec into
+> `deploy/ach-content-service` (not the operator Pod) when standalone.
+> RWX is required because both Pods mount the same PVC concurrently; the
+> kind/e2e cluster ships only RWO, so standalone is validated by
+> `helm template` + a real RWX cluster, not the local e2e suite.
+
+### ❌ `/content/{prompt,artifact}/…` 404s right after deploying the uniform-`.tar.gz` build
+```bash
+curl .../content/prompt/foo   # HTTP 404 content_not_found
+ls $ACH_CACHE_ROOT/prompt/    # foo  (bare, no .tar.gz)
+```
+✅ Force a FULL re-fetch of each Prompt/Artifact (`scope=object`) so the
+operator rewrites the cache file as `<name>.tar.gz`. As of the
+uniform-context-format change, Prompt and Artifact `scope=object` are
+published as a 1-entry gzip tar (`prompt/<name>.tar.gz`,
+`artifact/<name>.tar.gz`) — the same shape as skill/plugin/directory-
+artifact — and `ResolvePath` / `contentTypeFor` serve them as
+`application/gzip`. The harness and `ach-cli` already untar every kind
+with `mode="r:gz"`, so they extract into a directory
+`<kind>/<name>/<source-basename>`. (skills + directory-artifacts already
+ship `.tar.gz`, so they need NO migration.)
+
+⚠ **A force-refresh annotation / Admin-API refresh / plain resync does
+NOT migrate it.** Those re-run the fetch but still send the stored
+upstream SHA as `PriorRev`, so the fetcher returns `NotModified`
+(`external_ref_refresh.go` Step 4) and the helper returns BEFORE staging
+— the bare file is never rewritten. `PriorRev` is cleared (forcing a real
+body) ONLY on a **`metadata.generation` bump**
+(`external_ref_driver.go` — the F1 spec-change clause) or a
+delete/recreate. So the migration needs a real spec change:
+```bash
+# generation bump → clears PriorRev → full re-fetch → writes <name>.tar.gz
+kubectl -n ach patch prompt   <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'
+kubectl -n ach patch artifact <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'  # scope=object only
+# (or kubectl delete + re-apply the CR). Then verify on the PVC:
+kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
+  ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
+```
+WHY IT FAILS: after the rollout, `ResolvePath` looks for `<name>.tar.gz`
+while the old **bare** file still sits there → 404 `content_not_found`.
+It does NOT self-heal on resync — the conditional-fetch `NotModified`
+shortcut skips the rewrite until a generation bump forces a full
+re-fetch. **Orphan bare files**: a live CR's old bare `prompt/<name>` /
+`artifact/<name>` is NOT auto-removed (the name changed) — the
+finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
+housekeeping after all CRs re-fetch (optional; NOT scripted into the
+operator — YAGNI):
+```bash
+find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
+```
+
+### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)
+```bash
+curl -X PATCH .../platform/objects/environments/demo -d '{"spec":{...}}'
+# HTTP 403 {"code":"immutable_via_ui", ...}
+```
+✅ Working as designed — **GitOps-wins (G2)**. The UI Objects API
+(`/platform/objects`, Environment only in v1) writes `origin='ui'` DRAFT rows.
+The operator is always authoritative: when a CR with the same `(namespace,name)`
+is applied it TAKES OVER the row (`origin` flips `ui`→`cr`, `locked=TRUE`) and
+the UI can no longer modify it — PATCH/DELETE return `403 immutable_via_ui`,
+POST returns `409 conflict_with_kubernetes_object`. Manage operator-owned
+(`origin='cr'`) objects via Git/`kubectl`, not the UI. A UI draft you exported
+(`GET /platform/objects/environments/<name>/yaml`) and applied is now
+operator-owned — that is the intended round-trip, not data loss. To re-open an
+object for UI editing, `kubectl delete` the CR (the operator removes the row);
+a fresh UI POST then creates a new `origin='ui'` draft.
+WHY: a UI draft has NULL status conditions (not `Available`), so hydrate will
+not serve it until the operator reconciles the applied CR. Set
+`ACH_DISABLE_UI_WRITES=true` to disable the write path entirely
+(every write → `403 ui_writes_disabled`).
+
+### ❌ Forwarder Pod CrashLoopBackOff: `ach-jwt-signing-keys` Secret missing
+```bash
+kubectl -n ach-system logs deploy/ach-forwarder -c forwarder
+# fatal: load JWT signing keys: secret "ach-jwt-signing-keys" not found in namespace "ach-system"
+```
+✅ The forwarder refuses to start without `ach-jwt-signing-keys`
+(FWD-09 — no in-cluster fallback, no implicit zero-key). The Secret
+must carry two keys: `current.kid` (short ASCII id) and `current.seed`
+(32 random bytes). The operator mints it on boot
+(`internal/jwtkeys.EnsureSigningKeys`, mint-once), so on a fresh install
+the forwarder crashloops only until the operator is up. Manual seed if the
+operator cannot run (or to pin a known seed):
+```bash
+jwttmp=$(mktemp -d)
+openssl rand 32 > "${jwttmp}/current.seed"
+printf 'dev-%s' "$(date +%s)" > "${jwttmp}/current.kid"
+kubectl -n ach-system create secret generic ach-jwt-signing-keys \
+  --from-file=current.kid="${jwttmp}/current.kid" \
+  --from-file=current.seed="${jwttmp}/current.seed"
+rm -rf "${jwttmp}"
+```
+WHY IT FAILS: The forwarder mints the per-request JWT off this seed at
+startup; a missing Secret turns the whole JWT trust path unreachable,
+which would silently degrade upstream auth. Refusing to start is the
+correct posture — fix the seed, not the check.
+
+### ❌ platform-api / forwarder CrashLoopBackOff: `ACH_KEY_ENCRYPTION_KEY` missing/invalid (G3)
+```bash
+kubectl -n ach-system logs deploy/ach-platform-api
+# validateConfig: ACH_KEY_ENCRYPTION_KEY is not set
+# (or) ACH_KEY_ENCRYPTION_KEY still holds the placeholder value
+# (or) ACH_KEY_ENCRYPTION_KEY decoded to 16 bytes: must be 32 bytes
+```
+✅ Both platform-api and forwarder require the AES-256 DEK that seals
+LiteLLM virtual-key material at rest (G3 — same hard-requirement posture
+as the credential-hash pepper, `ACH_CREDENTIAL_HASH_PEPPER`). The Helm chart
+injects BOTH env vars into platform-api + forwarder from the top-level
+`security` block (`security.keyEncryptionKey.secretRef` +
+`security.credentialHashPepper.secretRef`, via the `ach.securityEnv` helper) —
+but it never CREATES the Secrets, because they must stay stable across
+upgrades. Provision them out-of-band before install/upgrade (defaults:
+`ach-key-encryption-key`/`dek`, `ach-credential-hash-pepper`/`pepper`):
+`kubectl create secret generic ach-key-encryption-key --from-literal=dek="$(openssl rand -base64 32)"`
+(base64 of **exactly 32 bytes**) and likewise the pepper Secret. The kind/e2e
+harness seeds fixed dev values in `test/e2e/cluster/02-ach/secrets/`. WHY:
+`dekenv.Load` rejects an unset value, the `REPLACE-ME-WITH-RANDOM-`
+placeholder, and any value that does not decode to 32 bytes — encryption is
+always on, there is no plaintext fallback. (Do NOT also set these in
+`extraEnv` — the chart now sources them; a duplicate env entry results.)
+
+### ❌ Upstream 401 + forwarder logs `key material decrypt failed` (G3)
+```bash
+kubectl -n ach-system logs deploy/ach-forwarder -c forwarder | grep 'key material decrypt failed'
+```
+✅ The forwarder decrypts the sealed LiteLLM key material per request; on a
+decrypt failure it forwards **no** key, so LiteLLM returns 401. Cause is
+either a **DEK mismatch** (platform-api sealed under a different
+`ACH_KEY_ENCRYPTION_KEY` than the forwarder holds) or a **legacy/plaintext
+row** (a `pk_`/`ek_` minted before migration 000014, whose material was
+nulled). Fix: ensure platform-api and forwarder mount the SAME DEK Secret,
+then **re-mint** the affected key (`ach-cli login` / `ach-cli keys
+create`, or the back-compat alias `ach-cli env-keys create`). The log never prints the material or the DEK.
+
+### ❌ `helm install` aborts: `no matches for kind "LiteLLMConnection"`
+```bash
+# Error: failed post-install: ... resource mapping not found for name: "default"
+#   ... no matches for kind "LiteLLMConnection" in version "ach.ackstorm.ai/v1alpha1"
+```
+✅ This is fixed — the chart no longer ships the CR. The operator
+bootstraps `LiteLLMConnection/default` on boot
+(`internal/operator/litellmconnboot.EnsureConnection`, run before
+`mgr.Start` like the JWT-key mint). WHY THE CHART CAN'T: ACH CRDs render
+as ordinary `templates/` (managed-upgrade strategy, NOT Helm's `crds/`
+dir). Helm builds its REST mapper once per action and only refreshes it
+after a `crds/` install — never after a `templates/`-rendered CRD. So
+within the install release NO manifest (normal template OR post-install
+hook) can be mapped to the just-created kind; both fail with the error
+above. The operator's live-discovery client has no such limitation.
+Config flows in via `litellmConnection.{endpoint,masterKeySecretRef}` →
+operator env `ACH_LITELLM_CONNECTION_{ENDPOINT,SECRET_NAME,SECRET_KEY}`
+(Secret *reference* only — the master-key value is never put in env). The
+bootstrap is idempotent + drift-correcting; `litellmConnection.enabled:
+false` (empty endpoint) skips it. If `default` is missing after install,
+check `kubectl -n ach-system logs deploy/ach-operator -c operator | grep
+litellmconnboot`.
+
+### ❌ "SourceReachable=False reason=Unauthorized" on a public GitHub repo
+```bash
+kubectl get plugin/caveman -o jsonpath='{.status.conditions[0]}'
+# {"reason":"Unauthorized","message":"github: unreachable: ..."}
+```
+✅ `github`/`gitlab`/`bitbucket` sources fetch exclusively over git (git
+ls-remote + git clone; no REST call, no per-IP REST rate-limit — the legacy
+`spec.<provider>.transport: rest` escape hatch was removed). A failure here
+means the upstream is genuinely unreachable, the ref doesn't exist, or git's
+HTTPS auth-prompt fired (anonymous + a nonexistent or private repo cannot be
+told apart by git/HTTPS — both surface as "please authenticate"). Either:
+  - set `authSecretRef` on a CR whose repo legitimately needs auth, OR
+  - verify `spec.ref` actually exists on the upstream, OR
+  - investigate why the operator is reconciling more often than expected
+    (`kubectl -n ach-system logs deploy/ach-operator | grep -c "fetch:"`)
+
+The transport that served each fetch is surfaced on the `SourceReachable=True`
+(Plugin/Prompt/Artifact) and `Synced=True` (PluginMarketplace) condition
+messages as `transport=<git|n/a>`.
+
+**Self-hosted GitLab (as of 2026-06-04)**: ACH authenticates GitLab
+git-smart-http with HTTP Basic `oauth2:<token>` (GitLab's documented
+PAT/Group/Project-token method), NOT `Authorization: Bearer`. Self-hosted
+instances configured without Bearer support (e.g. `git.example.com`) reject
+Bearer with `401 / sources: unauthorized` even when the token, scope, and
+project path are all valid. Basic is selected automatically for `gitlab`
+source types and for marketplace clones whose host matches the marketplace's
+`spec.gitlab.host`. `spec.gitlab.host` accepts `git.example.com` or
+`https://git.example.com` identically (the clone URL is always https).
+(github.com / bitbucket.org still use Bearer.)
+
+### ℹ️ `NameConflict` condition reason — removed in v0.2.5+
+`PluginMarketplace` previously set `Synced=False reason=NameConflict` when two
+marketplaces exposed a plugin with the same bare name. This reason is **deleted**.
+Plugin references in `Environment.spec.context.plugins` are now marketplace-scoped:
+
+- Bare `name` → internal Plugin CRD only.
+- `name@marketplace` → that PluginMarketplace's plugin, resolved by exact
+  `(marketplace_name, name)` PK. Two marketplaces exposing the same name both
+  reach `Synced=True`; no conflict is possible.
+
+Intra-marketplace duplicates (same name listed twice in a single
+`marketplace.json`) are soft-skipped: the first entry wins, the rest surface in
+the Synced condition `message` with reason `DuplicateName`; `Synced` stays
+`True`.
+
+If you see `NameConflict` in `kubectl get pluginmarketplace` output, the cluster
+is running a pre-v0.2.5 operator image. Roll to the current image.
+
+### ❌ `plugin <name>: UpstreamInvalid` in a marketplace stage-2 summary
+The fetched plugin subtree has **neither** `.claude-plugin/plugin.json` **nor**
+any recognized convention component — i.e. the marketplace entry's `source`
+points at the wrong path/dir. Note manifest-less plugins ARE accepted as of
+`verifyPluginContents` (`internal/controller/ach/marketplace_manifest.go`):
+`.claude-plugin/plugin.json` is optional per the Claude Code schema, so a
+plugin with only `commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/
+`themes/`/`monitors/` (or root `SKILL.md`/`.mcp.json`/`.lsp.json`) passes.
+`UpstreamInvalid` therefore means none of those were found at the tar root.
+
+`verifyPluginContents` / `verifySkillContents` ALSO walk the WHOLE tar and
+reject (same `UpstreamInvalid` reason) any entry the CLI hydrate extractor
+refuses under every policy — path traversal (`../`, absolute, `.//../` , `\`,
+`C:\`), hardlinks, device/fifo nodes, unknown typeflags, pax-injected paths, or
+an out-of-tree symlink target — plus archives over the operator walk caps
+(`maxVerifyEntries` / `maxVerifyDecompressedBytes`, a bomb guard). So
+`UpstreamInvalid` here means EITHER "no recognized component" OR "the tar
+carries an entry/shape hydrate would reject" (F3). In-tree symlinks are allowed.
+
+✅ Verify the entry `source` resolves to the **plugin root** (where the
+convention dirs live), not a parent dir or a docs-only directory; and that the
+upstream tree contains no unsafe entries. The marketplace stays `Synced=True`;
+the good plugins keep serving while the bad entry is reported in
+`status.message`.
+
+### ❌ Environment stuck in `AccessGroupSynced=False reason=UnresolvedReferences`
+```bash
+kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.type=="AccessGroupSynced")]}'
+# {"type":"AccessGroupSynced","status":"False","reason":"UnresolvedReferences",
+#  "message":"unresolved: mcpServers=[demo-mcp] a2aAgents=[] authorizedTeams=[]"}
+```
+✅ The named MCP server / A2A agent / authorized team does not exist in
+LiteLLM. The reconciler resolves names on each reconcile via
+`ListMCPServers` / `ListA2AAgents` / `ListAllTeams`; any unresolved
+entry flips the condition with the offending list in the message.
+
+Register the missing resource(s):
+```bash
+# MCP server
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/v1/mcp/server \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"server_name":"<name>","transport":"http","url":"http://<addr>"}'
+
+# A2A agent
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/v1/agents \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"agent_name":"<name>","agent_card_params":{"name":"<name>","url":"<addr>"}}'
+
+# Team
+kubectl -n litellm-system exec deploy/litellm -c litellm -- \
+  curl -sf -X POST http://localhost:4000/team/new \
+    -H 'Authorization: Bearer sk-test-master-key' \
+    -d '{"team_alias":"<alias>"}'
+```
+The next reconcile (or any spec-change touch) re-runs the resolvers and
+the condition flips to `True/Synced`.
+
+WHY IT FAILS: the legacy `POST /access_group/new` rejected empty
+`model_names` (issue #17). The `/v1/access_group` endpoint accepts
+empty resource sets, but every ID in `access_mcp_server_ids` /
+`access_agent_ids` / `assigned_team_ids` must exist upstream. The
+reconciler converts names → IDs on-demand each reconcile (no
+Snapshotter cache), so the condition reflects fresh upstream state —
+at most `operatorReadCacheTTL` (10 s) old: the operator's LiteLLM client
+caches master-key GETs that long so the Environments sharing one resync
+tick read each catalog once, and any write drops the cache.
+
+### ❌ Environment declaring guardrails stuck with a 403 on the shell team — no Enterprise licence
+
+Team-scoped guardrails are premium-gated in LiteLLM. Without `LITELLM_LICENSE`
+on the proxy, `ensureShellTeam` gets
+
+```
+403 This feature is only available for LiteLLM Enterprise users: guardrails.
+```
+
+which fails `AccessGroupSynced`, so the Environment never goes `Available` and
+new `ek_` minting stays blocked. `shellTeamWriteErr` appends the licence hint to
+the condition message on exactly this shape. The fix is a licence or an empty
+`spec.runtime.guardrails` — an empty/omitted list is exempt from the gate, which
+is why every Environment that declares none is unaffected.
+
+Two traps around this:
+
+- **The gate fires twice.** Even if the attach somehow lands, every request from
+  a key in a team carrying guardrails also 403s. A stored-but-unlicensed
+  guardrail bricks the team rather than degrading it.
+- **The LiteLLM UI can build that broken state.** The UI writes
+  `metadata.guardrails`, which is NOT gated (200), while ACH writes the
+  top-level `guardrails` field, which is. So a team guardrail set from the UI
+  saves fine and then 403s on every call. Inspect with
+  `GET /team/info?team_id=X` → `metadata.guardrails` — `GET /team/list` does not
+  return `metadata` at all, so it will look clean there.
+
+Global `default_on` guardrails are ungated and keep running throughout; confirm
+with the `x-litellm-applied-guardrails` response header.
+
+### ❌ Environment stuck `AccessGroupSynced=False` / `UnresolvedReferences` naming a guardrail
+The guardrail does not exist on the proxy. LiteLLM accepts unknown
+guardrail names and silently never runs them, so ACH refuses to mint
+new `ek_` keys (`POST /platform/keys` → 503 `not_ready`) rather than
+hand out a key believing it is protected. Check
+`ach-cli admin list guardrails` for the exact name.
+
+**Scope of that barrier:** it blocks NEW key minting only. Existing
+`ek_` keys keep serving unprotected, hydrate still returns the
+manifest, and the forwarder still proxies — none of those read
+Environment conditions. Fix the name; there is no revocation path for
+a typo.
+
+A guardrail listed with `defaultOn: true` in `ach-cli admin list guardrails`
+(or `GET /platform/admin/runtime/guardrails`) already runs on every
+request — naming it in an Environment changes nothing.
+
+### Team has zero models/MCP tools although the access group lists it
+
+LiteLLM stores the team↔access-group relation twice: `access_group.assigned_team_ids`
+(`GET /v1/access_group`) and `team.access_group_ids` (`GET /v2/team/list`). Grants are
+enforced off the **team** side. A manual team edit or a partial write can leave the two
+disagreeing — the group lists the team, the team lists no group, and the team's keys
+resolve zero tools.
+
+Check both sides:
+
+```bash
+curl -sH "Authorization: Bearer $LITELLM_MASTER_KEY" "$LITELLM/v1/access_group" \
+  | jq '.[] | {access_group_name, assigned_team_ids}'
+curl -sH "Authorization: Bearer $LITELLM_MASTER_KEY" "$LITELLM/v2/team/list?page_size=100" \
+  | jq '.teams[] | {team_alias, access_group_ids}'
+```
+
+LiteLLM's mirror is **delta-driven**: it rewrites `team.access_group_ids` only for teams that
+enter or leave `assigned_team_ids`. Re-PUTting the same list changes nothing, which is why the
+pre-v0.6.16 operator could not have repaired this even if it had noticed.
+
+Since v0.6.16 the Environment reconciler compares both sides every pass and repairs a divergent
+mirror with two PUTs — first `assigned_team_ids` **without the drifted teams** (and with any
+stale foreign team temporarily added), then the desired list — so the required deltas fire while
+co-authorized healthy teams stay in both calls and never lose access for an instant. Log line:
+`access group team mirror drifted; running delta repair`.
+
+If the mirror still diverges after the sequence, the Environment goes
+`AccessGroupSynced=False / MirrorUnconverged` and further repairs are suppressed until the spec
+changes — deliberately loud, so a LiteLLM semantics change surfaces as a broken Environment
+rather than an endless write loop. Investigate LiteLLM itself in that case; the operator has done
+all it can.
+
+### ❌ A deleted Environment's `ek_` still answers 200 for up to a minute
+
+Only possible if the shell team (`ach-env-<env>`) was deleted BEFORE its keys —
+by hand, or by a build predating v0.6.17. LiteLLM caches key rows for ~60s, and
+inside that window the key cannot be revoked by any route: `POST /key/delete`
+(by `keys` and by `tokens`), `POST /key/block` and `POST /key/update` all return
+404 while the key still serves traffic. The key keeps the deleted team's
+restrictions, so it is a revocation-LATENCY problem, not privilege escalation.
+
+There is no fix from outside — wait out the cache. Never read those 404s as
+"already revoked": the operator logs `ek_ absent in LiteLLM at revoke time` only
+for keys it confirmed gone BEFORE touching the team.
+
+Since v0.6.17 the finalizer order is: revoke every `ek_` → delete the access
+group → delete the shell team, so the window does not occur on a normal delete.
+
+### ℹ️ An `ek_` created before v0.6.17 can still reach models its Environment never granted
+
+Keys minted before the shell-team change carry no `team_id`. A LiteLLM key with
+no team is fail-open on models — the access group cannot narrow it (MCP and
+agents DO scope correctly even then). They were deliberately NOT migrated.
+
+Fix per key: `ach-cli keys revoke <ekid_…>` then `ach-cli keys create`. The new
+key is minted into `ach-env-<env>` and capped correctly. To find them:
+
+    psql "$ACH_DB_URL" -c \
+      "SELECT key_id, environment, owner_email, created_at FROM environment_keys
+        WHERE status='active' AND created_at < '2026-07-21' ORDER BY created_at"
+
+### ℹ️ A fresh `pk_` reaches nothing for up to a few minutes after first login
+
+Expected. `MintPK` (behind the OAuth token endpoint) provisions the caller's
+`ach-user-<email>` shell and mints the key into it immediately, but the shell carries NO grants of its
+own — the operator is the sole writer of `assigned_team_ids` and only attaches
+the shell to an entitled Environment's access group on that Environment's
+NEXT reconcile pass. A brand-new pk_ is therefore briefly fail-closed (reaches
+nothing), not fail-open. One-time per user; resolves itself on the next
+Environment reconcile (well under the default `wait-*` timeouts).
+
+Even once attached, LiteLLM's `/model_group/info` for that key (what
+`/clients/opencode/config` lists) keeps answering from its in-memory
+pre-attach state for a few more minutes: measured 3.5–4 min after the
+operator logged `updated access group` (LiteLLM v1.99.1, no Redis), unchanged
+with `DEFAULT_ACCESS_GROUP_CACHE_TTL=60`. `TestClientsOpenCode` pokes `demo`
+and polls up to 5 min for exactly this.
+
+### ℹ️ A `pk_` minted before the per-user shell change can reach everything
+
+The mirror image of the `ek_` case above: pre-change PKs carry `team_id=NULL`
+and `expires:None` — deliberately NOT migrated (spec decision iii). A teamless
+key is fail-open on models. Fix per key: have the user re-login via
+`ach-cli login` to mint a fresh, properly-shelled `pk_`, then
+revoke the old one (`ach-cli keys revoke <pkid_…>` or an admin force-revoke).
+
+### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
+```bash
+./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json
+diff -u /tmp/hydrate-test.json examples/hydrate.json
+# --- /tmp/hydrate-test.json
+# +++ examples/hydrate.json
+# -        "downloadUrl": "https://kind.cluster.local/content/prompt/..."
+# +        "downloadUrl": "http://localhost:8080/content/prompt/..."
+```
+✅ The golden at `examples/hydrate.json` is stored against the literal base
+URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
+`ACH_BASE_URL` the `ach-local-gateway` serves (set in
+`test/e2e/cluster/02-ach/ach.values.yaml`). When the kept cluster exposes the
+platform-api on a different externally-visible base (a custom Ingress, a
+different DNS name, an https prod host, etc.), the raw `diff -u` flags every
+`downloadUrl`/`endpoint` row even though the response shape is byte-identical.
+
+Two remedies, in preference order:
+
+1. **Normalize the golden in-test** (CLI e2e suite does this automatically):
+   the canonical helper is `phase6NormalizeHydrate(golden, liveBaseURL)` in
+   `test/e2e/phase6_helpers_test.go`, which rewrites the golden's stored base
+   URL (`http://localhost:8080`, scheme + host) to the live cluster's base.
+   It is a no-op on the standard fixture; it only does real work against an
+   exotic-host cluster (set `ACH_E2E_PHASE6_BASE_URL`). The `TestPhase6CLI`
+   umbrella's `hydrate_golden_diff` subtest uses it. Manual repro:
+   ```bash
+   sed 's#http://localhost:8080#<your-cluster-base-url>#g' examples/hydrate.json | \
+     diff -u - /tmp/hydrate-test.json
+   ```
+2. **Re-capture the golden** against the standard fixture (only when the
+   response shape legitimately changed — new field, schemaVersion bump, an
+   Environment fixture edit):
+   ```bash
+   ./bin/ach-cli env hydrate demo > examples/hydrate.json
+   git diff examples/hydrate.json   # audit — should be the intended shape change
+   ```
+
+WHY IT FAILS: the hydrate command emits the response body verbatim via
+`io.Copy` (no re-encoding); the only intentional cross-cluster transform is
+the base URL (scheme + host) on each `downloadUrl`/`endpoint`. A raw
+byte-for-byte compare without normalization trips on any cluster topology
+that isn't the standard `http://localhost:8080` fixture — and the failure
+mode is identical to a real schema drift (`schemaVersion` bump, new field,
+etc.), so documenting the gotcha protects future debuggers from chasing a
+phantom regression.
+
+### ❌ `--global` content landed somewhere the agent doesn't read it
+
+**Symptom:** `ach-cli env hydrate --global` / `skill install --global` reports
+success, but the agent CLI never sees the skill/MCP server.
+
+**Cause A — the var was not exported to ach-cli.** ach-cli READS the tool's
+config-dir var; it never sets it. If you run your agent under a redirected
+profile (e.g. `ackstorm/agent-profile`) but the var is not set in the shell that
+runs ach-cli, ach-cli writes to `$HOME` while the agent reads the profile dir.
+Check: `env | grep -E 'CLAUDE_CONFIG_DIR|CODEX_HOME|GEMINI_CLI_HOME|PI_CODING_AGENT_DIR|XDG_CONFIG_HOME'`.
+Fix: export the var in the same shell (or via direnv) before hydrating.
+
+**Cause B — the value is relative.** A relative value is deliberately ignored
+and ach-cli falls back to `$HOME`. Use an absolute path.
+
+**Cause C — the path is outside the redirected prefix.** Only the adapter's own
+config prefix redirects. `CODEX_HOME` does NOT move `.agents/skills/**`, and
+`CLAUDE_CONFIG_DIR` does not move `.mcp.json`/`CLAUDE.md`. See the table in
+`internal/cli/CLAUDE.md` "Global-scope root resolution".
+
+**Orphans after switching profiles.** Changing the var between runs leaves the
+previously written files at the OLD location — a plain `env hydrate` writes the
+new copies and forgets the old entries. Remedy: run `ach-cli env hydrate --sync`
+(prunes the old destinations), or `ach-cli env uninstall <name>` BEFORE
+switching the variable.
+
+### ❌ `ach-cli env hydrate` exits 1 "environment is required" ✅ pass the positional `<name>` (engine namespaces state by env)
+The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
+(`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under
+`--global`) per CLI spec §8.1. So the positional `<name>` (or `ACH_ENVIRONMENT`) is
+REQUIRED for any single-env engine run — including the `ek_` credential path, which
+used to treat it as optional. Two exemptions: `--raw` (it short-circuits before the
+engine), and a **bare** `ach-cli env hydrate` (no `<name>`, no `ACH_ENVIRONMENT`)
+inside a folder that already has `.ach/<env>/`: it re-hydrates each recorded
+Environment best-effort (exit ≠0 if any fails).
+
+Two Environments hydrated into ONE project therefore get isolated caches +
+state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
+adapter-native projection (`.claude/`, `.codex/`, …) is single-path by
+construction — agents read fixed config locations — so two Environments UNION in
+the same `.claude/` (each surgically tracked + independently uninstallable via
+`ach-cli env uninstall <env>`).
+
+A pre-namespacing flat `<cwd>/.ach/state.json` (or a pre-per-platform
+`.ach/<env>/state.json`) is NOT migrated any more and is ignored: re-hydrate
+from scratch. `ach-cli env status`
+with no `<env>` argument (project scope) enumerates ALL `.ach/<env>/` so a
+multi-env project lists every installed set.
+
+`.ach/<env>/runtime/{mcp,a2a,model}.json` are credential-free snapshots of the
+Environment's runtime block (the bearer is injected ONLY into the adapter
+config, never the cache) — recorded in `state.runtimeFiles` so `--sync` /
+uninstall and drift cover runtime entries (incl. models, which have no adapter
+destination).
+
+### ❌ `ach-cli login` fails `not available in synthetic mode` ✅ unset ACH_KEY (ACH_URL alone is the login prefill)
+`ACH_URL` + `ACH_KEY` set TOGETHER is **synthetic/headless mode**: the CLI runs
+server-mediated commands off env vars, no config file — and `login`, `logout`,
+`token`, `profile …`, `--profile` and a saved-name `--key` are refused:
+```
+this command is not available in synthetic mode (ACH_URL + ACH_KEY are set: no config file is used)
+```
+`ACH_URL` ALONE only pre-fills the `ach-cli login` URL prompt (precedence: the
+positional `login <url>` → `ACH_URL` → prompt).
+
+| Vars | Job | Effect on `login` |
+|------|-----|-------------------|
+| `ACH_URL` | pre-fill the login URL | prompt suggests the URL; profile saved to disk |
+| `ACH_URL` + `ACH_KEY` | synthetic/headless mode (no disk config) | REFUSED, exit 1 |
+
+Fix: `unset ACH_KEY; ach-cli login https://hub.example.com`.
+
+### ❌ Every ach-cli command fails `uses a removed field (pk/ek)` ✅ delete the config and log in again
+The config file changed shape (profiles now hold `key:` and `keys: {name: {id,
+key}}`); an older `~/.config/ach/config.yaml` with `pk:`/`ek:` is refused, with
+no migration: `rm ~/.config/ach/config.yaml && ach-cli login <url>`. Saved `ek-`
+keys in the old file still work server-side — re-save one with
+`ach-cli profile add <name> --url <url> --key ek-…`, or revoke it.
+
+### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
+```bash
+curl -i -H 'Authorization: Bearer pk_demo' https://forwarder.local/mcp/demo-mcp-echo
+# HTTP/1.1 401 Unauthorized
+# WWW-Authenticate: Bearer error="invalid_token"
+```
+✅ The mcp-echo backend (issue #35) cryptographically verifies the JWT
+against the forwarder's JWKS. A 401 here means one of:
+- The BIP `bip-demo-mcp-echo` is missing or `Synced=False` (forwarder
+  did not promote to JWT-mint; backend sees the raw `pk_` instead of
+  a JWT). Check `kubectl -n ach-system get bip bip-demo-mcp-echo -o yaml`.
+- The forwarder's `ACH_BASE_URL` does not match the backend's
+  `ACH_EXPECTED_ISS` (Helm `testMocks.mcpEcho.expectedIss`). The
+  `iss` claim must match exactly.
+- The minted JWT's `aud=mcp:<name>` does not match
+  `testMocks.mcpEcho.expectedAud`. The route name and the audience
+  expectation must agree.
+- The backend's JWKS cache hasn't refreshed since a forwarder rotation.
+  Restart `deploy/ach-mcp-echo` to force a clean re-fetch.
+- The LiteLLM MCP server registration is missing
+  `extra_headers: ["authorization"]`. LiteLLM acts as an MCP gateway
+  in front of the backend; by default it DROPS the caller's
+  Authorization header before forwarding. Without the opt-in, the
+  backend never sees the JWT and 401s every call (visible upstream
+  as `tools=[]` on `tools/list`). `scripts/cluster.sh hydrate_fixtures`
+  registers `demo-mcp-echo` with this opt-in already in place; users
+  registering their own backends MUST do the same.
+
+WHY IT FAILS: The verifier is intentionally strict — the trust path is
+only meaningful if the backend refuses on the slightest mismatch. Fix
+the configuration, not the verifier.
+
+### ❌ `POST /mcp/<name>` 404s while LiteLLM serves it directly
+```
+{"msg":"platform-api: access","method":"POST","path":"/mcp/vmcp-zoho","status":404,"latency_ms":0}
+```
+Two red herrings make this one confusing. (1) The `platform-api: access`
+label does NOT mean platform-api handled it — `AccessLog`
+(`internal/platformapi/middleware`) is shared middleware the forwarder
+reuses verbatim, so a forwarder 404 still logs that label. (2) The gateway
+routes `/mcp/` to the forwarder correctly (`internal/gateway/routes.go`);
+the request reaches the forwarder.
+✅ The tell is `latency_ms:0` with a 404: chi rejected the path at the
+ROUTER, before precheck/JWT/LiteLLM ran (a real LiteLLM 404 has non-zero
+latency; a precheck miss is 403, not 404; a missing Environment is a 404
+but carries a JSON `environment_not_found` envelope, not chi's plain
+`404 page not found`). The forwarder registers BOTH `/mcp/{name}` and
+`/mcp/{name}/*` (`internal/forwarder/server.go`) precisely because chi
+(no `RedirectSlashes`) will not match a slash-less `/mcp/<name>` against a
+`/{name}/*`-only route. If a bare `/mcp/<name>` 404s, that bare route
+regressed — `TestRouteAcceptsBareAndSubpathNames` guards it.
+WHY IT FAILS: hydrate writes the endpoint as the bare `…/mcp/<name>`
+(`internal/platformapi/hydrate/handler.go`); MCP clients POST exactly that.
+A `/{name}/*`-only table drops it at the router. Same applies to `/a2a/<name>`.
+
+### ❌ Forwarder refuses a request body: 413 `request_too_large` / 400 `invalid_request` / 400 `client_tags_not_allowed`
+
+The forwarder scans every `/v1`, `/gemini` and `/a2a` body for client budget
+tags (`tags`, `metadata.tags`, `litellm_metadata.tags`) before forwarding, so a
+caller cannot redirect spend to another user's budget (review #5). It fails
+closed, by design:
+
+- 413 `request_too_large`: the body is above 32 MiB. OpenAI `/v1/files` and
+  `/v1/uploads` parts above that size are refused.
+- 400 `invalid_request`: the body is not a JSON object, or the Content-Type or
+  multipart framing is ambiguous. Gemini Files API raw-binary uploads
+  (`/gemini/upload/...`) are refused this way.
+- 400 `client_tags_not_allowed`: a form (multipart/urlencoded) field is named
+  `tags`, `metadata` or `litellm_metadata`.
+
+FIX: send budget-free requests (drop those fields; ACH stamps the tags itself).
+Uploads above 32 MiB, or in a refused shape, go to LiteLLM directly, done by an
+admin; they are not routable through ACH.
+
+### ❌ A model is missing from `GET /v1/models` (embedding, transcription, image…)
+
+**Symptom:** a granted model works when called by name but is not in the
+`/v1/models` list (LibreChat's picker, an SDK's `models.list()`).
+
+**Cause:** the forwarder lists only `chat`/`completion` models by default
+(`internal/forwarder/proxy/models.go`). Call `/v1/models?types=embedding`
+(any LiteLLM mode, comma-separated) or `?types=all`. A chat model that is
+missing has the wrong `mode` in LiteLLM: set `model_info.mode: chat` on its
+deployment. A model with no `mode` at all is always listed.
+The console Models page and `ach-cli env describe` are not affected — they do
+not read `/v1/models`; if a model is missing THERE, it is a grant/projection
+problem, not this filter.
+
+### ❌ LibreChat (trusted IdP / Dex token): 403 `ach_login_required`
+
+The Dex token verified, but the user has no live `purpose='oauth'` pk_: they
+never signed in to ACH, the row was revoked (an IdP refusal at an ACH refresh
+does that), or it passed its 90-day cap (each Dex use slides it 7 days, never
+past `created_at + 90 days`). The forwarder never mints one. Fix: the user
+signs in once at the console (`ACH_BASE_URL/`) — that grant mints a fresh row.
+Check: `SELECT key_id, status, expires_at, created_at FROM personal_keys WHERE
+owner_email = '<email>' AND purpose = 'oauth' ORDER BY created_at DESC LIMIT 1;`
+
+### ❌ LibreChat (trusted IdP): 503 `idp_unreachable`
+
+The forwarder cannot fetch the issuer's discovery document or JWKS (transport
+error or 5xx). Check forwarder egress to the issuer host and that
+`forwarder.trustedIdP.issuer` is the exact URL Dex serves discovery under
+(`curl <issuer>/.well-known/openid-configuration`). Other credentials keep
+working; this path heals on its own when the issuer answers again.
+
+### ❌ LibreChat (trusted IdP): 401 on every call though the user is signed in to Dex
+
+The token is not recognised or does not verify. In order: its `iss` must equal
+`forwarder.trustedIdP.issuer` byte for byte (trailing slash, `/dex` path); its
+`aud` (the Dex client id, e.g. `chat`) must be in `audiences`; the client must
+request the `email` scope or the claim is absent; `email_verified: false`
+(Dex emits false for an OIDC connector whose upstream omits the claim unless
+the connector sets `insecureSkipEmailVerified: true`); only RS256 is accepted.
+A Dex-token request answered by LiteLLM's own 401 "Invalid proxy server token"
+instead is the row's LiteLLM key gone — the user's next ACH sign-in re-mints it.
+
+### ❌ OAuth (Claude Code / Codex / opencode): 401 with `WWW-Authenticate` on every request
+
+The tool never ran its login. MCP entries hydrate writes carry **no
+credential** by design (the OAuth front door): the first request gets
+`401 WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp/<name>"`
+and the tool must be told to act on it once — `claude mcp login <name>`,
+`codex mcp login <name>`, `opencode mcp auth <name>`. None of the three
+opens a browser mid-session. If the entry carries an `Authorization` header
+or an empty `x-ach-key` (hand-edited, or a pre-OAuth hydrate), remove it:
+Claude Code disables its OAuth fallback when a credential header is
+configured.
+
+### ❌ `ach-cli token` / a tool refresh fails `invalid_grant`
+
+The refresh is dead. Since 0.9.8 every ACH refresh replays Dex's refresh
+token (`offline_access`), so the first suspect is the **IdP**: the user was
+disabled at Google/Azure, or Dex's own refresh token expired
+(`expiry.refreshTokens` in the Dex config — `validIfNotUsedFor`,
+`absoluteLifetime`). platform-api logs `oauth: identity provider refused
+the refresh; sessions ended` and revokes the user's oauth `pk_` (Dex keeps
+ONE refresh token per user+client, so ACH keeps one per user shared by all
+their tools; the other tools fail their next refresh without asking Dex). Otherwise: the ACH refresh token expired
+(`ACH_OAUTH_REFRESH_TTL`), was rotated by another process (single-use — a
+second copy of the profile on another machine races the first), or Redis
+was flushed. Fix: `ach-cli login` again; for a tool, its `… mcp login`
+again — the IdP decides there. A login that fails `the identity provider
+did not complete the login` with `no refresh_token in the Dex response`
+means Dex did not grant `offline_access`: the connector must support
+refresh (Google needs `promptType: consent`).
+`temporarily_unavailable` / 503 on refresh is Dex unreachable — the token
+stays valid, retry.
+
+### ❌ OAuth session works at login, model call answers LiteLLM `Invalid proxy server token passed … Unable to find token in cache or LiteLLM_VerificationTokenTable`
+
+The user's `purpose='oauth'` `personal_keys` row points at a LiteLLM key
+LiteLLM no longer has. Seen 2026-09-21 with **two ACH releases (separate
+DBs) on one LiteLLM** (the since-removed `identity` profile; ANY two
+releases sharing a LiteLLM behave the same) — one release's orphan
+reaper listed the shared user's keys, found the other release's key
+(`ach_key_id` present, unknown to its own DB) and revoked it within the
+hour; the other AS kept reusing the row (one oauth row per user), so a
+login that worked at first died on the next model call. Other causes: key
+deleted in LiteLLM's UI, LiteLLM DB reset. Since 0.9.8: keys carry
+`metadata.ach_issuer` (= `ACH_BASE_URL`) and the reaper revokes only its
+own release's (pre-0.9.8 keys have no stamp → never touched); `/token`
+also checks the key with `GET /key/list` on every issue (login and each 1h
+refresh) and re-mints a missing one — log line `oauth: litellm no longer
+has the oauth pk_ key; re-minting`. Manual unblock on an older release:
+revoke the row (`DELETE /platform/keys/{id}?force=true`, pk self-revoke)
+and log in again — and set `ACH_ORPHAN_CLEANUP_DRY_RUN=true` on the other
+release until it runs 0.9.8.
+
+### ❌ OAuth login works, `/mcp/<name>` is 403
+
+Not OAuth — `precheck`, exactly as for a `pk_`. The token stands for the
+user; the user reaches an `/mcp/<name>` only through an Environment whose
+`spec.authorizedTeams` includes one of their LiteLLM teams. Same fix as
+the pk_ case above ("A fresh `pk_` reaches nothing…"): the Environment's
+grants, then wait one reconcile.
+
+**It can equally mean the name does not exist at all**, and nothing before
+the 403 will tell you so. `GET /.well-known/oauth-protected-resource/mcp/<name>`
+answers 200 with a well-formed document for ANY well-formed name, declared or
+not — deliberate, not a bug: `proxy.WellKnownHandler` holds no resolver
+precisely so this anonymous endpoint cannot become an existence oracle over
+every MCP server in the deployment (D-15 applied to the anonymous surface; see
+the doc comment there). So the client discovers happily, runs a full OAuth
+ceremony against a real AS, gets a real token that verifies — and only the
+first real call 403s. A typo in the server name is indistinguishable from a
+missing grant at every step up to that point.
+
+Confirm the name exists before hunting grants (needs an admin credential):
+
+```bash
+ach-cli admin list mcp
+```
+
+### ❌ MCP client refuses: "Protected resource `<X>` does not match expected `<Y>`"
+
+```
+Protected resource https://api.example.com/mcp/my-server
+does not match expected https://ach.example.com/mcp/my-server (or origin)
+```
+RFC 9728 §3.2 — the client rejects protected-resource metadata whose
+`resource` is not the resource it addressed. It dialled ACH; the document
+names some other host. Observed with OpenCode; the check is standard, not
+client-specific. **This fails silently at every hop** — nothing is logged
+by the gateway, the forwarder, or LiteLLM, so it looks identical to the
+route not existing.
+
+Walk it in this order:
+
+1. **Is the document reachable at all?** It is a SIBLING of the resource
+   path, not a child (RFC 9728 §3 follows RFC 8414, not RFC 8615):
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server
+   ```
+   404 on a build before v0.8.4 means the forwarder mounted only
+   `jwks.json` under `/.well-known/` — upgrade, or route the path straight
+   to the backend at the ingress (see jwt-forwarder.md §1.4).
+
+2. **Does the document name ACH?**
+   ```bash
+   curl -s https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server | jq -r .resource
+   ```
+   Since the OAuth front door the forwarder COMPOSES this document itself
+   from `ACH_BASE_URL` (`proxy.WellKnownHandler`) — LiteLLM's copy is no
+   longer relayed. A wrong host here means `ACH_BASE_URL` on the forwarder
+   Deployment is wrong. (On older builds it was LiteLLM's document and the
+   `use_x_forwarded_for` + `mcp_trusted_proxy_ranges` opt-in applied.)
+
+3. **Is the scheme wrong but the host right** (`http://ach.example.com`)?
+   The Ingress is not sending `X-Forwarded-Proto`. The gateway only fills
+   it in when absent — it never overwrites the Ingress's value, because
+   TLS terminates there and the gateway sees plaintext.
+
+4. **Backend serving its own document?** It must select `resource` from an
+   allowlist of public URLs matched against `X-Forwarded-Host` — matched,
+   never echoed: the value names a document the client goes on to trust.
+   A single static resource URL pins the backend to exactly one front door.
+
+5. **Is the 401 challenge itself naming the wrong host?**
+   ```
+   www-authenticate: Bearer error="invalid_token",
+     resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+   ```
+   On the `/mcp` path LiteLLM COMPOSES this header itself — its probe loop
+   discards the backend's and synthesizes one from `PROXY_BASE_URL`, which
+   short-circuits all `X-Forwarded-*` handling. Since v0.8.5 the forwarder
+   rewrites the pointer's scheme+authority to `ACH_BASE_URL` on the way out
+   (jwt-forwarder.md §1.5). If it still names the wrong host, check
+   `ACH_BASE_URL` on the forwarder Deployment — an empty or unparseable
+   value disables the rewrite silently.
+
+WHY IT FAILS: the backend sits behind LiteLLM's own hop and cannot see the
+`Host` ACH preserved. The public hostname travels in `X-Forwarded-Host`,
+which the gateway hop SETS (overwriting any client-supplied value, so it
+cannot be spoofed) and the proxy's `stripAndRewrite` passes through untouched.
+`TestXForwardedHostSurvivesBothHops` guards the composed path.
+
+### ❌ Cost stuck at 0 under `litellm_usage`
+
+Check `GET /v2/model/info?model=<name>` reachability through the gateway
+with the agent's `ek_` presented: it is the one owned route outside the four
+families (the catch-all is gone — spec D-18), credential required like `/v1`,
+forwarded with the agent's own key; without a credential it is ACH's 401 +
+challenge, and any OTHER `/v2/*` path is a 404.
+
+### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
+After migration `000011` the forwarder authenticates to LiteLLM with the
+**caller's own** virtual key (`litellm_key_material`), not the master key
+(TESTING-PHASE reversal of FIX01 §A.6). A key minted **before** `000011` has a
+NULL `litellm_key_material`, so the forwarder sends an empty `x-litellm-api-key`
+(`Bearer ` on `/mcp`) and LiteLLM rejects it `401`.
+✅ Re-mint the pk_/ek_ (`ach-cli login` again, or recreate the env-key) — the
+fresh key persists its material. There is **no master fallback** by design.
+WHY IT FAILS: only mint (`platformapi/auth/sso.go`, `envkeys/handler.go`) writes
+the column; existing rows are not backfilled (the one-time `sk-…` is gone). Note
+the master key is still used for the teams precheck (`/user/info`) and for
+operator/platform-api admin — just never in the proxied data path.
+
+### ❌ LiteLLM 500 `MCP request failed` / `Only proxy admin … Route=/mcp/<n>/`
+The forwarder now sends the caller's **non-admin** virtual key (post-`000011`),
+and LiteLLM's MCP gateway guards it two ways (full analysis: jwt-forwarder.md
+§2.6.1):
+1. **Admin-only route.** `mcp_inference_routes` only whitelists the single-segment
+   `/mcp/{subpath}` for non-admin keys. A trailing slash (`/mcp/<n>/`) or deeper
+   subpath (`/mcp/<n>/mcp`) misses it → `_raise_admin_only_route_exception` →
+   `500`. ✅ The Director collapses the upstream path to the bare `/mcp/<server>`
+   (`mcpServerPath`, `proxy.go`); hydrate already writes the bare URL. If a `500`
+   reappears, confirm the Director normalization is intact
+   (`TestDirector_McpPathNormalizedToBareServer`).
+2. **Object-permission** (`200` body `"User not allowed to call this tool"`). The
+   key isn't granted the server. ✅ Register the MCP server with
+   `allow_all_keys: true` (the e2e seed in `scripts/cluster.sh` does this). WHY:
+   `proxy_admin` (the old master path) bypassed both guards; a per-user key needs
+   the bare route AND an explicit grant. The backend identity still rides the JWT.
+
+### ❌ Duplicate MCP servers / ambiguous `/mcp/<name>` routing
+`POST /v1/mcp/server` is **not** idempotent — each call mints a new `server_id`,
+so re-running `cluster-up`/`cluster-sync` piled up duplicate `demo-mcp-*` rows
+with the same `server_name` (LiteLLM then routes to an arbitrary one). ✅ The
+seed in `scripts/cluster.sh` now `DELETE`s every existing row for the name
+(`jq` over the `GET /v1/mcp/server` array) before re-creating it. If you see
+stale duplicates from an older run, delete them by `server_id` and re-sync.
+
+### ❌ Transient MCP `tools/call` 200 `isError: Tool '<tool>' not found`
+A proxied `tools/call` returns **HTTP 200** with an `isError` result body
+`{"content":[{"type":"text","text":"Error: Tool 'echo' not found"}],"isError":true}`
+for a tool that demonstrably exists (mcp-echo registers `echo` statically at
+boot). Not the `tools=[]` auth-drop misconfig above — the SAME call succeeds a
+few seconds later. ✅ It is LiteLLM's **MCP tool-discovery warmup window**: right
+after `cluster-up` or `cluster-sync` rolls/re-registers LiteLLM, its registry
+may not yet have run `tools/list` against the Ready backend. The error string is
+LiteLLM's, not mcp-go's. Re-run or fix the failed cluster readiness gate; do not
+increase a Go test retry budget. Readiness succeeds only when the live
+`/v1/mcp/tools` response contains exactly one `demo-mcp-jwt.echo` and one
+`demo-mcp-nojwt.echo`. A focused pass on a retained cluster proves only that the
+registry has warmed. On failure, use the emitted last `/v1/mcp/tools` response,
+relevant `/v1/mcp/server` rows, port-forward log, `ach-mcp-echo` logs, and
+LiteLLM logs to distinguish registration, backend, authorization, discovery,
+and port-forward failures. WHY: discovery is asynchronous, so readiness—not
+the first route test—owns convergence; this is not a JWT/BIP-precedence signal.
+
+### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
+**Dormant / unreachable in v1alpha1.** The v1alpha1 write path is **GitOps/CRD
+only** — there is no UI write path, so `origin='ui'` rows are never produced and
+this condition cannot fire in practice. The machinery is **reserved** for the
+future UI Objects API (#34, whose promotion half is unbuilt).
+✅ N/A in v1alpha1 — there is nothing to fix; you will not encounter this. If you
+somehow see it, an `origin='ui'` row was written by hand into Postgres (the
+control plane never does this) — remove that row.
+WHY (reserved-machinery background): every projection table (environments,
+plugins, prompts, artifacts, litellm_connections, backend_identity_policies,
+external_refs, marketplace_plugins) carries an `origin TEXT CHECK IN ('cr','ui')`
+column. The operator's UPSERTs are guarded by
+`ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; a filter miss
+returns `pgx.ErrNoRows`, which the helper maps to `ErrOriginConflict` and the
+reconciler maps to `Synced=False reason=ConflictWithUIRow` with a 1-min requeue.
+Until a UI write path ships, that guard simply never trips.
+
+### ❌ orphan-cleanup revoked a LiteLLM key it should not have (or revoked nothing)
+The operator's orphan-cleanup loop (`internal/orphan`, OP-15 / Hub §18.4)
+revokes **only** ACH-minted keys that ACH no longer tracks as active. A key is
+ACH-minted iff its LiteLLM `/key/list` metadata carries `ach_key_id` (set at
+mint in `sso.go` / `envkeys/handler.go`); that id joins against the active
+`key_id` set (`db.ListActiveACHKeyIDs`). Foreign keys (manual dashboard, `tf-*`,
+token-factory — no `ach_key_id`) are **never** touched.
+✅ Diagnose with the audit/metrics, then tune via env (operator-only, set through
+Helm `extraEnv`):
+```bash
+make logs-operator | grep -E "orphan-cleanup: (revoked|WOULD revoke|WARNING)|skipped_"
+# /metrics: ach_orphan_cleanup_candidates_total / _revoked_total /
+#           _skipped_total{reason=dry_run|empty_active_set|circuit_breaker|...}
+```
+- **Emergency stop (no rebuild):** `ACH_ORPHAN_CLEANUP_INTERVAL=8760h` — the
+  loop has no initial tick, so a year-long interval never fires for that pod.
+- **Reversible neutralize (B3):** `ACH_ORPHAN_CLEANUP_DRY_RUN=true` — logs
+  `WOULD revoke` + `skipped{dry_run}`, never calls RevokeKey.
+- **Circuit-breaker (B2):** `ACH_ORPHAN_CLEANUP_MAX_REVOKE` (default 10) — a tick
+  with more true-orphan candidates than the cap aborts revocation entirely and
+  emits `outcome=skipped_circuit_breaker`.
+- **Empty-active-set fail-safe (B1):** if the active key set is empty while
+  ACH-owned candidates exist (the mis-wire shape), the tick skips with
+  `outcome=skipped_empty_active_set` rather than revoking the fleet. Accepted
+  corner (D-23): an empty managed set does NOT imply an empty user set (the
+  managed set is every non-revoked row; the user set enumerates ANY status),
+  so a DB whose every row is revoked plus one still-lingering LiteLLM key
+  also trips this guard — the reap-as-revoke-retry for that key is delayed
+  to a later tick, never lost, and nothing is ever wrongly revoked.
+WHY IT MATTERED: the original loop joined the opaque LiteLLM `token` against the
+`key_id` set — two non-intersecting namespaces — so every key older than the
+10-min floor under a managed user was mis-classified orphan and revoked. The
+ownership gate + B1/B2 guards make a future mis-wire observable and bounded.
+
+NOTE (`ACH_ORPHAN_CLEANUP_DRY_RUN`): a malformed value (`tru`, `yes`, `on`)
+**fails operator startup** — it is parsed with `MustEnvBool`, not the
+silent-fallback `EnvBool`, so a typo can never quietly re-enable real
+revocation. Under dry-run the B1/B2 guards still emit per-key `WOULD revoke` +
+`skipped{dry_run}` so you can inspect exactly the batches they would abort.
+
+KNOWN LIMITATION (orphan backstop coverage): the loop only checks users with an
+**active** ACH row (`ListACHManagedLitellmUsers` filters `status='active'`). A
+LiteLLM key whose owner's last ACH row is already `revoked` — e.g. a DB-side
+revoke whose LiteLLM-side `/key/delete` failed — is NOT re-checked by later
+ticks. If you see a stale upstream key for a fully-revoked user, delete it
+manually (it 401s anyway); a widened-enumeration backstop is a tracked
+follow-up, not part of PR #119.
+
+### ❌ `ach-cli keys revoke <ekid_>` → `502 litellm_rejected` (key deleted in LiteLLM out-of-band)
+ek_ revoke is **LiteLLM-first** (KEY-08): the ACH row flips only after LiteLLM
+acks the `/key/delete`. If you deleted the ek_'s LiteLLM virtual key directly
+(LiteLLM UI, raw `POST /key/delete`, or `ek save`-style tooling) instead of
+through `ach-cli keys revoke`, LiteLLM no longer has the token → future
+`/key/delete` returns **404 `Key not found.`**. The ACH row is untouched, so
+the `ek-…` **still authenticates to ACH** (hydrate/reads work) while every model
++ MCP call 401s at LiteLLM — a desync between ACH and LiteLLM.
+✅ The revoke handler now treats that 404 as **idempotent success** (the
+upstream credential is already gone → the barrier's goal is met) and proceeds to
+the DB flip, so a plain `ach-cli keys revoke <ekid_>` finishes cleanly and
+returns 204. Any OTHER LiteLLM error (503 unreachable, 401/403 rejected) still
+fails closed — the row stays `active` so a retry is safe.
+WHY IT MATTERED: before this, a 404 was classified as a hard rejection → the row
+could never be revoked via the CLI, leaving a live-in-ACH but dead-in-LiteLLM
+key with no self-service recovery (needed a manual DB `UPDATE`). Root fix:
+`litellm.IsHTTPNotFound` + the 404 branch in `revokeEnvironmentKey`
+(`envkeys/handler.go` step 5). **Always** revoke via `ach-cli keys revoke`, not
+directly in LiteLLM, to keep the two sides in sync in the first place.
+
+### ❌ Code change rebuilt but the old container keeps serving after `cluster-up`
+```bash
+# edit Go code → make cluster-up → behavior unchanged; pod AGE is hours old
+kubectl -n ach-system get pod -l app.kubernetes.io/component=platform-api
+# ach-platform-api-... 1/1 Running 0 48m   ← NOT restarted
+```
+✅ `scripts/cluster.sh hydrate_ach` rebuilds + `kind load`s the image under
+the **fixed** tag `:e2e` with `pullPolicy=IfNotPresent`. A rebuilt image
+carries the same tag, so a plain `helm upgrade` renders a byte-identical
+Deployment spec and does NOT roll the pods — kubelet keeps the stale image
+running. `hydrate_ach` defeats this by passing
+`--set-string image.rebuildId=$(date +%s)`: the chart renders that value
+into an `ach.ackstorm.ai/rebuild-id` pod annotation on every ach
+Deployment, so the podTemplate changes each run and **Helm rolls all pods
+in the same upgrade** onto the freshly node-resident `:e2e` layer. The
+value defaults to `""` (annotation omitted) so **production never rolls
+pods spuriously**. If you redeploy by some other path (raw `helm upgrade`,
+manual image rebuild), either pass the same `--set-string` or force the
+roll yourself:
+```bash
+for d in ach-operator ach-platform-api ach-forwarder; do
+  ./scripts/dev.sh kubectl -n ach-system rollout restart deploy/"$d"
+done
+```
+WHY IT FAILS: `IfNotPresent` + a non-unique tag means the only signal that
+would trigger a rollout (a changed podTemplate) never changes across
+rebuilds. The image content under `:e2e` is new, but nothing tells kubelet
+to recreate the pod. `image.rebuildId` is the prod-safe knob that makes the
+podTemplate differ per build; a unique per-build image **tag** would also
+work but leaves orphan images on the node.
+
+### ❌ E2E capture test fails with `/__capture/reset: ... EOF`; mock container crashed
+```bash
+# e.g. TestPhase4Invariants/SC2_EkTagStamping:
+#   phase4_invariants_test.go:163: POST /__capture/reset: ... EOF
+./scripts/dev.sh kubectl -n ach-system get pod -l app.kubernetes.io/component=mock-model \
+  -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{"\n"}'   # ≥ 1
+./scripts/dev.sh kubectl -n ach-system logs <pod> --previous   # panic / fatal error
+```
+An `EOF` on a freshly-established port-forward almost always means the
+**backend container died**, not a test-logic bug. `ach-mock` and `ach-mcp-echo`
+are applied via kustomize (stage-03 backends, NOT the ach Helm chart), so the
+`image.rebuildId` roll above does **not** touch them — and the deeper trap is
+the image **build**, not the rollout: a stale `COPY` layer can rebuild the mock
+to a **byte-identical** pre-fix image, so `kind load` reports *"already present
+… skipping"* and the old (crashing) binary keeps serving even after a pod roll.
+This once shipped a pre-fix `ach-mock` binary that crashed with
+`fatal error: sync: unlock of unlocked mutex` on every `/__capture/reset`.
+✅ Confirm the crash from `--previous` logs, then force a clean rebuild and roll:
+```bash
+docker build --no-cache -t ach-mock:e2e -f test/e2e/mock/Dockerfile .
+kind load docker-image ach-mock:e2e --name ach-e2e
+./scripts/dev.sh kubectl -n ach-system rollout restart deploy/ach-mock-model
+```
+The structural fix is already in: both mock Dockerfiles use **explicit
+allow-list `COPY`** (never `COPY . .`), so a source edit busts the layer cache
+deterministically. Re-validate with `make e2e-run` (NOT `e2e-full`, whose
+`cluster-up` rebuild could re-cache a stale layer on an unchanged tree).
+
+### ❌ First SSO login returns `500 default_team_missing`
+A login that arrives BEFORE the operator's first successful `EnsureDefaultTeam`
+(operator just started / `LiteLLMConnection` not yet `Ready` / LiteLLM briefly
+unreachable) can 500 with audit `outcome=default_team_missing`.
+✅ It SELF-HEALS — the next LiteLLMConnection reconcile creates the canonical
+`default` team (idempotent list-first → `POST /team/new`), and subsequent logins
+succeed. No manual action needed; the operator bootstraps the team proactively
+(`litellmconnection_controller.go`), so in steady state it is present before any
+login. WHY: ACH does NOT lazily create the default team in the SSO path — that is
+a fail-loud signal (`auth/doc.go`) — but the operator's proactive bootstrap closes
+the gap once the control plane converges. The 500 is transient, not a dead-end.
+
+### ❌ A user in an SSO group / `platformApi.teams.users` does not get the team's Environment
+Check in order. (1) `login: team does not exist; skipped team=<alias>` in the
+platform-api log → LiteLLM has no team with that alias (LiteLLM is the source of
+truth; ACH never creates `users`/`sso` teams) — create it, the NEXT login joins
+the user. (2) No mapping fires for an SSO group → the ID token has no `groups`
+claim: the Dex upstream connector must emit it (Google needs the groups config,
+Azure the groups claim); ACH already requests the `groups` scope. Keys match
+case-insensitively, but the value must otherwise equal the claim. (3) Joined but
+no access yet → the operator attaches the user's shell team at the Environment's
+next reconcile (same fail-closed delay as a brand-new shell). Removing a mapping
+never detaches the user; remove them from the LiteLLM team by hand.
+`ACH_TEAMS_DEFAULT: at least one default team required` at start → set
+`platformApi.teams.default`.
+
+### ❌ OAuth consent does not complete for an MCP backend
+The authorization flow returns `502` after the broker callback, or the broker
+is never reached. Check the winning MCP `BackendIdentityPolicy`: both
+`consentBroker` and `consentAudience` must be set, and the target must have
+`forwardIdentityJWT: true`. Then verify the broker's RFC 8414 document and
+registration endpoint are reachable from platform-api. WHY: ACH only starts
+the one-hop ceremony when its forwarder probe reports `auth_required`; after
+the callback it probes again and issues a code only when the backend reports
+`ok`. A missing policy, an already-authorized backend, a broker failure, or a
+failed post-consent probe does not create a wider OAuth token.
+
+### ❌ `401 missing_key` although the client sends its key
+✅ The header is not one of the release's declared credential slots
+(`forwarder.headers` / `platformApi.headers` → `ACH_CREDENTIAL_HEADERS`;
+names are lower-cased): `kubectl -n ach-system get deploy ach-forwarder -o
+jsonpath='{.spec.template.spec.containers[0].env}'`. A raw LiteLLM key in
+`Authorization` is 401 by design — `Authorization: Bearer` is only ever ACH's
+own OAuth token; declare a `mode: passthrough` header for raw keys.
+
+### ❌ `401 expired_or_revoked` on an `ek_` the key list shows `suspended`/`expired`
+✅ Expected — a suspended, expired, revoked, or unknown key all collapse to
+the same resolver-miss outcome (`audit.OutcomeExpiredOrRevoked`, code
+`expired_or_revoked`, KEY-04/KEY-06 "indistinguishable" by design). Check
+what `GET /platform/keys` reports for that `ekid_`: `suspended` means an
+explicit `POST /platform/keys/{id}/suspend` (resume it, or wait — the
+enforcement bound is ≤60s from the DB commit, not from this 401); `expired`
+means its `expires_at` has passed (not editable — create a new credential).
+This is NOT the same failure as the 403 below.
+
+### ❌ `403 unauthorized_team` on an `ek_`
+✅ The key still authenticates but its owner no longer holds the bound
+Environment's access (D-30 `invalid` state) — the `EkOwnerGate` middleware
+(forwarder `/v1`, `/gemini`, `/mcp`, `/a2a`, `/v2/model/info`), `/platform/
+hydrate`, and content-service all run the same `authorizedTeams ∩
+TeamsResolver(owner_email)` check pk_ traffic already used. Confirm via
+`GET /platform/keys`: the list shows effective state `invalid` with a
+`no_access` reason. Nothing is persisted — when the owner's team membership
+is restored the SAME key authorizes again on the next TeamsResolver
+refresh (≤60s positive / 5s negative cache), no re-mint needed.
+
+### ❌ `503 litellm_unreachable` on an `ek_`
+✅ NOT an access-loss verdict — the `EkOwnerGate`/hydrate/content-service
+team check could not reach LiteLLM/TeamsResolver to decide, so it fails
+safe with a 503 rather than silently treating a transient dependency
+outage as `invalid` (§7.2: "never overwrite manual state"). Retry; if it
+persists, check LiteLLM/TeamsResolver connectivity, not the key's state.
+
+### ❌ `make migrate` DOWN below the console release: `environment_keys has suspended or expiring rows; rollback below the console release is not supported (D-29)`
+✅ By design — the down migration for `000022_ek_state` refuses when any
+`environment_keys` row is `status='suspended'` or carries a non-null
+`expires_at`, because an older build's orphan reaper has no concept of
+`suspended` (it would reap those keys) and dropping the `expires_at` column
+would silently erase expiry. Resume every suspended key and let every
+`expires_at` either clear (revoke + recreate without expiry) or expire
+naturally before rolling back below this release; there is no forced
+override.
+
+### ❌ `GET /` answers `404 console not built: run make ui-build`
+✅ Expected on a binary built without the React bundle: `internal/platformapi/
+console/dist` only tracks `.gitkeep`, and `go build` embeds whatever is there.
+`make ui-build` (needs `ui/`) fills it before `make build-server`; the release
+image runs the Node stage itself. The API is unaffected — only "/" and the
+client routes fall back to this notice; `/platform/*` stays a JSON 404.
+
+### ❌ Release fails: `git is in a dirty state` / `D .../console/dist/.gitkeep`
+✅ goreleaser refuses to run on a dirty tree. `vite build` sets
+`emptyOutDir: true` on `internal/platformapi/console/dist`, which wipes the
+directory **including the tracked `.gitkeep`** that keeps it embeddable by
+`go:embed all:dist` before the console is ever built. The `ui` package's
+`postbuild` npm hook restores it; it covers the `build` script only, so a bare
+`npx vite build` (or a build that fails after `emptyOutDir` has already run)
+still leaves the tree dirty.
+
+This is a **release-burning** failure, not a local nuisance: `release.yml`
+pushes the git tag BEFORE goreleaser runs, so the abort strands a public
+`vX.Y.Z` tag with no release, image, or chart behind it (v0.9.11). The
+workflow now asserts `git status --porcelain` is empty right after the console
+build, failing while the tag is still private. If an orphan tag did get
+pushed, delete it: `git push origin :refs/tags/vX.Y.Z` — otherwise the Go
+module proxy keeps serving `@vX.Y.Z`. Full recovery matrix in
+`references/release-pipeline.md` ("Orphan-tag posture").
+
+### ❌ Console: `400 ambiguous_credentials` on every request
+✅ The browser sent the console cookie AND an API credential — usually a
+browser extension injecting `Authorization`, or a client reusing a browser
+cookie jar next to `x-ach-key`. The adapter refuses both on purpose (spec
+§5.3): drop one of them. `403 csrf_rejected` on a cookie-authenticated
+mutation means the request carried no `Sec-Fetch-Site: same-origin` and no
+`Origin` equal to `ACH_BASE_URL` (D-28) — a cross-site form, a `curl` without
+those headers, or a proxy that strips fetch metadata. `503
+temporarily_unavailable` on a cookie request is Dex not answering the periodic
+revalidation; the session is kept, retry.
+
+### ❌ `GET /platform/console/latency` answers 200 `{"available":false,"reason":"unavailable"}`
+✅ `/spend/logs/v2` refused the caller's own LiteLLM key with 401
+`role=unknown` (§10.2 fact 1) — the user's LiteLLM `user_role` was never set,
+almost always because the user never went through `provisionUser` (no
+first-login OAuth round-trip minted their `sk-`/role, e.g. a row seeded
+directly in the DB for a test, or a user provisioned before the role was
+added). ACH never retries with the master key on this path (§10.1) — that
+would leak the user-scoping guarantee. Fix: have the user complete a real
+OAuth login (`ach-cli login` or the console session flow) so `provisionUser`
+runs; `reason:"fetch_failed"` instead is a different failure (transport/5xx)
+and self-heals once LiteLLM answers again.
+
+### ❌ `GET /platform/console/stats` answers `502 litellm_rejected`
+✅ The CURRENT-window `/user/daily/activity` call was refused — the caller's
+decrypted `sk-` (opened from `personal_keys.LiteLLMKeyMaterial`) no longer
+exists in LiteLLM, usually because it was deleted directly in LiteLLM
+(orphan reaper, a manual `key/delete`, or a DB reset that didn't touch
+ACH's row). ACH does not retry with the master key (§10.1), so this is a
+hard error, not a degraded 200. Self-heals on the next `/platform/oauth/token`
+issue: platform-api re-mints the `sk-` whenever `GET /key/list` no longer
+lists it (one check per issue) — have the user re-run `ach-cli login` (or
+let their client's token refresh trigger `/token`), then retry.
+
+### ❌ `/ui`, `/key/list`, `/health`, `/v2/...` are 404 through the ACH host
+✅ By design since D-18: nothing LiteLLM serves outside `/v1`, `/gemini`,
+`/mcp/<n>`, `/a2a/<n>` (+ `GET /v2/model/info` for ach-agent pricing) is
+proxied any more. Use LiteLLM's own host / cluster-internal Service for its
+UI and admin surface.
+
+### ❌ Fresh install: `ach-operator` + `ach-platform-api` stuck `ContainerCreating`, `FailedMount … secret "ach-jwt-signing-keys" not found`
+✅ Chart older than the fix below: the content-service SIDECAR in the operator
+Pod mounted `ach-jwt-signing-keys` as a required volume, and the operator is
+what mints that Secret → the Pod could never start. Fixed 2026-09-21 by making
+the sidecar's volume `optional: true` (`ach.contentServiceJWTVolume`); the
+sidecar restarts until the Secret exists. On an old chart, seed the Secret by
+hand (recipe above) and the Pods start. Hidden for days on the kept kind
+cluster because the Secret survived from earlier runs — only a clean
+`cluster-down && cluster-up` shows it.
+
+### ❌ After `make clean-cache`: `kubectl` → "the server could not find the requested resource" / `current-context is not set`
+✅ `.gocache/kube/config` (the kind kubeconfig devtools mounts) was wiped with
+the cache. `scripts/dev.sh` only regenerates it when the HOST has `kind`; this
+box does not. Restore it from inside devtools:
+`./scripts/dev.sh bash -c 'kind get kubeconfig --name ach-e2e > /workspace/.gocache/kube/config'`.
+The cluster itself is untouched (`./scripts/dev.sh kind get clusters`).
+
+
+### ❌ Console: the create-key Environment picker is empty, but `ach-cli keys create` works
+
+Symptom: every Environment in the modal's dropdown is greyed out, so the
+console can mint no keys at all, while the same create against
+`POST /platform/keys` succeeds for those same Environments.
+
+Cause: the two surfaces were gating on different conditions. The backend
+requires **`AccessGroupSynced=True`** and nothing else
+(`envkeys/handler.go` → `Store.AccessGroupSyncedFromRow`). The UI was
+gating on the rolled-up `status` string being exactly `"Available"`, which
+is `AccessGroupSynced` **AND** `ExecutionResourcesResolved`. Any
+Environment with an unresolved runtime/context reference — an unresolvable
+model name is the common one — reports `Available=False` with a reason
+like `ResourceUnresolved` while remaining perfectly able to mint keys.
+Nine such Environments in production meant an empty picker.
+
+Fix (2026-09-23): the UI reads the `conditions` array, which
+`GET /platform/environments` has always returned (`store.RowToView`), and
+gates on `AccessGroupSynced` via `ui/src/lib/env-status.ts`; a synced but
+degraded Environment stays selectable and shows its reason as a hint. With
+no `conditions` on the wire it falls back to the old `status` check, so an
+older platform-api behaves as before.
+
+Check it from outside the browser:
+`curl -s "$ACH/platform/environments?limit=500" -H "x-ach-key: pk_…" | jq '.items[] | {name, status, sync: (.conditions[]? | select(.type=="AccessGroupSynced") | .status)}'`
+— `status` other than `Available` with `sync: "True"` is the condition this
+entry describes, and keys can be created.
+
+### ❌ OpenCode picks the wrong default model / ignores `genai.defaultModel`
+
+`/clients/opencode/config` sets `config.model` / `config.small_model` (`<provider>/<name>`)
+only when the bare name from `ACH_GENAI_DEFAULT_MODEL` / `ACH_GENAI_DEFAULT_SMALL_MODEL` is a
+**chat** model in the caller's OWN LiteLLM list. A hidden, misspelt, embedding or `a2a/` name
+is silently omitted and OpenCode takes the first model. Check `curl -H "Authorization: Bearer
+<token>" https://<ach>/clients/opencode/config | jq '.config|{model,small_model}, (.provider[]|.models|keys)'`.
+A model/small_model the user set in their own opencode.json always wins.
+
+### ❌ OpenCode v2: no `ackstorm` models after `opencode auth login`
+
+Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
++ `opencode service restart`: `opencode models` lists only `<provider>/*`.
+`/clients/opencode/config` carries no MCP servers (since 2026-10-08): `opencode mcp list`
+shows only what a hydrated Environment wrote (`ach-cli env hydrate <env> --target opencode`,
+`-g` or `--dir`), so an empty list there means nothing was hydrated, not a login fault.
+Observed 2026-09-29, three separate causes:
+
+- **Right after the restart.** The service loads the plugin, which then fetches the
+  config (2 s timeout). A `models` / `mcp list` run in the same second races it.
+  Wait a few seconds and run it again.
+- **The credentials never reached the service's database.** Check
+  `opencode debug config`: the first source must be the well-known document
+  (`plugins: [git+…opencode-oidc-provider…]` + `experimental.policies` deny `*` /
+  allow `<provider>`). If it is missing, read `~/.local/share/opencode/opencode.db`:
+  `select value from kv where key='wellknown:sources'` must list the ACH origin and
+  the `credential` table must hold it plus the `<provider>` oauth row. Both empty
+  while the log shows `credential created` (with no `credential removed`) means the
+  service that took the login did not persist it. Log in again with both commands,
+  then restart.
+- **`OPENCODE_MODELS_URL` left from an older setup** (e.g. alitellm-auth's
+  `/public/opencode`): the log shows `Failed to fetch models.dev … 404` on every
+  service start. Unset it in the shell profile; the service inherits the environment
+  of the shell that restarts it.
+
+Two v2 `auth logout` traps (from alitellm-auth, same plugin):
+
+- **Log out the provider before the origin.** `opencode auth logout <provider>` first,
+  then `opencode auth logout <origin>`. With the origin gone first the plugin unloads,
+  `auth logout <provider>` answers "Integration not found", and the tokens stay stored
+  with nothing able to reach them.
+- **A saved origin that no longer answers** its `/.well-known/opencode` makes every
+  login and logout fail with "Integration not found". Remove it from
+  `kv['wellknown:sources']` in `opencode.db`; never delete the db (it holds every
+  session and login).
+
+A plugin under `~/.config/opencode/plugins/` that logs `Plugin must export a default
+definition with an id and an effect or setup function` is a v1-only plugin that v2
+skips. Harmless to ACH.
+
+### ❌ OpenCode refresh `400 invalid_grant` for every install of one user; log `identity provider refused the refresh; sessions ended … claimed twice`
+
+Every `/platform/oauth/token` refresh replays the user's ONE shared Dex refresh
+token. Before 2026-10-09 that replay ran on the request context: a slow Dex
+answer (15 s on 2026-10-08) whose client hung up was cancelled AFTER Dex had
+rotated, the rotated token was never stored, and the next replay got Dex's
+`refresh token claimed twice` (400) — which ends every session of the user and
+revokes the oauth `pk_`. `revalidateAtIdP` now runs detached
+(`context.WithoutCancel` + 30 s). An affected user must log in again
+(`opencode auth login -p <provider>`). Every refused refresh logs an
+`oauth: refresh refused: …` line with `sub`/`client_id`.
+
+Racing refreshes of ONE ACH refresh token (several opencode processes waking
+up after an expiry) were a second path to the same outcome: the grant read the
+token, asked Dex, and only then took it, so every racer replayed the shared Dex
+token, and one outside Dex's reuse interval was "claimed twice". Since
+2026-10-10 the grant takes the token FIRST (`GETDEL`): losers get
+`invalid_grant` without reaching Dex, and the token is put back on a 503/500
+or a failed issue. While a grant holds it, a short-lived `rotating` marker
+(Valkey `ach:oauth:rotating:<token>`, 60 s) makes a racer's answer carry
+`error_description: "refresh token rotation in progress"` — a contract with
+opencode-oidc-provider ≥ v0.4.9, which then waits up to 35 s for the winner's
+tokens in its `rotation.json` (a slow Dex no longer costs the racer its turn)
+and retries once if none appear. A bare `invalid_grant` is a dead token: the
+plugin signs out after 2.5 s. An IdP refusal deletes the marker so racers of
+a session that just ended fail at once.
+
+Dex facts (`dexidp/dex` `grants/refresh.go`): reuse, an unknown token and an
+expired one all answer 400 with the same "invalid or already claimed" family —
+not distinguishable; an upstream connector refusal (user disabled at Google)
+answers **500**, which ACH maps to 503, not to "sessions ended". The prod Dex
+`refreshTokens.validIfNotUsedFor: 720h` ends a session idle for 30 days — an
+accepted cap below `RefreshTTL` (90 d).
+
+### ❌ `env list` empty / `403 unauthorized_team` for one user whose LiteLLM `user_email` is NULL
+
+A LiteLLM user created out-of-band (token-factory) with `user_id=<email>` but a
+NULL `user_email` was invisible to `UserInfoByEmail` (`/user/info?user_email=`
+answers the `default_user_id` placeholder, `/user/list?user_email=` has no
+match) → zero teams everywhere (env list, hydrate, `ek_` create, forwarder
+`/mcp`/`/a2a` precheck). `UserInfoByEmail` now asks
+`/user/info?user_id=<email>` FIRST (one round-trip for every ACH-provisioned
+user, where the email chain costs three), trusting only an answer for exactly
+that id (the placeholder carries the admin's teams); only a miss falls through
+to the email chain. The SSO login backfills `user_email` on the record.

@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litellm-master-key
+  namespace: ach-system
+type: Opaque
+stringData:
+  masterKey: sk-test-master-key
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: LiteLLMConnection
+metadata:
+  name: default
+  namespace: ach-system
+spec:
+  endpoint: http://litellm.litellm-system.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: masterKey

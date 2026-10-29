@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SkillMarketplace — pulls anthropics/skills as a skill collection. There is NO
+# marketplace.json: the operator fetches the repo tarball and tree-walks the
+# `skills/` sub-directory (spec.github.path), discovering one skill per
+# `skills/<name>/SKILL.md` whose frontmatter name == <name>. Each discovered
+# skill is sliced into skill-marketplace/anthropic-skills/<name>.tar.gz and
+# folded into the admin SKILLS inventory as `<name>@anthropic-skills`.
+#
+# The demo Environment (05-environment) references `pdf@anthropic-skills` to
+# exercise the name@marketplace skill resolution + hydrate path end-to-end.
+# Part of the SYNCED set (cluster.sh applies it; verify_all gates Synced=True).
+# Public repo — no PAT. path=skills is honored POST-FETCH (the git fetcher
+# returns the whole repo; discovery narrows to the skills/ subtree).
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: SkillMarketplace
+metadata:
+  name: anthropic-skills
+  namespace: ach-system
+spec:
+  type: github
+  github:
+    repo: anthropics/skills
+    ref: main
+    path: skills
+  refresh:
+    interval: 1h
+    maxStaleness: 24h

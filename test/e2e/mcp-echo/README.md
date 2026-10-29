@@ -1,0 +1,67 @@
+# ach-mcp-echo — JWT-validating MCP echo backend
+
+A runnable reference + e2e fixture for ACH's `/mcp` JWT trust path.
+
+Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
+`:9090`) exposing a single tool, `echo`, which:
+
+1. Receives a `text: string` argument.
+2. Verifies the incoming `Authorization: Bearer <jwt>` against the
+   Forwarder's `/.well-known/jwks.json` (Ed25519 / EdDSA).
+3. Validates the standard claim set (`iss`, `aud`, `exp`) against
+   environment-configured expectations.
+4. Returns the echoed text plus the verified claims as JSON.
+
+> **JWT claims.** Backends verify `iss` / `aud` / `exp` only — `nbf` is
+> **absent** (intentional; `exp` is the sole time bound), so do not require it.
+> `sub` is the bare `<owner-email>` (no namespace prefix); the additive `email`
+> claim mirrors `sub`. The verifier also captures `iss` / `aud` / `sub` / `kid`
+> and the additive `groups` claim (the caller's LiteLLM team aliases) — `groups`
+> is **optional**: absent means the caller belongs to no team, never a
+> verification error.
+
+## Environment
+
+| Var | Required | Default | Purpose |
+|---|---|---|---|
+| `MOCK_BIND_ADDRESS` | no | `:9090` | HTTP bind address |
+| `ACH_JWKS_URL` | yes | — | Forwarder JWKS URL (e.g. `http://ach-forwarder.ach-system.svc/.well-known/jwks.json`) |
+| `ACH_EXPECTED_ISS` | yes | — | Required `iss` claim (= `ACH_BASE_URL` configured on the Forwarder) |
+| `ACH_EXPECTED_AUD` | yes | — | Comma-separated list of accepted `aud` claims (e.g. `mcp:demo-mcp-echo`) |
+| `ACH_JWKS_REFRESH` | no | `5m` | Min interval between background JWKS refreshes |
+| `ACH_GRANT_REDIS_ADDR` | no | empty | Valkey/Redis address for an audience-specific OAuth grant gate |
+| `ACH_GRANT_AUD` | no | empty | JWT `aud` that requires a grant projection |
+| `ACH_GRANT_STORE` | no | `echo` | Grant projection store in `oauth:<store>:state:<sub>` |
+
+## Endpoints
+
+| Path | Auth | Purpose |
+|---|---|---|
+| `/` | JWT | MCP Streamable-HTTP endpoint (echo tool lives here) |
+| `/healthz` | none | Liveness/readiness |
+| `/__capture/last` | none | Last request snapshot (test introspection) |
+| `/__capture/reset` | none | Reset capture buffer (test introspection) |
+
+## Module layout
+
+This directory is its own Go module (`github.com/ackstorm/ach/test/e2e/mcp-echo`,
+own `go.mod`/`go.sum`) so `mark3labs/mcp-go` stays out of the production
+dependency graph. Run `go test ./...` from inside this directory; the root
+`./...` sweeps do not include it (`make qa-lint` and pre-push gate 12 cover it
+explicitly). Build the image from the repo root with `make build-image-mcp-echo`.
+
+## Standalone run
+
+```bash
+cd test/e2e/mcp-echo
+ACH_JWKS_URL=https://forwarder.example/.well-known/jwks.json \
+ACH_EXPECTED_ISS=https://hub.example \
+ACH_EXPECTED_AUD=mcp:demo-mcp-echo \
+go run .
+```
+
+## E2E
+
+Built into `ach-mcp-echo:e2e` by `make build-image-mcp-echo`, deployed by
+the Helm chart when `testMocks.mcpEcho.enabled=true`, exercised by
+`TestPhase4JWTValidate` in `test/e2e/phase4_jwt_validate_test.go`.

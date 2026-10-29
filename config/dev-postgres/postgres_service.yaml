@@ -1,0 +1,24 @@
+# Phase 02.1 — Development-only Postgres Service for kind e2e.
+#
+# Service name `ach-postgres` MUST match the host portion of the ach-db-url
+# Secret (patched by config/e2e to `.ach-system.svc.cluster.local`).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ach-postgres
+  namespace: system                         # kustomize rewrites to ach-system
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP

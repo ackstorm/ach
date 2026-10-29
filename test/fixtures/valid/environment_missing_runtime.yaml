@@ -1,0 +1,20 @@
+# FIXTURE: valid. Expected acceptance at admission.
+# Guards that Environment.spec.runtime is OPTIONAL. Commit 30c76e0
+# ("feat(api): make Environment spec.context/spec.runtime optional") switched
+# spec.runtime and spec.context from +kubebuilder:validation:Required to
+# +optional with +kubebuilder:default={}. A manifest that omits spec.runtime
+# is therefore accepted: the API server defaults it to {} and the list
+# sub-fields backfill to []. Only spec.authorizedTeams remains required.
+# See api/ach/v1alpha1/environment_types.go.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: valid-omitted-runtime
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  context:
+    prompts: []
+    plugins: []
+    artifacts: []

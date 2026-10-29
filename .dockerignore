@@ -1,0 +1,34 @@
+# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
+#
+# Defense-in-depth deny-list. The Dockerfile uses explicit per-directory
+# COPY directives (cmd/, api/, internal/, db/migrations/), so the build
+# context surface is already small. This file additionally excludes
+# directories that should NEVER enter the build context even if a future
+# Dockerfile change reintroduces `COPY . .`.
+bin/
+# Devtools-container persistent Go module/build cache + kubeconfig (mounted
+# from host at runtime — copying it into the Docker build context bloats
+# the image and can exhaust disk on shallow runners).
+.gocache/
+# Git metadata: large, churny, and never needed by the builder or runtime.
+.git/
+# Claude Code per-project session/cache data (transcripts, agent worktrees —
+# multi-GB). gitignored, and never an input to any Dockerfile; excluding it
+# stops `docker build` from shipping GBs of session/cache state to the daemon
+# on every build.
+.claude/
+# Build / release / coverage / log artifacts — outputs, never build inputs.
+dist/
+site/
+cover-*.out
+*.log
+*.tmp
+# Planning + agent-facing scratch are not consumed by any Dockerfile COPY.
+.planning/
+
+# Console build inputs that never enter the image build context (the `ui` stage runs npm ci itself).
+ui/node_modules/
+ui/dist/
+# Local builds' stale hashed console assets; the image's ui stage rebuilds them.
+internal/platformapi/console/dist/*
+!internal/platformapi/console/dist/.gitkeep

@@ -1,0 +1,131 @@
+{{- if and .Values.enterprise.enabled .Values.classifier.enabled }}
+{{- with .Values.classifier }}
+---
+# Conversation classifier (docs/developer-guide/conversation-classifier.md).
+# A single replica: each process keeps its own cursor over idle sessions, and a
+# repeated write is an overwrite (deterministic score id), never a duplicate.
+# No Service: it serves nothing. No k8s API calls, so no RBAC.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ach-classifier
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: classifier
+{{- with .taxonomy }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ach-classifier-taxonomy
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: classifier
+data:
+  taxonomy.yaml: |
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ach-classifier
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: classifier
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: classifier
+  template:
+    metadata:
+      {{- if or $.Values.image.rebuildId .taxonomy }}
+      annotations:
+        {{- with $.Values.image.rebuildId }}
+        ach.ackstorm.ai/rebuild-id: {{ . | quote }}
+        {{- end }}
+        {{- with .taxonomy }}
+        # The file is read once at startup: a new taxonomy restarts the pod.
+        ach.ackstorm.ai/taxonomy-checksum: {{ toYaml . | sha256sum }}
+        {{- end }}
+      {{- end }}
+      labels:
+        {{- include "ach.commonLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: classifier
+    spec:
+      serviceAccountName: ach-classifier
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: classifier
+          image: {{ include "ach.image" $ }}
+          imagePullPolicy: {{ include "ach.imagePullPolicy" $ }}
+          args: ["classifier"]
+          # Secret keys: ACH_CLASSIFIER_CLICKHOUSE_USER, _PASSWORD, ACH_CLASSIFIER_MODEL_KEY,
+          # and, with classifier.langfuseUrl, ACH_CLASSIFIER_LANGFUSE_PUBLIC_KEY/_SECRET_KEY.
+          # Never extraEnv: it reaches every Deployment.
+          envFrom:
+            - secretRef:
+                name: {{ required "classifier.secretName is required with classifier.enabled" .secretName }}
+          env:
+            - name: ACH_ENTERPRISE
+              value: {{ $.Values.enterprise.enabled | quote }}
+            - name: ACH_CLASSIFIER_CLICKHOUSE_URL
+              value: {{ required "classifier.clickhouseUrl is required with classifier.enabled" .clickhouseUrl | quote }}
+            - name: ACH_CLASSIFIER_LANGFUSE_PROJECT_ID
+              value: {{ .projectId | quote }}
+            - name: ACH_CLASSIFIER_MODEL_URL
+              value: {{ required "classifier.modelUrl is required with classifier.enabled" .modelUrl | quote }}
+            - name: ACH_CLASSIFIER_MODEL
+              value: {{ .model | quote }}
+            {{- with .langfuseUrl }}
+            - name: ACH_CLASSIFIER_LANGFUSE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .onlyUser }}
+            - name: ACH_CLASSIFIER_ONLY_USER
+              value: {{ . | quote }}
+            {{- end }}
+            - name: ACH_CLASSIFIER_INTERVAL
+              value: {{ .interval | quote }}
+            - name: ACH_CLASSIFIER_IDLE
+              value: {{ .idle | quote }}
+            - name: ACH_CLASSIFIER_LOOKBACK
+              value: {{ .lookback | quote }}
+            - name: ACH_CLASSIFIER_BATCH
+              value: {{ .batch | quote }}
+            {{- if .taxonomy }}
+            - name: ACH_CLASSIFIER_TAXONOMY_FILE
+              value: /etc/ach-classifier/taxonomy.yaml
+            {{- end }}
+          resources: {{ toYaml .resources | nindent 12 }}
+          {{- if .taxonomy }}
+          volumeMounts:
+            - name: taxonomy
+              mountPath: /etc/ach-classifier
+              readOnly: true
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- if .taxonomy }}
+      volumes:
+        - name: taxonomy
+          configMap:
+            name: ach-classifier-taxonomy
+      {{- end }}
+{{- end }}
+{{- end }}

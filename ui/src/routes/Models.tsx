@@ -1,0 +1,371 @@
+// Models.tsx — the #/models catalog page (nav: KEYS · MODELS · MCPS · STATS · HOW-TO).
+//
+// Read-only catalog of the model aliases available on the gateway, sourced from
+// GET /platform/console/capabilities?scope=personal (models — the safe public
+// group view: no upstream model / api_base / api_key). Per alias it shows the
+// provider(s), mode, whether it is a thinking/reasoning model, context window
+// (max input/output tokens), per-1M-token pricing, and capability badges.
+//
+// Renders through the SAME generic DataTable<T> as the Keys table so the two
+// surfaces are visually coherent (header font/size, padding, row borders, card
+// chrome). States: per-page error+retry card (useModels throws on non-200), a
+// skeleton while pending, and an in-table empty state. Presentational only — no
+// data ownership; the hook owns the fetch.
+
+import {
+  Brain,
+  Check,
+  Copy,
+  Eye,
+  Globe,
+  Wrench,
+} from 'lucide-react';
+
+import { useState } from 'react';
+
+import {
+  CAP_OPTIONS,
+  applyModelFilters,
+  applyModeFilter,
+  modelModeOptions,
+  type ModelCapKey,
+} from '@/components/models/ModelFilters';
+import {
+  DataTable,
+  type DataTableColumn,
+} from '@/components/ui/data-table';
+import { CatalogHead } from '@/components/catalog/Catalog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { FilterChips, toggled } from '@/components/ui/FilterChips';
+import { Tag } from '@/components/ui/Tag';
+import { TableSearch, matchesSearch } from '@/components/ui/table-search';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useCopyFeedback } from '@/hooks/use-copy-feedback';
+import { useModels } from '@/hooks/use-capabilities';
+import type { ModelRow } from '@/lib/api-types';
+import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
+import { abbreviate, formatPricePerMillion } from '@/lib/format';
+import { isA2aModelRow, isRouterModel } from '@/lib/model-classify';
+import { useSessionStore } from '@/stores/session';
+
+const EM_DASH = '—';
+
+const PAGE_TITLE = 'Models';
+const PAGE_SUB =
+  'Model aliases available on the gateway — pricing is per 1M tokens, context is the max input / output window.';
+const ERR_HEADING = "Couldn't load models";
+const ERR_BODY =
+  "We couldn't reach the model catalog. Check your connection and retry.";
+const EMPTY_HEADING = 'No models yet';
+const EMPTY_BODY =
+  'No model aliases are configured on the gateway for your access level.';
+const PROVISIONING_MSG =
+  'Access is being provisioned — your personal catalog appears after the next Environment sync.';
+
+// A capability badge: a NEUTRAL grey icon pill with an instant on-brand tooltip
+// (Radix, not the native `title` — the icon alone is cryptic, so the label needs
+// to surface immediately on hover/focus, not after the OS title delay). Grey (not
+// the primary accent) so it reads as a static info marker, not a clickable button.
+// Only rendered when the capability is true (off-capabilities are simply absent).
+function CapBadge({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Eye;
+  label: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Tag aria-label={label} className="icon">
+          <Icon aria-hidden="true" />
+        </Tag>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+// Thinking-column cell. Its own column (after Mode) answers "is this a reasoning
+// model?" directly. Backed by supports_reasoning: a neutral labelled badge when
+// true, an em-dash when not. Neutral styling — info, not a button.
+function ThinkingCell({ on }: { on: boolean }) {
+  if (!on) return <span className="text-muted-foreground">{EM_DASH}</span>;
+  return (
+    <Tag title="Thinking model — supports extended reasoning" aria-label="Thinking model">
+      <Brain aria-hidden="true" />
+      yes
+    </Tag>
+  );
+}
+
+// Context window as "in / out", abbreviated (e.g. 128K / 16K). A single em-dash
+// when neither cap is set.
+function ContextCell({ row }: { row: ModelRow }) {
+  if (isRouterModel(row)) {
+    return (
+      <span className="text-muted-foreground" title="Depends on the routed model">
+        Dynamic
+      </span>
+    );
+  }
+  const hasIn = typeof row.max_input_tokens === 'number';
+  const hasOut = typeof row.max_output_tokens === 'number';
+  if (!hasIn && !hasOut) return <span className="text-muted-foreground">{EM_DASH}</span>;
+  return (
+    <span className="font-mono text-xs whitespace-nowrap text-foreground">
+      {hasIn ? abbreviate(row.max_input_tokens) : EM_DASH}
+      <span className="text-muted-foreground"> / </span>
+      {hasOut ? abbreviate(row.max_output_tokens) : EM_DASH}
+    </span>
+  );
+}
+
+// Combined price cell: "$in / $out" per 1M tokens, mirroring ContextCell so the
+// two paired metrics read the same way. A single em-dash when neither cost is set.
+function PriceCell({ row }: { row: ModelRow }) {
+  if (isRouterModel(row)) {
+    return (
+      <span className="text-muted-foreground" title="Priced by the routed model">
+        Dynamic
+      </span>
+    );
+  }
+  const hasIn = typeof row.input_cost_per_token === 'number';
+  const hasOut = typeof row.output_cost_per_token === 'number';
+  if (!hasIn && !hasOut) return <span className="text-muted-foreground">{EM_DASH}</span>;
+  return (
+    <span className="font-mono text-xs whitespace-nowrap text-foreground">
+      {hasIn ? formatPricePerMillion(row.input_cost_per_token) : EM_DASH}
+      <span className="text-muted-foreground"> / </span>
+      {hasOut ? formatPricePerMillion(row.output_cost_per_token) : EM_DASH}
+    </span>
+  );
+}
+
+// Capability badge cluster (vision / tools / web). Reasoning lives in its own
+// Thinking column, so it is intentionally absent here.
+function CapabilitiesCell({ row }: { row: ModelRow }) {
+  const any =
+    row.supports_vision || row.supports_function_calling || row.supports_web_search;
+  return (
+    <TooltipProvider>
+      <div className="flex flex-wrap gap-1.5">
+        {row.supports_vision && <CapBadge icon={Eye} label="Vision" />}
+        {row.supports_function_calling && (
+          <CapBadge icon={Wrench} label="Function calling / tools" />
+        )}
+        {row.supports_web_search && <CapBadge icon={Globe} label="Web search" />}
+        {!any && (
+          <span className="font-mono text-xs text-muted-foreground">{EM_DASH}</span>
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+// A ready-to-run curl for one alias against the live gateway (key = placeholder).
+// The real ek_/pk_ is shown ONCE at mint time (Keys tab), NEVER on this page
+// (security constraint).
+function curlSnippet(endpoint: string, alias: string): string {
+  return `curl ${endpoint}/v1/chat/completions \\
+  -H "${AUTH_HEADER}: ${KEY_PLACEHOLDER}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${alias}","messages":[{"role":"user","content":"Hello!"}]}'`;
+}
+
+// Per-row "copy curl" action. Reads the live gateway endpoint from the session
+// and copies exactly the shown snippet on an explicit click (useCopyFeedback).
+function CurlCell({ row }: { row: ModelRow }) {
+  const endpoint = useSessionStore((s) => s.me?.endpoint) ?? FALLBACK_API_BASE;
+  const { copied, copy } = useCopyFeedback();
+  const alias = row.name ?? '';
+  return (
+    <button
+      type="button"
+      aria-label={`Copy curl for ${alias}`}
+      onClick={() => void copy(curlSnippet(endpoint, alias))}
+      className={copied ? 'btn sm is-done' : 'btn sm'}
+    >
+      {copied ? (
+        <Check className="size-3" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3" aria-hidden="true" />
+      )}
+      {copied ? 'copied!' : 'curl'}
+    </button>
+  );
+}
+
+// Columns for the shared DataTable. Same contract as KeysTable so the two tables
+// render with identical header/cell chrome.
+const COLUMNS: DataTableColumn<ModelRow>[] = [
+  {
+    key: 'model',
+    header: 'Model',
+    headerClassName: 'whitespace-nowrap',
+    className: 'align-top',
+    cell: (row) => (
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="text-foreground font-mono text-sm font-semibold">
+          {row.name ?? EM_DASH}
+        </span>
+        {row.providers.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {row.providers.map((p) => (
+              <Tag key={p}>{p}</Tag>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    ),
+    sortAccessor: (row) => row.name,
+  },
+  {
+    key: 'mode',
+    header: 'Mode',
+    className: 'align-top',
+    cell: (row) => (row.mode ? <Tag>{row.mode}</Tag> : <span className="text-muted-foreground">{EM_DASH}</span>),
+    sortAccessor: (row) => row.mode,
+  },
+  {
+    key: 'thinking',
+    header: 'Thinking',
+    className: 'align-top',
+    cell: (row) => <ThinkingCell on={row.supports_reasoning} />,
+    sortAccessor: (row) => (row.supports_reasoning ? 1 : 0),
+  },
+  {
+    key: 'context',
+    header: 'Context (in / out)',
+    headerClassName: 'whitespace-nowrap',
+    className: 'align-top whitespace-nowrap',
+    cell: (row) => <ContextCell row={row} />,
+    sortAccessor: (row) => row.max_input_tokens,
+  },
+  {
+    key: 'price',
+    header: '$ / 1M (in / out)',
+    headerClassName: 'whitespace-nowrap',
+    className: 'align-top whitespace-nowrap',
+    cell: (row) => <PriceCell row={row} />,
+    sortAccessor: (row) => row.input_cost_per_token,
+  },
+  {
+    key: 'caps',
+    header: 'Capabilities',
+    className: 'align-top',
+    cell: (row) => <CapabilitiesCell row={row} />,
+    // Sort by how many capabilities the model supports (most-capable first when
+    // descending). Vision + function-calling + reasoning + web-search.
+    sortAccessor: (row) =>
+      [
+        row.supports_vision,
+        row.supports_function_calling,
+        row.supports_reasoning,
+        row.supports_web_search,
+      ].filter(Boolean).length,
+  },
+  {
+    key: 'example',
+    header: 'Example',
+    className: 'align-top',
+    cell: (row) => <CurlCell row={row} />,
+  },
+];
+
+export function Models() {
+  // ponytail: the alitellm-auth default-key gate had no ACH equivalent (env
+  // keys are the scoping unit, not a "default" key) — always fetch.
+  const query = useModels();
+  const [caps, setCaps] = useState<Set<ModelCapKey>>(new Set());
+  const [modes, setModes] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  // A2A agents ride the same catalog under providers: ["a2a1"] — they aren't
+  // models, so they're excluded from this table entirely.
+  const models = (query.data?.models ?? []).filter((m) => !isA2aModelRow(m));
+  const modeOptions = modelModeOptions(models);
+  const header = <CatalogHead title={PAGE_TITLE} description={PAGE_SUB} count={models.length} />;
+
+  // Error (502 / network) — same card + retry as the Stats page.
+  if (query.isError) {
+    return (
+      <div className="catalog-page flex flex-col gap-6">
+        {header}
+        <div className="flex flex-col items-center gap-3 panel p-12 text-center">
+          <div className="font-sans text-2xl font-semibold text-text-primary">
+            {ERR_HEADING}
+          </div>
+          <div className="max-w-md font-sans text-sm text-text-secondary">
+            {ERR_BODY}
+          </div>
+          <button
+            type="button"
+            onClick={() => void query.refetch()}
+            className="btn"
+          >
+            retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Provisioning (§10.2 fact 3): the caller's shell team has not yet been
+  // attached to any access group — a calm card, not the empty-table copy.
+  if (!query.isPending && query.data?.provisioning) {
+    return (
+      <div className="catalog-page flex flex-col gap-6">
+        {header}
+        <div className="flex flex-col items-center gap-3 panel p-12 text-center">
+          <p className="max-w-md font-sans text-sm text-text-secondary">
+            {PROVISIONING_MSG}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="catalog-page flex flex-col gap-6">
+      {header}
+
+      {query.isPending ? (
+        <Skeleton variant="table-rows" rows={6} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="toolbar">
+            <TableSearch value={search} onChange={setSearch} placeholder="Search models…" />
+            <div className="filter-set">
+              {/* A single-mode catalog has nothing to choose between. */}
+              {modeOptions.length >= 2 && <><FilterChips label="Mode" allLabel="All modes" options={modeOptions} active={modes} onToggle={(k) => setModes(toggled(modes, k))} onClear={() => setModes(new Set())} /><span className="filter-sep" aria-hidden="true" /></>}
+              <FilterChips label="Capabilities" allLabel="All capabilities" options={CAP_OPTIONS} active={caps} onToggle={(k) => setCaps(toggled(caps, k))} onClear={() => setCaps(new Set())} />
+            </div>
+          </div>
+        <DataTable
+          data-slot="models-table"
+          className="panel"
+          pageSize={10}
+          columns={COLUMNS}
+          rows={applyModeFilter(applyModelFilters(models, caps), modes).filter((m) => matchesSearch(search, m.name))}
+          defaultSort={{ key: 'model', dir: 'asc' }}
+          getRowId={(row) => row.name ?? ''}
+          empty={
+            <div data-slot="models-table-empty" className="py-6">
+              <p className="text-foreground text-base font-semibold">
+                {EMPTY_HEADING}
+              </p>
+              <p className="text-muted-foreground mt-1 text-sm">{EMPTY_BODY}</p>
+            </div>
+          }
+        />
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64" role="img" aria-label="AliteLLM Auth">
+  <!-- Theme-neutral: OpenWork renders one brandLogoUrl on both light and dark
+       sidebars (no per-theme variant), so the wordmark is a mid slate that
+       reads on either surface and the mark keeps the console green. -->
+  <g fill="none" stroke="#16c47f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="translate(8 8) scale(2)">
+    <path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/>
+    <path d="m9 12 2 2 4-4"/>
+  </g>
+  <text x="68" y="41" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="26" font-weight="600" fill="#64748b" letter-spacing="-0.5">AliteLLM Auth</text>
+</svg>
