@@ -95,8 +95,6 @@
 .console-ledger .wc-c-marketing-content_design{--wc:color-mix(in oklch,var(--purple),var(--red))}.console-ledger .wc-c-business-operations{--wc:var(--amber)}.console-ledger .wc-c-general-research_learning{--wc:color-mix(in oklch,var(--amber),var(--red))}
 .console-ledger .wc-c-general-personal{--wc:color-mix(in oklch,var(--blue),var(--green))}.console-ledger .wc-c-other{--wc:var(--muted)}.console-ledger .wc-c-trivial{--wc:var(--faint)}
 /* Overview ratio hero: ratio · cache share · average input · facts */
-.console-ledger .ratio-hero{grid-template-columns:minmax(245px,1fr) minmax(0,1.2fr) minmax(200px,.8fr) minmax(220px,.8fr)}
-@media(max-width:1100px){.console-ledger .ratio-hero{grid-template-columns:1fr 1fr}}
 .console-ledger .nav-disabled.nav-soon{display:flex;align-items:center;gap:10px;padding:8px;font-size:inherit}
 /* Cost detail change: spend up is red, down is green. */
 .console-ledger .chg.up{color:var(--red)}.console-ledger .chg.down{color:var(--green)}
