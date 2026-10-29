@@ -1,0 +1,5443 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/api-reference/ach.ackstorm.ai/">
+      
+      
+        <link rel="prev" href="../../runbooks/phase6-cli-e2e-verification/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>ach.ackstorm.ai - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ach.ackstorm.ai
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../developer-guide/architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/editions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Editions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/signing-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/conversation-classifier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conversation classifier
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/jwt-forwarder/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer-guide/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Packages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#achackstormaiv1alpha1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ach.ackstorm.ai/v1alpha1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ach.ackstorm.ai/v1alpha1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resource-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resource Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Artifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicylist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicyList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicyspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicystatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicyStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendtargetref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendTargetRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bitbucketsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BitbucketSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budgetblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BudgetBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contextblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ContextBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#expandedruntime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExpandedRuntime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#externalrefstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExternalRefStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gcssource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GCSSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#githubsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHubSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gitlabsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitLabSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#httpsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTPSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplacefilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarketplaceFilters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplacepluginref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarketplacePluginRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacestatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refreshblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RefreshBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runtimeblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RuntimeBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#s3source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#secretkeyref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SecretKeyRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skilllist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplaceskillref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceSkillRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacestatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sourceauthsecretref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceAuthSecretRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unresolvedruntime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UnresolvedRuntime
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Packages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#achackstormaiv1alpha1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ach.ackstorm.ai/v1alpha1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ach.ackstorm.ai/v1alpha1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resource-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Types
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resource Types">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Artifact
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#artifactstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArtifactStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicylist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicyList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicyspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicySpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendidentitypolicystatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendIdentityPolicyStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backendtargetref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BackendTargetRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bitbucketsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BitbucketSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#budgetblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BudgetBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#contextblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ContextBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environmentstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EnvironmentStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#expandedruntime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExpandedRuntime
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#externalrefstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ExternalRefStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gcssource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GCSSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#githubsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHubSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gitlabsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitLabSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#httpsource" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HTTPSource
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#litellmconnectionstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LiteLLMConnectionStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplacefilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarketplaceFilters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplacepluginref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MarketplacePluginRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginmarketplacestatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginMarketplaceStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pluginstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PluginStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#promptstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PromptStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refreshblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RefreshBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runtimeblock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RuntimeBlock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#s3source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#secretkeyref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SecretKeyRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skilllist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacelist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplaceskillref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceSkillRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacespec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillmarketplacestatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillMarketplaceStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skillstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SkillStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sourceauthsecretref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceAuthSecretRef
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unresolvedruntime" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UnresolvedRuntime
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<h2 id="packages">Packages<a class="headerlink" href="#packages" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="#achackstormaiv1alpha1">ach.ackstorm.ai/v1alpha1</a></li>
+</ul>
+<h2 id="achackstormaiv1alpha1">ach.ackstorm.ai/v1alpha1<a class="headerlink" href="#achackstormaiv1alpha1" title="Permanent link">&para;</a></h2>
+<p>Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.</p>
+<h3 id="resource-types">Resource Types<a class="headerlink" href="#resource-types" title="Permanent link">&para;</a></h3>
+<ul>
+<li><a href="#artifact">Artifact</a></li>
+<li><a href="#artifactlist">ArtifactList</a></li>
+<li><a href="#backendidentitypolicy">BackendIdentityPolicy</a></li>
+<li><a href="#backendidentitypolicylist">BackendIdentityPolicyList</a></li>
+<li><a href="#environment">Environment</a></li>
+<li><a href="#environmentlist">EnvironmentList</a></li>
+<li><a href="#litellmconnection">LiteLLMConnection</a></li>
+<li><a href="#litellmconnectionlist">LiteLLMConnectionList</a></li>
+<li><a href="#plugin">Plugin</a></li>
+<li><a href="#pluginlist">PluginList</a></li>
+<li><a href="#pluginmarketplace">PluginMarketplace</a></li>
+<li><a href="#pluginmarketplacelist">PluginMarketplaceList</a></li>
+<li><a href="#prompt">Prompt</a></li>
+<li><a href="#promptlist">PromptList</a></li>
+<li><a href="#skill">Skill</a></li>
+<li><a href="#skilllist">SkillList</a></li>
+<li><a href="#skillmarketplace">SkillMarketplace</a></li>
+<li><a href="#skillmarketplacelist">SkillMarketplaceList</a></li>
+</ul>
+<h4 id="artifact">Artifact<a class="headerlink" href="#artifact" title="Permanent link">&para;</a></h4>
+<p>Artifact is the Schema for the artifacts API (Hub §13).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactlist">ArtifactList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>Artifact</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#artifactspec">ArtifactSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#artifactstatus">ArtifactStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="artifactlist">ArtifactList<a class="headerlink" href="#artifactlist" title="Permanent link">&para;</a></h4>
+<p>ArtifactList contains a list of Artifact.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>ArtifactList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#artifact">Artifact</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="artifactspec">ArtifactSpec<a class="headerlink" href="#artifactspec" title="Permanent link">&para;</a></h4>
+<p>ArtifactSpec defines the desired state of Artifact (Hub §13).</p>
+<p>CRD-05: spec.scope is REQUIRED and is one of {object, directory}. For
+type=http only scope=object is permitted; CRD admission rejects
+directory scope on http sources.
+CRD-04: spec.refresh.maxStaleness is REQUIRED.
+CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).</p>
+<p><em>Appears in:</em>
+- <a href="#artifact">Artifact</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>scope</code> <em>string</em></td>
+<td>Scope picks single-object vs directory-bundle delivery (CRD-05).<br />object: serves exactly one upstream object verbatim.<br />directory: materializes the directory tree into a .tar.gz at refresh time.</td>
+<td></td>
+<td>Enum: [object directory] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="artifactstatus">ArtifactStatus<a class="headerlink" href="#artifactstatus" title="Permanent link">&para;</a></h4>
+<p>ArtifactStatus defines the observed state of Artifact.</p>
+<p><em>Appears in:</em>
+- <a href="#artifact">Artifact</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="backendidentitypolicy">BackendIdentityPolicy<a class="headerlink" href="#backendidentitypolicy" title="Permanent link">&para;</a></h4>
+<p>BackendIdentityPolicy is the Schema for the backendidentitypolicies API
+(Hub §9.3, CRD-08).</p>
+<p><em>Appears in:</em>
+- <a href="#backendidentitypolicylist">BackendIdentityPolicyList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>BackendIdentityPolicy</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#backendidentitypolicyspec">BackendIdentityPolicySpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#backendidentitypolicystatus">BackendIdentityPolicyStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="backendidentitypolicylist">BackendIdentityPolicyList<a class="headerlink" href="#backendidentitypolicylist" title="Permanent link">&para;</a></h4>
+<p>BackendIdentityPolicyList contains a list of BackendIdentityPolicy.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>BackendIdentityPolicyList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#backendidentitypolicy">BackendIdentityPolicy</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="backendidentitypolicyspec">BackendIdentityPolicySpec<a class="headerlink" href="#backendidentitypolicyspec" title="Permanent link">&para;</a></h4>
+<p>BackendIdentityPolicySpec defines the desired state of BackendIdentityPolicy
+(Hub §9.3, CRD-08).</p>
+<p>The CR is the OPT-IN switch for attaching the ACH-signed JWT to forwarded
+/mcp/<name> or /a2a/<name> requests. Without a matching CR, the Forwarder
+strips the client Authorization header and writes none of its own.</p>
+<p>CRD-08: forwardIdentityJWT is REQUIRED — no Go zero-value default,
+no kubebuilder default. The explicit false form is a documentation aid;
+admission rejects a CR omitting the field via the resource-root CEL rule
+on the type below.</p>
+<p><em>Appears in:</em>
+- <a href="#backendidentitypolicy">BackendIdentityPolicy</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target</code> <em><a href="#backendtargetref">BackendTargetRef</a></em></td>
+<td>Target identifies the backend route this policy controls.</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>forwardIdentityJWT</code> <em>boolean</em></td>
+<td>ForwardIdentityJWT, when true, instructs the Forwarder to sign and<br />attach the §9.1 ACH JWT to forwarded requests for this target. When<br />false, the Forwarder forwards without an Authorization header (an<br />explicit no-JWT declaration; operationally indistinguishable from no<br />CR at all).<br />REQUIRED per CRD-08. There is no default. Admission rejects a CR<br />that omits the field.</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>consentBroker</code> <em>string</em></td>
+<td>ConsentBroker is the issuer URL of the backend's own OAuth broker. When<br />set with consentAudience, a human OAuth login to this MCP route may be<br />chained through that broker when the backend reports auth_required.</td>
+<td></td>
+<td>Pattern: <code>^https?://</code> <br /></td>
+</tr>
+<tr>
+<td><code>consentAudience</code> <em>string</em></td>
+<td>ConsentAudience is the audience placed in the signed login_hint sent to<br />ConsentBroker. Set it together with consentBroker.</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="backendidentitypolicystatus">BackendIdentityPolicyStatus<a class="headerlink" href="#backendidentitypolicystatus" title="Permanent link">&para;</a></h4>
+<p>BackendIdentityPolicyStatus defines the observed state of
+BackendIdentityPolicy.</p>
+<p>Deliberate scope: the reconciler does NOT perform DuplicateTarget
+shadow resolution. Multiple CRs targeting the same (kind, name) are
+allowed; the Forwarder's runtime read path resolves the duplicate
+deterministically by sorting matching CRs by metadata.name ASC and
+using the LAST entry's forwardIdentityJWT value. Operators wanting
+different precedence rename their CRs. This is intentional —
+operator stays dumb, user owns the CR set, no Synced=DuplicateTarget
+condition is written.</p>
+<p><em>Appears in:</em>
+- <a href="#backendidentitypolicy">BackendIdentityPolicy</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the reconciler<br />most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions is reserved for future per-CR status surfaces. It is<br />NOT populated today — duplicate targets are resolved by the<br />Forwarder at read time (alphabetically-LAST CR wins) without any<br />operator-side status churn.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="backendtargetref">BackendTargetRef<a class="headerlink" href="#backendtargetref" title="Permanent link">&para;</a></h4>
+<p>BackendTargetRef identifies the route a BackendIdentityPolicy applies to
+(Hub §9.3).</p>
+<p><em>Appears in:</em>
+- <a href="#backendidentitypolicyspec">BackendIdentityPolicySpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is the routed backend type. CEL-enforced enum.</td>
+<td></td>
+<td>Enum: [MCPServer A2AAgent] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name is the bare route segment the Forwarder sees as <name> in<br />/mcp/<name> or /a2a/<name>. MUST satisfy DNS-1123 subdomain rules<br />(≤253 chars, <code>[a-z0-9]([-a-z0-9.]*[a-z0-9])?</code>). Pattern enforced<br />per CRD-08 / Hub §9.3.</td>
+<td></td>
+<td>MaxLength: 253 <br />MinLength: 1 <br />Pattern: <code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$</code> <br />Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="bitbucketsource">BitbucketSource<a class="headerlink" href="#bitbucketsource" title="Permanent link">&para;</a></h4>
+<p>BitbucketSource describes a bitbucket-hosted upstream (Hub §10.1).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workspace</code> <em>string</em></td>
+<td>Workspace name on Bitbucket.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>repo</code> <em>string</em></td>
+<td>Repo within the workspace.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>path</code> <em>string</em></td>
+<td>Path within the repo, honored at fetch time (F1; see GitHubSource.Path<br />for the directory-vs-file + marketplace semantics).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ref</code> <em>string</em></td>
+<td>Ref is a branch or tag name.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="budgetblock">BudgetBlock<a class="headerlink" href="#budgetblock" title="Permanent link">&para;</a></h4>
+<p>BudgetBlock is a spend ceiling ACH writes onto a LiteLLM tag. ACH stores
+no spend of its own: LiteLLM owns the counter and the enforcement (it
+refuses a request once the tag's accumulated spend exceeds MaxBudget).</p>
+<p><em>Appears in:</em>
+- <a href="#environmentspec">EnvironmentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxBudget</code> <em>float</em></td>
+<td>MaxBudget is the ceiling in LiteLLM's spend unit (USD). Required<br />when the block is present.</td>
+<td></td>
+<td>Minimum: 0 <br /></td>
+</tr>
+<tr>
+<td><code>budgetDuration</code> <em>string</em></td>
+<td>BudgetDuration is the reset window LiteLLM applies, e.g. "30d".<br />Empty means the budget never resets.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="contextblock">ContextBlock<a class="headerlink" href="#contextblock" title="Permanent link">&para;</a></h4>
+<p>ContextBlock is the content-resource half of an Environment (Hub §6, §6.1).
+Names reference ACH-owned content objects (Prompt, Plugin, Artifact CRDs
+or marketplace_plugins rows) and are served by the ACH Content Service.</p>
+<p><em>Appears in:</em>
+- <a href="#environmentspec">EnvironmentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prompts</code> <em>string array</em></td>
+<td>Prompts lists referenced Prompt names. Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>plugins</code> <em>string array</em></td>
+<td>Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator.</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>artifacts</code> <em>string array</em></td>
+<td>Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace<br />control chars or DEL).</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>skills</code> <em>string array</em></td>
+<td>Skills lists referenced Skill names. A bare name ("pdf-processing")<br />resolves to a Skill CR in the operator namespace; a scoped<br />"name@marketplace" ("branding@ackstorm") resolves a skill discovered<br />inside a SkillMarketplace (the final "@" separates name from marketplace,<br />mirroring context.plugins). Content-gated like Plugins. Same strict<br />deny-pattern as Plugins (no "/" "\" ? # % whitespace, control chars or<br />DEL).</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h4>
+<p>Environment is the Schema for the environments API (Hub §6).</p>
+<p>An Environment is the ACH product boundary: a bundle of runtime
+(models, mcpServers, a2aAgents, guardrails) and context (prompts, plugins,
+artifacts) capabilities exposed to authorized Teams. The ACH
+Operator reconciles spec.runtime into a LiteLLM access group of
+the same name (§6.2). The CEL XValidation rules above enforce
+CRD-02 at admission.</p>
+<p><em>Appears in:</em>
+- <a href="#environmentlist">EnvironmentList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>Environment</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#environmentspec">EnvironmentSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#environmentstatus">EnvironmentStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="environmentlist">EnvironmentList<a class="headerlink" href="#environmentlist" title="Permanent link">&para;</a></h4>
+<p>EnvironmentList contains a list of Environment.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>EnvironmentList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#environment">Environment</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="environmentspec">EnvironmentSpec<a class="headerlink" href="#environmentspec" title="Permanent link">&para;</a></h4>
+<p>EnvironmentSpec defines the desired state of Environment (CRD-02, Hub §6).</p>
+<p><em>Appears in:</em>
+- <a href="#environment">Environment</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runtime</code> <em><a href="#runtimeblock">RuntimeBlock</a></em></td>
+<td>Runtime is the execution-resource bundle projected into the LiteLLM<br />access group (§6.2). Optional in the manifest; defaults to an empty<br />block whose list fields backfill to [] so CRD-02 ("always present in<br />the hydrate response") holds even when the author omits it.</td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>context</code> <em><a href="#contextblock">ContextBlock</a></em></td>
+<td>Context is the content-resource bundle served by Content Service<br />(§10, §15.6). Optional in the manifest; defaults to an empty block<br />whose list fields backfill to [] so CRD-02 ("always present in the<br />hydrate response") holds even when the author omits it.</td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>authorizedTeams</code> <em>string array</em></td>
+<td>AuthorizedTeams references LiteLLM Team aliases (§6.1). The Environment<br />is unusable when no entry resolves to an existing LiteLLM Team;<br />admission requires at least one entry per Hub §6 (informational —<br />reconcile-time existence is verified per §6.4).</td>
+<td></td>
+<td>MinItems: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>notice</code> <em>string</em></td>
+<td>Notice is an optional free-text advisory shown to the user ONLY after<br /><code>ach-cli env hydrate</code> (it is not surfaced in <code>env list</code> / <code>env describe</code><br />— use Description for catalog metadata). Use it for operational reminders<br />("re-login after key rotation") or model guidance ("works best with the<br />openai-* models"). Plain text, not interpreted; empty renders nothing.</td>
+<td></td>
+<td>MaxLength: 2048 <br /></td>
+</tr>
+<tr>
+<td><code>description</code> <em>string</em></td>
+<td>Description is optional catalog metadata describing what this Environment<br />is. It is surfaced in <code>ach-cli env list</code> (truncated) and <code>env describe</code><br />(full) — the browse-time "what is this" text, distinct from Notice's<br />post-hydrate advisory. Plain text, not interpreted; empty renders nothing.</td>
+<td></td>
+<td>MaxLength: 2048 <br /></td>
+</tr>
+<tr>
+<td><code>budget</code> <em><a href="#budgetblock">BudgetBlock</a></em></td>
+<td>Budget caps the POOLED spend of every ek_ issued for this Environment<br />(all owners together). It is enforced through the "environment:<name>"<br />tag the forwarder stamps on each request, independently of the per-user<br />and per-key budgets — whichever ceiling is crossed first refuses the<br />request. Omit for an uncapped Environment.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="environmentstatus">EnvironmentStatus<a class="headerlink" href="#environmentstatus" title="Permanent link">&para;</a></h4>
+<p>EnvironmentStatus defines the observed state of Environment (Hub §6.4, §6.6).</p>
+<p><em>Appears in:</em>
+- <a href="#environment">Environment</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the reconciler<br />most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions carries Environment condition types per §6.6 closed set:<br />Available, ContentReady, ExecutionResourcesResolved, AccessGroupSynced.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>unresolvedRuntime</code> <em><a href="#unresolvedruntime">UnresolvedRuntime</a></em></td>
+<td>UnresolvedRuntime lists runtime references not currently registered in<br />LiteLLM. Surfaced for <code>kubectl describe environment</code> per §6.4. The<br />field contract belongs here from Phase 1; the reconciler in Phase 2<br />rewrites it on every reconcile.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>expandedRuntime</code> <em><a href="#expandedruntime">ExpandedRuntime</a></em></td>
+<td>ExpandedRuntime lists the MCP servers and A2A agents granted ONLY via<br />spec.runtime.mcpServerGroups / agentGroups (names also listed<br />explicitly are omitted). Nil when the groups grant nothing extra.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>unresolvedContextPlugins</code> <em>string array</em></td>
+<td>UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present.</td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>unresolvedContextSkills</code> <em>string array</em></td>
+<td>UnresolvedContextSkills lists context.skills entries whose content has<br />not yet been synced (last_successful_refresh IS NULL in the skills<br />projection row). A non-empty list blocks ExecutionResourcesResolved<br />from becoming True — same content-gating as UnresolvedContextPlugins.</td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>litellmAccessGroup</code> <em>string</em></td>
+<td>LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="expandedruntime">ExpandedRuntime<a class="headerlink" href="#expandedruntime" title="Permanent link">&para;</a></h4>
+<p>UnresolvedRuntime mirrors the four runtime reference lists (§6.4) and
+names the specific entries that did not resolve against LiteLLM.
+ExpandedRuntime is the group-derived part of the effective runtime.</p>
+<p><em>Appears in:</em>
+- <a href="#environmentstatus">EnvironmentStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mcpServers</code> <em>string array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>a2aAgents</code> <em>string array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="externalrefstatus">ExternalRefStatus<a class="headerlink" href="#externalrefstatus" title="Permanent link">&para;</a></h4>
+<p>ExternalRefStatus is the shared status surface for external-reference
+resources (Plugin, Prompt, Artifact, PluginMarketplace) per Hub §6.6.</p>
+<p><em>Appears in:</em>
+- <a href="#artifactstatus">ArtifactStatus</a>
+- <a href="#pluginmarketplacestatus">PluginMarketplaceStatus</a>
+- <a href="#pluginstatus">PluginStatus</a>
+- <a href="#promptstatus">PromptStatus</a>
+- <a href="#skillmarketplacestatus">SkillMarketplaceStatus</a>
+- <a href="#skillstatus">SkillStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="gcssource">GCSSource<a class="headerlink" href="#gcssource" title="Permanent link">&para;</a></h4>
+<p>GCSSource describes a Google Cloud Storage upstream (Hub §10.1).
+No ref field — refresh polls the object's generation (single object)
+or the prefix listing (directory scope).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bucket</code> <em>string</em></td>
+<td>Bucket name.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>object</code> <em>string</em></td>
+<td>Object name (single object) or prefix (directory scope).</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef points at the Secret carrying a service-account JSON<br />blob (data key named via .key).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="githubsource">GitHubSource<a class="headerlink" href="#githubsource" title="Permanent link">&para;</a></h4>
+<p>GitHubSource describes a github-hosted upstream (Hub §10.1).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>repo</code> <em>string</em></td>
+<td>Repo is the "<owner>/<name>" GitHub identifier.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>path</code> <em>string</em></td>
+<td>Path within the repo, honored at fetch time (F1): a directory narrows the<br />fetched content to that subtree; a single file (Prompt, Artifact<br />scope=object) returns that file's raw bytes. Empty → whole repo.<br />PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this<br />as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path<br />only as the post-fetch skills-root walk hint; PluginMarketplace discovers<br />.claude-plugin/marketplace.json conventionally).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ref</code> <em>string</em></td>
+<td>Ref is a branch or tag name. No immutable commit refs in v1alpha1<br />(CRD-04, Hub §10).</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="gitlabsource">GitLabSource<a class="headerlink" href="#gitlabsource" title="Permanent link">&para;</a></h4>
+<p>GitLabSource describes a gitlab-hosted upstream (Hub §10.1).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>host</code> <em>string</em></td>
+<td>Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Prompt /<br />PluginMarketplace). Defaults to gitlab.com when empty.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>project</code> <em>string</em></td>
+<td>Project is the "<namespace>/<project>" GitLab identifier.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>path</code> <em>string</em></td>
+<td>Path within the project repo, honored at fetch time (F1; see<br />GitHubSource.Path for the directory-vs-file + marketplace semantics).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>ref</code> <em>string</em></td>
+<td>Ref is a branch or tag name.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="httpsource">HTTPSource<a class="headerlink" href="#httpsource" title="Permanent link">&para;</a></h4>
+<p>HTTPSource describes a generic HTTP/HTTPS upstream (Hub §10.1).
+No ref field — refresh issues a conditional GET when the server
+supports If-Modified-Since / If-None-Match, otherwise a full GET.</p>
+<p>Phase 02.1: the original HTTPS-only invariant (T-02-02-03) was lifted
+to admit in-cluster development fixture-servers serving plaintext HTTP.
+Production deployments are expected to use https:// URLs by convention,
+but the constraint is no longer machine-enforced at admission or fetch.</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code> <em>string</em></td>
+<td>URL of the upstream resource. Accepts http:// or https://.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef optionally attaches an authentication header<br />(e.g. Authorization: Bearer ...). The data key named via<br />.headerValueKey supplies the header value at request time.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="litellmconnection">LiteLLMConnection<a class="headerlink" href="#litellmconnection" title="Permanent link">&para;</a></h4>
+<p>LiteLLMConnection is the singleton connection definition used by the ACH
+operator. v1alpha1 admits only LiteLLMConnection/default per namespace.</p>
+<p><em>Appears in:</em>
+- <a href="#litellmconnectionlist">LiteLLMConnectionList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>LiteLLMConnection</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#litellmconnectionspec">LiteLLMConnectionSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#litellmconnectionstatus">LiteLLMConnectionStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="litellmconnectionlist">LiteLLMConnectionList<a class="headerlink" href="#litellmconnectionlist" title="Permanent link">&para;</a></h4>
+<p>LiteLLMConnectionList contains a list of LiteLLMConnection.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>LiteLLMConnectionList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#litellmconnection">LiteLLMConnection</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="litellmconnectionspec">LiteLLMConnectionSpec<a class="headerlink" href="#litellmconnectionspec" title="Permanent link">&para;</a></h4>
+<p>LiteLLMConnectionSpec defines the desired LiteLLM endpoint consumed by ACH.</p>
+<p><em>Appears in:</em>
+- <a href="#litellmconnection">LiteLLMConnection</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>endpoint</code> <em>string</em></td>
+<td>Endpoint is the base URL of the LiteLLM instance.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>masterKeySecretRef</code> <em><a href="#secretkeyref">SecretKeyRef</a></em></td>
+<td>MasterKeySecretRef points to the Secret key that carries the LiteLLM<br />master key. The Secret must live in the same namespace as the CR.</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="litellmconnectionstatus">LiteLLMConnectionStatus<a class="headerlink" href="#litellmconnectionstatus" title="Permanent link">&para;</a></h4>
+<p>LiteLLMConnectionStatus defines the observed LiteLLM connection state.</p>
+<p><em>Appears in:</em>
+- <a href="#litellmconnection">LiteLLMConnection</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="marketplacefilters">MarketplaceFilters<a class="headerlink" href="#marketplacefilters" title="Permanent link">&para;</a></h4>
+<p>MarketplaceFilters narrows the upstream marketplace catalog to a curated
+subset via anchored RE2 regex include/exclude patterns (Hub §12).</p>
+<ul>
+<li>filters.include OPTIONAL: when set, only names matched by at least one
+    anchored include pattern survive. When absent (or empty), all upstream
+    names pass through.</li>
+<li>filters.exclude OPTIONAL: when set, names matched by any anchored exclude
+    pattern are dropped AFTER include. exclude wins on conflict.</li>
+</ul>
+<p>CRD admission catches obviously-empty entries; full RE2 compile validation
+runs at reconcile (Synced=False, reason=InvalidConfig on failure).</p>
+<p><em>Appears in:</em>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include</code> <em>string array</em></td>
+<td>Include is a list of anchored RE2 patterns that narrow the catalog.<br />When omitted or empty, all upstream names pass through.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>exclude</code> <em>string array</em></td>
+<td>Exclude is a list of anchored RE2 patterns dropped from the catalog<br />after Include is applied.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="marketplacepluginref">MarketplacePluginRef<a class="headerlink" href="#marketplacepluginref" title="Permanent link">&para;</a></h4>
+<p>MarketplacePluginRef is the per-plugin entry surfaced on
+PluginMarketplace status — operators reading the CR need at-a-glance
+visibility into which plugin names the most recent reconcile
+materialized AND the upstream revision they pin against.</p>
+<p><em>Appears in:</em>
+- <a href="#pluginmarketplacestatus">PluginMarketplaceStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name is the plugin's identifier within the catalog<br />(marketplace.json plugins[].name).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision for this entry.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="plugin">Plugin<a class="headerlink" href="#plugin" title="Permanent link">&para;</a></h4>
+<p>Plugin is the Schema for the plugins API (Hub §11).</p>
+<p><em>Appears in:</em>
+- <a href="#pluginlist">PluginList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>Plugin</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#pluginspec">PluginSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#pluginstatus">PluginStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginlist">PluginList<a class="headerlink" href="#pluginlist" title="Permanent link">&para;</a></h4>
+<p>PluginList contains a list of Plugin.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>PluginList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#plugin">Plugin</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginmarketplace">PluginMarketplace<a class="headerlink" href="#pluginmarketplace" title="Permanent link">&para;</a></h4>
+<p>PluginMarketplace is the Schema for the pluginmarketplaces API (Hub §12).</p>
+<p><em>Appears in:</em>
+- <a href="#pluginmarketplacelist">PluginMarketplaceList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>PluginMarketplace</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#pluginmarketplacespec">PluginMarketplaceSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#pluginmarketplacestatus">PluginMarketplaceStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginmarketplacelist">PluginMarketplaceList<a class="headerlink" href="#pluginmarketplacelist" title="Permanent link">&para;</a></h4>
+<p>PluginMarketplaceList contains a list of PluginMarketplace.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>PluginMarketplaceList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#pluginmarketplace">PluginMarketplace</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginmarketplacespec">PluginMarketplaceSpec<a class="headerlink" href="#pluginmarketplacespec" title="Permanent link">&para;</a></h4>
+<p>PluginMarketplaceSpec defines the desired state of PluginMarketplace (Hub §12).</p>
+<p>The marketplace file is fetched via the chosen source type (§12.1).
+Body handling depends on the type:</p>
+<ul>
+<li>github / gitlab / bitbucket: the fetcher returns the full repo
+    tarball (Hub §10.1, Path-subset extraction deferred to v1beta1).
+    Stage-1 walks the tarball and extracts the first regular file
+    whose path ends with <code>/.claude-plugin/marketplace.json</code>. spec.<type>.path
+    is IGNORED for marketplaces (the file location is conventional).</li>
+<li>s3 / gcs / http: spec.<type>.key/object/url MUST point at the
+    marketplace.json body directly; the fetcher returns that body
+    verbatim with no extraction.</li>
+</ul>
+<p>CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED.</p>
+<p><em>Appears in:</em>
+- <a href="#pluginmarketplace">PluginMarketplace</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind for the marketplace file.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>filters</code> <em><a href="#marketplacefilters">MarketplaceFilters</a></em></td>
+<td>Filters narrows the upstream catalog (Hub §12). Optional.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginmarketplacestatus">PluginMarketplaceStatus<a class="headerlink" href="#pluginmarketplacestatus" title="Permanent link">&para;</a></h4>
+<p>PluginMarketplaceStatus defines the observed state of PluginMarketplace.</p>
+<p>In addition to the shared ExternalRefStatus, PluginMarketplace exposes a
+Synced condition (§6.6) with reasons UpstreamInvalid, InvalidConfig,
+UnsupportedPluginSource (plus per-plugin soft-skip reasons in the
+message such as DuplicateName), plus the materialized plugin set
+(Plugins / PluginsCount) populated on each successful reconcile.</p>
+<p><em>Appears in:</em>
+- <a href="#pluginmarketplace">PluginMarketplace</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>plugins</code> <em><a href="#marketplacepluginref">MarketplacePluginRef</a> array</em></td>
+<td>Plugins lists the entries in the upstream catalog that the most<br />recent reconcile successfully materialized into marketplace_plugins<br />(+ the per-marketplace cache). Ordered by Name. Entries that<br />failed Stage-2 are NOT included here — those surface in the<br />Synced condition's message field (<code>stage-2: &lt;N&gt; plugin(s)&lt;br /&gt;failed: ...</code>). Empty before the first successful reconcile.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>pluginsCount</code> <em>integer</em></td>
+<td>PluginsCount is the size of Plugins, denormalized so the<br />kubectl print column can show it without a JSONPath length()<br />expression. Equal to len(Plugins).</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginspec">PluginSpec<a class="headerlink" href="#pluginspec" title="Permanent link">&para;</a></h4>
+<p>PluginSpec defines the desired state of Plugin (Hub §11).</p>
+<p>A Plugin references an upstream location whose subtree contains a
+Claude Code plugin tree (root directory with .claude-plugin/plugin.json
+and component directories). ACH fetches the subtree and serves it as
+a .tar.gz archive (CRD-04, CRD-03, Hub §11).</p>
+<p>CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED; spec.refresh.interval,
+when set, MUST NOT exceed spec.refresh.maxStaleness.</p>
+<p><em>Appears in:</em>
+- <a href="#plugin">Plugin</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind. Drives which one of the<br />type-specific subobjects below is required.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="pluginstatus">PluginStatus<a class="headerlink" href="#pluginstatus" title="Permanent link">&para;</a></h4>
+<p>PluginStatus defines the observed state of Plugin.</p>
+<p><em>Appears in:</em>
+- <a href="#plugin">Plugin</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="prompt">Prompt<a class="headerlink" href="#prompt" title="Permanent link">&para;</a></h4>
+<p>Prompt is the Schema for the prompts API (Hub §14).</p>
+<p><em>Appears in:</em>
+- <a href="#promptlist">PromptList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>Prompt</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#promptspec">PromptSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#promptstatus">PromptStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="promptlist">PromptList<a class="headerlink" href="#promptlist" title="Permanent link">&para;</a></h4>
+<p>PromptList contains a list of Prompt.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>PromptList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#prompt">Prompt</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="promptspec">PromptSpec<a class="headerlink" href="#promptspec" title="Permanent link">&para;</a></h4>
+<p>PromptSpec defines the desired state of Prompt (Hub §14).</p>
+<p>A Prompt references a single upstream file served by ACH Content Service.
+CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED.</p>
+<p><em>Appears in:</em>
+- <a href="#prompt">Prompt</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>contentType</code> <em>string</em></td>
+<td>ContentType is the HTTP Content-Type the Content Service returns for<br />this prompt. Optional; when empty, Content Service falls back to the<br />upstream response's Content-Type or application/octet-stream<br />(Hub §14).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="promptstatus">PromptStatus<a class="headerlink" href="#promptstatus" title="Permanent link">&para;</a></h4>
+<p>PromptStatus defines the observed state of Prompt.</p>
+<p><em>Appears in:</em>
+- <a href="#prompt">Prompt</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="refreshblock">RefreshBlock<a class="headerlink" href="#refreshblock" title="Permanent link">&para;</a></h4>
+<p>RefreshBlock declares how often an external-reference resource is polled
+upstream and how stale a cached snapshot may be before content delivery
+is refused (Hub §10).</p>
+<p>CRD-04: maxStaleness is REQUIRED on every Plugin/PluginMarketplace/
+Prompt/Artifact. CRD-03: interval, when set, MUST NOT exceed maxStaleness;
+a resource with interval &gt; maxStaleness would always be stale between
+refresh attempts.</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>interval</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta">Duration</a></em></td>
+<td>Interval is how often the ACH Operator polls the upstream source.<br />Optional; when unset, the Operator uses an implementation default.<br />Format matches Kubernetes Duration (e.g. "15m", "1h", "30s").</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>maxStaleness</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta">Duration</a></em></td>
+<td>MaxStaleness bounds the age of a served cached snapshot. When<br />now - lastSuccessfulRefresh &gt; maxStaleness, Content Service<br />returns 503 stale_cache_expired for the affected content<br />(§10). REQUIRED per CRD-04 — admission rejects a resource that<br />omits this field.</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="runtimeblock">RuntimeBlock<a class="headerlink" href="#runtimeblock" title="Permanent link">&para;</a></h4>
+<p>RuntimeBlock is the execution-resource half of an Environment (Hub §6, §6.1).
+Names resolve against LiteLLM's runtime state (§17) and are projected by
+the ACH Operator into the LiteLLM access group <environment>.</p>
+<p>CRD-02: both runtime and context blocks are always present in the hydrate
+response, even when one is empty. The list-element fields default to []
+so a manifest omitting a sub-field still surfaces an empty slice.</p>
+<p><em>Appears in:</em>
+- <a href="#environmentspec">EnvironmentSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>models</code> <em>string array</em></td>
+<td>Models lists LiteLLM model names (model_name) included in this Environment.<br />Names are projected into LiteLLM API request bodies (not ACH URL routing),<br />so the looser deny-pattern admits provider-prefixed ("openai/gpt-4") and<br />tagged ("gpt-4o:latest") names while forbidding URL-injection metacharacters<br />? # % plus whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth). Only Models uses the loose pattern; see MCPServers<br />and A2AAgents below for why those must use the strict (no-slash) pattern.</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>mcpServers</code> <em>string array</em></td>
+<td>MCPServers lists LiteLLM MCP server names (server_name).<br />Names are used as chi route parameters at the forwarder (/mcp/{name});<br />a slash-containing name would be admitted but always 403 (chi matches<br />raw "%2F"-encoded segment against the decoded DB value — never matches).<br />The strict deny-pattern therefore also forbids "/" and "\" in addition<br />to ? # % whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth).</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>a2aAgents</code> <em>string array</em></td>
+<td>A2AAgents lists LiteLLM A2A agent names (agent_name).<br />Names are used as chi route parameters at the forwarder (/a2a/{name});<br />same routing constraint as MCPServers — slash-containing names always 403.<br />The strict deny-pattern forbids "/" and "\" in addition to ? # %<br />whitespace, control chars (U+0000-U+001F), and DEL (U+007F)<br />(S2 defense-in-depth).</td>
+<td>{  }</td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>modelGroups</code> <em>string array</em></td>
+<td>ModelGroups lists LiteLLM model access-group TAGS<br />(model_info.access_groups, e.g. "openai"). They are passed through to<br />the LiteLLM access group alongside Models and LiteLLM expands them at<br />request time; ACH never resolves them, so they never appear in the<br />hydrate manifest or the console. A tag matching no model grants nothing.<br />SECURITY: this widens automatically — tagging a new model in LiteLLM<br />grants it to every Environment naming the tag, with no CR change.</td>
+<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>mcpServerGroups</code> <em>string array</em></td>
+<td>MCPServerGroups lists LiteLLM MCP server access-group TAGS<br />(mcp_access_groups). The operator expands them on every reconcile into<br />the MCP servers carrying any of the tags, unioned with MCPServers; the<br />names it added are reported in status.expandedRuntime. A tag matching<br />no server is ignored.<br />SECURITY: this widens automatically — tagging a new MCP server in<br />LiteLLM grants it to every Environment naming the tag, with no CR<br />change (picked up within the 5-minute LiteLLM snapshot refresh).</td>
+<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>agentGroups</code> <em>string array</em></td>
+<td>A2AAgentGroups lists LiteLLM A2A agent access-group TAGS<br />(agent_access_groups), expanded exactly like MCPServerGroups.<br />Upstream LiteLLM does not store agent_access_groups on an agent (only<br />a LiteLLM carrying the ackstorm agent_access_groups patch does); on a<br />stock proxy every agent reports no tags and this field grants nothing.<br />SECURITY: same automatic widening as MCPServerGroups.</td>
+<td></td>
+<td>items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+<tr>
+<td><code>guardrails</code> <em>string array</em></td>
+<td>Guardrails lists LiteLLM guardrail names (guardrail_name) that LiteLLM<br />runs on this Environment's ek_ traffic.<br />REQUIRES A LITELLM ENTERPRISE LICENCE. Team-scoped guardrails are premium-<br />gated: without LITELLM_LICENSE set on the proxy, a non-empty list here is<br />rejected 403 TWICE — when the operator attaches it to the shell team<br />(AccessGroupSynced=False, so the Environment never goes Available and NEW<br />ek_ minting is blocked) and again on every request a key in that team<br />makes. Leaving this empty is exempt and is the only supported shape on an<br />unlicensed proxy. Measured on LiteLLM v1.93.0, 2026-07-29; see<br />references/litellm-permission-model.md §11.<br />GLOBAL default_on guardrails are NOT gated and run on every request with<br />no licence and no ACH configuration — check <code>ach-cli admin list&lt;br /&gt;guardrails</code> before adding a name here, because naming a default_on guardrail<br />changes nothing except your exposure to the gate above.<br />WHICH traffic is each guardrail's own business, not ACH's: a guardrail<br />declares one or more modes, and ACH only attaches the name. A<br />pre_call/post_call guardrail inspects LLM completions and does NOT run on<br />/mcp traffic — that needs a guardrail configured with pre_mcp_call or<br />during_mcp_call. Listing a name here is therefore not a blanket promise<br />of coverage; <code>ach-cli admin list guardrails</code> prints each one's MODE.<br />This axis INVERTS the semantics of its siblings: models, mcpServers and<br />a2aAgents are additive grants, a guardrail is a constraint. ACH attaches<br />the names to the Environment's deny-all shell team; LiteLLM unions them<br />across key, team and request body, so a caller can ADD to the set but<br />never subtract from it.<br />Coverage is EK-only. ek_ keys live in this Environment's shell team and<br />inherit its guardrails; pk_ keys live in ach-user-<email> and reach the<br />Environment through the access group, which carries no guardrail field.<br />See references/litellm-permission-model.md.<br />An unresolved name blocks AccessGroupSynced, which blocks NEW ek_<br />minting — it does NOT stop existing keys, hydrate, or forwarded traffic.<br />Entries must be unique: the operator compares the attached set against<br />LiteLLM's stored list to decide whether a repair is needed, and<br />duplicates make that comparison undecidable (LiteLLM's own duplicate<br />handling differs between its storage and enforcement paths).<br />ACH never creates, updates or deletes guardrail definitions.</td>
+<td>{  }</td>
+<td>MaxItems: 50 <br />items:MaxLength: 253 <br />items:Pattern: ^[^/\?#%\s\x00-\x1f\x7f]+$ <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="s3source">S3Source<a class="headerlink" href="#s3source" title="Permanent link">&para;</a></h4>
+<p>S3Source describes an S3-compatible object store upstream (Hub §10.1).
+No ref field — refresh polls the object's ETag (single key) or the
+prefix listing (directory scope).</p>
+<p><em>Appears in:</em>
+- <a href="#artifactspec">ArtifactSpec</a>
+- <a href="#pluginmarketplacespec">PluginMarketplaceSpec</a>
+- <a href="#pluginspec">PluginSpec</a>
+- <a href="#promptspec">PromptSpec</a>
+- <a href="#skillmarketplacespec">SkillMarketplaceSpec</a>
+- <a href="#skillspec">SkillSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bucket</code> <em>string</em></td>
+<td>Bucket name.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>key</code> <em>string</em></td>
+<td>Key is the object key (single object) or prefix (directory scope).</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>region</code> <em>string</em></td>
+<td>Region of the bucket.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>endpoint</code> <em>string</em></td>
+<td>Endpoint for S3-compatible storage. Optional; defaults to AWS S3<br />when empty.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
+<td>AuthSecretRef points at the Secret carrying access-key-id and<br />secret-access-key (data keys named via accessKeyIdKey /<br />secretAccessKeyKey).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="secretkeyref">SecretKeyRef<a class="headerlink" href="#secretkeyref" title="Permanent link">&para;</a></h4>
+<p>SecretKeyRef identifies a key in a same-namespace Secret.</p>
+<p><em>Appears in:</em>
+- <a href="#litellmconnectionspec">LiteLLMConnectionSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name is the Kubernetes Secret name.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>key</code> <em>string</em></td>
+<td>Key is the data key inside the Secret.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skill">Skill<a class="headerlink" href="#skill" title="Permanent link">&para;</a></h4>
+<p>Skill is the Schema for the skills API.</p>
+<p><em>Appears in:</em>
+- <a href="#skilllist">SkillList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>Skill</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#skillspec">SkillSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#skillstatus">SkillStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skilllist">SkillList<a class="headerlink" href="#skilllist" title="Permanent link">&para;</a></h4>
+<p>SkillList contains a list of Skill.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>SkillList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#skill">Skill</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillmarketplace">SkillMarketplace<a class="headerlink" href="#skillmarketplace" title="Permanent link">&para;</a></h4>
+<p>SkillMarketplace is the Schema for the skillmarketplaces API. One upstream
+repo of agent skills (discovered by convention) → many skills.</p>
+<p><em>Appears in:</em>
+- <a href="#skillmarketplacelist">SkillMarketplaceList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>SkillMarketplace</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#skillmarketplacespec">SkillMarketplaceSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#skillmarketplacestatus">SkillMarketplaceStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillmarketplacelist">SkillMarketplaceList<a class="headerlink" href="#skillmarketplacelist" title="Permanent link">&para;</a></h4>
+<p>SkillMarketplaceList contains a list of SkillMarketplace.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>SkillMarketplaceList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#skillmarketplace">SkillMarketplace</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillmarketplaceskillref">SkillMarketplaceSkillRef<a class="headerlink" href="#skillmarketplaceskillref" title="Permanent link">&para;</a></h4>
+<p>SkillMarketplaceSkillRef is the per-skill entry surfaced on
+SkillMarketplace status — operators reading the CR need at-a-glance
+visibility into which skill names the most recent reconcile materialized AND
+the upstream revision they pin against.</p>
+<p><em>Appears in:</em>
+- <a href="#skillmarketplacestatus">SkillMarketplaceStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name is the skill's identifier within the collection<br />(the SKILL.md frontmatter name == the top-level directory basename).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the resolved revision the materialized tarball<br />was fetched at — a 40-hex commit SHA for git-backed sources, an<br />S3 ETag for S3, a generation for GCS, an ETag|Last-Modified<br />composite for HTTP. Empty only when the upstream fetcher did not<br />report a revision.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillmarketplacespec">SkillMarketplaceSpec<a class="headerlink" href="#skillmarketplacespec" title="Permanent link">&para;</a></h4>
+<p>SkillMarketplaceSpec defines the desired state of SkillMarketplace.</p>
+<p>A SkillMarketplace fetches ONE upstream repo subtree as a single tar.gz and
+discovers many agent skills inside it by convention (agentskills.io has NO
+marketplace.json index — unlike PluginMarketplace). Body handling depends on
+the source type:</p>
+<ul>
+<li>github / gitlab / bitbucket: the fetcher returns the repo archive
+    (a tar.gz of the repo subtree). Stage-1 walks it for every top-level
+    directory containing a valid SKILL.md (name == dir basename); the REST
+    "<repo>-<sha>/" archive-root wrapper is stripped automatically.</li>
+<li>s3 / gcs / http: spec.<type>.key/object/url MUST point at a pre-archived
+    <code>.tar.gz</code> body directly; these fetchers do NOT walk directories. Stage-1
+    validates the fetched body is gzip (malformed → Synced=False,
+    reason=UpstreamInvalid).</li>
+</ul>
+<p>CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED.</p>
+<p><em>Appears in:</em>
+- <a href="#skillmarketplace">SkillMarketplace</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind for the marketplace archive.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>filters</code> <em><a href="#marketplacefilters">MarketplaceFilters</a></em></td>
+<td>Filters narrows the discovered skill set via anchored RE2 patterns.<br />Optional.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillmarketplacestatus">SkillMarketplaceStatus<a class="headerlink" href="#skillmarketplacestatus" title="Permanent link">&para;</a></h4>
+<p>SkillMarketplaceStatus defines the observed state of SkillMarketplace.</p>
+<p>In addition to the shared ExternalRefStatus, SkillMarketplace exposes a
+Synced condition with reasons UpstreamInvalid, InvalidConfig (plus per-skill
+soft-skip reasons in the message), plus the materialized skill set
+(Skills / SkillsCount) populated on each successful reconcile.</p>
+<p><em>Appears in:</em>
+- <a href="#skillmarketplace">SkillMarketplace</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>skills</code> <em><a href="#skillmarketplaceskillref">SkillMarketplaceSkillRef</a> array</em></td>
+<td>Skills lists the entries in the upstream collection that the most<br />recent reconcile successfully materialized into skill_marketplace_skills<br />(+ the per-marketplace cache). Ordered by Name. Entries that failed<br />Stage-2 are NOT included here — those surface in the Synced condition's<br />message field. Empty before the first successful reconcile.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>skillsCount</code> <em>integer</em></td>
+<td>SkillsCount is the size of Skills, denormalized so the kubectl print<br />column can show it without a JSONPath length() expression. Equal to<br />len(Skills).</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillspec">SkillSpec<a class="headerlink" href="#skillspec" title="Permanent link">&para;</a></h4>
+<p>SkillSpec defines the desired state of Skill.</p>
+<p>A Skill references an upstream location whose subtree contains an agent
+skill directory (a root directory with a SKILL.md manifest plus optional
+scripts/, references/, and assets/ subdirectories; see
+https://agentskills.io/specification). ACH fetches the subtree and serves
+it as a .tar.gz archive. Unlike Plugin, no component filter is applied —
+the fetched skill tree is served verbatim.</p>
+<p>CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED; spec.refresh.interval,
+when set, MUST NOT exceed spec.refresh.maxStaleness.</p>
+<p><em>Appears in:</em>
+- <a href="#skill">Skill</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code> <em>string</em></td>
+<td>Type names the upstream source kind. Drives which one of the<br />type-specific subobjects below is required.</td>
+<td></td>
+<td>Enum: [github gitlab bitbucket s3 gcs http] <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>refresh</code> <em><a href="#refreshblock">RefreshBlock</a></em></td>
+<td>Refresh declares poll cadence and staleness bound (CRD-04).</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>github</code> <em><a href="#githubsource">GitHubSource</a></em></td>
+<td>GitHub source. Required when spec.type == "github".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gitlab</code> <em><a href="#gitlabsource">GitLabSource</a></em></td>
+<td>GitLab source. Required when spec.type == "gitlab".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>bitbucket</code> <em><a href="#bitbucketsource">BitbucketSource</a></em></td>
+<td>Bitbucket source. Required when spec.type == "bitbucket".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s3</code> <em><a href="#s3source">S3Source</a></em></td>
+<td>S3 source. Required when spec.type == "s3".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>gcs</code> <em><a href="#gcssource">GCSSource</a></em></td>
+<td>GCS source. Required when spec.type == "gcs".</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>http</code> <em><a href="#httpsource">HTTPSource</a></em></td>
+<td>HTTP source. Required when spec.type == "http".</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="skillstatus">SkillStatus<a class="headerlink" href="#skillstatus" title="Permanent link">&para;</a></h4>
+<p>SkillStatus defines the observed state of Skill.</p>
+<p><em>Appears in:</em>
+- <a href="#skill">Skill</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageLocation</code> <em>string</em></td>
+<td>StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>lastSuccessfulRefresh</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta">Time</a></em></td>
+<td>LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5).</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>upstreamRev</code> <em>string</em></td>
+<td>UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="sourceauthsecretref">SourceAuthSecretRef<a class="headerlink" href="#sourceauthsecretref" title="Permanent link">&para;</a></h4>
+<p>SourceAuthSecretRef references a Kubernetes Secret carrying credentials
+for fetching an upstream source. The Secret MUST live in the same
+namespace as the referring CR (no cross-namespace resolution in
+v1alpha1).</p>
+<p><em>Appears in:</em>
+- <a href="#bitbucketsource">BitbucketSource</a>
+- <a href="#gcssource">GCSSource</a>
+- <a href="#githubsource">GitHubSource</a>
+- <a href="#gitlabsource">GitLabSource</a>
+- <a href="#httpsource">HTTPSource</a>
+- <a href="#s3source">S3Source</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name of the Kubernetes Secret in the CR's namespace.</td>
+<td></td>
+<td>MinLength: 1 <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>key</code> <em>string</em></td>
+<td>Key is the name of the Secret data key holding the bearer token.<br />Optional; when omitted on a git source type the operator falls<br />back to a provider-specific default key name:<br />  - github     → GITHUB_TOKEN<br />  - gitlab     → GITLAB_TOKEN<br />  - bitbucket  → BITBUCKET_TOKEN<br />(Matches the ecosystem env-var convention used by gh, glab,<br />terraform-provider-*, gitlab-runner, etc.) Other source types<br />(s3 / gcs / http) carry their own per-type key fields and do<br />NOT use this fallback.</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+<tr>
+<td><code>accessKeyIdKey</code> <em>string</em></td>
+<td>AccessKeyIDKey is the data-key holding the AWS access-key-id<br />(S3 source only).</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+<tr>
+<td><code>secretAccessKeyKey</code> <em>string</em></td>
+<td>SecretAccessKeyKey is the data-key holding the AWS secret-access-key<br />(S3 source only).</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+<tr>
+<td><code>headerName</code> <em>string</em></td>
+<td>HeaderName is the HTTP header name to attach for http sources<br />(e.g. "Authorization").</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+<tr>
+<td><code>headerValueKey</code> <em>string</em></td>
+<td>HeaderValueKey is the data-key holding the value for HeaderName<br />(http source only).</td>
+<td></td>
+<td>MinLength: 1 <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="unresolvedruntime">UnresolvedRuntime<a class="headerlink" href="#unresolvedruntime" title="Permanent link">&para;</a></h4>
+<p><em>Appears in:</em>
+- <a href="#environmentstatus">EnvironmentStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>models</code> <em>string array</em></td>
+<td></td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>mcpServers</code> <em>string array</em></td>
+<td></td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>a2aAgents</code> <em>string array</em></td>
+<td></td>
+<td>{  }</td>
+<td></td>
+</tr>
+<tr>
+<td><code>guardrails</code> <em>string array</em></td>
+<td>Guardrails lists spec.runtime.guardrails entries not registered in<br />LiteLLM. LiteLLM accepts unknown guardrail names silently and never runs<br />them, so an unlisted name is a fail-OPEN hole. Surfacing it here and<br />failing AccessGroupSynced converts that into a blocked ek_ mint.</td>
+<td>{  }</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>

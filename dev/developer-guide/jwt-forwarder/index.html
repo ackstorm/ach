@@ -1,0 +1,2846 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/dev/developer-guide/jwt-forwarder/">
+      
+      
+        <link rel="prev" href="../development/">
+      
+      
+        <link rel="next" href="../litellm-custom-auth/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>JWT Forwarder - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#jwt-forwarder-mcp-and-a2a-trust-path" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              JWT Forwarder
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../runbooks/jwt-key-rotation/" class="md-tabs__link">
+          
+  
+  
+  Runbooks
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api-reference/ach.ackstorm.ai/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/editions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Editions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/signing-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conversation-classifier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conversation classifier
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-end-to-end-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. End-to-end flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 EkOwnerGate — ek_ owner access re-check (D-30)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-jws-contract-what-the-forwarder-mints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 JWS contract — what the Forwarder mints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1.2 JWS contract — what the Forwarder mints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The groups claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-jwks-endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 JWKS endpoint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-public-hostname-forwarding-rfc-9728-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Public hostname forwarding + RFC 9728 discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1.4 Public hostname forwarding + RFC 9728 discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-a-backend-needs-this-and-when-it-cannot-have-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a backend needs this — and when it cannot have it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-metadata-route-ach-composes-both-discovery-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The metadata route — ACH composes both discovery documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-challenge-on-a-missing-credential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The challenge on a missing credential
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-slots-declared-not-discovered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential slots — declared, not discovered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-litellm-configuration-direct-backends-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required LiteLLM configuration (direct backends only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-auth-challenge-rewrite-pointing-resource_metadata-at-ach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 Auth-challenge rewrite — pointing resource_metadata at ACH
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-oauth-consent-is-declared-by-the-backend-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.6 OAuth consent is declared by the backend policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. BackendIdentityPolicy (BIP) — turning JWT mint on
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. BackendIdentityPolicy (BIP) — turning JWT mint on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observability-confirming-a-jwt-was-attached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability — confirming a JWT was attached
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6.1 The MCP gateway accepts the user key only on the bare path + allow_all_keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-litellm-intermediary-the-extra_headers-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. LiteLLM intermediary — the extra_headers opt-in
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-backend-side-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Backend-side verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-end-to-end-verification-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. End-to-end verification recipe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-related-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Related references
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../litellm-custom-auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LiteLLM Custom Auth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/jwt-key-rotation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Key Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/writing-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runbooks/phase6-cli-e2e-verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phase 6 CLI E2E Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach.ackstorm.ai
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-end-to-end-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. End-to-end flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 EkOwnerGate — ek_ owner access re-check (D-30)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-jws-contract-what-the-forwarder-mints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 JWS contract — what the Forwarder mints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1.2 JWS contract — what the Forwarder mints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-groups-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The groups claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-jwks-endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 JWKS endpoint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-public-hostname-forwarding-rfc-9728-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Public hostname forwarding + RFC 9728 discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1.4 Public hostname forwarding + RFC 9728 discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-a-backend-needs-this-and-when-it-cannot-have-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why a backend needs this — and when it cannot have it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-metadata-route-ach-composes-both-discovery-documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The metadata route — ACH composes both discovery documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-challenge-on-a-missing-credential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The challenge on a missing credential
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-slots-declared-not-discovered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential slots — declared, not discovered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#required-litellm-configuration-direct-backends-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required LiteLLM configuration (direct backends only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-auth-challenge-rewrite-pointing-resource_metadata-at-ach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.5 Auth-challenge rewrite — pointing resource_metadata at ACH
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#16-oauth-consent-is-declared-by-the-backend-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.6 OAuth consent is declared by the backend policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. BackendIdentityPolicy (BIP) — turning JWT mint on
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. BackendIdentityPolicy (BIP) — turning JWT mint on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#observability-confirming-a-jwt-was-attached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability — confirming a JWT was attached
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2.6 LiteLLM gateway auth — x-litellm-api-key (per-user, TESTING-PHASE)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.6.1 The MCP gateway accepts the user key only on the bare path + allow_all_keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-litellm-intermediary-the-extra_headers-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. LiteLLM intermediary — the extra_headers opt-in
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-backend-side-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Backend-side verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-end-to-end-verification-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. End-to-end verification recipe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-related-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Related references
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="jwt-forwarder-mcp-and-a2a-trust-path">JWT Forwarder — <code>/mcp</code> and <code>/a2a</code> Trust Path<a class="headerlink" href="#jwt-forwarder-mcp-and-a2a-trust-path" title="Permanent link">&para;</a></h1>
+<p>The ACH Forwarder authenticates a caller's ACH key (<code>pk_…</code> or <code>ek_…</code>),
+then — on routes covered by a <code>BackendIdentityPolicy</code> with
+<code>forwardIdentityJWT: true</code> — mints a short-lived Ed25519 JWT and
+attaches it as <code>Authorization: Bearer &lt;jwt&gt;</code> to the upstream request.
+Downstream MCP / A2A backends verify the JWT against the Forwarder's
+JWKS endpoint. This is the §9 / FWD-07..10 trust path.</p>
+<p>This page documents the contract and the operational gotchas. For
+backend-side verification code, see
+<a href="../../runbooks/writing-an-mcp-backend/">Writing an MCP backend</a>. For
+the rotation procedure, see
+<a href="../../runbooks/jwt-key-rotation/">JWT key rotation</a>.</p>
+<p><code>/v1</code> and <code>/gemini</code> are pass-through route families with <strong>no</strong> JWT
+involvement: the caller's bare <code>x-litellm-api-key</code>, no precheck; LiteLLM is
+the authorization boundary. <code>/mcp</code> and <code>/a2a</code> remain the only JWT routes.
+Nothing else is proxied (spec D-18): there is no catch-all, so <code>/ui</code>,
+<code>/key/*</code>, <code>/health</code>, <code>/model/*</code>… are 404 here and live on LiteLLM's own host.
+The one owned exception is <code>GET /v2/model/info</code> — ach-agent's <code>litellm_usage</code>
+cost source prices its responses there with its <code>ek_</code> — which follows the
+<code>/v1</code> rules (credential required, caller's own key forwarded, no JWT).</p>
+<hr />
+<h2 id="1-end-to-end-flow">1. End-to-end flow<a class="headerlink" href="#1-end-to-end-flow" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌────────────┐  x-ach-key: pk_…           ┌──────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│   Client   │ ─────────────────────────▶ │  Forwarder   │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│            │  (or Authorization:        │              │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│            │   Bearer pk_…)             │              │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>└────────────┘                            │              │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                                          │              │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                  ┌───────────────────────┤              │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                  │  1. Authenticate key  │              │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                  │  2. Pre-check         │              │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                  │     Env+team intersect│              │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                  │  3. BIP lookup        │              │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                  │     forwardIdentityJWT│              │
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                  │  4. Sign EdDSA JWT    │              │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>                  │     (claims §1.2)     │              │
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                  │  5. Strip + rewrite   │              │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                  │     headers           │              │
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                  │  6. Attach JWT LAST   │              │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                  └───────────────────────┤              │
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                                          └───────┬──────┘
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>                                                  │ Authorization: Bearer &lt;jwt&gt;
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>                                                  ▼
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>                                          ┌──────────────┐
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>                                          │   LiteLLM    │   ◀── MCP/A2A gateway
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                                          │ (MCP gateway)│       (drops Authorization
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>                                          │              │        unless extra_headers
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>                                          │              │        opts in — §3)
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>                                          └──────┬───────┘
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>                                                 │ Authorization: Bearer &lt;jwt&gt;
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>                                                 ▼
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>                                          ┌──────────────┐
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>                                          │   Backend    │
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>                                          │  (your MCP   │
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>                                          │   server)    │
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>                                          │              │
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>                                          │ JWKS verify  │
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>                                          │ iss/aud/exp  │
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                                          │ check        │
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                                          └──────────────┘
+</code></pre></div>
+<p>Agent keys (<code>ek_</code>) never receive the BIP JWT: the Forwarder strips any client
+<code>Authorization</code> header and the backend identifies the agent through
+<code>x-litellm-api-key</code> → <code>/v2/user/info</code>. <code>forwardIdentityJWT</code> governs human
+<code>pk_</code>/OAuth callers only.</p>
+<p>The Forwarder is the only ACH service that mints JWTs. It signs with
+the <code>current</code> slot of the <code>ach-jwt-signing-keys</code> Secret (Ed25519 / 32-byte
+raw seed). The JWKS endpoint exposes the public half so any backend can
+verify offline.</p>
+<hr />
+<h2 id="11-ekownergate-ek_-owner-access-re-check-d-30">1.1 <code>EkOwnerGate</code> — ek_ owner access re-check (D-30)<a class="headerlink" href="#11-ekownergate-ek_-owner-access-re-check-d-30" title="Permanent link">&para;</a></h2>
+<p><code>proxy.EkOwnerGate</code> sits in the authenticated route group in
+<code>internal/forwarder/server.go</code>, immediately after <code>middleware.Authn</code> and
+before every family handler (<code>/v1</code>, <code>/gemini</code>, <code>/v2/model/info</code>, <code>/mcp/&lt;n&gt;</code>,
+<code>/a2a/&lt;n&gt;</code>) — so it runs before the mcp/a2a <code>CheckMCP</code>/<code>CheckA2A</code> precheck
+above and before JWT mint. It is a no-op for <code>pk_</code> and no-identity requests;
+their own rules live in the per-route handlers. For an <code>ek_</code> caller it calls
+<code>precheck.CheckEkOwner</code>, which re-derives the same <code>authorizedTeams ∩
+TeamsResolver(owner_email)</code> verdict the pk_ precheck already used, keyed on
+the resolved row's <code>owner_email</code> instead of the caller's own identity — an
+<code>ek_</code> names its Environment, but it is only usable while its human owner
+still holds that Environment's access (the console <code>invalid</code> state, §7 of
+<code>docs/plans/unified-console-spec.md</code>). A lost intersection is <code>403
+unauthorized_team</code>; a TeamsResolver/LiteLLM failure is <code>503
+litellm_unreachable</code>, never treated as a verdict. Nothing is persisted by
+this check — the same <code>ek_</code> authorizes again on the next TeamsResolver
+refresh once access returns, with no re-mint and no JWT-path change.</p>
+<hr />
+<h2 id="12-jws-contract-what-the-forwarder-mints">1.2 JWS contract — what the Forwarder mints<a class="headerlink" href="#12-jws-contract-what-the-forwarder-mints" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+<th>Reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alg</code></td>
+<td><code>EdDSA</code> (Ed25519)</td>
+<td>FWD-07</td>
+</tr>
+<tr>
+<td><code>typ</code></td>
+<td><code>JWT</code></td>
+<td>RFC 7519</td>
+</tr>
+<tr>
+<td><code>kid</code></td>
+<td>Stable id of the signing slot (e.g. <code>ach-jwt-&lt;ulid&gt;</code> or <code>dev-&lt;ts&gt;</code>)</td>
+<td>FWD-08</td>
+</tr>
+<tr>
+<td><code>iss</code></td>
+<td>Forwarder <code>ACH_BASE_URL</code> (HTTPS-only in prod per FWD-10)</td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
+<td><code>sub</code></td>
+<td>Bare <code>&lt;owner-email&gt;</code> (no namespace prefix)</td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
+<td><code>email</code></td>
+<td>Bare <code>&lt;owner-email&gt;</code> (mirrors <code>sub</code>); <strong>omitted when empty</strong> — additive, for consumers that key by email</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>Caller's LiteLLM team aliases (ACH does no UUID→alias translation — see below), deduplicated + sorted, ACH's internal shell teams stripped; <strong>omitted entirely when empty</strong> — additive, see below</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>aud</code></td>
+<td><code>mcp:&lt;bare-name&gt;</code> on <code>/mcp/&lt;bare-name&gt;</code><br><code>a2a:&lt;bare-name&gt;</code> on <code>/a2a/&lt;bare-name&gt;</code></td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
+<td><code>iat</code></td>
+<td>Unix seconds at mint time</td>
+<td>RFC 7519</td>
+</tr>
+<tr>
+<td><code>exp</code></td>
+<td><code>iat + 120</code></td>
+<td>FWD-07</td>
+</tr>
+<tr>
+<td><code>nbf</code></td>
+<td><strong>NOT emitted</strong> (deliberate; see note below)</td>
+<td>Hub §9.1</td>
+</tr>
+<tr>
+<td><code>jti</code></td>
+<td><strong>NOT emitted</strong> (deliberate; Hub §9.1 + §20)</td>
+<td>Hub §9.1</td>
+</tr>
+</tbody>
+</table>
+<p>Authoritative implementation: <a href="https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go"><code>internal/forwarder/jwt/signer.go</code></a>.</p>
+<p><code>sub</code> is the bare <code>&lt;owner-email&gt;</code> (no namespace prefix). The additive <code>email</code>
+claim mirrors it for backends that key their per-user token storage by email and
+read <code>email</code> first, falling back to <code>sub</code>. It is omitted entirely when the owner
+email is empty. The legacy <code>&lt;namespace&gt;/&lt;email&gt;</code> <code>sub</code> form is <strong>gone</strong>
+(pre-release hard-cut) — do not split <code>sub</code> on <code>/</code>; key on <code>iss</code> + <code>sub</code>.</p>
+<p><strong><code>nbf</code> is intentionally omitted.</strong> With a 120 s <code>exp</code> it would add only
+clock-skew risk for no security gain — <code>exp</code> is the sole time bound. The minted
+claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>
+and <code>groups</code>): <strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> /
+<code>exp</code> only and MUST NOT require <code>nbf</code>.</p>
+<p>The 120-second TTL is intentionally tight. There is no refresh mechanism;
+every forwarded request mints a fresh JWT. Clock skew between the
+Forwarder and the backend MUST stay well under 120 s for the trust path
+to be steady-state.</p>
+<h3 id="the-groups-claim">The <code>groups</code> claim<a class="headerlink" href="#the-groups-claim" title="Permanent link">&para;</a></h3>
+<p>The Forwarder emits <code>groups</code> — the caller's LiteLLM <strong>team aliases</strong> — on
+minted tokens whose resolved set is non-empty. Backends use it to authorize
+group-owned resources.</p>
+<table>
+<thead>
+<tr>
+<th>Key type</th>
+<th><code>groups</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pk_</code></td>
+<td>the caller's LiteLLM teams ∩ <code>authorizedTeams</code> of active Environments whose <code>runtime.mcpServers</code> (or <code>runtime.a2aAgents</code>) contains <code>&lt;name&gt;</code></td>
+</tr>
+<tr>
+<td><code>ek_</code></td>
+<td>its Environment's <code>authorizedTeams</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both are sorted, deduplicated, and stripped of ACH's internal shell teams
+(<code>ach-env-*</code>, <code>ach-user-*</code>). The claim is <strong>omitted entirely</strong> when the set
+is empty — consumers must read an absent claim as "no groups", never as an
+error.</p>
+<p>Values are whatever LiteLLM's <code>team_alias</code> resolves to (falling back to
+<code>team_id</code> if the alias is empty) — ACH performs no UUID→alias translation
+of its own, so an <code>authorizedTeams</code> entry authored as a raw team UUID
+ships through unchanged. Renaming a LiteLLM team therefore changes the
+claim; a backend keying on the old alias stops matching.</p>
+<p><strong>Staleness.</strong> There is no revocation channel: a backend trusts the claim
+for the token's life. Two distinct vectors, two distinct bounds. Removing a
+user from a LiteLLM team affects the <code>pk_</code> path only (the 60s
+team-membership cache) and takes effect at the backend after at most
+<code>exp</code> (120s) + 60s ≈ 180s. Dropping a team from
+<code>Environment.spec.authorizedTeams</code> affects <strong>both</strong> key types — <code>ek_</code>
+groups read the Environment row directly, and <code>pk_</code> groups intersect
+against it — and bounds on <code>exp</code> (120s) + the <code>envstore</code> package's 5-minute
+NOTIFY-loss safety-net refresh (<code>internal/forwarder/envstore/store.go</code>)
+≈ ~7 minutes worst case.</p>
+<hr />
+<h2 id="13-jwks-endpoint">1.3 JWKS endpoint<a class="headerlink" href="#13-jwks-endpoint" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>GET &lt;iss&gt;/.well-known/jwks.json
+</code></pre></div>
+<p>Response shape (RFC 7517 §5):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">"keys"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">"kty"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OKP"</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">"crv"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ed25519"</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sig"</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">"alg"</span><span class="p">:</span><span class="w"> </span><span class="s2">"EdDSA"</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">"kid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-jwt-01J…"</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">"x"</span><span class="p">:</span><span class="w">   </span><span class="s2">"&lt;base64url-no-pad of the 32-byte public key&gt;"</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">"kty"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OKP"</span><span class="p">,</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="nt">"crv"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ed25519"</span><span class="p">,</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">"use"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sig"</span><span class="p">,</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">"alg"</span><span class="p">:</span><span class="w"> </span><span class="s2">"EdDSA"</span><span class="p">,</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">"kid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ach-jwt-01K…"</span><span class="p">,</span><span class="w">   </span><span class="c1">// OPTIONAL — only during a rotation window</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">      </span><span class="nt">"x"</span><span class="p">:</span><span class="w">   </span><span class="s2">"..."</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="p">}</span>
+</code></pre></div>
+<p>Response headers:</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Content-Type</code></td>
+<td><code>application/jwk-set+json</code></td>
+</tr>
+<tr>
+<td><code>Cache-Control</code></td>
+<td><code>public, max-age=3600</code></td>
+</tr>
+</tbody>
+</table>
+<p>The cache TTL is the contract for backends; a 1-hour stale view is
+correct by design. During a rotation, both slots are published for
+≥24 hours of overlap before the old <code>kid</code> is removed
+(<a href="../../runbooks/jwt-key-rotation/">JWT key rotation</a>).</p>
+<hr />
+<h2 id="14-public-hostname-forwarding-rfc-9728-discovery">1.4 Public hostname forwarding + RFC 9728 discovery<a class="headerlink" href="#14-public-hostname-forwarding-rfc-9728-discovery" title="Permanent link">&para;</a></h2>
+<p>Both proxy hops preserve <code>Host</code>: LiteLLM composes its own redirects
+(<code>/</code> → <code>/ui/</code>) from it and ignores <code>X-Forwarded-Host</code>, so a cleared <code>Host</code>
+sent browsers to the Service name. A backend <em>behind</em> LiteLLM, however,
+sees LiteLLM's hop and still needs to learn which public hostname it was
+reached at — that is what breaks OAuth discovery for any MCP backend
+fronted by more than one door (issue #177).</p>
+<p>The gateway hop therefore publishes the public hostname in a header the
+upstream can opt into:</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>Set by</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>X-Forwarded-Host</code></td>
+<td>gateway hop</td>
+<td><strong>Always overwritten</strong> from the incoming <code>Host</code>. A client-supplied value is discarded, so it cannot be spoofed past the front door.</td>
+</tr>
+<tr>
+<td><code>X-Forwarded-Proto</code></td>
+<td>gateway hop</td>
+<td>Filled in <strong>only when absent</strong> (<code>https</code> iff the gateway itself terminated TLS).</td>
+</tr>
+</tbody>
+</table>
+<p>The asymmetry is deliberate: an Ingress preserves the original <code>Host</code>
+end-to-end, so the gateway's <code>req.Host</code> is authoritative — but TLS
+terminates at the Ingress, so the gateway only ever sees plaintext and
+must trust the Ingress's <code>X-Forwarded-Proto</code> when it is present.</p>
+<p>The forwarder's <code>proxy.stripAndRewrite</code> drops only <code>x-ach-*</code> and sets
+<code>x-litellm-api-key</code>; every other header — these two, <code>Authorization</code>, the
+other <code>x-litellm-*</code> — passes as it came.</p>
+<h3 id="why-a-backend-needs-this-and-when-it-cannot-have-it">Why a backend needs this — and when it cannot have it<a class="headerlink" href="#why-a-backend-needs-this-and-when-it-cannot-have-it" title="Permanent link">&para;</a></h3>
+<p>RFC 9728 §3.2: a client rejects protected-resource metadata whose
+<code>resource</code> is not the resource it is addressing. A backend that serves
+several front doors must publish the <code>resource</code> matching the one the
+client actually used — it needs <code>X-Forwarded-Host</code> to pick.</p>
+<p><strong>Match against it; never echo it.</strong> The value names a document the
+client goes on to trust. Select from a configured allowlist of public
+URLs (normalizing default ports) and fall back to the canonical URL on a
+miss.</p>
+<blockquote>
+<p><strong>This applies only to a backend ACH proxies to DIRECTLY.</strong> On the full
+<code>/mcp/{name}</code> path — <code>client → gateway → forwarder → LiteLLM → toolhive
+→ MCP pod</code> — the header has exactly one reachable consumer, LiteLLM, and
+it never reaches the pod:</p>
+<ul>
+<li>toolhive's transparent proxy calls <code>SetXForwarded()</code> unconditionally
+  and <code>SetURL()</code> rewrites <code>Host</code>, so a client-supplied <code>X-Forwarded-*</code>
+  never survives;</li>
+<li>vMCP rejects <code>X-Forwarded-*</code> unconditionally
+  (<a href="https://github.com/stacklok/toolhive/issues/6523">stacklok/toolhive#6523</a>),
+  and keeps that exclusion by design — those headers are smuggling and
+  spoofing vectors.</li>
+</ul>
+<p>A backend that cannot learn its front door should <strong>omit</strong>
+<code>resource_metadata</code> rather than advertise a document the client will
+reject. §1.5 is what makes that safe: ACH supplies the pointer itself.</p>
+</blockquote>
+<h3 id="the-metadata-route-ach-composes-both-discovery-documents">The metadata route — ACH composes both discovery documents<a class="headerlink" href="#the-metadata-route-ach-composes-both-discovery-documents" title="Permanent link">&para;</a></h3>
+<p>RFC 9728 §3 places the well-known segment <em>between the authority and the
+resource path</em> (following RFC 8414, not RFC 8615) — so for resource
+<code>https://ach.example.com/mcp/my-server</code> the document lives at
+<code>https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server</code>,
+a <strong>sibling</strong> of <code>/mcp/my-server</code>, not a child.</p>
+<p>The forwarder mounts the discovery surface <strong>outside</strong> the Authn group,
+alongside JWKS, and <strong>serves it itself</strong> (<code>proxy.WellKnownHandler</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">wk</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">proxy</span><span class="p">.</span><span class="nx">WellKnownHandler</span><span class="p">(</span><span class="nx">deps</span><span class="p">.</span><span class="nx">BaseURL</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-authorization-server"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 8414 — jwt.ASMetadata</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">     </span><span class="c1">// RFC 9728 — the API root</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nx">r</span><span class="p">.</span><span class="nx">Handle</span><span class="p">(</span><span class="s">"/.well-known/oauth-protected-resource/*"</span><span class="p">,</span><span class="w"> </span><span class="nx">wk</span><span class="p">)</span><span class="w">   </span><span class="c1">// RFC 9728 — /v1, /gemini, /mcp/&lt;name&gt;, /a2a/&lt;name&gt;</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th><code>resource</code> / <code>issuer</code></th>
+<th>Points at</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/.well-known/oauth-authorization-server</code></td>
+<td><code>ACH_BASE_URL</code></td>
+<td>platform-api's <code>/platform/oauth/{register,authorize,token}</code>, <code>jwks_uri</code> = the forwarder's JWKS</td>
+</tr>
+<tr>
+<td><code>/.well-known/oauth-protected-resource</code></td>
+<td><code>ACH_BASE_URL</code></td>
+<td><code>authorization_servers: [ACH_BASE_URL]</code></td>
+</tr>
+<tr>
+<td><code>…/oauth-protected-resource/mcp/&lt;name&gt;</code></td>
+<td><code>ACH_BASE_URL/mcp/&lt;name&gt;</code></td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>…/oauth-protected-resource/a2a/&lt;name&gt;</code></td>
+<td><code>ACH_BASE_URL/a2a/&lt;name&gt;</code></td>
+<td>same</td>
+</tr>
+<tr>
+<td><code>…/oauth-protected-resource/v1</code> (also <code>/gemini</code>)</td>
+<td><code>ACH_BASE_URL/v1</code></td>
+<td>same — the model API family is a resource of its own (the opencode-auth plugin builds this URL itself)</td>
+</tr>
+</tbody>
+</table>
+<p>Any other path under the PRM segment (<code>/v1/chat</code>, <code>/mcp/</code>, <code>/mcp/a/b</code>) is 404.
+<strong>LiteLLM's PRM document is no longer relayed</strong> — the client must be sent
+to ACH's authorization server, not LiteLLM's, so the <code>X-Forwarded-Host</code>
+opt-in below is no longer load-bearing for discovery (it stays documented
+because backends proxied directly still read it).</p>
+<p>Anonymous by design (RFC 9728 §5): a client fetches these documents
+precisely because it does not yet hold a credential — gating them makes
+the ceremony unstartable.</p>
+<blockquote>
+<p><code>/.well-known/jwks.json</code> is registered explicitly and therefore
+<strong>shadows</strong> the one LiteLLM also serves. That is required, not
+incidental: backends point <code>AUTH_JWT_JWKS_URI</code> at ACH and must receive
+ACH's Ed25519 signing keys, never LiteLLM's.</p>
+</blockquote>
+<h3 id="the-challenge-on-a-missing-credential">The challenge on a missing credential<a class="headerlink" href="#the-challenge-on-a-missing-credential" title="Permanent link">&para;</a></h3>
+<p><code>middleware.Authn</code> (with <code>AuthnOptions.Challenge = proxy.ChallengeFor(base)</code>)
+answers an anonymous request with <code>401</code> and</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>WWW-Authenticate: Bearer resource_metadata="&lt;ACH_BASE_URL&gt;/.well-known/oauth-protected-resource[/v1|/gemini|/mcp/&lt;name&gt;|/a2a/&lt;name&gt;]"
+</code></pre></div>
+<p>The pointer names the <strong>service root</strong>, never the dialled path: streamable
+HTTP appends <code>/messages</code> and session segments, and RFC 9728 §3.2 has the
+client compare the document's <code>resource</code> against the server it configured.
+This is what starts the OAuth ceremony for Claude Code, Codex and opencode
+(<code>docs/developer-guide/oauth-client-conformance.md</code>).</p>
+<h3 id="credential-slots-declared-not-discovered">Credential slots — declared, not discovered<a class="headerlink" href="#credential-slots-declared-not-discovered" title="Permanent link">&para;</a></h3>
+<p>The forwarder reads a credential only from headers the operator declares
+(<code>forwarder.headers</code> in the chart → <code>ACH_CREDENTIAL_HEADERS</code>, a JSON list
+consulted in order; the first one present decides):</p>
+<table>
+<thead>
+<tr>
+<th><code>mode</code></th>
+<th>The value is</th>
+<th>The forwarder</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resolve</code></td>
+<td>an ACH credential (<code>pk_</code>/<code>ek_</code>)</td>
+<td>resolves it against ACH, removes the header, sends the caller's own LiteLLM key as <code>x-litellm-api-key</code>; unknown/revoked → <code>401 expired_or_revoked</code></td>
+</tr>
+<tr>
+<td><code>passthrough</code></td>
+<td>the backend's own key (a LiteLLM <code>sk-…</code> under a customer-facing name such as <code>x-genai-api-key</code>)</td>
+<td>leaves the header as it came <strong>and</strong> mirrors it to <code>x-litellm-api-key</code>; no ACH identity (<code>middleware.RawLiteLLMKeyFromCtx</code>), no precheck, no per-target JWT. A <code>pk-</code>/<code>ek-</code> value here is resolved as if the slot were <code>resolve</code> (header removed) — an ACH key never reaches the upstream</td>
+</tr>
+</tbody>
+</table>
+<p>Every other header passes as it came — including <code>Authorization</code> when a
+declared slot carried the credential (Claude Code on an Anthropic
+subscription: ours in <code>x-ach-key</code>, Anthropic's in <code>Authorization</code>; Claude
+Code's <code>apiKeyHelper</code> sends the same value in <code>x-api-key</code> and
+<code>Authorization</code> — the first resolves, the second is ignored upstream).</p>
+<p>With <strong>no declared slot present</strong>, <code>Authorization: Bearer</code> is resolved only
+when it is ours: ACH's own OAuth access token — JWS-shaped, verified against
+the signing key (the only way an MCP client can present one) — or a
+<code>pk-</code>/<code>ek-</code> key (an OpenAI SDK puts its key there). A JWS that does
+not verify (expired, foreign issuer) is <code>401</code> + challenge, so the client
+re-authenticates with ACH. Anything else in <code>Authorization</code> — a raw <code>sk-</code>,
+Basic, LiteLLM's UI bearer on <code>/v1/agents</code> or <code>/health/license</code> — is not ours
+to judge: it is forwarded untouched with <strong>no ACH identity</strong> (no precheck, no
+BIP JWT, no env tag) and LiteLLM authenticates it. A <code>pk-</code>/<code>ek-</code> is never
+"anything else": forwarding one could not authenticate (LiteLLM takes only
+<code>sk-</code>) and would only hand an ACH secret to the upstream, so it is resolved
+and removed; unknown or malformed is ACH's 401. <code>authorization</code> cannot be
+listed as a slot.</p>
+<p><strong>Trusted external IdP</strong> (<code>forwarder.trustedIdP</code> → <code>ACH_TRUSTED_IDP_ISSUER</code>,
+<code>_AUDIENCES</code> (JSON list, required with the issuer or the forwarder refuses to
+start), <code>_CLAIM</code> (default <code>email</code>); off when the issuer is empty). A JWS in
+<code>Authorization: Bearer</code> whose <strong>unverified</strong> <code>iss</code> equals the issuer byte for
+byte is not judged as ACH's own: <code>keystore.NewTrustedIdPResolver</code> verifies it
+against the issuer's discovery JWKS (go-oidc <code>RemoteKeySet</code>, refetch on an
+unknown <code>kid</code>), RS256 only, <code>exp</code>, exact <code>iss</code>, <code>aud</code> in the list, the claim
+present and non-empty (trimmed, lower-cased), and <code>email_verified</code> not
+<code>false</code> (absent is accepted — some connectors omit it). The identity resolves
+to the user's EXISTING <code>purpose='oauth'</code> pk_, so everything downstream is a
+pk_ caller: own LiteLLM key as <code>x-litellm-api-key</code>, the IdP token removed,
+<code>x-litellm-tags: user:&lt;email&gt;</code>, BIP JWTs on <code>/mcp</code>/<code>/a2a</code>. The forwarder never
+mints a LiteLLM key or user:</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>token invalid (sig, alg, exp, aud, claim, <code>email_verified:false</code>)</td>
+<td>401 + challenge, like any bad bearer</td>
+</tr>
+<tr>
+<td>valid, user never signed in to ACH / oauth row revoked / past the 90-day cap</td>
+<td><strong>403 <code>ach_login_required</code></strong> naming the console — no challenge (the caller already holds a valid IdP token; an ACH OAuth dance is not what it needs)</td>
+</tr>
+<tr>
+<td>issuer discovery or JWKS unreachable (transport error / 5xx)</td>
+<td><strong>503 <code>idp_unreachable</code></strong>; the forwarder still starts (discovery is lazy and retried) and every other credential path is untouched</td>
+</tr>
+<tr>
+<td>LiteLLM no longer lists the row's key</td>
+<td>LiteLLM's own 401 — fail closed, no per-request <code>/key/list</code>; the user's next ACH grant re-mints (<code>ensureOAuthPK</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Row lifetime: LibreChat never calls <code>/token</code>, which is what keeps an oauth row
+alive for ACH OAuth clients. So each trusted-IdP use slides the row exactly
+like a plain pk_ (<code>db.OAuthPKCheckAndExtend</code>: 7 days, 5-minute debounce,
+absolute cap <code>created_at + 90 days</code>) and fires the existing LiteLLM expiry
+mirror. A trusted-IdP result is never put in the Redis resolver cache:
+platform-api and content-service read that cache too, and must not accept
+an IdP token, so every such request is checked against Postgres. A user disabled at the IdP keeps a valid token until its <code>exp</code>
+(Dex default 24 h), then stops sliding the row.
+platform-api shares the middleware with its own <code>platformApi.headers</code>
+(resolve only). On <code>/mcp</code> + <code>/a2a</code> the per-target ACH JWT overwrites
+<code>Authorization</code> when a BIP mints one.</p>
+<h3 id="required-litellm-configuration-direct-backends-only">Required LiteLLM configuration (direct backends only)<a class="headerlink" href="#required-litellm-configuration-direct-backends-only" title="Permanent link">&para;</a></h3>
+<p><code>/mcp/*</code> traffic traverses LiteLLM (§3), and LiteLLM builds its own
+document's <code>resource</code> / <code>authorization_servers</code> from the request base URL
+(<code>get_request_base_url</code>). ACH no longer serves that document, but a
+backend ACH proxies to directly may still consume <code>X-Forwarded-Host</code>.
+LiteLLM honors <code>X-Forwarded-Host</code> / <code>-Proto</code> / <code>-Port</code> <strong>only</strong> when
+<code>general_settings</code> sets <strong>both</strong> of these:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">general_settings</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">use_x_forwarded_for</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">mcp_trusted_proxy_ranges</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"&lt;ach-forwarder</span><span class="nv"> </span><span class="s">Pod</span><span class="nv"> </span><span class="s">CIDR&gt;"</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>With <code>use_x_forwarded_for</code> alone LiteLLM deliberately fails closed
+(<code>litellm/proxy/auth/ip_address_utils.py</code>, <code>is_request_from_trusted_proxy</code>)
+— it cannot distinguish a trusted reverse proxy from a direct attacker,
+and these URLs become <code>redirect_uri</code>s. <strong>Never set the range to
+<code>0.0.0.0/0</code></strong>; scope it to the forwarder's Pod CIDR.</p>
+<blockquote>
+<p><strong>⚠ <code>PROXY_BASE_URL</code> short-circuits all of the above</strong> —
+<code>get_request_base_url</code> returns it verbatim before any <code>X-Forwarded-*</code>
+handling. That is one of the reasons ACH composes the documents itself.</p>
+</blockquote>
+<h3 id="scope">Scope<a class="headerlink" href="#scope" title="Permanent link">&para;</a></h3>
+<p>The forwarder serves the two discovery documents; the ceremony endpoints
+are platform-api's <code>/platform/oauth/{register,authorize,as-callback,token}</code>
+(reached through the gateway on the same origin). LiteLLM's own OAuth
+surface — <code>/.well-known/openid-configuration</code> and
+<code>/v1/mcp/oauth/{authorize,token,register}</code> — is <strong>not</strong> exposed
+anonymously: the first is unmounted (404) and the rest sit inside the
+Authn group (<code>401 missing_key</code>).</p>
+<hr />
+<h2 id="15-auth-challenge-rewrite-pointing-resource_metadata-at-ach">1.5 Auth-challenge rewrite — pointing <code>resource_metadata</code> at ACH<a class="headerlink" href="#15-auth-challenge-rewrite-pointing-resource_metadata-at-ach" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>A request with <strong>no credential at all</strong> never reaches LiteLLM: Authn
+answers it with the pointer directly (§1.4 "The challenge on a missing
+credential"). The rewrite below covers the other case — a credentialed
+request that LiteLLM's MCP gateway itself challenges.</p>
+</blockquote>
+<p>Header forwarding (§1.4) gets the public hostname as far as LiteLLM. On the
+<code>/mcp</code> path that is not enough, for two upstream reasons measured on
+<code>v1.99.1</code>:</p>
+<ol>
+<li><strong>LiteLLM composes the challenge itself.</strong> Its pre-session probe loop
+   (<code>proxy/_experimental/mcp_server/server.py</code>) discards the upstream's
+   <code>WWW-Authenticate</code> and synthesizes a replacement:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">for</span> <span class="p">(</span><span class="n">srv</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">challenge_server_name</span><span class="p">),</span> <span class="p">(</span><span class="n">probe_status</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">probe_targets</span><span class="p">,</span> <span class="n">probe_results</span><span class="p">):</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="k">if</span> <span class="n">probe_status</span> <span class="o">==</span> <span class="mi">401</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="n">www_authenticate</span> <span class="o">=</span> <span class="n">get_passthrough_www_authenticate</span><span class="p">(</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>            <span class="n">scope</span><span class="o">=</span><span class="n">scope</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="n">challenge_server_name</span><span class="p">,</span> <span class="n">invalid_token</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>        <span class="p">)</span>
+</code></pre></div>
+<p>(The <code>is_true_passthrough</code> block ~200 lines earlier does the opposite and
+   relays it — an upstream inconsistency, not something ACH can configure
+   around.) So even a backend that correctly selects its own <code>resource</code> from
+   <code>X-Forwarded-Host</code> cannot reach the client: its header is replaced.</p>
+<ol>
+<li><strong>That synthesized pointer comes from <code>PROXY_BASE_URL</code></strong> when set — see
+   the callout in §1.4.</li>
+</ol>
+<p>Together: the challenge is composed by LiteLLM, from a static env var, and
+the backend's answer is discarded. <strong>No header-propagation rule can
+influence it.</strong></p>
+<p>The forwarder is the last hop that knows which front door the client
+dialled, and it knows its own public name without trusting any header:
+<code>ACH_BASE_URL</code>, validated <code>http(s)://</code> at process start and already used as
+the JWT <code>iss</code>. Consuming no header is the point — it is the one mechanism
+immune to both the <code>PROXY_BASE_URL</code> precedence above and the toolhive
+<code>X-Forwarded-*</code> rejection in §1.4.</p>
+<p>Two branches, one invariant: <strong>a challenge leaving ACH names an ACH
+document, always</strong> — whether upstream sent the wrong pointer, or none at
+all. ACH guarantees this alone, with no cooperation from LiteLLM, toolhive,
+or the backend, which is what makes the forwarder the right layer for it.</p>
+<p><strong>Branch 1 — rewrite</strong> (<code>internal/forwarder/proxy/challenge.go</code>), when a
+pointer is present:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token",
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>             resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>client:    WWW-Authenticate: Bearer error="invalid_token",
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+</code></pre></div>
+<p>Only the <strong>scheme and authority</strong> change. The path tail names the backend
+the document describes and is upstream's to choose.</p>
+<p><strong>Branch 2 — insert</strong>, when no pointer is present and the route is
+<code>/mcp/{name}</code> or <code>/a2a/{name}</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>upstream:  WWW-Authenticate: Bearer error="invalid_token", scope="read"
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>client:    WWW-Authenticate: Bearer error="invalid_token", scope="read",
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>             resource_metadata="https://ach.example.com/.well-known/oauth-protected-resource/mcp/my-server"
+</code></pre></div>
+<p>Branch 2 is not hypothetical housekeeping: branch 1 alone <strong>silently
+no-ops</strong> the day LiteLLM stops discarding the backend's challenge. ACH
+would then receive a bare <code>Bearer error="invalid_token", …</code>, find nothing
+to rewrite, and pass it through — leaving the client to derive the metadata
+URL from the resource it dialled (§3.1). That derivation is legal and some
+clients do it, but it is not something to depend on, and the failure mode
+is the same silent one this issue opened with.</p>
+<p>The inserted pointer names the document the forwarder already serves at
+that path (§1.4), so both branches produce the same URL. Only <code>Bearer</code>
+challenges are touched — appending an OAuth auth-param to a <code>Basic</code>
+challenge would be meaningless. A 401 carrying no challenge at all gets a
+minimal <code>Bearer</code> one (RFC 7235 requires a challenge on 401); a 403 does
+not, so an upstream that sent none keeps none.</p>
+<p>Deliberately narrow — the client FOLLOWS this URL, so a broader rewrite
+would be a redirect-injection primitive rather than a fix:</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>status is not 401/403</td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>no <code>resource_metadata</code>, route is not <code>/mcp/{name}</code> or <code>/a2a/{name}</code></td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>no <code>resource_metadata</code>, <code>Basic</code>-only challenge</td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>no <code>resource_metadata</code>, 403 with no challenge</td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>value does not parse as a URL</td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>path lacks <code>/.well-known/oauth-protected-resource</code></td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>quoted-string unterminated</td>
+<td>untouched</td>
+</tr>
+<tr>
+<td>param name merely <em>ends</em> in <code>resource_metadata</code></td>
+<td>untouched</td>
+</tr>
+<tr>
+<td><code>ACH_BASE_URL</code> empty/unparseable</td>
+<td>hook not installed at all</td>
+</tr>
+</tbody>
+</table>
+<p>Every other auth-param (<code>error</code>, <code>error_description</code>, <code>scope</code>, <code>realm</code>) and
+all surrounding whitespace survive byte for byte — only the quoted value is
+substituted.</p>
+<blockquote>
+<p><strong><code>ModifyResponse</code> is header-only.</strong> It was previously <code>nil</code>, documented
+as deliberate "for streaming pass-through (D-05)". The constraint that
+comment encoded is that the <strong>body</strong> is never touched, and it still is
+not (except <code>GET /v1/models</code>, below): <code>ModifyResponse</code> runs before the body is copied and buffers nothing,
+so SSE and streamable-http pass-through are unaffected. The proxy suite's
+streaming test runs with the hook installed precisely to keep that honest.</p>
+</blockquote>
+<p><strong>The one body rewrite: <code>GET /v1/models</code>.</strong> That list is small JSON, never a
+stream, so the hook filters it (<code>proxy/models.go</code>): by default only items
+whose LiteLLM <code>mode</code> is <code>chat</code> or <code>completion</code> are kept, which is what the
+console labels "chat", so a chat client (LibreChat) offers no embedding,
+transcription, image or rerank model. <code>?types=&lt;mode&gt;[,&lt;mode&gt;…]</code> adds
+LiteLLM's own mode names on top (<code>embedding</code>, <code>audio_transcription</code>,
+<code>image_generation</code>, <code>responses</code>…), <code>?types=all</code> turns the filter off, and
+<code>types</code> never reaches LiteLLM. An item with no <code>mode</code> stays: LiteLLM omits it
+when neither <code>model_info.mode</code> nor its cost map knows the model. The request
+drops <code>Accept-Encoding</code> so the Transport hands the hook plain JSON; any body
+that is not a 200 <code>{"data":[…]}</code> list passes through untouched.</p>
+<p>The filter is for external chat clients only. The views that list models in
+ACH never go through it: the console Models page shows every mode
+(<code>/model_group/info</code> as the user), the OpenCode config shows chat models only
+(its own <code>/model_group/info</code> read; like <code>/v1/models</code>, a model with no mode,
+or an empty one, is kept, and the deployment's mode from <code>/v2/model/info</code>
+decides when LiteLLM knows it). No ACH-internal
+caller of the forwarder's <code>/v1/models</code> exists today; a future one must send
+<code>?types=all</code>. <code>TestNoInternalModelListWithoutTypesAll</code>
+(<code>proxy/models_selfcall_test.go</code>) is a heuristic guard for that (literal
+<code>"/v1/models…"</code> strings in tracked source only; <code>url.JoinPath</code>, base+path
+concatenation and SDK calls are not caught).</p>
+<hr />
+<h2 id="16-oauth-consent-is-declared-by-the-backend-policy">1.6 OAuth consent is declared by the backend policy<a class="headerlink" href="#16-oauth-consent-is-declared-by-the-backend-policy" title="Permanent link">&para;</a></h2>
+<p>OAuth access tokens carry identity only; they do not carry service scopes and
+the forwarder has no static scope gate. A target that needs a separate consent
+ceremony declares it on its winning MCP <code>BackendIdentityPolicy</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="nv">MCPServer</span><span class="p p-Indicator">,</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">demo-mcp-jwt</span><span class="p p-Indicator">}</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">consentBroker</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://broker.example</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">consentAudience</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backend-store</span>
+</code></pre></div>
+<p>During <code>/authorize</code>, ACH probes <code>/mcp/&lt;name&gt;</code> through the public forwarder as
+the user. Only the LiteLLM <code>auth_required</code> outcome starts one broker hop. ACH
+discovers the broker with RFC 8414, registers a public PKCE client, sends a
+short-lived EdDSA <code>login_hint</code> whose <code>aud</code> is <code>consentAudience</code>, and never
+redeems the broker code. The callback re-probes the same backend; only an
+<code>ok</code> outcome issues the ACH authorization code. The broker policy is resolved
+from Postgres, so there is no <code>ACH_OAUTH_SERVICES</code> or grants-Redis map.</p>
+<hr />
+<h2 id="2-backendidentitypolicy-bip-turning-jwt-mint-on">2. BackendIdentityPolicy (BIP) — turning JWT mint on<a class="headerlink" href="#2-backendidentitypolicy-bip-turning-jwt-mint-on" title="Permanent link">&para;</a></h2>
+<p>JWT mint is <strong>opt-in per target</strong>. A <code>BackendIdentityPolicy</code> CR selects
+a route and sets <code>forwardIdentityJWT: true</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach.ackstorm.ai/v1alpha1</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BackendIdentityPolicy</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nt">metadata</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bip-demo-mcp-echo</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ach-system</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nt">spec</span><span class="p">:</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MCPServer</span><span class="w">       </span><span class="c1"># or "A2AAgent"</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">demo-mcp-echo</span><span class="w">   </span><span class="c1"># bare name; matches /mcp/&lt;name&gt; route</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">forwardIdentityJWT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p>When the Forwarder handles <code>/mcp/&lt;name&gt;/*</code>, it looks up the BIP by
+<code>(MCPServer, &lt;name&gt;)</code> via the in-process <code>bipcache</code> (Postgres-backed
+projection refreshed by <code>NOTIFY ach_backend_identity_policies_changed</code>).
+If the BIP exists and <code>forwardIdentityJWT = true</code>, the JWT is minted
+and attached. Otherwise the request is forwarded <strong>without</strong> an
+Authorization header (the <code>Authorization</code> slot is intentionally cleared
+by the strip pass — clients cannot smuggle a JWT through a no-policy
+route).</p>
+<p>Symmetric behaviour applies to <code>/a2a/&lt;name&gt;/*</code> with <code>kind: A2AAgent</code>.</p>
+<p>The Forwarder consumes the BIP cache directly — there is no CRD watch
+on the request path. Operator → Postgres → forwarder cache is the only
+flow (issue #34 C1). Status conditions on the BIP CR are informational;
+the Forwarder reads from Postgres unconditionally.</p>
+<h3 id="observability-confirming-a-jwt-was-attached">Observability — confirming a JWT was attached<a class="headerlink" href="#observability-confirming-a-jwt-was-attached" title="Permanent link">&para;</a></h3>
+<p>On the mint path the Forwarder logs at <strong>Info</strong>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>forwarder: backend identity forwarded (JWT minted)  kind=MCPServer target=&lt;name&gt; aud=mcp:&lt;name&gt; owner=&lt;email&gt; request_id=...
+</code></pre></div>
+<p>When no BIP matches it logs the same fact at <strong>Debug</strong>
+(<code>no backend identity policy; forwarding without JWT</code>) — raise the log
+level to see <em>why</em> identity is not being forwarded. The corresponding
+counters are <code>ach_forwarder_jwt_signed_total{kind}</code> (mint) and
+<code>ach_forwarder_jwt_suppressed_total{kind,reason}</code> with
+<code>reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}</code>.
+A common gotcha: the BIP must live in the <strong>same namespace as the
+forwarder Pod</strong> (<code>POD_NAMESPACE</code>) — the cache query is namespace-scoped,
+so a BIP in <code>default</code> is invisible and shows up as <code>reason=no_policy</code>.</p>
+<hr />
+<h2 id="26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase">2.6 LiteLLM gateway auth — <code>x-litellm-api-key</code> (per-user, TESTING-PHASE)<a class="headerlink" href="#26-litellm-gateway-auth-x-litellm-api-key-per-user-testing-phase" title="Permanent link">&para;</a></h2>
+<p>Distinct from the backend-facing <code>Authorization</code> JWT (§2-§3), the Forwarder
+must authenticate the proxied request <strong>to LiteLLM itself</strong>. As of migration
+<code>000011</code> it does this with the <strong>caller's own LiteLLM virtual key</strong>, not the
+shared master key.</p>
+<ul>
+<li>At pk_/ek_ mint, platform-api persists the <code>/key/generate</code> <code>sk-…</code> plaintext
+  into the new <code>litellm_key_material</code> column (reversing FIX01 §A.6 — plaintext,
+  deliberate for this testing phase).</li>
+<li>The resolver carries it through <code>KeyInfo</code> → <code>KeyContext</code>; the Director writes
+  it as <code>x-litellm-api-key</code> — <strong>bare</strong> on <code>/v1</code>/<code>/a2a</code>, <code>Bearer</code>-prefixed on
+  <code>/mcp</code> (LiteLLM's MCP key parser requires the prefix).</li>
+<li><strong><code>/gemini</code> is the exception:</strong> LiteLLM's native Google AI Studio passthrough
+  authenticates the virtual key ONLY via <code>x-goog-api-key</code> (or <code>?key=</code>) — it does
+  NOT read <code>x-litellm-api-key</code> (that is the <code>/v1</code> OpenAI-compat proxy); sending
+  it yields a <code>Virtual Key expected … 'sk-'</code> 401. So on <code>/gemini</code> the Director
+  sets the caller's material as <strong>bare <code>x-goog-api-key</code></strong> and DROPS
+  <code>x-litellm-api-key</code> so exactly one auth header is sent. Any client-supplied
+  <code>x-goog-api-key</code> is stripped first (§2 strip pass — no credential smuggling).</li>
+<li><strong><code>/v1/realtime</code> WebSocket upgrade:</strong> LiteLLM's realtime auth reads
+  <code>Authorization</code>, not <code>x-litellm-api-key</code>, so on an upgrade to that path the
+  Director ALSO sets <code>Authorization: Bearer &lt;material&gt;</code> (no JWT is ever minted
+  on <code>/v1</code>, so the jwt-LAST write cannot overwrite it).</li>
+<li>LiteLLM therefore attributes the request <strong>1:1 to the user</strong> (their own key,
+  their own budget/tags), and the master key never enters the data path — so it
+  can no longer leak to an MCP backend that echoes inbound headers.</li>
+<li>The <code>x-litellm-key-id</code> delegation header is <strong>no longer sent</strong> (it was only
+  meaningful when authenticating as the master and delegating).</li>
+<li><strong>No fallback:</strong> a key minted before <code>000011</code> has NULL material → the header
+  is forwarded empty (<code>Bearer</code> on <code>/mcp</code>) → LiteLLM <strong>401s</strong>. Re-mint the key.</li>
+</ul>
+<p>The master key survives <strong>only</strong> for the Forwarder's <code>TeamsResolver</code> precheck
+(<code>/user/info</code>, <code>unauthorized_team</code>) and for operator/platform-api admin tasks
+(<code>/key/generate</code>, <code>/user/new</code>, access-group sync) — never in the proxied user
+request. This is a TESTING-PHASE simplification; grep <code>TESTING-PHASE (reverts
+FIX01</code> for the full revert surface.</p>
+<h3 id="261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys">2.6.1 The MCP gateway accepts the user key only on the bare path + <code>allow_all_keys</code><a class="headerlink" href="#261-the-mcp-gateway-accepts-the-user-key-only-on-the-bare-path-allow_all_keys" title="Permanent link">&para;</a></h3>
+<p>Forwarding the caller's <strong>non-admin</strong> virtual key (§2.6) instead of the master
+collides with two LiteLLM MCP-gateway guards. Both must be satisfied or the
+<code>/mcp</code> request fails even though the same key works on <code>/v1</code>:</p>
+<ol>
+<li><strong>Route-level (admin-only).</strong> LiteLLM's <code>mcp_inference_routes</code> lists
+   <code>/mcp/{subpath}</code> — a <strong>single</strong> path segment. <code>/mcp/&lt;server&gt;</code> matches and is
+   treated as an LLM-API route (any key); <code>/mcp/&lt;server&gt;/</code> (trailing slash) and
+   <code>/mcp/&lt;server&gt;/mcp</code> do <strong>not</strong> match, fall through to
+   <code>_raise_admin_only_route_exception</code>, and 500 for anything but <code>proxy_admin</code>.
+   The Forwarder Director therefore <strong>collapses the upstream <code>/mcp</code> path to the
+   bare <code>/mcp/&lt;server&gt;</code></strong> (<code>mcpServerPath</code>, <code>proxy.go</code>) — hydrate already writes
+   the bare URL (<code>platformapi/hydrate/handler.go</code>), but a client (or test) that
+   appends a slash/subpath is normalized back.</li>
+<li><strong>Object-permission.</strong> Even on the bare path, a non-admin key is rejected
+   (<code>200</code> body <code>"User not allowed to call this tool"</code>) unless it is granted the
+   server. The simplest grant is registering the MCP server with
+   <code>allow_all_keys: true</code> (the e2e seed in <code>scripts/cluster.sh</code> does this; the
+   live setup mirrors it). With it the user key reaches the upstream exactly as
+   <code>proxy_admin</code> would; the per-user identity to the backend still flows via the
+   <code>Authorization</code> JWT (§2-§3), unchanged.</li>
+</ol>
+<p><code>proxy_admin</code> (master) sidestepped both guards, which is why the pre-§2.6
+master-key path worked on any <code>/mcp</code> URL. <code>/a2a</code> may carry the same gateway
+guards; it has no full round-trip e2e yet — track as a follow-up.</p>
+<hr />
+<h2 id="3-litellm-intermediary-the-extra_headers-opt-in">3. LiteLLM intermediary — the <code>extra_headers</code> opt-in<a class="headerlink" href="#3-litellm-intermediary-the-extra_headers-opt-in" title="Permanent link">&para;</a></h2>
+<p>In the production ACH topology, <code>/mcp/&lt;name&gt;/*</code> proxies to LiteLLM's
+MCP gateway (not directly to the backend). LiteLLM then dispatches to
+the actual MCP server registered under <code>&lt;name&gt;</code>. <strong>By default LiteLLM
+strips the caller's <code>Authorization</code> header before calling the backend</strong>
+— a sensible posture for the generic case where the gateway holds its
+own credential, but it breaks the ACH JWT trust path.</p>
+<p>To opt in to forwarding, register (or re-register) the MCP server in
+LiteLLM with <code>extra_headers: ["authorization"]</code> (and <code>allow_all_keys: true</code>
+so the per-user virtual key is accepted — see §2.6.1):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://litellm.litellm-system.svc:4000/v1/mcp/server<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Authorization: Bearer &lt;master-key&gt;'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="s1">    "server_name": "demo-mcp-echo",</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="s1">    "transport":   "http",</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="s1">    "url":         "http://ach-mcp-echo.ach-system.svc",</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="s1">    "extra_headers": ["authorization"],</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="s1">    "allow_all_keys": true</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="s1">  }'</span>
+</code></pre></div>
+<p>What the opt-in does:</p>
+<ul>
+<li>LiteLLM keeps the incoming <code>Authorization</code> header AS-IS and forwards
+  it verbatim to the upstream MCP server.</li>
+<li>The backend sees <code>Authorization: Bearer &lt;ach-jwt&gt;</code> — i.e. the JWT the
+  Forwarder minted — and can run its JWKS-based verification.</li>
+</ul>
+<p>What it does <strong>not</strong> do:</p>
+<ul>
+<li>It is NOT a per-call header injection. Static per-server headers go
+  in <code>static_headers</code> instead.</li>
+<li>It does NOT bypass LiteLLM's MCP gateway logic — <code>tools/list</code>,
+  <code>tools/call</code>, etc. still flow through LiteLLM. The header is just
+  preserved.</li>
+</ul>
+<p><code>scripts/cluster.sh hydrate_fixtures</code> already registers the e2e
+<code>demo-mcp-echo</code> server with this opt-in. Operators registering their
+own MCP/A2A backends MUST do the same — without it the Forwarder will
+mint a perfectly valid JWT that the backend never sees, and the call
+will surface as <code>tools = []</code> (LiteLLM returns an empty tool set when
+the upstream <code>tools/list</code> 401s) or as <code>401 invalid_token</code> from the
+backend if it does receive a half-stripped header.</p>
+<blockquote>
+<p><strong>Direct-from-Forwarder mode</strong>: If your backend is reachable
+directly (the Forwarder skips LiteLLM and proxies straight to the
+backend), <code>extra_headers</code> is irrelevant — the Forwarder's
+Director writes Authorization on the outbound request itself. This
+mode is reserved for future use; today every <code>/mcp/*</code> request
+traverses LiteLLM.</p>
+</blockquote>
+<hr />
+<h2 id="4-backend-side-verification">4. Backend-side verification<a class="headerlink" href="#4-backend-side-verification" title="Permanent link">&para;</a></h2>
+<p>Recommended posture (full detail and a runnable Go reference at
+<a href="../../runbooks/writing-an-mcp-backend/">Writing an MCP backend</a>):</p>
+<ol>
+<li><strong>Pin the algorithm.</strong> Reject anything other than <code>alg=EdDSA</code> on the
+   JWS header. Never accept <code>alg=none</code>. Never derive the verifier from
+   the token's own <code>alg</code>.</li>
+<li><strong>Resolve <code>kid</code> against a fresh-enough JWKS.</strong> Cache the JWK Set
+   but refresh on <code>kid</code> miss; the Forwarder rotates with ≥24h overlap
+   so a backend that holds a 1-hour-stale view is correct by design.</li>
+<li><strong>Validate <code>iss</code>, <code>aud</code>, <code>exp</code>.</strong> Pin <code>iss</code> to the Forwarder's
+   <code>ACH_BASE_URL</code>; pin <code>aud</code> to the route prefix
+   (<code>mcp:&lt;bare-name&gt;</code> or <code>a2a:&lt;bare-name&gt;</code>) for the route(s) this
+   backend serves.</li>
+<li><strong>Do not trust <code>sub</code> as identity</strong> unless your security model
+   matches ACH's. <code>sub</code> carries the bare <code>&lt;owner-email&gt;</code> for audit
+   purposes — not for authorization decisions.</li>
+<li><strong>Refuse on the slightest mismatch.</strong> The trust path is only
+   meaningful if the backend rejects on any failure. There is no
+   "soft" mode.</li>
+</ol>
+<p>A runnable reference implementation lives at
+<a href="https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo"><code>test/e2e/mcp-echo/</code></a>.
+The verifier (<code>jwt/verify.go</code>) and JWKS cache (<code>jwt/jwks.go</code>) are each
+~150 lines of pure stdlib — copy-and-adapt, do not import.</p>
+<hr />
+<h2 id="5-end-to-end-verification-recipe">5. End-to-end verification recipe<a class="headerlink" href="#5-end-to-end-verification-recipe" title="Permanent link">&para;</a></h2>
+<p>The full round-trip can be exercised on a <code>kind</code> cluster:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># 1. Bring up the cluster with the e2e mocks.</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>./scripts/dev.sh<span class="w"> </span>make<span class="w"> </span>cluster-up<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nv">HELM_EXTRA_ARGS</span><span class="o">=</span><span class="s2">"--set testMocks.enabled=true --set testMocks.mcpEcho.enabled=true"</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># 2. Mint a pk_ via SSO (drives Dex + platform-api via the unified</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1">#    local-gateway). See references/local-testing-gateway.md for the</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1">#    Python helper that handles __Host- cookie HTTP-localhost workaround.</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="nv">PK</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>python3<span class="w"> </span>scripts/sso-mint.py<span class="k">)</span><span class="s2">"</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># 3. Apply the BIP fixture so /mcp/demo-mcp-echo gets a JWT.</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>-n<span class="w"> </span>ach-system<span class="w"> </span>apply<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">  </span>-f<span class="w"> </span>test/e2e/fixtures/phase4_bip_mcp_echo.yaml
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="c1"># 4. Fire a tools/call through the forwarder.</span>
+<a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8080/mcp/demo-mcp-echo/<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"x-ach-key: </span><span class="nv">$PK</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="w">  </span>-H<span class="w"> </span><span class="s1">'Accept: application/json, text/event-stream'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"jsonrpc":"2.0","id":1,</span>
+<a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a><span class="s1">       "method":"tools/call",</span>
+<a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a><span class="s1">       "params":{"name":"demo-mcp-echo.echo",</span>
+<a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a><span class="s1">                 "arguments":{"text":"hello"}}}'</span>
+<a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a>
+<a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a><span class="c1"># 5. Inspect what mcp-echo saw.</span>
+<a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a>./scripts/dev.sh<span class="w"> </span>kubectl<span class="w"> </span>run<span class="w"> </span>cap<span class="w"> </span>--rm<span class="w"> </span>-i<span class="w"> </span>--restart<span class="o">=</span>Never<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a><span class="w">  </span>--image<span class="o">=</span>curlimages/curl:latest<span class="w"> </span>--quiet<span class="w"> </span>--command<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a><span class="w">  </span>curl<span class="w"> </span>-sS<span class="w"> </span>http://ach-mcp-echo.ach-system.svc/__capture/last
+</code></pre></div>
+<p>A passing run prints the echoed text plus the verified claim set
+(<code>iss</code>, <code>sub</code>, <code>aud</code>, <code>kid</code>, <code>iat</code>, <code>exp</code>) inside the tool result.
+<code>/__capture/last</code> shows the rewritten <code>Authorization</code> header
+(<code>Bearer ey…</code> — the ACH JWT, not the original <code>pk_</code>) and the parsed
+claims.</p>
+<p>The automated suite is
+<a href="https://github.com/ackstorm/ach/blob/main/test/e2e/phase4_jwt_validate_test.go"><code>test/e2e/phase4_jwt_validate_test.go</code></a>;
+gate it on <code>ACH_E2E_PHASE4=1</code> + <code>ACH_E2E_PK=&lt;pk_…&gt;</code> and run via
+<code>make e2e-focus RUN=TestPhase4JWTValidate</code>.</p>
+<hr />
+<h2 id="6-troubleshooting">6. Troubleshooting<a class="headerlink" href="#6-troubleshooting" title="Permanent link">&para;</a></h2>
+<p>See the Common failure modes section in
+<a href="https://github.com/ackstorm/ach/blob/main/CLAUDE.md#common-failure-modes">CLAUDE.md</a>
+for the canonical "401 from <code>/mcp/&lt;name&gt;</code>" decision tree. The top three
+causes, in order of frequency:</p>
+<ol>
+<li><strong>LiteLLM gateway dropped Authorization</strong> — missing
+   <code>extra_headers: ["authorization"]</code> on the MCP server registration
+   (§3 above).</li>
+<li><strong>Backend <code>expectedIss</code> doesn't match Forwarder <code>ACH_BASE_URL</code></strong> —
+   the <code>iss</code> claim must match exactly, character for character.</li>
+<li><strong>Backend <code>expectedAud</code> doesn't match the route</strong> — <code>aud</code> is
+   derived from the route name (<code>mcp:&lt;name&gt;</code>), not from anything the
+   client controls.</li>
+</ol>
+<p>Forwarder logs to look for:</p>
+<ul>
+<li><code>"forwarder starting" … "baseURL": "&lt;URL&gt;"</code> confirms which <code>iss</code>
+  the Forwarder will mint.</li>
+<li><code>"jwt signing keys loaded" … "current.kid": "&lt;KID&gt;"</code> confirms the
+  <code>kid</code> that ends up in the JWS header.</li>
+<li>A <code>403 unauthorized_team</code> from the Forwarder means precheck rejected
+  the request <strong>before</strong> JWT mint — fix the Environment's
+  <code>authorizedTeams</code> or the caller's LiteLLM team membership before
+  debugging the JWT path. For an <code>ek_</code> caller the same code can also come
+  from <code>EkOwnerGate</code> (§1.1) even on <code>/v1</code>/<code>/gemini</code>, which never reach
+  <code>CheckMCP</code>/<code>CheckA2A</code> — that means the key's OWNER lost Environment
+  access, not a runtime-list/team mismatch on the resource itself.</li>
+</ul>
+<p>Backend logs to look for:</p>
+<ul>
+<li>A 401 with <code>WWW-Authenticate: Bearer error="invalid_token"</code> means
+  the backend saw a JWT but rejected it. Decode the JWS payload
+  (<code>echo "&lt;payload&gt;" | base64 -d</code>) to see which claim mismatched.</li>
+<li>No backend hit at all (capture empty, no log line) means the JWT
+  never reached the backend — almost always the LiteLLM strip case.</li>
+</ul>
+<hr />
+<h2 id="7-related-references">7. Related references<a class="headerlink" href="#7-related-references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../runbooks/jwt-key-rotation/">JWT key rotation</a> — operational
+  procedure for rotating the <code>ach-jwt-signing-keys</code> Secret with
+  zero-downtime ≥24h overlap.</li>
+<li><a href="../../runbooks/writing-an-mcp-backend/">Writing an MCP backend</a> —
+  backend-side verification posture, common pitfalls, and a runnable
+  Go reference.</li>
+<li><a href="../litellm-custom-auth/">LiteLLM Custom Auth</a> — the parallel trust
+  path for <code>/v1</code> chat completions (impersonation via
+  <code>X-Litellm-Api-Key</code> + <code>X-Litellm-Key-Id</code>, NOT the JWT path).</li>
+<li><a href="https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go"><code>internal/forwarder/jwt/signer.go</code></a> —
+  authoritative implementation of the signer.</li>
+<li><a href="https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo"><code>test/e2e/mcp-echo/</code></a> —
+  reference backend verifier (stdlib-only).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
