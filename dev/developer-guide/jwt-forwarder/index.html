@@ -702,6 +702,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/key-exchange/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent credentials by token exchange
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1027,6 +1055,17 @@
     <span class="md-ellipsis">
       
         Credential slots — declared, not discovered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exchange-jwts-aud-ach-ek" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exchange JWTs (aud: ach-ek)
       
     </span>
   </a>
@@ -1636,6 +1675,17 @@
     <span class="md-ellipsis">
       
         Credential slots — declared, not discovered
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exchange-jwts-aud-ach-ek" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exchange JWTs (aud: ach-ek)
       
     </span>
   </a>
@@ -2307,6 +2357,18 @@ mints a LiteLLM key or user:</p>
 </tr>
 </tbody>
 </table>
+<h3 id="exchange-jwts-aud-ach-ek">Exchange JWTs (<code>aud: ach-ek</code>)<a class="headerlink" href="#exchange-jwts-aud-ach-ek" title="Permanent link">&para;</a></h3>
+<p><code>POST /platform/keys/exchange</code> (platform API) signs a JWT with the same
+Ed25519 slots: <code>iss</code> = <code>ACH_BASE_URL</code>, <code>aud</code> = <code>ach-ek</code>, <code>sub</code> = an exchange
+key id (<code>ekid_…</code>), <code>jti</code>, lifetime <code>ACH_KEY_EXCHANGE_TOKEN_TTL</code> (15 minutes by default, 1 minute to 1 hour).
+<code>keystore.NewExchangeResolver</code> wraps the OAuth resolver inside the Redis cache
+in the forwarder, content service and platform API: a JWS whose unverified
+<code>aud</code> is <code>ach-ek</code> is verified there and resolves to the exchange key — the same
+<code>KeyInfo</code> an <code>ek_</code> yields, so <code>EkOwnerGate</code>, the <code>key:&lt;id&gt;</code> budget tag and
+LiteLLM routing are unchanged — only while a <code>KeyGrant</code> still allows its
+(identity, Environment, ServiceAccount) tuple. Any other JWS goes to the OAuth
+resolver (<code>aud: ach</code>). It is accepted in <code>x-ach-key</code> and in
+<code>Authorization: Bearer</code>. The cache entry expires with the JWT.</p>
 <p>Row lifetime: LibreChat never calls <code>/token</code>, which is what keeps an oauth row
 alive for ACH OAuth clients. So each trusted-IdP use slides the row exactly
 like a plain pk_ (<code>db.OAuthPKCheckAndExtend</code>: 7 days, 5-minute debounce,

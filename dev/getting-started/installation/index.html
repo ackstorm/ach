@@ -564,6 +564,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#agent-credentials-by-token-exchange" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent credentials by token exchange
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -761,6 +772,34 @@
     
   
     Agent plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/key-exchange/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent credentials by token exchange
   
 
     
@@ -1292,6 +1331,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#agent-credentials-by-token-exchange" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent credentials by token exchange
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1353,6 +1403,12 @@ ask it, or read it directly.</p>
 </ol>
 <p>The chart manages the CRDs (<code>installCRDs: true</code>), so <code>helm upgrade</code> upgrades them too
 and <code>helm uninstall</code> leaves them and your resources in place.</p>
+<h2 id="agent-credentials-by-token-exchange">Agent credentials by token exchange<a class="headerlink" href="#agent-credentials-by-token-exchange" title="Permanent link">&para;</a></h2>
+<p>The platform API reviews ServiceAccount tokens for <code>POST /platform/keys/exchange</code>
+through a cluster-wide <code>system:auth-delegator</code> binding the chart creates. Set
+API server audit level <code>Metadata</code> for <code>tokenreviews</code>, and bind the
+<code>&lt;release&gt;-keygrant-editor</code> ClusterRole (<code>ach-keygrant-editor</code> for release <code>ach</code>) to platform admins only. See
+<a href="../../user-guide/key-exchange/">Agent credentials by token exchange</a>.</p>
 
 
 

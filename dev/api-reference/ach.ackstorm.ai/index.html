@@ -700,6 +700,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/key-exchange/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent credentials by token exchange
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1482,6 +1510,61 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#keygrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantrequesters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantRequesters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#litellmconnection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2174,6 +2257,61 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#keygrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantList
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantrequesters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantRequesters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keygrantstatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyGrantStatus
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#litellmconnection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2581,6 +2719,8 @@
 <li><a href="#backendidentitypolicylist">BackendIdentityPolicyList</a></li>
 <li><a href="#environment">Environment</a></li>
 <li><a href="#environmentlist">EnvironmentList</a></li>
+<li><a href="#keygrant">KeyGrant</a></li>
+<li><a href="#keygrantlist">KeyGrantList</a></li>
 <li><a href="#litellmconnection">LiteLLMConnection</a></li>
 <li><a href="#litellmconnectionlist">LiteLLMConnectionList</a></li>
 <li><a href="#plugin">Plugin</a></li>
@@ -3102,7 +3242,8 @@ condition is written.</p>
 no spend of its own: LiteLLM owns the counter and the enforcement (it
 refuses a request once the tag's accumulated spend exceeds MaxBudget).</p>
 <p><em>Appears in:</em>
-- <a href="#environmentspec">EnvironmentSpec</a></p>
+- <a href="#environmentspec">EnvironmentSpec</a>
+- <a href="#keygrantspec">KeyGrantSpec</a></p>
 <table>
 <thead>
 <tr>
@@ -3646,6 +3787,211 @@ but the constraint is no longer machine-enforced at admission or fetch.</p>
 <tr>
 <td><code>authSecretRef</code> <em><a href="#sourceauthsecretref">SourceAuthSecretRef</a></em></td>
 <td>AuthSecretRef optionally attaches an authentication header<br />(e.g. Authorization: Bearer ...). The data key named via<br />.headerValueKey supplies the header value at request time.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="keygrant">KeyGrant<a class="headerlink" href="#keygrant" title="Permanent link">&para;</a></h4>
+<p>KeyGrant lets the named ServiceAccounts exchange their pod token for an ACH
+credential of Identity in the named Environments. A grant naming a shared
+ServiceAccount is usable by every pod running that ServiceAccount. Writing
+one is the power to act as Identity: the chart's <release>-keygrant-editor ClusterRole
+(ach-keygrant-editor for release ach) is bound to nobody and is never aggregated into admin or edit.</p>
+<p><em>Appears in:</em>
+- <a href="#keygrantlist">KeyGrantList</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>KeyGrant</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta">ObjectMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>spec</code> <em><a href="#keygrantspec">KeyGrantSpec</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>status</code> <em><a href="#keygrantstatus">KeyGrantStatus</a></em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="keygrantlist">KeyGrantList<a class="headerlink" href="#keygrantlist" title="Permanent link">&para;</a></h4>
+<p>KeyGrantList contains a list of KeyGrant.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td><code>ach.ackstorm.ai/v1alpha1</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td><code>KeyGrantList</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kind</code> <em>string</em></td>
+<td>Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>apiVersion</code> <em>string</em></td>
+<td>APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>metadata</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta">ListMeta</a></em></td>
+<td>Refer to Kubernetes API documentation for fields of <code>metadata</code>.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>items</code> <em><a href="#keygrant">KeyGrant</a> array</em></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="keygrantrequesters">KeyGrantRequesters<a class="headerlink" href="#keygrantrequesters" title="Permanent link">&para;</a></h4>
+<p>KeyGrantRequesters names who may exchange for the grant's identity. It is a
+block so other requester kinds can sit beside ServiceAccounts.</p>
+<p><em>Appears in:</em>
+- <a href="#keygrantspec">KeyGrantSpec</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>serviceAccounts</code> <em>string array</em></td>
+<td>ServiceAccounts are exact "<namespace>/<name>" ServiceAccounts, both<br />parts DNS-1123. No patterns.</td>
+<td></td>
+<td>MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?/<a href="[-a-z0-9.]*[a-z0-9]">a-z0-9</a>?$ <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="keygrantspec">KeyGrantSpec<a class="headerlink" href="#keygrantspec" title="Permanent link">&para;</a></h4>
+<p>KeyGrantSpec allows POST /platform/keys/exchange for one identity in every
+combination of its Environments and Requesters — and nothing that would
+only match by combining lists from different grants.</p>
+<p><em>Appears in:</em>
+- <a href="#keygrant">KeyGrant</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identity</code> <em>string</em></td>
+<td>Identity is exactly one ACH identity: an email, lower-case. No patterns.</td>
+<td></td>
+<td>MaxLength: 254 <br />Pattern: <code>^[a-z0-9._%+-]+@[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$</code> <br />Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>environments</code> <em>string array</em></td>
+<td>Environments are exact Environment names in this namespace.</td>
+<td></td>
+<td>MinItems: 1 <br />items:MaxLength: 253 <br />items:Pattern: ^<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?(.<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?)*$ <br /></td>
+</tr>
+<tr>
+<td><code>requesters</code> <em><a href="#keygrantrequesters">KeyGrantRequesters</a></em></td>
+<td>Requesters name who may exchange.</td>
+<td></td>
+<td>Required: {} <br /></td>
+</tr>
+<tr>
+<td><code>budget</code> <em><a href="#budgetblock">BudgetBlock</a></em></td>
+<td>Budget caps EACH exchange key this grant covers, through that key's own<br />"key:<id>" tag. When several grants cover one key the lowest maxBudget<br />applies. Removing it leaves the last ceiling in place.</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="keygrantstatus">KeyGrantStatus<a class="headerlink" href="#keygrantstatus" title="Permanent link">&para;</a></h4>
+<p>KeyGrantStatus is the observed state of a KeyGrant.</p>
+<p><em>Appears in:</em>
+- <a href="#keygrant">KeyGrant</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>observedGeneration</code> <em>integer</em></td>
+<td>ObservedGeneration is the metadata.generation the reconciler last processed.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
+<td>Conditions carry Ready: False with reason IdentityUnknown (the identity<br />has never logged in to ACH) or EnvironmentMissing.</td>
 <td></td>
 <td></td>
 </tr>
