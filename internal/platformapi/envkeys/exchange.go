@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"slices"
@@ -126,7 +127,7 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 		var req ExchangeRequest
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, exchangeMaxBody))
 		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil || dec.More() || req.Identity == "" || req.Environment == "" ||
+		if err := dec.Decode(&req); err != nil || dec.Decode(&struct{}{}) != io.EOF || req.Identity == "" || req.Environment == "" ||
 			len(req.Identity) > exchangeMaxField || len(req.Environment) > exchangeMaxField {
 			deny(http.StatusBadRequest, codeInvalidArgument, "identity and environment required", "")
 			return

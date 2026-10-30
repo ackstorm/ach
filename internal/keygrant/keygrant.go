@@ -39,19 +39,37 @@ func Miss(grants []db.KeyGrantRow, env string) string {
 	return "environment_not_granted"
 }
 
-// Budget is the lowest maxBudget among covering grants (first by name on a
-// tie); nil when none sets one.
+// Budget is the lowest maxBudget among covering grants; on a tie the lowest
+// namespace/name, then the lowest budgetDuration, wins whatever the input
+// order. nil when none sets one.
 func Budget(covering []db.KeyGrantRow) *litellm.TagBudget {
-	var best *litellm.TagBudget
-	for _, g := range covering {
+	var best *db.KeyGrantRow
+	for i := range covering {
+		g := &covering[i]
 		if g.MaxBudget == nil {
 			continue
 		}
-		if best == nil || *g.MaxBudget < best.MaxBudget {
-			best = &litellm.TagBudget{MaxBudget: *g.MaxBudget, BudgetDuration: g.BudgetDuration}
+		if best == nil || budgetLess(g, best) {
+			best = g
 		}
 	}
-	return best
+	if best == nil {
+		return nil
+	}
+	return &litellm.TagBudget{MaxBudget: *best.MaxBudget, BudgetDuration: best.BudgetDuration}
+}
+
+func budgetLess(a, b *db.KeyGrantRow) bool {
+	if *a.MaxBudget != *b.MaxBudget {
+		return *a.MaxBudget < *b.MaxBudget
+	}
+	if a.Namespace != b.Namespace {
+		return a.Namespace < b.Namespace
+	}
+	if a.Name != b.Name {
+		return a.Name < b.Name
+	}
+	return a.BudgetDuration < b.BudgetDuration
 }
 
 // Plan splits non-revoked exchange keys into those no grant allows any more

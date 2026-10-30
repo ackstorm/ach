@@ -725,6 +725,13 @@ func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string
 		tag := litellm.KeyBudgetTag(keyID)
 		if err := deps.LiteLLM.UpsertTagBudget(ctx, tag, cr.req.Budget.TagBudget()); err != nil {
 			deps.Logger.Error("envkeys.create: key budget tag", "key_id", keyID, "err", err)
+			audit.EmitAudit(ctx, deps.Audit, audit.Event{
+				Action: cr.action, Extra: cr.extra,
+				Outcome:   audit.OutcomeLitellmRejected,
+				Actor:     cr.actor,
+				RequestID: reqID,
+				Target:    cr.target,
+			})
 			render.Error(w, http.StatusBadGateway, audit.OutcomeLitellmRejected,
 				"key created but its budget could not be set", reqID)
 			return "", "", false

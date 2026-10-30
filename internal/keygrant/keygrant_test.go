@@ -79,3 +79,15 @@ func TestPlan(t *testing.T) {
 		t.Fatalf("budgets = %v", budgets)
 	}
 }
+
+func TestBudget_TieIsOrderIndependent(t *testing.T) {
+	ten := 10.0
+	a := grant("a", nil, nil, &ten, "7d")
+	b := grant("b", nil, nil, &ten, "1d")
+	for _, in := range [][]db.KeyGrantRow{{a, b}, {b, a}} {
+		got := Budget(in)
+		if got == nil || got.BudgetDuration != "7d" {
+			t.Fatalf("want grant a (7d), got %+v", got)
+		}
+	}
+}

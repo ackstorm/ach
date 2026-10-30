@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	authnv1 "k8s.io/api/authentication/v1"
 
+	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keystore"
@@ -422,10 +423,11 @@ func TestExchange_ExistingKeyReappliesBudget(t *testing.T) {
 
 func TestExchange_BodyLimits(t *testing.T) {
 	for name, body := range map[string]string{
-		"oversize":      `{"identity":"` + strings.Repeat("a", 5000) + `","environment":"prod"}`,
-		"long identity": `{"identity":"` + strings.Repeat("a", 257) + `","environment":"prod"}`,
-		"long env":      `{"identity":"a@b.c","environment":"` + strings.Repeat("a", 257) + `"}`,
-		"trailing JSON": okBody + `{}`,
+		"oversize":       `{"identity":"` + strings.Repeat("a", 5000) + `","environment":"prod"}`,
+		"long identity":  `{"identity":"` + strings.Repeat("a", 257) + `","environment":"prod"}`,
+		"long env":       `{"identity":"a@b.c","environment":"` + strings.Repeat("a", 257) + `"}`,
+		"trailing JSON":  okBody + `{}`,
+		"trailing brace": okBody + `}`,
 	} {
 		f := newExchangeFixture(t)
 		rec := f.do(t, saToken(exAudience), body, "")
@@ -457,5 +459,19 @@ func TestExchange_RaceWinnerSuspendedIsRefused(t *testing.T) {
 	rec := f.do(t, saToken(exAudience), okBody, "")
 	if rec.Code != http.StatusConflict || errorCode(t, rec) != "key_suspended" {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestExchange_NewKeyBudgetWriteFailureAuditsOnce(t *testing.T) {
+	ten := 10.0
+	f := newExchangeFixture(t)
+	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
+	f.llm.upsertTagErr = fmt.Errorf("boom")
+	rec := f.do(t, saToken(exAudience), okBody, "")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d %s", rec.Code, rec.Body)
+	}
+	if n := strings.Count(f.audit.String(), `"action":"`+audit.ActionEkExchange+`"`); n != 1 {
+		t.Fatalf("want exactly one exchange audit event, got %d: %s", n, f.audit)
 	}
 }
