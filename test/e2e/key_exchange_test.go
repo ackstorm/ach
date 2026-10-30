@@ -246,6 +246,7 @@ spec:
 				"--serviceaccount="+kxNamespace+":"+kxSA, "-n", namespace); err != nil {
 				t.Fatalf("bind %s: %v\n%s", role, err, out)
 			}
+			t.Cleanup(func() { _, _ = runCmd("kubectl", "delete", "rolebinding", rb, "-n", namespace, "--ignore-not-found") })
 			out, _ := runCmd("kubectl", "auth", "can-i", "create", "keygrants.ach.ackstorm.ai", "-n", namespace, "--as="+sa)
 			if strings.TrimSpace(out) != "no" {
 				t.Errorf("%s may create KeyGrants: %q", role, out)
@@ -254,7 +255,6 @@ spec:
 			if strings.TrimSpace(out) != "yes" {
 				t.Errorf("control check: the %s binding is not effective: %q", role, out)
 			}
-			_, _ = runCmd("kubectl", "delete", "rolebinding", rb, "-n", namespace)
 		}
 	})
 
