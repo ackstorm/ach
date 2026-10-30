@@ -99,8 +99,13 @@ grep -q "keygrants/finalizers" <<<"$(render --show-only templates/operator-rbac.
 # Each rule starts at a "- apiGroups" line; a rule naming the bare keygrants
 # resource, or every resource ("*"), must carry none of the authoring verbs.
 render --show-only templates/operator-rbac.yaml | awk '
-  function flush() {
-    if ((rule ~ /(^|[^a-z\/])keygrants([^a-z\/]|$)/ || rule ~ /resources: *\[[^]]*"\*"/ || rule ~ /resources:\n *- *"?\*"?\n/) && rule ~ /verbs:[^\n]*"(create|delete|patch|\*)"/) bad = 1
+  function flush(   v) {
+    # The verbs value, flow ([a, b]) or block style, quoted or not.
+    v = rule
+    if (!sub(/^.*verbs:/, "", v)) { rule = ""; return }
+    sub(/\n *(apiGroups|resources|resourceNames|nonResourceURLs):.*$/, "", v)
+    if ((rule ~ /(^|[^a-z\/])keygrants([^a-z\/]|$)/ || rule ~ /resources: *\[[^]]*[*]/ || rule ~ /resources:\n *- *.?[*]/) \
+        && v ~ /(^|[^a-z])(create|delete|deletecollection|patch)([^a-z]|$)|[*]/) bad = 1
     rule = ""
   }
   /^- apiGroups/ { flush() }

@@ -109,8 +109,9 @@ const (
 // not_granted, one code for every miss; the audit names which), the
 // Environment exists and is synced (404 / 503), the identity's teams
 // intersect authorizedTeams (403 unauthorized_team). Exactly one
-// platform.ek.exchange audit event per request that passes the signature
-// check, never carrying a token.
+// platform.ek.exchange audit event per request from the body check onwards,
+// never carrying a token. A global-limit 429 after a valid signature is the
+// one exception: it is counted in the metric, not audited.
 func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 	aud := strings.TrimRight(d.Issuer, "/")
 	lim := newExchangeLimiter()
@@ -148,7 +149,9 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 				reject(http.StatusUnauthorized, audit.OutcomeInvalidToken, "invalid ServiceAccount token", "invalid_signature")
 				return
 			}
-			d.Logger.Error("envkeys.exchange: ServiceAccount keys unavailable", "err", err)
+			if err != ErrSAKeysUnavailable { // the plain sentinel is a repeat inside the backoff window
+				d.Logger.Error("envkeys.exchange: ServiceAccount keys unavailable", "err", err)
+			}
 			reject(http.StatusServiceUnavailable, audit.OutcomeNotReady, "token verification unavailable", "keys_unavailable")
 			return
 		}

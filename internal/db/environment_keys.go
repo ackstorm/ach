@@ -82,7 +82,7 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	const sql = `
 		SELECT key_id, credential_hash, environment, owner_email, name,
 		       litellm_user_id, litellm_token,
-		       status, created_at, last_used_at, revoked_at, expires_at, requester
+		       status, created_at, last_used_at, revoked_at, expires_at, COALESCE(requester, '')
 		  FROM environment_keys
 		 WHERE key_id = $1
 	`

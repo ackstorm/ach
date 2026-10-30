@@ -140,6 +140,7 @@ func TestSATokenVerifier_FetchFailure(t *testing.T) {
 		t.Fatalf("no cache: err = %v, want ErrSAKeysUnavailable", err)
 	}
 	src.err, src.keys = nil, []satKey{k}
+	now = now.Add(61 * time.Second)
 	if err := v.Verify(context.Background(), tok); err != nil {
 		t.Fatal(err)
 	}
@@ -148,5 +149,48 @@ func TestSATokenVerifier_FetchFailure(t *testing.T) {
 	now = now.Add(saJWKSTTL + time.Minute)
 	if err := v.Verify(context.Background(), tok); err != nil {
 		t.Fatalf("stale cache must keep verifying: %v", err)
+	}
+}
+
+// Forged tokens with an empty cache and a failing API server cost one fetch
+// per window, not one per request.
+func TestSATokenVerifier_EmptyCacheFailureBacksOff(t *testing.T) {
+	k := newSatKey(t, "k1")
+	src := &fakeJWKS{err: errors.New("boom")}
+	now := time.Now()
+	v := NewSATokenVerifier(src.fetch)
+	v.now = func() time.Time { return now }
+	tok := k.sign(t, satIssuer, now.Add(time.Hour))
+	for i := 0; i < 20; i++ {
+		if err := v.Verify(context.Background(), tok); !errors.Is(err, ErrSAKeysUnavailable) {
+			t.Fatal(err)
+		}
+	}
+	if src.calls != 1 {
+		t.Fatalf("fetches = %d, want 1 per window", src.calls)
+	}
+	now = now.Add(61 * time.Second)
+	_ = v.Verify(context.Background(), tok)
+	if src.calls != 2 {
+		t.Fatalf("fetches = %d, want 2 after the window", src.calls)
+	}
+}
+
+// A caller that disconnects must not fail the refresh nor burn the window.
+func TestSATokenVerifier_CancelledCallerDoesNotPoisonRefresh(t *testing.T) {
+	k := newSatKey(t, "k1")
+	src := &fakeJWKS{keys: []satKey{k}}
+	now := time.Now()
+	v := NewSATokenVerifier(func(ctx context.Context) (string, []byte, error) {
+		if ctx.Err() != nil {
+			return "", nil, ctx.Err()
+		}
+		return src.fetch(ctx)
+	})
+	v.now = func() time.Time { return now }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := v.Verify(ctx, k.sign(t, satIssuer, now.Add(time.Hour))); err != nil {
+		t.Fatalf("cancelled caller: %v", err)
 	}
 }

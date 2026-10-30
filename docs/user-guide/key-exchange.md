@@ -112,6 +112,11 @@ it answers 404.
   ClusterRoleBinding, so the chart adds no RBAC for them. A cluster that
   removed or narrowed that binding must restore it for the platform-api
   ServiceAccount, or every exchange answers 503 `not_ready`.
+- Only RS256 and ES256 ServiceAccount signing keys are supported; a cluster
+  signing with ES384, ES512 or another algorithm gets 401 `invalid_token` for
+  every exchange. A token carrying an old issuer after a
+  `--service-account-issuer` migration passes TokenReview but fails the local
+  issuer check, so agents must restart to receive tokens of the new issuer.
 - The API server stores TokenReview bodies, which contain the token, only under
   audit level `Request` or `RequestResponse`. Set level `Metadata` for
   `tokenreviews` in the API server audit policy (on EKS, check the control-plane
@@ -122,13 +127,14 @@ it answers 404.
 
 ## Audit
 
-Every exchange that passes the signature check, granted or denied, emits one
+Every exchange from the body check onwards, granted or denied, emits one
 `platform.ek.exchange` audit event: actor (the ServiceAccount), requester, pod name and uid, identity,
 Environment, key id, outcome and, for a denial, the reason. No token is ever
 recorded.
 
-Requests rejected earlier (wrong audience, rate limit, a token the cluster's
-keys do not confirm) are not audited, because the caller is unauthenticated;
+Requests rejected earlier (wrong audience, rate limit, including the global
+limit after a valid signature, a token the cluster's keys do not confirm) are
+not audited, because the caller is unauthenticated;
 they are counted in `ach_key_exchange_rejected_total{reason}` with reason
 `guard`, `rate_limited`, `invalid_signature` or `keys_unavailable`.
 

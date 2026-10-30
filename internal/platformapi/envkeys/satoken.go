@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -17,9 +18,9 @@ import (
 type OIDCFetchFunc func(ctx context.Context) (issuer string, jwks []byte, err error)
 
 const (
-	saJWKSTTL         = 10 * time.Minute
-	saJWKSMinRefetch  = time.Minute
-	saJWKSFetchTimout = 5 * time.Second
+	saJWKSTTL          = 10 * time.Minute
+	saJWKSMinRefetch   = time.Minute
+	saJWKSFetchTimeout = 5 * time.Second
 )
 
 var (
@@ -85,28 +86,40 @@ func (v *SATokenVerifier) Verify(ctx context.Context, token string) error {
 }
 
 // keysFor returns the cached issuer and key set, refreshing when stale or
-// when kid is unknown (rate-limited).
+// when kid is unknown. Every fetch, first included, waits saJWKSMinRefetch
+// after the previous attempt, so forged tokens cannot turn into API-server
+// reads. The lock covers only the cache, never the network call; the fetch
+// outlives a caller that disconnects.
 func (v *SATokenVerifier) keysFor(ctx context.Context, kid string) (string, jose.JSONWebKeySet, error) {
 	v.mu.Lock()
-	defer v.mu.Unlock()
 	now := v.now()
 	stale := !v.loaded || now.Sub(v.fetchedAt) >= saJWKSTTL
 	unknown := v.loaded && len(v.keys.Key(kid)) == 0
-	if (stale || unknown) && (!v.loaded || now.Sub(v.attempted) >= saJWKSMinRefetch) {
-		v.attempted = now
-		fctx, cancel := context.WithTimeout(ctx, saJWKSFetchTimout)
-		issuer, raw, err := v.fetch(fctx)
-		cancel()
-		var set jose.JSONWebKeySet
-		if err == nil {
-			err = json.Unmarshal(raw, &set)
-		}
-		switch {
-		case err == nil:
-			v.issuer, v.keys, v.loaded, v.fetchedAt = issuer, set, true, now
-		case !v.loaded:
+	if !(stale || unknown) || now.Sub(v.attempted) < saJWKSMinRefetch && !v.attempted.IsZero() {
+		issuer, keys, loaded := v.issuer, v.keys, v.loaded
+		v.mu.Unlock()
+		if !loaded {
 			return "", jose.JSONWebKeySet{}, ErrSAKeysUnavailable
 		}
+		return issuer, keys, nil
+	}
+	v.attempted = now
+	v.mu.Unlock()
+
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), saJWKSFetchTimeout)
+	defer cancel()
+	issuer, raw, err := v.fetch(fctx)
+	var set jose.JSONWebKeySet
+	if err == nil {
+		err = json.Unmarshal(raw, &set)
+	}
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err == nil {
+		v.issuer, v.keys, v.loaded, v.fetchedAt = issuer, set, true, now
+	} else if !v.loaded {
+		return "", jose.JSONWebKeySet{}, fmt.Errorf("%w: %v", ErrSAKeysUnavailable, err)
 	}
 	return v.issuer, v.keys, nil
 }

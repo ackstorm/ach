@@ -52,6 +52,33 @@ func TestInsertEnvironmentKey_HappyPath(t *testing.T) {
 	if got.Status != "active" {
 		t.Errorf("Status=%q; want active", got.Status)
 	}
+	if got.Requester != "" {
+		t.Errorf("manual key Requester=%q; want empty (NULL column)", got.Requester)
+	}
+}
+
+// TestGetEnvironmentKey_ExchangeKeyCarriesRequester: the requester of an
+// exchange key is read back; a manual key's NULL reads as empty.
+func TestGetEnvironmentKey_ExchangeKeyCarriesRequester(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	req := "agents/agent-k8s-doctor"
+	if err := db.InsertEnvironmentKey(ctx, pool, db.EkInsertRow{
+		KeyID: "ekid_exch1", CredentialHash: "h_exch1", Environment: "env1", OwnerEmail: "a@b.example",
+		Name: "exchange:" + req, IssuedVia: "exchange", Requester: &req,
+	}); err != nil {
+		t.Fatalf("InsertEnvironmentKey: %v", err)
+	}
+	got, err := db.GetEnvironmentKey(ctx, pool, "ekid_exch1")
+	if err != nil || got == nil {
+		t.Fatalf("GetEnvironmentKey: %v, %v", got, err)
+	}
+	if got.Requester != req {
+		t.Errorf("Requester=%q; want %q", got.Requester, req)
+	}
 }
 
 // TestInsertEnvironmentKey_UniqueViolation: duplicate credential_hash → 23505.
