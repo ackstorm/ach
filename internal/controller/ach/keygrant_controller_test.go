@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
@@ -337,11 +338,23 @@ func TestKeyGrantReconciler_ColdStartKeepsKeyOfUnprojectedGrant(t *testing.T) {
 		Requester: "agents/cold-b", LiteLLMToken: &tok, Status: "active"})
 	r := &KeyGrantReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), LiteLLM: llm,
 		Namespace: WatchNamespace, Log: logr.Discard(), Store: store}
-	req := ctrlRequest(a)
-	for i := 0; i < 3; i++ { // finalizer add (it may already be there), then projection + sweep
-		if _, err := r.Reconcile(ctx, req); err != nil {
-			t.Fatal(err)
+	// The suite manager's own reconciler adds the finalizers; drive projection
+	// only once both grants carry one, so the direct Reconcile never races an
+	// Update with it.
+	if !Eventually(func() bool {
+		for _, g := range []*achv1alpha1.KeyGrant{a, b} {
+			var cur achv1alpha1.KeyGrant
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(g), &cur); err != nil ||
+				!controllerutil.ContainsFinalizer(&cur, keyGrantFinalizer) {
+				return false
+			}
 		}
+		return true
+	}, 10*time.Second, 100*time.Millisecond) {
+		t.Fatal("the manager did not add the finalizers")
+	}
+	if _, err := r.Reconcile(ctx, ctrlRequest(a)); err != nil {
+		t.Fatal(err)
 	}
 	if _, ok := store.grant(WatchNamespace, "kg-cold-a"); !ok {
 		t.Fatal("grant A was not projected")

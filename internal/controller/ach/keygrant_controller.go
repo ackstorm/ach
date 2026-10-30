@@ -103,30 +103,32 @@ func (r *KeyGrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, r.Update(ctx, &kg)
 	}
 
+	// A sweep failure is returned after the status update so Ready and
+	// observedGeneration track the grant even while the sweep retries.
+	var sweepErr error
 	if r.Store != nil {
 		if err := r.Store.UpsertKeyGrant(ctx, keyGrantRow(&kg)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("upsert key_grants row: %w", err)
 		}
-		if err := r.sweep(ctx); err != nil {
-			return ctrl.Result{}, err
-		}
+		sweepErr = r.sweep(ctx)
 	}
 
 	cond, err := r.readyCondition(ctx, &kg)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, errors.Join(sweepErr, err)
 	}
 	if cur := apimeta.FindStatusCondition(kg.Status.Conditions, "Ready"); cur != nil &&
 		cur.Status == cond.Status && cur.Reason == cond.Reason && cur.Message == cond.Message &&
 		kg.Status.ObservedGeneration == kg.Generation {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, sweepErr
 	}
 	setExternalRefCondition(&kg.Status.Conditions, "Ready", cond.Status, cond.Reason, cond.Message, kg.Generation)
 	kg.Status.ObservedGeneration = kg.Generation
 	desired := kg.Status
-	return ctrl.Result{}, retryStatusUpdate(ctx, r.Client, &kg, func(fresh *achv1alpha1.KeyGrant) {
+	statusErr := retryStatusUpdate(ctx, r.Client, &kg, func(fresh *achv1alpha1.KeyGrant) {
 		fresh.Status = desired
 	})
+	return ctrl.Result{}, errors.Join(sweepErr, statusErr)
 }
 
 func keyGrantRow(kg *achv1alpha1.KeyGrant) achdb.KeyGrantRow {
