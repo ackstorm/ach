@@ -33,8 +33,8 @@ spec:
           KeyGrant lets the named ServiceAccounts exchange their pod token for an ACH
           credential of Identity in the named Environments. A grant naming a shared
           ServiceAccount is usable by every pod running that ServiceAccount. Writing
-          one is the power to act as Identity: the chart's keygrant-editor ClusterRole is bound to
-          nobody and is never aggregated into admin or edit.
+          one is the power to act as Identity: the chart's ach-keygrant-editor ClusterRole (release ach) is
+          bound to nobody and is never aggregated into admin or edit.
         properties:
           apiVersion:
             description: |-

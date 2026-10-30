@@ -82,4 +82,17 @@ grep -q "name: system:auth-delegator" <<<"$(render --show-only templates/platfor
 grep -A1 "name: ACH_KEY_EXCHANGE_TOKEN_TTL" <<<"$(render)" | grep -q 'value: "15m"' \
   || fail "default: ACH_KEY_EXCHANGE_TOKEN_TTL must be \"15m\""
 
-echo "helm-render-check OK (7 topologies)"
+# 8. KeyGrant authoring: writing one is acting as its identity. The editor
+# role ships bound to nobody and never aggregates into admin/edit; nothing the
+# chart renders aggregates keygrants into those roles; the operator can read
+# grants and manage their finalizer and status.
+editor="$(render --show-only templates/keygrant-editor-role.yaml)"
+grep -q "name: ach-keygrant-editor" <<<"$editor" || fail "ach-keygrant-editor ClusterRole missing"
+grep -q "kind: ClusterRoleBinding" <<<"$editor" && fail "ach-keygrant-editor must ship bound to nobody"
+grep -q "aggregate-to" <<<"$editor" && fail "ach-keygrant-editor must not aggregate into a built-in role"
+awk -v RS='\n---\n' '/aggregate-to-(admin|edit)/' <<<"$(render)" | grep -q keygrants \
+  && fail "a role aggregated into admin/edit names keygrants"
+grep -q "keygrants/finalizers" <<<"$(render --show-only templates/operator-rbac.yaml)" \
+  || fail "operator RBAC lacks keygrants"
+
+echo "helm-render-check OK (8 topologies)"

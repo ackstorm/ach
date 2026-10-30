@@ -33,6 +33,12 @@ rules:
   - skills
   - skillmarketplaces
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+# KeyGrant: read and finalizer only — the operator never authors a grant
+# (writing one is acting as its identity). update is what adding and removing
+# the finalizer takes.
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["keygrants"]
+  verbs: ["get", "list", "watch", "update"]
 - apiGroups: ["ach.ackstorm.ai"]
   resources:
   - artifacts/finalizers

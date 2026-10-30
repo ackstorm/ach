@@ -1,0 +1,21 @@
+---
+# Writing a KeyGrant is the power to act as its identity: POST
+# /platform/keys/exchange mints that identity's credential for the named
+# ServiceAccounts. This role is bound to NOBODY by default — bind it to the
+# platform-admin group only. It carries no aggregation label, so the
+# built-in admin and edit roles never include it; any wildcard role (`*` on
+# ach.ackstorm.ai or on all resources) in ACH's namespace still grants the
+# same power.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-keygrant-editor
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+rules:
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["keygrants"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["ach.ackstorm.ai"]
+  resources: ["keygrants/status"]
+  verbs: ["get"]

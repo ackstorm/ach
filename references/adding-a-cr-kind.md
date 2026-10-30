@@ -101,7 +101,8 @@ first, then walk the matrix.
 6. `KeyGrant` has a projection table but no NOTIFY: its readers (the exchange
    handler and the exchange-JWT resolvers) query `key_grants` per request,
    behind the 60-second resolver cache, and keep no in-memory copy. It has no
-   admin inventory route yet.
+   admin inventory route yet: there is no `/platform/admin/keygrants`, so grants
+   are read with `kubectl` only.
 
 ## Retroactive audit note
 

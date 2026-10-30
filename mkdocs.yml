@@ -14,6 +14,7 @@ nav:
       - Editions: user-guide/editions.md
       - Signing in from Claude Code, Codex and opencode: user-guide/signing-in-from-tools.md
       - Agent plugins: user-guide/agent-plugins.md
+      - Agent credentials by token exchange: user-guide/key-exchange.md
   - Developer Guide:
       - Architecture: developer-guide/architecture.md
       - Conversation classifier: developer-guide/conversation-classifier.md

@@ -133,7 +133,7 @@ scope and the base Reader the Enterprise readers wrap, and
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
 **Source of truth (Phase D, #34)**: the operator writes Postgres
-(12 projection tables incl. `environments`, `plugins`, `skills`,
+(13 projection tables incl. `key_grants`, `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
 `marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
@@ -226,7 +226,7 @@ platform-api; wraps the OAuth resolver inside the Redis cache) accepts that JWT
 wherever an `ek_` goes (`x-ach-key` or `Authorization`) only while a grant
 still allows its tuple. One `platform.ek.exchange` audit event per request,
 never a token.
-The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and writes the lowest covering `spec.budget` onto every other one's `key:<id>` tag; dropping `spec.budget` keeps the last ceiling. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`.
+The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and writes the lowest covering `spec.budget` onto every other one's `key:<id>` tag; dropping `spec.budget` keeps the last ceiling. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`. Writing a `KeyGrant` is acting as its identity: the chart ships ClusterRole `<release>-keygrant-editor` bound to nobody and aggregates no ACH role into `admin`/`edit` (`make helm-render-check` check 8; e2e `kubectl auth can-i`).
 
 Login team enrolment (`platformApi.teams` → `ACH_TEAMS_DEFAULT`/`_USER`/`_SSO`, JSON):
 at every interactive login (`as-callback` — CLI loopback, device grant, console;
