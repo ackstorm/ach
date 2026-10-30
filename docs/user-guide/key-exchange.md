@@ -46,9 +46,8 @@ spec:
 ## Who may write grants
 
 Writing a `KeyGrant` is the power to act as its identity. The chart ships the
-ClusterRole `ach-keygrant-editor` (create, update, patch, delete on
-`keygrants`; `<release>-keygrant-editor` for another release name) bound to
-nobody. Bind it to the platform-admin group only:
+ClusterRole `<release>-keygrant-editor` (`ach-keygrant-editor` for release
+`ach`; create, update, patch, delete on `keygrants`) bound to nobody. Bind it to the platform-admin group only:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -59,7 +58,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ach-keygrant-editor
+  name: ach-keygrant-editor # <release>-keygrant-editor
 subjects:
 - apiGroup: rbac.authorization.k8s.io
   kind: Group

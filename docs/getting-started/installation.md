@@ -50,5 +50,5 @@ and `helm uninstall` leaves them and your resources in place.
 The platform API reviews ServiceAccount tokens for `POST /platform/keys/exchange`
 through a cluster-wide `system:auth-delegator` binding the chart creates. Set
 API server audit level `Metadata` for `tokenreviews`, and bind the
-`ach-keygrant-editor` ClusterRole to platform admins only. See
+`<release>-keygrant-editor` ClusterRole (`ach-keygrant-editor` for release `ach`) to platform admins only. See
 [Agent credentials by token exchange](../user-guide/key-exchange.md).

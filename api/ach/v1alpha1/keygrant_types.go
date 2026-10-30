@@ -77,8 +77,8 @@ type KeyGrantStatus struct {
 // KeyGrant lets the named ServiceAccounts exchange their pod token for an ACH
 // credential of Identity in the named Environments. A grant naming a shared
 // ServiceAccount is usable by every pod running that ServiceAccount. Writing
-// one is the power to act as Identity: the chart's ach-keygrant-editor ClusterRole (release ach) is
-// bound to nobody and is never aggregated into admin or edit.
+// one is the power to act as Identity: the chart's <release>-keygrant-editor ClusterRole
+// (ach-keygrant-editor for release ach) is bound to nobody and is never aggregated into admin or edit.
 type KeyGrant struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
