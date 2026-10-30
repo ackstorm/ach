@@ -159,6 +159,32 @@ func TestPatchBudgetRevokedKeyIs409(t *testing.T) {
 	}
 }
 
+// An exchange key's ceiling belongs to its KeyGrant; suspend stays open to
+// the owner as the kill switch.
+func TestPatchBudgetExchangeKeyIs409AndSuspendStillWorks(t *testing.T) {
+	row := suspendableEkRow()
+	row.Requester = "agents/agent-k8s-doctor"
+	flm := newCaptureLiteLLM()
+	suspended := *row
+	suspended.Status = statusSuspended
+	fdb := &envKeyStateDB{getRow: row, suspendRow: &suspended}
+	deps := captureAuditDeps(fdb, flm, nil, &recordRedis{}, &bytes.Buffer{})
+
+	rec := patchBudget(deps, row.KeyID, `{"max_budget":50}`, row.OwnerEmail)
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != codeBudgetManagedByGrant {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body)
+	}
+	if len(flm.upsertedTags) != 0 {
+		t.Fatalf("tag written: %v", flm.upsertedTags)
+	}
+	if len(fdb.suspendIDs) != 0 {
+		t.Fatal("budget refusal must not suspend")
+	}
+	if rec := serveSuspend(deps, row.KeyID); rec.Code != http.StatusNoContent {
+		t.Fatalf("suspend: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // TestRevokeDeletesKeyTagAndBudget — a revoked key leaves neither a stale
 // budget tag nor its budget object behind (the tag delete orphans it).
 func TestRevokeDeletesKeyTagAndBudget(t *testing.T) {

@@ -147,6 +147,9 @@ they are counted in `ach_key_exchange_rejected_total{reason}` with reason
   operator revokes a key, forwarded LiteLLM traffic stops at once because the
   LiteLLM key is revoked first, while hydrate and content reads can keep
   working for up to 60 seconds.
-- The identity's own user can `PATCH /platform/keys/{id}/budget` on an exchange
-  key, but the grant's ceiling is re-applied at the next exchange (about every
-  JWT lifetime) or, at the latest, by the operator sweep within 5 minutes.
+- `PATCH /platform/keys/{id}/budget` on an exchange key answers 409
+  `budget_managed_by_grant`: the grant's ceiling is the only one, applied at
+  every exchange and by the operator sweep within 5 minutes. The identity's own
+  user can still suspend, resume and revoke the key; while it is suspended,
+  `POST /platform/keys/exchange` answers 409 `key_suspended` until it is
+  resumed.
