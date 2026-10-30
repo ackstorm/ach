@@ -492,6 +492,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -508,6 +526,47 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-need-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What you need first
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -674,6 +733,34 @@
     
   
     Signing in from Claude Code, Codex and opencode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/agent-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent plugins
   
 
     
@@ -1177,6 +1264,36 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-need-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What you need first
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1196,7 +1313,46 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>TODO: Helm chart install instructions, prerequisites (Postgres, Redis), CRD upgrade dance.</p>
+<p>ACH installs on Kubernetes with one Helm chart, <code>oci://ghcr.io/ackstorm/charts/ach</code>,
+running one image, <code>ghcr.io/ackstorm/ach</code>. The full guide (every value, sign-in,
+topology, Enterprise, upgrades, troubleshooting) is the <code>ach-install</code> agent skill in
+this repository: <a href="https://github.com/ackstorm/ach/tree/main/plugins/ach-install/skills/ach-install"><code>plugins/ach-install/skills/ach-install/</code></a>.
+Install it into your agent (see <a href="../../user-guide/agent-plugins/">Agent plugins</a>) and
+ask it, or read it directly.</p>
+<h2 id="what-you-need-first">What you need first<a class="headerlink" href="#what-you-need-first" title="Permanent link">&para;</a></h2>
+<p>The chart installs none of these:</p>
+<ul>
+<li><strong>Postgres</strong>: a database and user for ACH. It is the source of truth for ACH state.</li>
+<li><strong>Valkey or Redis</strong>: caches and OAuth session state.</li>
+<li><strong>LiteLLM</strong> with its own database and a master key: ACH sits in front of it.</li>
+<li><strong>Dex</strong> with a connector to your identity provider: the only way users sign in. Register
+  a client for ACH with redirect URI <code>https://&lt;ACH host&gt;/platform/oauth/as-callback</code>.</li>
+<li>An ingress controller and TLS for the ACH host.</li>
+</ul>
+<h2 id="steps">Steps<a class="headerlink" href="#steps" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Create the Secrets in the release namespace: the at-rest DEK and the credential
+   pepper (<code>security.*</code> values; generated once, kept stable), the LiteLLM master key
+   (<code>litellmConnection.masterKeySecretRef</code>), the Dex client secret and the database and
+   Valkey passwords. The operator mints the JWT signing keys itself.</li>
+<li>Write a values file. Start from the minimal production values in the skill's
+   <code>references/values.md</code>; <code>deploy/helm/ach/values.yaml</code> documents every key.</li>
+<li>Render, then install:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>template<span class="w"> </span>ach<span class="w"> </span>oci://ghcr.io/ackstorm/charts/ach<span class="w"> </span>--version<span class="w"> </span>&lt;X.Y.Z&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span>-n<span class="w"> </span>ach<span class="w"> </span>-f<span class="w"> </span>values.yaml<span class="w"> </span>&gt;/dev/null
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>--install<span class="w"> </span>ach<span class="w"> </span>oci://ghcr.io/ackstorm/charts/ach<span class="w"> </span>--version<span class="w"> </span>&lt;X.Y.Z&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>-n<span class="w"> </span>ach<span class="w"> </span>--create-namespace<span class="w"> </span>-f<span class="w"> </span>values.yaml<span class="w"> </span>--wait<span class="w"> </span>--timeout<span class="w"> </span>10m
+</code></pre></div>
+<p>On a first install the forwarder and content-service restart a few times until the
+   operator has minted <code>ach-jwt-signing-keys</code>.</p>
+<ol>
+<li>Verify: every Deployment is Ready, <code>kubectl -n ach get litellmconnection default</code>
+   is Ready, and <code>ach-cli login https://&lt;ACH host&gt;</code> followed by <code>ach-cli whoami</code> shows
+   your user. Then create a first Environment: see the <a href="../quickstart/">Quickstart</a>.</li>
+</ol>
+<p>The chart manages the CRDs (<code>installCRDs: true</code>), so <code>helm upgrade</code> upgrades them too
+and <code>helm uninstall</code> leaves them and your resources in place.</p>
 
 
 

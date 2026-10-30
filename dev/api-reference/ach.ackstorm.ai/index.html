@@ -672,6 +672,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/agent-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2959,7 +2987,7 @@ BackendIdentityPolicy.</p>
 shadow resolution. Multiple CRs targeting the same (kind, name) are
 allowed; the Forwarder's runtime read path resolves the duplicate
 deterministically by sorting matching CRs by metadata.name ASC and
-using the LAST entry's forwardIdentityJWT value. Operators wanting
+using the FIRST entry's forwardIdentityJWT value. Operators wanting
 different precedence rename their CRs. This is intentional —
 operator stays dumb, user owns the CR set, no Synced=DuplicateTarget
 condition is written.</p>
@@ -2983,7 +3011,7 @@ condition is written.</p>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions is reserved for future per-CR status surfaces. It is<br />NOT populated today — duplicate targets are resolved by the<br />Forwarder at read time (alphabetically-LAST CR wins) without any<br />operator-side status churn.</td>
+<td>Conditions is reserved for future per-CR status surfaces. It is<br />NOT populated today — duplicate targets are resolved by the<br />Forwarder at read time (alphabetically-FIRST CR wins) without any<br />operator-side status churn.</td>
 <td></td>
 <td></td>
 </tr>
