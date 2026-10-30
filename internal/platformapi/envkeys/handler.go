@@ -272,6 +272,7 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 			deps: deps, w: w, ctx: ctx, req: req, keyCtx: keyCtx,
 			actor: actor, reqID: reqID, expiresAt: expiresAt,
 			target: &audit.Target{Kind: "environment", Name: req.Environment},
+			action: audit.ActionEkCreate,
 		}
 
 		// Step 3+4: load env, terminating(404), not-synced(503).
@@ -288,15 +289,40 @@ func CreateHandler(deps Deps) http.HandlerFunc {
 		if handled {
 			return
 		}
-		// Steps 7+8: mint + insert + success response.
-		cr.mintAndInsert(env, userID)
+		// Steps 7+8: mint + insert, then this route's own audit + response.
+		keyID, plaintext, ok := cr.mint(env, userID)
+		if !ok {
+			return
+		}
+		audit.EmitAudit(ctx, deps.Audit, audit.Event{
+			Action:    audit.ActionEkCreate,
+			Outcome:   audit.OutcomeCreated,
+			Actor:     actor,
+			RequestID: reqID,
+			KeyID:     keyID,
+			Target:    cr.target,
+		})
+		var expiresAtResp *string
+		if expiresAt != nil {
+			s := expiresAt.Format(time.RFC3339)
+			expiresAtResp = &s
+		}
+		render.JSON(w, http.StatusOK, CreateResponse{
+			KeyID:       keyID,
+			Plaintext:   plaintext,
+			Environment: req.Environment,
+			Name:        req.Name,
+			OwnerEmail:  keyCtx.OwnerEmail,
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+			ExpiresAt:   expiresAtResp,
+		})
 	}
 }
 
 // createReq carries the per-request locals shared by CreateHandler's extracted
 // steps (CPLX-1). It is constructed once per request after decode+validate and
 // threaded through validateAndLoadEnv/validateTeamMembership/provisionUser/
-// mintAndInsert; each method reads the fields it needs and writes the terminal
+// mint; each method reads the fields it needs and writes the terminal
 // HTTP response + audit event on its own rejection/success branch.
 type createReq struct {
 	deps      Deps
@@ -308,6 +334,10 @@ type createReq struct {
 	reqID     string
 	expiresAt *time.Time
 	target    *audit.Target
+	// action is the audit action every event of this request carries
+	// (platform.ek.create, platform.ek.exchange); extra rides on each event.
+	action string
+	extra  map[string]string
 }
 
 // emitInternalError audits + renders the §15.5 500 internal_error envelope
@@ -315,7 +345,7 @@ type createReq struct {
 func (cr *createReq) emitInternalError(logMsg string, err error) {
 	cr.deps.Logger.Error(logMsg, "env", cr.req.Environment, "err", err)
 	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-		Action: audit.ActionEkCreate, Outcome: audit.OutcomeInternalError,
+		Action: cr.action, Extra: cr.extra, Outcome: audit.OutcomeInternalError,
 		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
 	})
 	render.Error(cr.w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", cr.reqID)
@@ -328,7 +358,7 @@ func (cr *createReq) emitInternalError(logMsg string, err error) {
 func (cr *createReq) emitLitellmError(err error, logMsg string) {
 	st, oc, msg := ClassifyLitellmErr(err)
 	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-		Action: audit.ActionEkCreate, Outcome: oc,
+		Action: cr.action, Extra: cr.extra, Outcome: oc,
 		Actor: cr.actor, RequestID: cr.reqID, Target: cr.target,
 	})
 	cr.deps.Logger.Error(logMsg, "owner", cr.keyCtx.OwnerEmail, "env", cr.req.Environment, "err", err)
@@ -351,7 +381,7 @@ func (cr *createReq) validateAndLoadEnv() (env *db.EnvironmentRow, handled bool)
 	}
 	if env == nil {
 		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeEnvironmentNotFound,
 			Actor:     cr.actor,
 			RequestID: cr.reqID,
@@ -364,7 +394,7 @@ func (cr *createReq) validateAndLoadEnv() (env *db.EnvironmentRow, handled bool)
 	// terminating envs treated as not-found per D-12 step 2.
 	if env.DeletionTimestamp != nil {
 		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeEnvironmentNotFound,
 			Actor:     cr.actor,
 			RequestID: cr.reqID,
@@ -377,7 +407,7 @@ func (cr *createReq) validateAndLoadEnv() (env *db.EnvironmentRow, handled bool)
 	// AccessGroupSynced=True per D-12 step 3.
 	if !cr.deps.Store.AccessGroupSyncedFromRow(env) {
 		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeNotReady,
 			Actor:     cr.actor,
 			RequestID: cr.reqID,
@@ -403,7 +433,7 @@ func (cr *createReq) validateTeamMembership(env *db.EnvironmentRow) (handled boo
 	}
 	if !achteams.HasIntersect(env.AuthorizedTeams, callerTeams) {
 		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeUnauthorizedTeam,
 			Actor:     cr.actor,
 			RequestID: cr.reqID,
@@ -468,12 +498,13 @@ func (cr *createReq) provisionUser() (userID string, handled bool) {
 	return userInfo.UserID, false
 }
 
-// mintAndInsert runs §8.2 steps 7+8: server-side plaintext + key_id generation
-// (D-13), the LiteLLM KeyGenerate with the Enterprise-tags drop-and-retry
-// fallback, the INSERT with the WARN-03 ekid_-collision single retry +
-// compensation RevokeKey under a fresh context, and the OutcomeCreated success
-// audit + 200 CreateResponse. This method writes the terminal response itself.
-func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
+// mint runs §8.2 steps 7+8: server-side plaintext + key_id generation (D-13),
+// the LiteLLM KeyGenerate with the Enterprise-tags drop-and-retry fallback,
+// the INSERT with the WARN-03 ekid_-collision single retry + compensation
+// RevokeKey under a fresh context, and the optional key:<id> budget. On any
+// failure it writes the response + audit itself and returns ok=false; on
+// success it writes nothing — the caller owns the response and its audit.
+func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string, bool) {
 	deps := cr.deps
 	w := cr.w
 	ctx := cr.ctx
@@ -483,17 +514,17 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	plaintext, err := keys.NewBearer(keys.PrefixEk)
 	if err != nil {
 		cr.emitInternalError("envkeys.create: NewBearer failed", err)
-		return
+		return "", "", false
 	}
 	keyID, err := keys.NewKeyID(keys.PrefixEkid)
 	if err != nil {
 		cr.emitInternalError("envkeys.create: NewKeyID failed", err)
-		return
+		return "", "", false
 	}
 	credHash, err := credhash.Hash(deps.Pepper, []byte(plaintext))
 	if err != nil {
 		cr.emitInternalError("envkeys.create: credhash.Hash failed", err)
-		return
+		return "", "", false
 	}
 
 	// The ek_ is capped by the Environment's deny-all shell team and by
@@ -505,11 +536,11 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	shellTeamID, stErr := achteams.LookupTeamIDByAlias(ctx, deps.LiteLLM, shellAlias)
 	if stErr != nil {
 		cr.emitLitellmError(stErr, "envkeys.create: shell team lookup failed")
-		return
+		return "", "", false
 	}
 	if shellTeamID == "" {
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeNotReady,
 			Actor:     cr.actor,
 			RequestID: reqID,
@@ -517,7 +548,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		})
 		render.Error(w, http.StatusServiceUnavailable, audit.OutcomeNotReady,
 			"environment shell team not yet provisioned", reqID)
-		return
+		return "", "", false
 	}
 
 	// LiteLLM KeyGenerate (D-12 step 6). FIX01 §A.6: do NOT supply
@@ -571,7 +602,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 	}
 	if err != nil {
 		cr.emitLitellmError(err, "envkeys.create: KeyGenerate failed")
-		return
+		return "", "", false
 	}
 	llToken := keyResp.Token
 	llUserID := userID
@@ -588,7 +619,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		}
 		cancel()
 		cr.emitInternalError("envkeys.create: seal key material failed", err)
-		return
+		return "", "", false
 	}
 
 	// Step 8: INSERT row with WARN-03 retry policy.
@@ -637,7 +668,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 				"key_id", keyID, "err", cleanupErr)
 		}
 		audit.EmitAudit(ctx, deps.Audit, audit.Event{
-			Action:    audit.ActionEkCreate,
+			Action: cr.action, Extra: cr.extra,
 			Outcome:   audit.OutcomeDbInsertFailed,
 			Actor:     cr.actor,
 			RequestID: reqID,
@@ -646,7 +677,7 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 		deps.Logger.Error("envkeys.create: InsertEnvironmentKey failed",
 			"key_id", keyID, "env", cr.req.Environment, "err", insertErr)
 		render.Error(w, http.StatusInternalServerError, audit.OutcomeDbInsertFailed, "db insert failed", reqID)
-		return
+		return "", "", false
 	}
 
 	// The key's own ceiling, once the row is committed and the plaintext is
@@ -658,33 +689,11 @@ func (cr *createReq) mintAndInsert(env *db.EnvironmentRow, userID string) {
 			deps.Logger.Error("envkeys.create: key budget tag", "key_id", keyID, "err", err)
 			render.Error(w, http.StatusBadGateway, audit.OutcomeLitellmRejected,
 				"key created but its budget could not be set", reqID)
-			return
+			return "", "", false
 		}
 	}
 
-	// Step 8 success: audit + respond.
-	audit.EmitAudit(ctx, deps.Audit, audit.Event{
-		Action:    audit.ActionEkCreate,
-		Outcome:   audit.OutcomeCreated,
-		Actor:     cr.actor,
-		RequestID: reqID,
-		KeyID:     keyID,
-		Target:    cr.target,
-	})
-	var expiresAtResp *string
-	if cr.expiresAt != nil {
-		s := cr.expiresAt.Format(time.RFC3339)
-		expiresAtResp = &s
-	}
-	render.JSON(w, http.StatusOK, CreateResponse{
-		KeyID:       keyID,
-		Plaintext:   plaintext,
-		Environment: cr.req.Environment,
-		Name:        cr.req.Name,
-		OwnerEmail:  cr.keyCtx.OwnerEmail,
-		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-		ExpiresAt:   expiresAtResp,
-	})
+	return keyID, plaintext, true
 }
 
 // insertErrClass enumerates the pgx 23505 unique-violation classes the
