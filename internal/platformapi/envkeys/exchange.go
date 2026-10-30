@@ -50,7 +50,7 @@ type ExchangeDeps struct {
 	VerifySA func(ctx context.Context, token string) error
 	// Metrics counts requests rejected before the audited stage; nil-tolerant.
 	Metrics *achmetrics.PlatformAPICollectors
-	Signer      jwt.Signer
+	Signer  jwt.Signer
 	// TTL is the exchanged JWT's lifetime (ACH_KEY_EXCHANGE_TOKEN_TTL).
 	TTL time.Duration
 }

@@ -13,7 +13,9 @@ import (
 
 type blockingReview struct{}
 
-func (blockingReview) Create(ctx context.Context, _ *authnv1.TokenReview, _ metav1.CreateOptions) (*authnv1.TokenReview, error) {
+func (blockingReview) Create(
+	ctx context.Context, _ *authnv1.TokenReview, _ metav1.CreateOptions,
+) (*authnv1.TokenReview, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
