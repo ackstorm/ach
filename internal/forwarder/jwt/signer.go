@@ -36,8 +36,8 @@ var ErrNoCurrentSlot = errors.New("jwt: no current slot loaded")
 // Claims is the caller-supplied subset of the JWT payload. iat and exp
 // are synthesized inside Sign (iat = time.Now().Unix(), exp = iat+120)
 // per FWD-07 / Hub §9.1; the caller MUST NOT pre-compute them.
-// NO jti claim is emitted (Hub §9.1 + §20, accepted v1alpha1 threat
-// model — replay-window restatement is v1beta1 backlog).
+// A jti claim is emitted only when JTI is set (exchange tokens); backend
+// tokens carry none.
 type Claims struct {
 	// Iss is the JWT "iss" (issuer) claim. Production forwarder code
 	// sets this to ACH_BASE_URL verbatim (already validated as http(s)://
@@ -62,6 +62,9 @@ type Claims struct {
 	// window used for per-target backend tokens; the OAuth front door sets
 	// ACH_OAUTH_ACCESS_TTL (1h) so a user token outlives one request.
 	TTL time.Duration
+	// JTI is the "jti" claim; omitted when empty. Exchange tokens
+	// (POST /platform/keys/exchange) carry one; backend tokens do not.
+	JTI string
 }
 
 // JWK is the RFC 7517 JSON Web Key wire shape for a single Ed25519
@@ -168,8 +171,7 @@ func (s *Ed25519Signer) Loaded() bool {
 // Sign returns a compact JWS over the supplied claims plus iat/exp
 // synthesized per FWD-07 / Hub §9.1. The header is
 // {"alg":"EdDSA","typ":"JWT","kid":"<current.kid>"}; the payload is
-// {"iss","sub","aud","iat","exp"} plus the optional "email" and "groups"
-// — explicitly NO jti per Hub §9.1 + §20 (accepted v1alpha1 threat model).
+// {"iss","sub","aud","iat","exp"} plus the optional "email", "groups" and "jti".
 //
 // The signing slot is the result of s.current.Load() at Sign-entry; a
 // concurrent loadCurrent racing the in-flight Sign uses whichever slot
@@ -181,7 +183,7 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 		return "", ErrNoCurrentSlot
 	}
 	now := time.Now().Unix()
-	ttl := int64(120) // FWD-07 / Hub §9.1: 120-second skew window. NO jti.
+	ttl := int64(120) // FWD-07 / Hub §9.1: 120-second skew window.
 	if c.TTL != 0 {
 		ttl = int64(c.TTL / time.Second)
 	}
@@ -202,6 +204,9 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	// an absent claim as "no groups" rather than parsing an empty array.
 	if len(c.Groups) > 0 {
 		claims["groups"] = c.Groups
+	}
+	if c.JTI != "" {
+		claims["jti"] = c.JTI
 	}
 	token := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, claims)
 	token.Header["kid"] = slot.kid

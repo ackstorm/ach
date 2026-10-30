@@ -5,6 +5,7 @@ package keys
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -202,4 +203,32 @@ func isBase64URL(c byte) bool {
 // keystore).
 func LooksLikeJWS(s string) bool {
 	return strings.Count(s, ".") == 2 && !strings.HasPrefix(s, "sk-")
+}
+
+// PeekAudience returns a compact JWS's aud claim (a string or a list) WITHOUT
+// verifying it — routing only, never trust. nil when absent or unreadable.
+func PeekAudience(raw string) []string {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+	var c struct {
+		Aud json.RawMessage `json:"aud"`
+	}
+	if json.Unmarshal(b, &c) != nil {
+		return nil
+	}
+	var one string
+	if json.Unmarshal(c.Aud, &one) == nil {
+		return []string{one}
+	}
+	var many []string
+	if json.Unmarshal(c.Aud, &many) == nil {
+		return many
+	}
+	return nil
 }

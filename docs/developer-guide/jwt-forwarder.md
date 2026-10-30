@@ -379,6 +379,20 @@ mints a LiteLLM key or user:
 | issuer discovery or JWKS unreachable (transport error / 5xx) | **503 `idp_unreachable`**; the forwarder still starts (discovery is lazy and retried) and every other credential path is untouched |
 | LiteLLM no longer lists the row's key | LiteLLM's own 401 — fail closed, no per-request `/key/list`; the user's next ACH grant re-mints (`ensureOAuthPK`) |
 
+### Exchange JWTs (`aud: ach-ek`)
+
+`POST /platform/keys/exchange` (platform API) signs a JWT with the same
+Ed25519 slots: `iss` = `ACH_BASE_URL`, `aud` = `ach-ek`, `sub` = an exchange
+key id (`ekid_…`), `jti`, lifetime `ACH_KEY_EXCHANGE_TOKEN_TTL` (15 minutes).
+`keystore.NewExchangeResolver` wraps the OAuth resolver inside the Redis cache
+in the forwarder, content service and platform API: a JWS whose unverified
+`aud` is `ach-ek` is verified there and resolves to the exchange key — the same
+`KeyInfo` an `ek_` yields, so `EkOwnerGate`, the `key:<id>` budget tag and
+LiteLLM routing are unchanged — only while a `KeyGrant` still allows its
+(identity, Environment, ServiceAccount) tuple. Any other JWS goes to the OAuth
+resolver (`aud: ach`). It is accepted in `x-ach-key` and in
+`Authorization: Bearer`. The cache entry expires with the JWT.
+
 Row lifetime: LibreChat never calls `/token`, which is what keeps an oauth row
 alive for ACH OAuth clients. So each trusted-IdP use slides the row exactly
 like a plain pk_ (`db.OAuthPKCheckAndExtend`: 7 days, 5-minute debounce,

@@ -347,7 +347,10 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 	out.signer = jwt.NewEd25519Signer()
 	out.loader = jwt.NewSecretLoader(out.signer, cfg.Namespace, cfg.JWTSecretName, ctrl.Log.WithName("jwt-loader"))
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, out.signer, cfg.BaseURL, "ach", pool)
-	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
+	// Exchange JWTs (aud ach-ek) resolve to their exchange key while a
+	// KeyGrant still allows it; every other bearer goes on to the OAuth resolver.
+	exchangeResolver := keystore.NewExchangeResolverDB(oauthResolver, out.signer, cfg.BaseURL, pool, cfg.Namespace)
+	cachedResolver, err := keystore.NewCachedResolver(exchangeResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)

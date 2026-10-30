@@ -182,16 +182,22 @@ func ekLookupFor(pool *pgxpool.Pool) dbLookupFn {
 		if row == nil {
 			return nil, nil
 		}
-		return &KeyInfo{
-			KeyID:         row.KeyID,
-			KeyType:       keys.PrefixEk,
-			OwnerEmail:    row.OwnerEmail,
-			ExpiresAt:     row.ExpiresAt,
-			Environment:   row.Environment,
-			LiteLLMUserID: row.LiteLLMUserID,
-			LiteLLMToken:  row.LiteLLMToken,
-			// TESTING-PHASE (reverts FIX01 §A.6)
-			LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
-		}, nil
+		return keyInfoFromEK(row), nil
+	}
+}
+
+// keyInfoFromEK maps a resolved environment_keys row to the auth-layer view.
+// Shared by the ek_ path and the exchange-JWT resolver (same row shape).
+func keyInfoFromEK(row *db.EkKeyInfo) *KeyInfo {
+	return &KeyInfo{
+		KeyID:         row.KeyID,
+		KeyType:       keys.PrefixEk,
+		OwnerEmail:    row.OwnerEmail,
+		ExpiresAt:     row.ExpiresAt,
+		Environment:   row.Environment,
+		LiteLLMUserID: row.LiteLLMUserID,
+		LiteLLMToken:  row.LiteLLMToken,
+		// TESTING-PHASE (reverts FIX01 §A.6)
+		LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 	}
 }

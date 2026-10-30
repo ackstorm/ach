@@ -190,7 +190,8 @@ func runContentService(cmd *cobra.Command, _ []string) error {
 	}
 	go jwt.WatchDir(ctx, verifier, cfg.JWTSecretDir, jwt.DirReloadInterval, logger)
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, verifier, cfg.BaseURL, "ach", pool)
-	resolver, err := keystore.NewCachedResolver(oauthResolver, redisClient, cfg.Pepper)
+	exchangeResolver := keystore.NewExchangeResolverDB(oauthResolver, verifier, cfg.BaseURL, pool, cfg.Namespace)
+	resolver, err := keystore.NewCachedResolver(exchangeResolver, redisClient, cfg.Pepper)
 	if err != nil {
 		return fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}

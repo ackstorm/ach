@@ -491,7 +491,8 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return out, err
 	}
 	oauthResolver := keystore.NewOAuthResolverDB(dbResolver, signer, cfg.BaseURL, "ach", pool)
-	cachedResolver, err := keystore.NewCachedResolver(oauthResolver, out.redis, cfg.Pepper,
+	exchangeResolver := keystore.NewExchangeResolverDB(oauthResolver, signer, cfg.BaseURL, pool, cfg.Namespace)
+	cachedResolver, err := keystore.NewCachedResolver(exchangeResolver, out.redis, cfg.Pepper,
 		keystore.WithCacheMetrics(keystoreCollectors))
 	if err != nil {
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)

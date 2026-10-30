@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 )
@@ -18,8 +19,15 @@ var ErrNotAJWT = errors.New("jwt: not a compact JWS")
 // its subject. iss and aud are exact matches. Keys are the
 // in-memory slots — no JWKS fetch, both services hold the same Secret.
 func (s *Ed25519Signer) Verify(raw, iss, aud string) (string, error) {
+	sub, _, err := s.VerifyExp(raw, iss, aud)
+	return sub, err
+}
+
+// VerifyExp is Verify that also returns the token's expiry, so a cached
+// resolution never outlives the token.
+func (s *Ed25519Signer) VerifyExp(raw, iss, aud string) (string, time.Time, error) {
 	if strings.Count(raw, ".") != 2 {
-		return "", ErrNotAJWT
+		return "", time.Time{}, ErrNotAJWT
 	}
 	keyfunc := func(t *jwtv5.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
@@ -37,11 +45,15 @@ func (s *Ed25519Signer) Verify(raw, iss, aud string) (string, error) {
 		jwtv5.WithAudience(aud),
 	)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	sub, err := tok.Claims.GetSubject()
 	if err != nil || sub == "" {
-		return "", errors.New("jwt: no subject")
+		return "", time.Time{}, errors.New("jwt: no subject")
 	}
-	return sub, nil
+	exp, err := tok.Claims.GetExpirationTime()
+	if err != nil || exp == nil {
+		return "", time.Time{}, errors.New("jwt: no exp")
+	}
+	return sub, exp.Time, nil
 }
