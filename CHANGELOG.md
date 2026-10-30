@@ -4,6 +4,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-30
+
+### Fixed
+- Console Enterprise Overview: the input statistics (median, maximum, reasoning
+  share, period) sit in the fourth column of the input/output panel again instead
+  of wrapping to a row of their own.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
