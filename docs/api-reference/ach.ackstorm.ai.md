@@ -15,6 +15,8 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [BackendIdentityPolicyList](#backendidentitypolicylist)
 - [Environment](#environment)
 - [EnvironmentList](#environmentlist)
+- [KeyGrant](#keygrant)
+- [KeyGrantList](#keygrantlist)
 - [LiteLLMConnection](#litellmconnection)
 - [LiteLLMConnectionList](#litellmconnectionlist)
 - [Plugin](#plugin)
@@ -276,6 +278,7 @@ refuses a request once the tag's accumulated spend exceeds MaxBudget).
 
 _Appears in:_
 - [EnvironmentSpec](#environmentspec)
+- [KeyGrantSpec](#keygrantspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -542,6 +545,107 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `url` _string_ | URL of the upstream resource. Accepts http:// or https://. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef optionally attaches an authentication header<br />(e.g. Authorization: Bearer ...). The data key named via<br />.headerValueKey supplies the header value at request time. |  |  |
+
+
+#### KeyGrant
+
+
+
+KeyGrant lets the named ServiceAccounts exchange their pod token for an ACH
+credential of Identity in the named Environments. A grant naming a shared
+ServiceAccount is usable by every pod running that ServiceAccount. Writing
+one is the power to act as Identity: the chart's keygrant-editor ClusterRole is bound to
+nobody and is never aggregated into admin or edit.
+
+
+
+_Appears in:_
+- [KeyGrantList](#keygrantlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `KeyGrant` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[KeyGrantSpec](#keygrantspec)_ |  |  |  |
+| `status` _[KeyGrantStatus](#keygrantstatus)_ |  |  |  |
+
+
+#### KeyGrantList
+
+
+
+KeyGrantList contains a list of KeyGrant.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `KeyGrantList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[KeyGrant](#keygrant) array_ |  |  |  |
+
+
+#### KeyGrantRequesters
+
+
+
+KeyGrantRequesters names who may exchange for the grant's identity. It is a
+block so other requester kinds can sit beside ServiceAccounts.
+
+
+
+_Appears in:_
+- [KeyGrantSpec](#keygrantspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `serviceAccounts` _string array_ | ServiceAccounts are exact "<namespace>/<name>" ServiceAccounts, both<br />parts DNS-1123. No patterns. |  | MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ <br /> |
+
+
+#### KeyGrantSpec
+
+
+
+KeyGrantSpec allows POST /platform/keys/exchange for one identity in every
+combination of its Environments and Requesters — and nothing that would
+only match by combining lists from different grants.
+
+
+
+_Appears in:_
+- [KeyGrant](#keygrant)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `identity` _string_ | Identity is exactly one ACH identity: an email, lower-case. No patterns. |  | MaxLength: 254 <br />Pattern: `^[a-z0-9._%+-]+@[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$` <br />Required: \{\} <br /> |
+| `environments` _string array_ | Environments are exact Environment names in this namespace. |  | MinItems: 1 <br />items:MaxLength: 253 <br />items:Pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$ <br /> |
+| `requesters` _[KeyGrantRequesters](#keygrantrequesters)_ | Requesters name who may exchange. |  | Required: \{\} <br /> |
+| `budget` _[BudgetBlock](#budgetblock)_ | Budget caps EACH exchange key this grant covers, through that key's own<br />"key:<id>" tag. When several grants cover one key the lowest maxBudget<br />applies. Removing it leaves the last ceiling in place. |  |  |
+
+
+#### KeyGrantStatus
+
+
+
+KeyGrantStatus is the observed state of a KeyGrant.
+
+
+
+_Appears in:_
+- [KeyGrant](#keygrant)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation the reconciler last processed. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions carry Ready: False with reason IdentityUnknown (the identity<br />has never logged in to ACH) or EnvironmentMissing. |  |  |
 
 
 #### LiteLLMConnection

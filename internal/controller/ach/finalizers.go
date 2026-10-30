@@ -23,4 +23,5 @@ const (
 	skillFinalizer                 = "skills.ach.ackstorm.ai/finalizer"
 	skillMarketplaceFinalizer      = "skillmarketplaces.ach.ackstorm.ai/finalizer"
 	backendIdentityPolicyFinalizer = "backendidentitypolicies.ach.ackstorm.ai/finalizer"
+	keyGrantFinalizer              = "keygrants.ach.ackstorm.ai/finalizer"
 )

@@ -170,7 +170,7 @@ the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<sv
 in front of `ach-gateway` (preserving the single `ach.e2e.local:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
 `Skill`, `SkillMarketplace`, `Prompt`, `Artifact`, `LiteLLMConnection`,
-`BackendIdentityPolicy` (`api/` is authoritative —
+`BackendIdentityPolicy`, `KeyGrant` (`api/` is authoritative —
 NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 `ek_`/`pk_` keys and teams are platform-api/DB objects). Agents run under the separate
 `ach-agent` project (github.com/ackstorm/ach-agent), which uses ACH's public API only:
@@ -226,6 +226,7 @@ platform-api; wraps the OAuth resolver inside the Redis cache) accepts that JWT
 wherever an `ek_` goes (`x-ach-key` or `Authorization`) only while a grant
 still allows its tuple. One `platform.ek.exchange` audit event per request,
 never a token.
+The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and writes the lowest covering `spec.budget` onto every other one's `key:<id>` tag; dropping `spec.budget` keeps the last ceiling. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`.
 
 Login team enrolment (`platformApi.teams` → `ACH_TEAMS_DEFAULT`/`_USER`/`_SSO`, JSON):
 at every interactive login (`as-callback` — CLI loopback, device grant, console;

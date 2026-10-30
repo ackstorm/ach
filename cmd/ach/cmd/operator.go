@@ -373,7 +373,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 
 	// ─── Issue #34 (A10/A11): per-Kind source.Channel feeds ───
 	//
-	// Each reconciler that owns one of the seven ACH CR Kinds picks up
+	// Each reconciler that owns an ACH CR Kind picks up
 	// GenericEvents from a dedicated buffered channel via
 	// WatchesRawSource(source.Channel(...)). Two upstream producers push
 	// into these channels:
@@ -396,6 +396,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	smpCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	bipCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	llmCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	kgCh := make(chan event.GenericEvent, resyncSourceChanCap)
 
 	pluginCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	mpCh := make(chan event.GenericEvent, resyncSourceChanCap)
@@ -548,6 +549,17 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller BackendIdentityPolicy: %w", err)
 	}
+	if err = (&achcontroller.KeyGrantReconciler{
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		LiteLLM:      realLiteLLM,
+		Namespace:    watchNS,
+		Log:          ctrl.Log.WithName("controller").WithName("KeyGrant"),
+		Store:        achcontroller.NewKeyGrantStore(dbPool),
+		ResyncSource: kgCh,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller KeyGrant: %w", err)
+	}
 	// +kubebuilder:scaffold:builder
 
 	// ─── Issue #34 A10: periodic full resync runnable. ───
@@ -565,6 +577,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 			SkillMarketplace:  smpCh,
 			BIP:               bipCh,
 			LiteLLMConnection: llmCh,
+			KeyGrant:          kgCh,
 		},
 	}
 	if err := mgr.Add(resyncRunnable); err != nil {

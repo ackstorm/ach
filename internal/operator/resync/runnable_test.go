@@ -198,3 +198,26 @@ func TestResync_GatedKindsNeverListed(t *testing.T) {
 		t.Error("sweepAll skipped EnvironmentList — the wired Kind must still sweep")
 	}
 }
+
+func TestResync_KeyGrantSwept(t *testing.T) {
+	s := testScheme(t)
+	kg := &achv1alpha1.KeyGrant{ObjectMeta: metav1.ObjectMeta{Namespace: "ach-system", Name: "ai-run"}}
+	c := fake.NewClientBuilder().WithScheme(s).WithObjects(kg).Build()
+	ch := make(chan event.GenericEvent, 4)
+	r := &Resync{Client: c, Namespace: "ach-system", Interval: time.Hour, Log: logr.Discard(),
+		Channels: Channels{KeyGrant: ch}}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- r.Start(ctx) }()
+	select {
+	case ev := <-ch:
+		if ev.Object.GetName() != "ai-run" {
+			t.Fatalf("expected ai-run, got %q", ev.Object.GetName())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no KeyGrant event on initial fire")
+	}
+	cancel()
+	<-done
+}

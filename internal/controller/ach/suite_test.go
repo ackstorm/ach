@@ -69,6 +69,8 @@ var (
 	connCache       *connection.Cache
 	accessGroupFake *accessGroupFakeImpl
 	envSnapshotter  *snapshot.Snapshotter
+	keyGrantStore   *keyGrantStoreFake
+	keyGrantLLM     *keyGrantLLMFake
 )
 
 // countingNoopClient wraps litellm.NoopClient and bumps an atomic counter
@@ -404,6 +406,19 @@ func setupAndRun(m *testing.M) int {
 		Log:       logr.Discard(),
 	}).SetupWithManager(mgr); err != nil {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(BackendIdentityPolicy): %v\n", err)
+		return 1
+	}
+	keyGrantStore = newKeyGrantStoreFake()
+	keyGrantLLM = newKeyGrantLLMFake()
+	if err := (&KeyGrantReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		LiteLLM:   keyGrantLLM,
+		Namespace: WatchNamespace,
+		Log:       logr.Discard(),
+		Store:     keyGrantStore,
+	}).SetupWithManager(mgr); err != nil {
+		fmt.Fprintf(os.Stderr, "SetupWithManager(KeyGrant): %v\n", err)
 		return 1
 	}
 	// Start the manager in a goroutine and wait for the cache to sync —

@@ -23,7 +23,7 @@ first, then walk the matrix.
 |-----------|-------|----------------|
 | **object** | `Plugin`, `Skill`, `Artifact`, `Prompt` | Fetched, validated, cached, served, hydrated. Path **narrows at fetch** (F1). |
 | **discovery** | `PluginMarketplace`, `SkillMarketplace` | Fetches the **whole repo**, tree-walks it, slices each discovered item into its own tarball + inventory entry. Opts OUT of fetch-narrowing (`withoutGitPath`). |
-| **governance** | `Environment`, `BackendIdentityPolicy` | No content of its own; resolves/gates references and drives downstream state (LiteLLM access-groups, forwarder RBAC/JWT mint). |
+| **governance** | `Environment`, `BackendIdentityPolicy`, `KeyGrant` | No content of its own; resolves/gates references and drives downstream state (LiteLLM access-groups, forwarder RBAC/JWT mint). |
 | **config singleton** | `LiteLLMConnection` | Cluster-level configuration the operator reads; not served, not hydrated, not inventoried. |
 
 ## The 11 surfaces
@@ -71,11 +71,11 @@ first, then walk the matrix.
 | # | Surface | object | discovery | governance | config singleton |
 |---|---------|:------:|:---------:|:----------:|:----------------:|
 | 1 | CRD + CEL | ✓ | ✓ | ✓ | ✓ |
-| 2 | Projection table + `with_tx_notify` | ✓ | ✓ | ✓ | ◑¹ |
+| 2 | Projection table + `with_tx_notify` | ✓ | ✓ | ✓⁶ | ◑¹ |
 | 3 | Status conditions (+`NameConflict` G15; `origin`/`locked` if UI-writable) | ✓ | ✓ | ✓ | ✓ |
 | 4 | Reconciler + finalizer | ✓ | ✓ | ✓ | ✓ |
 | 5 | Content pipeline (F1) | ✓ (narrow-at-fetch) | ◑² (whole-repo → slice) | — | — |
-| 6 | Admin inventory | ✓ | ✓ (`<item>@<mkt>`) | ✓ | — |
+| 6 | Admin inventory | ✓ | ✓ (`<item>@<mkt>`) | ✓⁶ | — |
 | 7 | Admin refresh | ✓ | ✓ | ◑³ | — |
 | 8 | Hydrate | ✓ | ◑⁴ | ◑⁵ | — |
 | 9 | Metrics | ✓ | ✓ | ✓ | ✓ |
@@ -98,6 +98,10 @@ first, then walk the matrix.
    object archetype.
 5. `Environment` is the hydrate root (`ach-cli env hydrate`);
    `BackendIdentityPolicy` is not hydrated.
+6. `KeyGrant` has a projection table but no NOTIFY: its readers (the exchange
+   handler and the exchange-JWT resolvers) query `key_grants` per request,
+   behind the 60-second resolver cache, and keep no in-memory copy. It has no
+   admin inventory route yet.
 
 ## Retroactive audit note
 

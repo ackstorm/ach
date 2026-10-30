@@ -34,6 +34,7 @@ type Channels struct {
 	SkillMarketplace  chan<- event.GenericEvent
 	BIP               chan<- event.GenericEvent
 	LiteLLMConnection chan<- event.GenericEvent
+	KeyGrant          chan<- event.GenericEvent
 }
 
 // Resync implements manager.Runnable: every Interval it re-Lists each ACH
@@ -108,6 +109,8 @@ func (r *Resync) sweepAll(ctx context.Context) {
 		func(l *achv1alpha1.BackendIdentityPolicyList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.LiteLLMConnection, &achv1alpha1.LiteLLMConnectionList{}, "litellmconnections",
 		func(l *achv1alpha1.LiteLLMConnectionList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.KeyGrant, &achv1alpha1.KeyGrantList{}, "keygrants",
+		func(l *achv1alpha1.KeyGrantList) []client.Object { return toObjects(l.Items) })
 }
 
 // sweepKind lists all objects of one Kind in the watched namespace and

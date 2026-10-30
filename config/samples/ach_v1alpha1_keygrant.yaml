@@ -1,0 +1,18 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: KeyGrant
+metadata:
+  labels:
+    app.kubernetes.io/name: ach
+    app.kubernetes.io/managed-by: kustomize
+  name: ai-run-k8s-doctor
+  namespace: ach-system
+spec:
+  identity: ai.run@ackstorm.com
+  environments: [agent-k8s-doctor]
+  # A grant naming a shared ServiceAccount is usable by every pod running it.
+  requesters:
+    serviceAccounts:
+      - ach-agent/ach-agent-control
+  budget:
+    maxBudget: 50
+    budgetDuration: 30d

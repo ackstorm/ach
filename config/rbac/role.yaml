@@ -38,6 +38,7 @@ rules:
   - artifacts/finalizers
   - backendidentitypolicies/finalizers
   - environments/finalizers
+  - keygrants/finalizers
   - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
@@ -52,6 +53,7 @@ rules:
   - artifacts/status
   - backendidentitypolicies/status
   - environments/status
+  - keygrants/status
   - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
@@ -62,3 +64,12 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - ach.ackstorm.ai
+  resources:
+  - keygrants
+  verbs:
+  - get
+  - list
+  - update
+  - watch
