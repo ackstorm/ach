@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -31,6 +32,7 @@ import (
 type KeyGrantStore interface {
 	UpsertKeyGrant(ctx context.Context, row achdb.KeyGrantRow) error
 	DeleteKeyGrant(ctx context.Context, ns, name string) error
+	ListKeyGrants(ctx context.Context, ns string) ([]achdb.KeyGrantRow, error)
 	ListExchangeKeys(ctx context.Context) ([]achdb.EkKeyInfo, error)
 	RevokeEnvironmentKey(ctx context.Context, keyID string) (*achdb.EkKeyInfo, error)
 }
@@ -45,6 +47,9 @@ func (s poolKeyGrantStore) UpsertKeyGrant(ctx context.Context, row achdb.KeyGran
 }
 func (s poolKeyGrantStore) DeleteKeyGrant(ctx context.Context, ns, name string) error {
 	return achdb.DeleteKeyGrant(ctx, s.pool, ns, name)
+}
+func (s poolKeyGrantStore) ListKeyGrants(ctx context.Context, ns string) ([]achdb.KeyGrantRow, error) {
+	return achdb.ListKeyGrants(ctx, s.pool, ns)
 }
 func (s poolKeyGrantStore) ListExchangeKeys(ctx context.Context) ([]achdb.EkKeyInfo, error) {
 	return achdb.ListExchangeKeys(ctx, s.pool)
@@ -92,7 +97,10 @@ func (r *KeyGrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if err := r.Store.DeleteKeyGrant(ctx, kg.Namespace, kg.Name); err != nil {
 				return ctrl.Result{}, fmt.Errorf("delete key_grants row: %w", err)
 			}
-			if err := r.sweep(ctx); err != nil {
+			// Only the keys this grant covered gate the finalizer; a failure
+			// on an unrelated key is the next sweep's to retry.
+			gone := keyGrantRow(&kg)
+			if err := r.sweep(ctx, &gone); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -110,7 +118,7 @@ func (r *KeyGrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Store.UpsertKeyGrant(ctx, keyGrantRow(&kg)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("upsert key_grants row: %w", err)
 		}
-		sweepErr = r.sweep(ctx)
+		sweepErr = r.sweep(ctx, nil)
 	}
 
 	cond, err := r.readyCondition(ctx, &kg)
@@ -183,25 +191,53 @@ func (r *KeyGrantReconciler) readyCondition(ctx context.Context, kg *achv1alpha1
 // it holds only the grants reconciled so far and would revoke keys a not yet
 // projected grant still allows. A CR being deleted covers nothing. One failing
 // key never blocks the others; the errors are joined.
+//
+// With gone nil it first deletes every key_grants row whose KeyGrant no longer
+// exists (a CR removed without its finalizer running), so a stale row never
+// keeps authorizing exchanges. With gone set (a grant being deleted) it
+// plans only the keys that grant covered.
 // ponytail: one UpsertTagBudget per covered key per KeyGrant reconcile; skip
 // unchanged ceilings if LiteLLM load ever shows it.
-func (r *KeyGrantReconciler) sweep(ctx context.Context) error {
+func (r *KeyGrantReconciler) sweep(ctx context.Context, gone *achdb.KeyGrantRow) error {
 	var list achv1alpha1.KeyGrantList
 	if err := r.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
 		return fmt.Errorf("list KeyGrants: %w", err)
 	}
 	grants := make([]achdb.KeyGrantRow, 0, len(list.Items))
+	exists := make(map[string]bool, len(list.Items))
 	for i := range list.Items {
+		exists[list.Items[i].Name] = true
 		if list.Items[i].DeletionTimestamp.IsZero() {
 			grants = append(grants, keyGrantRow(&list.Items[i]))
 		}
 	}
+	var errs []error
+	if gone == nil {
+		rows, err := r.Store.ListKeyGrants(ctx, r.Namespace)
+		if err != nil {
+			return fmt.Errorf("list key_grants rows: %w", err)
+		}
+		for _, row := range rows {
+			if exists[row.Name] {
+				continue
+			}
+			if err := r.Store.DeleteKeyGrant(ctx, row.Namespace, row.Name); err != nil {
+				errs = append(errs, fmt.Errorf("prune key_grants row %s/%s: %w", row.Namespace, row.Name, err))
+				continue
+			}
+			r.Log.Info("pruned key_grants row without a KeyGrant", "namespace", row.Namespace, "name", row.Name)
+		}
+	}
 	keys, err := r.Store.ListExchangeKeys(ctx)
 	if err != nil {
-		return fmt.Errorf("list exchange keys: %w", err)
+		return errors.Join(append(errs, fmt.Errorf("list exchange keys: %w", err))...)
+	}
+	if gone != nil {
+		keys = slices.DeleteFunc(keys, func(k achdb.EkKeyInfo) bool {
+			return len(keygrant.Covering([]achdb.KeyGrantRow{*gone}, k.OwnerEmail, k.Environment, k.Requester)) == 0
+		})
 	}
 	revoke, budgets := keygrant.Plan(grants, keys)
-	var errs []error
 	for _, k := range revoke {
 		if err := r.revokeKey(ctx, k); err != nil {
 			errs = append(errs, err)

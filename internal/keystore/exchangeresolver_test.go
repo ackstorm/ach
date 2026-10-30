@@ -120,3 +120,98 @@ func TestExchangeAndOAuthResolversInProductionOrder(t *testing.T) {
 		t.Fatal("an OAuth JWT reached the exchange-key lookup")
 	}
 }
+
+func TestGrantedExchangeKey(t *testing.T) {
+	ctx := context.Background()
+	row := liveExchangeRow()
+	grant := db.KeyGrantRow{Namespace: "ach", Name: "g", Identity: row.OwnerEmail,
+		Environments: []string{"prod"}, ServiceAccounts: []string{"agents/doctor"}}
+	grants := []db.KeyGrantRow{grant}
+	read := func(context.Context, string) (*db.EkKeyInfo, error) { return liveExchangeRow(), nil }
+	list := func(context.Context, string) ([]db.KeyGrantRow, error) { return grants, nil }
+	lookup := grantedExchangeKey(read, list)
+
+	if got, err := lookup(ctx, "ekid_1"); err != nil || got == nil {
+		t.Fatalf("granted: got=%v err=%v", got, err)
+	}
+	for name, g := range map[string]db.KeyGrantRow{
+		"identity mismatch":    {Identity: "x@ackstorm.com", Environments: grant.Environments, ServiceAccounts: grant.ServiceAccounts},
+		"environment mismatch": {Identity: grant.Identity, Environments: []string{"dev"}, ServiceAccounts: grant.ServiceAccounts},
+		"requester mismatch":   {Identity: grant.Identity, Environments: grant.Environments, ServiceAccounts: []string{"agents/other"}},
+	} {
+		grants = []db.KeyGrantRow{g}
+		if got, err := lookup(ctx, "ekid_1"); err != nil || got != nil {
+			t.Errorf("%s: got=%v err=%v; want (nil, nil)", name, got, err)
+		}
+	}
+	grants = nil
+	if got, err := lookup(ctx, "ekid_1"); err != nil || got != nil {
+		t.Errorf("grant removed: got=%v err=%v; want (nil, nil)", got, err)
+	}
+	if got, err := grantedExchangeKey(func(context.Context, string) (*db.EkKeyInfo, error) { return nil, nil }, list)(ctx, "ekid_1"); err != nil || got != nil {
+		t.Errorf("no key row: got=%v err=%v", got, err)
+	}
+	boom := errors.New("db down")
+	if _, err := grantedExchangeKey(read, func(context.Context, string) ([]db.KeyGrantRow, error) { return nil, boom })(ctx, "ekid_1"); !errors.Is(err, boom) {
+		t.Errorf("grant listing error must surface, got %v", err)
+	}
+	if _, err := grantedExchangeKey(func(context.Context, string) (*db.EkKeyInfo, error) { return nil, boom }, list)(ctx, "ekid_1"); !errors.Is(err, boom) {
+		t.Errorf("key lookup error must surface, got %v", err)
+	}
+}
+
+// TestCachedExchangeResolverServesRemovedGrantUntilExpiry runs the production
+// chain cache(exchange(oauth(db))): a grant removed after the first resolve is
+// still served from the cache until its entry expires, then refused, and an
+// entry never outlives the JWT.
+func TestCachedExchangeResolverServesRemovedGrantUntilExpiry(t *testing.T) {
+	s := oauthSigner(t)
+	ctx := context.Background()
+	granted := true
+	lookup := grantedExchangeKey(
+		func(context.Context, string) (*db.EkKeyInfo, error) { return liveExchangeRow(), nil },
+		func(context.Context, string) ([]db.KeyGrantRow, error) {
+			if !granted {
+				return nil, nil
+			}
+			return []db.KeyGrantRow{{Identity: "ai.run@ackstorm.com", Environments: []string{"prod"},
+				ServiceAccounts: []string{"agents/doctor"}}}, nil
+		})
+	oauth := NewOAuthResolver(fallthroughResolver(), s, "https://ach.test", "ach",
+		func(context.Context, string) (*db.PkKeyInfo, error) { return nil, nil })
+	now := time.Now()
+	chain, mr, _ := setupCachedWith(t, NewExchangeResolver(oauth, s, "https://ach.test", lookup),
+		WithClock(func() time.Time { return now }))
+
+	raw := func(ttl time.Duration) string {
+		tok, err := s.Sign(ctx, jwt.Claims{Iss: "https://ach.test", Sub: "ekid_1", Aud: ExchangeAudience, TTL: ttl})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	long := raw(10 * time.Minute)
+	if info, err := chain.Resolve(ctx, long); err != nil || info == nil {
+		t.Fatalf("first resolve: info=%v err=%v", info, err)
+	}
+	granted = false
+	if info, err := chain.Resolve(ctx, long); err != nil || info == nil {
+		t.Fatalf("cached entry must still be served inside the window: info=%v err=%v", info, err)
+	}
+	now = now.Add(defaultTTL + time.Second)
+	mr.FastForward(defaultTTL + time.Second)
+	if info, err := chain.Resolve(ctx, long); err != nil || info != nil {
+		t.Fatalf("after the window the removed grant must refuse: info=%v err=%v", info, err)
+	}
+
+	granted, now = true, time.Now()
+	short := raw(10 * time.Second)
+	if info, err := chain.Resolve(ctx, short); err != nil || info == nil {
+		t.Fatalf("short JWT: info=%v err=%v", info, err)
+	}
+	for _, k := range mr.Keys() {
+		if ttl := mr.TTL(k); ttl > 10*time.Second {
+			t.Fatalf("cache entry %s TTL %v outlives the 10s JWT", k, ttl)
+		}
+	}
+}

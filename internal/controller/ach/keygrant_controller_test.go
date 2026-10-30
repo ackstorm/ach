@@ -4,6 +4,7 @@ package ach
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -11,10 +12,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -45,6 +48,18 @@ func (s *keyGrantStoreFake) DeleteKeyGrant(_ context.Context, ns, name string) e
 	defer s.mu.Unlock()
 	delete(s.grants, ns+"/"+name)
 	return nil
+}
+
+func (s *keyGrantStoreFake) ListKeyGrants(_ context.Context, ns string) ([]achdb.KeyGrantRow, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []achdb.KeyGrantRow
+	for _, g := range s.grants {
+		if g.Namespace == ns {
+			out = append(out, g)
+		}
+	}
+	return out, nil
 }
 
 func (s *keyGrantStoreFake) ListExchangeKeys(context.Context) ([]achdb.EkKeyInfo, error) {
@@ -369,4 +384,99 @@ func TestKeyGrantReconciler_ColdStartKeepsKeyOfUnprojectedGrant(t *testing.T) {
 
 func ctrlRequest(kg *achv1alpha1.KeyGrant) ctrl.Request {
 	return ctrl.Request{NamespacedName: client.ObjectKeyFromObject(kg)}
+}
+
+// failingRevokeLLM refuses to revoke one token.
+type failingRevokeLLM struct {
+	*keyGrantLLMFake
+	failToken string
+}
+
+func (f *failingRevokeLLM) RevokeKey(ctx context.Context, token string) error {
+	if token == f.failToken {
+		return errors.New("litellm down")
+	}
+	return f.keyGrantLLMFake.RevokeKey(ctx, token)
+}
+
+func fakeKeyGrantClient(t *testing.T, objs ...client.Object) client.Client {
+	t.Helper()
+	return fake.NewClientBuilder().WithScheme(k8sClient.Scheme()).WithObjects(objs...).
+		WithStatusSubresource(&achv1alpha1.KeyGrant{}).Build()
+}
+
+func liveKeyGrant(name, who, env, sa string) *achv1alpha1.KeyGrant {
+	kg := newKeyGrant(name, who, []string{env}, []string{sa}, nil)
+	kg.Namespace = WatchNamespace
+	kg.Finalizers = []string{keyGrantFinalizer}
+	return kg
+}
+
+func TestKeyGrantReconciler_SweepPrunesRowWithoutKeyGrant(t *testing.T) {
+	ctx := context.Background()
+	const who = "prune@ackstorm.com"
+	live := liveKeyGrant("kg-live", who, "prune-env", "agents/live")
+	store, llm := newKeyGrantStoreFake(), newKeyGrantLLMFake()
+	llm.knowUser(who)
+	_ = store.UpsertKeyGrant(ctx, keyGrantRow(live))
+	ghost := keyGrantRow(liveKeyGrant("kg-ghost", who, "prune-env", "agents/ghost"))
+	_ = store.UpsertKeyGrant(ctx, ghost)
+	tokLive, tokGhost := "lt-live", "lt-ghost"
+	store.addKey(achdb.EkKeyInfo{KeyID: "ekid_live", OwnerEmail: who, Environment: "prune-env",
+		Requester: "agents/live", LiteLLMToken: &tokLive, Status: "active"})
+	store.addKey(achdb.EkKeyInfo{KeyID: "ekid_ghost", OwnerEmail: who, Environment: "prune-env",
+		Requester: "agents/ghost", LiteLLMToken: &tokGhost, Status: "active"})
+	r := &KeyGrantReconciler{Client: fakeKeyGrantClient(t, live), Scheme: k8sClient.Scheme(), LiteLLM: llm,
+		Namespace: WatchNamespace, Log: logr.Discard(), Store: store}
+
+	if _, err := r.Reconcile(ctx, ctrlRequest(live)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.grant(WatchNamespace, "kg-ghost"); ok {
+		t.Fatal("a row with no KeyGrant survived the sweep")
+	}
+	if _, ok := store.grant(WatchNamespace, "kg-live"); !ok {
+		t.Fatal("the row of a live KeyGrant was pruned")
+	}
+	if store.status("ekid_ghost") != "revoked" || !llm.wasRevoked(tokGhost) {
+		t.Fatal("the key only the pruned row allowed was not revoked")
+	}
+	if store.status("ekid_live") != "active" || llm.wasRevoked(tokLive) {
+		t.Fatal("the key of a live grant was revoked")
+	}
+}
+
+func TestKeyGrantReconciler_DeleteFinalizerIgnoresUnrelatedKeyFailure(t *testing.T) {
+	ctx := context.Background()
+	const who = "fin@ackstorm.com"
+	now := metav1.Now()
+	dying := liveKeyGrant("kg-dying", who, "fin-env", "agents/dying")
+	dying.DeletionTimestamp = &now
+	other := liveKeyGrant("kg-other", "other@ackstorm.com", "fin-env", "agents/other")
+	store := newKeyGrantStoreFake()
+	llm := &failingRevokeLLM{keyGrantLLMFake: newKeyGrantLLMFake(), failToken: "lt-unrelated"}
+	_ = store.UpsertKeyGrant(ctx, keyGrantRow(dying))
+	_ = store.UpsertKeyGrant(ctx, keyGrantRow(other))
+	tokDying, tokUnrelated := "lt-dying", "lt-unrelated"
+	store.addKey(achdb.EkKeyInfo{KeyID: "ekid_dying", OwnerEmail: who, Environment: "fin-env",
+		Requester: "agents/dying", LiteLLMToken: &tokDying, Status: "active"})
+	store.addKey(achdb.EkKeyInfo{KeyID: "ekid_unrelated", OwnerEmail: who, Environment: "fin-env",
+		Requester: "agents/unrelated", LiteLLMToken: &tokUnrelated, Status: "active"})
+	c := fakeKeyGrantClient(t, dying, other)
+	r := &KeyGrantReconciler{Client: c, Scheme: k8sClient.Scheme(), LiteLLM: llm,
+		Namespace: WatchNamespace, Log: logr.Discard(), Store: store}
+
+	if _, err := r.Reconcile(ctx, ctrlRequest(dying)); err != nil {
+		t.Fatalf("an unrelated key's failed revoke blocked the finalizer: %v", err)
+	}
+	if store.status("ekid_dying") != "revoked" || !llm.wasRevoked(tokDying) {
+		t.Fatal("the key only the deleting grant allowed was not revoked")
+	}
+	if store.status("ekid_unrelated") != "active" {
+		t.Fatal("an unrelated key was touched by the deletion path")
+	}
+	var got achv1alpha1.KeyGrant
+	if err := c.Get(ctx, client.ObjectKeyFromObject(dying), &got); !apierrors.IsNotFound(err) {
+		t.Fatalf("finalizer not removed: %v", err)
+	}
 }

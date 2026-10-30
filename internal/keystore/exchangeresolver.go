@@ -52,12 +52,24 @@ func NewExchangeResolver(inner Resolver, v ExchangeVerifier, iss string, lookup 
 // active exchange key AND a KeyGrant in ns must still allow its tuple, so
 // removing a grant entry cuts access within the cache window.
 func NewExchangeResolverDB(inner Resolver, v ExchangeVerifier, iss string, pool *pgxpool.Pool, ns string) Resolver {
-	return NewExchangeResolver(inner, v, iss, func(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
-		row, err := db.ExchangeKeyResolve(ctx, pool, keyID)
+	return NewExchangeResolver(inner, v, iss, grantedExchangeKey(
+		func(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+			return db.ExchangeKeyResolve(ctx, pool, keyID)
+		},
+		func(ctx context.Context, identity string) ([]db.KeyGrantRow, error) {
+			return db.ListKeyGrantsForIdentity(ctx, pool, ns, identity)
+		}))
+}
+
+// grantedExchangeKey is the lookup NewExchangeResolverDB serves: the key row
+// from read, kept only while a grant from list for its owner covers its tuple.
+func grantedExchangeKey(read ExchangeKeyLookup, list func(ctx context.Context, identity string) ([]db.KeyGrantRow, error)) ExchangeKeyLookup {
+	return func(ctx context.Context, keyID string) (*db.EkKeyInfo, error) {
+		row, err := read(ctx, keyID)
 		if err != nil || row == nil {
 			return nil, err
 		}
-		grants, err := db.ListKeyGrantsForIdentity(ctx, pool, ns, row.OwnerEmail)
+		grants, err := list(ctx, row.OwnerEmail)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +77,7 @@ func NewExchangeResolverDB(inner Resolver, v ExchangeVerifier, iss string, pool 
 			return nil, nil
 		}
 		return row, nil
-	})
+	}
 }
 
 func (r *exchangeResolver) Resolve(ctx context.Context, plaintext string) (*KeyInfo, error) {
