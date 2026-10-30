@@ -31,11 +31,11 @@ values ({{ .Values.litellmConnection.endpoint }}). The master-key Secret
 === CRDs ===
 {{- if .Values.installCRDs }}
 
-The chart manages the 9 ACH CRDs (*.ach.ackstorm.ai) as ordinary resources:
+The chart manages the 10 ACH CRDs (*.ach.ackstorm.ai) as ordinary resources:
 `helm upgrade` upgrades them, and `helm uninstall` keeps them (and your CRs).
 {{- else }}
 
-installCRDs=false: apply the 9 ACH CRDs (*.ach.ackstorm.ai) yourself before
+installCRDs=false: apply the 10 ACH CRDs (*.ach.ackstorm.ai) yourself before
 every upgrade, from the chart's crd-sources/ directory.
 {{- end }}
 
