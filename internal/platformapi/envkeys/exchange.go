@@ -75,6 +75,11 @@ const (
 	exchangeGlobalRate     = 10
 	exchangeGlobalBurst    = 50
 	exchangeMaxClients     = 10000
+
+	// The route is anonymous until TokenReview: bound what it reads and what
+	// reaches the audit log.
+	exchangeMaxBody  = 4096
+	exchangeMaxField = 256
 )
 
 // ExchangeHandler serves POST /platform/keys/exchange. A pod-bound
@@ -114,13 +119,15 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			return
 		}
 		if !lim.allow(middleware.ClientIP(r)) {
+			w.Header().Set("Retry-After", "1")
 			deny(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "")
 			return
 		}
 		var req ExchangeRequest
-		dec := json.NewDecoder(r.Body)
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, exchangeMaxBody))
 		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil || req.Identity == "" || req.Environment == "" {
+		if err := dec.Decode(&req); err != nil || dec.More() || req.Identity == "" || req.Environment == "" ||
+			len(req.Identity) > exchangeMaxField || len(req.Environment) > exchangeMaxField {
 			deny(http.StatusBadRequest, codeInvalidArgument, "identity and environment required", "")
 			return
 		}
@@ -191,8 +198,9 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 }
 
 // stableKey returns the tuple's live exchange key, minting it on first use.
-// The key's budget (lowest covering grant) is written by mint at creation;
-// the operator's KeyGrant sweep keeps it current afterwards.
+// The key's budget (lowest covering grant) is written by mint at creation
+// and re-written on every later exchange; the operator's KeyGrant sweep
+// keeps it current in between.
 func (cr *createReq) stableKey(env *db.EnvironmentRow) (string, bool) {
 	row, err := cr.xdb.FindExchangeKey(cr.ctx, cr.keyCtx.OwnerEmail, env.Name, cr.requester)
 	if err != nil {
@@ -201,22 +209,46 @@ func (cr *createReq) stableKey(env *db.EnvironmentRow) (string, bool) {
 	}
 	if row != nil {
 		if row.Status != statusActive {
-			// Suspended by its owner: a JWT for it could never authenticate.
-			audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-				Action: cr.action, Outcome: audit.OutcomeKeySuspended, Actor: cr.actor,
-				RequestID: cr.reqID, KeyID: row.KeyID, Target: cr.target, Extra: cr.extra,
-			})
-			render.Error(cr.w, http.StatusConflict, audit.OutcomeKeySuspended, "the exchange key for this grant is suspended", cr.reqID)
+			cr.refuseSuspended(row.KeyID)
 			return "", false
 		}
-		return row.KeyID, true
+		return row.KeyID, cr.applyBudget(row.KeyID)
 	}
 	userID, handled := cr.provisionUser()
 	if handled {
 		return "", false
 	}
-	keyID, _, ok := cr.mint(env, userID)
+	keyID, plaintext, ok := cr.mint(env, userID)
+	if ok && plaintext == "" {
+		// Race loser: the winner's budget write may have failed.
+		ok = cr.applyBudget(keyID)
+	}
 	return keyID, ok
+}
+
+// refuseSuspended answers 409: a JWT for a suspended key could never
+// authenticate.
+func (cr *createReq) refuseSuspended(keyID string) {
+	audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
+		Action: cr.action, Outcome: audit.OutcomeKeySuspended, Actor: cr.actor,
+		RequestID: cr.reqID, KeyID: keyID, Target: cr.target, Extra: cr.extra,
+	})
+	render.Error(cr.w, http.StatusConflict, audit.OutcomeKeySuspended, "the exchange key for this grant is suspended", cr.reqID)
+}
+
+// applyBudget re-writes the covering grants' ceiling onto an existing key's
+// tag, so a write refused at mint is never skipped by a later exchange: no JWT
+// is issued for a key that may be uncapped. It answers the request itself on
+// failure.
+func (cr *createReq) applyBudget(keyID string) bool {
+	if cr.req.Budget == nil {
+		return true
+	}
+	if err := cr.deps.LiteLLM.UpsertTagBudget(cr.ctx, litellm.KeyBudgetTag(keyID), cr.req.Budget.TagBudget()); err != nil {
+		cr.emitLitellmError(err, "envkeys.exchange: key budget tag")
+		return false
+	}
+	return true
 }
 
 // reviewedRequester turns a TokenReview answer into "<namespace>/<name>", or

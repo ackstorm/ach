@@ -399,3 +399,63 @@ func TestExchange_AuditOneEventPerRequestWithoutCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestExchange_ExistingKeyReappliesBudget(t *testing.T) {
+	f := newExchangeFixture(t)
+	ten := 10.0
+	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
+	f.xdb.existing = &db.EkKeyInfo{KeyID: "ekid_live", Status: "active"}
+	decodeExchange(t, f.do(t, saToken(exAudience), okBody, ""))
+	if b := f.llm.upsertedTags["key:ekid_live"]; b.MaxBudget != 10 {
+		t.Fatalf("budget not re-applied: %+v", f.llm.upsertedTags)
+	}
+
+	f = newExchangeFixture(t)
+	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
+	f.xdb.existing = &db.EkKeyInfo{KeyID: "ekid_live", Status: "active"}
+	f.llm.upsertTagErr = fmt.Errorf("boom")
+	rec := f.do(t, saToken(exAudience), okBody, "")
+	if rec.Code < 500 || strings.Contains(rec.Body.String(), `"token"`) {
+		t.Fatalf("a refused budget write must not issue a token: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestExchange_BodyLimits(t *testing.T) {
+	for name, body := range map[string]string{
+		"oversize":      `{"identity":"` + strings.Repeat("a", 5000) + `","environment":"prod"}`,
+		"long identity": `{"identity":"` + strings.Repeat("a", 257) + `","environment":"prod"}`,
+		"long env":      `{"identity":"a@b.c","environment":"` + strings.Repeat("a", 257) + `"}`,
+		"trailing JSON": okBody + `{}`,
+	} {
+		f := newExchangeFixture(t)
+		rec := f.do(t, saToken(exAudience), body, "")
+		if rec.Code != http.StatusBadRequest || errorCode(t, rec) != "invalid_argument" {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+		if f.fdb.inserted != nil {
+			t.Errorf("%s: minted", name)
+		}
+	}
+}
+
+func TestExchange_RateLimitedSendsRetryAfter(t *testing.T) {
+	f := newExchangeFixture(t)
+	var last *httptest.ResponseRecorder
+	for i := 0; i <= exchangePerClientBurst; i++ {
+		last = f.do(t, saToken(exAudience), `{}`, "10.0.0.9:1")
+	}
+	if last.Code != http.StatusTooManyRequests || last.Header().Get("Retry-After") != "1" {
+		t.Fatalf("%d %v", last.Code, last.Header())
+	}
+}
+
+func TestExchange_RaceWinnerSuspendedIsRefused(t *testing.T) {
+	f := newExchangeFixture(t)
+	f.deps.DB = &raceEkDB{}
+	f.deps.LiteLLM = &revokeCapture{captureLiteLLM: f.llm}
+	f.xdb.winner = &db.EkKeyInfo{KeyID: "ekid_winner", Status: "suspended"}
+	rec := f.do(t, saToken(exAudience), okBody, "")
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != "key_suspended" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}

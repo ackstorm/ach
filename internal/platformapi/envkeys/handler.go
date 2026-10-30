@@ -690,6 +690,10 @@ func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string
 			cr.emitInternalError("envkeys.exchange: read race winner", err)
 			return "", "", false
 		}
+		if winner.Status != statusActive {
+			cr.refuseSuspended(winner.KeyID)
+			return "", "", false
+		}
 		return winner.KeyID, "", true
 	}
 	if insertErr != nil {
