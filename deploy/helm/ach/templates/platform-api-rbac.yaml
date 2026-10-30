@@ -14,10 +14,9 @@
 #     force_refresh_requested_at column (Phase B2).
 #   - Dex client-secret is read from env at boot; no Secret informer.
 #
-# Result: platform-api holds zero K8s privileges. The ServiceAccount stays
-# bound to an empty ClusterRole so any leftover client-go credential lookup
-# (e.g. accidental in-cluster config use by a dependency) cannot reach
-# anything sensitive.
+# Result: platform-api's own ClusterRole stays empty. Its one K8s privilege
+# is TokenReview for POST /platform/keys/exchange, through the built-in
+# system:auth-delegator ClusterRole (binding below).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -38,6 +37,25 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ .Release.Name }}-platform-api
+subjects:
+- kind: ServiceAccount
+  name: ach-platform-api
+  namespace: {{ .Release.Namespace }}
+---
+# TokenReview for POST /platform/keys/exchange. system:auth-delegator grants
+# create on tokenreviews and subjectaccessreviews, nothing else. Cluster-scoped
+# because TokenReview is.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-platform-api-auth-delegator
+  labels:
+    {{- include "ach.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: platform-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
 subjects:
 - kind: ServiceAccount
   name: ach-platform-api

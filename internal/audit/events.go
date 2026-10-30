@@ -58,6 +58,7 @@ const (
 	ActionAdminUsersRevokeKeys = "platform.admin.users.revoke_keys"
 	ActionAdminUserBudget      = "platform.admin.user.budget"
 	ActionAdminUserLimits      = "platform.admin.user.limits"
+	ActionEkExchange           = "platform.ek.exchange"
 
 	// ActionContentGet is the Content Service emission action (Phase 5
 	// D-Discretion / Plan 05-05). The handler emits exactly one audit
@@ -114,4 +115,11 @@ const (
 	// single log-filter predicate counts successes across the trust
 	// boundary.
 	OutcomeForwarded = "forwarded"
+
+	// POST /platform/keys/exchange outcomes.
+	OutcomeIssued       = "issued"
+	OutcomeInvalidToken = "invalid_token"
+	OutcomeNotGranted   = "not_granted"
+	OutcomeRateLimited  = "rate_limited"
+	OutcomeKeySuspended = "key_suspended"
 )

@@ -154,6 +154,11 @@ type Deps struct {
 	// VerifyAccessToken checks ACH's own OAuth access token locally (no I/O)
 	// and returns its subject email; nil disables /clients/opencode/config.
 	VerifyAccessToken func(token string) (email string, err error)
+	// TokenReview reviews ServiceAccount tokens for POST /platform/keys/exchange;
+	// nil (no in-cluster config) leaves the route unmounted.
+	TokenReview envkeys.TokenReviewFunc
+	// KeyExchangeTTL is the exchanged JWT's lifetime (ACH_KEY_EXCHANGE_TOKEN_TTL).
+	KeyExchangeTTL time.Duration
 }
 
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
@@ -240,6 +245,34 @@ func New(deps Deps) http.Handler {
 			CookieName: auth.ConsoleCookieName(deps.InsecureCookie), Session: od.ConsoleSession})
 	}
 
+	envkeysDeps := envkeys.Deps{
+		LiteLLM:          deps.LiteLLM,
+		DB:               newEnvkeysDB(deps.Pool),
+		Store:            deps.Store,
+		Redis:            newRedisDelAdapter(deps.Redis),
+		Pepper:           deps.Pepper,
+		KeyEncryptionKey: deps.KeyEncryptionKey,
+		Audit:            deps.Audit,
+		Logger:           deps.Logger,
+		Namespace:        deps.Namespace,
+		Issuer:           deps.BaseURL,
+		DefaultMaxKeys:   deps.DefaultMaxKeys,
+		DefaultTeams:     deps.Teams.Default,
+	}
+	if deps.OAuth != nil {
+		envkeysDeps.EndOAuthSessions = deps.OAuth.EndSessions
+	}
+
+	// POST /platform/keys/exchange: the ServiceAccount token IS the credential,
+	// so the route sits outside the pk_/ek_ Authn subtree. It signs with the
+	// OAuth AS's signer.
+	if deps.TokenReview != nil && deps.OAuth != nil {
+		r.Post("/platform/keys/exchange", envkeys.ExchangeHandler(envkeys.ExchangeDeps{
+			Deps: envkeysDeps, ExchangeDB: newEnvkeysDB(deps.Pool),
+			TokenReview: deps.TokenReview, Signer: deps.OAuth.Signer, TTL: deps.KeyExchangeTTL,
+		}))
+	}
+
 	// Authenticated subtree — BLK-02: middleware.Authn(deps.Resolver,
 	// deps.Allowlist, deps.Audit) — allowlist passed positionally so
 	// KeyContext.IsAdmin is populated uniformly for downstream
@@ -258,23 +291,6 @@ func New(deps Deps) http.Handler {
 		}
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))
 
-		envkeysDeps := envkeys.Deps{
-			LiteLLM:          deps.LiteLLM,
-			DB:               newEnvkeysDB(deps.Pool),
-			Store:            deps.Store,
-			Redis:            newRedisDelAdapter(deps.Redis),
-			Pepper:           deps.Pepper,
-			KeyEncryptionKey: deps.KeyEncryptionKey,
-			Audit:            deps.Audit,
-			Logger:           deps.Logger,
-			Namespace:        deps.Namespace,
-			Issuer:           deps.BaseURL,
-			DefaultMaxKeys:   deps.DefaultMaxKeys,
-			DefaultTeams:     deps.Teams.Default,
-		}
-		if deps.OAuth != nil {
-			envkeysDeps.EndOAuthSessions = deps.OAuth.EndSessions
-		}
 		envkeys.MountKeys(r, envkeysDeps)
 
 		// WARN-06: environments.Deps now carries LiteLLM (for

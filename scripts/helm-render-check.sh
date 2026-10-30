@@ -76,4 +76,10 @@ out="$(render --set enterprise.enabled=true \
 grep -q "name: ACH_OBSERVABILITY_CLICKHOUSE_URL" <<<"$out" \
   || fail "enterprise.enabled=true: ACH_OBSERVABILITY_CLICKHOUSE_URL not rendered"
 
-echo "helm-render-check OK (6 topologies)"
+# 7. Key exchange: platform-api may call TokenReview and nothing else.
+grep -q "name: system:auth-delegator" <<<"$(render --show-only templates/platform-api-rbac.yaml)" \
+  || fail "default: platform-api lacks the system:auth-delegator binding (TokenReview)"
+grep -A1 "name: ACH_KEY_EXCHANGE_TOKEN_TTL" <<<"$(render)" | grep -q 'value: "15m"' \
+  || fail "default: ACH_KEY_EXCHANGE_TOKEN_TTL must be \"15m\""
+
+echo "helm-render-check OK (7 topologies)"

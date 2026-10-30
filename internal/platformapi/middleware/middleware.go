@@ -172,17 +172,17 @@ func RequestID(next http.Handler) http.Handler {
 		// G20: capture forensics metadata once, at the outermost layer, so
 		// every downstream EmitAudit attaches source.ip + source.user_agent.
 		ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{
-			SourceIP:  clientIP(r),
+			SourceIP:  ClientIP(r),
 			UserAgent: r.Header.Get("User-Agent"),
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// clientIP returns the request's originating client address: the first
+// ClientIP returns the request's originating client address: the first
 // X-Forwarded-For hop when present (the gateway/Ingress prepends it), else
-// r.RemoteAddr. Used only for the audit source.ip attribute (G20).
-func clientIP(r *http.Request) string {
+// r.RemoteAddr. Used for the audit source.ip attribute (G20) and the key-exchange rate limit.
+func ClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if i := strings.IndexByte(xff, ','); i >= 0 {
 			return strings.TrimSpace(xff[:i])

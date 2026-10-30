@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
+	authnv1 "k8s.io/api/authentication/v1"
 
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keys"
@@ -338,5 +339,32 @@ func TestServer_MountsOAuthOutsideAuthn(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "unsupported_grant_type") {
 		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestServer_MountsKeyExchangeOutsideAuthn(t *testing.T) {
+	mr := miniredis.RunT(t)
+	deps := newTestDeps(t, &fakeResolver{})
+	deps.OAuth = &auth.OAuthDeps{
+		Store:  &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
+		Signer: jwt.NewEd25519Signer(), Issuer: "https://ach.example.com", Audience: "ach",
+		AccessTTL: time.Hour, RefreshTTL: time.Hour,
+	}
+	deps.TokenReview = func(context.Context, string, string) (authnv1.TokenReviewStatus, error) {
+		t.Error("the guard must answer before TokenReview")
+		return authnv1.TokenReviewStatus{}, nil
+	}
+	deps.KeyExchangeTTL = 15 * time.Minute
+	h := New(deps)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/platform/keys/exchange", strings.NewReader(`{}`)))
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "invalid_token") {
+		t.Fatalf("exchange: %d %s (Authn would answer missing_key)", w.Code, w.Body)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/platform/keys", strings.NewReader(`{}`)))
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "missing_key") {
+		t.Fatalf("the rest of /platform/keys must stay behind Authn: %d %s", w.Code, w.Body)
 	}
 }

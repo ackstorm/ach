@@ -157,6 +157,11 @@ platformApi:
     # maxKeys is the number of non-revoked ek_ keys one person may hold.
     # 0 means deny-by-default; an admin grants an explicit allowance.
     maxKeys: 0
+  # keyExchange: POST /platform/keys/exchange trades a pod-bound ServiceAccount
+  # token (plus a KeyGrant) for a short-lived ACH JWT. tokenTTL is that JWT's
+  # lifetime (Go duration, minimum 1m).
+  keyExchange:
+    tokenTTL: 15m
   # oauth.redirectHosts: hosts an OAuth client registered at /platform/oauth/register
   # may redirect to over https (e.g. claude.ai for its web MCP connector).
   # Loopback (http://127.0.0.1, localhost — ach-cli, OpenCode) is always allowed.

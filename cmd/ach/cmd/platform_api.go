@@ -127,8 +127,10 @@ type platformAPIConfig struct {
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
 	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
+	KeyExchangeTTL  time.Duration // ACH_KEY_EXCHANGE_TOKEN_TTL, default 15m, minimum 1m
 }
 
+//nolint:gocyclo // linear env-to-config table
 func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	cfg := &platformAPIConfig{}
 	baseURL, err := config.MustEnvNonEmpty("ACH_BASE_URL")
@@ -209,6 +211,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	if cfg.OAuthRefreshTTL, err = config.MustEnvDurationAtLeast("ACH_OAUTH_REFRESH_TTL", 30*24*time.Hour, time.Hour); err != nil {
+		return nil, err
+	}
+	if cfg.KeyExchangeTTL, err = config.MustEnvDurationAtLeast("ACH_KEY_EXCHANGE_TOKEN_TTL", 15*time.Minute, time.Minute); err != nil {
 		return nil, err
 	}
 	if cfg.Teams, err = teamPolicyFromEnv(); err != nil {
@@ -498,9 +503,15 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
 
+	tokenReview, trErr := inClusterTokenReview()
+	if trErr != nil {
+		logger.Warn("POST /platform/keys/exchange disabled: no in-cluster Kubernetes config", "err", trErr)
+	}
 	out.server = platformapi.Deps{
-		Enterprise: cfg.Enterprise,
-		OAuth:      oauthDeps,
+		TokenReview:    tokenReview,
+		KeyExchangeTTL: cfg.KeyExchangeTTL,
+		Enterprise:     cfg.Enterprise,
+		OAuth:          oauthDeps,
 		AuthnOptions: pamw.AuthnOptions{
 			Challenge: func(*http.Request) string {
 				return `Bearer resource_metadata="` + strings.TrimRight(cfg.BaseURL, "/") + `/.well-known/oauth-protected-resource"`

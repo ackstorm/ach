@@ -148,8 +148,10 @@ The export renders the spec stored verbatim in `environments.spec` (jsonb,
 migration 000024 — written by the operator and the UI path), NOT the per-field
 columns: those carry the operator's runtime-group expansion and lack e.g.
 `budget`; they are rebuilt only for a row older than 000024. The forwarder's only remaining k8s read is the
-`ach-jwt-signing-keys` Secret informer; the platform-api's only remaining k8s
-touchpoint is the Dex leg of the OAuth AS.
+`ach-jwt-signing-keys` Secret informer; the platform-api's only k8s
+touchpoints are the Dex leg of the OAuth AS and TokenReview for
+`POST /platform/keys/exchange` (a cluster-wide `system:auth-delegator`
+ClusterRoleBinding; outside a cluster the route is not mounted).
 
 Content-service runs **by default** as a **sidecar in the operator Pod**
 (co-located because the artifact PVC is RWO) — no `ach-content-service`
@@ -172,7 +174,7 @@ CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
 NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 `ek_`/`pk_` keys and teams are platform-api/DB objects). Agents run under the separate
 `ach-agent` project (github.com/ackstorm/ach-agent), which uses ACH's public API only:
-`POST /platform/hydrate` and `GET /v2/model/info` with an `ek_` in `x-ach-key`, plus the
+`POST /platform/hydrate` and `GET /v2/model/info` with an `ek_` (or an exchanged ACH JWT, `POST /platform/keys/exchange`) in `x-ach-key`, plus the
 model and MCP routes.
 
 The architecture is **5 logic modes** (operator, platform-api, forwarder,
@@ -198,6 +200,32 @@ It is read fresh on every create and never seeded at login; admins are not
 exempt and grant themselves with `PATCH /platform/admin/users/{email}/limits`.
 That admin route accepts `{"max_keys": N}` (N >= 0), upserts the Postgres row,
 returns 204, and takes effect on the next create without a cache delay.
+
+Key exchange (`POST /platform/keys/exchange`, outside the `pk_`/`ek_` Authn
+subtree): `Authorization: Bearer <pod-bound ServiceAccount token>` whose
+audience is `ACH_BASE_URL` without a trailing slash, body
+`{"identity","environment"}`. Guards before any API-server call: a compact
+JWS whose unverified `aud` names that audience (else 401 `invalid_token`),
+then a per-client (first `X-Forwarded-For` hop) and global rate limit (429
+`rate_limited`). Then, first failure answers: TokenReview (authenticated,
+audience, `system:serviceaccount:`, pod-name + pod-uid extras; 401
+`invalid_token`), ONE `KeyGrant` naming identity + Environment + `<ns>/<sa>`
+together (403 `not_granted` for every miss; the audit names which), the
+Environment exists and is synced (404/503), the identity's teams ∩
+`authorizedTeams` (403 `unauthorized_team`). Success: the tuple's ONE stable
+`ek_` (`issued_via='exchange'`, `requester`, name `exchange:<ns>/<sa>`,
+minted on first use by the create path's `mint`; the partial unique index
+`environment_keys_exchange_tuple_uniq` makes racing first exchanges converge;
+it never counts against `max_keys`; a suspended one is 409 `key_suspended`;
+its `key:<id>` budget is the lowest covering `spec.budget`) and a JWT
+`iss=ACH_BASE_URL aud=ach-ek sub=<ekid_> jti`, lifetime
+`platformApi.keyExchange.tokenTTL` → `ACH_KEY_EXCHANGE_TOKEN_TTL` (15m, min
+1m), answered as `{token, expires_in, key_id}`. The raw `ek_` never leaves
+ACH. `keystore.NewExchangeResolver` (forwarder, content-service,
+platform-api; wraps the OAuth resolver inside the Redis cache) accepts that JWT
+wherever an `ek_` goes (`x-ach-key` or `Authorization`) only while a grant
+still allows its tuple. One `platform.ek.exchange` audit event per request,
+never a token.
 
 Login team enrolment (`platformApi.teams` → `ACH_TEAMS_DEFAULT`/`_USER`/`_SSO`, JSON):
 at every interactive login (`as-callback` — CLI loopback, device grant, console;

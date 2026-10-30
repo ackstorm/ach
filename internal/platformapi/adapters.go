@@ -78,3 +78,11 @@ func (a *redisDelAdapter) Del(ctx context.Context, key string) error {
 	}
 	return a.client.Del(ctx, key).Err()
 }
+
+func (a *envkeysDBAdapter) ListKeyGrantsForIdentity(ctx context.Context, ns, identity string) ([]db.KeyGrantRow, error) {
+	return db.ListKeyGrantsForIdentity(ctx, a.pool, ns, identity)
+}
+
+func (a *envkeysDBAdapter) FindExchangeKey(ctx context.Context, owner, environment, requester string) (*db.EkKeyInfo, error) {
+	return db.FindExchangeKey(ctx, a.pool, owner, environment, requester)
+}

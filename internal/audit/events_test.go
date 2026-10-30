@@ -24,6 +24,7 @@ func TestEventConstantsAreStable(t *testing.T) {
 	}{
 		// Actions — Hub §18.2
 		{"ActionEkCreate", audit.ActionEkCreate, "platform.ek.create"},
+		{"ActionEkExchange", audit.ActionEkExchange, "platform.ek.exchange"},
 		{"ActionEkRevoke", audit.ActionEkRevoke, "platform.ek.revoke"},
 		{"ActionPkRevoke", audit.ActionPkRevoke, "platform.pk.revoke"},
 		{"ActionHydrate", audit.ActionHydrate, "platform.hydrate"},
@@ -39,6 +40,11 @@ func TestEventConstantsAreStable(t *testing.T) {
 		{"OutcomeMissingEnvironment", audit.OutcomeMissingEnvironment, "missing_environment"},
 		{"OutcomeEnvironmentNotFound", audit.OutcomeEnvironmentNotFound, "environment_not_found"},
 		{"OutcomeNotReady", audit.OutcomeNotReady, "not_ready"},
+		{"OutcomeIssued", audit.OutcomeIssued, "issued"},
+		{"OutcomeInvalidToken", audit.OutcomeInvalidToken, "invalid_token"},
+		{"OutcomeNotGranted", audit.OutcomeNotGranted, "not_granted"},
+		{"OutcomeRateLimited", audit.OutcomeRateLimited, "rate_limited"},
+		{"OutcomeKeySuspended", audit.OutcomeKeySuspended, "key_suspended"},
 		{"OutcomeDefaultTeamMissing", audit.OutcomeDefaultTeamMissing, "default_team_missing"},
 		{"OutcomeInvalidKeyType", audit.OutcomeInvalidKeyType, "invalid_key_type"},
 		{"OutcomeNotAdmin", audit.OutcomeNotAdmin, "not_admin"},

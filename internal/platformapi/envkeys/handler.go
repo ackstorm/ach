@@ -148,6 +148,9 @@ type CreateResponse struct {
 // envelope code for malformed requests.
 const codeInvalidArgument = "invalid_argument"
 
+// issuedViaExchange marks a key minted by POST /platform/keys/exchange.
+const issuedViaExchange = "exchange"
+
 // codeKeyLimitReached is the 403 outcome when the caller already holds as
 // many non-revoked ek_ keys as their ceiling allows.
 const codeKeyLimitReached = "key_limit_reached"
@@ -338,6 +341,10 @@ type createReq struct {
 	// (platform.ek.create, platform.ek.exchange); extra rides on each event.
 	action string
 	extra  map[string]string
+	// requester ("<namespace>/<serviceaccount>") and xdb are set only by
+	// POST /platform/keys/exchange: they make mint issue an exchange key.
+	requester string
+	xdb       exchangeDB
 }
 
 // emitInternalError audits + renders the §15.5 500 internal_error envelope
@@ -586,6 +593,10 @@ func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string
 			"ach_issuer":      deps.Issuer,
 		},
 	}
+	if cr.requester != "" {
+		keyReq.Metadata["ach_issued_via"] = issuedViaExchange
+		keyReq.Metadata["ach_requester"] = cr.requester
+	}
 	keyResp, err := deps.LiteLLM.KeyGenerate(ctx, keyReq)
 	if err != nil && isEnterpriseTagsRejection(err) {
 		// §6.3's `tags` is a LiteLLM Enterprise-only feature; an OSS
@@ -641,6 +652,10 @@ func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string
 		LiteLLMKeyMaterial: &llMaterial,
 		ExpiresAt:          cr.expiresAt,
 	}
+	if cr.requester != "" {
+		insertRow.IssuedVia = issuedViaExchange
+		insertRow.Requester = &cr.requester
+	}
 	insertErr := deps.DB.InsertEnvironmentKey(ctx, insertRow)
 	if insertErr != nil {
 		class := classifyInsertError(insertErr)
@@ -657,6 +672,25 @@ func (cr *createReq) mint(env *db.EnvironmentRow, userID string) (string, string
 				}
 			}
 		}
+	}
+	if insertErr != nil && cr.xdb != nil && classifyInsertError(insertErr) == insertErrExchangeTuple {
+		// A concurrent first exchange for the same tuple won the partial
+		// unique index: drop the LiteLLM key minted here, answer with the
+		// winner's row.
+		compCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if cleanupErr := deps.LiteLLM.RevokeKey(compCtx, llToken); cleanupErr != nil {
+			deps.Logger.Error("envkeys.exchange: race-loser RevokeKey failed", "key_id", keyID, "err", cleanupErr)
+		}
+		cancel()
+		winner, err := cr.xdb.FindExchangeKey(ctx, cr.keyCtx.OwnerEmail, cr.req.Environment, cr.requester)
+		if err == nil && winner == nil {
+			err = errors.New("exchange tuple taken but no live row found")
+		}
+		if err != nil {
+			cr.emitInternalError("envkeys.exchange: read race winner", err)
+			return "", "", false
+		}
+		return winner.KeyID, "", true
 	}
 	if insertErr != nil {
 		// Compensation: RevokeKey under a fresh context so caller
@@ -703,6 +737,7 @@ type insertErrClass int
 const (
 	insertErrOther insertErrClass = iota
 	insertErrEkidCollision
+	insertErrExchangeTuple
 )
 
 // classifyInsertError inspects a db.InsertEnvironmentKey error and
@@ -725,6 +760,9 @@ func classifyInsertError(err error) insertErrClass {
 	//   unique violation.
 	if pgErr.ConstraintName == "environment_keys_pkey" {
 		return insertErrEkidCollision
+	}
+	if pgErr.ConstraintName == db.ExchangeTupleConstraint {
+		return insertErrExchangeTuple
 	}
 	return insertErrOther
 }
