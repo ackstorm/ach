@@ -29,6 +29,7 @@ Activation: `make e2e-run` (builds `bin/ach` + `bin/ach-cli` with
 | `phase6_helpers_test.go`              | Phase 06 helpers (`phase6SuiteGuard`, `phase6WriteTempConfig`, `phase6NormalizeHydrate`, `phase6RunAch`)                |
 | `oauth_login_helpers_test.go`         | `oauthLogin` (loopback ceremony → token pair, the user's credential everywhere) + `writeCLIConfig` (stages an OAuth profile) |
 | `device_grant_test.go`                | RFC 8628 device grant end to end: AS endpoints, the verification page, the real `ach-cli login --no-browser`            |
+| `key_exchange_test.go`                | `TestKeyExchange` — real pod-bound ServiceAccount token + real TokenReview: guards (ek_, OAuth JWT, wrong audience, unbound token → 401), not_granted, KeyGrant Ready, stable key reused across exchanges, the JWT on forwarder (x-ach-key + Authorization), hydrate and content-service, `platform.ek.exchange` audit without credentials, admin/edit cannot write keygrants, grant removal → 401 within the cache window and the key revoked |
 
 ## Focused dev loop
 

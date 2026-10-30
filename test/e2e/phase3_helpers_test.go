@@ -206,7 +206,14 @@ func phase3AssertAuditOBS02(t *testing.T, rec phase3AuditRecord) {
 	if rec.Timestamp == "" {
 		t.Errorf("OBS-02: audit record missing timestamp: %s", rec.rawLine)
 	}
-	if rec.Actor == "" {
+	if rec.Action == "platform.ek.exchange" {
+		// The caller is a ServiceAccount (system:serviceaccount:<ns>:<sa>)
+		// once TokenReview passes, and nobody before it.
+		if rec.Actor != "" && !strings.HasPrefix(rec.Actor, "system:serviceaccount:") {
+			t.Errorf("OBS-02: exchange actor must be empty or a ServiceAccount, got %q: %s",
+				rec.Actor, rec.rawLine)
+		}
+	} else if rec.Actor == "" {
 		t.Errorf("OBS-02: audit record missing actor: %s", rec.rawLine)
 	} else if !strings.Contains(rec.Actor, "/") {
 		t.Errorf("OBS-02: actor must be <namespace>/<email>, got %q: %s",
