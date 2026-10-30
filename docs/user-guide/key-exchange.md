@@ -93,7 +93,7 @@ previous one, which stays valid until it expires.
 | 404 | `environment_not_found` | no such Environment |
 | 503 | `not_ready` | the Environment is not synced yet, or TokenReview is unavailable |
 | 403 | `unauthorized_team` | the identity's teams do not intersect `authorizedTeams` |
-| 409 | `key_suspended` | the exchange key was suspended by its owner |
+| 409 | `key_suspended` | the exchange key was suspended (by its owner or an admin) |
 
 The JWT's lifetime (and the response's `expires_in`) is
 `platformApi.keyExchange.tokenTTL` (default `15m`, minimum `1m`).
@@ -128,7 +128,14 @@ recorded.
   on TokenReview calls; a caller presenting junk with a matching audience can
   consume it.
 - A JWT is a bearer token valid until it expires; deleting the pod does not
-  revoke a JWT already issued. After a pod or grant is removed, exposure is
-  bounded by the JWT lifetime (15 minutes by default) and the resolver cache
-  (60 seconds). TokenReview itself accepts a deleted pod's token for up to 60
-  seconds.
+  revoke a JWT already issued. After a pod is deleted, exposure is bounded by
+  the JWT lifetime (`tokenTTL`, 15 minutes by default) plus TokenReview's own
+  cache, which accepts a deleted pod's token for up to 60 seconds.
+- Grant removal, key revoke and key suspend take effect within the 60 second
+  resolver cache; suspend does not purge the cached JWT resolutions. When the
+  operator revokes a key, forwarded LiteLLM traffic stops at once because the
+  LiteLLM key is revoked first, while hydrate and content reads can keep
+  working for up to 60 seconds.
+- The identity's own user can `PATCH /platform/keys/{id}/budget` on an exchange
+  key, but the grant's ceiling is re-applied at the next exchange (about every
+  JWT lifetime) or, at the latest, by the operator sweep within 5 minutes.

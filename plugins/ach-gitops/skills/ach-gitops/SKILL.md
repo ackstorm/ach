@@ -1,6 +1,6 @@
 ---
 name: ach-gitops
-description: "Write, review and fix ACH (Agent Capability Hub) custom resources in a GitOps repo: Environment, PluginMarketplace, Plugin, SkillMarketplace, Skill, Prompt, Artifact, BackendIdentityPolicy and LiteLLMConnection (apiVersion ach.ackstorm.ai/v1alpha1). Use whenever you edit or review YAML of these kinds, grant models, MCP servers, A2A agents, guardrails, plugins or skills to LiteLLM teams through an Environment, set an Environment budget, add a plugin or skill marketplace from GitHub or GitLab, wire authSecretRef for a private repo, turn on the ACH identity JWT for an MCP or A2A backend, or debug an ACH resource that is not Synced, SourceReachable or Available (UnresolvedReferences, UpstreamInvalid, ResourceUnresolved, ShellTeamFailed). Not for day-to-day ach-cli use or for installing the Helm chart."
+description: "Write, review and fix ACH (Agent Capability Hub) custom resources in a GitOps repo: Environment, PluginMarketplace, Plugin, SkillMarketplace, Skill, Prompt, Artifact, BackendIdentityPolicy, KeyGrant and LiteLLMConnection (apiVersion ach.ackstorm.ai/v1alpha1). Use whenever you edit or review YAML of these kinds, grant models, MCP servers, A2A agents, guardrails, plugins or skills to LiteLLM teams through an Environment, set an Environment budget, add a plugin or skill marketplace from GitHub or GitLab, wire authSecretRef for a private repo, turn on the ACH identity JWT for an MCP or A2A backend, let a pod ServiceAccount exchange its token for an Environment credential with a KeyGrant, or debug an ACH resource that is not Synced, SourceReachable or Available (UnresolvedReferences, UpstreamInvalid, ResourceUnresolved, ShellTeamFailed, IdentityUnknown, EnvironmentMissing). Not for day-to-day ach-cli use or for installing the Helm chart."
 ---
 
 # Writing ACH custom resources
@@ -28,13 +28,14 @@ user/agent: ach-cli env hydrate <env>  -> manifest + plugins/skills/prompts/arti
             ek-/pk- key or OAuth token  -> forwarder -> LiteLLM (models, /mcp, /a2a)
 ```
 
-The kinds fall into four groups:
+The kinds fall into five groups:
 
 | Family | Kinds | What the operator does |
 |--------|-------|------------------------|
 | Grant | `Environment` | Resolves names against LiteLLM and writes one LiteLLM access group per Environment, bound to the `authorizedTeams` |
 | Content | `Plugin`, `Skill`, `Prompt`, `Artifact`, `PluginMarketplace`, `SkillMarketplace` | Polls an upstream source on `spec.refresh`, validates it, caches it; hydrate serves it |
 | Identity | `BackendIdentityPolicy` | Tells the forwarder to sign a JWT for one `/mcp/<name>` or `/a2a/<name>` route |
+| Exchange | `KeyGrant` | Projects the grant to Postgres; platform-api lets a named pod ServiceAccount exchange its token for a JWT of one identity's key in one Environment; the operator revokes keys no grant allows any more |
 | Connection | `LiteLLMConnection` | The single `default` link to LiteLLM, normally created by the operator from Helm values |
 
 An Environment is the unit people see (`ach-cli env list`), hydrate, and mint `ek-`
@@ -51,6 +52,7 @@ user's agent tool by `ach-cli env hydrate`.
 | A PluginMarketplace or SkillMarketplace, `name@marketplace` refs, filters, what a valid plugin or skill directory needs | `references/marketplaces.md` |
 | A standalone Plugin, Skill, Prompt or Artifact | `references/objects.md` |
 | A BackendIdentityPolicy (JWT to an MCP/A2A backend, consent broker) or the LiteLLMConnection | `references/identity.md` |
+| A KeyGrant (ServiceAccount token exchange): fields, Ready reasons, who may write one | `references/keygrant.md` |
 | A resource that is not Ready: condition, reason, cause, fix | `references/troubleshooting.md` |
 
 ## Workflow

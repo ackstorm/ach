@@ -124,6 +124,7 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.teams.default` | `[default]` | LiteLLM team aliases every user joins at login (`ACH_TEAMS_DEFAULT`). At least one. |
 | `platformApi.teams.users` | `{}` | email → team aliases (`ACH_TEAMS_USER`). |
 | `platformApi.teams.sso` | `{}` | Dex `groups` value → team aliases (`ACH_TEAMS_SSO`). |
+| `platformApi.keyExchange.tokenTTL` | `15m` | Lifetime of the JWT a ServiceAccount token exchange returns (`ACH_KEY_EXCHANGE_TOKEN_TTL`), minimum `1m`. Needs the audit policy noted in `SKILL.md`. |
 | `platformApi.console.chatUrl` | `""` | Chat button target in the console (`ACH_CONSOLE_CHAT_URL`). |
 | `platformApi.observability.*` | empty | Enterprise; see `references/enterprise.md`. |
 | `platformApi.initContainers` | `[]` | |
