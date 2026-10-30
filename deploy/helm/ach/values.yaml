@@ -159,7 +159,7 @@ platformApi:
     maxKeys: 0
   # keyExchange: POST /platform/keys/exchange trades a pod-bound ServiceAccount
   # token (plus a KeyGrant) for a short-lived ACH JWT. tokenTTL is that JWT's
-  # lifetime (Go duration, minimum 1m).
+  # lifetime (Go duration, 1m to 1h).
   keyExchange:
     tokenTTL: 15m
   # oauth.redirectHosts: hosts an OAuth client registered at /platform/oauth/register

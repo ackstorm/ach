@@ -181,10 +181,13 @@ the schema back. Full procedure: `references/upgrade.md`.
   its fix in `references/troubleshooting.md`.
 - **LiteLLM's own UI and admin API are not reachable through ACH.** Publish
   LiteLLM on its own host for `/ui`, `/key/*`, `/health`.
-- **Token exchange needs three things outside the values.** `platformApi.keyExchange.tokenTTL`
-  (default `15m`, minimum `1m`) sets the exchange JWT lifetime. The chart binds the
+- **Token exchange needs four things outside the values.** `platformApi.keyExchange.tokenTTL`
+  (default `15m`, between `1m` and `1h`) sets the exchange JWT lifetime. The chart binds the
   platform-api ServiceAccount to `system:auth-delegator` cluster-wide (TokenReview and
-  SubjectAccessReview only). The API server audit policy must log `tokenreviews` at level
+  SubjectAccessReview only). Platform-api also reads `/openid/v1/jwks` and
+  `/.well-known/openid-configuration` to verify the token's signature before TokenReview: the
+  default `system:service-account-issuer-discovery` ClusterRoleBinding allows it for every
+  authenticated ServiceAccount, so a cluster that removed it must restore it. The API server audit policy must log `tokenreviews` at level
   `Metadata`: at `Request` or `RequestResponse` the ServiceAccount token lands in the
   audit log (on EKS, check the control-plane audit policy). The chart also ships the
   `<release>-keygrant-editor` ClusterRole bound to nobody: bind it to platform admins only,

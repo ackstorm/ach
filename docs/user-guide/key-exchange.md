@@ -86,16 +86,16 @@ previous one, which stays valid until it expires.
 | Status | Code | Meaning |
 |---|---|---|
 | 400 | `invalid_argument` | body is not `{"identity","environment"}` |
-| 401 | `invalid_token` | not a pod-bound ServiceAccount token for this ACH (wrong audience, a token minted without a bound pod, a `pk_`/`ek_`/ACH JWT) |
+| 401 | `invalid_token` | not a pod-bound ServiceAccount token for this ACH (wrong audience, a token minted without a bound pod, a `pk_`/`ek_`/ACH JWT, or a token whose signature, issuer or expiry the cluster's ServiceAccount keys do not confirm) |
 | 429 | `rate_limited` | too many exchange requests from this client or overall |
 | 403 | `not_granted` | no single `KeyGrant` names this identity, Environment and ServiceAccount together |
 | 404 | `environment_not_found` | no such Environment |
-| 503 | `not_ready` | the Environment is not synced yet, or TokenReview is unavailable |
+| 503 | `not_ready` | the Environment is not synced yet, TokenReview is unavailable (it times out after 5 s), or the cluster's ServiceAccount keys cannot be read |
 | 403 | `unauthorized_team` | the identity's teams do not intersect `authorizedTeams` |
 | 409 | `key_suspended` | the exchange key was suspended (by its owner or an admin) |
 
 The JWT's lifetime (and the response's `expires_in`) is
-`platformApi.keyExchange.tokenTTL` (default `15m`, minimum `1m`).
+`platformApi.keyExchange.tokenTTL` (default `15m`, between `1m` and `1h`).
 
 The route is mounted only when platform-api has in-cluster Kubernetes
 configuration (for TokenReview) and the OAuth authorization server; otherwise
@@ -105,6 +105,13 @@ it answers 404.
 
 - The chart binds the platform-api ServiceAccount to `system:auth-delegator`
   cluster-wide, which allows TokenReview and SubjectAccessReview only.
+- Before TokenReview, platform-api verifies the token's signature against the
+  cluster's ServiceAccount JWKS (`GET /openid/v1/jwks` and
+  `GET /.well-known/openid-configuration`). Kubernetes lets any authenticated
+  caller read both through the default `system:service-account-issuer-discovery`
+  ClusterRoleBinding, so the chart adds no RBAC for them. A cluster that
+  removed or narrowed that binding must restore it for the platform-api
+  ServiceAccount, or every exchange answers 503 `not_ready`.
 - The API server stores TokenReview bodies, which contain the token, only under
   audit level `Request` or `RequestResponse`. Set level `Metadata` for
   `tokenreviews` in the API server audit policy (on EKS, check the control-plane
@@ -115,17 +122,22 @@ it answers 404.
 
 ## Audit
 
-Every exchange, granted or denied, emits one `platform.ek.exchange` audit
-event: actor (the ServiceAccount), requester, pod name and uid, identity,
+Every exchange that passes the signature check, granted or denied, emits one
+`platform.ek.exchange` audit event: actor (the ServiceAccount), requester, pod name and uid, identity,
 Environment, key id, outcome and, for a denial, the reason. No token is ever
 recorded.
+
+Requests rejected earlier (wrong audience, rate limit, a token the cluster's
+keys do not confirm) are not audited, because the caller is unauthenticated;
+they are counted in `ach_key_exchange_rejected_total{reason}` with reason
+`guard`, `rate_limited`, `invalid_signature` or `keys_unavailable`.
 
 ## Limits and residual exposure
 
 - The per-client rate limit keys on the first `X-Forwarded-For` hop, which a
   caller can forge. The global limit (10 requests per second) is the real bound
-  on TokenReview calls; a caller presenting junk with a matching audience can
-  consume it.
+  on TokenReview calls; it is charged only after the token's cluster signature
+  checks out, so an anonymous caller cannot consume it with forged tokens.
 - A JWT is a bearer token valid until it expires; deleting the pod does not
   revoke a JWT already issued. After a pod is deleted, exposure is bounded by
   the JWT lifetime (`tokenTTL`, 15 minutes by default) plus TokenReview's own

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
@@ -43,6 +45,11 @@ type ExchangeDeps struct {
 	Deps
 	ExchangeDB  exchangeDB
 	TokenReview TokenReviewFunc
+	// VerifySA checks the token's cluster signature, issuer and expiry before
+	// the global limit and TokenReview (SATokenVerifier.Verify).
+	VerifySA func(ctx context.Context, token string) error
+	// Metrics counts requests rejected before the audited stage; nil-tolerant.
+	Metrics *achmetrics.PlatformAPICollectors
 	Signer      jwt.Signer
 	// TTL is the exchanged JWT's lifetime (ACH_KEY_EXCHANGE_TOKEN_TTL).
 	TTL time.Duration
@@ -89,15 +96,21 @@ const (
 // the tuple's one stable ek_, minted on first use by the create path's mint.
 // The raw ek_ never leaves ACH.
 //
-// Two guards never reach the API server: the bearer must be a compact JWS
-// whose unverified aud names this ACH (401 invalid_token), then the
-// per-client and global rate limit (429) — after the first guard, so junk
-// cannot drain the budget that protects TokenReview. Then, first failure
-// answers: TokenReview (401 invalid_token), one grant allows the tuple (403
+// Before any API-server call, cheap guards run in order: the bearer must be
+// a compact JWS whose unverified aud names this ACH (401 invalid_token), the
+// per-client rate limit (429), then the token's signature, issuer and expiry
+// against the cluster's ServiceAccount JWKS (401 invalid_token; 503 not_ready
+// when no JWKS can be had), and only then the global rate limit (429) — so
+// neither junk nor forged tokens drain the budget that protects TokenReview.
+// Requests the guards reject are counted in
+// ach_key_exchange_rejected_total{reason}, never audited. Then, first
+// failure answers: body (400), TokenReview (401 invalid_token; 503 not_ready
+// on error or after 5 s), one grant allows the tuple (403
 // not_granted, one code for every miss; the audit names which), the
 // Environment exists and is synced (404 / 503), the identity's teams
 // intersect authorizedTeams (403 unauthorized_team). Exactly one
-// platform.ek.exchange audit event per request, never carrying a token.
+// platform.ek.exchange audit event per request that passes the signature
+// check, never carrying a token.
 func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 	aud := strings.TrimRight(d.Issuer, "/")
 	lim := newExchangeLimiter()
@@ -114,14 +127,34 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			render.Error(w, status, code, msg, reqID)
 		}
 
+		reject := func(status int, code, msg, reason string) {
+			if d.Metrics != nil {
+				d.Metrics.KeyExchangeRejected.WithLabelValues(reason).Inc()
+			}
+			render.Error(w, status, code, msg, reqID)
+		}
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || !keys.LooksLikeJWS(token) || !slices.Contains(keys.PeekAudience(token), aud) {
-			deny(http.StatusUnauthorized, audit.OutcomeInvalidToken, "a ServiceAccount token issued for this ACH is required", "bearer")
+			reject(http.StatusUnauthorized, audit.OutcomeInvalidToken, "a ServiceAccount token issued for this ACH is required", "guard")
 			return
 		}
-		if !lim.allow(middleware.ClientIP(r)) {
+		if !lim.allowClient(middleware.ClientIP(r)) {
 			w.Header().Set("Retry-After", "1")
-			deny(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "")
+			reject(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "rate_limited")
+			return
+		}
+		if err := d.VerifySA(ctx, token); err != nil {
+			if errors.Is(err, ErrSATokenInvalid) {
+				reject(http.StatusUnauthorized, audit.OutcomeInvalidToken, "invalid ServiceAccount token", "invalid_signature")
+				return
+			}
+			d.Logger.Error("envkeys.exchange: ServiceAccount keys unavailable", "err", err)
+			reject(http.StatusServiceUnavailable, audit.OutcomeNotReady, "token verification unavailable", "keys_unavailable")
+			return
+		}
+		if !lim.allowGlobal() {
+			w.Header().Set("Retry-After", "1")
+			reject(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "rate_limited")
 			return
 		}
 		var req ExchangeRequest
@@ -298,7 +331,9 @@ func newExchangeLimiter() *exchangeLimiter {
 	}
 }
 
-func (l *exchangeLimiter) allow(addr string) bool {
+func (l *exchangeLimiter) allowGlobal() bool { return l.global.Allow() }
+
+func (l *exchangeLimiter) allowClient(addr string) bool {
 	if host, _, err := net.SplitHostPort(addr); err == nil {
 		addr = host // RemoteAddr carries a per-connection port
 	}
@@ -312,5 +347,5 @@ func (l *exchangeLimiter) allow(addr string) bool {
 		c = rate.NewLimiter(exchangePerClientRate, exchangePerClientBurst)
 		l.clients[addr] = c
 	}
-	return c.Allow() && l.global.Allow()
+	return c.Allow()
 }

@@ -157,6 +157,9 @@ type Deps struct {
 	// TokenReview reviews ServiceAccount tokens for POST /platform/keys/exchange;
 	// nil (no in-cluster config) leaves the route unmounted.
 	TokenReview envkeys.TokenReviewFunc
+	// VerifySA verifies a ServiceAccount token's cluster signature before
+	// TokenReview; required with TokenReview.
+	VerifySA func(ctx context.Context, token string) error
 	// KeyExchangeTTL is the exchanged JWT's lifetime (ACH_KEY_EXCHANGE_TOKEN_TTL).
 	KeyExchangeTTL time.Duration
 }
@@ -266,10 +269,10 @@ func New(deps Deps) http.Handler {
 	// POST /platform/keys/exchange: the ServiceAccount token IS the credential,
 	// so the route sits outside the pk_/ek_ Authn subtree. It signs with the
 	// OAuth AS's signer.
-	if deps.TokenReview != nil && deps.OAuth != nil {
+	if deps.TokenReview != nil && deps.VerifySA != nil && deps.OAuth != nil {
 		r.Post("/platform/keys/exchange", envkeys.ExchangeHandler(envkeys.ExchangeDeps{
 			Deps: envkeysDeps, ExchangeDB: newEnvkeysDB(deps.Pool),
-			TokenReview: deps.TokenReview, Signer: deps.OAuth.Signer, TTL: deps.KeyExchangeTTL,
+			TokenReview: deps.TokenReview, VerifySA: deps.VerifySA, Metrics: deps.Metrics, Signer: deps.OAuth.Signer, TTL: deps.KeyExchangeTTL,
 		}))
 	}
 

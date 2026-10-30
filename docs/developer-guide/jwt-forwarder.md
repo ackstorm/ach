@@ -383,7 +383,7 @@ mints a LiteLLM key or user:
 
 `POST /platform/keys/exchange` (platform API) signs a JWT with the same
 Ed25519 slots: `iss` = `ACH_BASE_URL`, `aud` = `ach-ek`, `sub` = an exchange
-key id (`ekid_…`), `jti`, lifetime `ACH_KEY_EXCHANGE_TOKEN_TTL` (15 minutes).
+key id (`ekid_…`), `jti`, lifetime `ACH_KEY_EXCHANGE_TOKEN_TTL` (15 minutes by default, 1 minute to 1 hour).
 `keystore.NewExchangeResolver` wraps the OAuth resolver inside the Redis cache
 in the forwarder, content service and platform API: a JWS whose unverified
 `aud` is `ach-ek` is verified there and resolves to the exchange key — the same

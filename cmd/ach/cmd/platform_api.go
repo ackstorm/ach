@@ -64,6 +64,10 @@ import (
 // genaiProviderID is the OpenCode plugin's PROVIDER_ID pattern.
 var genaiProviderID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
+// maxKeyExchangeTTL caps the exchanged JWT's lifetime: it outlives a revoked
+// grant by its remaining TTL.
+const maxKeyExchangeTTL = time.Hour
+
 func init() {
 	rootCmd.AddCommand(platformAPICmd)
 }
@@ -127,7 +131,7 @@ type platformAPIConfig struct {
 	JWTSecretDir    string        // ACH_JWT_SECRET_DIR: ach-jwt-signing-keys mounted as files (the AS signs with it)
 	OAuthAccessTTL  time.Duration // ACH_OAUTH_ACCESS_TTL, default 1h
 	OAuthRefreshTTL time.Duration // ACH_OAUTH_REFRESH_TTL, default 720h
-	KeyExchangeTTL  time.Duration // ACH_KEY_EXCHANGE_TOKEN_TTL, default 15m, minimum 1m
+	KeyExchangeTTL  time.Duration // ACH_KEY_EXCHANGE_TOKEN_TTL, default 15m, 1m..1h
 }
 
 //nolint:gocyclo // linear env-to-config table
@@ -215,6 +219,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	if cfg.KeyExchangeTTL, err = config.MustEnvDurationAtLeast("ACH_KEY_EXCHANGE_TOKEN_TTL", 15*time.Minute, time.Minute); err != nil {
 		return nil, err
+	}
+	if cfg.KeyExchangeTTL > maxKeyExchangeTTL {
+		return nil, fmt.Errorf("config: ACH_KEY_EXCHANGE_TOKEN_TTL=%s is above maximum %s", cfg.KeyExchangeTTL, maxKeyExchangeTTL)
 	}
 	if cfg.Teams, err = teamPolicyFromEnv(); err != nil {
 		return nil, err
@@ -503,12 +510,13 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		return out, fmt.Errorf("keystore.NewCachedResolver: %w", err)
 	}
 
-	tokenReview, trErr := inClusterTokenReview()
+	tokenReview, verifySA, trErr := inClusterExchangeAuth()
 	if trErr != nil {
 		logger.Warn("POST /platform/keys/exchange disabled: no in-cluster Kubernetes config", "err", trErr)
 	}
 	out.server = platformapi.Deps{
 		TokenReview:    tokenReview,
+		VerifySA:       verifySA,
 		KeyExchangeTTL: cfg.KeyExchangeTTL,
 		Enterprise:     cfg.Enterprise,
 		OAuth:          oauthDeps,

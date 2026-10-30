@@ -354,6 +354,7 @@ func TestServer_MountsKeyExchangeOutsideAuthn(t *testing.T) {
 		t.Error("the guard must answer before TokenReview")
 		return authnv1.TokenReviewStatus{}, nil
 	}
+	deps.VerifySA = func(context.Context, string) error { return nil }
 	deps.KeyExchangeTTL = 15 * time.Minute
 	h := New(deps)
 

@@ -205,3 +205,16 @@ func TestValidatePlatformAPIConfig_RetiredMCPEnabledEnvironmentsIgnored(t *testi
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestValidatePlatformAPIConfig_KeyExchangeTTL(t *testing.T) {
+	for ttl, ok := range map[string]bool{"59s": false, "1m": true, "1h": true, "61m": false} {
+		t.Run(ttl, func(t *testing.T) {
+			setRequiredPlatformAPIEnv(t)
+			t.Setenv("ACH_KEY_EXCHANGE_TOKEN_TTL", ttl)
+			_, err := validatePlatformAPIConfig()
+			if (err == nil) != ok {
+				t.Fatalf("ttl %s: err = %v, want ok=%v", ttl, err, ok)
+			}
+		})
+	}
+}

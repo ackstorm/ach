@@ -16,12 +16,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	authnv1 "k8s.io/api/authentication/v1"
 
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keystore"
+	achmetrics "github.com/ackstorm/ach/internal/metrics"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -91,6 +94,7 @@ type exchangeFixture struct {
 	audit        *bytes.Buffer
 	review       TokenReviewFunc
 	reviews      int
+	verify       func(ctx context.Context, token string) error
 	lastAudience string
 	handler      http.HandlerFunc
 }
@@ -111,6 +115,12 @@ func newExchangeFixture(t *testing.T) *exchangeFixture {
 		t.Fatal(err)
 	}
 	f.deps = ExchangeDeps{Deps: deps, ExchangeDB: f.xdb, Signer: f.signer, TTL: 15 * time.Minute,
+		VerifySA: func(ctx context.Context, tok string) error {
+			if f.verify != nil {
+				return f.verify(ctx, tok)
+			}
+			return nil
+		},
 		TokenReview: func(ctx context.Context, tok, aud string) (authnv1.TokenReviewStatus, error) {
 			f.reviews++
 			f.lastAudience = aud
@@ -473,5 +483,49 @@ func TestExchange_NewKeyBudgetWriteFailureAuditsOnce(t *testing.T) {
 	}
 	if n := strings.Count(f.audit.String(), `"action":"`+audit.ActionEkExchange+`"`); n != 1 {
 		t.Fatalf("want exactly one exchange audit event, got %d: %s", n, f.audit)
+	}
+}
+
+func TestExchange_UnverifiedTokenNeverReachesGlobalLimitOrTokenReview(t *testing.T) {
+	f := newExchangeFixture(t)
+	f.verify = func(context.Context, string) error { return ErrSATokenInvalid }
+	for i := 0; i < exchangeGlobalBurst+20; i++ {
+		rec := f.do(t, saToken(exAudience), okBody, fmt.Sprintf("10.2.%d.%d:1", i/250, i%250))
+		if rec.Code != http.StatusUnauthorized || errorCode(t, rec) != "invalid_token" {
+			t.Fatalf("request %d: %d %s", i, rec.Code, rec.Body)
+		}
+	}
+	if f.reviews != 0 {
+		t.Fatalf("TokenReview called %d times for unverified tokens", f.reviews)
+	}
+	f.verify = nil
+	if rec := f.do(t, saToken(exAudience), okBody, "10.9.9.9:1"); rec.Code != http.StatusOK {
+		t.Fatalf("a real agent was starved by forged tokens: %d %s", rec.Code, rec.Body)
+	}
+	if strings.Count(f.audit.String(), "\n") != 1 {
+		t.Fatalf("rejected requests must not be audited; log: %s", f.audit)
+	}
+}
+
+func TestExchange_KeysUnavailableIs503NotReady(t *testing.T) {
+	f := newExchangeFixture(t)
+	f.verify = func(context.Context, string) error { return ErrSAKeysUnavailable }
+	rec := f.do(t, saToken(exAudience), okBody, "")
+	if rec.Code != http.StatusServiceUnavailable || errorCode(t, rec) != "not_ready" || f.reviews != 0 {
+		t.Fatalf("%d %s reviews=%d", rec.Code, rec.Body, f.reviews)
+	}
+}
+
+func TestExchange_RejectionsAreCounted(t *testing.T) {
+	f := newExchangeFixture(t)
+	reg := prometheus.NewRegistry()
+	f.deps.Metrics = achmetrics.NewPlatformAPICollectors(reg)
+	f.verify = func(context.Context, string) error { return ErrSATokenInvalid }
+	f.do(t, "", okBody, "")
+	f.do(t, saToken(exAudience), okBody, "")
+	for reason, want := range map[string]float64{"guard": 1, "invalid_signature": 1} {
+		if got := testutil.ToFloat64(f.deps.Metrics.KeyExchangeRejected.WithLabelValues(reason)); got != want {
+			t.Errorf("%s = %v, want %v", reason, got, want)
+		}
 	}
 }
