@@ -500,7 +500,7 @@ cleaned up — the warm caches are what the retry needs.
 
 Service-specific debugging (content-service 404, forwarder JWT 401,
 SourceReachable rate-limit, AccessGroupSynced, hydrate-golden diff, mcp-echo,
-ConflictWithUIRow (dormant/reserved — no UI write path in v1alpha1),
+ConflictWithUIRow (dormant — the Environment upsert takes over UI rows),
 stale image roll) → **`references/troubleshooting.md`**. The
 seven below are the cross-cutting workflow traps:
 

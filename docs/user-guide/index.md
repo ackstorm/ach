@@ -1,6 +1,10 @@
 # User Guide
 
-TODO: Per-CRD usage guides — `Environment`, `Plugin`, `PluginMarketplace`, `Artifact`, `Prompt`, `BackendIdentityPolicy`.
+Writing ACH's custom resources (`Environment`, `Plugin`, `PluginMarketplace`,
+`Skill`, `SkillMarketplace`, `Prompt`, `Artifact`, `BackendIdentityPolicy`) is
+covered by the `ach-gitops` agent skill
+([`plugins/ach-gitops/skills/ach-gitops/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-gitops/skills/ach-gitops));
+field-by-field detail is in the [API reference](../api-reference/ach.ackstorm.ai.md).
 
 ## Choosing a key: `pk_` vs `ek_`
 

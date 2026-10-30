@@ -1,7 +1,7 @@
 {
   "name": "ach-install",
   "description": "Install, configure and upgrade ACH on Kubernetes with its Helm chart: prerequisites (Postgres, Valkey, Dex, LiteLLM), values, sign-in, topology, Enterprise features and post-install checks.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "ACKstorm",
     "url": "https://github.com/ackstorm/ach"

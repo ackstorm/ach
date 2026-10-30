@@ -82,7 +82,6 @@ extraEnv:
 | `image.tag` | the chart's version | Pin it. |
 | `image.pullPolicy` | `IfNotPresent` | `Always` is fine in production. |
 | `image.rebuildId` | `""` | Dev only: a changing value forces a roll when the same tag is rebuilt. Leave empty. |
-| `watchNamespace` | `""` | Not consumed by the deployments in the current chart (only echoed by `NOTES.txt`); the operator watches the release namespace. |
 | `extraEnv` | `[]` | `{name, value|valueFrom}` items added to every component and the migrate Job. Where `ACH_BASE_URL`, `ACH_DB_URL`, Redis and Dex settings live. |
 | `initContainers` | `[]` | Raw init containers added to every ACH Deployment (not the migrate Job). Use a bounded wait, never an endless loop. |
 
@@ -116,7 +115,7 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.enabled` | `true` | REST API, OAuth server, console. |
 | `platformApi.replicas` | `1` | |
 | `platformApi.resources` | `{}` | |
-| `platformApi.admins` | (not in values.yaml) | List of admin emails, rendered into the `ach-platform-api-admins` ConfigMap. Empty = every admin route 403. |
+| `platformApi.admins` | `[]` | List of admin emails, rendered into the `ach-platform-api-admins` ConfigMap. Empty = every admin route 403. |
 | `platformApi.headers` | `x-ach-key`, `x-api-key` (both `resolve`) | `ACH_CREDENTIAL_HEADERS`. `resolve` only; `passthrough` or `authorization` refuse to start. |
 | `platformApi.userDefaults.maxBudget` | `""` | Per-user spend ceiling seeded at login (`ACH_USER_MAX_BUDGET`). `""` = no cap, `0` = refuse everything. |
 | `platformApi.userDefaults.budgetDuration` | `"30d"` | Reset window (`ACH_USER_BUDGET_DURATION`), rendered only with a `maxBudget`. |

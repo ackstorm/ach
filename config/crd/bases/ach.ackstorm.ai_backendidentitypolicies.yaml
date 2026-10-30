@@ -127,7 +127,7 @@ spec:
               shadow resolution. Multiple CRs targeting the same (kind, name) are
               allowed; the Forwarder's runtime read path resolves the duplicate
               deterministically by sorting matching CRs by metadata.name ASC and
-              using the LAST entry's forwardIdentityJWT value. Operators wanting
+              using the FIRST entry's forwardIdentityJWT value. Operators wanting
               different precedence rename their CRs. This is intentional —
               operator stays dumb, user owns the CR set, no Synced=DuplicateTarget
               condition is written.
@@ -136,7 +136,7 @@ spec:
                 description: |-
                   Conditions is reserved for future per-CR status surfaces. It is
                   NOT populated today — duplicate targets are resolved by the
-                  Forwarder at read time (alphabetically-LAST CR wins) without any
+                  Forwarder at read time (alphabetically-FIRST CR wins) without any
                   operator-side status churn.
                 items:
                   description: Condition contains details for one aspect of the current

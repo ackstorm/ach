@@ -15,6 +15,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - The OpenCode onboarding skill (`<provider>-ach`) is a bootstrap only: install
   `ach-cli`, sign in, list Environments, hydrate the default Environment. The
   rest moved to the `ach-cli` plugin, which the default Environment should carry.
+- Chart `NOTES.txt` describes this chart (9 CRDs managed by Helm, the operator
+  creating `LiteLLMConnection/default`); `platformApi.admins` is declared in
+  `values.yaml`; the unused `watchNamespace` value is gone.
+
+### Fixed
+- `BackendIdentityPolicy` docs: when several policies target the same backend,
+  the alphabetically FIRST one wins (the docs said last).
 
 ## [1.0.1] - 2026-10-30
 

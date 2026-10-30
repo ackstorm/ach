@@ -6,8 +6,8 @@
 # enable only the components they need (operator-only baseline, full hub, etc).
 #
 # CRDs are installed by default (helm.sh/resource-policy: keep). External
-# Postgres and Redis are assumed — embedded subcharts are out of scope for
-# the v0.0.1 baseline; use bitnami/postgresql + bitnami/valkey alongside.
+# Postgres and Valkey/Redis are assumed — the chart embeds neither; run e.g.
+# bitnami/postgresql + bitnami/valkey alongside.
 
 # installCRDs: when true (default), the chart ships every CRD in
 # crd-sources/ as a managed Helm resource. `helm upgrade` then upgrades
@@ -46,19 +46,13 @@ image:
   # `$(date +%s)` on each hydrate_ach.
   rebuildId: ""
 
-# watchNamespace: empty = cluster-scoped; non-empty = namespace-scoped.
-# Maps to WATCH_NAMESPACE env var on operator Deployment.
-watchNamespace: ""
-
 # operator: reconciles the ACH CRDs (Environment, Plugin, Skill, etc).
 #
 # Default args bind the controller-runtime metricsserver on :8080
 # (HTTP, no auth) so the Pod-level prometheus.io/scrape annotation
 # in operator-deployment.yaml actually resolves to a live endpoint.
-# Phase 5 OBS-03..06 + SC#5 wiring — the operator's :8080/metrics
-# surfaces controller_runtime_reconcile_*, workqueue_*, plus the
-# shared ach_litellm_unreachable_total{caller="operator"} registered by
-# Plan 05-06 Task 5.
+# The operator's :8080/metrics surfaces controller_runtime_reconcile_*,
+# workqueue_*, plus the shared ach_litellm_unreachable_total{caller="operator"}.
 #
 # To switch to secure metrics (TLS + authn/authz on :8443) for
 # deployers running cert-manager + Prometheus with bearer-token
@@ -118,6 +112,11 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
+  # admins: emails allowed on the admin endpoints (ach-cli admin …, the
+  # console's admin views), mounted as /etc/ach/admins/admins.txt. Read once
+  # at start and matched case-sensitively, so a change needs a platform-api
+  # restart. Empty = no admins (every admin call is 403 not_admin).
+  admins: []
   # headers: the credential slots platform-api reads, in order (same shape as
   # forwarder.headers). resolve only — platform-api does not proxy, so a
   # passthrough entry is refused at start-up. Authorization: Bearer is
@@ -275,8 +274,9 @@ forwarder:
 # litellmConnection — the SINGLE place to configure the ACH↔LiteLLM wire.
 # Configure endpoint + master-key Secret ref here ONCE; the chart fans it
 # out to every consumer:
-#   - renders LiteLLMConnection/default (operator reconciles it → Postgres
-#     projection that the forwarder + Environment controller read), and
+#   - feeds the operator, which creates and keeps LiteLLMConnection/default
+#     (→ the Postgres projection the forwarder + Environment controller
+#     read), and
 #   - derives ACH_LITELLM_BASE_URL + ACH_LITELLM_MASTER_KEY env for
 #     platform-api + content-service (via the ach.litellmConnectionEnv
 #     helper), and
@@ -329,7 +329,7 @@ security:
 # config (/clients/opencode/config) and the plugin's options in
 # /.well-known/opencode carry.
 # Format: ^[a-z0-9][a-z0-9-]{0,63}$ (platform-api refuses to start otherwise).
-# It also names the onboarding skill the config ships, "<providerName>-api",
+# It also names the onboarding skill the config ships, "<providerName>-ach",
 # which must be kebab-case and at most 64 chars (also refused at start).
 # Keep it stable: the plugin keeps its data under ~/.local/share/opencode/<name>/
 # and OpenCode keys the user's credentials by it — changing it signs users out.
@@ -351,12 +351,13 @@ genai:
   # Empty = off.
   defaultModel: ""
   defaultSmallModel: ""
-  # The Environment the onboarding skill (<providerName>-api, shipped by
+  # The Environment the onboarding skill (<providerName>-ach, shipped by
   # /clients/opencode/config) tells users to hydrate globally:
   # `ach-cli env hydrate <defaultEnvironment> -g`. Empty = no such step.
-  # (Replaces mcpEnabledEnvironments: the config no longer carries MCP
-  # servers, they come from a hydrated Environment; a leftover
-  # mcpEnabledEnvironments value is ignored.)
+  # List ach-cli@<marketplace> in it (docs/user-guide/agent-plugins.md): the
+  # skill hands every later step over to that plugin. MCP servers reach
+  # OpenCode only from a hydrated Environment; a leftover
+  # mcpEnabledEnvironments value is ignored.
   defaultEnvironment: ""
   # defaultEnvironment: ackstorm
 
@@ -493,7 +494,7 @@ ingress:
   service: ach-gateway
   port: 80
 
-# metrics: Prometheus observability topology — Phase 5 OBS-03..06.
+# metrics: Prometheus observability topology.
 #
 # Each long-running service exposes GET /metrics on its main traffic
 # listener:
@@ -523,15 +524,14 @@ ingress:
 # pod-scrape annotations. examples/prometheus-servicemonitor.yaml is the
 # equivalent standalone manifest for non-Helm / reference use.
 #
-# Spec v4 §5.2 RBAC reversal — Content Service no longer holds
-# informers over ACH CRDs (Phase 5 D-Discretion + Plan 05-06). The
-# contract is enforced AT THE GO CODE LEVEL: cmd/ach/cmd/content_service.go
+# Content Service holds no informers over ACH CRDs. The contract is
+# enforced AT THE GO CODE LEVEL: cmd/ach/cmd/content_service.go
 # does NOT construct a controller-runtime manager.Manager. At the
 # K8s RBAC level the CS container shares the ach-operator
 # ServiceAccount (RWO PVC co-location), so `kubectl auth can-i list
 # environments.ach.ackstorm.ai --as=system:serviceaccount:<ns>:ach-operator`
-# returns "yes" — that grant is needed by the OPERATOR reconcilers
-# (Phase 1 Plan 01-09); CS code never exercises it.
+# returns "yes" — that grant is needed by the OPERATOR reconcilers;
+# CS code never exercises it.
 #
 # metrics.serviceMonitor: render a prometheus-operator ServiceMonitor
 # (templates/servicemonitor.yaml) covering forwarder, platform-api,

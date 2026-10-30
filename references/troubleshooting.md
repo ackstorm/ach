@@ -37,7 +37,7 @@ exist. Fix is a rolling image update; no data migration.
 ```bash
 # /platform/oauth/as-callback?code=…&state=<pendingID>  → 400 (HTML)
 ```
-✅ Since v0.9.1 `/authorize` sets a per-pending browser-binding cookie
+✅ `/authorize` sets a per-pending browser-binding cookie
 (`__Host-ach_oauth_<pendingID>` on https, `ach_oauth_<pendingID>` on a
 plain-http base, `SameSite=Lax`, 10 min) and `/as-callback` requires it to
 match the pending record before minting a code. The 400 means the callback
@@ -956,13 +956,13 @@ and port-forward failures. WHY: discovery is asynchronous, so readiness—not
 the first route test—owns convergence; this is not a JWT/BIP-precedence signal.
 
 ### ❌ Operator condition: `Synced=False reason=ConflictWithUIRow`
-**Dormant / unreachable in v1alpha1.** The v1alpha1 write path is **GitOps/CRD
-only** — there is no UI write path, so `origin='ui'` rows are never produced and
-this condition cannot fire in practice. The machinery is **reserved** for the
-future UI Objects API (#34, whose promotion half is unbuilt).
-✅ N/A in v1alpha1 — there is nothing to fix; you will not encounter this. If you
-somehow see it, an `origin='ui'` row was written by hand into Postgres (the
-control plane never does this) — remove that row.
+**Dormant.** The UI Objects API (`/platform/objects`) writes `origin='ui'`
+rows for Environments only, and the Environment upsert TAKES OVER such a row
+(`origin` 'ui'→'cr') instead of declining, so it never returns this reason. The
+other kinds keep the `origin='cr'` gate, but nothing writes a `ui` row for them.
+✅ Nothing to fix in normal operation. If you see it, an `origin='ui'` row of a
+non-Environment kind was written by hand into Postgres (the control plane never
+does this) — remove that row.
 WHY (reserved-machinery background): every projection table (environments,
 plugins, prompts, artifacts, litellm_connections, backend_identity_policies,
 external_refs, marketplace_plugins) carries an `origin TEXT CHECK IN ('cr','ui')`
@@ -970,7 +970,7 @@ column. The operator's UPSERTs are guarded by
 `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; a filter miss
 returns `pgx.ErrNoRows`, which the helper maps to `ErrOriginConflict` and the
 reconciler maps to `Synced=False reason=ConflictWithUIRow` with a 1-min requeue.
-Until a UI write path ships, that guard simply never trips.
+Only `environments` skips that guard (the takeover above).
 
 ### ❌ orphan-cleanup revoked a LiteLLM key it should not have (or revoked nothing)
 The operator's orphan-cleanup loop (`internal/orphan`, OP-15 / Hub §18.4)
@@ -1248,12 +1248,12 @@ proxied any more. Use LiteLLM's own host / cluster-internal Service for its
 UI and admin surface.
 
 ### ❌ Fresh install: `ach-operator` + `ach-platform-api` stuck `ContainerCreating`, `FailedMount … secret "ach-jwt-signing-keys" not found`
-✅ Chart older than the fix below: the content-service SIDECAR in the operator
-Pod mounted `ach-jwt-signing-keys` as a required volume, and the operator is
-what mints that Secret → the Pod could never start. Fixed 2026-09-21 by making
-the sidecar's volume `optional: true` (`ach.contentServiceJWTVolume`); the
-sidecar restarts until the Secret exists. On an old chart, seed the Secret by
-hand (recipe above) and the Pods start. Hidden for days on the kept kind
+✅ An old chart: its content-service SIDECAR in the operator Pod mounts
+`ach-jwt-signing-keys` as a required volume, and the operator is what mints
+that Secret → the Pod can never start. The current chart mounts it
+`optional: true` (`ach.contentServiceJWTVolume`), so the sidecar only restarts
+until the Secret exists. On an old chart, upgrade, or seed the Secret by hand
+(recipe above) and the Pods start. Hidden for days on the kept kind
 cluster because the Secret survived from earlier runs — only a clean
 `cluster-down && cluster-up` shows it.
 

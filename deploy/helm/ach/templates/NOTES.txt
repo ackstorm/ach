@@ -1,8 +1,10 @@
-LiteLLM Operator v{{ .Chart.AppVersion }} has been installed!
+ACH {{ .Chart.AppVersion }} has been installed.
 
 Namespace: {{ .Release.Namespace }}
-Watch namespace: {{ .Values.watchNamespace }}
 Image: {{ .Values.image.repo }}:{{ .Values.image.tag }}
+
+The operator reconciles ACH custom resources in this namespace only: create
+Environments, marketplaces, Plugins and Skills here.
 
 === REQUIRED: at-rest crypto Secrets ===
 
@@ -17,77 +19,35 @@ them, because they must stay STABLE across upgrades):
 
 ⚠  Rotating the DEK orphans all sealed LiteLLM key material; rotating the
    pepper invalidates every stored credential hash. Create once, keep stable.
+{{- if .Values.litellmConnection.enabled }}
 
-=== IMPORTANT: CRD Upgrade Dance (D-03) ===
+=== LiteLLM ===
 
-The 7 LiteLLM operator CRDs are shipped in the chart's crds/ directory and
-are installed automatically by `helm install`. However, Helm does NOT manage
-CRDs on `helm upgrade` (standard Helm 3 convention — avoids accidental data
-loss on schema changes).
+The operator creates LiteLLMConnection/default from the `litellmConnection`
+values ({{ .Values.litellmConnection.endpoint }}). The master-key Secret
+{{ .Values.litellmConnection.masterKeySecretRef.name }} must exist in {{ .Release.Namespace }}.
+{{- end }}
 
-Before every `helm upgrade`, apply the CRDs manually:
+=== CRDs ===
+{{- if .Values.installCRDs }}
 
-  kubectl apply -f charts/ach/crds/
-  # or, if installing from the OCI registry:
-  helm pull oci://ghcr.io/ackstorm/charts/ach \
-    --version {{ .Chart.Version }} --untar
-  kubectl apply -f ach/crds/
+The chart manages the 9 ACH CRDs (*.ach.ackstorm.ai) as ordinary resources:
+`helm upgrade` upgrades them, and `helm uninstall` keeps them (and your CRs).
+{{- else }}
 
-Then run your upgrade:
+installCRDs=false: apply the 9 ACH CRDs (*.ach.ackstorm.ai) yourself before
+every upgrade, from the chart's crd-sources/ directory.
+{{- end }}
 
-  helm upgrade {{ .Release.Name }} oci://ghcr.io/ackstorm/charts/ach \
-    --version {{ .Chart.Version }} --namespace {{ .Release.Namespace }}
+=== Verify the install ===
 
-=== Verify the Install ===
-
-  # Check operator is running
-  kubectl get deployment -n {{ .Release.Namespace }}
-
-  # Check CRDs installed
+  kubectl -n {{ .Release.Namespace }} get deployments,pods
   kubectl get crd | grep ach.ackstorm.ai
+  kubectl -n {{ .Release.Namespace }} get litellmconnection default
 
-  # Expected CRDs (7 total):
-  #   a2aagents.ach.ackstorm.ai
-  #   litellmconnections.ach.ackstorm.ai
-  #   mcpserverdiscoveries.ach.ackstorm.ai
-  #   mcpservers.ach.ackstorm.ai
-  #   modeldiscoveries.ach.ackstorm.ai
-  #   models.ach.ackstorm.ai
-  #   teams.ach.ackstorm.ai
-
-=== Getting Started ===
-
-Tip: For a fresh namespace, run:
-  helm install ach ./charts/ach \
-    --namespace <your-namespace> --create-namespace
-
-1. Create a Secret with your LiteLLM master key:
-
-  kubectl create secret generic litellm-master-key \
-    --from-literal=LITELLM_MASTER_KEY=<your-master-key> \
-    -n {{ .Values.watchNamespace }}
-
-2. Create a LiteLLMConnection CR:
-
-  kubectl apply -n {{ .Values.watchNamespace }} -f - <<EOF
-  apiVersion: ach.ackstorm.ai/v1alpha1
-  kind: LiteLLMConnection
-  metadata:
-    name: default
-  spec:
-    endpoint: http://litellm.<your-namespace>.svc:4000
-    masterKeySecretRef:
-      name: litellm-master-key
-      key: LITELLM_MASTER_KEY
-  EOF
-
-3. Check the connection status:
-
-  kubectl get litellmconnection default -n {{ .Values.watchNamespace }} -o yaml
-
-For a full walkthrough, see:
-  https://github.com/ackstorm/ach/blob/main/README.md
-
+Then sign in from a workstation: `ach-cli login <ACH URL>` and `ach-cli whoami`.
+Install, configuration and upgrade guide:
+  https://github.com/ackstorm/ach/blob/main/docs/getting-started/installation.md
 {{- if .Values.ingress.enabled }}
 
 === Public Ingress (ach-public) ===

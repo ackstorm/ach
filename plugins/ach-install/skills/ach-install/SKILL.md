@@ -163,8 +163,8 @@ the schema back. Full procedure: `references/upgrade.md`.
   `ek-` key until an admin grants an allowance (`ach-cli admin users limits`)
   or the default is raised. Intentional, but surprising on day one.
 - **`platformApi.admins` starts empty**: every admin route answers 403 until
-  emails are listed. The key is read by the chart template but not declared in
-  the default values file.
+  emails are listed. platform-api reads the list once at start and matches it
+  case-sensitively, so restart platform-api after changing it.
 - **What fails the render** (`helm template` shows it): a leftover `profile:`
   value other than `full`; `litellmConnection.enabled` with an empty endpoint or
   Secret ref; empty `security.*.secretRef` names; with Enterprise on,
@@ -181,7 +181,3 @@ the schema back. Full procedure: `references/upgrade.md`.
   its fix in `references/troubleshooting.md`.
 - **LiteLLM's own UI and admin API are not reachable through ACH.** Publish
   LiteLLM on its own host for `/ui`, `/key/*`, `/health`.
-- **The chart's `NOTES.txt` is out of date**: it describes a manual CRD apply
-  before each upgrade and creating a `LiteLLMConnection` by hand. Neither is
-  needed: CRDs ship as templates and the operator bootstraps
-  `LiteLLMConnection/default` from `litellmConnection`.

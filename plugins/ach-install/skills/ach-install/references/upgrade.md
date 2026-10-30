@@ -23,8 +23,8 @@
 3. Rolls the Deployments onto the new image. The operator uses the Recreate
    strategy (brief reconcile and, with the sidecar topology, hydrate pause).
 
-There is no separate CRD step: ignore any instruction (including an older
-`NOTES.txt`) to `kubectl apply` the CRDs by hand before upgrading, unless you
+There is no separate CRD step: do not `kubectl apply` the CRDs by hand before
+upgrading, unless you
 run with `installCRDs: false`, in which case apply the new chart's
 `crd-sources/` yourself first.
 

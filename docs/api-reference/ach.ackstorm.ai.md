@@ -205,7 +205,7 @@ Deliberate scope: the reconciler does NOT perform DuplicateTarget
 shadow resolution. Multiple CRs targeting the same (kind, name) are
 allowed; the Forwarder's runtime read path resolves the duplicate
 deterministically by sorting matching CRs by metadata.name ASC and
-using the LAST entry's forwardIdentityJWT value. Operators wanting
+using the FIRST entry's forwardIdentityJWT value. Operators wanting
 different precedence rename their CRs. This is intentional —
 operator stays dumb, user owns the CR set, no Synced=DuplicateTarget
 condition is written.
@@ -218,7 +218,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the reconciler<br />most recently processed. |  |  |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions is reserved for future per-CR status surfaces. It is<br />NOT populated today — duplicate targets are resolved by the<br />Forwarder at read time (alphabetically-LAST CR wins) without any<br />operator-side status churn. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions is reserved for future per-CR status surfaces. It is<br />NOT populated today — duplicate targets are resolved by the<br />Forwarder at read time (alphabetically-FIRST CR wins) without any<br />operator-side status churn. |  |  |
 
 
 #### BackendTargetRef
