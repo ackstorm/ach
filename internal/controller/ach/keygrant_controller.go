@@ -4,6 +4,7 @@ package ach
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,7 +31,6 @@ import (
 type KeyGrantStore interface {
 	UpsertKeyGrant(ctx context.Context, row achdb.KeyGrantRow) error
 	DeleteKeyGrant(ctx context.Context, ns, name string) error
-	ListKeyGrants(ctx context.Context, ns string) ([]achdb.KeyGrantRow, error)
 	ListExchangeKeys(ctx context.Context) ([]achdb.EkKeyInfo, error)
 	RevokeEnvironmentKey(ctx context.Context, keyID string) (*achdb.EkKeyInfo, error)
 }
@@ -46,9 +46,6 @@ func (s poolKeyGrantStore) UpsertKeyGrant(ctx context.Context, row achdb.KeyGran
 func (s poolKeyGrantStore) DeleteKeyGrant(ctx context.Context, ns, name string) error {
 	return achdb.DeleteKeyGrant(ctx, s.pool, ns, name)
 }
-func (s poolKeyGrantStore) ListKeyGrants(ctx context.Context, ns string) ([]achdb.KeyGrantRow, error) {
-	return achdb.ListKeyGrants(ctx, s.pool, ns)
-}
 func (s poolKeyGrantStore) ListExchangeKeys(ctx context.Context) ([]achdb.EkKeyInfo, error) {
 	return achdb.ListExchangeKeys(ctx, s.pool)
 }
@@ -57,7 +54,8 @@ func (s poolKeyGrantStore) RevokeEnvironmentKey(ctx context.Context, keyID strin
 }
 
 // KeyGrantReconciler projects KeyGrant CRs into key_grants and owns exchange
-// key cleanup: after every projection change it revokes the exchange keys no
+// key cleanup: after every projection change it plans from the KeyGrant CRs
+// themselves (the table fills one CR at a time and may start empty), revokes the exchange keys no
 // grant allows any more (LiteLLM first) and writes the lowest covering
 // spec.budget onto every other one's key:<id> tag. The platform API never
 // revokes on grant removal: its resolvers stop accepting the JWT within the
@@ -178,43 +176,67 @@ func (r *KeyGrantReconciler) readyCondition(ctx context.Context, kg *achv1alpha1
 
 // sweep revokes every exchange key no grant allows any more, LiteLLM first
 // (a 404 means the key is already gone), and writes the lowest covering
-// spec.budget onto every other one.
+// spec.budget onto every other one. It plans from the KeyGrant CRs, not the
+// key_grants table: the table is filled one CR at a time, so on a cold start
+// it holds only the grants reconciled so far and would revoke keys a not yet
+// projected grant still allows. A CR being deleted covers nothing. One failing
+// key never blocks the others; the errors are joined.
 // ponytail: one UpsertTagBudget per covered key per KeyGrant reconcile; skip
 // unchanged ceilings if LiteLLM load ever shows it.
 func (r *KeyGrantReconciler) sweep(ctx context.Context) error {
-	grants, err := r.Store.ListKeyGrants(ctx, r.Namespace)
-	if err != nil {
-		return fmt.Errorf("list key_grants: %w", err)
+	var list achv1alpha1.KeyGrantList
+	if err := r.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
+		return fmt.Errorf("list KeyGrants: %w", err)
+	}
+	grants := make([]achdb.KeyGrantRow, 0, len(list.Items))
+	for i := range list.Items {
+		if list.Items[i].DeletionTimestamp.IsZero() {
+			grants = append(grants, keyGrantRow(&list.Items[i]))
+		}
 	}
 	keys, err := r.Store.ListExchangeKeys(ctx)
 	if err != nil {
 		return fmt.Errorf("list exchange keys: %w", err)
 	}
 	revoke, budgets := keygrant.Plan(grants, keys)
+	var errs []error
 	for _, k := range revoke {
-		if k.LiteLLMToken != nil {
-			if err := r.LiteLLM.RevokeKey(ctx, *k.LiteLLMToken); err != nil && !litellm.IsHTTPNotFound(err) {
-				return fmt.Errorf("revoke exchange key %s: %w", k.KeyID, err)
-			}
-		}
-		if _, err := r.Store.RevokeEnvironmentKey(ctx, k.KeyID); err != nil {
-			return fmt.Errorf("revoke exchange key row %s: %w", k.KeyID, err)
-		}
-		if err := litellm.DeleteKeyBudget(ctx, r.LiteLLM, k.KeyID); err != nil {
-			r.Log.Error(err, "delete key budget", "key_id", k.KeyID)
+		if err := r.revokeKey(ctx, k); err != nil {
+			errs = append(errs, err)
+			continue
 		}
 		r.Log.Info("revoked exchange key no grant allows", "key_id", k.KeyID,
 			"environment", k.Environment, "requester", k.Requester)
 	}
 	for keyID, b := range budgets {
 		if err := r.LiteLLM.UpsertTagBudget(ctx, litellm.KeyBudgetTag(keyID), b); err != nil {
-			return fmt.Errorf("budget for exchange key %s: %w", keyID, err)
+			errs = append(errs, fmt.Errorf("budget for exchange key %s: %w", keyID, err))
 		}
+	}
+	return errors.Join(errs...)
+}
+
+// revokeKey kills the LiteLLM key, then its budget tag, then the row: the row
+// stays listed until every earlier step succeeded, so a failure is retried.
+func (r *KeyGrantReconciler) revokeKey(ctx context.Context, k achdb.EkKeyInfo) error {
+	if k.LiteLLMToken != nil {
+		if err := r.LiteLLM.RevokeKey(ctx, *k.LiteLLMToken); err != nil && !litellm.IsHTTPNotFound(err) {
+			return fmt.Errorf("revoke exchange key %s: %w", k.KeyID, err)
+		}
+	}
+	if err := litellm.DeleteKeyBudget(ctx, r.LiteLLM, k.KeyID); err != nil && !litellm.IsHTTPNotFound(err) {
+		return fmt.Errorf("delete budget of exchange key %s: %w", k.KeyID, err)
+	}
+	if _, err := r.Store.RevokeEnvironmentKey(ctx, k.KeyID); err != nil {
+		return fmt.Errorf("revoke exchange key row %s: %w", k.KeyID, err)
 	}
 	return nil
 }
 
 // SetupWithManager registers the reconciler with controller-runtime.
 func (r *KeyGrantReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Namespace == "" {
+		return errors.New("KeyGrantReconciler: Namespace is required")
+	}
 	return setupWithResync(mgr, r, &achv1alpha1.KeyGrant{}, "ach-keygrant", r.ResyncSource)
 }

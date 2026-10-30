@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -44,19 +44,6 @@ func (s *keyGrantStoreFake) DeleteKeyGrant(_ context.Context, ns, name string) e
 	defer s.mu.Unlock()
 	delete(s.grants, ns+"/"+name)
 	return nil
-}
-
-func (s *keyGrantStoreFake) ListKeyGrants(_ context.Context, ns string) ([]achdb.KeyGrantRow, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []achdb.KeyGrantRow
-	for _, g := range s.grants {
-		if g.Namespace == ns {
-			out = append(out, g)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
 }
 
 func (s *keyGrantStoreFake) ListExchangeKeys(context.Context) ([]achdb.EkKeyInfo, error) {
@@ -330,4 +317,43 @@ func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testin
 	if !Eventually(func() bool { return keyGrantStore.status("ekid_sweepa") == "revoked" }, 30*time.Second, 250*time.Millisecond) {
 		t.Fatal("removing the last covering grant must revoke the key")
 	}
+}
+
+func TestKeyGrantReconciler_ColdStartKeepsKeyOfUnprojectedGrant(t *testing.T) {
+	ctx := context.Background()
+	const who = "cold@ackstorm.com"
+	a := newKeyGrant("kg-cold-a", who, []string{"cold-env"}, []string{"agents/cold-a"}, nil)
+	b := newKeyGrant("kg-cold-b", who, []string{"cold-env"}, []string{"agents/cold-b"}, nil)
+	for _, g := range []*achv1alpha1.KeyGrant{a, b} {
+		if err := k8sClient.Create(ctx, g); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), g) })
+	}
+	// A reconciler with an empty key_grants table, as after a restored or wiped DB.
+	store, llm := newKeyGrantStoreFake(), newKeyGrantLLMFake()
+	tok := "lt-cold-b"
+	store.addKey(achdb.EkKeyInfo{KeyID: "ekid_coldb", OwnerEmail: who, Environment: "cold-env",
+		Requester: "agents/cold-b", LiteLLMToken: &tok, Status: "active"})
+	r := &KeyGrantReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), LiteLLM: llm,
+		Namespace: WatchNamespace, Log: logr.Discard(), Store: store}
+	req := ctrlRequest(a)
+	for i := 0; i < 3; i++ { // finalizer add (it may already be there), then projection + sweep
+		if _, err := r.Reconcile(ctx, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := store.grant(WatchNamespace, "kg-cold-a"); !ok {
+		t.Fatal("grant A was not projected")
+	}
+	if _, ok := store.grant(WatchNamespace, "kg-cold-b"); ok {
+		t.Fatal("test premise broken: grant B must not be projected yet")
+	}
+	if store.status("ekid_coldb") != "active" || llm.wasRevoked(tok) {
+		t.Fatal("the key of a grant not projected yet was revoked")
+	}
+}
+
+func ctrlRequest(kg *achv1alpha1.KeyGrant) ctrl.Request {
+	return ctrl.Request{NamespacedName: client.ObjectKeyFromObject(kg)}
 }
