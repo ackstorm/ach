@@ -97,12 +97,15 @@ grep -q "keygrants/finalizers" <<<"$(render --show-only templates/operator-rbac.
 
 # No rule of the operator's ClusterRole/Role may let it author a KeyGrant.
 # Each rule starts at a "- apiGroups" line; a rule naming the bare keygrants
-# resource must carry none of the authoring verbs.
+# resource, or every resource ("*"), must carry none of the authoring verbs.
 render --show-only templates/operator-rbac.yaml | awk '
-  function flush() { if (rule ~ /(^|[^a-z\/])keygrants([^a-z\/]|$)/ && rule ~ /"(create|delete|patch|\*)"/) bad = 1; rule = "" }
+  function flush() {
+    if ((rule ~ /(^|[^a-z\/])keygrants([^a-z\/]|$)/ || rule ~ /resources: *\[[^]]*"\*"/ || rule ~ /resources:\n *- *"?\*"?\n/) && rule ~ /verbs:[^\n]*"(create|delete|patch|\*)"/) bad = 1
+    rule = ""
+  }
   /^- apiGroups/ { flush() }
   { rule = rule "\n" $0 }
   END { flush(); exit bad }
-' || fail "operator RBAC grants create/delete/patch on keygrants"
+' || fail "operator RBAC grants create/delete/patch on keygrants (directly or through a \"*\" resource)"
 
 echo "helm-render-check OK (8 topologies)"

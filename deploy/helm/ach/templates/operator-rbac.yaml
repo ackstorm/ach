@@ -34,7 +34,9 @@ rules:
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 # KeyGrant: read and finalizer only — the operator never authors a grant
 # (writing one is acting as its identity). update is what adding and removing
-# the finalizer takes.
+# the finalizer takes. update also allows editing a grant's spec; that is
+# accepted because the operator already holds the LiteLLM master key and can
+# act with any identity's authority without a KeyGrant.
 - apiGroups: ["ach.ackstorm.ai"]
   resources: ["keygrants"]
   verbs: ["get", "list", "watch", "update"]
