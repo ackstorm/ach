@@ -4,7 +4,26 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-30
+
 ### Added
+- `KeyGrant` (`ach.ackstorm.ai/v1alpha1`): a platform admin names one identity,
+  its Environments and the ServiceAccounts (`<namespace>/<name>`) that may act
+  as it, with an optional per-key budget. The operator projects it, reports
+  `Ready` (`IdentityUnknown`, `EnvironmentMissing`), revokes exchange keys no
+  grant allows any more and keeps each covered key's `key:<id>` budget at the
+  lowest covering `spec.budget`.
+- `POST /platform/keys/exchange`: a pod-bound ServiceAccount token plus a
+  matching grant buys a short-lived ACH JWT (`aud: ach-ek`) standing for one
+  stable `ek_` per identity, Environment and ServiceAccount; the `ek_` never
+  leaves ACH. The token's signature is verified against the cluster JWKS before
+  any rate limiting or TokenReview. The JWT lifetime is
+  `platformApi.keyExchange.tokenTTL` (default `15m`, `1m` to `1h`). The
+  forwarder, content service and platform API accept the JWT wherever an `ek_`
+  goes. Every exchange emits a `platform.ek.exchange` audit event.
+- Helm: platform-api `system:auth-delegator` binding (TokenReview); ClusterRole
+  `<release>-keygrant-editor` (create, update, patch, delete on `keygrants`),
+  bound to nobody.
 - Plugin marketplace `ach` at the repo root (Claude Code and Codex) with three
   plugins: `ach-cli` (using the platform from the CLI), `ach-gitops` (writing
   ACH custom resources) and `ach-install` (deploying the Helm chart). Install
@@ -12,10 +31,25 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   through a `PluginMarketplace` and an Environment.
 
 ### Changed
+- platform-api now holds a cluster-wide `system:auth-delegator`
+  ClusterRoleBinding (it held no Kubernetes privilege before) and relies on the
+  default `system:service-account-issuer-discovery` binding to read the cluster
+  JWKS.
+- The API-server audit level for `tokenreviews` must be `Metadata`; `Request`
+  or `RequestResponse` would log the submitted ServiceAccount tokens.
+- Operator RBAC for `keygrants`: get, list, watch, update, plus
+  `keygrants/finalizers` and `keygrants/status`; never create, delete or patch.
+- Exchange keys do not count against `max_keys`.
+- Owner budget changes on exchange keys are refused (409
+  `budget_managed_by_grant`); the grant's `spec.budget` is the only source.
+- Migration `000026` adds `environment_keys.issued_via` and `requester` and the
+  `key_grants` table; its down step refuses while live exchange keys exist.
+- The `ach-gitops` and `ach-install` plugins (1.1.0) gain KeyGrant and
+  key-exchange guidance.
 - The OpenCode onboarding skill (`<provider>-ach`) is a bootstrap only: install
   `ach-cli`, sign in, list Environments, hydrate the default Environment. The
   rest moved to the `ach-cli` plugin, which the default Environment should carry.
-- Chart `NOTES.txt` describes this chart (9 CRDs managed by Helm, the operator
+- Chart `NOTES.txt` describes this chart (10 CRDs managed by Helm, the operator
   creating `LiteLLMConnection/default`); `platformApi.admins` is declared in
   `values.yaml`; the unused `watchNamespace` value is gone.
 
