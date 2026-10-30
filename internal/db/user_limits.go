@@ -23,12 +23,14 @@ import (
 //
 // Revoked keys are excluded — counting them would turn the ceiling into a
 // lifetime quota. Suspended and expired keys DO count: both are one call
-// away from carrying traffic again.
+// away from carrying traffic again. Exchange keys (issued_via='exchange') do
+// not count: KeyGrants bound them, one per granted tuple, and only platform
+// admins write grants.
 func UserKeyAllowance(ctx context.Context, pool *pgxpool.Pool, email string, defaultMax int) (used int, max int, err error) {
 	const sql = `
 		SELECT
 		    (SELECT count(*) FROM environment_keys
-		      WHERE lower(owner_email) = $1 AND status <> 'revoked'),
+		      WHERE lower(owner_email) = $1 AND status <> 'revoked' AND issued_via <> 'exchange'),
 		    COALESCE((SELECT max_keys FROM user_limits WHERE email = $1), $2)
 	`
 	row := pool.QueryRow(ctx, sql, litellm.NormalizeEmail(email), defaultMax)

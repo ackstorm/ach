@@ -89,6 +89,10 @@ type EkKeyInfo struct {
 	RevokedAt          *time.Time // NULL while status='active'
 	// ExpiresAt is NULL = perpetual (§7.3); enforced in ACH only (D-24).
 	ExpiresAt *time.Time
+	// Requester is "<namespace>/<serviceaccount>" for an exchange key
+	// (migration 000026). Empty for a manual key and for read paths that do
+	// not select it.
+	Requester string
 }
 
 // PkInsertRow is the value-struct argument to InsertPersonalKey. Fields match
@@ -121,4 +125,10 @@ type EkInsertRow struct {
 	LiteLLMKeyMaterial *string // encrypted at rest (keycrypt blob; G3)
 	// ExpiresAt is NULL = perpetual (§7.3); enforced in ACH only (D-24).
 	ExpiresAt *time.Time
+
+	// IssuedVia is "exchange" for a key minted by POST /platform/keys/exchange;
+	// empty means "manual". Requester is set only for an exchange key (a CHECK
+	// constraint refuses any other combination).
+	IssuedVia string
+	Requester *string
 }

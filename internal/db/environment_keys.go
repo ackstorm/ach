@@ -18,6 +18,7 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -40,8 +41,12 @@ const (
 		`WHERE environment=$1 AND status<>'revoked'`
 )
 
+// ExchangeTupleConstraint is the partial unique index (migration 000026) that
+// admits one live exchange key per (owner, environment, requester).
+const ExchangeTupleConstraint = "environment_keys_exchange_tuple_uniq"
+
 // InsertEnvironmentKey writes a single environment_keys row. status defaults
-// to 'active' and created_at defaults to now().
+// to 'active' and created_at defaults to now(); an empty IssuedVia is 'manual'.
 //
 // Per D-12 step 7, the handler is responsible for running the LiteLLM
 // compensation (RevokeKey) when this returns a non-transient error.
@@ -49,12 +54,14 @@ func InsertEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, row EkInsertR
 	const sql = `
 		INSERT INTO environment_keys
 		    (key_id, credential_hash, environment, owner_email, name,
-		     status, litellm_user_id, litellm_token, litellm_key_material_enc, expires_at)
-		VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9)
+		     status, litellm_user_id, litellm_token, litellm_key_material_enc, expires_at,
+		     issued_via, requester)
+		VALUES ($1, $2, $3, $4, $5, 'active', $6, $7, $8, $9, $10, $11)
 	`
 	if _, err := pool.Exec(ctx, sql,
 		row.KeyID, row.CredentialHash, row.Environment, row.OwnerEmail, row.Name,
 		row.LiteLLMUserID, row.LiteLLMToken, row.LiteLLMKeyMaterial, row.ExpiresAt,
+		cmp.Or(row.IssuedVia, "manual"), row.Requester,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
@@ -274,4 +281,98 @@ func listEnvironmentKeys(ctx context.Context, pool *pgxpool.Pool, ownerEmailFilt
 		},
 		func(k EkKeyInfo) (time.Time, string) { return k.CreatedAt, k.KeyID },
 	)
+}
+
+// FindExchangeKey returns the live (non-revoked) exchange key of one
+// (owner, environment, requester) tuple, or (nil, nil).
+func FindExchangeKey(ctx context.Context, pool *pgxpool.Pool, owner, environment, requester string) (*EkKeyInfo, error) {
+	const sql = `
+		SELECT key_id, credential_hash, environment, owner_email, name,
+		       litellm_user_id, litellm_token,
+		       status, created_at, last_used_at, revoked_at, expires_at, requester
+		  FROM environment_keys
+		 WHERE issued_via = 'exchange' AND status <> 'revoked'
+		   AND owner_email = $1 AND environment = $2 AND requester = $3
+	`
+	r := &EkKeyInfo{}
+	err := pool.QueryRow(ctx, sql, owner, environment, requester).Scan(
+		&r.KeyID, &r.CredentialHash, &r.Environment, &r.OwnerEmail, &r.Name,
+		&r.LiteLLMUserID, &r.LiteLLMToken,
+		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt, &r.ExpiresAt, &r.Requester,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: FindExchangeKey: %w", err)
+	}
+	return r, nil
+}
+
+// ExchangeKeyResolve is EkResolve for an exchange JWT: the row is found by the
+// JWT's subject (key_id), not by a credential hash, and only an active,
+// unexpired exchange key matches — a manual key's id never resolves here.
+// last_used_at is debounced exactly like EkResolve.
+func ExchangeKeyResolve(ctx context.Context, pool *pgxpool.Pool, keyID string) (*EkKeyInfo, error) {
+	const sql = `
+		UPDATE environment_keys SET
+		    last_used_at = CASE
+		        WHEN last_used_at IS NULL
+		          OR last_used_at < now() - interval '5 minutes'
+		        THEN now()
+		        ELSE last_used_at
+		    END
+		 WHERE key_id = $1
+		   AND issued_via = 'exchange'
+		   AND status = 'active'
+		   AND (expires_at IS NULL OR expires_at > now())
+		RETURNING key_id, environment, owner_email, name,
+		          litellm_user_id, litellm_token, litellm_key_material_enc, expires_at, requester
+	`
+	r := &EkKeyInfo{}
+	err := pool.QueryRow(ctx, sql, keyID).Scan(
+		&r.KeyID, &r.Environment, &r.OwnerEmail, &r.Name,
+		&r.LiteLLMUserID, &r.LiteLLMToken, &r.LiteLLMKeyMaterial, &r.ExpiresAt, &r.Requester,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ExchangeKeyResolve: %w", err)
+	}
+	return r, nil
+}
+
+// ListExchangeKeys returns every non-revoked exchange key; the operator's
+// KeyGrant sweep revokes the ones no grant allows any more.
+func ListExchangeKeys(ctx context.Context, pool *pgxpool.Pool) ([]EkKeyInfo, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT key_id, environment, owner_email, requester, litellm_token
+		  FROM environment_keys
+		 WHERE issued_via = 'exchange' AND status <> 'revoked'
+		 ORDER BY key_id`)
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListExchangeKeys: %w", err)
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (EkKeyInfo, error) {
+		var k EkKeyInfo
+		err := r.Scan(&k.KeyID, &k.Environment, &k.OwnerEmail, &k.Requester, &k.LiteLLMToken)
+		return k, err
+	})
+	if err != nil {
+		if isTransientPgErr(err) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("db: ListExchangeKeys: %w", err)
+	}
+	return out, nil
 }
