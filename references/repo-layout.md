@@ -61,6 +61,11 @@ ach/
 │   ├── test-mcp-jwt.sh        manual /mcp JWT trust-path helper
 │   └── hydrate.json           Golden /platform/hydrate output (CLI e2e diffs vs this)
 ├── hack/boilerplate.go.txt  ← SPDX one-liner, prepended to generated files
+├── .claude-plugin/marketplace.json  ← plugin marketplace `ach` (Claude Code; source of truth)
+├── .agents/plugins/marketplace.json ← the same marketplace for Codex (hand-kept in step)
+├── plugins/                 ← user-facing agent plugins (ach-cli, ach-gitops, ach-install);
+│                              each: .claude-plugin/plugin.json + plugin.json (Codex) +
+│                              skills/<name>/SKILL.md + references/
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
 │   └── security/govulncheck-acknowledged.md

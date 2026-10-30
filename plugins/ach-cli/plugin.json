@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ach-cli",
+  "version": "1.0.0",
+  "description": "Use this organization's AI platform (ACH) from the command line: sign in, find and hydrate Environments into Claude Code, Codex, OpenCode, Gemini CLI or pi, MCP sign-in, environment keys (ek-) and ach-cli local."
+}

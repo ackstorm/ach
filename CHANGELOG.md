@@ -4,6 +4,18 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- Plugin marketplace `ach` at the repo root (Claude Code and Codex) with three
+  plugins: `ach-cli` (using the platform from the CLI), `ach-gitops` (writing
+  ACH custom resources) and `ach-install` (deploying the Helm chart). Install
+  with `claude plugin marketplace add ackstorm/ach`, or serve them to users
+  through a `PluginMarketplace` and an Environment.
+
+### Changed
+- The OpenCode onboarding skill (`<provider>-ach`) is a bootstrap only: install
+  `ach-cli`, sign in, list Environments, hydrate the default Environment. The
+  rest moved to the `ach-cli` plugin, which the default Environment should carry.
+
 ## [1.0.1] - 2026-10-30
 
 ### Fixed

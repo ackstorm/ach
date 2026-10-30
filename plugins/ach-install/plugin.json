@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ach-install",
+  "version": "1.0.0",
+  "description": "Install, configure and upgrade ACH on Kubernetes with its Helm chart: prerequisites (Postgres, Valkey, Dex, LiteLLM), values, sign-in, topology, Enterprise features and post-install checks."
+}

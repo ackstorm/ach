@@ -1,0 +1,14 @@
+{
+  "name": "ach-gitops",
+  "description": "Write and maintain ACH custom resources in a GitOps repo: Environments, plugin and skill marketplaces, Plugins, Skills, Prompts, Artifacts, BackendIdentityPolicies and LiteLLMConnections, and debug their status.",
+  "version": "1.0.0",
+  "author": {
+    "name": "ACKstorm",
+    "url": "https://github.com/ackstorm/ach"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "ach",
+    "gitops"
+  ]
+}

@@ -11,8 +11,8 @@ func TestAPISkill(t *testing.T) {
 	s := apiSkill("https://ach.test/", "ackstorm", "ackstorm")
 	md := s["files"].(map[string]string)["SKILL.md"]
 	if s["name"] != "ackstorm-ach" || !strings.HasPrefix(md, "---\nname: ackstorm-ach\n") ||
-		!strings.Contains(md, "ach-cli login https://ach.test\n") ||
-		!strings.Contains(md, "`https://ach.test/v1`") || !strings.Contains(md, "opencode auth login ackstorm") ||
+		!strings.Contains(md, "ach-cli login https://ach.test --no-browser") ||
+		!strings.Contains(md, "`https://ach.test`") || !strings.Contains(md, "opencode auth login ackstorm") ||
 		!strings.Contains(md, "opencode auth login https://ach.test`") ||
 		!strings.Contains(md, "ach-cli env hydrate ackstorm -g --target opencode") ||
 		strings.Contains(md, "{{") {
@@ -24,7 +24,7 @@ func TestAPISkill(t *testing.T) {
 
 	// No default Environment: its step is cut, the rest is unchanged.
 	bare := apiSkill("https://ach.test/", "ackstorm", "")["files"].(map[string]string)["SKILL.md"]
-	if strings.Contains(bare, "baseline") || strings.Contains(bare, "{{") || !strings.Contains(bare, "one folder per Environment") {
+	if strings.Contains(bare, "env hydrate") || strings.Contains(bare, "{{") || !strings.Contains(bare, "ach-cli env list") {
 		t.Fatal(bare)
 	}
 }

@@ -1,0 +1,25 @@
+{
+  "name": "ach",
+  "description": "ACH (Agent Capability Hub) plugins: using the platform from ach-cli, writing its GitOps objects, installing it.",
+  "owner": {
+    "name": "ACKstorm",
+    "url": "https://github.com/ackstorm/ach"
+  },
+  "plugins": [
+    {
+      "name": "ach-cli",
+      "source": "./plugins/ach-cli",
+      "description": "Use this organization's AI platform (ACH) from the command line: sign in, find and hydrate Environments into Claude Code, Codex, OpenCode, Gemini CLI or pi, MCP sign-in, environment keys (ek-) and ach-cli local."
+    },
+    {
+      "name": "ach-gitops",
+      "source": "./plugins/ach-gitops",
+      "description": "Write and maintain ACH custom resources in a GitOps repo: Environments, plugin and skill marketplaces, Plugins, Skills, Prompts, Artifacts, BackendIdentityPolicies and LiteLLMConnections, and debug their status."
+    },
+    {
+      "name": "ach-install",
+      "source": "./plugins/ach-install",
+      "description": "Install, configure and upgrade ACH on Kubernetes with its Helm chart: prerequisites (Postgres, Valkey, Dex, LiteLLM), values, sign-in, topology, Enterprise features and post-install checks."
+    }
+  ]
+}

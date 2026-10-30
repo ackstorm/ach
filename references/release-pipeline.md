@@ -23,12 +23,15 @@ goreleaser or the chart push **does leave an orphan tag on origin** — see
 Cutting a release (stable example, `v0.1.0`):
 
 Before cutting, check whether the range since the last tag changes anything the
-`<provider>-ach` skill (`internal/platformapi/opencode/skill/SKILL.md`) tells users'
-agents to do — `ach-cli` commands/flags, the OpenCode sign-in flow, MCP enablement.
-If it does, fix the skill in the release, not after:
+agent guidance tells users' agents to do: the `<provider>-ach` bootstrap
+(`internal/platformapi/opencode/skill/SKILL.md` — install, login, `env list`,
+default hydrate, the OpenCode sign-in flow) and the `plugins/` marketplace
+(`ach-cli` commands/flags, CRD fields for `ach-gitops`, chart values for
+`ach-install`). If it does, fix it in the release, not after, and bump the
+plugin's `version` (both manifests):
 
 ```bash
-git diff "$(git describe --tags --abbrev=0)"..HEAD --stat -- cmd/ach-cli internal/cli internal/platformapi/opencode
+git diff "$(git describe --tags --abbrev=0)"..HEAD --stat -- cmd/ach-cli internal/cli internal/platformapi/opencode api deploy/helm/ach/values.yaml plugins
 ```
 
 ```bash

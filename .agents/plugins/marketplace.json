@@ -1,0 +1,44 @@
+{
+  "name": "ach",
+  "interface": {
+    "displayName": "ACH"
+  },
+  "plugins": [
+    {
+      "name": "ach-cli",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ach-cli"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "ach-gitops",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ach-gitops"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "ach-install",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ach-install"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

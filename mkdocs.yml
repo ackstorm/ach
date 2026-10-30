@@ -13,6 +13,7 @@ nav:
       - Overview: user-guide/index.md
       - Editions: user-guide/editions.md
       - Signing in from Claude Code, Codex and opencode: user-guide/signing-in-from-tools.md
+      - Agent plugins: user-guide/agent-plugins.md
   - Developer Guide:
       - Architecture: developer-guide/architecture.md
       - Conversation classifier: developer-guide/conversation-classifier.md
