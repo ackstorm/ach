@@ -25,7 +25,6 @@ rules:
   - artifacts
   - backendidentitypolicies
   - environments
-  - keygrants
   - litellmconnections
   - pluginmarketplaces
   - plugins

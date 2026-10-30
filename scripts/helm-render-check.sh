@@ -95,4 +95,14 @@ awk -v RS='\n---\n' '/aggregate-to-(admin|edit)/' <<<"$(render)" | grep -q keygr
 grep -q "keygrants/finalizers" <<<"$(render --show-only templates/operator-rbac.yaml)" \
   || fail "operator RBAC lacks keygrants"
 
+# No rule of the operator's ClusterRole/Role may let it author a KeyGrant.
+# Each rule starts at a "- apiGroups" line; a rule naming the bare keygrants
+# resource must carry none of the authoring verbs.
+render --show-only templates/operator-rbac.yaml | awk '
+  function flush() { if (rule ~ /(^|[^a-z\/])keygrants([^a-z\/]|$)/ && rule ~ /"(create|delete|patch|\*)"/) bad = 1; rule = "" }
+  /^- apiGroups/ { flush() }
+  { rule = rule "\n" $0 }
+  END { flush(); exit bad }
+' || fail "operator RBAC grants create/delete/patch on keygrants"
+
 echo "helm-render-check OK (8 topologies)"
