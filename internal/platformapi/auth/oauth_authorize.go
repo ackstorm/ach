@@ -344,19 +344,35 @@ func (d OAuthDeps) dexExchange(ctx context.Context, code, verifier string) (emai
 }
 
 // dexRefresh asks Dex — and through it the identity provider — whether
-// the session still stands. Returns Dex's rotated refresh token.
-func (d OAuthDeps) dexRefresh(ctx context.Context, refresh string) (string, error) {
+// the session still stands. Returns Dex's rotated refresh token and the
+// `groups` claim of the refreshed id_token (Dex's Google connector re-reads
+// the Directory API on every refresh). Once Dex answered, the token has
+// rotated: an id_token that is missing or fails to verify yields nil
+// groups, never an error — losing the rotated token would end every
+// session of the user.
+func (d OAuthDeps) dexRefresh(ctx context.Context, refresh string) (string, []string, error) {
 	if d.DexRefresh != nil {
 		return d.DexRefresh(ctx, refresh)
 	}
 	tok, err := d.dexConfig().TokenSource(ctx, &oauth2.Token{RefreshToken: refresh}).Token()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if tok.RefreshToken == "" {
-		return refresh, nil
+	rotated := tok.RefreshToken
+	if rotated == "" {
+		rotated = refresh
 	}
-	return tok.RefreshToken, nil
+	var claims idTokenClaims
+	if rawID, _ := tok.Extra("id_token").(string); rawID != "" && d.Auth.IDTokenVerifier != nil {
+		idt, verr := d.Auth.IDTokenVerifier.Verify(ctx, rawID)
+		if verr == nil {
+			verr = idt.Claims(&claims)
+		}
+		if verr != nil {
+			d.Auth.Logger.Warn("oauth: refreshed id_token unusable; groups unknown", "err", verr)
+		}
+	}
+	return rotated, claims.Groups, nil
 }
 
 // dexDenied: Dex answered the refresh with an OAuth error (invalid_grant —

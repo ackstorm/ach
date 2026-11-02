@@ -12,8 +12,8 @@ import (
 // TeamPolicy is the chart's login enrolment (platformApi.teams). Default
 // teams are mandatory (provisionUser fails the login without them); the
 // per-user and per-SSO-group teams are best-effort and additive: a team that
-// does not exist in LiteLLM is skipped and retried at the next login, and a
-// removed mapping never detaches anyone. LiteLLM is the source of truth —
+// does not exist in LiteLLM is skipped and retried at the next login (or
+// POST /platform/refresh), and a removed mapping never detaches anyone. LiteLLM is the source of truth —
 // ACH never creates these teams.
 type TeamPolicy struct {
 	Default    []string
@@ -45,7 +45,7 @@ func (p TeamPolicy) extra(email string, groups []string) []string {
 }
 
 // enrollExtraTeams never fails the login: what is missing is an entitlement,
-// not a credential, and the next login retries.
+// not a credential, and the next login or POST /platform/refresh retries.
 func enrollExtraTeams(ctx context.Context, deps Deps, userID, email string, groups []string) {
 	for _, alias := range deps.Teams.extra(email, groups) {
 		teams, err := deps.LiteLLM.ListTeamsByAlias(ctx, alias)

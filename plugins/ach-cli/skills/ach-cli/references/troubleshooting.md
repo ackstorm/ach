@@ -20,6 +20,8 @@
   ([login](login.md)). A session also ends when the user is disabled at the identity
   provider.
 - **An Environment is missing from `env list`**: no access ([environments](environments.md)).
+  If the user was just added to an SSO group, run `ach-cli refresh` (or `ach-cli login`)
+  and allow a few minutes for the Environment to reconcile.
 - **Hydrate says another hydrate holds the lock**: one is still running in that folder.
   Wait for it, or pass `--lock-timeout 2m`.
 - **Hydrate cannot detect the tool**: pass `--target`.

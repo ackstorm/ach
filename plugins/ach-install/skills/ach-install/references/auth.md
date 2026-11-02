@@ -116,7 +116,9 @@ platformApi:
       platform-engineers@example.com: [platform]
 ```
 
-At every interactive login (not on token refresh) ACH adds the USER to these
+At every interactive login, and on `ach-cli refresh` (`POST /platform/refresh`,
+which re-reads the user's groups at the IdP without a browser; `users` and `sso`
+only), ACH adds the USER to these
 LiteLLM teams, by team alias. LiteLLM is the source of truth: ACH never creates
 these teams, except that the operator bootstraps the alias `default` itself.
 
@@ -126,7 +128,7 @@ these teams, except that the operator bootstraps the alias `default` itself.
   `default`; it heals on the next attempt.
 - `users` and `sso` are best-effort and additive: a team that does not exist
   yet is skipped (log `login: team does not exist`) and retried at the next
-  login; LiteLLM errors never block a login.
+  login or `ach-cli refresh`; LiteLLM errors never block a login.
 - Removing a mapping never detaches anyone; remove the user from the LiteLLM
   team by hand.
 - Keys match case-insensitively.

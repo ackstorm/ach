@@ -242,7 +242,7 @@ func TestConsole_SharesTheDexChainWithTokenRefresh(t *testing.T) {
 	f.mountConsole()
 	c := consoleLogin(t, f, "/")
 	// A CLI refresh rotates the shared token…
-	if err := f.deps.revalidateAtIdP(context.Background(), "u@x.com"); err != nil {
+	if _, err := f.deps.revalidateAtIdP(context.Background(), "u@x.com"); err != nil {
 		t.Fatal(err)
 	}
 	var rt string

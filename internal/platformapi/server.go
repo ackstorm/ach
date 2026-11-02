@@ -296,6 +296,13 @@ func New(deps Deps) http.Handler {
 
 		envkeys.MountKeys(r, envkeysDeps)
 
+		// ach-cli refresh: on-demand IdP re-read + login team enrolment.
+		if deps.OAuth != nil {
+			od := *deps.OAuth
+			od.Auth = authDeps
+			r.Post("/platform/refresh", od.Refresh)
+		}
+
 		// WARN-06: environments.Deps now carries LiteLLM (for
 		// internal/platformapi/teams.LookupCallerTeams).
 		envDeps := environments.Deps{

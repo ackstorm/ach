@@ -249,9 +249,17 @@ exist`) and retried at the next login, a LiteLLM error never blocks the login, a
 removed mapping never detaches. LiteLLM is the source of truth — ACH never
 creates these teams. The `ek_`-create fallback that provisions a user LiteLLM does not know uses the same default list. Keys match case-insensitively. Access to an Environment
 follows at its next reconcile (the operator attaches the user's shell team).
+`ach-cli refresh` → `POST /platform/refresh` (pk_ only, else 401
+`invalid_key_type`) re-runs the `users`/`sso` enrolment on demand without a
+browser: it replays the user's shared Dex refresh token (the same IdP
+revalidation as `/token`; refused = 401 `ach_login_required`, Dex down = 503
+`idp_unreachable`) and reads `groups` from the refreshed id_token (the Google
+connector re-reads the Directory API on refresh); 204. The `/token` refresh and
+console revalidation never enrol, by design: the per-team LiteLLM lookups stay
+off the hourly path.
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
-`logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local`/`launch` (workspace verbs
+`logout`/`whoami`/`refresh`/`token`/`profile`/`env`/`keys`/`admin`/`local`/`launch` (workspace verbs
 `clone`/`hydrate`/`status`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
 `launch <claude|codex|gemini|opencode|pi> --environment <env>` = `env hydrate` for that
 one target, then starts the tool in `--dir` (exits with the tool's code; no tool on

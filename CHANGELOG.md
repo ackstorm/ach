@@ -30,6 +30,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   with `claude plugin marketplace add ackstorm/ach`, or serve them to users
   through a `PluginMarketplace` and an Environment.
 
+- `ach-cli refresh` (`POST /platform/refresh`): after being added to an SSO
+  group, join the teams it maps to (`platformApi.teams.sso`/`users`) without
+  logging in again. It re-reads the groups at the identity provider; the
+  Environments follow at their next reconcile.
+
 ### Changed
 - platform-api now holds a cluster-wide `system:auth-delegator`
   ClusterRoleBinding (it held no Kubernetes privilege before) and relies on the
