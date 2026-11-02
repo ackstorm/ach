@@ -108,13 +108,15 @@ export function Overview() {
   // Both medians come from each period's latest calls; no comparison without both.
   const prevP50 = prevLatency?.available ? prevLatency.latency?.p50_ms : null;
   const latencyPct = l?.p50_ms != null && prevP50 ? l.p50_ms / prevP50 - 1 : null;
-  // Spend KPI = this cycle's allowance spend (the enforced tag, same figure as
-  // the allowance panel), not the page range.
+  // With a cycle the KPI is the Budget: this cycle's allowance spend (the
+  // enforced tag, same figure as the allowance panel), its sparkline the cycle's
+  // days, and no range delta (that compares a different window). Without one it
+  // is the range Spend.
   const cycle = budget.source !== 'unknown' && budget.current != null;
   return <>
     {head}
     <div className="kpis">
-      <div className="panel kpi"><div className="khead"><span className="badge">$</span>Spend</div><div className="value">{formatCurrency(cycle ? budget.current : totals.spend)}{cycle && budget.max_budget != null && <span className="of"> / {formatCurrency(budget.max_budget)}</span>}</div><div className="delta">{!cycle ? 'Recorded spend' : budget.max_budget ? `${formatPercent(budget.current! / budget.max_budget, 0)} of this cycle’s allowance` : 'Spent this cycle'}</div><Delta pct={deltas.spend_pct} bad /><Spark values={series.map((row) => row.spend)} /></div>
+      <div className="panel kpi"><div className="khead"><span className="badge">$</span>{cycle ? 'Budget' : 'Spend'}</div><div className="value">{formatCurrency(cycle ? budget.current : totals.spend)}{cycle && budget.max_budget != null && <span className="of"> / {formatCurrency(budget.max_budget)}</span>}</div><div className="delta">{!cycle ? 'Recorded spend' : budget.max_budget ? `${formatPercent(budget.current! / budget.max_budget, 0)} of this cycle’s allowance` : 'Spent this cycle'}</div>{!cycle && <Delta pct={deltas.spend_pct} bad />}<Spark values={(cycle ? budget.cycle_series ?? [] : series).map((row) => row.spend)} /></div>
       <div className="panel kpi"><div className="khead"><span className="badge">⬡</span>Tokens</div><div className="value">{abbreviate(totals.tokens)}</div><div className="delta">{abbreviate(totals.input_tokens)} input · {abbreviate(totals.output_tokens)} output</div><Delta pct={deltas.tokens_pct} /><Spark color="blue" values={series.map((row) => row.tokens)} /></div>
       <div className="panel kpi"><div className="khead"><span className="badge">↗</span>Gateway operations</div><div className="value">{formatInt(totals.requests)}</div><div className="delta">{formatInt(totals.failed_requests)} failed</div><Delta pct={deltas.requests_pct} /><Spark values={series.map((row) => row.requests)} /></div>
       <div className="panel kpi"><div className="khead"><span className="badge">◷</span>Median latency</div><div className="value">{formatSeconds(l?.p50_ms, 2)}</div><div className="delta">{l && latency ? `P95 ${formatSeconds(l.p95_ms, 2)} · ${sampleNote(latency)}` : latency ? 'Latency unavailable' : 'Loading…'}</div><Delta pct={latencyPct} bad /></div>

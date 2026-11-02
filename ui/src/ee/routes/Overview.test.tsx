@@ -57,17 +57,17 @@ describe('Overview v3', () => {
     state.stats.isPending = false;
   });
 
-  it('orders the KPI row Spend → Tokens → Gateway operations → Average generation input', () => {
+  it('orders the KPI row Budget → Tokens → Gateway operations → Average generation input', () => {
     const { container } = render(<MemoryRouter><Overview /></MemoryRouter>);
     const heads = [...container.querySelectorAll('.kpi .khead')].map((el) => el.lastChild?.textContent);
-    expect(heads).toEqual(['Spend', 'Tokens', 'Gateway operations', 'Average generation input']);
+    expect(heads).toEqual(['Budget', 'Tokens', 'Gateway operations', 'Average generation input']);
     expect(screen.getByText('5.25B')).toBeInTheDocument();
   });
 
-  it('puts each LiteLLM KPI change on its own line; a missing change shows none', () => {
+  it('puts each LiteLLM KPI change on its own line; a missing change shows none, the Budget none', () => {
     render(<MemoryRouter><Overview /></MemoryRouter>);
     const lines = [...document.querySelectorAll('.kpi')].map((k) => [...k.querySelectorAll('.delta')].map((d) => d.textContent));
-    expect(lines.map((l) => l[1] ?? null)).toEqual(['▲ 10.9% vs previous period', null, '▼ 1.8% vs previous period', null]);
+    expect(lines.map((l) => l[1] ?? null)).toEqual([null, null, '▼ 1.8% vs previous period', null]);
   });
 
   it('shows verified signals only from measured counts', () => {
