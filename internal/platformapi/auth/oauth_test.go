@@ -66,6 +66,8 @@ type asFixture struct {
 	// refuse (the IdP disabled the user) or to be unreachable.
 	dexRefresh func(rt string) (string, error)
 	dexSeen    []string
+	// dexGroups is the `groups` claim the refreshed id_token carries.
+	dexGroups []string
 	// now is the fixture clock once mountConsole pinned deps.Now.
 	now time.Time
 }
@@ -89,9 +91,10 @@ func newAS(t *testing.T) *asFixture {
 		ConsentBIP: func(context.Context, string) (*db.BIPRow, error) { return nil, nil },
 	}}
 	f.dexRefresh = func(rt string) (string, error) { return rt + "+", nil }
-	f.deps.DexRefresh = func(_ context.Context, rt string) (string, error) {
+	f.deps.DexRefresh = func(_ context.Context, rt string) (string, []string, error) {
 		f.dexSeen = append(f.dexSeen, rt)
-		return f.dexRefresh(rt)
+		rotated, err := f.dexRefresh(rt)
+		return rotated, f.dexGroups, err
 	}
 	f.mount()
 	return f

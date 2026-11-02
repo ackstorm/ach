@@ -48,7 +48,7 @@ type OAuthDeps struct {
 	// Auth.MintPK, db.ActiveOAuthPKAnyExpiry, db.RevokePersonalKey + LiteLLM revoke.
 	DexLogin      func(state, pkceVerifier string) string
 	DexExchange   func(ctx context.Context, code, pkceVerifier string) (email, name string, groups []string, dexRefresh string, err error)
-	DexRefresh    func(ctx context.Context, dexRefresh string) (rotated string, err error)
+	DexRefresh    func(ctx context.Context, dexRefresh string) (rotated string, groups []string, err error)
 	Provision     func(ctx context.Context, email string, groups []string) (userID string, err error)
 	Mint          func(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error)
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)

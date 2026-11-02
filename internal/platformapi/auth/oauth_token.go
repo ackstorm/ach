@@ -119,7 +119,7 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 	if err := d.Store.Put(r.Context(), rotatingKind, presented, true, rotatingTTL); err != nil {
 		d.Auth.Logger.Warn("oauth: rotation marker not stored; a racer is told invalid_grant", "err", err)
 	}
-	if err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
+	if _, err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
 		if errors.Is(err, errIdPRefused) {
 			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
 			_ = d.Store.Del(context.WithoutCancel(r.Context()), rotatingKind, presented) // racers: the session is over, fail now
@@ -165,7 +165,8 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 
 // revalidateAtIdP replays the user's shared Dex refresh token (D-22) — the
 // one check both the /token refresh grant and the console session run.
-// nil: the IdP still honours the user and the rotated token is stored.
+// nil: the IdP still honours the user and the rotated token is stored;
+// groups is the refreshed `groups` claim (nil when Dex sent none).
 // errIdPRefused: sessions ended (Dex token deleted, oauth pk_ revoked).
 // ErrIdPUnreachable: Dex did not answer — nothing changed, retry later.
 //
@@ -173,21 +174,21 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 // even when our caller hangs up mid-call, and a rotated token we never
 // stored is "claimed twice" at the next replay — which ends every session
 // of the user (incident 2026-10-08: a 15 s Dex answer, client gone).
-func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
+func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []string, err error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dexRefreshTimeout)
 	defer cancel()
 	var dexRefresh string
 	if ok, err := d.Store.Get(ctx, dexRefreshKind, sub, &dexRefresh); err != nil {
-		return err
+		return nil, err
 	} else if !ok {
 		d.Auth.Logger.Info("oauth: no Dex refresh token stored for the user; sessions ended", "sub", sub)
-		return errIdPRefused
+		return nil, errIdPRefused
 	}
-	rotated, err := d.dexRefresh(ctx, dexRefresh)
+	rotated, groups, err := d.dexRefresh(ctx, dexRefresh)
 	if err != nil {
 		if !dexDenied(err) {
 			d.Auth.Logger.Warn("oauth: dex refresh unreachable", "err", err)
-			return fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
+			return nil, fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
 		}
 		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", sub, "err", err)
 		_ = d.Store.Del(ctx, dexRefreshKind, sub)
@@ -196,19 +197,19 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) error {
 				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)
 			}
 		}
-		return errIdPRefused
+		return nil, errIdPRefused
 	}
 	// PutIfExists: an EndSessions (pk_ revoke) landing during the Dex call
 	// must stay ended, not be undone by this rotation.
 	stored, err := d.Store.PutIfExists(ctx, dexRefreshKind, sub, rotated, d.RefreshTTL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !stored {
 		d.Auth.Logger.Info("oauth: sessions ended during the Dex refresh; refusing", "sub", sub)
-		return errIdPRefused
+		return nil, errIdPRefused
 	}
-	return nil
+	return groups, nil
 }
 
 // issue answers the grant with a new token pair; false when it answered

@@ -173,7 +173,7 @@ func (d OAuthDeps) ConsoleSession(ctx context.Context, sid string) (string, bool
 	if now.Before(s.RevalidateAt) {
 		return s.Sub, true, nil
 	}
-	if err := d.revalidateAtIdP(ctx, s.Sub); err != nil {
+	if _, err := d.revalidateAtIdP(ctx, s.Sub); err != nil {
 		if errors.Is(err, errIdPRefused) {
 			_ = d.Store.Del(ctx, consoleSessionKind, sid)
 			return "", false, nil

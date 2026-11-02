@@ -5,6 +5,7 @@
 ```bash
 ach-cli login            # URL from the argument, else ACH_URL, else a prompt
 ach-cli whoami           # who you are, your budget and how many keys you may create
+ach-cli refresh          # after joining an SSO group: pick up its teams, no browser
 ```
 
 The URL is the platform's base URL (`https://…`). Pass it as the argument when you know
