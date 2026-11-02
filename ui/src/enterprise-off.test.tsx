@@ -68,11 +68,11 @@ describe('Enterprise disabled', () => {
     expect(analyticsLinks()).toEqual([]);
   });
 
-  it('puts each KPI change on its own line, latency against the previous period\'s median', () => {
+  it('puts each KPI change on its own line, latency against the previous period\'s median; the Budget has none', () => {
     render(<MemoryRouter><Overview /></MemoryRouter>);
     const lines = [...document.querySelectorAll('.kpi')].map((k) => [...k.querySelectorAll('.delta')].map((d) => d.textContent));
-    expect(lines.map((l) => l[1])).toEqual(['▲ 10.9% vs previous period', '▲ 68.8% vs previous period', '▼ 1.8% vs previous period', '▲ 30.0% vs previous period']);
-    expect(document.querySelectorAll('.kpi .chg.up')).toHaveLength(2); // spend and latency rising are bad
+    expect(lines.map((l) => l[1])).toEqual([undefined, '▲ 68.8% vs previous period', '▼ 1.8% vs previous period', '▲ 30.0% vs previous period']);
+    expect(document.querySelectorAll('.kpi .chg.up')).toHaveLength(1); // latency rising is bad
   });
 
   it('navigation marks Enterprise entries and links to no analytics page', () => {

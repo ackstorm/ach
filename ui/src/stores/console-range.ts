@@ -14,7 +14,7 @@ function load(): Saved {
     const saved = JSON.parse(window.sessionStorage.getItem(KEY) ?? 'null') as Saved | null;
     if (saved && typeof saved.preset === 'string') return { preset: saved.preset, custom: saved.custom ?? null };
   } catch { /* storage blocked or corrupt */ }
-  return { preset: '30d', custom: null };
+  return { preset: '7d', custom: null };
 }
 function save(state: Saved): Saved {
   try { window.sessionStorage.setItem(KEY, JSON.stringify(state)); } catch { /* storage blocked */ }

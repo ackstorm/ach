@@ -33,14 +33,16 @@ export function Overview() {
   if (query.isError || !query.data) return <ErrorCard onRetry={() => void query.refetch()} retrying={query.isFetching} />;
   const { totals, budget, range, series, models } = query.data;
   const deltas: Partial<StatsDeltas> = totals.deltas ?? {};
-  // Spend KPI = this cycle's allowance spend (the enforced tag, same figure as
-  // the allowance panel), not the page range; the range spend lives on Cost.
+  // With a cycle the KPI is the Budget: this cycle's allowance spend (the
+  // enforced tag, same figure as the allowance panel), its sparkline the cycle's
+  // days, and no range delta (that compares a different window); the range
+  // spend lives on Cost. Without one it is the range Spend.
   const cycle = budget.source !== 'unknown' && budget.current != null;
-  const spend = <><div className="value">{formatCurrency(cycle ? budget.current : totals.spend)}{cycle && budget.max_budget != null && <span className="of"> / {formatCurrency(budget.max_budget)}</span>}</div><div className="delta">{!cycle ? 'Recorded spend' : budget.max_budget ? `${formatPercent(budget.current! / budget.max_budget, 0)} of this cycle’s allowance` : 'Spent this cycle'}</div><Delta pct={deltas.spend_pct} bad /></>;
+  const spend = <><div className="value">{formatCurrency(cycle ? budget.current : totals.spend)}{cycle && budget.max_budget != null && <span className="of"> / {formatCurrency(budget.max_budget)}</span>}</div><div className="delta">{!cycle ? 'Recorded spend' : budget.max_budget ? `${formatPercent(budget.current! / budget.max_budget, 0)} of this cycle’s allowance` : 'Spent this cycle'}</div>{!cycle && <Delta pct={deltas.spend_pct} bad />}</>;
   return <>
     {head}
     <div className="kpis">
-      <div className="panel kpi"><div className="khead"><span className="badge">$</span>Spend</div>{spend}<Spark values={series.map((row) => row.spend)} /></div>
+      <div className="panel kpi"><div className="khead"><span className="badge">$</span>{cycle ? 'Budget' : 'Spend'}</div>{spend}<Spark values={(cycle ? budget.cycle_series ?? [] : series).map((row) => row.spend)} /></div>
       <div className="panel kpi"><div className="khead"><span className="badge">⬡</span>Tokens</div><div className="value">{abbreviate(totals.tokens)}</div><div className="delta">{abbreviate(totals.input_tokens)} input · {abbreviate(totals.output_tokens)} output</div><Delta pct={deltas.tokens_pct} /><Spark color="blue" values={series.map((row) => row.tokens)} /></div>
       <div className="panel kpi"><div className="khead"><span className="badge">↗</span>Gateway operations</div><div className="value">{formatInt(totals.requests)}</div><div className="delta">{formatInt(totals.failed_requests)} failed operations</div><Delta pct={deltas.requests_pct} /><Spark values={series.map((row) => row.requests)} /></div>
       <EvidenceKpi />
