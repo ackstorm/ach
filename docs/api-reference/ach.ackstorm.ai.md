@@ -607,7 +607,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `serviceAccounts` _string array_ | ServiceAccounts are exact "<namespace>/<name>" ServiceAccounts, both<br />parts DNS-1123. No patterns. |  | MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ <br /> |
+| `serviceAccounts` _string array_ | ServiceAccounts are exact "<namespace>/<name>" ServiceAccounts, both<br />parts DNS-1123. No patterns. |  | MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$ <br /> |
 
 
 #### KeyGrantSpec
