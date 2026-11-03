@@ -1,6 +1,6 @@
 ---
 name: ach-cli
-description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Claude Code, Codex, OpenCode, Gemini CLI or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
+description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, launch a tool on, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Claude Code, Codex, OpenCode, Gemini CLI or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
 ---
 
 # ACH from the command line
@@ -43,7 +43,7 @@ announcing a next step: run it in the same reply, or end with a question.
 | Install or update ach-cli itself | [install](references/install.md) |
 | Sign in, switch profiles, sign out, a machine/CI profile, `ach-cli token` | [login](references/login.md) |
 | See, search or describe Environments | [environments](references/environments.md) |
-| Install an Environment globally or into a folder, keep it updated, remove it | [hydrate](references/hydrate.md) |
+| Install an Environment globally or into a folder, start a tool on it (`launch`), keep it updated, remove it | [hydrate](references/hydrate.md) |
 | Sign in to or fix an MCP server | [mcp](references/mcp.md) |
 | A key for an agent, CI job or script (`ek-`) | [keys](references/keys.md) |
 | Install a plugin or skill straight from a git repo, without an Environment | [local](references/local.md) |
