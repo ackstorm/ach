@@ -51,6 +51,20 @@ Hydrate prints a per-item diff framed by `Hydrating …` / `Finished …`: `+` a
 never overwritten silently: hydrate stops with exit code 2. Show the user which file,
 then either keep their edit (do nothing) or, only on their say-so, `--force`.
 
+## Hydrate and start the tool in one step
+
+```bash
+ach-cli launch claude --environment <environment>                  # or codex, gemini, opencode, pi
+ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>
+```
+
+`launch` runs the same hydrate for that one tool (same flags as `env hydrate`, minus
+`--target`, `--only` and `--dry-run`), then starts the tool in `--dir` (default: the
+current folder) and exits with the tool's exit code. Nothing starts when the tool is not
+on the `PATH`, no Environment is given (`--environment` or `ACH_ENVIRONMENT`), or the
+hydrate fails. Arguments after the tool name go to it; its own flags go after `--`.
+It takes over the terminal: tell the user to run it themselves, never run it yourself.
+
 ## One plugin or skill only
 
 ```bash
