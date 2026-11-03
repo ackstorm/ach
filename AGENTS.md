@@ -251,8 +251,11 @@ creates these teams. The `ek_`-create fallback that provisions a user LiteLLM do
 follows at its next reconcile (the operator attaches the user's shell team).
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
-`logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local` (workspace verbs
+`logout`/`whoami`/`token`/`profile`/`env`/`keys`/`admin`/`local`/`launch` (workspace verbs
 `clone`/`hydrate`/`status`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
+`launch <claude|codex|gemini|opencode|pi> --environment <env>` = `env hydrate` for that
+one target, then starts the tool in `--dir` (exits with the tool's code; no tool on
+PATH, no environment or a failed hydrate = nothing starts);
 `env hydrate|uninstall <env> --only plugin/<name>` (or `skill/<name>`) touches one item;
 `--dir`/`-g` pick the root, `--target a,b` the tools; a plugin's commands and
 skills land namespaced by the plugin name — `/bro:ladder` in Claude Code,

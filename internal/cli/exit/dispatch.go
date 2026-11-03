@@ -32,10 +32,12 @@ func Dispatch(err error) Code {
 
 // DispatchAndRender resolves the exit Code and writes the error to stderr
 // git-style ("error: <msg>", then "hint: <next step>" when one is known).
-// main() should call os.Exit(int(code)) with the returned Code.
+// An empty message prints nothing: the code alone is the result (`launch`
+// passing on the tool's own exit code). main() should call
+// os.Exit(int(code)) with the returned Code.
 func DispatchAndRender(err error, stderr io.Writer) Code {
 	code := Dispatch(err)
-	if err != nil {
+	if err != nil && err.Error() != "" {
 		_, _ = fmt.Fprintln(stderr, "error: "+err.Error())
 		var sErr *httpclient.ServerError
 		if errors.As(err, &sErr) && serverHints[sErr.Code] != "" {
