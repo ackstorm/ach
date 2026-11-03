@@ -3923,7 +3923,7 @@ block so other requester kinds can sit beside ServiceAccounts.</p>
 <td><code>serviceAccounts</code> <em>string array</em></td>
 <td>ServiceAccounts are exact "<namespace>/<name>" ServiceAccounts, both<br />parts DNS-1123. No patterns.</td>
 <td></td>
-<td>MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?/<a href="[-a-z0-9.]*[a-z0-9]">a-z0-9</a>?$ <br /></td>
+<td>MinItems: 1 <br />items:MaxLength: 317 <br />items:Pattern: ^<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?/<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?(.<a href="[-a-z0-9]*[a-z0-9]">a-z0-9</a>?)*$ <br /></td>
 </tr>
 </tbody>
 </table>
