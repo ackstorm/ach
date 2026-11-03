@@ -56,3 +56,11 @@ func TestDispatchAndRender_ServerHint(t *testing.T) {
 		t.Errorf("unexpected hint: %q", buf.String())
 	}
 }
+
+// An empty message carries only the code (launch's tool exit code): no output.
+func TestDispatchAndRender_EmptyMessageSilent(t *testing.T) {
+	var buf bytes.Buffer
+	if code := exit.DispatchAndRender(&exit.CodedError{Code: 42}, &buf); code != 42 || buf.Len() != 0 {
+		t.Errorf("code %d, output %q; want 42 and nothing", code, buf.String())
+	}
+}

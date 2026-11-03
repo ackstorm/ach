@@ -63,3 +63,6 @@ graphify-out/
 # React build output is embedded at build time (make ui-build); only the keep-file is tracked.
 internal/platformapi/console/dist/*
 !internal/platformapi/console/dist/.gitkeep
+
+# Local MCP client config (per developer, may hold credentials).
+/.mcp.json

@@ -10,7 +10,7 @@ func TestRoot_NoHandWrittenLong(t *testing.T) {
 	if rootCmd.Long != "" {
 		t.Errorf("root Long should be empty (cobra lists the commands); got:\n%s", rootCmd.Long)
 	}
-	for _, want := range []string{"login", "logout", "whoami", "token", "profile", "env", "keys", "admin", "local"} {
+	for _, want := range []string{"login", "logout", "whoami", "token", "profile", "env", "keys", "admin", "local", "launch"} {
 		if c, _, err := rootCmd.Find([]string{want}); err != nil || c == rootCmd {
 			t.Errorf("root is missing command %q", want)
 		}

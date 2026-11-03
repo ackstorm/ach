@@ -95,25 +95,11 @@ var hydrateRunFn = hydrate.Run
 // tree per t.Run.
 func newHydrateCmd() *cobra.Command {
 	var (
-		// Phase 6 surface — preserved.
-		flagNoWarnings bool
-		flagInsecure   bool
-		flagCred       credFlags
-
-		// Phase 7 engine flags (D-03).
-		flagOnlyRuntime   bool
-		flagSync          bool
-		flagForce         bool
+		f                 hydrateFlags
 		flagDryRun        bool
-		flagWait          bool
-		flagLockTimeout   time.Duration
-		flagDir           string
 		flagAllowSymlinks bool
 		flagTarget        []string
-		flagGlobal        bool
-		flagConflict      string
 		flagOnly          string
-		flagModels        bool
 
 		// D-04 hidden flag — surface preserved for the W3-P3 golden-
 		// diff anchor.
@@ -179,80 +165,35 @@ Exit codes:
   3 not authorized   4 wrong environment for this key   5 state mismatch
   6 network error   7 file-name collision   8 config read/write error`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conflict, err := conflict.Parse(flagConflict)
-			if err != nil {
-				return &exit.CodedError{Code: exit.General, Msg: err.Error()}
-			}
-			var only *hydrate.Item
-			if flagOnly != "" {
-				if only, err = hydrate.ParseItem(flagOnly); err != nil {
-					return &exit.CodedError{Code: exit.General, Msg: err.Error()}
-				}
-			}
 			env := ""
 			if len(args) > 0 {
 				env = args[0]
 			}
-			return runHydrate(cmd, hydrateInputs{
-				environment:   env,
-				noWarnings:    flagNoWarnings,
-				verbose:       flagCred.Verbose,
-				insecure:      flagInsecure,
-				cred:          flagCred,
-				onlyRuntime:   flagOnlyRuntime,
-				sync:          flagSync,
-				force:         flagForce,
-				dryRun:        flagDryRun,
-				wait:          flagWait,
-				lockTimeout:   flagLockTimeout,
-				output:        flagDir,
-				allowSymlinks: flagAllowSymlinks,
-				platform:      flagTarget,
-				global:        flagGlobal,
-				conflict:      conflict,
-				raw:           flagRaw,
-				only:          only,
-				models:        flagModels,
-			})
+			in, err := f.inputs(env)
+			if err != nil {
+				return err
+			}
+			if flagOnly != "" {
+				if in.only, err = hydrate.ParseItem(flagOnly); err != nil {
+					return &exit.CodedError{Code: exit.General, Msg: err.Error()}
+				}
+			}
+			in.dryRun, in.allowSymlinks, in.platform, in.raw = flagDryRun, flagAllowSymlinks, flagTarget, flagRaw
+			return runHydrate(cmd, in)
 		},
 	}
 
-	// Phase 6 surface flags — preserved.
-	cmd.Flags().BoolVar(&flagNoWarnings, "no-warnings", false,
-		"Suppress the tip to use an environment key (ek-) instead of your sign-in")
-	cmd.Flags().BoolVar(&flagInsecure, "insecure", false,
-		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
-	registerCredFlags(cmd, &flagCred)
-
-	// Phase 7 engine flags (D-03).
-	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
-		"Reconcile ONLY runtime entries (skip context)")
-	cmd.Flags().BoolVar(&flagSync, "sync", false,
-		"Delete state entries no longer in the environment (deepest-first)")
-	cmd.Flags().BoolVar(&flagForce, "force", false,
-		"Bypass drift refusal, environment guard, and schema mismatch")
+	f.register(cmd)
 	cmd.Flags().BoolVar(&flagDryRun, "dry-run", false,
 		"Run read+diff steps but skip state write and content extract")
-	cmd.Flags().BoolVar(&flagWait, "wait", false,
-		"Block indefinitely on workspace lock contention")
-	cmd.Flags().DurationVar(&flagLockTimeout, "lock-timeout", 0,
-		"Wait up to <d> for workspace lock (mutually exclusive with --wait)")
-	cmd.Flags().StringVar(&flagDir, "dir", "",
-		"Workspace root override (default: cwd)")
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Permit symlinks in downloaded archives (unsafe)")
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
 		"Override platform autodetection; "+
 			"comma-separated or repeated for several targets, e.g. codex,opencode "+
 			"(claude-code / codex / gemini-cli / opencode / pi + case-folded aliases)")
-	cmd.Flags().BoolVarP(&flagGlobal, "global", "g", false,
-		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
-	cmd.Flags().StringVar(&flagConflict, "conflict", "namespace",
-		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
 		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
-	cmd.Flags().BoolVar(&flagModels, "models", false,
-		"Route the tool's model traffic through ACH (apiKeyHelper / model provider wiring)")
 
 	// D-04 hidden: --raw preserves the Phase 6 POST+stream byte-for-byte
 	// contract. Hidden so --help advertises only the engine surface.
@@ -266,6 +207,73 @@ Exit codes:
 	}
 
 	return cmd
+}
+
+// hydrateFlags are the hydrate flags `env hydrate` and `launch` share; one
+// registration keeps their names, defaults and help text identical.
+type hydrateFlags struct {
+	noWarnings  bool
+	insecure    bool
+	cred        credFlags
+	onlyRuntime bool
+	sync        bool
+	force       bool
+	wait        bool
+	lockTimeout time.Duration
+	dir         string
+	global      bool
+	conflict    string
+	models      bool
+}
+
+func (f *hydrateFlags) register(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&f.noWarnings, "no-warnings", false,
+		"Suppress the tip to use an environment key (ek-) instead of your sign-in")
+	cmd.Flags().BoolVar(&f.insecure, "insecure", false,
+		"Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)")
+	registerCredFlags(cmd, &f.cred)
+	cmd.Flags().BoolVar(&f.onlyRuntime, "only-runtime", false,
+		"Reconcile ONLY runtime entries (skip context)")
+	cmd.Flags().BoolVar(&f.sync, "sync", false,
+		"Delete state entries no longer in the environment (deepest-first)")
+	cmd.Flags().BoolVar(&f.force, "force", false,
+		"Bypass drift refusal, environment guard, and schema mismatch")
+	cmd.Flags().BoolVar(&f.wait, "wait", false,
+		"Block indefinitely on workspace lock contention")
+	cmd.Flags().DurationVar(&f.lockTimeout, "lock-timeout", 0,
+		"Wait up to <d> for workspace lock (mutually exclusive with --wait)")
+	cmd.Flags().StringVar(&f.dir, "dir", "",
+		"Workspace root override (default: cwd)")
+	cmd.Flags().BoolVarP(&f.global, "global", "g", false,
+		"Use $HOME/.ach/<env> scope instead of cwd/.ach")
+	cmd.Flags().StringVar(&f.conflict, "conflict", "namespace",
+		"Cross-plugin collision policy: namespace|skip|overwrite|refuse")
+	cmd.Flags().BoolVar(&f.models, "models", false,
+		"Route the tool's model traffic through ACH (apiKeyHelper / model provider wiring)")
+}
+
+// inputs is the hydrateInputs these flags fill for environment env.
+func (f *hydrateFlags) inputs(env string) (hydrateInputs, error) {
+	policy, err := conflict.Parse(f.conflict)
+	if err != nil {
+		return hydrateInputs{}, &exit.CodedError{Code: exit.General, Msg: err.Error()}
+	}
+	return hydrateInputs{
+		environment: env,
+		noWarnings:  f.noWarnings,
+		verbose:     f.cred.Verbose,
+		insecure:    f.insecure,
+		cred:        f.cred,
+		onlyRuntime: f.onlyRuntime,
+		sync:        f.sync,
+		force:       f.force,
+		wait:        f.wait,
+		lockTimeout: f.lockTimeout,
+		output:      f.dir,
+		global:      f.global,
+		conflict:    policy,
+		models:      f.models,
+	}, nil
 }
 
 // hydrateInputs is the resolved flag + env snapshot used by every step

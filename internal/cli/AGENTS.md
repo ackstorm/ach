@@ -53,6 +53,7 @@ ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <e
 ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` updates every env recorded under .ach/
 ach-cli env status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli launch <claude|codex|gemini|opencode|pi> --environment <env> [hydrate flags] [-- tool args]   # runHydrate for that one target, then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with env hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target
 ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
 ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
