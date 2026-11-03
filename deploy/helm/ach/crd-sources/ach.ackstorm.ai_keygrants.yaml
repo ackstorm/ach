@@ -104,7 +104,7 @@ spec:
                       parts DNS-1123. No patterns.
                     items:
                       maxLength: 317
-                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                       type: string
                     minItems: 1
                     type: array

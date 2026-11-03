@@ -14,7 +14,7 @@ type KeyGrantRequesters struct {
 	//
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:items:MaxLength=317
-	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	// +listType=set
 	ServiceAccounts []string `json:"serviceAccounts"`
 }

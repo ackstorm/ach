@@ -208,6 +208,7 @@ func TestKeyGrantAdmission(t *testing.T) {
 		{"no service accounts", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = nil }},
 		{"bare service account", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"agent-k8s-doctor"} }},
 		{"glob service account", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"ach-agent/*"} }},
+		{"empty label in service account name", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"agents/a..b"} }},
 		{"negative budget", func(k *achv1alpha1.KeyGrant) { k.Spec.Budget = &achv1alpha1.BudgetBlock{MaxBudget: -1} }},
 	}
 	for i, tc := range cases {
