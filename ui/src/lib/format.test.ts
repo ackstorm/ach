@@ -14,6 +14,7 @@ import {
   formatInt,
   abbreviate,
   formatDate,
+  formatCycleEnd,
   formatLocalDate,
   formatLocalDateTime,
   formatLocalTime,
@@ -119,6 +120,16 @@ describe('abbreviate — K/M/B suffixes, up to 2 decimals trimmed', () => {
 // LiteLLM resets a budget at local midnight in ITS timezone, so the instant
 // is the day before in UTC east of Greenwich: production's Nov 1 reset in
 // Europe/Madrid arrives as 2026-10-31T23:00:00Z.
+describe('formatCycleEnd — the day before the reset', () => {
+  it('closes the cycle on the last day of the month', () => {
+    expect(formatCycleEnd('2026-11-30T23:00:00Z', 'Europe/Madrid')).toBe('Nov 30, 2026');
+  });
+  it('keeps the em-dash contract', () => {
+    expect(formatCycleEnd(null)).toBe('—');
+    expect(formatCycleEnd('nope')).toBe('—');
+  });
+});
+
 describe('formatLocalDate — MMM DD, YYYY in the viewer\'s zone', () => {
   it('renders the instant on the viewer\'s calendar, not UTC\'s', () => {
     expect(formatLocalDate('2026-10-31T23:00:00Z', 'Europe/Madrid')).toBe('Nov 01, 2026');
@@ -221,9 +232,21 @@ describe('locale', () => {
     expect(f.formatDate('2026-03-01T10:00:00Z')).toBe('01 mar 2026');
   });
 
-  it('pins tests to en-US and falls back to the browser for an invalid tag', async () => {
+  it('pins tests to en-US and falls back to the default for an invalid tag', async () => {
     expect((await load('en-US')).formatDecimal(1234.5, 1)).toBe('1,234.5');
-    expect((await load('not a locale!')).LOCALE).toBeUndefined();
+    expect((await load('not a locale!')).formatDecimal(1234.5, 1)).toBe('1.234,5');
+  });
+
+  it('defaults to English dates and a leading $ with European separators', async () => {
+    const f = await load('');
+    expect(f.formatCurrency(14)).toBe('$14,00');
+    expect(f.formatCurrency(1249.5)).toBe('$1.249,50');
+    expect(f.formatCurrencyCompact(1234)).toBe('$1,23K');
+    expect(f.formatUsdSmall(0.0042)).toBe('$0,0042');
+    expect(f.formatInt(7251087)).toBe('7.251.087');
+    expect(f.abbreviate(769990000)).toBe('769,99M');
+    expect(f.formatPercent(0.985)).toBe('98,5%');
+    expect(f.formatDate('2026-11-30T10:00:00Z')).toBe('Nov 30, 2026');
   });
 
   it('covers the helpers that replaced ad-hoc toFixed', async () => {

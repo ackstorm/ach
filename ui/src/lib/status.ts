@@ -21,12 +21,6 @@ export const ENV_STATUS = {
   outsideTeams: { label: 'Not in your teams', tone: 'neutral' },
 } as const satisfies Record<string, Status>;
 
-/** MCP server health; anything unrecognised reads as its own word, neutral. */
-export function mcpStatus(status: string | null): Status {
-  const s = (status || 'unknown').toLowerCase();
-  return { label: s, tone: s === 'healthy' ? 'ok' : s === 'unhealthy' ? 'danger' : 'neutral' };
-}
-
 /** Trace outcome — Overview and Traces both use this. */
 export const TRACE_OUTCOME: Record<TraceSummary['status'], Status> = {
   success: { label: 'Success', tone: 'ok' },

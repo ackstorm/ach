@@ -3,8 +3,8 @@
 // Read-only list of the Model Context Protocol servers wired into the gateway,
 // sourced from GET /platform/console/capabilities?scope=personal (mcp_servers, a
 // PUBLIC projection — no credentials/env/headers). Per server it shows name +
-// description, status pill, endpoint URL, transport + auth-type chips, the exposed
-// tools, and access groups.
+// description, transport + auth-type chips, its gateway URL, the
+// exposed tools, and access groups.
 //
 // States: per-page error+retry card (useMcp throws on non-200); a calm
 // "provisioning" card while the personal credential is still being set up
@@ -15,17 +15,19 @@ import { useState } from 'react';
 import { Boxes, ExternalLink } from 'lucide-react';
 
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusPill } from '@/components/ui/StatusPill';
 import { Tag } from '@/components/ui/Tag';
 import { TableSearch, matchesSearch } from '@/components/ui/table-search';
 import { FilterChips, toggled } from '@/components/ui/FilterChips';
 import { useMcp } from '@/hooks/use-capabilities';
+import { useSessionStore } from '@/stores/session';
 import { CatalogHead, CatalogState } from '@/components/catalog/Catalog';
 import type { McpServerRow } from '@/lib/api-types';
-import { mcpStatus } from '@/lib/status';
 import { formatInt } from '@/lib/format';
 
 const EM_DASH = '—';
+
+// Mirrors A2a's fallback: a sensible host before the session endpoint resolves.
+const FALLBACK_API_BASE = 'https://api.your-domain.example';
 
 const PAGE_TITLE = 'MCPs';
 const PAGE_SUB =
@@ -33,27 +35,28 @@ const PAGE_SUB =
 const ERR_HEADING = "Couldn't load MCP servers";
 const ERR_BODY =
   "We couldn't reach the MCP gateway. Check your connection and retry.";
-const UNAVAIL_HEADING = 'MCP gateway not enabled';
+// An empty list only says this caller has no server grant, not that MCP is off.
+const UNAVAIL_HEADING = 'No MCP servers available';
 const UNAVAIL_BODY =
-  'This deployment has no MCP gateway configured. Once servers are added, they will appear here.';
+  'No MCP servers are available to you. They appear here once an Environment grants them.';
 const PROVISIONING_HEADING = 'Access is being provisioned';
 const PROVISIONING_BODY =
   'Your personal catalog appears after the next Environment sync.';
 
-function ServerCard({ server }: { server: McpServerRow }) {
+function ServerCard({ server, apiBase }: { server: McpServerRow; apiBase: string }) {
+  // The URL clients connect to on the gateway, never the upstream server's own.
+  const slug = server.name ?? server.id;
+  const gatewayUrl = slug ? `${apiBase}/mcp/${encodeURIComponent(slug)}` : null;
   return (
     <div className="panel flex flex-col gap-3 p-5">
-      {/* Head: name + status */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border">
-            <Boxes className="size-4 text-primary" aria-hidden="true" />
-          </span>
-          <span className="font-sans text-sm font-semibold text-text-primary">
-            {server.name ?? server.id ?? EM_DASH}
-          </span>
-        </div>
-        <StatusPill tone={mcpStatus(server.status).tone}>{mcpStatus(server.status).label}</StatusPill>
+      {/* Head: name */}
+      <div className="flex items-center gap-2.5">
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border">
+          <Boxes className="size-4 text-primary" aria-hidden="true" />
+        </span>
+        <span className="font-sans text-sm font-semibold text-text-primary">
+          {server.name ?? server.id ?? EM_DASH}
+        </span>
       </div>
 
       {/* Description */}
@@ -61,14 +64,6 @@ function ServerCard({ server }: { server: McpServerRow }) {
         <p className="font-sans text-sm leading-relaxed text-text-secondary">
           {server.description}
         </p>
-      )}
-
-      {/* Endpoint URL */}
-      {server.url && (
-        <div className="flex items-center gap-1.5 break-all font-mono text-[11px] text-text-tertiary">
-          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-          {server.url}
-        </div>
       )}
 
       {/* Meta chips: transport + auth */}
@@ -79,14 +74,20 @@ function ServerCard({ server }: { server: McpServerRow }) {
             <span className="k">server auth</span><b>{server.auth_type}</b>
           </Tag>
         )}
-        {server.tool_count > 0 ? (
+        {/* A zero count is indistinguishable from LiteLLM's non-admin endpoint
+            simply not reporting tools — don't claim "0 tools". */}
+        {server.tool_count > 0 && (
           <Tag><b>{server.tool_count}</b> {server.tool_count === 1 ? 'tool' : 'tools'}</Tag>
-        ) : (
-          // A zero count here is indistinguishable from LiteLLM's non-admin
-          // endpoint simply not reporting tools — don't claim "0 tools".
-          <Tag dim>tools not listed</Tag>
         )}
       </div>
+
+      {/* Gateway URL */}
+      {gatewayUrl && (
+        <div className="flex items-center gap-1.5 break-all font-mono text-[11px] text-text-tertiary">
+          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+          {gatewayUrl}
+        </div>
+      )}
 
       {/* Tools — cap the visible chips so a chatty server doesn't dominate. */}
       {server.tools.length > 0 && (
@@ -127,6 +128,7 @@ export function Mcp() {
   // ponytail: the alitellm-auth default-key gate had no ACH equivalent (env
   // keys are the scoping unit, not a "default" key) — always fetch.
   const query = useMcp();
+  const apiBase = useSessionStore((s) => s.me?.endpoint) || FALLBACK_API_BASE;
   const [search, setSearch] = useState('');
   const [groups, setGroups] = useState<Set<string>>(new Set());
   const servers = query.data?.servers ?? [];
@@ -135,7 +137,7 @@ export function Mcp() {
   // Error (502 / network).
   if (query.isError) {
     return (
-      <div className="catalog-page">
+      <div className="catalog-page flex flex-col gap-6">
         {header}
         <CatalogState heading={ERR_HEADING}>
           {ERR_BODY}
@@ -176,7 +178,7 @@ export function Mcp() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {visible.map((s, i) => (
-              <ServerCard key={s.id ?? i} server={s} />
+              <ServerCard key={s.id ?? i} server={s} apiBase={apiBase} />
             ))}
           </div>
         </div>

@@ -34,9 +34,10 @@ const PAGE_SUB =
 const ERR_HEADING = "Couldn't load A2A agents";
 const ERR_BODY =
   "We couldn't reach the A2A gateway. Check your connection and retry.";
-const UNAVAIL_HEADING = 'A2A gateway not enabled';
+// An empty list only says this caller has no agent grant, not that A2A is off.
+const UNAVAIL_HEADING = 'No agents available';
 const UNAVAIL_BODY =
-  'This deployment has no A2A gateway configured. Once agents are added, they will appear here.';
+  'No A2A agents are available to you. They appear here once an Environment grants them.';
 const PROVISIONING_HEADING = 'Access is being provisioned';
 const PROVISIONING_BODY =
   'Your personal catalog appears after the next Environment sync.';
@@ -113,7 +114,7 @@ export function A2a() {
   // Error (502 / network).
   if (query.isError) {
     return (
-      <div className="catalog-page">
+      <div className="catalog-page flex flex-col gap-6">
         {header}
         <CatalogState heading={ERR_HEADING}>
           {ERR_BODY}

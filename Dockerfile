@@ -8,7 +8,7 @@ WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY ui/ ./
-# Empty = each viewer's browser locale; e.g. es-ES forces one number/date format.
+# One number/date format for every viewer; empty = en-US with European separators.
 ARG CONSOLE_LOCALE=
 RUN VITE_CONSOLE_LOCALE=${CONSOLE_LOCALE} npm run build
 

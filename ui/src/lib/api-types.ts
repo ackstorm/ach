@@ -392,7 +392,6 @@ export interface McpServerRow {
   url: string | null;
   transport: string | null;
   auth_type: string | null;
-  status: string | null;
   tools: string[];
   tool_count: number;
   access_groups: string[];
