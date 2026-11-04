@@ -179,8 +179,8 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
 - **Cross-cutting columns**: `origin ('cr'|'ui')` + `locked` (GitOps-wins:
   operator UPSERTs guarded `ON CONFLICT … WHERE existing.origin='cr'`;
   CR apply TAKES OVER a ui row 'ui'→'cr' locked=TRUE; UI fenced with
-  `403 immutable_via_ui`); `deletion_timestamp` soft-delete drain markers +
-  partial indexes; `force_refresh_requested_at`; `upstream_rev`
+  `403 immutable_via_ui`); `deletion_timestamp` soft-delete drain markers
+  (not on Environments: the drain deletes the row) + partial indexes; `force_refresh_requested_at`; `upstream_rev`
   (SHA/ETag/generation/ETag|Last-Modified).
 - **NOTIFY**: `internal/db.WithTxNotify` — `pg_notify` inside the same tx as
   the row write (closes visibility race). 13 `ach_*_changed` channels + the

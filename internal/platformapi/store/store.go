@@ -121,11 +121,6 @@ func decodeAccessGroupSynced(raw []byte) bool {
 //     for ?all=true reaches this code path with all=true).
 //   - When all is false, an Environment is included iff its
 //     authorized_teams[] shares at least one element with callerTeams.
-//
-// Soft-deleted rows (deletion_timestamp IS NOT NULL) are excluded by the
-// underlying db.ListEnvironments helper — the list endpoint surfaces the
-// not-draining set; the Content Service authz path uses GetEnvironment which
-// deliberately surfaces drain-mode rows per CS-09.
 func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []string, all bool) ([]db.EnvironmentRow, error) {
 	rows, err := db.ListEnvironments(ctx, s.pool, s.ns)
 	if err != nil {

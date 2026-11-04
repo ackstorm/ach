@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- Deleting an `Environment` now removes its Postgres row. It used to stay
+  soft-deleted forever: gone from `env list`, but still answering hydrate,
+  `env describe`, the console and content downloads by name, reported as
+  `Available`. Migration `000027` purges the rows already left behind.
+
 ## [1.1.0] - 2026-10-30
 
 ### Added

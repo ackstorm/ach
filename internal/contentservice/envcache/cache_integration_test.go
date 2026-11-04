@@ -127,21 +127,30 @@ func TestNotifyInvalidates(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond, "Get should observe NOTIFY-driven row insert")
 }
 
-// TestDrainModeStillVisible: a soft-deleted (drain-mode) environment remains
-// visible to Get — the CS-09 contract the content-service relies on.
-func TestDrainModeStillVisible(t *testing.T) {
+// TestDeletedEnvironmentGoesAway: deleting the row NOTIFYs, so a running cache
+// stops serving the Environment without waiting for the periodic refresh.
+func TestDeletedEnvironmentGoesAway(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgres(t, ctx)
 	defer cleanup()
 
-	upsertEnv(t, ctx, pool, "draining")
-	require.NoError(t, db.SoftDeleteEnvironment(ctx, pool, testNS, "draining"))
+	upsertEnv(t, ctx, pool, "doomed")
 
 	c := envcache.New(pool, testNS, logr.Discard())
-	require.NoError(t, c.Refresh(ctx))
+	runCtx, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+	go func() { _ = c.Run(runCtx) }()
 
-	row, ok := c.Get(testNS, "draining")
-	require.True(t, ok, "drain-mode env must stay visible (CS-09)")
-	require.Equal(t, []string{"team-draining"}, row.AuthorizedTeams)
+	require.Eventually(t, func() bool {
+		_, ok := c.Get(testNS, "doomed")
+		return ok
+	}, 10*time.Second, 50*time.Millisecond, "Get should see the row after the initial refresh")
+
+	require.NoError(t, db.DeleteEnvironment(ctx, pool, testNS, "doomed"))
+
+	require.Eventually(t, func() bool {
+		_, ok := c.Get(testNS, "doomed")
+		return !ok
+	}, 10*time.Second, 50*time.Millisecond, "Get should observe the NOTIFY-driven removal")
 }

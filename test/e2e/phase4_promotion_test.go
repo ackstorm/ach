@@ -382,6 +382,7 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 			"--wait=true"); err != nil {
 			t.Fatalf("§11f.Env finalizer drain: %v\n%s", err, out)
 		}
+		waitForACHPostgresCount(t, "environments", "name='demo-drain'", 0, 30*time.Second)
 	})
 
 	t.Run("PluginMarketplace", func(t *testing.T) {

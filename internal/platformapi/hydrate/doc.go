@@ -17,8 +17,6 @@
 //   - pk_ team-intersection check via teams.LookupCallerTeams; empty
 //     intersection -> 403 unauthorized_team.
 //   - Unknown environment -> 404 environment_not_found.
-//   - Terminating Environments STILL serve hydrate (API-03 v9; drain semantics
-//     are Phase 5 CS-09 concern).
 //   - Response carries schemaVersion "v1alpha1" verbatim; runtime + context
 //     blocks ALWAYS present with empty slices [] (not null, not absent) when
 //     the underlying Environment has none.

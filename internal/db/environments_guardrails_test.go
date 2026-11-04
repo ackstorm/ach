@@ -68,14 +68,6 @@ func TestUpsertEnvironment_GuardrailsRoundTrip(t *testing.T) {
 		t.Errorf("List guardrails = %+v", list)
 	}
 
-	drain, err := db.ListEnvironmentsIncludingDraining(ctx, pool, "ach-system")
-	if err != nil {
-		t.Fatalf("ListEnvironmentsIncludingDraining: %v", err)
-	}
-	if len(drain) != 1 || !slices.Equal(drain[0].RuntimeGuardrails, want) {
-		t.Errorf("ListIncludingDraining guardrails = %+v", drain)
-	}
-
 	// Removal must converge — the EXCLUDED assignment has to overwrite, not
 	// leave the previous value behind.
 	cleared := baseGuardrailRow("guardrail-demo", []string{})

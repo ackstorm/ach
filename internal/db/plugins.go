@@ -206,7 +206,8 @@ func SoftDeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	return nil
 }
 
-// SoftDeletePluginTx — see SoftDeleteEnvironmentTx.
+// SoftDeletePluginTx is SoftDeletePlugin inside an outer transaction
+// (db.WithTxNotify).
 func SoftDeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {

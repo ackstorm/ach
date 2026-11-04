@@ -118,11 +118,6 @@ func resolveAuthn(ctx context.Context, d Deps, r *http.Request) (*keystore.KeyIn
 // EnvCache.Get(Namespace, resolvedEnv). EnvCache.Get returning a miss
 // (ok == false) → 404 environment_not_found. The lookup is an in-memory
 // map read, so it cannot error — there is no 500 path here.
-//
-// CS-09: the cache snapshot includes drain-mode rows (deletion_timestamp
-// != nil) — the Content Service serves until full finalizer drain.
-// Downstream gates (resolveContent / checkStaleness) eventually
-// short-circuit if the underlying projection row is hard-deleted.
 func resolveEnv(d Deps, info *keystore.KeyInfo, headerEnv string) (*envcache.EnvRow, *errResp) {
 	var resolved string
 	switch info.KeyType {

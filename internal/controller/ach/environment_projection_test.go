@@ -12,11 +12,9 @@
 //     envtest-fast (DB-nil default); covered by `make test-integration`
 //     once the integration env wires r.DB onto the test reconciler.
 //
-//   - TestEnvironmentReconciler_ProjectionSoftDeleteOnDrain: Create
+//   - TestEnvironmentReconciler_ProjectionRemovedOnDrain: Create
 //     Environment → wait for projection row → Delete CR → wait for
-//     finalizer drain → assert the row STILL EXISTS with
-//     DeletionTimestamp != nil (CS-09 in-flight-read preservation).
-//     Integration-gated.
+//     finalizer drain → assert the row is gone. Integration-gated.
 //
 //   - TestEnvironmentReconciler_ProjectionUpdatesOnSpecChange: Create
 //     Environment → projection row v1 → Patch spec.authorizedTeams →
@@ -31,7 +29,7 @@
 //
 // The integration-skip pattern matches pluginmarketplace_envtest_test.go's
 // TestPMR_Stage3_DeleteSweep precedent: the DB-roundtrip assertions for
-// UpsertEnvironment / SoftDeleteEnvironment / GetEnvironmentByName already
+// UpsertEnvironment / DeleteEnvironment / GetEnvironmentByName already
 // live in internal/db/environments_test.go under `//go:build integration`
 // (Plan 05-02 Task 2). This file documents the controller-level wiring
 // path and asserts the nil-DB tolerance invariant inline.
@@ -58,11 +56,11 @@ func TestEnvironmentReconciler_ProjectionUpsert(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/environments_test.go")
 }
 
-// TestEnvironmentReconciler_ProjectionSoftDeleteOnDrain exercises the
-// deletion-path SoftDeleteEnvironment write between drainEkRows and
+// TestEnvironmentReconciler_ProjectionRemovedOnDrain exercises the
+// deletion-path DeleteEnvironment write between drainEkRows and
 // RemoveFinalizer. Integration-gated (see ProjectionUpsert).
-func TestEnvironmentReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
-	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/environments_test.go")
+func TestEnvironmentReconciler_ProjectionRemovedOnDrain(t *testing.T) {
+	t.Skip("integration: requires r.DB (Postgres pool); covered by e2e §11f.Environment + internal/db/environments_test.go")
 }
 
 // TestEnvironmentReconciler_ProjectionUpdatesOnSpecChange exercises the

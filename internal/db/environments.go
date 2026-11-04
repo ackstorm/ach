@@ -20,8 +20,8 @@
 //     execution_resources_resolved_condition jsonb: dual-written from the
 //     Operator's existing condition rollup (D-14 / D-15) for kubectl-
 //     describe parity with the K8s status subresource.
-//   - deletion_timestamp timestamptz NULL: §6.5 / CS-09 — Content Service
-//     serves until the row is hard-deleted by finalizer drain.
+//   - deletion_timestamp timestamptz NULL: nothing sets it; the finalizer
+//     drain deletes the row (§6.5).
 //   - resource_version text, updated_at timestamptz: dual-write idempotency
 //     anchors.
 //
@@ -78,20 +78,15 @@ type EnvironmentRow struct {
 	// UI Objects API exports. Nil on rows written before 000024.
 	Spec []byte
 
-	DeletionTimestamp *time.Time // non-nil = drain-mode (CS-09)
+	DeletionTimestamp *time.Time // always nil; see the package comment
 	ResourceVersion   string     // K8s metadata.resourceVersion at write time
 	UpdatedAt         time.Time  // server-set on UPSERT
 }
 
 // UpsertEnvironment inserts-or-updates a row keyed by (namespace, name).
-// The ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile
-// (this path only runs for a CR with no metadata.deletionTimestamp) clears
-// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
-// MUST drop the stale drain marker, else env list (WHERE deletion_timestamp
-// IS NULL) hides the resurrected env forever (incident 2026-06-04). The
-// drain marker is owned solely by SoftDeleteEnvironment, which runs on the
-// deletion branch and never overlaps this upsert. updated_at is force-set
-// to now() in the UPDATE branch.
+// The ON CONFLICT DO UPDATE replaces every non-PK column, deletion_timestamp
+// included, so a row with a stale marker never stays hidden from env list.
+// updated_at is force-set to now() in the UPDATE branch.
 //
 // Returns raw error on pgconn class 08/57 (transient) so controller-runtime
 // applies exponential backoff. Other errors wrap with non-secret
@@ -195,11 +190,7 @@ func scanEnvironment(row pgx.Row, r *EnvironmentRow) error {
 }
 
 // GetEnvironmentByName reads the row keyed by (namespace, name). On
-// pgx.ErrNoRows it returns (nil, nil) — absence is not an error. The
-// row is returned WITH deletion_timestamp populated when set; per CS-09
-// the Content Service authz pipeline keeps serving until the row is
-// hard-deleted (DeleteEnvironment) by finalizer drain — callers must not
-// filter on deletion_timestamp here.
+// pgx.ErrNoRows it returns (nil, nil) — absence is not an error.
 //
 // Pgconn 08/57 errors propagate raw; other errors wrap with the
 // (namespace, name) identifiers per the package convention.
@@ -223,11 +214,8 @@ func GetEnvironmentByName(ctx context.Context, pool *pgxpool.Pool, ns, name stri
 }
 
 // ListEnvironments returns every live row in ns ordered by name ASC. Used by
-// the platform-api store (B1) and the forwarder envstore (C2) periodic
-// refresh. Rows with deletion_timestamp set are excluded (the steady-state
-// caller — platform-api environments list, forwarder precheck — wants the
-// not-draining set; the Content Service authz path uses GetEnvironmentByName
-// which deliberately surfaces drain-mode rows per CS-09).
+// the platform-api store (B1), the forwarder envstore (C2) and the
+// content-service envcache periodic refresh.
 func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
 	const sql = `
 		SELECT ` + environmentColumns + `
@@ -260,93 +248,21 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 	return out, nil
 }
 
-// ListEnvironmentsIncludingDraining returns every row in ns ordered by name
-// ASC, INCLUDING drain-mode rows (deletion_timestamp IS NOT NULL). Used by the
-// content-service in-memory env cache, which must keep serving environments
-// under finalizer drain per CS-09 — the inverse of ListEnvironments, which
-// excludes drain-mode rows for the steady-state platform-api / forwarder
-// callers.
-func ListEnvironmentsIncludingDraining(ctx context.Context, pool *pgxpool.Pool, ns string) ([]EnvironmentRow, error) {
-	const sql = `
-		SELECT ` + environmentColumns + `
-		  FROM environments
-		 WHERE namespace = $1
-		 ORDER BY name ASC
-	`
-	rows, err := pool.Query(ctx, sql, ns)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListEnvironmentsIncludingDraining(%s): %w", ns, err)
-	}
-	defer rows.Close()
-	out := []EnvironmentRow{}
-	for rows.Next() {
-		var r EnvironmentRow
-		if err := scanEnvironment(rows, &r); err != nil {
-			return nil, fmt.Errorf("db: ListEnvironmentsIncludingDraining(%s) scan: %w", ns, err)
-		}
-		out = append(out, r)
-	}
-	if err := rows.Err(); err != nil {
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: ListEnvironmentsIncludingDraining(%s) iterate: %w", ns, err)
-	}
-	return out, nil
-}
-
-// SoftDeleteEnvironment sets deletion_timestamp = now() without removing the
-// row (CS-09 — Content Service serves until full removal). Idempotent: a
-// row already in drain-mode (deletion_timestamp IS NOT NULL) is left
-// untouched, so duplicate finalizer ticks do not refresh the drain clock.
-//
-// updated_at is bumped on the matching path so the Operator's downstream
-// readers see fresh wall-clock state.
-func SoftDeleteEnvironment(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeleteEnvironmentSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteEnvironment(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-// SoftDeleteEnvironmentTx mirrors SoftDeleteEnvironment for use inside an
-// outer transaction (db.WithTxNotify). Same idempotent semantics.
-func SoftDeleteEnvironmentTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeleteEnvironmentSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteEnvironment(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-const softDeleteEnvironmentSQL = `
-	UPDATE environments
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
-
-// DeleteEnvironment removes the row keyed by (namespace, name) outright.
-// Called only after the Operator's finalizer drain completes (CS-09);
-// the soft-delete path is the steady-state mechanism for K8s `kubectl
-// delete environment` (SoftDeleteEnvironment + finalizer + DeleteEnvironment).
+// DeleteEnvironment removes the row keyed by (namespace, name) and NOTIFYs, so
+// every reader drops the Environment. The Operator's finalizer drain calls it
+// last, once the Environment's keys and LiteLLM objects are gone.
 //
 // Absence is not an error — DELETE of a non-existent row is a no-op.
 func DeleteEnvironment(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
 	const sql = `DELETE FROM environments WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
+	payload := fmt.Sprintf("%s/%s", ns, name)
+	return WithTxNotify(ctx, pool, EnvironmentsNotifyChannel, payload, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, ns, name); err != nil {
+			if isTransientPgErr(err) {
+				return err
+			}
+			return fmt.Errorf("db: DeleteEnvironment(%s): %w", payload, err)
 		}
-		return fmt.Errorf("db: DeleteEnvironment(%s/%s): %w", ns, name, err)
-	}
-	return nil
+		return nil
+	})
 }
