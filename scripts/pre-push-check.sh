@@ -10,7 +10,7 @@
 #   5. origin remote matches expected
 #  12. go mod tidy   (go.mod / go.sum drift blocks push)
 #  13. license-header SPDX gate (every in-scope *.go starts with SPDX line)
-#  14. golangci-lint full sweep (full lint runs here; no pre-commit stage)
+#  14. golangci-lint (full lint runs here; no pre-commit stage)
 #  15. make test-unit (pure-logic regression — ~5-10s warm)
 #  16. helm chart mirror drift (crd-sources/ — helm-sync-check)
 #  17. make test-ui (console tsc + vitest; skipped when ui/ is unchanged vs origin/main)
@@ -20,7 +20,11 @@
 # go.mod/go.sum, api/, config/crd/, crd-sources/, Makefile, .golangci*,
 # Dockerfile.devtools, hack/), gates 12/14/16 are skipped and 15 runs only the
 # packages owning a changed file (an embedded page.html still gets its
-# package's tests). PREPUSH_FULL=1 forces every gate (release-cut sets it).
+# package's tests).
+# Scoped lane: when the only Go-toolchain inputs are *.go files outside api/,
+# hack/ and the nested test/e2e/mcp-echo module, gate 14 lints the changed
+# packages and 15 runs `go vet ./...` plus the owning packages' tests.
+# PREPUSH_FULL=1 forces every gate (release-cut sets it).
 # A push that only deletes remote branches exits 0 before any gate.
 #
 # Soft checks (warnings only):
@@ -265,12 +269,13 @@ else
   printf '%s\n' "$DIRTY" | head -20
 fi
 
-# --- fast lane: does this push touch the Go toolchain at all? ---
-GO_INPUTS='\.go$|(^|/)go\.(mod|sum)$|^api/|^config/crd/|^deploy/helm/ach/crd-sources/|^Makefile$|^\.golangci|^Dockerfile\.devtools$|^hack/'
+# --- lanes: how far can this push reach through the Go toolchain? ---
+MODULE_WIDE='(^|/)go\.(mod|sum)$|^api/|^config/crd/|^deploy/helm/ach/crd-sources/|^Makefile$|^\.golangci|^Dockerfile\.devtools$|^hack/|^test/e2e/mcp-echo/.*\.go$'
 FAST_LANE=0
+SCOPED_LANE=0
 if [[ ${PREPUSH_FULL:-0} != 1 ]] && CHANGED_FILES=$(git diff --name-only origin/main..HEAD 2>/dev/null) \
-  && ! grep -qE "$GO_INPUTS" <<<"$CHANGED_FILES"; then
-  FAST_LANE=1
+  && ! grep -qE "$MODULE_WIDE" <<<"$CHANGED_FILES"; then
+  if grep -qE '\.go$' <<<"$CHANGED_FILES"; then SCOPED_LANE=1; else FAST_LANE=1; fi
   # Package owning each changed file: nearest ancestor dir holding *.go
   # (testdata/ and embedded assets belong to their parent package).
   FAST_PKGS=$(while IFS= read -r f; do
@@ -280,7 +285,11 @@ if [[ ${PREPUSH_FULL:-0} != 1 ]] && CHANGED_FILES=$(git diff --name-only origin/
       d=$(dirname "$d")
     done
   done <<<"$CHANGED_FILES" | grep -vE '^\./(internal/controller|test/e2e)' | sort -u)
-  printf '\n%sFast lane: no Go-toolchain input changed vs origin/main — gates 12/14/16 skipped, 15 scoped.%s\n' "$BLU" "$RST"
+  if (( FAST_LANE )); then
+    printf '\n%sFast lane: no Go-toolchain input changed vs origin/main — gates 12/14/16 skipped, 15 scoped.%s\n' "$BLU" "$RST"
+  else
+    printf '\n%sScoped lane: only *.go changed vs origin/main — gates 14 and 15 scoped to the changed packages.%s\n' "$BLU" "$RST"
+  fi
 fi
 
 # --- 12. go mod tidy drift ---
@@ -366,15 +375,17 @@ else
   printf '%s' "$MISSING_SPDX" | head -20
 fi
 
-# --- 14. golangci-lint full sweep ---
-# Full lint sweep over the whole module — there is no pre-commit stage, so
-# this gate is the local lint authority before a push leaves the host.
-# Runs in the devtools container.
-hdr "14. golangci-lint full sweep"
+# --- 14. golangci-lint ---
+# Whole module, or the changed packages in the scoped lane — there is no
+# pre-commit stage, so this gate is the local lint authority before a push
+# leaves the host. Runs in the devtools container.
+hdr "14. golangci-lint"
 if (( FAST_LANE )); then
   ok "fast lane — skipped"
 elif [[ -x scripts/dev.sh ]]; then
-  if ./scripts/dev.sh make qa-lint >/tmp/pre-push-lint.log 2>&1; then
+  LINT_TARGET=qa-lint
+  (( SCOPED_LANE )) && LINT_TARGET=qa-lint-changed
+  if ./scripts/dev.sh make "$LINT_TARGET" >/tmp/pre-push-lint.log 2>&1; then
     ok "golangci-lint clean"
   else
     fail "golangci-lint reported issues — see /tmp/pre-push-lint.log"
@@ -387,12 +398,21 @@ fi
 # Catches the simplest class of breakage that CI would otherwise flag.
 # Runs via devtools container; ~5-10s warm.
 hdr "15. unit tests"
-if (( FAST_LANE )) && [[ -z $FAST_PKGS ]]; then
-  ok "fast lane — no Go package owns a changed file, skipped"
-elif (( FAST_LANE )) && [[ -x scripts/dev.sh ]]; then
+# vet compiles every package and its tests, so a scoped run still fails on a
+# change that breaks a dependent package.
+if (( SCOPED_LANE )) && [[ -x scripts/dev.sh ]]; then
+  if ./scripts/dev.sh go vet ./... >/tmp/pre-push-vet.log 2>&1; then
+    ok "go vet clean"
+  else
+    fail "go vet failed — see /tmp/pre-push-vet.log"
+  fi
+fi
+if (( FAST_LANE || SCOPED_LANE )) && [[ -z $FAST_PKGS ]]; then
+  ok "no unit-tested Go package owns a changed file, skipped"
+elif (( FAST_LANE || SCOPED_LANE )) && [[ -x scripts/dev.sh ]]; then
   # shellcheck disable=SC2086 # word-split the package list on purpose
   if ./scripts/dev.sh go test -race -count=1 $FAST_PKGS >/tmp/pre-push-unit.log 2>&1; then
-    ok "fast lane — unit tests clean for: $(tr '\n' ' ' <<<"$FAST_PKGS")"
+    ok "unit tests clean for: $(tr '\n' ' ' <<<"$FAST_PKGS")"
   else
     fail "unit tests failed — see /tmp/pre-push-unit.log"
   fi

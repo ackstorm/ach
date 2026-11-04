@@ -247,7 +247,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-push` | 17-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. Fast lane when no Go-toolchain input changed (gates 12/14/16 skipped, 15 scoped to owning packages); `PREPUSH_FULL=1` forces all; branch-deletion pushes skip every gate. |
+| `pre-push` | 17-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. Fast lane when no Go-toolchain input changed (gates 12/14/16 skipped, 15 scoped to owning packages); scoped lane when only `*.go` outside `api/`, `hack/` and `test/e2e/mcp-echo/` changed (14 = `qa-lint-changed`, 15 = `go vet ./...` + owning packages); `PREPUSH_FULL=1` forces all; branch-deletion pushes skip every gate. |
 | `verify` | `qa-security` + `pre-push` — full gate bundle. |
 | `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 

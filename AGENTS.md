@@ -510,15 +510,19 @@ before a push leaves the host:
   `origin/main`). **Fast lane**: when `origin/main..HEAD` touches no Go-toolchain
   input (`*.go`, `go.mod`/`go.sum`, `api/`, `config/crd/`, `crd-sources/`,
   `Makefile`, `.golangci*`, `Dockerfile.devtools`, `hack/`), gates 12/14/16 are
-  skipped and 15 runs only the packages owning a changed file (~40s vs ~3m);
+  skipped and 15 runs only the packages owning a changed file (~40s vs ~3m).
+  **Scoped lane**: when the only such input is `*.go` outside `api/`, `hack/` and
+  `test/e2e/mcp-echo/`, gate 14 is `make qa-lint-changed` and 15 is `go vet ./...`
+  plus the owning packages' tests, so a logic regression in a dependent package
+  waits for release-cut or a PR's CI.
   `PREPUSH_FULL=1` forces the full sweep, and `make release-cut` always sets it.
   A push that only deletes remote branches runs no gate.
 
 The 12 hard gates: gitleaks (1, `origin/main..HEAD`; allowlist
 `.gitleaks.toml`) · large files >2 MB (2) · sensitive patterns (`.env`,
 `*.pem`, `*.key`, kubeconfig) (3) · LICENSE + README (4) · origin-remote match
-(5) · `go mod tidy` drift (12) · per-file SPDX header (13) · full
-golangci-lint (14) · `make test-unit` (15) · chart mirror drift (16,
+(5) · `go mod tidy` drift (12) · per-file SPDX header (13) ·
+golangci-lint (14) · unit tests (15) · chart mirror drift (16,
 `make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44) ·
 `make test-ui` (17) · `make qa-edition` (18). Informational only (6-11):
 internal hostnames/private IPv4, ackstorm emails, `.gitignore` sanity, commit authors, TODO markers,
