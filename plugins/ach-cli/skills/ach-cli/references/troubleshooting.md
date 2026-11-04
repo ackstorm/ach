@@ -22,6 +22,10 @@
 - **An Environment is missing from `env list`**: no access ([environments](environments.md)).
   If the user was just added to an SSO group, run `ach-cli refresh` (or `ach-cli login`)
   and allow a few minutes for the Environment to reconcile.
+- **`warning: ach-cli X does not match server Y`**: this CLI and the ACH server are on
+  different versions. Commands usually keep working; if one fails, update `ach-cli` first
+  ([install](install.md)). An `unknown field` error from hydrate has this same cause, and
+  older CLIs print no warning, so update on that error too.
 - **Hydrate says another hydrate holds the lock**: one is still running in that folder.
   Wait for it, or pass `--lock-timeout 2m`.
 - **Hydrate cannot detect the tool**: pass `--target`.

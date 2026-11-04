@@ -31,7 +31,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,6 +42,15 @@ import (
 // hydrate path comfortably while ensuring the CLI never hangs
 // indefinitely on a wedged Platform API.
 const defaultTimeout = 60 * time.Second
+
+// serverVersionHeader is platform-api's ServerVersionHeader.
+const serverVersionHeader = "X-ACH-Server-Version"
+
+// CLIVersion is this binary's version, set once at start. Empty disables the
+// server version check.
+var CLIVersion string
+
+var versionWarning sync.Once
 
 // Client is the per-process outbound HTTP client. Construct with at
 // least BaseURL + APIKey populated; the zero value of HTTPClient,
@@ -200,7 +211,27 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	if err != nil {
 		return nil, fmt.Errorf("httpclient: do: %w", err)
 	}
+	c.warnOnVersionMismatch(resp)
 	return resp, nil
+}
+
+// warnOnVersionMismatch tells the user, once per process, that this CLI and the
+// server differ. It runs before any decoding, so a response this CLI cannot
+// read still prints the warning next to the failure. A dev build on either
+// side, or a server that sends no version, is not compared.
+func (c *Client) warnOnVersionMismatch(resp *http.Response) {
+	cli := strings.TrimPrefix(CLIVersion, "v")
+	server := strings.TrimPrefix(resp.Header.Get(serverVersionHeader), "v")
+	if cli == "" || cli == "dev" || server == "" || server == "dev" || cli == server {
+		return
+	}
+	versionWarning.Do(func() {
+		var w io.Writer = os.Stderr
+		if c.Stderr != nil {
+			w = c.Stderr
+		}
+		_, _ = fmt.Fprintf(w, "warning: ach-cli %s does not match server %s; if this command fails, update ach-cli\n", cli, server)
+	})
 }
 
 // checkRedirect refuses to follow a redirect of a write. net/http turns a

@@ -71,7 +71,6 @@ func ptr[T any](v T) *T { return &v }
 
 type fixture struct {
 	h     http.HandlerFunc
-	caps  *capsCache
 	res   *fakeResolver
 	user  *fakeUser
 	admin *fakeAdmin
@@ -107,7 +106,7 @@ func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
 		},
 	}
 	mr := miniredis.RunT(t)
-	f.h, f.caps = newConfigHandler(ConfigDeps{
+	f.h = ConfigHandler(ConfigDeps{
 		BaseURL: "https://ach.test/", Provider: "acme", DefaultModel: defModel, DefaultSmall: defSmall,
 		Verify: func(tok string) (string, error) {
 			if tok == goodTok {
@@ -117,7 +116,7 @@ func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
 		},
 		Resolver: f.res, KeyEncryptionKey: kek,
 		AsUser:     func(k string) UserCatalog { f.seen = k; return f.user },
-		Admin:      f.admin,
+		Caps:       litellm.NewCapsCache(f.admin, slog.New(slog.NewTextHandler(io.Discard, nil))),
 		Store:      &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DefaultEnv: defEnv,
@@ -271,21 +270,6 @@ func TestConfig_CapabilitiesCachedProcessWide(t *testing.T) {
 	f.get(t, "Bearer "+goodTok)
 	if n := f.admin.calls.Load(); n != 1 {
 		t.Fatalf("admin read %d times", n)
-	}
-}
-
-func TestConfig_StaleCapabilitiesServedWithoutWaiting(t *testing.T) {
-	f := newFixture(t)
-	f.get(t, "Bearer "+goodTok) // warm
-	c := f.caps
-	c.mu.Lock()
-	c.at = time.Now().Add(-2 * capsTTL)
-	c.mu.Unlock()
-	f.admin.delay = 3 * time.Second
-	start := time.Now()
-	_, m := f.get(t, "Bearer "+goodTok)
-	if time.Since(start) > time.Second || len(models(m)["ackstorm.smart"].(map[string]any)["modalities"].(map[string]any)["input"].([]any)) != 3 {
-		t.Fatalf("waited %v or lost stale caps: %v", time.Since(start), m)
 	}
 }
 

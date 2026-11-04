@@ -24,12 +24,20 @@ const schemaV1Alpha1 = "v1alpha1"
 // a2aAgents) populate Endpoint; context entries (prompts, plugins,
 // artifacts) populate DownloadURL. The `omitempty` tags keep encoded
 // output minimal — a context entry round-trips with no Endpoint field
-// and vice-versa.
+// and vice-versa. Limits appears on models only, and no adapter projects it:
+// it is here because Decode refuses a field this struct does not name.
 type ContentRef struct {
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	DownloadURL string `json:"downloadUrl,omitempty"`
-	Endpoint    string `json:"endpoint,omitempty"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name,omitempty"`
+	DownloadURL string       `json:"downloadUrl,omitempty"`
+	Endpoint    string       `json:"endpoint,omitempty"`
+	Limits      *ModelLimits `json:"limits,omitempty"`
+}
+
+// ModelLimits is a model's token ceilings; a key is absent when unknown.
+type ModelLimits struct {
+	Context *int `json:"context,omitempty"`
+	Output  *int `json:"output,omitempty"`
 }
 
 // RuntimeBlock carries the runtime arms of the manifest. All three

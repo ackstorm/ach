@@ -36,8 +36,6 @@ const (
 	schemaID     = "ackstorm.opencode-config/1"
 	cacheKind    = "opencode_config"
 	cacheTTL     = 30 * 24 * time.Hour
-	capsTTL      = time.Hour
-	capsTimeout  = 15 * time.Second
 	upstreamWait = 1500 * time.Millisecond
 	// Same fallbacks as alitellm-operator and alitellm-auth.
 	defaultContext, defaultOutput = 128000, 8192
@@ -46,13 +44,6 @@ const (
 // UserCatalog is what the handler reads as the user (litellm.UserView).
 type UserCatalog interface {
 	ListModelGroups(ctx context.Context) ([]litellm.ModelGroupInfo, error)
-}
-
-// AdminCatalog is what it reads with the master key (*litellm.RESTClient).
-// It only DESCRIBES models the user's own view returned; it never adds one.
-type AdminCatalog interface {
-	ListDeploymentCapabilities(ctx context.Context) (map[string]litellm.ModelCaps, error)
-	ModelGroupAliases(ctx context.Context) (map[string]string, error)
 }
 
 // ConfigDeps wires ConfigHandler.
@@ -65,7 +56,7 @@ type ConfigDeps struct {
 	Resolver         keystore.Resolver
 	KeyEncryptionKey []byte
 	AsUser           func(litellmKey string) UserCatalog
-	Admin            AdminCatalog
+	Caps             *litellm.CapsCache // describes models the user's own view returned; never adds one
 	Store            *auth.OAuthStore
 	Logger           *slog.Logger
 
@@ -76,14 +67,8 @@ type ConfigDeps struct {
 
 // ConfigHandler serves GET /clients/opencode/config.
 func ConfigHandler(d ConfigDeps) http.HandlerFunc {
-	h, _ := newConfigHandler(d)
-	return h
-}
-
-func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 	base := strings.TrimRight(d.BaseURL, "/")
 	skill := apiSkill(base, d.Provider, d.DefaultEnv)
-	caps := &capsCache{admin: d.Admin, log: d.Logger}
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
@@ -141,7 +126,7 @@ func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 		)
 		wg.Add(2)
 		go func() { defer wg.Done(); groups, gErr = user.ListModelGroups(uctx) }()
-		go func() { defer wg.Done(); deps, aliases = caps.get(uctx) }()
+		go func() { defer wg.Done(); deps, aliases = d.Caps.Get(uctx) }()
 		wg.Wait()
 		if gErr != nil {
 			fallback()
@@ -152,7 +137,7 @@ func newConfigHandler(d ConfigDeps) (http.HandlerFunc, *capsCache) {
 			d.Logger.Warn("opencode config: cache write failed", "user", email, "err", err)
 		}
 		answer(b)
-	}, caps
+	}
 }
 
 func bearer(r *http.Request) (string, bool) {
@@ -174,11 +159,7 @@ func buildConfig(base, provider, defModel, defSmall string, groups []litellm.Mod
 			// list, which never holds agents, so every call is refused.
 			continue
 		}
-		target := g.Name
-		if a, ok := aliases[g.Name]; ok {
-			target = a
-		}
-		caps := overlay(capsFromGroup(g), deps[target])
+		caps := overlay(capsFromGroup(g), litellm.DeploymentCaps(deps, aliases, g.Name))
 		// OpenCode cannot use embeddings, TTS, image, transcription. A model
 		// with no mode stays, as on GET /v1/models: LiteLLM leaves it unset
 		// when neither its config nor its cost map knows the model, which is
@@ -301,59 +282,4 @@ func body(user *string, config map[string]any, skills []any, authState string, s
 		"generatedAt": time.Now().UTC().Format(time.RFC3339),
 		"config":      config, "skills": skills,
 	}
-}
-
-// capsCache is the process-wide admin view (deployment capabilities + alias
-// map), refreshed every capsTTL, stale-while-revalidate: a stale copy is
-// served at once while ONE background refresh runs; only a cold start waits,
-// bounded by the request. A failed refresh keeps the old copy (possibly none
-// ⇒ group-row values). ponytail: per replica; replicas refresh independently.
-type capsCache struct {
-	admin AdminCatalog
-	log   *slog.Logger
-
-	mu         sync.Mutex
-	at         time.Time
-	refreshing chan struct{}
-	deps       map[string]litellm.ModelCaps
-	aliases    map[string]string
-}
-
-func (c *capsCache) get(ctx context.Context) (map[string]litellm.ModelCaps, map[string]string) {
-	c.mu.Lock()
-	if time.Since(c.at) > capsTTL && c.refreshing == nil {
-		done := make(chan struct{})
-		c.refreshing = done
-		go c.refresh(done)
-	}
-	loaded, wait := !c.at.IsZero(), c.refreshing
-	c.mu.Unlock()
-	if !loaded && wait != nil {
-		select {
-		case <-wait:
-		case <-ctx.Done():
-		}
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.deps, c.aliases
-}
-
-func (c *capsCache) refresh(done chan struct{}) {
-	ctx, cancel := context.WithTimeout(context.Background(), capsTimeout)
-	defer cancel()
-	deps, err := c.admin.ListDeploymentCapabilities(ctx)
-	var aliases map[string]string
-	if err == nil {
-		aliases, err = c.admin.ModelGroupAliases(ctx)
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err != nil {
-		c.log.Warn("opencode config: capability refresh failed", "err", err)
-	} else {
-		c.deps, c.aliases, c.at = deps, aliases, time.Now()
-	}
-	c.refreshing = nil
-	close(done)
 }

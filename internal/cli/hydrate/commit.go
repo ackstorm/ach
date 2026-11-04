@@ -1188,7 +1188,7 @@ func (c *commit) step10bRuntimeMirror(m *manifest.Manifest, includeRuntime bool,
 // credential-free <achDir>/runtime/{mcp,a2a,model}.json snapshots and returns
 // the state.FileEntry rows (achDir-relative Target) for state.RuntimeFiles.
 //
-// The ContentRefs carry only {id, name, downloadUrl, endpoint} — the bearer
+// The ContentRefs carry only {id, name, downloadUrl, endpoint, limits} — the bearer
 // credential is injected exclusively at adapter render (RenderRuntime), never
 // here, so the cache holds NO secret (OBS-02). A bucket with no entries is not
 // written and any stale snapshot from a prior hydrate is removed so .ach/runtime

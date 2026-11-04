@@ -782,3 +782,15 @@ func TestAccessLogKeepsFlushAndHijack(t *testing.T) {
 		}
 	}
 }
+
+func TestServerVersion_StampsHeader(t *testing.T) {
+	h := ServerVersion("1.2.3")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if got := rec.Header().Get(ServerVersionHeader); got != "1.2.3" {
+		t.Fatalf("%s = %q", ServerVersionHeader, got)
+	}
+}
