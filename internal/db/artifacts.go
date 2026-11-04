@@ -180,7 +180,8 @@ func SoftDeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string
 	return nil
 }
 
-// SoftDeleteArtifactTx — see SoftDeleteEnvironmentTx.
+// SoftDeleteArtifactTx is SoftDeleteArtifact inside an outer transaction
+// (db.WithTxNotify).
 func SoftDeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {

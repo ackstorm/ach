@@ -7,10 +7,6 @@
 // safety net (LISTEN is at-most-once on session loss). The prior Redis-backed
 // 60s-TTL cache (D-07) is gone — Redis is retained only for the key/teams
 // caches in cmd/ach/cmd/content_service.go.
-//
-// CS-09: the snapshot includes drain-mode rows (deletion_timestamp set) via
-// db.ListEnvironmentsIncludingDraining, so the content-service keeps serving
-// environments under finalizer drain — see authz.go resolveEnv.
 package envcache
 
 import (
@@ -90,10 +86,9 @@ func NewWithRows(rows map[string]EnvRow) *Cache {
 	return c
 }
 
-// Refresh loads ALL environments including drain-mode rows (CS-09) and swaps
-// the snapshot atomically.
+// Refresh loads every Environment and swaps the snapshot atomically.
 func (c *Cache) Refresh(ctx context.Context) error {
-	rows, err := db.ListEnvironmentsIncludingDraining(ctx, c.pool, c.ns)
+	rows, err := db.ListEnvironments(ctx, c.pool, c.ns)
 	if err != nil {
 		return err
 	}

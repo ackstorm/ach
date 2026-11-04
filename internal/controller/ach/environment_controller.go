@@ -136,7 +136,8 @@ func (r *EnvironmentReconciler) recordAvailableGauge(name string, available meta
 //     i.   Delete LiteLLM access group <name> (§6.5 step 2 — runtime barrier).
 //     ii.  Delete LiteLLM tag <name>          (§6.5 step 3).
 //     iii. Drain ek_ rows                     (§6.5 step 4 — Phase 1 real code per D-12).
-//     iv.  RemoveFinalizer                    (§6.5 step 5).
+//     iv.  Delete the projection row.
+//     v.   RemoveFinalizer                    (§6.5 step 5).
 //   - Step 2b (finalizer-add path): controllerutil.AddFinalizer + Update.
 //   - Step 3 (steady state, Phase 2 — OP-13 / Hub §6.4):
 //     read the LiteLLM snapshot (lock-free via r.Snapshotter.Snapshot),
@@ -543,7 +544,7 @@ func appendContentUnresolvedMsg(message string, unresolvedPlugins, unresolvedSki
 // to keep the main method's cyclomatic complexity within golangci-lint's
 // gocyclo budget. Revokes the environment's ek_ keys in LiteLLM, deletes the
 // access group, deletes the deny-all shell team, deletes the tag, drains ek_
-// rows, soft-deletes the projection row, then removes the finalizer.
+// rows, deletes the projection row, then removes the finalizer.
 func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv1alpha1.Environment, logger logr.Logger) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(env, environmentFinalizer) {
 		return ctrl.Result{}, nil
@@ -593,7 +594,7 @@ func (r *EnvironmentReconciler) reconcileDeletion(ctx context.Context, env *achv
 	if err := r.drainEkRows(ctx, env); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.softDeleteEnvironmentProjection(ctx, env); err != nil {
+	if err := r.deleteEnvironmentProjection(ctx, env); err != nil {
 		return ctrl.Result{}, err
 	}
 	controllerutil.RemoveFinalizer(env, environmentFinalizer)
@@ -685,23 +686,19 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 	return nil
 }
 
-// softDeleteEnvironmentProjection wraps the nil-DB gate + the
-// achdb.SoftDeleteEnvironment call. Caller is the deletion path between
-// drainEkRows and RemoveFinalizer; the soft-delete preserves the
-// projection row's deletion_timestamp so Plan 05-05's CS pipeline can
-// keep serving until hard-delete (CS-09).
-func (r *EnvironmentReconciler) softDeleteEnvironmentProjection(
+// deleteEnvironmentProjection wraps the nil-DB gate + the
+// achdb.DeleteEnvironment call. Caller is the deletion path between
+// drainEkRows and RemoveFinalizer. It must run before the finalizer goes:
+// a row that outlives its CR keeps answering hydrate by name.
+func (r *EnvironmentReconciler) deleteEnvironmentProjection(
 	ctx context.Context,
 	env *achv1alpha1.Environment,
 ) error {
 	if r.DB == nil {
 		return nil
 	}
-	payload := fmt.Sprintf("%s/%s", env.Namespace, env.Name)
-	if err := achdb.WithTxNotify(ctx, r.DB, environmentsChannel, payload, func(tx pgx.Tx) error {
-		return achdb.SoftDeleteEnvironmentTx(ctx, tx, env.Namespace, env.Name)
-	}); err != nil {
-		return fmt.Errorf("db soft-delete environment projection: %w", err)
+	if err := achdb.DeleteEnvironment(ctx, r.DB, env.Namespace, env.Name); err != nil {
+		return fmt.Errorf("db delete environment projection: %w", err)
 	}
 	return nil
 }

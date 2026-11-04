@@ -175,7 +175,8 @@ func SoftDeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) 
 	return nil
 }
 
-// SoftDeletePromptTx — see SoftDeleteEnvironmentTx.
+// SoftDeletePromptTx is SoftDeletePrompt inside an outer transaction
+// (db.WithTxNotify).
 func SoftDeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
 	if _, err := tx.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {

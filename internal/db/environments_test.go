@@ -8,8 +8,8 @@
 // (reusing setupPostgresForPhase2 — applies migrations 000001 through 000004),
 // exercises one or more EnvironmentRow helpers, and asserts schema-level
 // invariants (Upsert round-trip, GetEnvironmentByName absence → (nil,nil),
-// SoftDeleteEnvironment preserves the row per CS-09, DeleteEnvironment hard-
-// removes).
+// DeleteEnvironment removes the row, migration 000027 purges leftover
+// soft-deleted rows).
 //
 // Run via: `make test-integration` or
 // `go test -tags=integration ./internal/db/... -count=1`.
@@ -18,7 +18,7 @@ package db_test
 
 import (
 	"context"
-	"slices"
+	"os"
 	"testing"
 	"time"
 
@@ -129,9 +129,9 @@ func TestUpsertEnvironment_ClearsStaleDeletionTimestamp(t *testing.T) {
 	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("seed upsert: %v", err)
 	}
-	// Soft-delete sets deletion_timestamp.
-	if err := db.SoftDeleteEnvironment(ctx, pool, "ach", "resurrect-me"); err != nil {
-		t.Fatalf("soft delete: %v", err)
+	if _, err := pool.Exec(ctx,
+		`UPDATE environments SET deletion_timestamp = now() WHERE name = 'resurrect-me'`); err != nil {
+		t.Fatalf("mark deleted: %v", err)
 	}
 	// Live reconcile of the recreated CR (same name) upserts again.
 	row.ResourceVersion = "2"
@@ -183,21 +183,17 @@ func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestListEnvironmentsIncludingDraining: a drain-mode row (deletion_timestamp
-// set) is returned by ListEnvironmentsIncludingDraining but NOT by
-// ListEnvironments. This preserves the CS-09 contract for the content-service
-// in-memory env cache (which must keep serving environments under finalizer
-// drain) while the steady-state ListEnvironments still excludes them.
-func TestListEnvironmentsIncludingDraining(t *testing.T) {
+// TestMigration000027_PurgesSoftDeletedEnvironments: the migration removes the
+// rows a drain left behind and keeps every live one.
+func TestMigration000027_PurgesSoftDeletedEnvironments(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	const ns = "ach-system"
-	seed := func(name string) {
+	for _, name := range []string{"live", "ghost"} {
 		if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
-			Namespace: ns, Name: name, ResourceVersion: "1",
+			Namespace: "ns1", Name: name, ResourceVersion: "1",
 			AuthorizedTeams: []string{}, ContextPrompts: []string{},
 			ContextPlugins: []string{}, ContextArtifacts: []string{},
 			ContextSkills: []string{},
@@ -207,73 +203,27 @@ func TestListEnvironmentsIncludingDraining(t *testing.T) {
 			t.Fatalf("seed Upsert(%s): %v", name, err)
 		}
 	}
-	names := func(rows []db.EnvironmentRow) []string {
-		out := make([]string, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, r.Name)
+	if _, err := pool.Exec(ctx,
+		`UPDATE environments SET deletion_timestamp = now() WHERE name = 'ghost'`); err != nil {
+		t.Fatalf("mark ghost: %v", err)
+	}
+
+	migration, err := os.ReadFile("../../db/migrations/000027_purge_deleted_environments.up.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	if _, err := pool.Exec(ctx, string(migration)); err != nil {
+		t.Fatalf("apply migration: %v", err)
+	}
+
+	for name, wantRow := range map[string]bool{"live": true, "ghost": false} {
+		got, err := db.GetEnvironmentByName(ctx, pool, "ns1", name)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", name, err)
 		}
-		return out
-	}
-
-	seed("live")
-	seed("draining")
-	if err := db.SoftDeleteEnvironment(ctx, pool, ns, "draining"); err != nil {
-		t.Fatalf("SoftDeleteEnvironment(draining): %v", err)
-	}
-
-	all, err := db.ListEnvironmentsIncludingDraining(ctx, pool, ns)
-	if err != nil {
-		t.Fatalf("list incl draining: %v", err)
-	}
-	if got := names(all); !slices.Contains(got, "live") || !slices.Contains(got, "draining") {
-		t.Fatalf("incl-draining = %v; want both live and draining", got)
-	}
-
-	live, err := db.ListEnvironments(ctx, pool, ns)
-	if err != nil {
-		t.Fatalf("list live: %v", err)
-	}
-	if slices.Contains(names(live), "draining") {
-		t.Fatalf("ListEnvironments leaked a draining row: %v", names(live))
-	}
-}
-
-// TestSoftDeleteEnvironment_PreservesRow: SoftDelete sets deletion_timestamp
-// but Get still returns the row (CS-09 — Content Service keeps serving until
-// hard-delete by finalizer drain). Re-SoftDelete is idempotent (no error).
-func TestSoftDeleteEnvironment_PreservesRow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
-		Namespace: "ns1", Name: "e", ResourceVersion: "1",
-		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
-		AuthorizedTeams: []string{}, ContextPrompts: []string{},
-		ContextPlugins: []string{}, ContextArtifacts: []string{},
-		ContextSkills: []string{},
-		RuntimeModels: []string{}, RuntimeMCPServers: []string{},
-		RuntimeA2AAgents: []string{},
-	}); err != nil {
-		t.Fatalf("seed Upsert: %v", err)
-	}
-	if err := db.SoftDeleteEnvironment(ctx, pool, "ns1", "e"); err != nil {
-		t.Fatalf("SoftDeleteEnvironment: %v", err)
-	}
-	got, err := db.GetEnvironmentByName(ctx, pool, "ns1", "e")
-	if err != nil {
-		t.Fatalf("Get after SoftDelete: %v", err)
-	}
-	if got == nil {
-		t.Fatal("Get after SoftDelete: row should still be present per CS-09")
-	}
-	if got.DeletionTimestamp == nil {
-		t.Error("DeletionTimestamp: got nil, want non-nil after SoftDelete")
-	}
-	// Re-SoftDelete must be a no-error no-op (idempotent).
-	if err := db.SoftDeleteEnvironment(ctx, pool, "ns1", "e"); err != nil {
-		t.Errorf("idempotent SoftDelete: got %v, want nil", err)
+		if (got != nil) != wantRow {
+			t.Errorf("Get(%s): row present = %v, want %v", name, got != nil, wantRow)
+		}
 	}
 }
 

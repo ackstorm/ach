@@ -50,11 +50,6 @@ func TestEnvironmentSpec_RoundTrip(t *testing.T) {
 		t.Fatalf("ListEnvironments: %+v err=%v", list, err)
 	}
 	assertSpec("List", list[0].Spec, spec)
-	all, err := db.ListEnvironmentsIncludingDraining(ctx, pool, "ach-system")
-	if err != nil || len(all) != 1 {
-		t.Fatalf("ListEnvironmentsIncludingDraining: %+v err=%v", all, err)
-	}
-	assertSpec("ListIncludingDraining", all[0].Spec, spec)
 
 	ui := baseGuardrailRow("spec-ui", []string{})
 	ui.Spec = spec
