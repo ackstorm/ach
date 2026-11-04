@@ -4,6 +4,19 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- **Breaking for older `ach-cli`:** `POST /platform/hydrate` now returns
+  `runtime.models[].limits` (`{context, output}`) when LiteLLM knows them,
+  aliases resolved. `ach-cli` decodes this response strictly, so v1.1.2 and
+  older fail with `unknown field "limits"` until updated. Release this
+  `ach-cli` first, then upgrade the server. ach-agent ignores the field and
+  keeps working.
+
+### Added
+- `ach-cli` warns on stderr, once per run, when its version differs from the
+  server's. platform-api reports its version in `X-ACH-Server-Version` on
+  authenticated responses.
+
 ### Fixed
 - Deleting an `Environment` now removes its Postgres row. It used to stay
   soft-deleted forever: gone from `env list`, but still answering hydrate,

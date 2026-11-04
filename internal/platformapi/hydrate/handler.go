@@ -3,6 +3,7 @@
 package hydrate
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -39,11 +40,14 @@ const SchemaVersion = "v1alpha1"
 //     context downloadUrl values. MUST be the public ACH base
 //     URL (Phase 3 deployment-level config).
 //   - Audit      — slog logger (audit.NewLogger result).
+//   - Caps       — the LiteLLM admin view behind runtime.models[].limits; nil
+//     hydrates without limits.
 type Deps struct {
 	Store   *store.Store
 	LiteLLM litellm.Client
 	BaseURL string
 	Audit   *slog.Logger
+	Caps    *litellm.CapsCache
 	// Metrics is the platform-api collector set (G7); nil-tolerant. Used to
 	// observe ach_platform_api_hydrate_duration_seconds per request.
 	Metrics *achmetrics.PlatformAPICollectors
@@ -60,9 +64,20 @@ type HydrateRequest struct {
 // `id` is the resource name (DNS-1123 — stable across reconciles).
 // `endpoint` points at the ACH Forwarder ingress for the kind (Phase 4
 // extends; Phase 3 freezes the §15.2 contract).
+//
+// `limits` is set on models only, and only with what LiteLLM reports.
 type RuntimeItem struct {
-	ID       string `json:"id"`
-	Endpoint string `json:"endpoint"`
+	ID       string       `json:"id"`
+	Endpoint string       `json:"endpoint"`
+	Limits   *ModelLimits `json:"limits,omitempty"`
+}
+
+// ModelLimits is a model's token ceilings as LiteLLM reports them for the
+// deployment behind it. A key is omitted when LiteLLM does not know the value;
+// there is no default, so a client keeps its own fallback.
+type ModelLimits struct {
+	Context *int `json:"context,omitempty"`
+	Output  *int `json:"output,omitempty"`
 }
 
 // ContextItem is one entry in the context block (Hub §15.2 / D-17).
@@ -297,6 +312,7 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 			Context:       toContextBlockFromRow(env, deps.BaseURL),
 			Notice:        env.Notice,
 		}
+		addModelLimits(ctx, deps.Caps, resp.Runtime.Models)
 
 		// Audit success — ActionHydrate + OutcomeCreated (created is the
 		// success outcome shared with other write paths; hydrate is read-
@@ -355,6 +371,36 @@ func toRuntimeBlockFromRow(row *db.EnvironmentRow, baseURL string) RuntimeBlock 
 	// Names only, and only when non-empty — see RuntimeBlock.Guardrails.
 	out.Guardrails = row.RuntimeGuardrails
 	return out
+}
+
+// addModelLimits sets each model's limits from the LiteLLM admin view. The
+// view failing is not a hydrate failure: CapsCache logs it and models go out
+// without limits.
+func addModelLimits(ctx context.Context, caps *litellm.CapsCache, models []RuntimeItem) {
+	if caps == nil {
+		return
+	}
+	deps, aliases := caps.Get(ctx)
+	for i := range models {
+		models[i].Limits = limitsOf(litellm.DeploymentCaps(deps, aliases, models[i].ID))
+	}
+}
+
+func limitsOf(c litellm.ModelCaps) *ModelLimits {
+	in, out := knownTokens(c.MaxInputTokens), knownTokens(c.MaxOutputTokens)
+	if in == nil && out == nil {
+		return nil
+	}
+	return &ModelLimits{Context: in, Output: out}
+}
+
+// knownTokens drops a missing or non-positive LiteLLM value, which means unknown.
+func knownTokens(v *float64) *int {
+	if v == nil || *v <= 0 {
+		return nil
+	}
+	n := int(*v)
+	return &n
 }
 
 // toContextBlockFromRow maps the projection row's flat context arrays

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/httpclient"
 )
 
 // Version is overridden via -ldflags at build time (see Makefile build target).
@@ -48,6 +49,7 @@ func runRoot(cmd *cobra.Command) error {
 var wrapArgsOnce sync.Once
 
 func Execute() error {
+	httpclient.CLIVersion = Version
 	wrapArgsOnce.Do(func() { withUsageOnArgErrors(rootCmd) })
 	return rootCmd.Execute()
 }

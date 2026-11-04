@@ -515,6 +515,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		logger.Warn("POST /platform/keys/exchange disabled: no in-cluster Kubernetes config", "err", trErr)
 	}
 	out.server = platformapi.Deps{
+		Version:        Version,
 		TokenReview:    tokenReview,
 		VerifySA:       verifySA,
 		KeyExchangeTTL: cfg.KeyExchangeTTL,

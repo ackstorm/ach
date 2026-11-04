@@ -303,6 +303,14 @@ There is no `ach.yaml`/`env save` and no legacy state migration (removed
 2026-10-23): `.ach/<env>/state-<platform>.json` is the only state layout.
 The workspace verbs print a git-style per-item diff (`+ ~ - !`) framed by
 `Hydrating …`/`Finished …` (conventions: `internal/cli/AGENTS.md`).
+Every API response behind Authn carries `X-ACH-Server-Version`; `ach-cli` warns on stderr,
+once per run, when it differs from its own version (`dev` on either side is not compared).
+`internal/cli/manifest` decodes `POST /platform/hydrate` strictly, so a new response field
+breaks every older `ach-cli`: add it to `ContentRef` and release the CLI first.
+`runtime.models[].limits` (`{context, output}`, either key absent when unknown, no defaults)
+comes from `litellm.CapsCache` (`DeploymentCaps`, aliases resolved), the same view as the
+per-user OpenCode config; a LiteLLM failure omits it, hydrate stays 200.
+
 Plus the **serverless local package manager** under `ach-cli local` — `repo` (register a GitHub/git
 marketplace or direct plugin/skill source), `plugin` and `skill`
 (`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs

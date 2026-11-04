@@ -68,6 +68,9 @@ type Deps struct {
 	// transport, spec §10.1). nil in tests that never reach those routes.
 	LiteLLMREST *litellm.RESTClient
 
+	// Version is this build, stamped on authenticated responses.
+	Version string
+
 	// Pepper is the server-side HMAC pepper (Phase 1 D-09).
 	Pepper []byte
 
@@ -170,6 +173,12 @@ type Deps struct {
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
 
+	// One admin view of LiteLLM's models, shared by every route that reads it.
+	var caps *litellm.CapsCache
+	if deps.LiteLLMREST != nil {
+		caps = litellm.NewCapsCache(deps.LiteLLMREST, deps.Logger)
+	}
+
 	// Middleware chain (D-02 outer → inner).
 	r.Use(pamw.RequestID)
 	r.Use(pamw.RecoverPanic(deps.Logger, deps.Audit))
@@ -228,7 +237,7 @@ func New(deps Deps) http.Handler {
 				DefaultEnv: deps.GenAIDefaultEnvironment,
 				Resolver:   deps.Resolver, KeyEncryptionKey: deps.KeyEncryptionKey,
 				AsUser: func(k string) opencode.UserCatalog { return deps.LiteLLMREST.AsUser(k) },
-				Admin:  deps.LiteLLMREST, Store: od.Store, Logger: deps.Logger,
+				Caps:   caps, Store: od.Store, Logger: deps.Logger,
 			}))
 		}
 		// Web console login/logout (D-27): the same AS, one more pending kind.
@@ -282,6 +291,7 @@ func New(deps Deps) http.Handler {
 	// handlers.
 	r.Group(func(r chi.Router) {
 		r.Use(pamw.Authn(deps.Resolver, deps.Allowlist, deps.Audit, authnOpts))
+		r.Use(pamw.ServerVersion(deps.Version))
 
 		// BLK-03: hydrate.Deps now exposes LiteLLM litellm.Client as a
 		// first-class field (Plan 03-09 ships the contract).
@@ -290,6 +300,7 @@ func New(deps Deps) http.Handler {
 			LiteLLM: deps.LiteLLM,
 			BaseURL: deps.BaseURL,
 			Audit:   deps.Audit,
+			Caps:    caps,
 			Metrics: deps.Metrics,
 		}
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))

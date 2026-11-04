@@ -26,6 +26,12 @@
 //     models     -> ${BaseURL}/v1
 //     mcpServers -> ${BaseURL}/mcp/<name>
 //     a2aAgents  -> ${BaseURL}/a2a/<name>
+//   - A model MAY carry limits: {context, output}, LiteLLM's max_input_tokens
+//     and max_output_tokens for the deployment behind it, aliases resolved.
+//     Each key is omitted when unknown, and all of limits when both are;
+//     there are no defaults. A LiteLLM failure omits them and hydrate still
+//     answers 200. ach-cli decodes this response strictly, so a CLI built
+//     before limits existed refuses it.
 //   - Each context item carries {name, id, downloadUrl}; downloadUrl is the
 //     §15.6 Content Service URL:
 //     ${BaseURL}/content/<kind>/<name>   (kind ∈ prompt|plugin|artifact)
