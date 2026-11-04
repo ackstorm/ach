@@ -161,7 +161,7 @@ describe('AppShell — sidebar nav', () => {
     for (const a of container.querySelectorAll('nav a')) { expect(a).toHaveAttribute('aria-label'); expect(a).toHaveAttribute('title', a.getAttribute('aria-label')); }
     expect(screen.queryByRole('button', { name: 'Analytics' })).toBeNull();
     expect(screen.queryByText('Evals · Coming soon')).toBeNull();
-    for (const name of ['Cost', 'Performance', 'Runtime', 'Reliability', 'Workloads', 'Skills & context']) expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    for (const name of ['Cost', 'Performance', 'Runtime', 'Workloads', 'Skills & context']) expect(screen.getByRole('link', { name })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
     expect(window.localStorage.getItem('console.sidebar.collapsed')).toBe('false');
   });

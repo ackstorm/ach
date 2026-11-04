@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-ACKstorm-EE
 // routes.tsx — the Enterprise routes and navigation entries.
 import type { RouteObject } from 'react-router';
-import { Brain, CircleDollarSign, Cpu, Gauge, GitBranch, LayoutGrid, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Brain, CircleDollarSign, Cpu, Gauge, GitBranch, LayoutGrid, type LucideIcon } from 'lucide-react';
 import { Traces } from './routes/Traces';
 import { Cost } from './routes/Cost';
 import { Performance } from './routes/Performance';
@@ -28,7 +28,6 @@ export const eeRoutes: RouteObject[] = [
 export const eeNav: { to: string; label: string; Icon: LucideIcon }[] = [
   { to: '/analytics/cost', label: 'Cost', Icon: CircleDollarSign },
   { to: '/analytics/performance', label: 'Performance', Icon: Gauge },
-  { to: '/analytics/reliability', label: 'Reliability', Icon: ShieldCheck },
   { to: '/analytics/runtime', label: 'Runtime', Icon: Cpu },
   { to: '/analytics/context', label: 'Skills & context', Icon: Brain },
   { to: '/analytics/workloads', label: 'Workloads', Icon: LayoutGrid },
@@ -36,4 +35,8 @@ export const eeNav: { to: string; label: string; Icon: LucideIcon }[] = [
 ];
 
 // The page title of every Enterprise route.
-export const eeTitles: Record<string, string> = Object.fromEntries(eeNav.map((item) => [item.to, item.label]));
+export const eeTitles: Record<string, string> = {
+  ...Object.fromEntries(eeNav.map((item) => [item.to, item.label])),
+  // Reliability is out of the sidebar but stays served at its URL.
+  '/analytics/reliability': 'Reliability',
+};
