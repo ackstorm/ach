@@ -51,8 +51,33 @@ func TestLaunch_HydratesThenRunsTool(t *testing.T) {
 	}
 }
 
+// With no environment named, launch updates what the folder already holds
+// for the launched tool, then starts it there.
+func TestLaunch_NoEnvironmentUsesHydratedFolder(t *testing.T) {
+	cwd := setupClone(t, false)
+	out := fakeTool(t)
+	t.Setenv("ACH_ENVIRONMENT", "")
+	seedState(t, cwd, "aws-rw", "codex")
+
+	_, _, code, _ := executeCommand(t, newLaunchCmd(), "claude")
+	if code != exit.Code(3) {
+		t.Fatalf("exit code = %d, want the tool's 3", code)
+	}
+	envs, err := hydratedEnvs(cwd)
+	if err != nil || len(envs) != 1 || strings.Join(envs[0].targets, ",") != "claude-code,codex" {
+		t.Fatalf("hydrated %+v, %v; want aws-rw for claude-code and codex", envs, err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("tool did not run: %v", err)
+	}
+	if want := cwd + "\n\n"; string(got) != want {
+		t.Fatalf("tool saw %q, want %q", got, want)
+	}
+}
+
 // Nothing runs — neither hydrate nor the tool — when the tool cannot start
-// or the environment is missing; a failed hydrate never starts the tool.
+// or the folder holds no environment; a failed hydrate never starts the tool.
 func TestLaunch_Refusals(t *testing.T) {
 	cases := []struct {
 		name, want string
@@ -61,7 +86,7 @@ func TestLaunch_Refusals(t *testing.T) {
 	}{
 		{"unknown tool", `unknown tool "cursor"`, false, []string{"cursor", "--environment", "e"}},
 		{"not on PATH", `"codex" not found on PATH`, false, []string{"codex", "--environment", "e"}},
-		{"no environment", "pass --environment", false, []string{"claude"}},
+		{"no environment", "nothing hydrated in this folder", false, []string{"claude"}},
 		{"hydrate fails", "boom", true, []string{"claude", "--environment", "e"}},
 	}
 	for _, tc := range cases {

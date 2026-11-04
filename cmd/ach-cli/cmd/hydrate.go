@@ -585,7 +585,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 	if len(envs) == 0 {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg: "nothing hydrated in this folder yet: pass <name> (or set " +
+			Msg: "nothing hydrated in this folder yet: name an Environment (or set " +
 				"ACH_ENVIRONMENT), or create the folder with `ach-cli env clone <name>`",
 		}
 	}

@@ -40,8 +40,10 @@ func newLaunchCmd() *cobra.Command {
 		Short: "Hydrate an Environment, then start the agent tool in it",
 		Long: `Hydrate an Environment for one tool (same engine and flags as
 ` + "`ach-cli env hydrate`" + `), then start the tool in --dir (default: the
-current directory). If hydrate fails, the tool is not started. ach-cli exits
-with the tool's exit code.
+current directory). With no --environment and no ACH_ENVIRONMENT, every
+Environment already hydrated in that folder (.ach/) is updated for the tool.
+If hydrate fails, the tool is not started. ach-cli exits with the tool's exit
+code.
 
 Tools: ` + launchToolList + `
 
@@ -50,6 +52,7 @@ after --.
 
 Example:
   ach-cli launch claude --environment frontend-dev
+  ach-cli launch opencode
   ach-cli launch codex --environment aws-rw --dir ~/work/infra -- --model ackstorm.smart`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := hydrate.ResolvePlatform(args[0])
@@ -63,15 +66,7 @@ Example:
 				return &exit.CodedError{Code: exit.General,
 					Msg: fmt.Sprintf("%q not found on PATH — install it first, then re-run", bin), Wrapped: err}
 			}
-			env := flagEnv
-			if env == "" {
-				env = os.Getenv("ACH_ENVIRONMENT")
-			}
-			if env == "" {
-				return &exit.CodedError{Code: exit.General,
-					Msg: "pass --environment <env> (or set ACH_ENVIRONMENT)"}
-			}
-			in, err := f.inputs(env)
+			in, err := f.inputs(flagEnv)
 			if err != nil {
 				return err
 			}
@@ -89,7 +84,7 @@ Example:
 		},
 	}
 	cmd.Flags().StringVar(&flagEnv, "environment", "",
-		"Environment to hydrate (ACH_ENVIRONMENT is the same)")
+		"Environment to hydrate (ACH_ENVIRONMENT is the same; default: those in .ach/)")
 	f.register(cmd)
 	return cmd
 }

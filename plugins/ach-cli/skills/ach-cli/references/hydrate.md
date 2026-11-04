@@ -55,14 +55,17 @@ then either keep their edit (do nothing) or, only on their say-so, `--force`.
 
 ```bash
 ach-cli launch claude --environment <environment>                  # or codex, gemini, opencode, pi
+ach-cli launch opencode                                            # the Environments already in this folder
 ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>
 ```
 
 `launch` runs the same hydrate for that one tool (same flags as `env hydrate`, minus
 `--target`, `--only` and `--dry-run`), then starts the tool in `--dir` (default: the
-current folder) and exits with the tool's exit code. Nothing starts when the tool is not
-on the `PATH`, no Environment is given (`--environment` or `ACH_ENVIRONMENT`), or the
-hydrate fails. Arguments after the tool name go to it; its own flags go after `--`.
+current folder) and exits with the tool's exit code. With no `--environment` and no
+`ACH_ENVIRONMENT`, every Environment already hydrated in that folder (`.ach/`) is updated
+for the tool; a global hydrate does not count. Nothing starts when the tool is not on the
+`PATH`, there is no Environment to hydrate, or the hydrate fails. Arguments after the tool
+name go to it; its own flags go after `--`.
 It takes over the terminal: tell the user to run it themselves, never run it yourself.
 
 ## One plugin or skill only

@@ -261,9 +261,10 @@ off the hourly path.
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
 `logout`/`whoami`/`refresh`/`token`/`profile`/`env`/`keys`/`admin`/`local`/`launch` (workspace verbs
 `clone`/`hydrate`/`status`/`uninstall`/`fetch` live under `env`, e.g. `ach-cli env hydrate`;
-`launch <claude|codex|gemini|opencode|pi> --environment <env>` = `env hydrate` for that
-one target, then starts the tool in `--dir` (exits with the tool's code; no tool on
-PATH, no environment or a failed hydrate = nothing starts);
+`launch <claude|codex|gemini|opencode|pi> [--environment <env>]` = `env hydrate` for that
+one target (no env = every Environment recorded under the folder's `.ach/`), then starts
+the tool in `--dir` (exits with the tool's code; no tool on PATH, nothing to hydrate or a
+failed hydrate = nothing starts);
 `env hydrate|uninstall <env> --only plugin/<name>` (or `skill/<name>`) touches one item;
 `--dir`/`-g` pick the root, `--target a,b` the tools; a plugin's commands and
 skills land namespaced by the plugin name — `/bro:ladder` in Claude Code,
