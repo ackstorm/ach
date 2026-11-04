@@ -200,19 +200,19 @@ describe('Models — populated', () => {
   it('counts the models in the title, before search and filters', () => {
     setSuccess([makeModel({ name: 'a' }), makeModel({ name: 'b' }), makeModel({ name: 'agent.x', providers: ['a2a1'] })]);
     render(<Models />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Models (2)');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Models (3)');
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'a' } });
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Models (2)');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Models (3)');
   });
 
-  it('filters out A2A agent rows (providers starting with "a2a")', () => {
+  it('lists agents published as models (providers starting with "a2a")', () => {
     setSuccess([
       makeModel({ name: 'gemini/flash', providers: ['gemini'] }),
       makeModel({ name: 'agent.finops-advisor', providers: ['a2a1'] }),
     ]);
     render(<Models />);
     expect(screen.getByText('gemini/flash')).toBeInTheDocument();
-    expect(screen.queryByText('agent.finops-advisor')).not.toBeInTheDocument();
+    expect(screen.getByText('agent.finops-advisor')).toBeInTheDocument();
   });
 
   it('shows "Dynamic" for auto-router price and context', () => {

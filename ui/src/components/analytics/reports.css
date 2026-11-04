@@ -33,9 +33,9 @@
 .console-ledger .perf-grid>.insights{align-self:start}
 .console-ledger .panel-title h2{white-space:nowrap}
 .console-ledger .panel-title p{flex:1 1 0;min-width:0}
-.console-ledger .panel>.scoregrid{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 17px 17px}
+.console-ledger .panel>.scoregrid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin:0 17px 17px}
 .console-ledger .panel>.scoregrid p{margin:6px 0 0;color:var(--muted);font-size:11px}
-.console-ledger .hero-metric>.scoregrid{margin-top:16px}
+.console-ledger .hero-metric>.scoregrid{margin:16px 0 0}
 .console-ledger .spark i{max-width:10px}
 .console-ledger .spark{justify-content:flex-end}
 @media(max-width:760px){.console-ledger .panel>.scoregrid{grid-template-columns:1fr}.console-ledger .panel-title h2{white-space:normal}}

@@ -62,7 +62,6 @@ const CAPS: CapabilitiesResponse = {
       url: 'https://mcp.internal/github',
       transport: 'http',
       auth_type: 'oauth2',
-      status: 'healthy',
       tools: ['list_repos'],
       tool_count: 1,
       access_groups: [],

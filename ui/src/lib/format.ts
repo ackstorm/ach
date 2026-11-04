@@ -2,9 +2,10 @@
 // toFixed()/toLocaleString() themselves: every number, amount and date goes
 // through here so one setting changes all of them.
 //
-// LOCALE is VITE_CONSOLE_LOCALE when the build sets it (e.g. "es-ES" for
-// everyone), otherwise the viewer's browser locale. Examples below are en-US;
-// es-ES gives "1.249,50 $", "1.000.000", "2,45 M" and "1 mar 2026".
+// LOCALE is VITE_CONSOLE_LOCALE when the build sets it. Unset, every viewer gets
+// en-US with European separators, whatever the browser says: "$1.249,50",
+// "1.000.000", "2,45M", "98,5%" and "Mar 01, 2026". The examples below are plain
+// en-US.
 //
 //   formatCurrency(1249.5)                       -> "$1,249.50"
 //   formatInt(1000000)                           -> "1,000,000"
@@ -28,9 +29,8 @@ function asNumber(n: number | string | null | undefined): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-// undefined = the browser's locale. An invalid build value falls back to it
-// rather than breaking every page.
-export const LOCALE: string | undefined = (() => {
+// An invalid build value falls back to the default rather than breaking every page.
+const BUILD_LOCALE: string | undefined = (() => {
   const want = import.meta.env.VITE_CONSOLE_LOCALE as string | undefined;
   if (!want) return undefined;
   try {
@@ -39,11 +39,20 @@ export const LOCALE: string | undefined = (() => {
     return undefined;
   }
 })();
+export const LOCALE: string = BUILD_LOCALE ?? 'en-US';
+
+// No locale gives "$1.249,50" with "Nov 30" (en-ES keeps US currency separators,
+// and browsers may not ship it), so the default swaps en-US's separators.
+const swapSeparators = (s: string): string => s.replace(/[.,]/g, (c) => (c === '.' ? ',' : '.'));
 
 // 'always' groups four-digit numbers too (es-ES would otherwise print 1234).
 // ES2023 Intl typings know it; this project targets ES2022 lib.
 type NumberOpts = Omit<Intl.NumberFormatOptions, 'useGrouping'> & { useGrouping?: boolean | 'always' | 'auto' | 'min2' };
-const numberFormat = (opts: NumberOpts) => new Intl.NumberFormat(LOCALE, opts as Intl.NumberFormatOptions);
+type NumberFormatter = { format: (n: number) => string };
+const numberFormat = (opts: NumberOpts): NumberFormatter => {
+  const fmt = new Intl.NumberFormat(LOCALE, opts as Intl.NumberFormatOptions);
+  return { format: (n) => (BUILD_LOCALE ? fmt.format(n) : swapSeparators(fmt.format(n))) };
+};
 const _currencyFmt = numberFormat({
   style: 'currency',
   currency: 'USD',
@@ -58,8 +67,8 @@ const _intFmt = numberFormat({
   useGrouping: 'always',
 });
 
-const _decimalFmts = new Map<string, Intl.NumberFormat>();
-function decimalFmt(min: number, max: number): Intl.NumberFormat {
+const _decimalFmts = new Map<string, NumberFormatter>();
+function decimalFmt(min: number, max: number): NumberFormatter {
   const key = `${min}:${max}`;
   let f = _decimalFmts.get(key);
   if (!f) {
@@ -80,7 +89,7 @@ export function formatDecimal(n: number | string | null | undefined, digits: num
 export function formatPercent(ratio: number | string | null | undefined, digits = 1): string {
   const num = asNumber(ratio);
   if (num === null) return EM_DASH;
-  return new Intl.NumberFormat(LOCALE, { style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(num);
+  return numberFormat({ style: 'percent', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(num);
 }
 
 // formatSeconds(1234) -> "1.2 s", formatSeconds(850) -> "850 ms": a duration
@@ -107,7 +116,7 @@ export function formatUsdSmall(n: number | string | null | undefined): string {
   const num = asNumber(n);
   if (num === null) return EM_DASH;
   if (Math.abs(num) >= 0.01 || num === 0) return _currencyFmt.format(num);
-  return new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(num);
+  return numberFormat({ style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 4, maximumFractionDigits: 4, useGrouping: 'always' }).format(num);
 }
 
 // formatCurrency(n) -> "$1,249.50"; null/undefined/non-numeric -> "—".
@@ -126,7 +135,7 @@ export function formatInt(n: number | string | null | undefined): string {
 
 // abbreviate(n) -> "2.45M" / "1.5K" / "950": compact notation, up to 2
 // decimals, trailing zeros trimmed (es-ES: "2,45 M", "1,5 mil").
-const _compactFmt = new Intl.NumberFormat(LOCALE, { notation: 'compact', maximumFractionDigits: 2 });
+const _compactFmt = numberFormat({ notation: 'compact', maximumFractionDigits: 2 });
 export function abbreviate(n: number | string | null | undefined): string {
   const num = asNumber(n);
   if (num === null) return EM_DASH;
@@ -173,6 +182,13 @@ export function formatLocalDate(iso: string | null | undefined, timeZone?: strin
   return d.toLocaleDateString(LOCALE, { ..._LOCAL_DATE_OPTS, timeZone });
 }
 
+// formatCycleEnd(resetIso) -> the last day of a budget cycle, on the viewer's
+// calendar. A reset is the instant the next cycle starts: 00:00 on Dec 01 closes Nov 30.
+export function formatCycleEnd(iso: string | null | undefined, timeZone?: string): string {
+  const t = iso == null ? NaN : Date.parse(iso);
+  return formatLocalDate(Number.isNaN(t) ? null : new Date(t - 1).toISOString(), timeZone);
+}
+
 // formatLocalDateTime(iso) -> "Oct 28, 08:13" and formatLocalTime(iso) ->
 // "08:13:05" on the viewer's clock (24h); same null/invalid -> "—" contract.
 export function formatLocalDateTime(iso: string | null | undefined, timeZone?: string): string {
@@ -195,7 +211,7 @@ export function formatShortDay(day: string | null | undefined): string {
 }
 
 // formatCurrencyCompact(1234) -> "$1.23K"; below $1k it is formatCurrency.
-const _currencyCompactFmt = new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', notation: 'compact', maximumFractionDigits: 2 });
+const _currencyCompactFmt = numberFormat({ style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', notation: 'compact', maximumFractionDigits: 2 });
 export function formatCurrencyCompact(n: number | null | undefined): string {
   const num = asNumber(n);
   if (num === null) return EM_DASH;

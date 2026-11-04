@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COMING_SOON, ENV_STATUS, KEY_STATUS, mcpStatus, targetStatus, traceOutcome } from './status';
+import { COMING_SOON, ENV_STATUS, KEY_STATUS, targetStatus, traceOutcome } from './status';
 
 describe('status label maps', () => {
   it('keys', () => {
@@ -13,13 +13,6 @@ describe('status label maps', () => {
     expect(Object.values(ENV_STATUS).map((v) => `${v.label}:${v.tone}`)).toEqual([
       'Available:ok', 'Degraded:warn', 'Not ready:danger', 'Not in your teams:neutral',
     ]);
-  });
-
-  it('mcp', () => {
-    expect(mcpStatus('healthy')).toEqual({ label: 'healthy', tone: 'ok' });
-    expect(mcpStatus('Unhealthy')).toEqual({ label: 'unhealthy', tone: 'danger' });
-    expect(mcpStatus(null)).toEqual({ label: 'unknown', tone: 'neutral' });
-    expect(mcpStatus('')).toEqual({ label: 'unknown', tone: 'neutral' });
   });
 
   it('trace outcome (shared by Overview and Traces)', () => {

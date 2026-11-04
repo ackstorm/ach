@@ -7,7 +7,7 @@
 // a source is unavailable, never 0.
 import { useConsoleStats } from '@/stores/console-range';
 import { EVIDENCE_LIMIT_NOTICE, sourceUnavailable, useEvidenceReport, useEvidenceWindow, type CostReport } from '@/hooks/use-evidence-reports';
-import { formatCurrency, formatInt, formatLocalDate, formatUsdSmall, formatPercent } from '@/lib/format';
+import { formatCurrency, formatInt, formatCycleEnd, formatUsdSmall, formatPercent } from '@/lib/format';
 import type { StatsKeyRow, StatsModelRow } from '@/lib/api-types';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { ErrorCard } from '@/components/layout/ErrorCard';
@@ -61,9 +61,9 @@ export function Cost() {
   const evidence = (loading: string, missing: string) => tooLong ? EVIDENCE_LIMIT_NOTICE : costQuery.isPending ? loading : missing;
   return <>{head}
     <div className="metric-grid">
-      <Metric label={p.horizon_end ? `Projected by ${formatLocalDate(p.horizon_end)}` : 'Projected spend'} value={p.spend == null ? undefined : formatCurrency(p.spend)}>{p.spend == null ? projectionReason(p) : `Estimate: this allowance cycle’s rate carried to its reset${p.pct == null ? '' : `, ${pct(p.pct)} of the cap`}. Independent of the selected period.`}</Metric>
-      <Metric label="Cost per model request" value={cost ? unit(cost.cost_per_model_request) : undefined}>{cost ? `${formatCurrency(cost.spend)} over ${formatInt(cost.priced_generations)} priced chat generations. ${formatInt(cost.zero_cost_generations)} generations with no recorded cost (subscription traffic) are counted apart and excluded.` : evidence('Loading generation costs…', 'Generation cost evidence is unavailable.')}</Metric>
-      <Metric label="Cost per session" value={cost ? unit(cost.cost_per_session) : undefined}>{cost ? `${formatInt(cost.sessions)} observed sessions · ${pct(cost.session_spend_coverage)} of spend carries a session id; the rest is unassigned.` : evidence('Loading sessions…', 'Session attribution is unavailable.')}</Metric>
+      <Metric icon="↗" label={p.horizon_end ? `Projected by ${formatCycleEnd(p.horizon_end)}` : 'Projected spend'} value={p.spend == null ? undefined : formatCurrency(p.spend)}>{p.spend == null ? projectionReason(p) : `Estimate: this allowance cycle’s rate carried to its reset${p.pct == null ? '' : `, ${pct(p.pct)} of the cap`}. Independent of the selected period.`}</Metric>
+      <Metric icon="$" label="Cost per model request" value={cost ? unit(cost.cost_per_model_request) : undefined}>{cost ? `${formatCurrency(cost.spend)} over ${formatInt(cost.priced_generations)} priced chat generations. ${formatInt(cost.zero_cost_generations)} generations with no recorded cost (subscription traffic) are counted apart and excluded.` : evidence('Loading generation costs…', 'Generation cost evidence is unavailable.')}</Metric>
+      <Metric icon="$" label="Cost per session" value={cost ? unit(cost.cost_per_session) : undefined}>{cost ? `${formatInt(cost.sessions)} observed sessions · ${pct(cost.session_spend_coverage)} of spend carries a session id; the rest is unassigned.` : evidence('Loading sessions…', 'Session attribution is unavailable.')}</Metric>
     </div>
     <section className="panel hero-metric report-gap"><div className="hero-top"><div><h2>Daily spend</h2><p>Recorded spend per UTC day for the selected period</p></div><div className="hero-number"><b>{formatCurrency(totals.spend)}</b><small>{change == null ? 'No comparable previous period' : `${change >= 0 ? '+' : ''}${formatPercent(change)} vs previous period${prior == null ? '' : ` (${formatCurrency(prior)})`}`}</small></div></div><DailySpend series={series} /></section>
     <div className="breakdown">

@@ -13,7 +13,7 @@
 // mint path has no admin bypass, so those rows get no Create key button).
 
 import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { Bot, Box, Boxes, ChevronRight, MessageSquareText, Package, Puzzle, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
 
 import { CatalogHead } from '@/components/catalog/Catalog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,18 +47,18 @@ function statusOf(env: EnvironmentRow): Status {
 
 // The declared name groups, in display order. Counts on the summary row use
 // the first five; the body lists every non-empty group.
-function groupsOf(env: EnvironmentRow): { label: string; unit: string; names: string[] }[] {
+function groupsOf(env: EnvironmentRow): { label: string; unit: string; icon: LucideIcon; names: string[] }[] {
   const r = env.runtime ?? {};
   const c = env.context ?? {};
   return [
-    { label: 'Models', unit: 'model', names: r.models ?? [] },
-    { label: 'MCP servers', unit: 'MCP', names: r.mcpServers ?? [] },
-    { label: 'A2A agents', unit: 'agent', names: r.a2aAgents ?? [] },
-    { label: 'Plugins', unit: 'plugin', names: c.plugins ?? [] },
-    { label: 'Skills', unit: 'skill', names: c.skills ?? [] },
-    { label: 'Guardrails', unit: 'guardrail', names: r.guardrails ?? [] },
-    { label: 'Prompts', unit: 'prompt', names: c.prompts ?? [] },
-    { label: 'Artifacts', unit: 'artifact', names: c.artifacts ?? [] },
+    { label: 'Models', unit: 'model', icon: Box, names: r.models ?? [] },
+    { label: 'MCP servers', unit: 'MCP', icon: Boxes, names: r.mcpServers ?? [] },
+    { label: 'A2A agents', unit: 'agent', icon: Bot, names: r.a2aAgents ?? [] },
+    { label: 'Plugins', unit: 'plugin', icon: Puzzle, names: c.plugins ?? [] },
+    { label: 'Skills', unit: 'skill', icon: Sparkles, names: c.skills ?? [] },
+    { label: 'Guardrails', unit: 'guardrail', icon: ShieldCheck, names: r.guardrails ?? [] },
+    { label: 'Prompts', unit: 'prompt', icon: MessageSquareText, names: c.prompts ?? [] },
+    { label: 'Artifacts', unit: 'artifact', icon: Package, names: c.artifacts ?? [] },
   ];
 }
 
@@ -123,8 +123,9 @@ function EnvironmentCard({ env, outsideTeams }: { env: EnvironmentRow; outsideTe
             .filter((g) => g.names.length > 0)
             .map((g) => (
               <div key={g.label}>
-                <h4 className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
-                  {g.label} <span className="text-text-secondary">{g.names.length}</span>
+                <h4 className="mb-2 flex items-center gap-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  <g.icon className="size-3.5 shrink-0" aria-hidden="true" />
+                  {g.label} <span className="muted">({formatInt(g.names.length)})</span>
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
                   {g.names.map((n) => (

@@ -7,12 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-import type { McpServerRow } from '@/lib/api-types';
+import type { McpServerRow, SessionMe } from '@/lib/api-types';
 import type { McpSelection } from '@/hooks/use-capabilities';
 
 vi.mock('@/hooks/use-capabilities', () => ({ useMcp: vi.fn() }));
 
 import { useMcp } from '@/hooks/use-capabilities';
+import { useSessionStore } from '@/stores/session';
 import { Mcp } from './Mcp';
 
 const useMcpMock = vi.mocked(useMcp);
@@ -25,7 +26,6 @@ function makeServer(over: Partial<McpServerRow> = {}): McpServerRow {
     url: 'https://mcp.internal/github',
     transport: 'http',
     auth_type: 'oauth2',
-    status: 'healthy',
     tools: ['list_repos', 'create_issue'],
     tool_count: 2,
     access_groups: ['platform'],
@@ -89,28 +89,27 @@ describe('Mcp — error', () => {
 });
 
 describe('Mcp — unavailable (no gateway, not provisioning)', () => {
-  it('shows the calm "not enabled" state when the list is empty and not provisioning', () => {
+  it('shows the calm "no servers" state when the list is empty and not provisioning', () => {
     setSuccess({ servers: [], provisioning: false });
     render(<Mcp />);
-    expect(screen.getByText('MCP gateway not enabled')).toBeInTheDocument();
+    expect(screen.getByText('No MCP servers available')).toBeInTheDocument();
   });
 });
 
 describe('Mcp — provisioning', () => {
-  it('shows the provisioning card, not the "not enabled" copy, when provisioning is true', () => {
+  it('shows the provisioning card, not the "no servers" copy, when provisioning is true', () => {
     setSuccess({ servers: [], provisioning: true });
     render(<Mcp />);
     expect(screen.getByText('Access is being provisioned')).toBeInTheDocument();
-    expect(screen.queryByText('MCP gateway not enabled')).not.toBeInTheDocument();
+    expect(screen.queryByText('No MCP servers available')).not.toBeInTheDocument();
   });
 });
 
 describe('Mcp — populated', () => {
-  it('renders the server name, status, tools, and the access-groups label', () => {
+  it('renders the server name, tools, and the access-groups label', () => {
     setSuccess({ servers: [makeServer()], provisioning: false });
     render(<Mcp />);
     expect(screen.getByText('GitHub')).toBeInTheDocument();
-    expect(screen.getByText('healthy')).toBeInTheDocument();
     expect(screen.getByText('list_repos')).toBeInTheDocument();
     expect(screen.getByText('create_issue')).toBeInTheDocument();
     // The gateway's grouping, not an ACH Environment; no vendor name in the UI.
@@ -154,14 +153,22 @@ describe('Mcp — populated', () => {
     expect(names()).toHaveLength(6);
   });
 
-  it('shows "tools not listed" instead of a misleading "0 tools" when the backend reports none', () => {
+  it('shows no tool-count chip when the backend reports none', () => {
     setSuccess({
       servers: [makeServer({ tools: [], tool_count: 0 })],
       provisioning: false,
     });
+    const { container } = render(<Mcp />);
+    expect(screen.queryByText('tools not listed')).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent('0 tools');
+  });
+
+  it('shows the gateway URL, never the upstream one', () => {
+    useSessionStore.setState({ me: { endpoint: 'https://api.ackstorm.ai' } as SessionMe });
+    setSuccess({ servers: [makeServer({ name: 'ach-memory' })], provisioning: false });
     render(<Mcp />);
-    expect(screen.getByText('tools not listed')).toBeInTheDocument();
-    expect(screen.queryByText('0 tools')).not.toBeInTheDocument();
+    expect(screen.getByText('https://api.ackstorm.ai/mcp/ach-memory')).toBeInTheDocument();
+    expect(screen.queryByText('https://mcp.internal/github')).not.toBeInTheDocument();
   });
 
   it('caps the visible tool chips at six with a "+N more" marker', () => {

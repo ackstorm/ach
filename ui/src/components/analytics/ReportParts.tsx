@@ -26,7 +26,7 @@ export function ReportFilters({ label, options = [], value = '', onChange }: { l
   if (!options.length) return null;
   return <div className="panel filtersbar report-filters"><label className="filter"><span>{label}</span><select aria-label={`${label} filter`} value={value} onChange={(event) => onChange?.(event.target.value)}><option value="">All {label.toLowerCase()}s</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label></div>;
 }
-export function Metric({ label, value = '—', children }: { label: string; value?: ReactNode; children: ReactNode }) { return <div className="panel metric"><span className="label">{label}</span><div className="value">{value}</div><p>{children}</p></div>; }
+export function Metric({ icon, label, value = '—', children }: { icon: string; label: string; value?: ReactNode; children: ReactNode }) { return <div className="panel kpi metric"><div className="khead"><span className="badge" aria-hidden="true">{icon}</span>{label}</div><div className="value">{value}</div><p>{children}</p></div>; }
 export function Panel({ title, subtitle, action, children, className = '' }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode; className?: string }) { return <section className={`panel ${className}`}><div className="panel-title"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}{action}</div>{children}</section>; }
 // One pattern for every bar list: right figure = `value · share%`, the share of
 // `total` (default: the rows' sum; pass the whole list's sum when paged or top-N).

@@ -50,7 +50,7 @@ import { useModels } from '@/hooks/use-capabilities';
 import type { ModelRow } from '@/lib/api-types';
 import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snippets';
 import { abbreviate, formatPricePerMillion } from '@/lib/format';
-import { isA2aModelRow, isRouterModel } from '@/lib/model-classify';
+import { isRouterModel } from '@/lib/model-classify';
 import { useSessionStore } from '@/stores/session';
 
 const EM_DASH = '—';
@@ -286,9 +286,7 @@ export function Models() {
   const [caps, setCaps] = useState<Set<ModelCapKey>>(new Set());
   const [modes, setModes] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
-  // A2A agents ride the same catalog under providers: ["a2a1"] — they aren't
-  // models, so they're excluded from this table entirely.
-  const models = (query.data?.models ?? []).filter((m) => !isA2aModelRow(m));
+  const models = query.data?.models ?? [];
   const modeOptions = modelModeOptions(models);
   const header = <CatalogHead title={PAGE_TITLE} description={PAGE_SUB} count={models.length} />;
 

@@ -88,19 +88,19 @@ describe('A2a — error', () => {
 });
 
 describe('A2a — unavailable (no gateway, not provisioning)', () => {
-  it('shows the calm "not enabled" state when the list is empty and not provisioning', () => {
+  it('shows the calm "no agents" state when the list is empty and not provisioning', () => {
     setSuccess({ agents: [], provisioning: false });
     render(<A2a />);
-    expect(screen.getByText('A2A gateway not enabled')).toBeInTheDocument();
+    expect(screen.getByText('No agents available')).toBeInTheDocument();
   });
 });
 
 describe('A2a — provisioning', () => {
-  it('shows the provisioning card, not the "not enabled" copy, when provisioning is true', () => {
+  it('shows the provisioning card, not the "no agents" copy, when provisioning is true', () => {
     setSuccess({ agents: [], provisioning: true });
     render(<A2a />);
     expect(screen.getByText('Access is being provisioned')).toBeInTheDocument();
-    expect(screen.queryByText('A2A gateway not enabled')).not.toBeInTheDocument();
+    expect(screen.queryByText('No agents available')).not.toBeInTheDocument();
   });
 });
 

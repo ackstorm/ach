@@ -5,7 +5,7 @@
 // independent of the page's activity period; a missing cap is "no limit",
 // never a zero allowance.
 import type { BudgetProjection, StatsBudget } from '@/lib/api-types';
-import { formatCurrency, formatCurrencyCompact, formatLocalDate, formatShortDay } from '@/lib/format';
+import { formatCurrency, formatCurrencyCompact, formatCycleEnd, formatLocalDate, formatShortDay } from '@/lib/format';
 import { ChartFrame, type Tip } from '@/components/charts/ChartFrame';
 
 const DAY = 86_400_000;
@@ -40,7 +40,7 @@ export function AllowancePanel({ budget }: { budget: StatsBudget }) {
   const meta = <div className="forecast-meta">
     <div><span>Spent this cycle</span><b>{spent == null ? 'Unavailable' : formatCurrency(spent)}</b></div>
     <div><span>Remaining</span><b>{cap == null ? 'No limit' : remaining == null ? 'Unavailable' : formatCurrency(remaining)}</b></div>
-    <div><span>{p.horizon_end ? `Projected by ${formatLocalDate(p.horizon_end)}` : 'Projection'}</span><b>{p.spend == null ? '—' : formatCurrency(p.spend)}</b></div>
+    <div><span>{p.horizon_end ? `Projected by ${formatCycleEnd(p.horizon_end)}` : 'Projection'}</span><b>{p.spend == null ? '—' : formatCurrency(p.spend)}</b></div>
   </div>;
   if (!hasCycle || spent == null) {
     return <section className="panel forecast forecast-compact"><div className="forecast-head"><div><h2>Allowance</h2><p>{cap == null ? 'No limit configured' : `${formatCurrency(cap)} cap`} · {projectionReason(p)}</p></div>{meta}</div></section>;

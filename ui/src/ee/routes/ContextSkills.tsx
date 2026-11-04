@@ -25,11 +25,11 @@ export function ContextSkills() {
   const named = (rows: ContextReport['skills'], color: string, none: string) => rows == null ? <Unavailable>Names could not be read for this period.</Unavailable> : rows.length ? <Bars color={color} share={false} rows={rows.map((row) => ({ name: row.name, value: row.count }))} /> : <Unavailable>{none}</Unavailable>;
   return <>{head}
     <div className="metric-grid">
-      <Metric label="Average generation input" value={abbreviate(c.input_summary.mean)}>Median {abbreviate(c.input_summary.median)} · maximum {abbreviate(c.input_summary.max)} over {formatInt(c.input_coverage)} generations.</Metric>
-      <Metric label="Skill loads" value={tools ? formatInt(c.skill_invocation_count) : undefined}>{tools ? `Skill tool calls by your clients · ${formatInt(large)} generations carried 200K+ input.` : 'Tool calls could not be read.'}</Metric>
-      <Metric label="Subagent starts" value={tools ? formatInt(c.subagent_invocation_count) : undefined}>{tools ? 'Agent and Task tool calls: work handed to a subagent.' : 'Tool calls could not be read.'}</Metric>
+      <Metric icon="◎" label="Average generation input" value={abbreviate(c.input_summary.mean)}>Median {abbreviate(c.input_summary.median)} · maximum {abbreviate(c.input_summary.max)} over {formatInt(c.input_coverage)} generations.</Metric>
+      <Metric icon="✦" label="Skill loads" value={tools ? formatInt(c.skill_invocation_count) : undefined}>{tools ? `Skill tool calls by your clients · ${formatInt(large)} generations carried 200K+ input.` : 'Tool calls could not be read.'}</Metric>
+      <Metric icon="⤷" label="Subagent starts" value={tools ? formatInt(c.subagent_invocation_count) : undefined}>{tools ? 'Agent and Task tool calls: work handed to a subagent.' : 'Tool calls could not be read.'}</Metric>
     </div>
-    <section className="panel hero-metric report-gap"><div className="hero-top"><div><h2>Input and cache shape</h2><p>Your generations in this period · provider prompt-cache semantics</p></div><div className="hero-number"><b>{ratio == null ? '—' : `${formatDecimal(ratio, 0)} : 1`}</b><small>{abbreviate(c.token_ratio.uncached_input_tokens)} uncached input / {abbreviate(c.token_ratio.output_tokens)} output · with cache reads {c.token_ratio.value == null ? '—' : `${formatDecimal(c.token_ratio.value, 0)} : 1`}</small></div></div>
+    <section className="panel hero-metric report-gap"><div className="hero-top"><div><h2>Input and cache shape</h2><p>Your generations in this period · provider prompt-cache semantics</p></div><div className="hero-number"><b>{ratio == null ? '—' : `${formatDecimal(ratio, 0)} : 1`}</b><small>{abbreviate(c.token_ratio.uncached_input_tokens)} uncached input / {abbreviate(c.token_ratio.output_tokens)} output</small></div></div>
       <div className="scoregrid">
         <div><b>{abbreviate(c.cache_read_tokens)}</b><span>Cache-read tokens</span><p>{formatInt(c.cache_coverage)} generations report it</p></div>
         <div><b>{abbreviate(c.cache_creation_tokens)}</b><span>Cache-created tokens</span><p>{formatInt(c.cache_creation_coverage)} generations report it</p></div>
