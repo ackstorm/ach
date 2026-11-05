@@ -32,7 +32,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   field of the Environment API view. Migration `000028` purges the remaining
   soft-deleted rows, then drops the column. Pods from an earlier version
   fail reads on those tables from the migration until the rollout replaces
-  them.
+  them. `helm rollback` below this release leaves them failing until
+  `000028_drop_deletion_timestamp.down.sql` is applied by hand.
 
 ## [1.1.0] - 2026-10-30
 
