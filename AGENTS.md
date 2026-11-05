@@ -366,14 +366,13 @@ independent collections.)
 
 `ci.yml` is **PR-only** — `pull_request → main` is the single trigger, no
 `push:` trigger. Release commits (`chore(release): v*`) → `release.yml`.
-**E2E, soak, leak, and fuzz-long run NOWHERE in CI** — `nightly.yml` was deleted
-2026-07-17 (unused). Their `make` targets still work; they are now **local-only,
-on demand**. Run `make e2e-full` locally before merging any change touching
+**Soak, leak, and fuzz-long run NOWHERE in CI**: their `make` targets are
+**local-only, on demand**. `e2e.yml` runs `make e2e-full` on PRs touching the
+surfaces below as a **non-required** measurement of hosted runners. Until that
+decision lands, run `make e2e-full` locally before merging any change touching
 `internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
 `deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop" (presentation-only
-changes are exempt, see there). There is **no
-automated backstop on `main`**: nothing catches an e2e regression except a
-human running the suite. `main` is protected, admins included: every commit
+changes are exempt, see there). A failing `e2e.yml` does not block a merge. `main` is protected, admins included: every commit
 arrives through a PR with `ci-ok` green and the branch up to date, and no
 approval is required. `ci.yml` always runs and `ci-ok` is the one required
 check; `scripts/ci-changes.sh` skips the test jobs when a PR only touches docs
@@ -655,9 +654,8 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 
 `make e2e-full` is the full-suite final gate (~10 min). It **keeps the cluster
 up** after the run — pass OR fail — so a red run can be diagnosed live; reclaim
-with `make cluster-down`. **CI
-does NOT run e2e at all** — the `e2e` job was removed from `ci.yml`, so e2e is a
-**local-only** gate now. Run `make e2e-full` on the host before merging any
+with `make cluster-down`. **`e2e.yml`
+is not a required check**, so the local run stays the gate. Run `make e2e-full` on the host before merging any
 change to the controller/services/CRDs/Helm/e2e surfaces.
 Iterate with the kept-cluster loop (full diagnosis recipe in
 `test/e2e/README.md`):
