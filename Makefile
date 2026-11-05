@@ -123,8 +123,8 @@ clean-cache: ## Remove ./.gocache, unlocking Go's read-only modcache first (fixe
 	@echo "Removed ./.gocache (re-created on next ./scripts/dev.sh use)."
 
 .PHONY: clean
-clean: clean-cache ## Remove all build artifacts: bin/, dist/, coverage profiles, testbin/, and ./.gocache. Host-only.
-	rm -rf bin dist testbin cover-unit.out cover-envtest.out
+clean: clean-cache ## Remove all build artifacts: bin/, dist/, testbin/, and ./.gocache. Host-only.
+	rm -rf bin dist testbin
 	@echo "Removed bin/ dist/ testbin/ cover*.out (tool + service binaries re-fetched/rebuilt on next make)."
 
 # clean-docker is intentionally NOT a dependency of `clean` — `clean` is a
@@ -200,8 +200,7 @@ _test-unit: _fmt-check vet
 	# Exclusions: internal/controller (envtest), test/e2e (cluster).
 	# Anything else is pure-logic.
 	go test -v -race -shuffle=on -count=1 \
-		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e") \
-		-coverprofile cover-unit.out
+		$$(go list ./... | grep -v -E "/internal/controller|/test/e2e")
 
 .PHONY: test-ui
 test-ui: ## Console unit tests (tsc type-check + vitest) — npm ci runs if ui/node_modules is absent.
@@ -223,7 +222,7 @@ _test-envtest: gen-manifests gen-code fmt vet setup-envtest
 	@# plus slow tests; failed packages dump their captured logs.
 	@KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_BIN_DIR) -p path)"; \
 	export KUBEBUILDER_ASSETS; \
-	scripts/run-envtest-packages.sh --race --timeout 15m --coverprofile cover-envtest.out -- ./internal/controller/...
+	scripts/run-envtest-packages.sh --race --timeout 15m -- ./internal/controller/...
 
 .PHONY: test-envtest-fast
 test-envtest-fast: ## Controller envtest WITHOUT -race (dev loop, ~3m).
