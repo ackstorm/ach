@@ -10,15 +10,25 @@ Always list what the tool already has before adding anything. A server that is l
 already configured, even when it says it needs authentication: only sign in to it.
 Adding it again creates a duplicate under another name.
 
+The Codex and OpenCode sign-in commands wait for a browser and hang the session in the
+foreground. Never run them directly: use the recipe below the table.
+
 | Tool | List | Sign in |
 |---|---|---|
 | Claude Code | `claude mcp list` | `/mcp` inside a session, pick the server, Authenticate |
 | Codex | `codex mcp list` | `codex mcp login <server>` |
 | OpenCode | `opencode mcp list` | `opencode mcp auth <server>` |
 
-Sign-in opens a browser and waits for it. When you run it for the user, start it in the
-background, read the link from its log, give the link to the user, and wait for them to
-say they approved; do not poll.
+One server at a time, with the tool's sign-in command:
+
+```bash
+LOG="${TMPDIR:-/tmp}/mcp-auth-<server>.log"
+nohup opencode mcp auth <server> </dev/null >"$LOG" 2>&1 &    # or: codex mcp login <server>
+for i in $(seq 1 20); do grep -q http "$LOG" && break; sleep 1; done; cat "$LOG"
+```
+
+Give the link to the user and wait for them to say they approved; do not poll. Then
+check the tool's list.
 
 ## A server the tool does not show
 

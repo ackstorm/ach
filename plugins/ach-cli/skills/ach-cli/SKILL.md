@@ -12,6 +12,10 @@ may use, and installs ("hydrates") an Environment into an agent tool.
 Never ask for, print, paste or commit a key or token. A key is shown once, on the
 user's own terminal, and stays there.
 
+Commands that wait for a browser (`ach-cli login`, MCP sign-in) hang the session in the
+foreground. Never run them directly: [login](references/login.md) and
+[mcp](references/mcp.md) have the background recipe.
+
 ## Where ACH is
 
 `ach-cli` already knows the platform URL once the user has signed in: it is saved in

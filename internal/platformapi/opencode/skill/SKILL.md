@@ -1,6 +1,6 @@
 ---
 name: {{skill}}
-description: Get this OpenCode set up on the organization's AI platform (ACH) at {{base}}. Use when the user wants to get started or onboard, install or sign in to ach-cli, sees no ACH models in OpenCode, or asks how to get the organization's MCP servers, skills and plugins into OpenCode.
+description: Entry point to the organization's AI platform (ACH) at {{base}}. Environments are ACH objects, not local files or folders, so never search the disk for one. Use whenever the user mentions an Environment or wants to hydrate, install, list or find one, even by name alone ("hydrate the X environment here"); wants to get started or onboard; wants to install or sign in to ach-cli; sees no ACH models in OpenCode; or asks how to get the organization's MCP servers, skills and plugins into OpenCode.
 ---
 
 # {{provider}} platform (ACH): first setup
@@ -14,11 +14,15 @@ installs it first. After installing or signing in, restart OpenCode: on OpenCode
 `opencode service restart` (the background service loads the plugin only when it
 starts); the models appear a few seconds later.
 
-This skill only gets `ach-cli` working and the user's Environments visible. Everything
-after that (installing Environments, folders, MCP sign-in, keys) is the `ach-cli` skill,
-which an Environment brings when it is installed: load it then.
+This skill gets `ach-cli` working, the user's Environments visible and a named
+Environment installed. Everything after that (folder layouts, MCP sign-in, keys) is the
+`ach-cli` skill, which an Environment brings when it is installed: load it then.
 
 Never ask for, print, paste or commit a key or token.
+
+Commands that wait for a browser (`ach-cli login`, `opencode mcp auth <server>`) hang the
+session in the foreground. Never run them directly: start them in the background, give
+the user the link from the log, and wait for them to say they approved.
 
 ## Steps
 
@@ -81,6 +85,12 @@ ach-cli env list
 An Environment is what a tool may use: models, MCP servers, skills, plugins. If one the
 user needs is missing, they do not have access to it: an ACH administrator grants it.
 
+If the user named an Environment, install that one into the current folder:
+
+```bash
+ach-cli env hydrate <name> --target opencode
+```
+
 {{#default_env}}
 ### 4. Install the baseline for every project
 
@@ -94,8 +104,21 @@ ach-cli env hydrate {{default_env}} -g --target opencode
 This writes into `~/.config/opencode/` its MCP servers (enabled), skills, commands and
 agents, including the `ach-cli` skill. Do not restart OpenCode afterwards: it picks up
 the new MCP servers by itself within seconds, and restarting from inside a session
-breaks that session. Then run `opencode mcp list`; for any server that needs
-authentication, and for anything else (another Environment, a folder per project,
+breaks that session. For anything else (another Environment, a folder per project,
 keys), load the `ach-cli` skill.
 
 {{/default_env}}
+### Sign in to MCP servers
+
+`opencode mcp list` shows which servers need it. One at a time:
+
+```bash
+LOG="${TMPDIR:-/tmp}/mcp-auth-<server>.log"
+nohup opencode mcp auth <server> </dev/null >"$LOG" 2>&1 &
+for i in $(seq 1 20); do grep -q http "$LOG" && break; sleep 1; done; cat "$LOG"
+```
+
+Give the user the link, then wait for them to say they approved (do not poll), and check
+with `opencode mcp list`. If the browser shows "127.0.0.1 refused to connect", ask them to
+paste the whole failed address, then run `curl -s -o /dev/null "<that address>"` here,
+only when it starts with `http://127.0.0.1:` or `http://localhost:`.

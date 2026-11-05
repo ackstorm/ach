@@ -8,6 +8,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Releases go through a PR: `make release-cut` opens it with the rotated
   CHANGELOG and manifest bumps, and the merged commit is what gets tagged.
   GitHub release notes are that version's CHANGELOG section.
+- The OpenCode bootstrap skill (`<provider>-ach`) loads on any mention of an
+  Environment and installs a named one, instead of leaving agents to search
+  the disk for it.
+- The OpenCode bootstrap skill and the `ach-cli` plugin (1.1.4) give agents a
+  background recipe for MCP sign-in, so they hand over the link instead of
+  hanging the session on the browser wait.
 
 ### Removed
 - The `pre-push` git hook, with `make pre-push`, `make hooks` and `make verify`.

@@ -24,7 +24,9 @@ func TestAPISkill(t *testing.T) {
 
 	// No default Environment: its step is cut, the rest is unchanged.
 	bare := apiSkill("https://ach.test/", "ackstorm", "")["files"].(map[string]string)["SKILL.md"]
-	if strings.Contains(bare, "env hydrate") || strings.Contains(bare, "{{") || !strings.Contains(bare, "ach-cli env list") {
+	if strings.Contains(bare, "-g --target opencode") || strings.Contains(bare, "{{") || !strings.Contains(bare, "ach-cli env list") ||
+		!strings.Contains(bare, "ach-cli env hydrate <name> --target opencode") ||
+		!strings.Contains(bare, "\n\n### Sign in to MCP servers\n") || !strings.Contains(bare, "nohup opencode mcp auth <server>") {
 		t.Fatal(bare)
 	}
 }
