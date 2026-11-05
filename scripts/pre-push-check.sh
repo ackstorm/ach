@@ -24,7 +24,7 @@
 # Scoped lane: when the only Go-toolchain inputs are *.go files outside api/,
 # hack/ and the nested test/e2e/mcp-echo module, gate 14 lints the changed
 # packages and 15 runs `go vet ./...` plus the owning packages' tests.
-# PREPUSH_FULL=1 forces every gate (release-cut sets it).
+# PREPUSH_FULL=1 forces every gate.
 # A push that only deletes remote branches exits 0 before any gate.
 #
 # Soft checks (warnings only):

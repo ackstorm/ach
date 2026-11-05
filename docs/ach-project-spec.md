@@ -114,7 +114,7 @@ runtime catalog.
 ## 4. Known gaps & accepted trade-offs (honest list for the review)
 
 1. **E2E is not a CI gate** — removed from CI for cost/speed; the burden is a local `make e2e-full` before merge. Works with discipline, doesn't scale with team size.
-2. **No branch protection on `main`** — PR-only CI is a real gate only with branch protection (paid plan / public repo). Direct pushes are currently unguarded.
+2. **Every change goes through a PR** — `main` is protected, admins included. A hotfix waits for CI or needs protection lifted by hand.
 3. **Hydrate vs concurrent editor save race** — a user edit during the hydrate window can be silently lost (self-heals next hydrate). Accepted v1 trade-off; an mtime-recheck would close it.
 4. **Environment authoring is admin-only** — no per-object ACLs yet, so no team self-service for Environments. Deliberate (avoids inventing an ACL model prematurely).
 5. **UI write path is Environment-only (v1)** — the Objects API + GitOps-wins takeover pattern exists but covers one kind.
@@ -156,7 +156,7 @@ Grouped by horizon. Items marked ⭐ are my (Claude's) additions beyond what's a
 ## 6. Questions for the review panel
 
 1. **CEO/CIO**: Is ACH an internal platform, a product, or both? The cost-visibility and provenance items change priority dramatically depending on the answer.
-2. **CTO**: Nightly e2e vs paid-plan branch protection — which unblocks first? (Both are cheap; sequencing is the only question.)
+2. **CTO**: Should e2e become a required check once measured on hosted runners?
 3. **CTO**: Plugins — name a re-enable trigger (customer, use case, date) or schedule the excision.
 4. **All**: Team self-service — is admin-only Environment authoring a current pain, or theoretical? Determines whether the minimal-ACL work is next quarter or next year.
 5. **CIO**: Which compliance regime (if any) should the audit/session retention story target? Shapes the analytics design before code is written.

@@ -465,18 +465,19 @@ project-root containment (only `.mcp.json` allowed at root). State
   kind+Helm ~6-10m, **cluster KEPT after** (debug loop:
   `logs-*`, `e2e-focus RUN=…`, `cluster-sync` w/ `image.rebuildId` roll).
   **CI runs NO e2e** — local-only gate before merging controller/service/
-  CRD/Helm/e2e changes. CI = PR-only (lint+unit+envtest+security); no branch
-  protection yet → direct pushes unguarded.
+  CRD/Helm/e2e changes. CI = PR-only (lint+unit+envtest+security); `ci-ok` is
+  the required check on protected `main`, admins included.
 - e2e: stdlib testing (Ginkgo REJECTED — user memory), synced fixtures
   `test/e2e/cluster/{00..06}` gated healthy by `verify_all`; tests ASSERT
   against synced state, only mutate throwaways. Golden
   `examples/hydrate.json` byte-diffed (host-normalized). mcp-echo = stdlib
   JWT-verifying reference backend.
 - Pre-push: 18 gates, 12 hard (installed hook; never `--no-verify`).
-- Release: commit-msg-driven `chore(release): vX.Y.Z` push → release.yml →
-  tests → bot manifest bump → goreleaser (multi-arch `ach` + distroless
-  `ach-cli` images, CycloneDX SBOM, cosign keyless) → OCI Helm chart →
-  **tag LAST** (no orphan tags). `make release-cut VERSION=…`.
+- Release: `make release-cut VERSION=…` opens the `chore(release): vX.Y.Z` PR
+  (rotated CHANGELOG + manifest bumps, auto-merge) → release.yml on merge →
+  **tag that commit** → goreleaser (multi-arch `ach` + distroless `ach-cli`
+  images, CycloneDX SBOM, cosign keyless, CHANGELOG section as notes) → OCI
+  Helm chart. No tests: the commit already passed `ci-ok`.
 - Helm: only supported install path (kustomize deleted 2026-07-17;
   `config/` = build/test scaffolding).
 
@@ -493,7 +494,8 @@ See `AGENTS.md` "Editions".
 
 ## 11. Known gaps / accepted trade-offs (from `docs/ach-project-spec.md` §4)
 
-1. e2e not a CI gate (local discipline). 2. No branch protection on main.
+1. e2e not a CI gate (local discipline). 2. Every change goes through a PR,
+hotfixes included.
 3. Hydrate vs editor-save race (edit in hydrate window silently lost;
 self-heals next run; mtime-recheck would close). 4. Environment authoring
 admin-only (no ACL model yet). 5. UI write path Environment-only.

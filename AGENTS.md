@@ -374,11 +374,11 @@ on demand**. Run `make e2e-full` locally before merging any change touching
 `deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop" (presentation-only
 changes are exempt, see there). There is **no
 automated backstop on `main`**: nothing catches an e2e regression except a
-human running the suite. Docs-only PRs
-(paths-ignore `**/*.md`, `docs/**`, `references/**`, `FIX*.txt`, `LICENSE`,
-`NOTICE`, `CODEOWNERS`, `.gitignore`) skip `ci.yml`. **⚠ PR-only is a real gate
-only if branch protection on `main` is enabled** (needs a paid plan / public
-repo); until then direct pushes to `main` are unguarded.
+human running the suite. `main` is protected, admins included: every commit
+arrives through a PR with `ci-ok` green and the branch up to date, and no
+approval is required. `ci.yml` always runs and `ci-ok` is the one required
+check; `scripts/ci-changes.sh` skips the test jobs when a PR only touches docs
+or version lines. `release.yml` runs no tests for that reason.
 
 `govulncheck.yml` is **cron-only** (Mondays + `workflow_dispatch`) — it has NO
 `pull_request` trigger. `ci.yml`'s security job already runs `make qa-security`,
@@ -458,6 +458,7 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) | dev loop on one sub-test |
 | `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; **rarely — CI owns it, see below** |
 | `make test-ui`          | console `tsc` + vitest (`ui/`), ~1m warm | every iteration touching `ui/` |
+| `make test-scripts`     | self-check of `scripts/ci-changes.sh` + `scripts/changelog.sh` | after touching either script |
 | `make qa-edition`       | only `cmd/ach` imports `ee/`; `ach-cli` links none; core UI reaches `ui/src/ee` only via `@ee` | after touching `ee/`, `ui/src/ee`, or imports across the edition line |
 | `make pre-push`         | gitleaks + 17 more gates (12 hard, 6 informational) | host-only; before push |
 
@@ -474,11 +475,8 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 - **`qa-security` is NOT in the pre-push gate.** `scripts/govulncheck-gate.sh`
   is called from exactly two places: `make qa-security` (which `ci.yml`'s
   security job runs on every PR) and the Monday `govulncheck.yml` cron. The
-  pre-push script runs neither govulncheck nor trufflehog. Since branch
-  protection on `main` is not enabled, **a direct push to `main` gets no
-  govulncheck at all** until the next cron. Run `make qa-security` by hand
-  before a release cut or a direct-to-main push that changes dependencies;
-  skip it in the inner loop, because `govulncheck ./...` analyses the WHOLE
+  pre-push script runs neither govulncheck nor trufflehog. Skip
+  `make qa-security` in the inner loop, because `govulncheck ./...` analyses the WHOLE
   module every time (reachability is a whole-program property, so it can never
   be scoped to the diff) and it cannot be incremental.
 
@@ -522,8 +520,8 @@ before a push leaves the host:
   **Scoped lane**: when the only such input is `*.go` outside `api/`, `hack/` and
   `test/e2e/mcp-echo/`, gate 14 is `make qa-lint-changed` and 15 is `go vet ./...`
   plus the owning packages' tests, so a logic regression in a dependent package
-  waits for release-cut or a PR's CI.
-  `PREPUSH_FULL=1` forces the full sweep, and `make release-cut` always sets it.
+  waits for the PR's CI.
+  `PREPUSH_FULL=1` forces the full sweep.
   A push that only deletes remote branches runs no gate.
 
 The 12 hard gates: gitleaks (1, `origin/main..HEAD`; allowlist
@@ -551,7 +549,7 @@ as `Latest` AND `gh run list --branch main -L 3` shows its `Release` run
 2. `git worktree remove` + `git branch -D` the merged feature worktrees;
    delete the merged remote branch (`git push origin --delete <branch>`).
 3. `make clean-docker` (safe with kind up).
-4. `git pull --ff-only` on `main` to pick up the bot's manifest bump.
+4. `git pull --ff-only` on `main` to pick up the merged release commit.
 
 Never touch another session's worktree or cache while it runs a gate
 (`pgrep -af <worktree-name>`), and never `uv cache clean`: long-running MCP

@@ -11,12 +11,13 @@
 ## Release pipeline
 
 Release artifacts are produced by **goreleaser** orchestrated by
-`.github/workflows/release.yml`. The flow is **commit-message-driven
-with tag-before-build**: a push to `main` whose head commit message starts
-with `chore(release): v<MAJOR>.<MINOR>.<PATCH>` fires the pipeline. The
-workflow then runs the tests, bumps manifests itself, builds the console,
-**creates and force-pushes the git tag**, and only then runs goreleaser to
-build + sign artifacts. Because the tag precedes the build, a failure in
+`.github/workflows/release.yml`. A release is a PR: `make release-cut` opens
+`chore(release): vX.Y.Z` with the rotated CHANGELOG and manifest bumps in one
+commit, and sets auto-merge, so **running it publishes the release**. The merge
+pushes that commit to `main`, which fires the pipeline. The workflow builds the
+console, **tags exactly that commit**, then runs goreleaser to build and sign
+artifacts. It runs no tests: branch protection, admins included, means the
+commit already passed `ci-ok`. Because the tag precedes the build, a failure in
 goreleaser or the chart push **does leave an orphan tag on origin** — see
 "Orphan-tag posture" below.
 
@@ -35,48 +36,34 @@ git diff "$(git describe --tags --abbrev=0)"..HEAD --stat -- cmd/ach-cli interna
 ```
 
 ```bash
-# Most common — empty release commit (no manifest pre-bump).
-# `make release-cut` runs preconditions (on main, clean tree, in-sync
-# with origin/main), creates the empty `chore(release): v0.1.0` commit,
-# runs the 17-gate pre-push, and pushes to main.
+# `[Unreleased]` must not be empty: `scripts/changelog.sh rotate` refuses it.
+# Preconditions: on main, clean tree, in sync with origin/main.
 make release-cut VERSION=0.1.0
-
-# Bundle the release intent with a real change:
-# (edit, then commit the change yourself, then:)
-git commit -am 'chore(release): v0.1.0'
-make pre-push
-git push origin main
 ```
+
+The PR only touches `CHANGELOG.md` and version lines, so `ci-ok` passes without
+running tests (`scripts/ci-changes.sh`). The GitHub release notes are that
+version's CHANGELOG section (`scripts/changelog.sh extract`), so upgrade and
+rollback warnings written there reach the release page. Do not set
+`changelog.disable` in the goreleaser configs: a disabled changelog pipe never
+loads `--release-notes`.
 
 After the release is confirmed OK (`Latest` in `gh release list`, the
 `Release` run green), run the post-release cleanup in CLAUDE.md "After every
 release — clean up".
 
-There is no need to `make release-bump` locally or to create the tag
-yourself. `make release-bump VERSION=X.Y.Z` is still available as the
-internal target release.yml invokes; it can also be run by hand if you
-want to pre-bump manifests in the same commit (the workflow detects the
-clean tree and skips its own bump step), but it is not the expected
-workflow.
-
-Per-release flow (after the `chore(release): v0.1.0` push):
+Per-release flow (after the `chore(release): v0.1.0` PR merges):
 
 1. **parse** job (job-level `if` skips non-release pushes): pulls
    `X.Y.Z` from the head commit message via regex.
-2. **test-unit** + **test-envtest** jobs (parallel): `make test-unit` and
-   `make test-envtest-fast` run as two concurrent jobs, both gating
-   build-and-release — the test phase costs `max(unit, envtest)` (envtest-fast
-   dominates) instead of their sum. Either failing stops the pipeline here —
-   no manifest mutation, no tag.
-3. **build-and-release** job:
+2. **build-and-release** job, checked out at `github.sha` so a merge landing
+   during the run does not ship:
    - Configures the github-actions[bot] identity.
-   - Runs `make release-bump VERSION=X.Y.Z`, commits the four bumped manifests
-     to `main` with a `[skip ci]` marker, and pushes the bot commit.
-     If the tree is already clean (user pre-bumped), this is a no-op.
+   - Checks that `Chart.yaml` carries the version, then extracts the release
+     notes from the CHANGELOG.
    - Picks the goreleaser config:
      - `vX.Y.Z`                  → `.goreleaser.yml`            (stable)
      - `vX.Y.Z-{alpha,beta,rc}*` → `.goreleaser.prerelease.yml`
-   - `make gen-code gen-manifests` regenerates CRDs (sanity).
    - Persists the **native** runner Go caches (`~/.cache/go-build` +
      `~/go/pkg/mod`) via `actions/cache` with a `restore-keys` prefix
      fallback — setup-go's built-in cache is disabled (`cache: false`)
@@ -130,17 +117,10 @@ theoretical — v0.6.13 and v0.9.11 both hit it. Recovery is one of:
 
 - `gh run rerun --failed` — HEAD is unchanged, the tag already points at the
   right commit, and the run resumes.
-- a fresh `chore(release): vX.Y.Z` push — HEAD moves and the force-push
-  re-points the tag.
 - **abandoning that version** (what v0.9.11 did, moving on to v0.9.12) — then
   DELETE the orphan tag by hand: `git push origin :refs/tags/vX.Y.Z`. Left in
   place, the Go module proxy will still serve `@vX.Y.Z` and `helm pull
   --version X.Y.Z` 404s.
-
-The bot bump commit may also be on `main` if the failure happened in
-goreleaser — reversible by reverting the bot commit or by simply running the
-next release attempt, since `make release-bump` inside the workflow is
-idempotent.
 
 There is no snapshot config: `release.yml` selects `.goreleaser.yml`
 (stable) or `.goreleaser.prerelease.yml` (`-alpha|beta|rc`).

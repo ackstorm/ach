@@ -5,23 +5,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Changed
-- **Breaking for older `ach-cli`:** `POST /platform/hydrate` now returns
-  `runtime.models[].limits` (`{context, output}`) when LiteLLM knows them,
-  aliases resolved. `ach-cli` decodes this response strictly, so v1.1.2 and
-  older fail with `unknown field "limits"` until updated. Release this
-  `ach-cli` first, then upgrade the server. ach-agent ignores the field and
-  keeps working.
+- Releases go through a PR: `make release-cut` opens it with the rotated
+  CHANGELOG and manifest bumps, and the merged commit is what gets tagged.
+  GitHub release notes are that version's CHANGELOG section.
 
-### Added
-- `ach-cli` warns on stderr, once per run, when its version differs from the
-  server's. platform-api reports its version in `X-ACH-Server-Version` on
-  authenticated responses.
+## [1.1.4] - 2026-11-05
 
 ### Fixed
-- Deleting an `Environment` now removes its Postgres row. It used to stay
-  soft-deleted forever: gone from `env list`, but still answering hydrate,
-  `env describe`, the console and content downloads by name, reported as
-  `Available`. Migration `000027` purges the rows already left behind.
 - Deleting a `Plugin`, `Prompt`, `Skill`, `Artifact`, `BackendIdentityPolicy`
   or `LiteLLMConnection` now removes its Postgres row too. `Plugin`, `Prompt`
   and `Artifact` rows left soft-deleted still answered by name; their cached
@@ -34,6 +24,54 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   fail reads on those tables from the migration until the rollout replaces
   them. `helm rollback` below this release leaves them failing until
   `000028_drop_deletion_timestamp.down.sql` is applied by hand.
+
+## [1.1.3] - 2026-11-04
+
+### Changed
+- **Breaking for older `ach-cli`:** `POST /platform/hydrate` now returns
+  `runtime.models[].limits` (`{context, output}`) when LiteLLM knows them,
+  aliases resolved. `ach-cli` decodes this response strictly, so v1.1.2 and
+  older fail with `unknown field "limits"` until updated. Release this
+  `ach-cli` first, then upgrade the server. ach-agent ignores the field and
+  keeps working.
+- Console pages use the full width, and Reliability is hidden from the sidebar.
+  The page stays served at `/analytics/reliability`.
+
+### Added
+- `ach-cli` warns on stderr, once per run, when its version differs from the
+  server's. platform-api reports its version in `X-ACH-Server-Version` on
+  authenticated responses.
+- `ach-cli launch` without `--environment` updates every Environment recorded
+  under the folder's `.ach/`, then starts the tool.
+
+### Fixed
+- Deleting an `Environment` now removes its Postgres row. It used to stay
+  soft-deleted forever: gone from `env list`, but still answering hydrate,
+  `env describe`, the console and content downloads by name, reported as
+  `Available`. Migration `000027` purges the rows already left behind.
+
+## [1.1.2] - 2026-11-04
+
+### Fixed
+- Console catalogs: MCP cards show the gateway URL, Models lists agents
+  published as models, and an empty A2A or MCP list reads as no grant rather
+  than a disabled gateway.
+
+## [1.1.1] - 2026-11-03
+
+### Added
+- `ach-cli launch <claude|codex|gemini|opencode|pi> --environment <env>`
+  hydrates that one target, then starts the tool in `--dir` and exits with its
+  code. A missing tool or a failed hydrate starts nothing.
+- `ach-cli refresh` (`POST /platform/refresh`): after being added to an SSO
+  group, join the teams it maps to (`platformApi.teams.sso`/`users`) without
+  logging in again. It re-reads the groups at the identity provider; the
+  Environments follow at their next reconcile.
+
+### Fixed
+- `KeyGrant` ServiceAccount names are validated as DNS-1123 subdomains.
+- The console's Spend KPI becomes Budget when a cycle exists, plotting that
+  cycle's days. The console range opens on the last 7 days.
 
 ## [1.1.0] - 2026-10-30
 
@@ -60,11 +98,6 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   ACH custom resources) and `ach-install` (deploying the Helm chart). Install
   with `claude plugin marketplace add ackstorm/ach`, or serve them to users
   through a `PluginMarketplace` and an Environment.
-
-- `ach-cli refresh` (`POST /platform/refresh`): after being added to an SSO
-  group, join the teams it maps to (`platformApi.teams.sso`/`users`) without
-  logging in again. It re-reads the groups at the identity provider; the
-  Environments follow at their next reconcile.
 
 ### Changed
 - platform-api now holds a cluster-wide `system:auth-delegator`
