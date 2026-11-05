@@ -211,6 +211,10 @@ _test-ui:
 	npm --prefix ui run type-check
 	npm --prefix ui test
 
+.PHONY: test-scripts
+test-scripts: ## Self-check the release and CI shell scripts.
+	bash scripts/release-scripts-test.sh
+
 .PHONY: test-envtest
 test-envtest: ## Controller envtest with -race (CI gate, ~7m).
 	$(call container_target,_test-envtest)
