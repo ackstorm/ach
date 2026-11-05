@@ -188,6 +188,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `test-full` | A | All non-cluster tests (unit + envtest, race-enabled). |
 | `test-unit` | A | Pure-logic unit tests (~10s warm). |
 | `test-ui` | A | Console `tsc` type-check + vitest (`ui/`); `npm ci` runs if `ui/node_modules` is absent. CI unit job + pre-push gate 17 (skipped there when `ui/` is unchanged vs `origin/main`). |
+| `test-scripts` | B | Self-check of `scripts/ci-changes.sh` + `scripts/changelog.sh`. |
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |
 | `test-integration` | A | Integration tests (build tag: integration; testcontainers). |
@@ -235,8 +236,8 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Release (`release-`)
 | Target | Ctx | Description |
 |--------|-----|-------------|
-| `release-bump VERSION=X.Y.Z` | B | Bump version across manifests (used by release.yml). |
-| `release-cut VERSION=X.Y.Z` | B | Empty `chore(release)` commit + full pre-push (`PREPUSH_FULL=1`, never the fast lane) + push to main. |
+| `release-bump VERSION=X.Y.Z` | B | Bump version across manifests (used by `release-cut`). |
+| `release-cut VERSION=X.Y.Z` | B | Rotates the CHANGELOG, bumps manifests, opens the `chore(release)` PR with auto-merge. Merging publishes. |
 
 ### Docs (`docs-`)
 | Target | Ctx | Description |

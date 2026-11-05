@@ -379,7 +379,7 @@ hooks: ## Install git hooks (pre-push).
 ##@ Release
 
 .PHONY: release-bump
-release-bump: ## Internal: bump version across all manifests. Used by release.yml. Prefer `make release-cut VERSION=X.Y.Z` for local cuts.
+release-bump: ## Internal: bump version across all manifests. Used by release-cut.
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -391,7 +391,7 @@ release-bump: ## Internal: bump version across all manifests. Used by release.ym
 	@echo "Manifests bumped to v$(VERSION)."
 
 .PHONY: release-cut
-release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-push, push to main. Usage: make release-cut VERSION=X.Y.Z
+release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR and auto-merge it on ci-ok. Usage: make release-cut VERSION=X.Y.Z
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -402,12 +402,16 @@ release-cut: ## Cut a release: empty `chore(release): vX.Y.Z` commit, run pre-pu
 	@git fetch origin main --quiet
 	@local=$$(git rev-parse HEAD); remote=$$(git rev-parse origin/main); \
 	test "$$local" = "$$remote" || (echo "ERROR: local main differs from origin/main; rebase or pull first" >&2; exit 1)
-	git commit --allow-empty -m "chore(release): v$(VERSION)"
-	PREPUSH_FULL=1 $(MAKE) pre-push
-	git push origin main
-	@echo ""
-	@echo "release.yml is now running. Watch with:"
-	@echo "  gh run watch \$$(gh run list --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"
+	scripts/changelog.sh rotate $(VERSION) $$(date -u +%F)
+	$(MAKE) release-bump VERSION=$(VERSION)
+	git switch -c release/v$(VERSION)
+	git add CHANGELOG.md deploy/helm/ach/Chart.yaml deploy/helm/ach/values.yaml config/manager/kustomization.yaml
+	git commit -m "chore(release): v$(VERSION)"
+	git push -u origin release/v$(VERSION)
+	gh pr create --base main --title "chore(release): v$(VERSION)" --body "Release v$(VERSION). Merging fires release.yml."
+	gh pr merge --rebase --auto --delete-branch
+	git switch main
+	@echo "Auto-merge is set; release.yml fires when ci-ok passes."
 
 ##@ Build
 

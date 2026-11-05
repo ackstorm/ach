@@ -39,4 +39,31 @@ sed -i 's/1\.0\.0/1.0.1/' deploy/helm/ach/Chart.yaml
 echo y >internal/a.go
 expect_code "version plus code" true
 
+export CHANGELOG="$tmp/CHANGELOG.md"
+cat >"$CHANGELOG" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- One thing.
+
+## [1.0.0] - 2026-01-01
+
+### Added
+- First.
+MD
+
+"$root/scripts/changelog.sh" rotate 1.0.1 2026-02-02
+grep -qx '## \[1.0.1\] - 2026-02-02' "$CHANGELOG" || fail "rotate: no section"
+[[ "$(grep -n '## \[Unreleased\]' "$CHANGELOG" | cut -d: -f1)" -lt \
+   "$(grep -n '## \[1.0.1\]' "$CHANGELOG" | cut -d: -f1)" ]] || fail "rotate: order"
+
+notes=$("$root/scripts/changelog.sh" extract 1.0.1)
+[[ "$notes" == *"One thing."* ]] || fail "extract: missing body"
+[[ "$notes" != *"First."* ]] || fail "extract: ran into next section"
+
+"$root/scripts/changelog.sh" rotate 1.0.2 2026-03-03 2>/dev/null && fail "rotate: accepted empty Unreleased"
+"$root/scripts/changelog.sh" extract 9.9.9 2>/dev/null && fail "extract: accepted unknown version"
+
 echo "OK release scripts"
