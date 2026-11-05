@@ -341,7 +341,7 @@ FUZZ_TIME_SHORT ?= 60s
 FUZZ_TIME_LONG  ?= 10m
 
 .PHONY: qa-security
-qa-security: ## govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 14).
+qa-security: ## govulncheck + fuzz-short (gosec runs inside qa-lint, the CI lint job).
 	$(call container_target,_qa-security)
 _qa-security:
 	bash scripts/govulncheck-gate.sh
@@ -360,21 +360,6 @@ qa-fuzz-long: ## Go fuzz targets, 10-minute budget each (local-only, on demand).
 _qa-fuzz-long:
 	@if [ -d ./internal/substitution ]; then go test -run='^$$' -fuzz=FuzzSubstitute -fuzztime=$(FUZZ_TIME_LONG)  ./internal/substitution/...; else echo "qa-fuzz-long: skip — ./internal/substitution absent";  fi
 	@if [ -d ./internal/normalize    ]; then go test -run='^$$' -fuzz=FuzzNormalize  -fuzztime=$(FUZZ_TIME_LONG)  ./internal/normalize/...;    else echo "qa-fuzz-long: skip — ./internal/normalize absent";     fi
-
-.PHONY: pre-push
-pre-push: ## Host-only — 16-gate pre-publication check (changed-commit gitleaks + lint + unit + SPDX + ...). Uses docker on host; do NOT call via ./scripts/dev.sh.
-	./scripts/pre-push-check.sh
-
-.PHONY: verify
-verify: ## Host-only — full pre-publication gate bundle: fuzz-short + host pre-push. Single command for all gates.
-# `govulncheck` stays in its dedicated CI workflow; local verification avoids
-# repeating the whole-module analysis on every push.
-	$(MAKE) qa-fuzz-short
-	$(MAKE) pre-push
-
-.PHONY: hooks
-hooks: ## Install git hooks (pre-push).
-	./scripts/install-hooks.sh
 
 ##@ Release
 
@@ -499,7 +484,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.17.0
 # go IS available — make then re-evaluates the Makefile inside the
 # container and the derivation succeeds. This avoids the cosmetic
 # `make: go: No such file or directory` noise on host-only targets such
-# as `make hooks`, `make cluster-up`, etc.
+# as `make cluster-up`, etc.
 #
 # (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell command -v go >/dev/null 2>&1 && go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')

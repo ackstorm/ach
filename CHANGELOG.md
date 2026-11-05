@@ -9,6 +9,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   CHANGELOG and manifest bumps, and the merged commit is what gets tagged.
   GitHub release notes are that version's CHANGELOG section.
 
+### Removed
+- The `pre-push` git hook, with `make pre-push`, `make hooks` and `make verify`.
+  CI is the gate. Delete `.git/hooks/pre-push` from existing clones.
+
 ## [1.1.4] - 2026-11-05
 
 ### Fixed

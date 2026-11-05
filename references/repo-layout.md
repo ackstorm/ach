@@ -69,7 +69,7 @@ ach/
 ├── references/              ← agent-facing internal docs (NOT on public site)
 │   ├── upstream-sync.md      ← what was grafted from alitellm and adapted
 │   └── security/govulncheck-acknowledged.md
-├── scripts/                 ← dev.sh, cluster.sh, pre-push-check.sh, ...
+├── scripts/                 ← dev.sh, cluster.sh, ...
 ├── test/                    ← e2e + utils
 │   ├── e2e/mcp-echo/        JWT-validating MCP fixture — its OWN Go module
 │   │                        (go.mod; mcp-go stays out of the prod graph)
@@ -98,7 +98,7 @@ sync reverts the edit. `templates/crds.yaml` ranges over it.
 
 `make helm-sync-check` re-syncs and hard-fails on any resulting change — added,
 deleted, or modified (it reads `git status --porcelain`, not `git diff`, so a
-NEW file is caught too). It is pre-push gate 18 and a CI step.
+NEW file is caught too). It is a CI step.
 
 **The Grafana dashboards are NOT mirrored.** `deploy/helm/ach/dashboards/*.json`
 is where they live and where you edit them; there is no second copy.

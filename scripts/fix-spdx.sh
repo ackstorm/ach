@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fix-spdx.sh — prepend the SPDX header (Apache-2.0; LicenseRef-ACKstorm-EE for ee/ and cmd/ach/ee.go) to any in-scope tracked
-# *.go file missing it (same scope as pre-push gate 15: vendor/, .claude/,
-# zz_generated*, mock_* are exempt). The gate scans the first 5 lines, so a
+# *.go file missing it (vendor/, .claude/,
+# zz_generated*, mock_* are exempt). It scans the first 5 lines, so a
 # plain prepend is gate-compliant; for build-tag-first files the resulting
 # `// SPDX…` line is a leading line comment, which Go still permits before a
 # `//go:build` constraint (the blank line separating them keeps the build

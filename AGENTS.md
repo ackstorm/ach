@@ -38,7 +38,7 @@ stale line there is a broken instruction for every user. Validate with
 | CRD field / condition / default | `docs/api-reference/` (`make gen-crd-ref-docs`) + `examples/` |
 | New/renamed `make` target or default behavior | table here + `references/makefile.md` |
 | New `wait-*` / blessed pattern / polling rule | "Waiting for state" table |
-| Pre-push gate / govulncheck ack / SPDX rule | "Publication" + `references/security/...` |
+| CI gate / govulncheck ack / SPDX rule | "Publication" + `references/security/...` |
 | Release pipeline (`release.yml`, goreleaser, bump) | `references/release-pipeline.md` |
 | Repo layout / synced-fixture set | `references/repo-layout.md` |
 | **Service/domain** failure mode | `references/troubleshooting.md` |
@@ -96,7 +96,7 @@ feature goes in `ee/` and registers through `internal/edition`.**
   enabling Enterprise is that one value.
 - **Isolation gate**: `make qa-edition` (`scripts/edition-check.sh`) — only `cmd/ach`
   imports `ee/`, `ach-cli` links none, core UI imports `ui/src/ee` only via `@ee`, the
-  two `ee` licence copies are identical. Pre-push gate 18 (hard) + CI lint job.
+  two `ee` licence copies are identical. CI lint job.
 
 | Enterprise | Where |
 |------------|-------|
@@ -348,7 +348,6 @@ independent collections.)
 | Curated examples / `ach-cli login` + `env hydrate` demo | `examples/README.md` |
 | E2E tests (kind cluster + Helm)        | `test/e2e/README.md`                     |
 | CI workflows (ci, docs, release, ...)  | `.github/workflows/*.yml` (authoritative); CI matrix below |
-| Pre-push gate logic                    | `scripts/pre-push-check.sh`              |
 | Helm chart values + defaults           | `deploy/helm/ach/values.yaml` (per-mode toggles) |
 | API reference rendering                | `docs/Makefile` + `docs/.crd-ref-docs.yaml` |
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |
@@ -393,7 +392,7 @@ The host has no Go toolchain on PATH. **Every `make` target auto-routes — the
 host needs only docker.** Toolchain targets (`test-*`, `qa-*`,
 `build-server`/`-cli`/`-e2e`/`-all`, `cluster-*`, `e2e-run`) wrap into the
 `ach-devtools` container via the `container_target` macro; host+docker targets
-(`build-image*`, the gates) and `kubectl`-only targets (`wait-*`, `logs-*`) run
+(`build-image*`) and `kubectl`-only targets (`wait-*`, `logs-*`) run
 on the host. Never prefix a wrapped `make` target with `./scripts/dev.sh`.
 **Exception — the generator targets are NOT wrapped**: `gen-code`,
 `gen-manifests`, `gen-crd-ref-docs`, `helm-sync`, `helm-sync-check` call
@@ -401,7 +400,7 @@ controller-gen directly, so standalone they need `./scripts/dev.sh make
 helm-sync` (a bare `make helm-sync` on the host fails with `go: executable
 file not found`). See `references/makefile.md` for the 3-context model.
 `test/e2e/mcp-echo` is a nested module: root `./...` sweeps (vet, lint,
-govulncheck, tidy) do not see it; `qa-lint` and pre-push gate 14 cover it
+govulncheck, tidy) do not see it; `qa-lint` covers it
 explicitly.
 
 ```bash
@@ -426,7 +425,7 @@ The container sets **`GOFLAGS=-mod=readonly`** (the Go ≥1.16 default, pinned s
 a stray environment cannot loosen it). Under `-mod=mod` any module-graph-walking
 command silently rewrote `go.sum` — `go list -m all` alone appended ~279
 pruned-graph `/go.mod` hashes that `go mod tidy` does not record, arming the
-pre-push `go mod tidy` drift gate from an ordinary dev command with no signal.
+CI `go mod tidy` drift gate from an ordinary dev command with no signal.
 If a go command now fails on a missing `go.sum` entry, the fix is an explicit
 `go mod tidy`, never loosening the flag.
 
@@ -451,7 +450,7 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 |-------|---------|------|
 | `make test-unit`        | pure-logic, ~10s warm | every iteration |
 | `make qa-lint-changed`  | golangci-lint scoped to touched pkgs | every iteration |
-| `make qa-lint`          | golangci-lint full sweep | before commit; also runs inside the pre-push gate |
+| `make qa-lint`          | golangci-lint full sweep | before commit; also runs in CI |
 | `make test-envtest`     | controller-runtime envtest (race), ~7m | before commit on controller changes |
 | `make test-envtest-fast`| envtest without -race, ~3m | dev inner loop |
 | `make e2e-full`         | kind + Helm + e2e binary build + stdlib testing, ~6m | final gate before commit |
@@ -460,22 +459,12 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make test-ui`          | console `tsc` + vitest (`ui/`), ~1m warm | every iteration touching `ui/` |
 | `make test-scripts`     | self-check of `scripts/ci-changes.sh` + `scripts/changelog.sh` | after touching either script |
 | `make qa-edition`       | only `cmd/ach` imports `ee/`; `ach-cli` links none; core UI reaches `ui/src/ee` only via `@ee` | after touching `ee/`, `ui/src/ee`, or imports across the edition line |
-| `make pre-push`         | gitleaks + 17 more gates (12 hard, 6 informational) | host-only; before push |
 
-- Umbrellas: `test-full` = `test-unit` + `test-envtest`; `verify` =
-  `qa-fuzz-short` + `pre-push`; `make hooks` installs `.git/hooks/pre-push ->
-  scripts/pre-push-check.sh` (and removes any stale pre-commit hook from a prior
-  install). Inner loop: `make test-unit-pkg PKG=...`,
-  `make test-envtest-pkg PKG=... [FOCUS=TestX]`.
-- `pre-push` is **host-only** — never via `./scripts/dev.sh`. Don't run it by
-  hand; the installed hook fires the same script (exception: after a
-  `--no-verify` push).
-- The fast pre-commit gate was retired — lint + unit now run inside the
-  pre-push gate and in CI.
-- **`qa-security` is NOT in the pre-push gate.** `scripts/govulncheck-gate.sh`
-  is called from exactly two places: `make qa-security` (which `ci.yml`'s
-  security job runs on every PR) and the Monday `govulncheck.yml` cron. The
-  pre-push script runs neither govulncheck nor trufflehog. Skip
+- Umbrella: `test-full` = `test-unit` + `test-envtest`. Inner loop:
+  `make test-unit-pkg PKG=...`, `make test-envtest-pkg PKG=... [FOCUS=TestX]`.
+- `scripts/govulncheck-gate.sh` is called from exactly two places:
+  `make qa-security` (which `ci.yml`'s security job runs on every PR) and the
+  Monday `govulncheck.yml` cron. Skip
   `make qa-security` in the inner loop, because `govulncheck ./...` analyses the WHOLE
   module every time (reachability is a whole-program property, so it can never
   be scoped to the diff) and it cannot be incremental.
@@ -503,39 +492,16 @@ All listed `wait-*` exist (plus `wait-litellm`/`wait-mcp-echo`/`wait-mocks` for
 test backends). Default `WAIT_TIMEOUT=300s`. If none cover a new wait need,
 **add a new `wait-*` target** — targets are the contract, not ad-hoc loops.
 
-## Publication — the pre-push gate is non-negotiable
+## Publication
 
-Remote: `git@github.com:ackstorm/ach.git`. A single hook stage gates publication
-before a push leaves the host:
-
-- The fast pre-commit gate was retired — lint + unit now run inside the pre-push
-  gate and in CI; no separate commit-time gate remains.
-- `pre-push` (full): **18 numbered gates, 12 of them hard** (failure blocks the
-  push); 6 are informational warnings. lint + unit live INSIDE them (gates 14 +
-  15; console tests are gate 17, skipped when `ui/` is unchanged vs
-  `origin/main`). **Fast lane**: when `origin/main..HEAD` touches no Go-toolchain
-  input (`*.go`, `go.mod`/`go.sum`, `api/`, `config/crd/`, `crd-sources/`,
-  `Makefile`, `.golangci*`, `Dockerfile.devtools`, `hack/`), gates 12/14/16 are
-  skipped and 15 runs only the packages owning a changed file (~40s vs ~3m).
-  **Scoped lane**: when the only such input is `*.go` outside `api/`, `hack/` and
-  `test/e2e/mcp-echo/`, gate 14 is `make qa-lint-changed` and 15 is `go vet ./...`
-  plus the owning packages' tests, so a logic regression in a dependent package
-  waits for the PR's CI.
-  `PREPUSH_FULL=1` forces the full sweep.
-  A push that only deletes remote branches runs no gate.
-
-The 12 hard gates: gitleaks (1, `origin/main..HEAD`; allowlist
-`.gitleaks.toml`) · large files >2 MB (2) · sensitive patterns (`.env`,
-`*.pem`, `*.key`, kubeconfig) (3) · LICENSE + README (4) · origin-remote match
-(5) · `go mod tidy` drift (12) · per-file SPDX header (13) ·
-golangci-lint (14) · unit tests (15) · chart mirror drift (16,
-`make helm-sync-check` — `crd-sources/` vs `config/crd/bases` #44) ·
-`make test-ui` (17) · `make qa-edition` (18). Informational only (6-11):
-internal hostnames/private IPv4, ackstorm emails, `.gitignore` sanity, commit authors, TODO markers,
-uncommitted working-tree changes. **Not here at all: trufflehog and
-govulncheck** — the latter is CI + cron only (see "Test phases"). Fix
-the root cause — never `--no-verify` (it skips ONLY the local hook; CI reruns the
-gates).
+Remote: `git@github.com:ackstorm/ach.git`. `ci-ok` on the PR is the only gate:
+lint (`make qa-lint`, which also covers the nested `test/e2e/mcp-echo` module),
+`make qa-edition`, chart, generated-code and `go mod tidy` drift, SPDX headers
+(`gen-code` runs `scripts/fix-spdx.sh`), Helm render, dashboards, unit, console,
+envtest and security. There is no local git hook. **CI does not scan for
+secrets**: run `gitleaks git --log-opts="HEAD --not --remotes" --redact
+--no-banner` before pushing (allowlist `.gitleaks.toml`). A secret pushed to a
+branch is already public.
 
 ## After every release — clean up (once confirmed OK)
 
@@ -545,7 +511,7 @@ as `Latest` AND `gh run list --branch main -L 3` shows its `Release` run
 
 1. `make clean-cache` in the primary checkout and in every worktree whose
    branch is merged (`.gocache` is 3–9 GB each; a full `/home/coder` once
-   killed a release-cut mid pre-push with ENOSPC).
+   killed a gate mid-run with ENOSPC).
 2. `git worktree remove` + `git branch -D` the merged feature worktrees;
    delete the merged remote branch (`git push origin --delete <branch>`).
 3. `make clean-docker` (safe with kind up).
@@ -562,7 +528,7 @@ Service-specific debugging (content-service 404, forwarder JWT 401,
 SourceReachable rate-limit, AccessGroupSynced, hydrate-golden diff, mcp-echo,
 ConflictWithUIRow (dormant — the Environment upsert takes over UI rows),
 stale image roll) → **`references/troubleshooting.md`**. The
-seven below are the cross-cutting workflow traps:
+six below are the cross-cutting workflow traps:
 
 ### ❌ Prefixing a `make` target with `./scripts/dev.sh`
 `./scripts/dev.sh make test-unit` works but the prefix is redundant —
@@ -590,12 +556,6 @@ looking like a network issue.
 long-running mode needs its subcommand (`operator`, `platform-api`, `forwarder`,
 `content-service`, `migrate`). WHY: a Deployment omitting `args: ["<mode>"]`
 CrashLoopBackOffs / silently restarts.
-
-### ❌ Pushing without the gate
-`git push --no-verify` bypasses the local hook ONLY (CI still runs it). ✅ Let
-the installed hook gate (`make hooks`), or `make pre-push` then push. WHY:
-pushed secrets / license-header drift / govulncheck regressions cannot be
-un-true'd from public history. The 18-gate script is the contract.
 
 ### ❌ Kubectl from host against the kind cluster
 `kubectl get pods` → context not found. ✅ Go through devtools:
@@ -681,7 +641,7 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
 - **SPDX-only license headers**: every `*.go` (outside `vendor/`,
   `zz_generated*.go`, `mock_*.go`) starts with
   `// SPDX-License-Identifier: Apache-2.0` (`LicenseRef-ACKstorm-EE` under `ee/` and
-  `cmd/ach/ee.go`; pre-push gate enforces;
+  `cmd/ach/ee.go`; the CI drift gate enforces;
   `hack/boilerplate.go.txt` feeds controller-gen via `make gen-code`). Run
   `make fix-spdx` to auto-prepend the header to any file missing it (also runs
   automatically at the end of `make gen-code`).

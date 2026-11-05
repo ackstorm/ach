@@ -47,7 +47,7 @@ Boots an MCP server (Streamable-HTTP) on `MOCK_BIND_ADDRESS` (default
 This directory is its own Go module (`github.com/ackstorm/ach/test/e2e/mcp-echo`,
 own `go.mod`/`go.sum`) so `mark3labs/mcp-go` stays out of the production
 dependency graph. Run `go test ./...` from inside this directory; the root
-`./...` sweeps do not include it (`make qa-lint` and pre-push gate 12 cover it
+`./...` sweeps do not include it (`make qa-lint` covers it
 explicitly). Build the image from the repo root with `make build-image-mcp-echo`.
 
 ## Standalone run

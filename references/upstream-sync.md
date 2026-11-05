@@ -39,17 +39,13 @@ Ported `.golangci.yml` verbatim from alitellm (50+ linters, gosec HIGH).
 
 ## 2026-05-25 (Task 4.3) — Pre-push gate pipeline
 
-Ported `scripts/pre-push-check.sh` (15-gate pipeline), `scripts/install-hooks.sh`,
-`scripts/govulncheck-gate.sh`, and `references/security/govulncheck-acknowledged.md`
+Ported `scripts/govulncheck-gate.sh` and `references/security/govulncheck-acknowledged.md`
 verbatim from alitellm with sed renames (`alitellm-operator` → `ach`,
 `litellm-devtools` → `ach-devtools`). Gate 1 (gitleaks) / Gate 2 (trufflehog) /
 Gate 13 (govulncheck) / Gate 15 (SPDX) all PASS on bare scaffolding.
 
 | ach file | alitellm file | Fix |
 |---|---|---|
-| `scripts/pre-push-check.sh` (gate 3 comment) | same | Re-worded the 2MB threshold rationale — removed mention of `spec/litellm_api.json` (alitellm-only file we don't bundle); kept the 2MB threshold as future-proofing. |
-| `scripts/pre-push-check.sh` (gate 14 restore) | same | **Real bug**: alitellm uses `SAVED=$(cat go.mod)` + `printf '%s' "$SAVED" > go.mod` to snapshot and restore on tidy drift. Both `$(cat)` and `printf '%s'` strip trailing newlines, so the restore silently corrupts `go.mod` and the next pre-push run sees a phantom `No newline at end of file` diff. ACH fix: snapshot via `cp` into a `mktemp -d` (cleaned via `trap EXIT`), restore via `cp` — byte-for-byte identical. Sync-back PR target. |
-| `scripts/pre-push-check.sh` (gate 11 self-match) | same | **Real bug (low)**: gate 11 (urgent TODO markers) `git grep`s the whole tree, which matches the gate script's own descriptive comments naming `DO-NOT-COMMIT` literal. ACH fix: exclude `scripts/pre-push-check.sh` from gate 11 via `':!scripts/pre-push-check.sh'`. Sync-back PR target. |
 
 ## 2026-05-25 (Task 5.1) — CRD scaffold side effects
 

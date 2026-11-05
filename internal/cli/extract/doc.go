@@ -48,7 +48,7 @@
 //   - Stdlib only beyond the in-repo internal/cli/hash dependency
 //     (D-11 — archive/tar + compress/gzip). No third-party tar/gzip
 //     library is introduced.
-//   - SPDX header on every source file; the pre-push gate enforces.
+//   - SPDX header on every source file; the CI drift gate enforces.
 //   - No `log` or `log/slog` imports — errors surface as wrapped Go
 //     errors that the hydrate orchestrator maps to `*exit.CodedError`.
 //

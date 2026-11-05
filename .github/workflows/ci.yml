@@ -60,9 +60,10 @@ jobs:
       - name: Chart CRD drift gate
         run: make helm-sync-check
 
-      - name: Generated code drift gate
+      - name: Generated code, SPDX and go.mod drift gate
         run: |
           ./scripts/dev.sh make gen-code gen-manifests
+          ./scripts/dev.sh sh -c 'go mod tidy && cd test/e2e/mcp-echo && go mod tidy'
           git diff --exit-code
 
       - name: Release script self-check

@@ -72,26 +72,6 @@ capture the full `--help` output and tag this check as FAIL.
 
 ---
 
-## CHECK 2 — `make pre-push` 17-gate sweep passes on current HEAD
-
-**Why human:** the pre-push gate is host-only (gitleaks spawns
-container peers on host docker). Cannot run inside the GSD orchestrator
-context. Already gated successfully on push of `e86e9a5` but a clean
-re-run on the target machine confirms reproducibility.
-
-```bash
-make pre-push 2>&1 | tee /tmp/phase6-pre-push.log
-echo "EXIT=$?"
-```
-
-**Expected:** exit `0` and tail of log shows `Failures: 0`. Warnings are OK
-(PUBLISH.md urgent-TODO false positives are pre-existing).
-
-**If FAIL:** capture `/tmp/phase6-pre-push.log` (or just the last 60 lines)
-and tag this check as FAIL.
-
----
-
 ## CHECK 3 — Live Phase 6 CLI e2e suite (BLOCKING)
 
 **Why human:** the e2e suite requires a real kind cluster + a live `pk_`
