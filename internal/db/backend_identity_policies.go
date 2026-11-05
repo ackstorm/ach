@@ -38,7 +38,6 @@ type BIPRow struct {
 	ConsentBroker      string
 	ConsentAudience    string
 	ObservedGeneration int64
-	DeletionTimestamp  *time.Time
 	ResourceVersion    string
 	UpdatedAt          time.Time
 	Origin             string
@@ -61,14 +60,6 @@ const upsertBIPSQL = `
 	    consent_broker       = EXCLUDED.consent_broker,
 	    consent_audience     = EXCLUDED.consent_audience,
 	    updated_at           = now(),
-	    -- Resurrection: a re-applied CR is LIVE. Unlike environments.go (which
-	    -- preserves deletion_timestamp for the CS-09 content-drain window), a
-	    -- BIP soft-delete is purely a forwarder cache-eviction signal with no
-	    -- drain consumer, so a delete-then-recreate of the SAME (namespace,name)
-	    -- MUST clear the tombstone. Otherwise the resurrected policy stays
-	    -- invisible to ListAllBIPs (which filters deletion_timestamp IS NULL)
-	    -- and the forwarder never sees it again.
-	    deletion_timestamp   = NULL,
 	    locked               = TRUE
 	WHERE backend_identity_policies.origin = 'cr'
 	RETURNING namespace
@@ -126,7 +117,7 @@ func scanBIPRow(row pgx.Row, r *BIPRow) error {
 		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
 		&r.ForwardIdentityJWT, &r.ConsentBroker, &r.ConsentAudience,
 		&r.ObservedGeneration,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
+		&r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
 	)
 }
 
@@ -159,9 +150,9 @@ func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, 
 		SELECT namespace, name, target_kind, target_name,
 		       forward_identity_jwt, consent_broker, consent_audience,
 		       observed_generation,
-		       deletion_timestamp, resource_version, updated_at, origin, locked
+		       resource_version, updated_at, origin, locked
 		  FROM backend_identity_policies
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -180,10 +171,10 @@ func ConsentBIP(ctx context.Context, pool *pgxpool.Pool, ns, targetName string) 
 	rows, err := pool.Query(ctx, `
 		SELECT namespace, name, target_kind, target_name,
 		       forward_identity_jwt, consent_broker, consent_audience, observed_generation,
-		       deletion_timestamp, resource_version, updated_at, origin, locked
+		       resource_version, updated_at, origin, locked
 		  FROM backend_identity_policies
 		 WHERE namespace = $1 AND target_kind = 'MCPServer' AND target_name = $2
-		   AND deletion_timestamp IS NULL
+		  
 		 ORDER BY name ASC
 		 LIMIT 1`, ns, targetName)
 	if err != nil {
@@ -202,20 +193,16 @@ func ConsentBIP(ctx context.Context, pool *pgxpool.Pool, ns, targetName string) 
 	return &out[0], nil
 }
 
-const softDeleteBIPSQL = `
-	UPDATE backend_identity_policies
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
+const deleteBIPSQL = `DELETE FROM backend_identity_policies WHERE namespace = $1 AND name = $2`
 
-// SoftDeleteBIPTx exposes the tx-form for callers inside db.WithTxNotify.
-func SoftDeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeleteBIPSQL, ns, name); err != nil {
+// DeleteBIPTx removes the row keyed by (namespace, name) inside an outer
+// transaction (db.WithTxNotify). Absence is not an error.
+func DeleteBIPTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, deleteBIPSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
-		return fmt.Errorf("db: SoftDeleteBIP(%s/%s): %w", ns, name, err)
+		return fmt.Errorf("db: DeleteBIP(%s/%s): %w", ns, name, err)
 	}
 	return nil
 }

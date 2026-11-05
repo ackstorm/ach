@@ -38,7 +38,7 @@ import (
 )
 
 // marketplacePluginsChannel is the NOTIFY channel emitted on every
-// per-plugin marketplace_plugins write/soft-delete (issue #34). Payload
+// per-plugin marketplace_plugins write/delete (issue #34). Payload
 // is "<marketplace_name>/<plugin_name>".
 const marketplacePluginsChannel = "ach_marketplace_plugins_changed"
 

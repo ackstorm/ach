@@ -6,8 +6,8 @@
 //
 // ResolvePluginByName two-arm semantics:
 //
-//   - bare (marketplace == ""): ONLY the plugins (CRD) row for (ns, name)
-//     where deletion_timestamp IS NULL. No marketplace fallback — the Plugin
+//   - bare (marketplace == ""): ONLY the plugins (CRD) row for (ns, name).
+//     No marketplace fallback — the Plugin
 //     CRD namespace is the sole resolution target for bare names.
 //   - scoped (marketplace != ""): the marketplace_plugins row with the exact
 //     (marketplace_name, name) PRIMARY KEY. No alphabetical tiebreak; the
@@ -50,7 +50,6 @@ type PluginRow struct {
 	StorageLocation       string     // absolute path the rename(2) published to
 	LastSuccessfulRefresh *time.Time // nil on first reconcile / OP-11 reset
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
-	DeletionTimestamp     *time.Time // non-nil → drain-mode (CS-09)
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
 }
@@ -77,14 +76,8 @@ type PluginResolution struct {
 }
 
 // UpsertPlugin inserts-or-updates a plugins row keyed by (namespace, name).
-// ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile (this
-// path only runs for a CR with no metadata.deletionTimestamp) clears
-// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
-// MUST drop the stale drain marker, else ResolvePluginByName (the per-request
-// content resolver, WHERE deletion_timestamp IS NULL) and ListPlugins hide
-// the resurrected plugin forever (incident 2026-06-04). The drain marker is
-// owned solely by SoftDeletePlugin, which runs on the deletion branch and
-// never overlaps this upsert; updated_at is force-set to now().
+// ON CONFLICT DO UPDATE replaces every non-PK column; updated_at is force-set
+// to now().
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other errors
 // wrap with non-secret (namespace, name) identifiers — pgErr.Message NEVER
@@ -103,7 +96,6 @@ const upsertPluginSQL = `
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
 	    updated_at              = now(),
-	    deletion_timestamp      = NULL,
 	    locked                  = TRUE
 	WHERE plugins.origin = 'cr'
 	RETURNING namespace
@@ -125,14 +117,12 @@ func UpsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
 }
 
 // GetPluginByName reads the plugins row keyed by (namespace, name).
-// pgx.ErrNoRows → (nil, nil). Per CS-09 the row is returned WITH
-// DeletionTimestamp populated when set — callers MUST NOT filter on it
-// here; Content Service keeps serving until hard-delete by finalizer drain.
+// pgx.ErrNoRows → (nil, nil).
 func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*PluginRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM plugins
 		 WHERE namespace = $1 AND name = $2
 	`
@@ -140,7 +130,7 @@ func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
 		&r.Namespace, &r.Name, &r.StorageLocation,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		&r.ResourceVersion, &r.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -153,16 +143,15 @@ func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 	return r, nil
 }
 
-// ListPlugins returns every live plugins row in ns ordered by name ASC.
-// Mirrors ListEnvironments: rows with deletion_timestamp set are excluded.
+// ListPlugins returns every plugins row in ns ordered by name ASC.
 // Used by the platform-api admin inventory endpoint (read-only).
 func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM plugins
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -179,7 +168,7 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListPlugins(%s) scan: %w", ns, err)
 		}
@@ -194,42 +183,23 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 	return out, nil
 }
 
-// SoftDeletePlugin sets deletion_timestamp = now() without removing the row
-// (CS-09). Idempotent on already-drained rows.
-func SoftDeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeletePlugin(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
+const deletePluginSQL = `DELETE FROM plugins WHERE namespace = $1 AND name = $2`
 
-// SoftDeletePluginTx is SoftDeletePlugin inside an outer transaction
-// (db.WithTxNotify).
-func SoftDeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeletePluginSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeletePlugin(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-const softDeletePluginSQL = `
-	UPDATE plugins
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
-
-// DeletePlugin removes the plugins row keyed by (namespace, name) outright.
-// Called only after finalizer drain. Absence is not an error.
+// DeletePlugin removes the row keyed by (namespace, name). Absence is not an
+// error.
 func DeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM plugins WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, deletePluginSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeletePlugin(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+// DeletePluginTx is DeletePlugin inside an outer transaction (db.WithTxNotify).
+func DeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, deletePluginSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -241,7 +211,7 @@ func DeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) erro
 // ResolvePluginByName implements scoped plugin-precedence:
 //
 //   - marketplace == ""  → bare reference: ONLY the plugins (CRD) row with
-//     matching (ns, name) and deletion_timestamp IS NULL. No marketplace
+//     matching (ns, name). No marketplace
 //     fallback — Plugin CRD is the sole bare namespace.
 //   - marketplace != ""  → scoped reference: the marketplace_plugins row with
 //     the exact (marketplace_name, name) PK. No alphabetical tiebreak.
@@ -257,7 +227,7 @@ func ResolvePluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name, mark
 			       namespace, name, storage_location,
 			       last_successful_refresh, max_staleness_seconds
 			  FROM plugins
-			 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL`
+			 WHERE namespace = $1 AND name = $2`
 		return scanResolution(ctx, pool, sql, ns, name)
 	}
 	const sql = `

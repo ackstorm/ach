@@ -12,15 +12,15 @@
 //     kind-specific column (Prompt.spec.contentType maps to NULL when
 //     empty per CS-06). Integration-gated.
 //
-//   - TestPromptReconciler_ProjectionSoftDeleteOnDrain: Create Prompt →
-//     wait for projection row → Delete CR → assert the row STILL
-//     EXISTS with DeletionTimestamp != nil (CS-09). Integration-gated.
+//   - TestPromptReconciler_ProjectionDeleteOnDrain: Create Prompt →
+//     wait for projection row → Delete CR → assert the row is
+//     gone. Integration-gated.
 //
 //   - TestPromptReconciler_DBNilTolerance: Apply Prompt with r.DB nil
 //     → reconcile completes without panic; finalizer add still happens.
 //
 // Integration tests skip; DB-roundtrip semantics for UpsertPrompt /
-// SoftDeletePrompt / GetPromptByName live in internal/db/prompts_test.go
+// DeletePrompt / GetPromptByName live in internal/db/prompts_test.go
 // (Plan 05-02 Task 2).
 
 package ach
@@ -41,7 +41,7 @@ func TestPromptReconciler_ProjectionUpsert(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/prompts_test.go")
 }
 
-func TestPromptReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
+func TestPromptReconciler_ProjectionDeleteOnDrain(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/prompts_test.go")
 }
 
@@ -49,8 +49,8 @@ func TestPromptReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
 // working. The suite-wired PromptReconciler has DB=nil
 // (suite_test.go:297-305); a Prompt Create still triggers finalizer add.
 // The projection-write block at the success path is gated on r.DB !=
-// nil so it MUST be skipped without panic; the deletion-path soft-
-// delete is similarly gated. Finalizer-add proves the nil-DB path runs
+// nil so it MUST be skipped without panic; the deletion-path delete
+// is similarly gated. Finalizer-add proves the nil-DB path runs
 // to completion without nil-deref.
 func TestPromptReconciler_DBNilTolerance(t *testing.T) {
 	ctx := context.Background()

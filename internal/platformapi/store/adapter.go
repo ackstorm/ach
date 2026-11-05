@@ -50,9 +50,6 @@ import (
 //     access_group_synced_condition,
 //     execution_resources_resolved_condition)
 //     as []metav1.Condition.
-//   - DeletionTimestamp            — set when the row's deletion_timestamp
-//     column is non-NULL (drain semantics
-//     per CS-09 / D-14).
 //   - ResourceVersion              — K8s metadata.resourceVersion the
 //     Operator captured at projection-write
 //     time. Surfaced for client-side
@@ -79,16 +76,15 @@ type EnvironmentView struct {
 	// composite condition (see deriveStatus). Surfaced as a flat string
 	// so the CLI's lean render.EnvView can render the STATUS column
 	// without importing metav1.Condition (k8s.io/*).
-	Status            string                   `json:"status,omitempty"`
-	AuthorizedTeams   []string                 `json:"authorizedTeams,omitempty"`
-	Context           achv1alpha1.ContextBlock `json:"context"`
-	Runtime           achv1alpha1.RuntimeBlock `json:"runtime"`
-	Conditions        []metav1.Condition       `json:"conditions,omitempty"`
-	DeletionTimestamp *metav1.Time             `json:"deletionTimestamp,omitempty"`
-	ResourceVersion   string                   `json:"resourceVersion,omitempty"`
-	Origin            string                   `json:"origin,omitempty"`
-	Locked            bool                     `json:"locked"`
-	Description       string                   `json:"description,omitempty"`
+	Status          string                   `json:"status,omitempty"`
+	AuthorizedTeams []string                 `json:"authorizedTeams,omitempty"`
+	Context         achv1alpha1.ContextBlock `json:"context"`
+	Runtime         achv1alpha1.RuntimeBlock `json:"runtime"`
+	Conditions      []metav1.Condition       `json:"conditions,omitempty"`
+	ResourceVersion string                   `json:"resourceVersion,omitempty"`
+	Origin          string                   `json:"origin,omitempty"`
+	Locked          bool                     `json:"locked"`
+	Description     string                   `json:"description,omitempty"`
 }
 
 // RowToView maps a flat db.EnvironmentRow into the nested EnvironmentView.
@@ -126,10 +122,6 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 		},
 		ResourceVersion: r.ResourceVersion,
 		Description:     r.Description,
-	}
-	if r.DeletionTimestamp != nil {
-		t := metav1.NewTime(*r.DeletionTimestamp)
-		view.DeletionTimestamp = &t
 	}
 	view.Conditions = mergeConditionColumns(
 		r.AvailableCondition,

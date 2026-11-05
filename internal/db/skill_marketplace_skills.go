@@ -124,8 +124,7 @@ func ListSkillMarketplaceSkills(ctx context.Context, pool *pgxpool.Pool, marketp
 }
 
 // ListAllSkillMarketplaceSkills returns every row across all marketplaces,
-// ordered by (marketplace_name, name) ASC. skill_marketplace_skills has no
-// deletion_timestamp column, so all rows are live. Used by the platform-api
+// ordered by (marketplace_name, name) ASC. Used by the platform-api
 // admin inventory endpoint (read-only). Returns an empty (non-nil) slice on
 // zero rows.
 func ListAllSkillMarketplaceSkills(ctx context.Context, pool *pgxpool.Pool) ([]SkillMarketplaceSkill, error) {

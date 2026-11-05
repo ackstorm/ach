@@ -346,13 +346,6 @@ func (f *testFixtures) seedPlugin(name string, lsr *time.Time, maxStaleness int6
 	}
 }
 
-func (f *testFixtures) softDeletePlugin(name string) {
-	f.t.Helper()
-	if err := db.SoftDeletePlugin(context.Background(), f.pool, "default", name); err != nil {
-		f.t.Fatalf("SoftDeletePlugin: %v", err)
-	}
-}
-
 func (f *testFixtures) seedMarketplacePlugin(marketplaceName, pluginName string, lsr time.Time, maxStaleness int64, body []byte) {
 	f.t.Helper()
 	ctx := context.Background()
@@ -885,14 +878,13 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		)
 	})
 
-	t.Run("soft-deleted CRD bare ref returns 404", func(t *testing.T) {
-		// B2 semantics: soft-deleted CRD plugin + bare ref → 404.
+	t.Run("deleted CRD bare ref returns 404", func(t *testing.T) {
+		// B2 semantics: deleted CRD plugin + bare ref → 404.
 		// No marketplace fallback for bare refs.
-		fx.seedPlugin("shared", &now, 600, []byte("crd-soft-deleted"))
-		fx.softDeletePlugin("shared")
-		defer func() {
-			_ = db.DeletePlugin(context.Background(), fx.pool, "default", "shared")
-		}()
+		fx.seedPlugin("shared", &now, 600, []byte("crd-deleted"))
+		if err := db.DeletePlugin(context.Background(), fx.pool, "default", "shared"); err != nil {
+			t.Fatalf("DeletePlugin: %v", err)
+		}
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",

@@ -35,7 +35,7 @@ import (
 )
 
 // environmentsChannel is the NOTIFY channel emitted on every Environment
-// projection write/soft-delete (issue #34). Consumers waking on this
+// projection write/delete (issue #34). Consumers waking on this
 // channel select the matching row to drive their read-side caches.
 const environmentsChannel = "ach_environments_changed"
 

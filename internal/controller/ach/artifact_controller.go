@@ -21,7 +21,7 @@ import (
 )
 
 // artifactsChannel is the NOTIFY channel emitted on every Artifact
-// projection write/soft-delete (issue #34). The external_refs upsert for
+// projection write/delete (issue #34). The external_refs upsert for
 // artifacts also fires on this channel.
 const artifactsChannel = "ach_artifacts_changed"
 
@@ -80,8 +80,8 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // reconcileDeletion runs the artifact deletion path: on-disk cache rm
 // (using the recorded cr.Status.StorageLocation when set, else the
 // Phase 1 carry-forward sweep over both object + directory paths) →
-// external_refs DELETE (Phase 2 row removal) → projection-row soft-delete
-// (Plan 05-04 — CS-09 grace window) → finalizer removal.
+// external_refs DELETE (Phase 2 row removal) → projection-row delete →
+// finalizer removal.
 //
 // Extracted from Reconcile to keep its cyclomatic complexity within the
 // gocyclo budget after the spec v4 §5.2 projection-write extension landed.
@@ -116,10 +116,7 @@ func (r *ArtifactReconciler) reconcileDeletion(
 			return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
 		}
 	}
-	// Spec v4 §5.2 / CS-09 / D-15: soft-delete the artifacts projection
-	// row AFTER the existing external_refs DELETE and BEFORE finalizer
-	// removal. Two writes are intentional — see plugin_controller.go.
-	if err := r.softDeleteArtifactProjection(ctx, cr); err != nil {
+	if err := r.deleteArtifactProjection(ctx, cr); err != nil {
 		return ctrl.Result{}, err
 	}
 	controllerutil.RemoveFinalizer(cr, artifactFinalizer)
@@ -160,10 +157,10 @@ func (r *ArtifactReconciler) writeArtifactProjection(
 	})
 }
 
-// softDeleteArtifactProjection wraps the nil-DB gate + the
-// achdb.SoftDeleteArtifact call. Caller is the deletion path between
+// deleteArtifactProjection wraps the nil-DB gate + the
+// achdb.DeleteArtifactTx call. Caller is the deletion path between
 // the external_refs DELETE and RemoveFinalizer.
-func (r *ArtifactReconciler) softDeleteArtifactProjection(
+func (r *ArtifactReconciler) deleteArtifactProjection(
 	ctx context.Context,
 	cr *achv1alpha1.Artifact,
 ) error {
@@ -172,9 +169,9 @@ func (r *ArtifactReconciler) softDeleteArtifactProjection(
 	}
 	payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
 	if err := achdb.WithTxNotify(ctx, r.DB, artifactsChannel, payload, func(tx pgx.Tx) error {
-		return achdb.SoftDeleteArtifactTx(ctx, tx, cr.Namespace, cr.Name)
+		return achdb.DeleteArtifactTx(ctx, tx, cr.Namespace, cr.Name)
 	}); err != nil {
-		return fmt.Errorf("db soft-delete artifact projection: %w", err)
+		return fmt.Errorf("db delete artifact projection: %w", err)
 	}
 	return nil
 }

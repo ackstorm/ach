@@ -234,11 +234,6 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 //   - (nil, errContentNotFound) when the projection row is absent (for a
 //     bare name: no Plugin CRD row; for a scoped name: no marketplace row);
 //   - (nil, errInternal) on any other DB error.
-//
-// CS-09: soft-deleted rows (DeletionTimestamp != nil) are STILL
-// returned. The staleness gate (gate 7) may eventually 503 once the
-// last_successful_refresh ages out, OR the row is hard-deleted by
-// finalizer drain (which manifests as 404 here).
 func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow, *errResp) {
 	switch kind {
 	case kindPrompt:

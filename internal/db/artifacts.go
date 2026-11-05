@@ -44,20 +44,13 @@ type ArtifactRow struct {
 	Scope                 string     // "object" | "directory" — enforced by SQL CHECK
 	LastSuccessfulRefresh *time.Time // nil on first reconcile / OP-11 reset
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
-	DeletionTimestamp     *time.Time // non-nil → drain-mode (CS-09)
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
 }
 
 // UpsertArtifact inserts-or-updates a row keyed by (namespace, name). The
-// ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile (this
-// path only runs for a CR with no metadata.deletionTimestamp) clears
-// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
-// MUST drop the stale drain marker, else ListArtifacts (WHERE
-// deletion_timestamp IS NULL) hides the resurrected artifact from the admin
-// inventory forever (incident 2026-06-04). The drain marker is owned solely
-// by SoftDeleteArtifact, which runs on the deletion branch and never overlaps
-// this upsert; updated_at is force-set to now() in the UPDATE branch.
+// ON CONFLICT DO UPDATE replaces every non-PK column; updated_at is force-set
+// to now() in the UPDATE branch.
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other
 // errors wrap with non-secret (namespace, name) identifiers — pgErr.Message
@@ -76,7 +69,6 @@ const upsertArtifactSQL = `
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
 	    updated_at              = now(),
-	    deletion_timestamp      = NULL,
 	    locked                  = TRUE
 	WHERE artifacts.origin = 'cr'
 	RETURNING namespace
@@ -98,14 +90,12 @@ func UpsertArtifactTx(ctx context.Context, tx pgx.Tx, row ArtifactRow) error {
 }
 
 // GetArtifactByName reads the row keyed by (namespace, name). pgx.ErrNoRows
-// → (nil, nil). Per CS-09 the row is returned with DeletionTimestamp
-// populated when set — caller MUST NOT filter on it here; Content Service
-// keeps serving until hard-delete by finalizer drain.
+// → (nil, nil).
 func GetArtifactByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*ArtifactRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location, scope,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM artifacts
 		 WHERE namespace = $1 AND name = $2
 	`
@@ -113,7 +103,7 @@ func GetArtifactByName(ctx context.Context, pool *pgxpool.Pool, ns, name string)
 	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
 		&r.Namespace, &r.Name, &r.StorageLocation, &r.Scope,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		&r.ResourceVersion, &r.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -126,16 +116,15 @@ func GetArtifactByName(ctx context.Context, pool *pgxpool.Pool, ns, name string)
 	return r, nil
 }
 
-// ListArtifacts returns every live artifacts row in ns ordered by name ASC.
-// Mirrors ListEnvironments: rows with deletion_timestamp set are excluded.
+// ListArtifacts returns every artifacts row in ns ordered by name ASC.
 // Used by the platform-api admin inventory endpoint (read-only).
 func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]ArtifactRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location, scope,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM artifacts
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -152,7 +141,7 @@ func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Artifa
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation, &r.Scope,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListArtifacts(%s) scan: %w", ns, err)
 		}
@@ -167,43 +156,23 @@ func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Artifa
 	return out, nil
 }
 
-// SoftDeleteArtifact sets deletion_timestamp = now() without removing the
-// row (CS-09). Idempotent: rows already in drain-mode are left untouched
-// so duplicate finalizer ticks do not refresh the drain clock.
-func SoftDeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteArtifact(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
+const deleteArtifactSQL = `DELETE FROM artifacts WHERE namespace = $1 AND name = $2`
 
-// SoftDeleteArtifactTx is SoftDeleteArtifact inside an outer transaction
-// (db.WithTxNotify).
-func SoftDeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeleteArtifactSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteArtifact(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-const softDeleteArtifactSQL = `
-	UPDATE artifacts
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
-
-// DeleteArtifact removes the row keyed by (namespace, name) outright. Called
-// only after finalizer drain completes. Absence is not an error.
+// DeleteArtifact removes the row keyed by (namespace, name). Absence is not an
+// error.
 func DeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM artifacts WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, deleteArtifactSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeleteArtifact(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+// DeleteArtifactTx is DeleteArtifact inside an outer transaction (db.WithTxNotify).
+func DeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, deleteArtifactSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}

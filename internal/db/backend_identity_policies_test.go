@@ -43,7 +43,7 @@ func TestConsentBIP_AlphaFirstAndFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SoftDeleteBIPTx(ctx, tx, ns, "a-off"); err != nil {
+	if err := db.DeleteBIPTx(ctx, tx, ns, "a-off"); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatal(err)
 	}

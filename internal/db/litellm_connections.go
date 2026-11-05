@@ -41,7 +41,6 @@ type LiteLLMConnectionRow struct {
 	MasterKeySecretNamespace string
 	MasterKeySecretName      string
 	MasterKeySecretKey       string
-	DeletionTimestamp        *time.Time
 	ResourceVersion          string
 	UpdatedAt                time.Time
 	Origin                   string // "cr" | "ui"
@@ -61,21 +60,14 @@ const upsertLiteLLMConnectionSQL = `
 	    master_key_secret_key       = EXCLUDED.master_key_secret_key,
 	    resource_version            = EXCLUDED.resource_version,
 	    updated_at                  = now(),
-	    deletion_timestamp          = NULL,
 	    locked                      = TRUE
 	WHERE litellm_connections.origin = 'cr'
 	RETURNING namespace
 `
 
 // UpsertLiteLLMConnection inserts-or-updates the row keyed by (Namespace,
-// Name). The ON CONFLICT DO UPDATE replaces every non-PK column. A live
-// reconcile (this path only runs for a CR with no metadata.deletionTimestamp)
-// clears deletion_timestamp to NULL — a recreated CR reusing a soft-deleted
-// name MUST drop the stale drain marker, else ListLitellmConnections (WHERE
-// deletion_timestamp IS NULL) hides the resurrected connection forever
-// (incident 2026-06-04). The drain marker is owned solely by
-// SoftDeleteLiteLLMConnection, which runs on the deletion branch and never
-// overlaps this upsert. Returns ErrOriginConflict if a UI-owned row already
+// Name). The ON CONFLICT DO UPDATE replaces every non-PK column. Returns
+// ErrOriginConflict if a UI-owned row already
 // holds the same PK; transient pgconn 08/57 propagated raw for
 // controller-runtime backoff.
 func UpsertLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, row LiteLLMConnectionRow) error {
@@ -127,7 +119,7 @@ func GetDefaultLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns str
 	const sql = `
 		SELECT namespace, name, endpoint,
 		       master_key_secret_namespace, master_key_secret_name, master_key_secret_key,
-		       deletion_timestamp, resource_version, updated_at, origin, locked
+		       resource_version, updated_at, origin, locked
 		  FROM litellm_connections
 		 WHERE namespace = $1 AND name = 'default'
 	`
@@ -135,7 +127,7 @@ func GetDefaultLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns str
 	if err := pool.QueryRow(ctx, sql, ns).Scan(
 		&r.Namespace, &r.Name, &r.Endpoint,
 		&r.MasterKeySecretNamespace, &r.MasterKeySecretName, &r.MasterKeySecretKey,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
+		&r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -148,33 +140,16 @@ func GetDefaultLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns str
 	return r, nil
 }
 
-const softDeleteLiteLLMConnectionSQL = `
-	UPDATE litellm_connections
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
+const deleteLiteLLMConnectionSQL = `DELETE FROM litellm_connections WHERE namespace = $1 AND name = $2`
 
-// SoftDeleteLiteLLMConnection marks the row drain-mode but preserves it
-// (mirrors environments.go semantics). Idempotent on already-drained rows.
-func SoftDeleteLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeleteLiteLLMConnectionSQL, ns, name); err != nil {
+// DeleteLiteLLMConnectionTx removes the row keyed by (namespace, name) inside an outer
+// transaction (db.WithTxNotify). Absence is not an error.
+func DeleteLiteLLMConnectionTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, deleteLiteLLMConnectionSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
-		return fmt.Errorf("db: SoftDeleteLiteLLMConnection(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-// SoftDeleteLiteLLMConnectionTx is the tx-form for callers inside
-// db.WithTxNotify.
-func SoftDeleteLiteLLMConnectionTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeleteLiteLLMConnectionSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeleteLiteLLMConnection(%s/%s): %w", ns, name, err)
+		return fmt.Errorf("db: DeleteLiteLLMConnection(%s/%s): %w", ns, name, err)
 	}
 	return nil
 }

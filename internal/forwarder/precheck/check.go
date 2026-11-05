@@ -19,8 +19,7 @@ import (
 //
 // Get returns (nil, false) on absence — caller maps that to
 // ErrUnauthorizedResource per the D-15 narrow contract.
-// List returns every active Environment (envstore.Store.List excludes
-// drain-mode rows at the SQL layer per db.ListEnvironments).
+// List returns every Environment.
 type EnvProvider interface {
 	Get(name string) (*db.EnvironmentRow, bool)
 	List() []db.EnvironmentRow
@@ -100,7 +99,7 @@ func CheckEkOwner(ctx context.Context, kc middleware.KeyContext, deps Deps) erro
 		return nil
 	}
 	row, ok := deps.EnvProvider.Get(kc.Environment)
-	if !ok || row.DeletionTimestamp != nil {
+	if !ok {
 		return ErrUnauthorizedResource
 	}
 	teams, err := deps.TeamsResolver.Resolve(ctx, kc.OwnerEmail)
@@ -125,21 +124,13 @@ func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps
 }
 
 // checkEk implements the ek_ path. The bound Environment name comes from
-// kc.Environment (resolved by Phase 3 keystore.EkResolve). Missing,
-// terminating, or name-not-in-list all fail closed as
-// ErrUnauthorizedResource per D-15 narrow error surface.
-//
-// envstore.Store.List/Get already filter drain-mode rows out at the SQL
-// layer (db.ListEnvironments excludes deletion_timestamp IS NOT NULL),
-// so a Get miss here means "absent OR terminating" — both collapse to
-// the narrow ErrUnauthorizedResource outcome regardless.
+// kc.Environment (resolved by Phase 3 keystore.EkResolve). Missing or
+// name-not-in-list both fail closed as ErrUnauthorizedResource per D-15
+// narrow error surface.
 func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
 	row, ok := deps.EnvProvider.Get(kc.Environment)
 	if !ok {
 		return nil, ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
-	}
-	if row.DeletionTimestamp != nil {
-		return nil, ErrUnauthorizedResource // terminating env cannot grant access (D-15)
 	}
 	for _, n := range runtimeList(row, kind) {
 		if n == name {
@@ -178,13 +169,6 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 		teamSet[t] = struct{}{}
 	}
 
-	// envstore.Store.List excludes drain-mode rows at the SQL layer
-	// (db.ListEnvironments filters deletion_timestamp IS NOT NULL), so
-	// PC14's "terminating envs cannot grant access" is enforced by the
-	// data layer; we still keep the in-row check below as defense in
-	// depth in case a future EnvProvider implementation surfaces
-	// drain-mode rows.
-	//
 	// The walk no longer stops at the first grant: the accumulated set is
 	// what the proxy mints into the "groups" claim, so a caller entitled
 	// through several Environments carries all of those teams. The
@@ -193,9 +177,6 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 	envs := deps.EnvProvider.List()
 	for i := range envs {
 		row := &envs[i]
-		if row.DeletionTimestamp != nil {
-			continue
-		}
 		hasName := false
 		for _, n := range runtimeList(row, kind) {
 			if n == name {

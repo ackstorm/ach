@@ -29,7 +29,7 @@ import (
 )
 
 // backendIdentityPoliciesChannel is the NOTIFY channel fired on every BIP
-// projection write/soft-delete (issue #34). Forwarder bipcache subscribes
+// projection write/delete (issue #34). Forwarder bipcache subscribes
 // to this channel to keep its read-side index converged.
 const backendIdentityPoliciesChannel = "ach_backend_identity_policies_changed"
 
@@ -52,7 +52,7 @@ const backendIdentityPoliciesChannel = "ach_backend_identity_policies_changed"
 // has no filesystem cleanup body.
 //
 // Pool is nil-tolerant: existing envtests that don't need projection
-// leave it unset, and the upsert/soft-delete branches are skipped.
+// leave it unset, and the upsert/delete branches are skipped.
 type BackendIdentityPolicyReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
@@ -72,7 +72,7 @@ type BackendIdentityPolicyReconciler struct {
 // +kubebuilder:rbac:groups=ach.ackstorm.ai,resources=backendidentitypolicies/finalizers,verbs=update
 
 // Reconcile implements the BackendIdentityPolicy lifecycle: finalizer
-// add/remove + projection write/soft-delete via the issue-#34 NOTIFY
+// add/remove + projection write/delete via the issue-#34 NOTIFY
 // helper. Duplicates coexist and the Forwarder resolves alphabetically-
 // FIRST at read time; the operator additionally writes one advisory
 // Synced=False/NameConflict on the shadowed loser(s) (G15, see the type
@@ -92,25 +92,25 @@ func (r *BackendIdentityPolicyReconciler) Reconcile(ctx context.Context, req ctr
 
 	if !cr.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&cr, backendIdentityPolicyFinalizer) {
-			// Issue #34: soft-delete the projection row inside the same
+			// Issue #34: delete the projection row inside the same
 			// transaction as the NOTIFY so any forwarder waking up on
 			// ach_backend_identity_policies_changed SELECTs a snapshot
-			// that already reflects the soft-delete. Skipped when
+			// that already reflects the delete. Skipped when
 			// r.Pool is nil (existing envtests).
 			if r.Pool != nil {
 				ns, name := cr.Namespace, cr.Name
 				payload := fmt.Sprintf("%s/%s", ns, name)
 				if err := achdb.WithTxNotify(ctx, r.Pool, backendIdentityPoliciesChannel, payload, func(tx pgx.Tx) error {
-					return achdb.SoftDeleteBIPTx(ctx, tx, ns, name)
+					return achdb.DeleteBIPTx(ctx, tx, ns, name)
 				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db soft-delete backend_identity_policies projection: %w", err)
+					return ctrl.Result{}, fmt.Errorf("db delete backend_identity_policies projection: %w", err)
 				}
 			}
 			controllerutil.RemoveFinalizer(&cr, backendIdentityPolicyFinalizer)
 			if err := r.Update(ctx, &cr); err != nil {
 				return ctrl.Result{}, err
 			}
-			logger.Info("finalizer removed; projection soft-deleted")
+			logger.Info("finalizer removed; projection deleted")
 		}
 		return ctrl.Result{}, nil
 	}
@@ -239,7 +239,7 @@ func (r *BackendIdentityPolicyReconciler) writeConflictStatus(
 // else "". Mirrors bipcache.Resolve's tiebreak (rows[0] in name-ASC order is
 // the winner) but over the CR set rather than the projection rows — the
 // reconciler is Pool-nil under envtest, and the CRs are the source the
-// projection mirrors anyway. Soft-deleting CRs are excluded.
+// projection mirrors anyway. CRs being deleted are excluded.
 func (r *BackendIdentityPolicyReconciler) duplicateWinner(
 	ctx context.Context,
 	cr *achv1alpha1.BackendIdentityPolicy,

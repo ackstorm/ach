@@ -12,17 +12,16 @@
 //     column (kubebuilder enum + DB CHECK constrain to
 //     {"object","directory"}). Integration-gated.
 //
-//   - TestArtifactReconciler_ProjectionSoftDeleteOnDrain: Create
-//     Artifact → wait for projection row → Delete CR → assert the row
-//     STILL EXISTS with DeletionTimestamp != nil (CS-09). Integration-
-//     gated.
+//   - TestArtifactReconciler_ProjectionDeleteOnDrain: Create
+//     Artifact → wait for projection row → Delete CR → assert the row is
+//     gone. Integration-gated.
 //
 //   - TestArtifactReconciler_DBNilTolerance: Apply Artifact with r.DB
 //     nil → reconcile completes without panic; finalizer add still
 //     happens.
 //
 // Integration tests skip; DB-roundtrip semantics for UpsertArtifact /
-// SoftDeleteArtifact / GetArtifactByName live in
+// DeleteArtifact / GetArtifactByName live in
 // internal/db/artifacts_test.go (Plan 05-02 Task 2). The DB CHECK
 // constraint on scope is exercised in artifacts_test.go too.
 
@@ -44,7 +43,7 @@ func TestArtifactReconciler_ProjectionUpsert(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/artifacts_test.go")
 }
 
-func TestArtifactReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
+func TestArtifactReconciler_ProjectionDeleteOnDrain(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/artifacts_test.go")
 }
 
@@ -53,7 +52,7 @@ func TestArtifactReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
 // (suite_test.go:287-295); an Artifact Create still triggers finalizer
 // add. The projection-write block at the success path is gated on
 // r.DB != nil so it MUST be skipped without panic; the deletion-path
-// soft-delete is similarly gated. Finalizer-add proves the nil-DB path
+// delete is similarly gated. Finalizer-add proves the nil-DB path
 // runs to completion without nil-deref.
 func TestArtifactReconciler_DBNilTolerance(t *testing.T) {
 	ctx := context.Background()

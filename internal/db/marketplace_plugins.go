@@ -127,8 +127,7 @@ func ListMarketplacePlugins(ctx context.Context, pool *pgxpool.Pool, marketplace
 }
 
 // ListAllMarketplacePlugins returns every row across all marketplaces,
-// ordered by (marketplace_name, name) ASC. marketplace_plugins has no
-// deletion_timestamp column, so all rows are live. Used by the platform-api
+// ordered by (marketplace_name, name) ASC. Used by the platform-api
 // admin inventory endpoint (read-only). Returns an empty (non-nil) slice on
 // zero rows.
 func ListAllMarketplacePlugins(ctx context.Context, pool *pgxpool.Pool) ([]MarketplacePlugin, error) {
