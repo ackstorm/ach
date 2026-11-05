@@ -348,9 +348,9 @@ func testSC11dOperatorRestart(t *testing.T) {
 //   - PluginMarketplace delete drives §10.3 cache cleanup + the
 //     marketplace_plugins DELETE (covered structurally by §11c, but
 //     re-asserted here in matrix form for completeness).
-//   - BIP delete is finalizer-only (no PVC, no DB); already covered
-//     structurally by §11b — re-asserted via the matrix sub-runner
-//     for one-stop visibility.
+//   - BIP delete removes the finalizer and the projection row; the
+//     finalizer is covered structurally by §11b — re-asserted via the
+//     matrix sub-runner for one-stop visibility.
 //
 // Each kind is a t.Run sub-sub-test so a failure on Environment doesn't
 // abort the PluginMarketplace assertion.
@@ -435,5 +435,6 @@ func testSC11fFinalizerCleanup(t *testing.T) {
 			t.Fatalf("§11f.BIP delete: %v\n%s", err, out)
 		}
 		waitForBIPDeleted(t, bipA, 30*time.Second)
+		waitForACHPostgresCount(t, "backend_identity_policies", "name='"+bipA+"'", 0, 30*time.Second)
 	})
 }

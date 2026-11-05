@@ -22,6 +22,17 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   soft-deleted forever: gone from `env list`, but still answering hydrate,
   `env describe`, the console and content downloads by name, reported as
   `Available`. Migration `000027` purges the rows already left behind.
+- Deleting a `Plugin`, `Prompt`, `Skill`, `Artifact`, `BackendIdentityPolicy`
+  or `LiteLLMConnection` now removes its Postgres row too. `Plugin`, `Prompt`
+  and `Artifact` rows left soft-deleted still answered by name; their cached
+  content was already gone.
+
+### Removed
+- The `deletion_timestamp` column on every table and the `deletionTimestamp`
+  field of the Environment API view. Migration `000028` purges the remaining
+  soft-deleted rows, then drops the column. Pods from an earlier version
+  fail reads on those tables from the migration until the rollout replaces
+  them.
 
 ## [1.1.0] - 2026-10-30
 

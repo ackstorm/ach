@@ -40,20 +40,13 @@ type PromptRow struct {
 	ContentType           *string    // spec.contentType override; nil → NULL
 	LastSuccessfulRefresh *time.Time // nil on first reconcile / OP-11 reset
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
-	DeletionTimestamp     *time.Time // non-nil → drain-mode (CS-09)
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
 }
 
 // UpsertPrompt inserts-or-updates a row keyed by (namespace, name). The
-// ON CONFLICT DO UPDATE replaces every non-PK column. A live reconcile (this
-// path only runs for a CR with no metadata.deletionTimestamp) clears
-// deletion_timestamp to NULL — a recreated CR reusing a soft-deleted name
-// MUST drop the stale drain marker, else ListPrompts (WHERE
-// deletion_timestamp IS NULL) hides the resurrected prompt from the admin
-// inventory forever (incident 2026-06-04). The drain marker is owned solely
-// by SoftDeletePrompt, which runs on the deletion branch and never overlaps
-// this upsert; updated_at is force-set to now() in the UPDATE branch.
+// ON CONFLICT DO UPDATE replaces every non-PK column; updated_at is force-set
+// to now() in the UPDATE branch.
 //
 // pgconn class 08/57 errors propagate raw (transient backoff). Other
 // errors wrap with non-secret (namespace, name); pgErr.Message NEVER
@@ -71,7 +64,6 @@ const upsertPromptSQL = `
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
 	    updated_at              = now(),
-	    deletion_timestamp      = NULL,
 	    locked                  = TRUE
 	WHERE prompts.origin = 'cr'
 	RETURNING namespace
@@ -93,14 +85,12 @@ func UpsertPromptTx(ctx context.Context, tx pgx.Tx, row PromptRow) error {
 }
 
 // GetPromptByName reads the row keyed by (namespace, name). pgx.ErrNoRows
-// → (nil, nil). Per CS-09 the row is returned with DeletionTimestamp
-// populated when set — caller MUST NOT filter on it here; the Content
-// Service authz pipeline keeps serving until hard-delete by finalizer drain.
+// → (nil, nil).
 func GetPromptByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*PromptRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location, content_type,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM prompts
 		 WHERE namespace = $1 AND name = $2
 	`
@@ -108,7 +98,7 @@ func GetPromptByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
 		&r.Namespace, &r.Name, &r.StorageLocation, &r.ContentType,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+		&r.ResourceVersion, &r.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -121,16 +111,15 @@ func GetPromptByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 	return r, nil
 }
 
-// ListPrompts returns every live prompts row in ns ordered by name ASC.
-// Mirrors ListEnvironments: rows with deletion_timestamp set are excluded.
+// ListPrompts returns every prompts row in ns ordered by name ASC.
 // Used by the platform-api admin inventory endpoint (read-only).
 func ListPrompts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PromptRow, error) {
 	const sql = `
 		SELECT namespace, name, storage_location, content_type,
 		       last_successful_refresh, max_staleness_seconds,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM prompts
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -147,7 +136,7 @@ func ListPrompts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PromptRo
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation, &r.ContentType,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListPrompts(%s) scan: %w", ns, err)
 		}
@@ -162,43 +151,23 @@ func ListPrompts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PromptRo
 	return out, nil
 }
 
-// SoftDeletePrompt sets deletion_timestamp = now() without removing the
-// row (CS-09). Idempotent: rows already in drain-mode are left untouched
-// so duplicate finalizer ticks do not refresh the drain clock.
-func SoftDeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeletePrompt(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
+const deletePromptSQL = `DELETE FROM prompts WHERE namespace = $1 AND name = $2`
 
-// SoftDeletePromptTx is SoftDeletePrompt inside an outer transaction
-// (db.WithTxNotify).
-func SoftDeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
-	if _, err := tx.Exec(ctx, softDeletePromptSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: SoftDeletePrompt(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
-
-const softDeletePromptSQL = `
-	UPDATE prompts
-	   SET deletion_timestamp = now(),
-	       updated_at         = now()
-	 WHERE namespace = $1 AND name = $2 AND deletion_timestamp IS NULL
-`
-
-// DeletePrompt removes the row keyed by (namespace, name) outright. Called
-// only after finalizer drain completes. Absence is not an error.
+// DeletePrompt removes the row keyed by (namespace, name). Absence is not an
+// error.
 func DeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM prompts WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
+	if _, err := pool.Exec(ctx, deletePromptSQL, ns, name); err != nil {
+		if isTransientPgErr(err) {
+			return err
+		}
+		return fmt.Errorf("db: DeletePrompt(%s/%s): %w", ns, name, err)
+	}
+	return nil
+}
+
+// DeletePromptTx is DeletePrompt inside an outer transaction (db.WithTxNotify).
+func DeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {
+	if _, err := tx.Exec(ctx, deletePromptSQL, ns, name); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}

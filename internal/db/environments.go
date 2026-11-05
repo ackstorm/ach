@@ -20,8 +20,6 @@
 //     execution_resources_resolved_condition jsonb: dual-written from the
 //     Operator's existing condition rollup (D-14 / D-15) for kubectl-
 //     describe parity with the K8s status subresource.
-//   - deletion_timestamp timestamptz NULL: nothing sets it; the finalizer
-//     drain deletes the row (§6.5).
 //   - resource_version text, updated_at timestamptz: dual-write idempotency
 //     anchors.
 //
@@ -78,15 +76,13 @@ type EnvironmentRow struct {
 	// UI Objects API exports. Nil on rows written before 000024.
 	Spec []byte
 
-	DeletionTimestamp *time.Time // always nil; see the package comment
-	ResourceVersion   string     // K8s metadata.resourceVersion at write time
-	UpdatedAt         time.Time  // server-set on UPSERT
+	ResourceVersion string    // K8s metadata.resourceVersion at write time
+	UpdatedAt       time.Time // server-set on UPSERT
 }
 
 // UpsertEnvironment inserts-or-updates a row keyed by (namespace, name).
-// The ON CONFLICT DO UPDATE replaces every non-PK column, deletion_timestamp
-// included, so a row with a stale marker never stays hidden from env list.
-// updated_at is force-set to now() in the UPDATE branch.
+// The ON CONFLICT DO UPDATE replaces every non-PK column; updated_at is
+// force-set to now() in the UPDATE branch.
 //
 // Returns raw error on pgconn class 08/57 (transient) so controller-runtime
 // applies exponential backoff. Other errors wrap with non-secret
@@ -130,7 +126,6 @@ const upsertEnvironmentSQL = `
 	    execution_resources_resolved_condition = EXCLUDED.execution_resources_resolved_condition,
 	    resource_version                       = EXCLUDED.resource_version,
 	    updated_at                             = now(),
-	    deletion_timestamp                     = NULL,
 	    origin                                 = 'cr',
 	    locked                                 = TRUE
 	RETURNING namespace
@@ -174,7 +169,7 @@ const environmentColumns = `namespace, name,
 		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
 		       available_condition, access_group_synced_condition,
 		       execution_resources_resolved_condition,
-		       deletion_timestamp, resource_version, updated_at, spec`
+		       resource_version, updated_at, spec`
 
 // scanEnvironment scans one environmentColumns row into r.
 func scanEnvironment(row pgx.Row, r *EnvironmentRow) error {
@@ -185,7 +180,7 @@ func scanEnvironment(row pgx.Row, r *EnvironmentRow) error {
 		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
 		&r.AvailableCondition, &r.AccessGroupSyncedCondition,
 		&r.ExecutionResourcesResolvedCondition,
-		&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt, &r.Spec,
+		&r.ResourceVersion, &r.UpdatedAt, &r.Spec,
 	)
 }
 
@@ -220,7 +215,7 @@ func ListEnvironments(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Env
 	const sql = `
 		SELECT ` + environmentColumns + `
 		  FROM environments
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)

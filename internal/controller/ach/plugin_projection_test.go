@@ -10,16 +10,16 @@
 //     exists with StorageLocation + LastSuccessfulRefresh +
 //     MaxStalenessSeconds matching the spec. Integration-gated.
 //
-//   - TestPluginReconciler_ProjectionSoftDeleteOnDrain: Create Plugin →
-//     wait for projection row → Delete CR → assert the row STILL
-//     EXISTS with DeletionTimestamp != nil (CS-09). Integration-gated.
+//   - TestPluginReconciler_ProjectionDeleteOnDrain: Create Plugin →
+//     wait for projection row → Delete CR → assert the row is
+//     gone. Integration-gated.
 //
 //   - TestPluginReconciler_DBNilTolerance: Apply Plugin with the suite-
 //     wired reconciler (r.DB nil) → reconcile completes without panic;
 //     finalizer add still happens.
 //
 // Integration tests skip with the `make test-integration` pointer; the
-// DB-roundtrip semantics for UpsertPlugin / SoftDeletePlugin /
+// DB-roundtrip semantics for UpsertPlugin / DeletePlugin /
 // GetPluginByName already live in internal/db/plugins_test.go (Plan
 // 05-02 Task 3).
 
@@ -41,7 +41,7 @@ func TestPluginReconciler_ProjectionUpsert(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/plugins_test.go")
 }
 
-func TestPluginReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
+func TestPluginReconciler_ProjectionDeleteOnDrain(t *testing.T) {
 	t.Skip("integration: requires r.DB (Postgres pool); covered by make test-integration + internal/db/plugins_test.go")
 }
 
@@ -49,8 +49,8 @@ func TestPluginReconciler_ProjectionSoftDeleteOnDrain(t *testing.T) {
 // The suite-wired PluginReconciler has DB=nil (suite_test.go:267-275); a
 // Plugin Create still triggers a finalizer add via the reconciler's
 // Reconcile entry. The projection-write block at the success path is
-// gated `if r.DB != nil` so it MUST be skipped; the deletion path soft-
-// delete is similarly gated. Verifying finalizer-add is sufficient
+// gated `if r.DB != nil` so it MUST be skipped; the deletion path delete
+// is similarly gated. Verifying finalizer-add is sufficient
 // evidence that the nil-DB branches do not panic.
 func TestPluginReconciler_DBNilTolerance(t *testing.T) {
 	ctx := context.Background()

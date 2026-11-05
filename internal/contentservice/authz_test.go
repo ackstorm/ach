@@ -339,7 +339,7 @@ func TestEnforceAllowlist(t *testing.T) {
 
 // resolveContent reaches into db.* directly — it cannot be unit-tested
 // without testcontainers. The integration tests in Task 4 cover the
-// full path (CRD-wins, marketplace-fallback, soft-deleted, no-match,
+// full path (CRD-wins, marketplace-fallback, deleted, no-match,
 // staleness paths). Here we cover the kind-dispatch wiring and the
 // pure-function checkStaleness helper.
 

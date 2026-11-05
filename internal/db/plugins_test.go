@@ -4,16 +4,14 @@
 
 // Integration tests for internal/db/plugins.go.
 //
-// Covers the standard CRUD round-trip per-kind (Upsert, Get, SoftDelete,
-// Delete) PLUS the ResolvePluginByName two-arm precedence matrix:
+// Covers the standard CRUD round-trip per-kind (Upsert, Get, Delete) PLUS the
+// ResolvePluginByName two-arm precedence matrix:
 //
 // Bare-name arm (marketplace == ""):
 //   - TestResolvePluginByName_CRDWins: plugins row wins for bare name.
 //   - TestResolvePluginByName_BareNameNoMarketplaceFallback: bare name that
 //     exists ONLY in marketplace_plugins resolves to nil (no fallback).
 //   - TestResolvePluginByName_NoMatch_NilNil: both tables empty → (nil, nil).
-//   - TestResolvePluginByName_SoftDeletedCRDReturnsNil: soft-deleted CRD row
-//     is excluded by deletion_timestamp IS NULL; bare resolution → nil.
 //
 // Scoped arm (marketplace != ""):
 //   - TestResolvePluginByName_ScopedExactPK: exact (marketplace_name, name)
@@ -104,36 +102,6 @@ func TestGetPluginByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestSoftDeletePlugin_PreservesRow.
-func TestSoftDeletePlugin_PreservesRow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
-		Namespace: "ns", Name: "p", StorageLocation: "/x", MaxStalenessSeconds: 60, ResourceVersion: "1",
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if err := db.SoftDeletePlugin(ctx, pool, "ns", "p"); err != nil {
-		t.Fatalf("SoftDeletePlugin: %v", err)
-	}
-	got, err := db.GetPluginByName(ctx, pool, "ns", "p")
-	if err != nil {
-		t.Fatalf("Get after SoftDelete: %v", err)
-	}
-	if got == nil {
-		t.Fatal("Get after SoftDelete: row missing (CS-09 violated)")
-	}
-	if got.DeletionTimestamp == nil {
-		t.Error("DeletionTimestamp: got nil, want non-nil")
-	}
-	if err := db.SoftDeletePlugin(ctx, pool, "ns", "p"); err != nil {
-		t.Errorf("idempotent SoftDelete: %v", err)
-	}
-}
-
 // TestDeletePlugin_RemovesRow.
 func TestDeletePlugin_RemovesRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -158,62 +126,6 @@ func TestDeletePlugin_RemovesRow(t *testing.T) {
 	}
 	if err := db.DeletePlugin(ctx, pool, "ns", "p"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
-	}
-}
-
-// TestUpsertPlugin_ClearsStaleDeletionTimestamp proves a LIVE reconcile
-// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04).
-// For plugins the per-request content resolver (ResolvePluginByName, WHERE
-// deletion_timestamp IS NULL) is the real blast radius: a resurrected plugin
-// must be served again, not fall through to a 404 / marketplace fallback.
-func TestUpsertPlugin_ClearsStaleDeletionTimestamp(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	row := db.PluginRow{
-		Namespace: "test", Name: "resurrect-me",
-		StorageLocation: "/crd/resurrect-me.tar.gz", MaxStalenessSeconds: 600, ResourceVersion: "1",
-	}
-	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
-		t.Fatalf("seed upsert: %v", err)
-	}
-	if err := db.SoftDeletePlugin(ctx, pool, "test", "resurrect-me"); err != nil {
-		t.Fatalf("SoftDeletePlugin: %v", err)
-	}
-	// Soft-deleted: the per-request resolver must NOT see it.
-	pre, err := db.ResolvePluginByName(ctx, pool, "test", "resurrect-me", "")
-	if err != nil {
-		t.Fatalf("resolve after soft-delete: %v", err)
-	}
-	if pre != nil {
-		t.Fatalf("resolver returned %+v after soft-delete, want nil", pre)
-	}
-	// Live reconcile of the recreated CR upserts again.
-	row.ResourceVersion = "2"
-	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
-		t.Fatalf("live upsert: %v", err)
-	}
-
-	got, err := db.GetPluginByName(ctx, pool, "test", "resurrect-me")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got == nil || got.DeletionTimestamp != nil {
-		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %+v", got)
-	}
-	// The per-request content resolver must serve the resurrected plugin again.
-	res, err := db.ResolvePluginByName(ctx, pool, "test", "resurrect-me", "")
-	if err != nil {
-		t.Fatalf("resolve after live upsert: %v", err)
-	}
-	if res == nil {
-		t.Fatal("resolver returned nil after live upsert; resurrected plugin still hidden")
-	}
-	if res.Source != "plugin" || res.StorageLocation != "/crd/resurrect-me.tar.gz" {
-		t.Errorf("resolver: got source=%q storage=%q, want plugin / /crd/resurrect-me.tar.gz",
-			res.Source, res.StorageLocation)
 	}
 }
 
@@ -437,49 +349,5 @@ func TestResolvePluginByName_NoMatch_NilNil(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("got %+v, want nil", got)
-	}
-}
-
-// TestResolvePluginByName_SoftDeletedCRDReturnsNil: bare lookup where the
-// plugins row is soft-deleted → deletion_timestamp IS NULL excludes it, and
-// bare resolution has no marketplace fallback → (nil, nil).
-// The marketplace row (if any) is reachable ONLY via a scoped lookup by the
-// caller once pluginref.Parse returns marketplace != "".
-func TestResolvePluginByName_SoftDeletedCRDReturnsNil(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	now := time.Now().UTC().Truncate(time.Second)
-	// Insert CRD row, then soft-delete it.
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
-		Namespace: "test", Name: "foo",
-		StorageLocation: "/crd/foo.tar.gz", MaxStalenessSeconds: 60, ResourceVersion: "1",
-	}); err != nil {
-		t.Fatalf("seed plugins: %v", err)
-	}
-	if err := db.SoftDeletePlugin(ctx, pool, "test", "foo"); err != nil {
-		t.Fatalf("SoftDeletePlugin: %v", err)
-	}
-	// Insert marketplace row with the same name — should NOT be returned for bare lookup.
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
-		MarketplaceName:       "any-mkt",
-		Name:                  "foo",
-		StorageLocation:       "/mkt/foo.tar.gz",
-		UpstreamRev:           "rev",
-		LastSuccessfulRefresh: now,
-		NextRefreshAt:         now.Add(time.Hour),
-		MaxStalenessSeconds:   600,
-	}); err != nil {
-		t.Fatalf("seed marketplace: %v", err)
-	}
-	// Bare lookup: soft-deleted CRD excluded, no marketplace fallback → nil.
-	got, err := db.ResolvePluginByName(ctx, pool, "test", "foo", "")
-	if err != nil {
-		t.Fatalf("ResolvePluginByName: %v", err)
-	}
-	if got != nil {
-		t.Errorf("got %+v, want nil (soft-deleted CRD, no bare fallback)", got)
 	}
 }

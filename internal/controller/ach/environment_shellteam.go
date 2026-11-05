@@ -231,7 +231,7 @@ func (r *EnvironmentReconciler) revokeEnvironmentKeys(
 	// wants revokeEnvironmentKeys to do real work (and the ordering it
 	// produces) injects it without needing a real *pgxpool.Pool, and without
 	// tripping the OTHER r.DB==nil gates in this same deletion sequence
-	// (drainEkRows, softDeleteEnvironmentProjection) that have no seam of
+	// (drainEkRows, deleteEnvironmentProjection) that have no seam of
 	// their own. Only when the seam is unset does r.DB==nil fall back to
 	// today's no-op contract exactly.
 	list := r.ListEKsForRevoke

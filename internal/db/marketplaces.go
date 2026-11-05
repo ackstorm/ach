@@ -28,14 +28,13 @@ import (
 // MarketplaceRow mirrors the marketplaces row schema (migration 000008).
 // (Namespace, Name) form the PRIMARY KEY.
 type MarketplaceRow struct {
-	Namespace         string
-	Name              string
-	SyncedStatus      string // metav1.Condition.Status: "True" | "False" | "Unknown" | ""
-	SyncedReason      string // condition Reason when not Synced
-	PluginsCount      int
-	DeletionTimestamp *time.Time
-	ResourceVersion   string
-	UpdatedAt         time.Time
+	Namespace       string
+	Name            string
+	SyncedStatus    string // metav1.Condition.Status: "True" | "False" | "Unknown" | ""
+	SyncedReason    string // condition Reason when not Synced
+	PluginsCount    int
+	ResourceVersion string
+	UpdatedAt       time.Time
 }
 
 const upsertMarketplaceSQL = `
@@ -48,7 +47,6 @@ const upsertMarketplaceSQL = `
 	    synced_reason      = EXCLUDED.synced_reason,
 	    plugins_count      = EXCLUDED.plugins_count,
 	    resource_version   = EXCLUDED.resource_version,
-	    deletion_timestamp = NULL,
 	    updated_at         = now()
 `
 
@@ -82,15 +80,15 @@ func UpsertMarketplaceTx(ctx context.Context, tx pgx.Tx, row MarketplaceRow) err
 	return nil
 }
 
-// ListMarketplaces returns every live marketplaces row in ns ordered by name
-// ASC. Soft-deleted rows (deletion_timestamp set) are excluded. Used by the
+// ListMarketplaces returns every marketplaces row in ns ordered by name
+// ASC. Used by the
 // platform-api admin inventory endpoint (read-only).
 func ListMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) ([]MarketplaceRow, error) {
 	const sql = `
 		SELECT namespace, name, synced_status, synced_reason, plugins_count,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM marketplaces
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -106,7 +104,7 @@ func ListMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Mar
 		var r MarketplaceRow
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.SyncedStatus, &r.SyncedReason, &r.PluginsCount,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListMarketplaces(%s) scan: %w", ns, err)
 		}

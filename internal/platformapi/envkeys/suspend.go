@@ -85,7 +85,7 @@ func ResumeHandler(deps Deps) http.HandlerFunc {
 			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 			return
 		}
-		if env == nil || env.DeletionTimestamp != nil {
+		if env == nil {
 			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam, "environment is not available", reqID)
 			return
 		}

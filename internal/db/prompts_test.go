@@ -99,36 +99,6 @@ func TestGetPromptByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestSoftDeletePrompt_PreservesRow: CS-09 — row remains after SoftDelete.
-func TestSoftDeletePrompt_PreservesRow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	if err := db.UpsertPrompt(ctx, pool, db.PromptRow{
-		Namespace: "ns", Name: "p", StorageLocation: "/x", MaxStalenessSeconds: 60, ResourceVersion: "1",
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if err := db.SoftDeletePrompt(ctx, pool, "ns", "p"); err != nil {
-		t.Fatalf("SoftDeletePrompt: %v", err)
-	}
-	got, err := db.GetPromptByName(ctx, pool, "ns", "p")
-	if err != nil {
-		t.Fatalf("Get after SoftDelete: %v", err)
-	}
-	if got == nil {
-		t.Fatal("Get after SoftDelete: row missing (CS-09 violated)")
-	}
-	if got.DeletionTimestamp == nil {
-		t.Error("DeletionTimestamp: got nil, want non-nil")
-	}
-	if err := db.SoftDeletePrompt(ctx, pool, "ns", "p"); err != nil {
-		t.Errorf("idempotent SoftDelete: %v", err)
-	}
-}
-
 // TestDeletePrompt_RemovesRow.
 func TestDeletePrompt_RemovesRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -153,55 +123,5 @@ func TestDeletePrompt_RemovesRow(t *testing.T) {
 	}
 	if err := db.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
-	}
-}
-
-// TestUpsertPrompt_ClearsStaleDeletionTimestamp proves a LIVE reconcile
-// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04).
-// The IS-NULL-filtered read is ListPrompts (admin inventory): a resurrected
-// prompt must reappear there after the live upsert.
-func TestUpsertPrompt_ClearsStaleDeletionTimestamp(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	row := db.PromptRow{
-		Namespace: "ns", Name: "resurrect-me", StorageLocation: "/x",
-		MaxStalenessSeconds: 60, ResourceVersion: "1",
-	}
-	if err := db.UpsertPrompt(ctx, pool, row); err != nil {
-		t.Fatalf("seed upsert: %v", err)
-	}
-	if err := db.SoftDeletePrompt(ctx, pool, "ns", "resurrect-me"); err != nil {
-		t.Fatalf("SoftDeletePrompt: %v", err)
-	}
-	// Live reconcile of the recreated CR upserts again.
-	row.ResourceVersion = "2"
-	if err := db.UpsertPrompt(ctx, pool, row); err != nil {
-		t.Fatalf("live upsert: %v", err)
-	}
-
-	got, err := db.GetPromptByName(ctx, pool, "ns", "resurrect-me")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got == nil || got.DeletionTimestamp != nil {
-		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %+v", got)
-	}
-	// The IS-NULL-filtered inventory read must list the resurrected prompt.
-	list, err := db.ListPrompts(ctx, pool, "ns")
-	if err != nil {
-		t.Fatalf("ListPrompts: %v", err)
-	}
-	var found bool
-	for _, p := range list {
-		if p.Name == "resurrect-me" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("resurrected prompt missing from ListPrompts after live upsert")
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
@@ -59,19 +58,14 @@ func (m *mockTeamsResolver) Resolve(_ context.Context, _ string) ([]string, erro
 	return m.teams, nil
 }
 
-func envRow(name string, mcps, a2as, authorizedTeams []string, terminating bool) db.EnvironmentRow {
-	row := db.EnvironmentRow{
+func envRow(name string, mcps, a2as, authorizedTeams []string) db.EnvironmentRow {
+	return db.EnvironmentRow{
 		Namespace:         testNS,
 		Name:              name,
 		AuthorizedTeams:   authorizedTeams,
 		RuntimeMCPServers: mcps,
 		RuntimeA2AAgents:  a2as,
 	}
-	if terminating {
-		now := time.Now()
-		row.DeletionTimestamp = &now
-	}
-	return row
 }
 
 // PC1: invalid key type → ErrInvalidKeyType.
@@ -84,7 +78,7 @@ func TestCheckMCP_PC1_InvalidKeyType(t *testing.T) {
 }
 
 func TestCheckMCP_PC2_EkAuthorized(t *testing.T) {
-	env := envRow("demo", []string{"foo", "bar"}, nil, nil, false)
+	env := envRow("demo", []string{"foo", "bar"}, nil, nil)
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
 	if _, err := CheckMCP(context.Background(), kc, "foo", deps); err != nil {
@@ -93,7 +87,7 @@ func TestCheckMCP_PC2_EkAuthorized(t *testing.T) {
 }
 
 func TestCheckMCP_PC3_EkNameMissing(t *testing.T) {
-	env := envRow("demo", []string{"foo", "bar"}, nil, nil, false)
+	env := envRow("demo", []string{"foo", "bar"}, nil, nil)
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
 	if _, err := CheckMCP(context.Background(), kc, "baz", deps); !errors.Is(err, ErrUnauthorizedResource) {
@@ -110,17 +104,8 @@ func TestCheckMCP_PC4_EkEnvNotFound(t *testing.T) {
 	}
 }
 
-func TestCheckMCP_PC5_EkTerminating(t *testing.T) {
-	env := envRow("demo", []string{"foo"}, nil, nil, true)
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
-	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
-	if _, err := CheckMCP(context.Background(), kc, "foo", deps); !errors.Is(err, ErrUnauthorizedResource) {
-		t.Errorf("err = %v; want ErrUnauthorizedResource (terminating)", err)
-	}
-}
-
 func TestCheckMCP_PC7_PkAuthorized(t *testing.T) {
-	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
+	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env),
@@ -132,7 +117,7 @@ func TestCheckMCP_PC7_PkAuthorized(t *testing.T) {
 }
 
 func TestCheckMCP_PC8_PkNoIntersection(t *testing.T) {
-	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
+	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env),
@@ -144,7 +129,7 @@ func TestCheckMCP_PC8_PkNoIntersection(t *testing.T) {
 }
 
 func TestCheckMCP_PC9_PkLiteLLMUnreachable(t *testing.T) {
-	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
+	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env),
@@ -156,7 +141,7 @@ func TestCheckMCP_PC9_PkLiteLLMUnreachable(t *testing.T) {
 }
 
 func TestCheckMCP_PC10_PkEmptyCallerTeams(t *testing.T) {
-	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
+	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env),
@@ -168,8 +153,8 @@ func TestCheckMCP_PC10_PkEmptyCallerTeams(t *testing.T) {
 }
 
 func TestCheckMCP_PC11_PkUnionSemantics(t *testing.T) {
-	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-x"}, false)
-	env2 := envRow("env2", []string{"foo"}, nil, []string{"team-a"}, false)
+	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-x"})
+	env2 := envRow("env2", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env1, env2),
@@ -181,8 +166,8 @@ func TestCheckMCP_PC11_PkUnionSemantics(t *testing.T) {
 }
 
 func TestCheckMCP_PC12_PkPicksCorrectEnv(t *testing.T) {
-	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
-	env2 := envRow("env2", []string{"bar"}, nil, []string{"team-a"}, false)
+	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
+	env2 := envRow("env2", []string{"bar"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env1, env2),
@@ -194,7 +179,7 @@ func TestCheckMCP_PC12_PkPicksCorrectEnv(t *testing.T) {
 }
 
 func TestCheckA2A_PC13_EkPath(t *testing.T) {
-	env := envRow("demo", nil, []string{"agent-foo", "agent-bar"}, nil, false)
+	env := envRow("demo", nil, []string{"agent-foo", "agent-bar"}, nil)
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
 
@@ -204,7 +189,7 @@ func TestCheckA2A_PC13_EkPath(t *testing.T) {
 	if _, err := CheckA2A(context.Background(), kc, "agent-missing", deps); !errors.Is(err, ErrUnauthorizedResource) {
 		t.Errorf("PC13-missing-name: err = %v; want ErrUnauthorizedResource", err)
 	}
-	env2 := envRow("demo2", []string{"server-x"}, nil, nil, false)
+	env2 := envRow("demo2", []string{"server-x"}, nil, nil)
 	kc2 := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo2"}
 	deps2 := Deps{EnvProvider: newEnvProvider(env2), TeamsResolver: &mockTeamsResolver{}}
 	if _, err := CheckA2A(context.Background(), kc2, "server-x", deps2); !errors.Is(err, ErrUnauthorizedResource) {
@@ -212,29 +197,9 @@ func TestCheckA2A_PC13_EkPath(t *testing.T) {
 	}
 }
 
-func TestCheckMCP_PC14_PkTerminatingExcluded(t *testing.T) {
-	envTerminating := envRow("env-old", []string{"foo"}, nil, []string{"team-a"}, true)
-	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
-	deps := Deps{
-		EnvProvider:   newEnvProvider(envTerminating),
-		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}},
-	}
-	if _, err := CheckMCP(context.Background(), kc, "foo", deps); !errors.Is(err, ErrUnauthorizedTeam) {
-		t.Errorf("err = %v; want ErrUnauthorizedTeam (terminating env should be skipped)", err)
-	}
-	envActive := envRow("env-new", []string{"foo"}, nil, []string{"team-a"}, false)
-	deps2 := Deps{
-		EnvProvider:   newEnvProvider(envTerminating, envActive),
-		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}},
-	}
-	if _, err := CheckMCP(context.Background(), kc, "foo", deps2); err != nil {
-		t.Errorf("err = %v; want nil (active env grants access)", err)
-	}
-}
-
 // PC15: ek_ authorized → returns the Environment's authorizedTeams verbatim.
 func TestCheckMCP_PC15_EkReturnsEnvTeams(t *testing.T) {
-	env := envRow("demo", []string{"foo"}, nil, []string{"team-a", "team-b"}, false)
+	env := envRow("demo", []string{"foo"}, nil, []string{"team-a", "team-b"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
 
@@ -250,8 +215,8 @@ func TestCheckMCP_PC15_EkReturnsEnvTeams(t *testing.T) {
 // PC16: pk_ accumulates the intersection across EVERY hosting Environment,
 // not just the first match (the union is what the JWT claim carries).
 func TestCheckMCP_PC16_PkAccumulatesAcrossEnvs(t *testing.T) {
-	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-a", "team-x"}, false)
-	env2 := envRow("env2", []string{"foo"}, nil, []string{"team-b"}, false)
+	env1 := envRow("env1", []string{"foo"}, nil, []string{"team-a", "team-x"})
+	env2 := envRow("env2", []string{"foo"}, nil, []string{"team-b"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env1, env2),
@@ -280,8 +245,8 @@ func TestCheckMCP_PC16_PkAccumulatesAcrossEnvs(t *testing.T) {
 // PC17: pk_ excludes Environments that do NOT host the requested name, even
 // when the caller belongs to a team those Environments authorize.
 func TestCheckMCP_PC17_PkExcludesNonHostingEnvs(t *testing.T) {
-	hosting := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
-	other := envRow("env2", []string{"bar"}, nil, []string{"team-b"}, false)
+	hosting := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
+	other := envRow("env2", []string{"bar"}, nil, []string{"team-b"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(hosting, other),
@@ -297,30 +262,11 @@ func TestCheckMCP_PC17_PkExcludesNonHostingEnvs(t *testing.T) {
 	}
 }
 
-// PC18: pk_ excludes terminating Environments from the accumulated set.
-func TestCheckMCP_PC18_PkExcludesTerminatingFromGroups(t *testing.T) {
-	live := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
-	dying := envRow("env2", []string{"foo"}, nil, []string{"team-b"}, true)
-	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
-	deps := Deps{
-		EnvProvider:   newEnvProvider(live, dying),
-		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
-	}
-
-	groups, err := CheckMCP(context.Background(), kc, "foo", deps)
-	if err != nil {
-		t.Fatalf("err = %v; want nil", err)
-	}
-	if len(groups) != 1 || groups[0] != "team-a" {
-		t.Errorf("groups = %v; want [team-a] (terminating env must not grant)", groups)
-	}
-}
-
 // D-30 / AC-09: CheckEkOwner — an ek_ is usable only while its owner still
 // holds the bound Environment's access, derived at use via the same
 // authorizedTeams ∩ TeamsResolver(owner_email) rule pk_ traffic passes.
 func TestCheckEkOwner(t *testing.T) {
-	env := envRow("demo", []string{"m"}, nil, []string{"team-a"}, false)
+	env := envRow("demo", []string{"m"}, nil, []string{"team-a"})
 	ek := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "demo"}
 	cases := []struct {
 		name  string
@@ -348,17 +294,11 @@ func TestCheckEkOwner(t *testing.T) {
 	if err := CheckEkOwner(context.Background(), ek, Deps{EnvProvider: newEnvProvider(), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}); !errors.Is(err, ErrUnauthorizedResource) {
 		t.Fatalf("absent env: %v", err)
 	}
-	// Terminating env cannot grant access either.
-	dying := envRow("dying", []string{"m"}, nil, []string{"team-a"}, true)
-	ekDying := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@x.com", Environment: "dying"}
-	if err := CheckEkOwner(context.Background(), ekDying, Deps{EnvProvider: newEnvProvider(dying), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}); !errors.Is(err, ErrUnauthorizedResource) {
-		t.Fatalf("terminating env: %v", err)
-	}
 }
 
 // PC19: every error path returns a nil group set.
 func TestCheckMCP_PC19_ErrorPathsReturnNilGroups(t *testing.T) {
-	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"}, false)
+	env := envRow("env1", []string{"foo"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
 	deps := Deps{
 		EnvProvider:   newEnvProvider(env),

@@ -21,7 +21,7 @@ import (
 )
 
 // pluginsChannel is the NOTIFY channel emitted on every Plugin projection
-// write/soft-delete (issue #34). The external_refs upsert (the
+// write/delete (issue #34). The external_refs upsert (the
 // fetcher-state side of the same logical resource) also fires on this
 // channel under the "plugin/<name>" payload.
 const pluginsChannel = "ach_plugins_changed"
@@ -87,7 +87,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 // reconcileDeletion is the §10.3 finalizer drain extracted from Reconcile
 // to keep cyclomatic complexity within the gocyclo budget. Removes the
-// cached file, drops the external_refs row, soft-deletes the plugins
+// cached file, drops the external_refs row, deletes the plugins
 // projection row (in one tx with NOTIFY ach_plugins_changed), then removes
 // the finalizer. Nil DB paths skip the DB writes for Phase 1 envtest mode.
 func (r *PluginReconciler) reconcileDeletion(ctx context.Context, cr *achv1alpha1.Plugin, logger logr.Logger) (ctrl.Result, error) {
@@ -103,9 +103,9 @@ func (r *PluginReconciler) reconcileDeletion(ctx context.Context, cr *achv1alpha
 		}
 		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
 		if err := achdb.WithTxNotify(ctx, r.DB, pluginsChannel, payload, func(tx pgx.Tx) error {
-			return achdb.SoftDeletePluginTx(ctx, tx, cr.Namespace, cr.Name)
+			return achdb.DeletePluginTx(ctx, tx, cr.Namespace, cr.Name)
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("db soft-delete plugin projection: %w", err)
+			return ctrl.Result{}, fmt.Errorf("db delete plugin projection: %w", err)
 		}
 	}
 	controllerutil.RemoveFinalizer(cr, pluginFinalizer)

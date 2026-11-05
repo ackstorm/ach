@@ -21,7 +21,7 @@ import (
 )
 
 // promptsChannel is the NOTIFY channel emitted on every Prompt projection
-// write/soft-delete (issue #34). The external_refs upsert for prompts
+// write/delete (issue #34). The external_refs upsert for prompts
 // fires on this same channel.
 const promptsChannel = "ach_prompts_changed"
 
@@ -87,16 +87,12 @@ func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.P
 		if err := achdb.DeleteExternalRef(ctx, r.DB, "prompt", cr.Name); err != nil {
 			return ctrl.Result{}, fmt.Errorf("db delete external_ref: %w", err)
 		}
-		// Spec v4 §5.2 / CS-09 / D-15: soft-delete the prompts
-		// projection row AFTER the existing external_refs DELETE
-		// and BEFORE finalizer removal. Two writes are intentional —
-		// see plugin_controller.go for rationale.
-		// Issue #34: soft-delete + NOTIFY in one tx.
+		// Issue #34: delete + NOTIFY in one tx.
 		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
 		if err := achdb.WithTxNotify(ctx, r.DB, promptsChannel, payload, func(tx pgx.Tx) error {
-			return achdb.SoftDeletePromptTx(ctx, tx, cr.Namespace, cr.Name)
+			return achdb.DeletePromptTx(ctx, tx, cr.Namespace, cr.Name)
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("db soft-delete prompt projection: %w", err)
+			return ctrl.Result{}, fmt.Errorf("db delete prompt projection: %w", err)
 		}
 	}
 	controllerutil.RemoveFinalizer(cr, promptFinalizer)

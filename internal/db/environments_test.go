@@ -8,8 +8,8 @@
 // (reusing setupPostgresForPhase2 — applies migrations 000001 through 000004),
 // exercises one or more EnvironmentRow helpers, and asserts schema-level
 // invariants (Upsert round-trip, GetEnvironmentByName absence → (nil,nil),
-// DeleteEnvironment removes the row, migration 000027 purges leftover
-// soft-deleted rows).
+// DeleteEnvironment removes the row, migration 000028 purges leftover
+// drained rows and drops deletion_timestamp).
 //
 // Run via: `make test-integration` or
 // `go test -tags=integration ./internal/db/... -count=1`.
@@ -21,6 +21,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ackstorm/ach/internal/db"
 )
@@ -106,66 +108,6 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 	}
 }
 
-// TestUpsertEnvironment_ClearsStaleDeletionTimestamp proves a LIVE reconcile
-// un-sets a drain marker left by a prior soft-delete (incident 2026-06-04:
-// a resurrected Environment stayed hidden from env list because the upsert
-// preserved the old deletion_timestamp).
-func TestUpsertEnvironment_ClearsStaleDeletionTimestamp(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	pool, cleanup := setupPostgresForPhase2(t, ctx)
-	defer cleanup()
-
-	row := db.EnvironmentRow{
-		Namespace:       "ach",
-		Name:            "resurrect-me",
-		AuthorizedTeams: []string{"default"},
-		ResourceVersion: "1",
-		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
-		ContextPrompts: []string{}, ContextPlugins: []string{},
-		ContextArtifacts: []string{}, ContextSkills: []string{}, RuntimeModels: []string{},
-		RuntimeMCPServers: []string{}, RuntimeA2AAgents: []string{},
-	}
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
-		t.Fatalf("seed upsert: %v", err)
-	}
-	if _, err := pool.Exec(ctx,
-		`UPDATE environments SET deletion_timestamp = now() WHERE name = 'resurrect-me'`); err != nil {
-		t.Fatalf("mark deleted: %v", err)
-	}
-	// Live reconcile of the recreated CR (same name) upserts again.
-	row.ResourceVersion = "2"
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
-		t.Fatalf("live upsert: %v", err)
-	}
-
-	got, err := db.GetEnvironmentByName(ctx, pool, "ach", "resurrect-me")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if got == nil {
-		t.Fatal("get: row missing after live upsert")
-	}
-	if got.DeletionTimestamp != nil {
-		t.Fatalf("expected deletion_timestamp cleared on live upsert, got %v", *got.DeletionTimestamp)
-	}
-	// The resurrected env must reappear in the IS-NULL-filtered list read.
-	list, err := db.ListEnvironments(ctx, pool, "ach")
-	if err != nil {
-		t.Fatalf("ListEnvironments: %v", err)
-	}
-	var found bool
-	for _, e := range list {
-		if e.Name == "resurrect-me" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("resurrected env missing from ListEnvironments (deletion_timestamp IS NULL filter)")
-	}
-}
-
 // TestGetEnvironmentByName_AbsenceReturnsNilNil: a Get on a (ns, name) that
 // was never inserted returns (nil, nil) — never an error.
 func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
@@ -183,47 +125,76 @@ func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestMigration000027_PurgesSoftDeletedEnvironments: the migration removes the
-// rows a drain left behind and keeps every live one.
-func TestMigration000027_PurgesSoftDeletedEnvironments(t *testing.T) {
+// TestMigration000028_DropsDeletionTimestamp: rolled back to the schema with
+// the column, the migration removes the rows a drain marked, keeps the others,
+// and leaves no table with the column.
+func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	for _, name := range []string{"live", "ghost"} {
-		if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
-			Namespace: "ns1", Name: name, ResourceVersion: "1",
-			AuthorizedTeams: []string{}, ContextPrompts: []string{},
-			ContextPlugins: []string{}, ContextArtifacts: []string{},
-			ContextSkills: []string{},
-			RuntimeModels: []string{}, RuntimeMCPServers: []string{},
-			RuntimeA2AAgents: []string{},
-		}); err != nil {
-			t.Fatalf("seed Upsert(%s): %v", name, err)
-		}
-	}
-	if _, err := pool.Exec(ctx,
-		`UPDATE environments SET deletion_timestamp = now() WHERE name = 'ghost'`); err != nil {
-		t.Fatalf("mark ghost: %v", err)
-	}
-
-	migration, err := os.ReadFile("../../db/migrations/000027_purge_deleted_environments.up.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
-	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		t.Fatalf("apply migration: %v", err)
-	}
-
-	for name, wantRow := range map[string]bool{"live": true, "ghost": false} {
-		got, err := db.GetEnvironmentByName(ctx, pool, "ns1", name)
+	applyMigration := func(file string) {
+		t.Helper()
+		sql, err := os.ReadFile("../../db/migrations/" + file)
 		if err != nil {
-			t.Fatalf("Get(%s): %v", name, err)
+			t.Fatalf("read %s: %v", file, err)
 		}
-		if (got != nil) != wantRow {
-			t.Errorf("Get(%s): row present = %v, want %v", name, got != nil, wantRow)
+		if _, err := pool.Exec(ctx, string(sql)); err != nil {
+			t.Fatalf("apply %s: %v", file, err)
 		}
+	}
+	applyMigration("000028_drop_deletion_timestamp.down.sql")
+
+	seeds := map[string]func(name string) error{
+		"plugins": func(name string) error {
+			return db.UpsertPlugin(ctx, pool, db.PluginRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+		},
+		"prompts": func(name string) error {
+			return db.UpsertPrompt(ctx, pool, db.PromptRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+		},
+		"artifacts": func(name string) error {
+			return db.UpsertArtifact(ctx, pool, db.ArtifactRow{Namespace: "ns1", Name: name, Scope: "object", ResourceVersion: "1"})
+		},
+		"skills": func(name string) error {
+			return db.UpsertSkill(ctx, pool, db.SkillRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+		},
+	}
+	for table, seed := range seeds {
+		for _, name := range []string{"live", "ghost"} {
+			if err := seed(name); err != nil {
+				t.Fatalf("seed %s/%s: %v", table, name, err)
+			}
+		}
+		if _, err := pool.Exec(ctx,
+			"UPDATE "+table+" SET deletion_timestamp = now() WHERE name = 'ghost'"); err != nil {
+			t.Fatalf("mark %s ghost: %v", table, err)
+		}
+	}
+
+	applyMigration("000028_drop_deletion_timestamp.up.sql")
+
+	for table := range seeds {
+		rows, err := pool.Query(ctx, "SELECT name FROM "+table)
+		if err != nil {
+			t.Fatalf("list %s: %v", table, err)
+		}
+		names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			t.Fatalf("scan %s: %v", table, err)
+		}
+		if len(names) != 1 || names[0] != "live" {
+			t.Errorf("%s after migration = %v, want [live]", table, names)
+		}
+	}
+
+	var withColumn int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema() AND column_name = 'deletion_timestamp'`).Scan(&withColumn); err != nil {
+		t.Fatalf("count columns: %v", err)
+	}
+	if withColumn != 0 {
+		t.Errorf("tables with deletion_timestamp = %d, want 0", withColumn)
 	}
 }
 

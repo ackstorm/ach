@@ -39,12 +39,12 @@ func TestUpsertGetListSkills(t *testing.T) {
 	if err != nil || res == nil || res.LastSuccessfulRefresh == nil {
 		t.Fatalf("ResolveSkillByName = %+v err=%v", res, err)
 	}
-	if err := db.SoftDeleteSkill(ctx, pool, "ach", "alpha"); err != nil {
-		t.Fatalf("SoftDeleteSkill: %v", err)
+	if err := db.DeleteSkill(ctx, pool, "ach", "alpha"); err != nil {
+		t.Fatalf("DeleteSkill: %v", err)
 	}
 	got, _ = db.ListSkills(ctx, pool, "ach")
 	if len(got) != 1 || got[0].Name != "bravo" {
-		t.Errorf("after soft-delete want only bravo; got %+v", got)
+		t.Errorf("after delete want only bravo; got %+v", got)
 	}
 	if err := db.DeleteSkill(ctx, pool, "ach", "bravo"); err != nil {
 		t.Fatalf("DeleteSkill: %v", err)

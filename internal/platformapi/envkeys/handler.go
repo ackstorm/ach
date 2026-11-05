@@ -398,19 +398,6 @@ func (cr *createReq) validateAndLoadEnv() (env *db.EnvironmentRow, handled bool)
 		return nil, true
 	}
 
-	// terminating envs treated as not-found per D-12 step 2.
-	if env.DeletionTimestamp != nil {
-		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
-			Action: cr.action, Extra: cr.extra,
-			Outcome:   audit.OutcomeEnvironmentNotFound,
-			Actor:     cr.actor,
-			RequestID: cr.reqID,
-			Target:    cr.target,
-		})
-		render.Error(cr.w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound, "environment not found", cr.reqID)
-		return nil, true
-	}
-
 	// AccessGroupSynced=True per D-12 step 3.
 	if !cr.deps.Store.AccessGroupSyncedFromRow(env) {
 		audit.EmitAudit(cr.ctx, cr.deps.Audit, audit.Event{
@@ -1080,7 +1067,7 @@ func (deps Deps) accessByEnvironment(ctx context.Context, kc middleware.KeyConte
 		switch {
 		case err != nil:
 			out[env] = accessUnverified
-		case row == nil || row.DeletionTimestamp != nil:
+		case row == nil:
 			out[env] = accessLost
 		case achteams.HasIntersect(row.AuthorizedTeams, teams):
 			out[env] = accessGranted

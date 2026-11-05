@@ -6,8 +6,8 @@
 // `ach admin list` object inventory feature: ListPlugins, ListPrompts,
 // ListArtifacts, ListAllMarketplacePlugins.
 //
-// Each asserts: live rows returned in stable order, soft-deleted rows excluded
-// (for tables that have deletion_timestamp), namespace scoping (for ns-keyed
+// Each asserts: live rows returned in stable order, deleted rows excluded,
+// namespace scoping (for ns-keyed
 // tables), and an empty (non-nil) slice on zero matches. One container per
 // test via setupPostgresForPhase2 (db.Migrate applies the full migrations dir,
 // so every projection table exists).
@@ -22,7 +22,7 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 )
 
-// TestListPlugins: live rows in ns ordered by name; soft-deleted + other-ns
+// TestListPlugins: live rows in ns ordered by name; deleted + other-ns
 // rows excluded.
 func TestListPlugins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -39,14 +39,14 @@ func TestListPlugins(t *testing.T) {
 			t.Fatalf("seed %s: %v", n, err)
 		}
 	}
-	// Soft-deleted row in ns1 must be excluded.
+	// Deleted row in ns1 must be excluded.
 	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
 		Namespace: "ns1", Name: "gone", StorageLocation: "/x/gone", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.SoftDeletePlugin(ctx, pool, "ns1", "gone"); err != nil {
-		t.Fatalf("soft-delete: %v", err)
+	if err := db.DeletePlugin(ctx, pool, "ns1", "gone"); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 	// Row in another namespace must be excluded.
 	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
@@ -75,7 +75,7 @@ func TestListPlugins(t *testing.T) {
 	}
 }
 
-// TestListPrompts: live rows in ns ordered by name; soft-deleted excluded.
+// TestListPrompts: live rows in ns ordered by name; deleted excluded.
 func TestListPrompts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -96,8 +96,8 @@ func TestListPrompts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.SoftDeletePrompt(ctx, pool, "ns1", "gone"); err != nil {
-		t.Fatalf("soft-delete: %v", err)
+	if err := db.DeletePrompt(ctx, pool, "ns1", "gone"); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 
 	got, err := db.ListPrompts(ctx, pool, "ns1")
@@ -112,7 +112,7 @@ func TestListPrompts(t *testing.T) {
 	}
 }
 
-// TestListArtifacts: live rows in ns ordered by name; soft-deleted excluded.
+// TestListArtifacts: live rows in ns ordered by name; deleted excluded.
 func TestListArtifacts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -133,8 +133,8 @@ func TestListArtifacts(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.SoftDeleteArtifact(ctx, pool, "ns1", "gone"); err != nil {
-		t.Fatalf("soft-delete: %v", err)
+	if err := db.DeleteArtifact(ctx, pool, "ns1", "gone"); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
 
 	got, err := db.ListArtifacts(ctx, pool, "ns1")

@@ -21,7 +21,7 @@ import (
 )
 
 // skillsChannel is the NOTIFY channel emitted on every Skill projection
-// write/soft-delete. The external_refs upsert (the fetcher-state side of the
+// write/delete. The external_refs upsert (the fetcher-state side of the
 // same logical resource) also fires on this channel under "skill/<name>".
 const skillsChannel = "ach_skills_changed"
 
@@ -50,7 +50,7 @@ type SkillReconciler struct {
 //
 //   - Fetch + NotFound → no-op.
 //   - Deletion path: remove <CacheRoot>/skill/<name>.tar.gz (IsNotExist
-//     tolerated) → DeleteExternalRef → soft-delete projection → RemoveFinalizer.
+//     tolerated) → DeleteExternalRef → delete projection → RemoveFinalizer.
 //   - Finalizer-add path: AddFinalizer + Update.
 //   - Steady-state: materializeExternalRef → status + RequeueAfter.
 func (r *SkillReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -79,7 +79,7 @@ func (r *SkillReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 // reconcileDeletion is the finalizer drain: remove the cached file, drop the
-// external_refs row, soft-delete the skills projection row (in one tx with
+// external_refs row, delete the skills projection row (in one tx with
 // NOTIFY ach_skills_changed), then remove the finalizer. Nil DB paths skip the
 // DB writes for envtest mode.
 func (r *SkillReconciler) reconcileDeletion(ctx context.Context, cr *achv1alpha1.Skill, logger logr.Logger) (ctrl.Result, error) {
@@ -95,9 +95,9 @@ func (r *SkillReconciler) reconcileDeletion(ctx context.Context, cr *achv1alpha1
 		}
 		payload := fmt.Sprintf("%s/%s", cr.Namespace, cr.Name)
 		if err := achdb.WithTxNotify(ctx, r.DB, skillsChannel, payload, func(tx pgx.Tx) error {
-			return achdb.SoftDeleteSkillTx(ctx, tx, cr.Namespace, cr.Name)
+			return achdb.DeleteSkillTx(ctx, tx, cr.Namespace, cr.Name)
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("db soft-delete skill projection: %w", err)
+			return ctrl.Result{}, fmt.Errorf("db delete skill projection: %w", err)
 		}
 	}
 	controllerutil.RemoveFinalizer(cr, skillFinalizer)

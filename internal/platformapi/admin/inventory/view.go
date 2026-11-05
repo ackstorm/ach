@@ -10,8 +10,7 @@
 //   - content kinds (plugin/prompt/artifact/marketplace/external-ref):
 //     last_successful_refresh + max_staleness_seconds staleness →
 //     fresh / STALE(<age over>) / never.
-//   - bip / litellm-connection: projected (presence; soft-deleted rows are
-//     already excluded by the db List helpers).
+//   - bip / litellm-connection: projected (presence).
 //
 // false-green caveat (memory plugin-scoping-followups): only context.plugins
 // content-presence gates the Environment ExecutionResourcesResolved condition.

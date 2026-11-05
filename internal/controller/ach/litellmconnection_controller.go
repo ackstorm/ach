@@ -31,7 +31,7 @@ import (
 )
 
 // litellmConnectionsChannel is the NOTIFY channel emitted on every
-// LiteLLMConnection projection write/soft-delete. Forwarder boots and
+// LiteLLMConnection projection write/delete. Forwarder boots and
 // hot-reloads off this channel (issue #34).
 const litellmConnectionsChannel = "ach_litellm_connections_changed"
 
@@ -78,18 +78,18 @@ func (r *LiteLLMConnectionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if !conn.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(&conn, litellmConnectionFinalizer) {
-			// Issue #34: soft-delete the projection row inside the same
+			// Issue #34: delete the projection row inside the same
 			// transaction as the NOTIFY so any consumer waking up on
 			// ach_litellm_connections_changed SELECTs a snapshot that
-			// already reflects the soft-delete. Skipped when r.Pool is
+			// already reflects the delete. Skipped when r.Pool is
 			// nil (existing envtests).
 			if r.Pool != nil {
 				ns, name := conn.Namespace, conn.Name
 				payload := fmt.Sprintf("%s/%s", ns, name)
 				if err := achdb.WithTxNotify(ctx, r.Pool, litellmConnectionsChannel, payload, func(tx pgx.Tx) error {
-					return achdb.SoftDeleteLiteLLMConnectionTx(ctx, tx, ns, name)
+					return achdb.DeleteLiteLLMConnectionTx(ctx, tx, ns, name)
 				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("db soft-delete litellm_connections projection: %w", err)
+					return ctrl.Result{}, fmt.Errorf("db delete litellm_connections projection: %w", err)
 				}
 			}
 			controllerutil.RemoveFinalizer(&conn, litellmConnectionFinalizer)

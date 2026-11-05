@@ -28,14 +28,13 @@ import (
 // SkillMarketplaceRow mirrors the skill_marketplaces row schema (migration
 // 000010). (Namespace, Name) form the PRIMARY KEY.
 type SkillMarketplaceRow struct {
-	Namespace         string
-	Name              string
-	SyncedStatus      string // metav1.Condition.Status: "True" | "False" | "Unknown" | ""
-	SyncedReason      string // condition Reason when not Synced
-	SkillsCount       int
-	DeletionTimestamp *time.Time
-	ResourceVersion   string
-	UpdatedAt         time.Time
+	Namespace       string
+	Name            string
+	SyncedStatus    string // metav1.Condition.Status: "True" | "False" | "Unknown" | ""
+	SyncedReason    string // condition Reason when not Synced
+	SkillsCount     int
+	ResourceVersion string
+	UpdatedAt       time.Time
 }
 
 const upsertSkillMarketplaceSQL = `
@@ -48,7 +47,6 @@ const upsertSkillMarketplaceSQL = `
 	    synced_reason      = EXCLUDED.synced_reason,
 	    skills_count       = EXCLUDED.skills_count,
 	    resource_version   = EXCLUDED.resource_version,
-	    deletion_timestamp = NULL,
 	    updated_at         = now()
 `
 
@@ -82,15 +80,15 @@ func UpsertSkillMarketplaceTx(ctx context.Context, tx pgx.Tx, row SkillMarketpla
 	return nil
 }
 
-// ListSkillMarketplaces returns every live skill_marketplaces row in ns ordered
-// by name ASC. Soft-deleted rows (deletion_timestamp set) are excluded. Used by
+// ListSkillMarketplaces returns every skill_marketplaces row in ns ordered
+// by name ASC. Used by
 // the platform-api admin inventory endpoint (read-only).
 func ListSkillMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) ([]SkillMarketplaceRow, error) {
 	const sql = `
 		SELECT namespace, name, synced_status, synced_reason, skills_count,
-		       deletion_timestamp, resource_version, updated_at
+		       resource_version, updated_at
 		  FROM skill_marketplaces
-		 WHERE namespace = $1 AND deletion_timestamp IS NULL
+		 WHERE namespace = $1
 		 ORDER BY name ASC
 	`
 	rows, err := pool.Query(ctx, sql, ns)
@@ -106,7 +104,7 @@ func ListSkillMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) (
 		var r SkillMarketplaceRow
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.SyncedStatus, &r.SyncedReason, &r.SkillsCount,
-			&r.DeletionTimestamp, &r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListSkillMarketplaces(%s) scan: %w", ns, err)
 		}

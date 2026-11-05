@@ -66,9 +66,7 @@ func (s *Store) List() []db.EnvironmentRow {
 }
 
 // Refresh reads the full Environment set for the namespace from
-// Postgres and swaps the atomic pointer. db.ListEnvironments excludes
-// drain-mode rows at the SQL layer per the precheck contract (FWD-03
-// rejects terminating envs from granting access).
+// Postgres and swaps the atomic pointer.
 func (s *Store) Refresh(ctx context.Context) error {
 	rows, err := db.ListEnvironments(ctx, s.pool, s.ns)
 	if err != nil {

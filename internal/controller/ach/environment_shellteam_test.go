@@ -298,7 +298,7 @@ func TestShellTeamFailedCondition(t *testing.T) {
 // r.DB is left nil — the injected ListEKsForRevoke seam is consulted
 // BEFORE revokeEnvironmentKeys's `if r.DB == nil` guard, so it runs
 // regardless, without also unlocking the OTHER real-Postgres codepaths later
-// in reconcileDeletion (drainEkRows, softDeleteEnvironmentProjection) that
+// in reconcileDeletion (drainEkRows, deleteEnvironmentProjection) that
 // have no seam of their own and would panic against a non-functional pool.
 // The seam returns three fake key rows — including one standing in for a
 // suspended row — so RevokeKey does real work and proves the finalizer

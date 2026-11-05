@@ -422,8 +422,8 @@ func envOrSkip(t *testing.T, key string) string {
 }
 
 // testPhase5SC3PluginPrecedence — §12.3 CTE precedence (CRD wins;
-// alphabetically-lowest marketplace fallback; deletion-drain).
-// CS-08 + CS-09 + drift flag #5 lock-in.
+// alphabetically-lowest marketplace fallback; delete removes the row).
+// CS-08 + drift flag #5 lock-in.
 func testPhase5SC3PluginPrecedence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -501,10 +501,9 @@ func testPhase5SC3PluginPrecedence(t *testing.T) {
 		}
 	})
 
-	t.Run("DeletionDrainStillServes", func(t *testing.T) {
-		// Apply a transient Plugin "drainable", wait Ready, delete it,
-		// then immediately curl. Expect either 200 (envcache hit during
-		// grace) OR 503 stale_cache_expired (after grace expiry). CS-09.
+	t.Run("DeletedPluginRowGoes", func(t *testing.T) {
+		// Apply a transient Plugin "drainable", wait Ready, delete it: its
+		// projection row must go with the CR.
 		applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-")
 		applyCmd.Stdin = strings.NewReader(`---
 apiVersion: ach.ackstorm.ai/v1alpha1
@@ -542,10 +541,7 @@ spec:
 			"-n", phase5Namespace).CombinedOutput(); err != nil {
 			t.Fatalf("kubectl delete: %v output=%s", err, strings.TrimSpace(string(out)))
 		}
-		// Engineer-pending: a CS GET here requires drainable in
-		// env.context.plugins (Environment "env-valid" doesn't include it).
-		// SC#9 grace window coverage at integration-test layer.
-		t.Logf("DeletionDrainStillServes: CRD delete issued; CS-09 grace verification deferred to Plan 05-05 integration test (Environment fixture omits drainable from context.plugins)")
+		waitForACHPostgresCount(t, "plugins", "name='drainable'", 0, 30*time.Second)
 	})
 }
 
