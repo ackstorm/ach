@@ -92,14 +92,6 @@ jobs:
       - name: Run console unit tests
         run: make test-ui
 
-      - name: Upload unit coverage
-        if: always()
-        uses: actions/upload-artifact@v7  # v4.6.2
-        with:
-          name: cover-unit
-          path: cover-unit.out
-          if-no-files-found: warn
-
   envtest:
     name: Envtest
     needs: changes
@@ -114,14 +106,6 @@ jobs:
 
       - name: Run controller + toolhive envtest
         run: make test-envtest-fast
-
-      - name: Upload envtest coverage
-        if: always()
-        uses: actions/upload-artifact@v7  # v4.6.2
-        with:
-          name: cover-envtest
-          path: cover-envtest.out
-          if-no-files-found: warn
 
   security:
     name: Security

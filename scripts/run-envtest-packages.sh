@@ -7,12 +7,11 @@
 set -euo pipefail
 
 race=0
-coverprofile=""
 timeout="10m"
 
 usage() {
     cat >&2 <<'EOF'
-usage: scripts/run-envtest-packages.sh [--race] [--coverprofile FILE] [--timeout DURATION] -- PKG...
+usage: scripts/run-envtest-packages.sh [--race] [--timeout DURATION] -- PKG...
 
 Environment:
   ENVTEST_JOBS                 max concurrent packages (default: number of packages)
@@ -26,14 +25,6 @@ while [[ $# -gt 0 ]]; do
         --race)
             race=1
             shift
-            ;;
-        --coverprofile)
-            coverprofile="${2:-}"
-            if [[ -z "${coverprofile}" ]]; then
-                usage
-                exit 2
-            fi
-            shift 2
             ;;
         --timeout)
             timeout="${2:-}"
@@ -88,7 +79,6 @@ trap cleanup EXIT
 
 declare -A pid_pkg=()
 declare -A pid_log=()
-declare -A pid_cov=()
 declare -A pid_start=()
 declare -a pids=()
 
@@ -97,17 +87,13 @@ failed=0
 
 start_one() {
     local pkg="$1"
-    local safe_pkg log cov
+    local safe_pkg log
     safe_pkg="$(printf '%s' "${pkg}" | tr '/:.' '___')"
     log="${workdir}/${safe_pkg}.log"
-    cov="${workdir}/${safe_pkg}.cov"
 
     local cmd=(go test -v -count=1 -timeout "${timeout}")
     if [[ "${race}" -eq 1 ]]; then
         cmd+=(-race)
-    fi
-    if [[ -n "${coverprofile}" ]]; then
-        cmd+=("-coverprofile=${cov}")
     fi
     cmd+=("${pkg}")
 
@@ -116,7 +102,6 @@ start_one() {
     local pid=$!
     pid_pkg["${pid}"]="${pkg}"
     pid_log["${pid}"]="${log}"
-    pid_cov["${pid}"]="${cov}"
     pid_start["${pid}"]="$(date +%s)"
     pids+=("${pid}")
 }
@@ -188,7 +173,7 @@ finish_one() {
         fi
     fi
 
-    unset "pid_pkg[${pid}]" "pid_log[${pid}]" "pid_cov[${pid}]" "pid_start[${pid}]"
+    unset "pid_pkg[${pid}]" "pid_log[${pid}]" "pid_start[${pid}]"
 }
 
 is_running_job() {
@@ -220,14 +205,5 @@ while [[ "${next}" -lt "${#packages[@]}" || "${#pids[@]}" -gt 0 ]]; do
         sleep 0.2
     fi
 done
-
-if [[ -n "${coverprofile}" ]]; then
-    {
-        echo "mode: atomic"
-        for cov in "${workdir}"/*.cov; do
-            [[ -s "${cov}" ]] && tail -n +2 "${cov}"
-        done
-    } >"${coverprofile}"
-fi
 
 exit "${failed}"
