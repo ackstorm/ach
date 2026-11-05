@@ -10,8 +10,8 @@
 // transforms (codex agent TOML, claude-code MCP deep-merge).
 //
 // All fixtures are local git file:// bare clones built with `git init` — no
-// network, no cluster — so the suite runs under `make test-unit` / CI / the
-// pre-push gate. Tests skip when git is not on PATH (mirrors the existing
+// network, no cluster — so the suite runs under `make test-unit` and CI.
+// Tests skip when git is not on PATH (mirrors the existing
 // helpers).
 
 package manager_test

@@ -1,8 +1,8 @@
 # gitleaks v8 config — extends the default ruleset with a project-scoped
 # allowlist for synthetic test fixtures and vendored upstream sample tokens.
 #
-# ⚠ SINGULAR [allowlist] ONLY. gitleaks v8.21.2 (pinned in
-# scripts/pre-push-check.sh) honors exactly one top-level [allowlist] table.
+# ⚠ SINGULAR [allowlist] ONLY. gitleaks v8.21.2 honors exactly one top-level
+# [allowlist] table.
 # The array-of-tables form [[allowlists]] is SILENTLY IGNORED by this version
 # — a config written with it scans with NO allowlist at all, and every
 # fixture token false-positives. Do NOT split this back into [[allowlists]]

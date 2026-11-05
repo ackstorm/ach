@@ -26,7 +26,7 @@
 //   - No `log`, `log/slog`, `fmt`, or `os` imports — the wrapper hashes
 //     opaque byte streams and never owns I/O lifecycle beyond what
 //     io.Reader provides.
-//   - SPDX header on every source file; the pre-push gate enforces.
+//   - SPDX header on every source file; the CI drift gate enforces.
 //
 // Discipline (cryptographic posture):
 //

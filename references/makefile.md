@@ -49,7 +49,7 @@ work happens when you debug it.
 | Ctx | Where it runs | Tools available | Examples |
 |-----|---------------|-----------------|----------|
 | **A** Devtools container | inside `ach-devtools:latest` via `scripts/dev.sh` (auto-wrapped by the `container_target` macro) | go, helm, kind, kubectl, golangci-lint, controller-gen, setup-envtest | `test-*`, `qa-*`, `build-server`/`build-cli`/`build-cli-host`/`build-e2e`/`build-all`, `cluster-*`, `e2e-run`/`e2e-focus`, `doctor-cluster`, `shell` |
-| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, gate orchestrators `pre-push`/`verify`, `e2e-full` (orchestrates context-A children) |
+| **B** Host + docker | directly on the host (needs only the docker CLI/daemon) | docker | `build-image`, `build-image-mock`, `build-image-mcp-echo`, `doctor`, `e2e-full` (orchestrates context-A children) |
 | **C** Kubernetes infra | host `kubectl`/`helm` against the kind cluster (kubeconfig at `./.gocache/kube/config`) | kubectl | `wait-*`, `logs-*` |
 
 > **Why the split is explicit.** Context-A targets opt in to container
@@ -176,10 +176,10 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 |--------|-----|-------------|
 | `gen-code` | A | controller-gen DeepCopy methods; then runs `fix-spdx` to self-heal SPDX headers. |
 | `gen-manifests` | A | controller-gen CRDs + RBAC + webhook manifests. |
-| `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script; same scope as pre-push gate 15). Also auto-run by `gen-code`. |
+| `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script). Also auto-run by `gen-code`. |
 | `gen-crd-ref-docs` | A | Render `docs/api-reference/` from CRD Go types. |
 | `helm-sync` | A | Copy the chart's ONE mirrored surface: the generated CRDs (`config/crd/bases` → `deploy/helm/ach/crd-sources/`). The Grafana dashboards under `deploy/helm/ach/dashboards/` are NOT mirrored — they live there. |
-| `helm-sync-check` | A | Drift gate for both mirrored dirs (pre-push gate 18). Fails when `helm-sync` produces a diff. |
+| `helm-sync-check` | A | Drift gate for both mirrored dirs (CI lint job). Fails when `helm-sync` produces a diff. |
 | `helm-render-check` | A | Render-smoke of non-default chart topologies (gateway off / ingress on / G16 standalone CS). Runs in CI lint job. |
 
 ### Tests (`test-`)
@@ -187,7 +187,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 |--------|-----|-------------|
 | `test-full` | A | All non-cluster tests (unit + envtest, race-enabled). |
 | `test-unit` | A | Pure-logic unit tests (~10s warm). |
-| `test-ui` | A | Console `tsc` type-check + vitest (`ui/`); `npm ci` runs if `ui/node_modules` is absent. CI unit job + pre-push gate 17 (skipped there when `ui/` is unchanged vs `origin/main`). |
+| `test-ui` | A | Console `tsc` type-check + vitest (`ui/`); `npm ci` runs if `ui/node_modules` is absent. CI unit job. |
 | `test-scripts` | B | Self-check of `scripts/ci-changes.sh` + `scripts/changelog.sh`. |
 | `test-envtest` | A | Controller envtest with -race (CI gate, ~7m). |
 | `test-envtest-fast` | A | Controller envtest WITHOUT -race (dev loop, ~3m). |
@@ -213,8 +213,8 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `qa-lint-fix` | A | golangci-lint with `--fix`. |
 | `qa-lint-config` | A | Verify golangci-lint config. |
 | `qa-lint-changed [BASE_REF=…]` | A | Lint only packages touched vs the merge-base with BASE_REF — committed, uncommitted and untracked `*.go` (usable mid-edit, before any commit). |
-| `qa-edition` | A | Edition isolation: only `cmd/ach` imports `ee/`, `ach-cli` links none, the two `ee` licence copies are identical, core UI imports `ui/src/ee` only via `@ee` (`scripts/edition-check.sh`; pre-push gate 18 + CI lint job). |
-| `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint — CI lint job + pre-push gate 14). |
+| `qa-edition` | A | Edition isolation: only `cmd/ach` imports `ee/`, `ach-cli` links none, the two `ee` licence copies are identical, core UI imports `ui/src/ee` only via `@ee` (`scripts/edition-check.sh`; CI lint job). |
+| `qa-security` | A | govulncheck + fuzz-short (gosec runs inside qa-lint, the CI lint job). |
 | `qa-fuzz-short` | A | Go fuzz targets, 60s budget each. |
 | `qa-fuzz-long` | A | Go fuzz targets, 10-min budget each (local-only, on demand). |
 | `fmt-check` | A | Fail if any Go file is not gofmt-clean (no mutation). |
@@ -248,9 +248,6 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 ### Gates (no prefix) — context B
 | Target | Description |
 |--------|-------------|
-| `pre-push` | 17-gate publication check (changed-commit gitleaks + lint + unit + SPDX + …). Installed git hook. Fast lane when no Go-toolchain input changed (gates 12/14/16 skipped, 15 scoped to owning packages); scoped lane when only `*.go` outside `api/`, `hack/` and `test/e2e/mcp-echo/` changed (14 = `qa-lint-changed`, 15 = `go vet ./...` + owning packages); `PREPUSH_FULL=1` forces all; branch-deletion pushes skip every gate. |
-| `verify` | `qa-security` + `pre-push` — full gate bundle. |
-| `hooks` | Install the pre-push git hook (and remove any stale pre-commit hook). |
 
 ## Debugging against the kind cluster
 

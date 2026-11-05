@@ -472,7 +472,6 @@ project-root containment (only `.mcp.json` allowed at root). State
   against synced state, only mutate throwaways. Golden
   `examples/hydrate.json` byte-diffed (host-normalized). mcp-echo = stdlib
   JWT-verifying reference backend.
-- Pre-push: 18 gates, 12 hard (installed hook; never `--no-verify`).
 - Release: `make release-cut VERSION=…` opens the `chore(release): vX.Y.Z` PR
   (rotated CHANGELOG + manifest bumps, auto-merge) → release.yml on merge →
   **tag that commit** → goreleaser (multi-arch `ach` + distroless `ach-cli`
@@ -489,7 +488,7 @@ ACKstorm Enterprise License) share one repo. `cmd/ach/ee.go` always links
 observability routes through `internal/edition`. One image and one console; Helm
 `enterprise.enabled` → `ACH_ENTERPRISE` turns the Enterprise features on. Off: their routes
 answer 403 `enterprise_only`, the classifier refuses to run, the chart renders no classifier,
-taxonomy or Thanos setting, and the console marks them "Enterprise only". `make qa-edition` guards the boundary (pre-push gate 18).
+taxonomy or Thanos setting, and the console marks them "Enterprise only". `make qa-edition` guards the boundary (CI lint job).
 See `AGENTS.md` "Editions".
 
 ## 11. Known gaps / accepted trade-offs (from `docs/ach-project-spec.md` §4)
