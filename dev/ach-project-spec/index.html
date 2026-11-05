@@ -1585,7 +1585,7 @@ runtime catalog.</p>
 <h2 id="4-known-gaps-accepted-trade-offs-honest-list-for-the-review">4. Known gaps &amp; accepted trade-offs (honest list for the review)<a class="headerlink" href="#4-known-gaps-accepted-trade-offs-honest-list-for-the-review" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>E2E is not a CI gate</strong> — removed from CI for cost/speed; the burden is a local <code>make e2e-full</code> before merge. Works with discipline, doesn't scale with team size.</li>
-<li><strong>No branch protection on <code>main</code></strong> — PR-only CI is a real gate only with branch protection (paid plan / public repo). Direct pushes are currently unguarded.</li>
+<li><strong>Every change goes through a PR</strong> — <code>main</code> is protected, admins included. A hotfix waits for CI or needs protection lifted by hand.</li>
 <li><strong>Hydrate vs concurrent editor save race</strong> — a user edit during the hydrate window can be silently lost (self-heals next hydrate). Accepted v1 trade-off; an mtime-recheck would close it.</li>
 <li><strong>Environment authoring is admin-only</strong> — no per-object ACLs yet, so no team self-service for Environments. Deliberate (avoids inventing an ACL model prematurely).</li>
 <li><strong>UI write path is Environment-only (v1)</strong> — the Objects API + GitOps-wins takeover pattern exists but covers one kind.</li>
@@ -1623,7 +1623,7 @@ runtime catalog.</p>
 <h2 id="6-questions-for-the-review-panel">6. Questions for the review panel<a class="headerlink" href="#6-questions-for-the-review-panel" title="Permanent link">&para;</a></h2>
 <ol>
 <li><strong>CEO/CIO</strong>: Is ACH an internal platform, a product, or both? The cost-visibility and provenance items change priority dramatically depending on the answer.</li>
-<li><strong>CTO</strong>: Nightly e2e vs paid-plan branch protection — which unblocks first? (Both are cheap; sequencing is the only question.)</li>
+<li><strong>CTO</strong>: Should e2e become a required check once measured on hosted runners?</li>
 <li><strong>CTO</strong>: Plugins — name a re-enable trigger (customer, use case, date) or schedule the excision.</li>
 <li><strong>All</strong>: Team self-service — is admin-only Environment authoring a current pain, or theoretical? Determines whether the minimal-ACL work is next quarter or next year.</li>
 <li><strong>CIO</strong>: Which compliance regime (if any) should the audit/session retention story target? Shapes the analytics design before code is written.</li>
