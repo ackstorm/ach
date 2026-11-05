@@ -464,7 +464,7 @@ project-root containment (only `.mcp.json` allowed at root). State
 - Test ladder: `test-unit` ~10s → `test-envtest[-fast]` 3-7m → `e2e-full`
   kind+Helm ~6-10m, **cluster KEPT after** (debug loop:
   `logs-*`, `e2e-focus RUN=…`, `cluster-sync` w/ `image.rebuildId` roll).
-  **CI runs NO e2e** — local-only gate before merging controller/service/
+  **E2e is not a required check** (`e2e.yml` only measures hosted runners) — local gate before merging controller/service/
   CRD/Helm/e2e changes. CI = PR-only (lint+unit+envtest+security); `ci-ok` is
   the required check on protected `main`, admins included.
 - e2e: stdlib testing (Ginkgo REJECTED — user memory), synced fixtures
