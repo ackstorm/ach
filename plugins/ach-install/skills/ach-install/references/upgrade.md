@@ -83,6 +83,11 @@ the release notes ask for it; migrations are cumulative and run in order.
   expiry, the schema cannot be migrated below the release that introduced key
   states; the down migration refuses. Resume suspended keys and clear expiries
   first if such a rollback is ever required.
+- Rolling back below 1.1.4 needs the `000028` down migration first: older pods
+  read the `deletion_timestamp` column and fail on every table that lost it.
+  `ach migrate` only moves forward, so apply
+  `000028_drop_deletion_timestamp.down.sql` by hand with `psql`. The rows that
+  migration purged do not come back.
 - Back up the ACH database before every upgrade (it is small). LiteLLM's
   database is separate and is not touched by ACH migrations.
 - To run migrations by hand (e.g. with `migrate.enabled: false` in a pipeline
