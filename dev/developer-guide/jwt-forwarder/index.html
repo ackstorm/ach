@@ -1938,10 +1938,13 @@ granted that name.</p>
 <a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                                          │ check        │
 <a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                                          └──────────────┘
 </code></pre></div>
-<p>Agent keys (<code>ek_</code>) never receive the BIP JWT: the Forwarder strips any client
-<code>Authorization</code> header and the backend identifies the agent through
-<code>x-litellm-api-key</code> → <code>/v2/user/info</code>. <code>forwardIdentityJWT</code> governs human
-<code>pk_</code>/OAuth callers only.</p>
+<p>An agent key (<code>ek_</code>) acts as its owner: its JWT carries the key row's
+<code>owner_email</code> and the same <code>groups</code> the owner's <code>pk_</code> gets for that target, plus
+<code>azp</code> for audit. The JWT adds identity, never permission: <code>checkEk</code> and
+<code>EkOwnerGate</code> (§1.1) decide the request, and the backend decides what that
+identity may do. With no policy or an opt-out, an <code>ek_</code> gets no JWT and any
+client <code>Authorization</code> is stripped. A backend cannot identify a caller through
+the LiteLLM key: LiteLLM v1.106+ never forwards it to MCP backends.</p>
 <p>The Forwarder is the only ACH service that mints JWTs. It signs with
 the <code>current</code> slot of the <code>ach-jwt-signing-keys</code> Secret (Ed25519 / 32-byte
 raw seed). The JWKS endpoint exposes the public half so any backend can
@@ -2011,6 +2014,11 @@ refresh once access returns, with no re-mint and no JWT-path change.</p>
 <td>—</td>
 </tr>
 <tr>
+<td><code>azp</code></td>
+<td><code>ek:&lt;environment&gt;</code> on a token minted for an agent key, for audit; <strong>omitted</strong> for <code>pk_</code>/OAuth callers. Additive, grants nothing</td>
+<td>—</td>
+</tr>
+<tr>
 <td><code>aud</code></td>
 <td><code>mcp:&lt;bare-name&gt;</code> on <code>/mcp/&lt;bare-name&gt;</code><br><code>a2a:&lt;bare-name&gt;</code> on <code>/a2a/&lt;bare-name&gt;</code></td>
 <td>Hub §9.1</td>
@@ -2045,8 +2053,8 @@ email is empty. The legacy <code>&lt;namespace&gt;/&lt;email&gt;</code> <code>su
 (pre-release hard-cut) — do not split <code>sub</code> on <code>/</code>; key on <code>iss</code> + <code>sub</code>.</p>
 <p><strong><code>nbf</code> is intentionally omitted.</strong> With a 120 s <code>exp</code> it would add only
 clock-skew risk for no security gain — <code>exp</code> is the sole time bound. The minted
-claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>
-and <code>groups</code>): <strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> /
+claim set is <code>iss</code> / <code>sub</code> / <code>aud</code> / <code>iat</code> / <code>exp</code> (plus the additive <code>email</code>,
+<code>groups</code> and <code>azp</code>): <strong>no <code>nbf</code>, no <code>jti</code>.</strong> Backends MUST verify <code>iss</code> / <code>aud</code> /
 <code>exp</code> only and MUST NOT require <code>nbf</code>.</p>
 <p>The 120-second TTL is intentionally tight. There is no refresh mechanism;
 every forwarded request mints a fresh JWT. Clock skew between the
@@ -2070,7 +2078,7 @@ group-owned resources.</p>
 </tr>
 <tr>
 <td><code>ek_</code></td>
-<td>its Environment's <code>authorizedTeams</code></td>
+<td>the same set for the key's <code>owner_email</code>: identical to the owner's <code>pk_</code> groups for that target, never the Environment's full <code>authorizedTeams</code>, which would grant teams the owner is not in</td>
 </tr>
 </tbody>
 </table>
@@ -2084,15 +2092,13 @@ of its own, so an <code>authorizedTeams</code> entry authored as a raw team UUID
 ships through unchanged. Renaming a LiteLLM team therefore changes the
 claim; a backend keying on the old alias stops matching.</p>
 <p><strong>Staleness.</strong> There is no revocation channel: a backend trusts the claim
-for the token's life. Two distinct vectors, two distinct bounds. Removing a
-user from a LiteLLM team affects the <code>pk_</code> path only (the 60s
-team-membership cache) and takes effect at the backend after at most
-<code>exp</code> (120s) + 60s ≈ 180s. Dropping a team from
-<code>Environment.spec.authorizedTeams</code> affects <strong>both</strong> key types — <code>ek_</code>
-groups read the Environment row directly, and <code>pk_</code> groups intersect
-against it — and bounds on <code>exp</code> (120s) + the <code>envstore</code> package's 5-minute
-NOTIFY-loss safety-net refresh (<code>internal/forwarder/envstore/store.go</code>)
-≈ ~7 minutes worst case.</p>
+for the token's life. Two distinct vectors, two distinct bounds, each
+applying to both key types. Removing a user from a LiteLLM team (the 60s
+team-membership cache, read on the owner for an <code>ek_</code>) takes effect at the
+backend after at most <code>exp</code> (120s) + 60s ≈ 180s. Dropping a team from
+<code>Environment.spec.authorizedTeams</code> bounds on <code>exp</code> (120s) + the <code>envstore</code>
+package's 5-minute NOTIFY-loss safety-net refresh
+(<code>internal/forwarder/envstore/store.go</code>) ≈ ~7 minutes worst case.</p>
 <hr />
 <h2 id="13-jwks-endpoint">1.3 JWKS endpoint<a class="headerlink" href="#13-jwks-endpoint" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>GET &lt;iss&gt;/.well-known/jwks.json
