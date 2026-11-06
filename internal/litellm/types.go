@@ -554,7 +554,7 @@ type guardrailListResponse struct {
 // LiteLLM_TagTable.budget_id; /tag/info returns it nested under
 // "litellm_budget_table". Enforcement compares the tag's accumulated spend
 // (LiteLLM_DailyTagSpend) against MaxBudget with a strict ">", i.e. the
-// request that crosses the line is served and the NEXT one is refused 429.
+// request that crosses the line is served and the NEXT one is refused.
 type TagBudget struct {
 	MaxBudget      float64 `json:"max_budget"`
 	BudgetDuration string  `json:"budget_duration,omitempty"`

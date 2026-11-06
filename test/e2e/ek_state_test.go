@@ -470,8 +470,9 @@ func assertReaperReapsRevokedAndKeepsForeign(t *testing.T, base, litellmURL, llD
 }
 
 // litellmKeyExists probes ONE specific LiteLLM key by its own plaintext via
-// GET /key/info?key=<plaintext> (master-key admin call) — 200 if it still
-// exists, 404 if it is gone. Unlike GET /key/list (ListUserKeys), this is a
+// GET /key/info?key=<plaintext> (master-key admin call). LiteLLM answers 200
+// for a deleted key too, from its archive with info.status "deleted", so
+// the status decides. Unlike GET /key/list (ListUserKeys), this is a
 // single-key lookup and is immune to LiteLLM's default first-page-only
 // pagination on a user with many keys.
 func litellmKeyExists(t *testing.T, litellmURL, plaintext string) bool {
@@ -489,10 +490,17 @@ func litellmKeyExists(t *testing.T, litellmURL, plaintext string) bool {
 		t.Fatalf("litellmKeyExists: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
 	switch resp.StatusCode {
 	case http.StatusOK:
-		return true
+		var out struct {
+			Info struct {
+				Status string `json:"status"`
+			} `json:"info"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("litellmKeyExists: decode /key/info: %v", err)
+		}
+		return out.Info.Status != "deleted"
 	case http.StatusNotFound:
 		return false
 	default:

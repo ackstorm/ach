@@ -984,6 +984,7 @@ gemini`,
               {[
                 ['401 Unauthorized', `Your session expired, or your key is missing or invalid. Sign in again (opencode auth login ${provider}); with a key, mint a fresh one on the Keys tab.`],
                 ['404 Model not found', 'The model alias is not enabled for your team or does not exist. Check the Models tab for available aliases.'],
+                ['422 Budget exceeded', 'A spend ceiling is reached; retrying will not help. The message names it: Tag=user: is your own, Tag=environment: the Environment, Tag=key: that key. Wait for the reset or ask an administrator to raise it.'],
                 ['429 Rate limited', 'Your key, team, or the upstream provider hit a rate limit. Retry with backoff or check your limits.'],
                 ['MCP: no tools discovered', 'The MCP server is reachable but returned no tools. Check the server health and your access group on the MCP tab.'],
                 ['MCP: authentication failed', 'In OpenCode: opencode mcp logout <name>, then opencode mcp auth <name>.'],

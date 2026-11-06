@@ -146,7 +146,7 @@ Hydration scopes what a client loads; `authorizedTeams` is the actual access con
 `budget` caps the **pooled** spend of every `ek-` key issued for this Environment, all
 owners together. ACH writes it onto the LiteLLM tag `environment:<name>`, which the
 forwarder stamps on each `ek-` request. It is independent of the per-user and per-key
-ceilings: whichever is crossed first refuses the request (HTTP 429). It does not cap
+ceilings: whichever is crossed first refuses the request (HTTP 422). It does not cap
 people using their personal login.
 
 - Enforcement is post-paid: the request that crosses the line is served, the next one

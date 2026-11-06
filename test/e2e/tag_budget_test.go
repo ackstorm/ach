@@ -35,7 +35,7 @@ const (
 	// tagSpendWindow bounds how long LiteLLM may take to BOOK the spend that
 	// pushes a tag over budget. Spend is written on a batched spend-log
 	// flush, not synchronously with the request, so this is much longer than
-	// the cache window — and it is why the test waits on the 429 itself
+	// the cache window — and it is why the test waits on the refusal itself
 	// rather than on a spend figure.
 	tagSpendWindow = 180 * time.Second
 )
@@ -43,7 +43,7 @@ const (
 // TestTagBudgets — the three ceilings are live and independent:
 //
 //  1. a per-ek budget set through PATCH /platform/keys/{id}/budget refuses
-//     that key's traffic once its spend exceeds it — the 429 IS the proof
+//     that key's traffic once its spend exceeds it — the 422 IS the proof
 //     that the forwarder stamped `key:<id>` and that LiteLLM booked spend
 //     against it, with no dependence on any spend projection;
 //  2. the owner's pk_ keeps working meanwhile — independent counters, no
@@ -63,7 +63,7 @@ const (
 //
 // What this test deliberately does NOT do is poll for a spend figure:
 // /tag/info carries none at all, and the spend LiteLLM books (TagTable.spend,
-// LiteLLM_DailyTagSpend) lands on its batched flush. The 429 is the signal.
+// LiteLLM_DailyTagSpend) lands on its batched flush. The 422 is the signal.
 func TestTagBudgets(t *testing.T) {
 	phase4SuiteGuard(t)
 	base := "http://" + phase4GatewayAuthority(t)
@@ -103,13 +103,19 @@ func TestTagBudgets(t *testing.T) {
 	within(t, tagSpendWindow, "the ek_ to be refused over budget", func() bool {
 		code, body := mcpCall(t, base, plaintext, costedMcpServer)
 		lastBody = body
-		return code == http.StatusTooManyRequests
+		return code == http.StatusUnprocessableEntity
 	})
 	// The refusal must name the tag that blocked: that is the whole contract
 	// — the forwarder stamped key:<id>, LiteLLM booked spend to it, and the
 	// ceiling ACH wrote is the one being compared against.
 	if !strings.Contains(lastBody, "Budget has been exceeded") || !strings.Contains(lastBody, keyTag) {
 		t.Fatalf("over-budget body = %s; want it to name %s", lastBody, keyTag)
+	}
+	// /v1 carries the same refusal in LiteLLM's error envelope.
+	if code, body := chatCall(t, base, plaintext); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(body, `"type":"budget_exceeded"`) || !strings.Contains(body, keyTag) {
+		t.Fatalf("over-budget /v1/chat/completions: status=%d body=%s, want 422 budget_exceeded naming %s",
+			code, body, keyTag)
 	}
 
 	// 2. The owner's pk_ is capped by user:<email>, which has no budget in
@@ -203,7 +209,7 @@ type tagBudgetEntry struct {
 
 // mcpCall POSTs one tools/call for the echo tool through the gateway →
 // forwarder → LiteLLM chain and returns the status AND body. Unlike
-// postMCPViaForwarder it never fails the test on a non-200: the 429 IS the
+// postMCPViaForwarder it never fails the test on a non-200: the 422 IS the
 // assertion here.
 func mcpCall(t *testing.T, base, key, server string) (int, string) {
 	t.Helper()
@@ -220,6 +226,26 @@ func mcpCall(t *testing.T, base, key, server string) (int, string) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("mcpCall: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
+// chatCall POSTs one chat completion through the forwarder and returns the
+// status AND body.
+func chatCall(t *testing.T, base, key string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, base+"/v1/chat/completions",
+		strings.NewReader(`{"model":"demo-model","messages":[{"role":"user","content":"tag-budget"}]}`))
+	if err != nil {
+		t.Fatalf("chatCall: new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-ach-key", key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("chatCall: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)

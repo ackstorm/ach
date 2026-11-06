@@ -5,6 +5,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Changed
+- Docs, the console and the e2e suite follow LiteLLM v1.108's budget refusal:
+  HTTP 422 with `type: budget_exceeded`, not 429. ACH keeps that default
+  because clients stop at once and show why, instead of retrying a request
+  that cannot succeed. The e2e LiteLLM pin moves to v1.108.1.
 - `scripts/dev.sh` shares one Go build and module cache per machine, Go's own
   defaults, so a new worktree starts warm. Existing `.gocache/build` and
   `.gocache/gopath/pkg` directories can be deleted with `make clean-cache`.

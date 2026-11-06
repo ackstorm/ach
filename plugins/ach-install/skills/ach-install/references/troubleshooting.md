@@ -91,7 +91,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | LiteLLM 401 for every user; forwarder logs `key material decrypt failed` | platform-api and forwarder use different DEKs, or the DEK changed | Same Secret for both; affected users log in again, `ek-` keys are re-created. |
 | `/ui`, `/key/list`, `/health` are 404 through ACH | By design | Use LiteLLM's own host. |
 | An `ek-` key cannot be created: 403 `key_limit_reached` | `userDefaults.maxKeys` is 0 or reached | `ach-cli admin users limits <email> --max-keys N` or raise the default. |
-| Requests refused with 429 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
+| Requests refused with 422 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
 | Newly granted access takes minutes to work | LiteLLM caches access-group grants per replica (up to ~10 min) | Wait; nothing to fix in ACH. |
 | Dashboards never appear in Grafana | Grafana sidecar does not watch the namespace | `metrics.dashboards.namespace` or the sidecar's search namespace. |
 | Orphan reaper revoked nothing / logs `circuit_breaker` | More candidates than `ACH_ORPHAN_CLEANUP_MAX_REVOKE` | Inspect first with `ACH_ORPHAN_CLEANUP_DRY_RUN=true`, then raise the cap deliberately. |
