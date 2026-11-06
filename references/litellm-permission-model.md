@@ -583,50 +583,51 @@ never a fake 0, never a lost ceiling. Neither fails the response. `/stats`
 runs its three reads (current window, prior window, budget) concurrently. The §10.4 `team_member`
 source is gone: it was unreachable in ACH's topology.
 
-## 16. `model_group_alias` is invisible to every catalog endpoint (measured 2026-09-23, api.ackstorm.ai + kind cluster)
+## 16. `model_group_alias` in LiteLLM's reads (measured 2026-11-06, api.ackstorm.ai, `pk_` and `ek_`)
 
-A LiteLLM `model_group_alias` routes requests but **does not appear in any
-model catalog LiteLLM serves**. Measured on the ackstorm proxy against two
-alias names known to work for inference (`gemini-3.7-flash`,
-`gemini-3.8-flash`), with `gemini-flash-latest` — a genuinely registered
-model — as the control:
+A LiteLLM `model_group_alias` routes requests and is listed per caller, but it
+is not a deployment, so `/v2/model/info` has no row for it. Under the caller's
+own key:
 
-| Read | alias name | control (`gemini-flash-latest`) |
-|---|---|---|
-| `GET /v1/models` | absent | present |
-| `GET /model_group/info` (list) | absent | present |
-| `GET /model_group/info?model_group=<name>` | **0 rows** | 1 row |
-| `GET /v1/model/info` | n/a — master-key only, 0 rows for a virtual key | — |
+| Read | granted alias | alias not granted | target of a granted alias |
+|---|---|---|---|
+| `GET /v1/models` | listed | absent | absent |
+| `GET /v2/model/info?model=<name>` | **200, no row** | **403** | **403** |
+| `GET /v2/model/info` (no filter) | no row | no row | row |
 
-The per-name query returning nothing is the decisive one: this is not a
-listing filter or a key-scoping artifact, the alias simply is not a model
-group as far as the read API is concerned.
+`?model=<name>` is LiteLLM's own entitlement check: it answers 403 `team not
+allowed to access model` unless the caller is granted that exact name, whether
+or not the name exists. The 200 for a granted alias carries only rows
+unrelated to the filter (the caller's `a2a/*` agents).
 
-**Where LiteLLM does declare them:** `GET /router/settings` exposes a
-`model_group_alias` field among its `fields[]` descriptors. Confirmed on the
-e2e cluster with the master key (value `{}` there — no aliases configured).
-The endpoint is **proxy-admin only**: a non-admin virtual key gets 401, not
-404. Siblings in the same family (`/model/settings`, `/get/config/callbacks`,
-`/config/field/info`) behave the same way.
+The caller is granted the alias, not its target. Rewriting `?model=` to the
+target therefore always fails; the caps of an alias can only come from the
+master-key view.
 
-**Why ACH cares.** The Environment reconciler resolves
-`spec.runtime.models` by exact string match against the Snapshotter's set,
-which is built from `GET /v1/model/info` → `model_name`
-(`internal/litellm/model.go`, `internal/snapshot/snapshot.go`). An
-Environment naming an alias therefore reports
-`ExecutionResourcesResolved=False` forever, however well the alias works for
-inference. **This is cosmetic**, and the blast radius is smaller than it
-looks: `reconcileAccessGroup` never inspects `spec.runtime.models` (it
-writes the names through unfiltered), `ek_` creation gates on
-`AccessGroupSynced` alone, and neither existing traffic nor hydrate is
-affected. Only the rolled-up `Available` goes False.
+The unfiltered listing is not scoped to the caller's grants: a key with 5
+models read 165 deployments, `litellm_params` included (`api_base`,
+`vertex_project`, no `api_key`).
 
-**ACH's chosen answer is NOT to read the alias table.** Aliases are a `/v1`
-concern (LiteLLM resolves them there itself). For the `/gemini` native
-route, where the model rides in the URL path, the forwarder strips
-configured vendor prefixes instead — see `forwarder.gemini.
-stripModelPrefixes` in CLAUDE.md. Environments should name the REAL
-registered model (`<vendor>.<model>`), which resolves cleanly.
+**Where LiteLLM declares aliases:** `GET /get/config/callbacks` carries
+`router_settings.model_group_alias`, and `GET /router/settings` lists the field
+among its `fields[]` descriptors. Both are proxy-admin only: a non-admin
+virtual key gets 401, not 404.
+
+**What ACH does with them.** The alias map only ever DESCRIBES a model, never
+authorizes one. `litellm.CapsCache` holds it next to the deployments' caps, and
+`litellm.DeploymentCaps` follows one hop to the target for every publisher:
+
+| Publisher | Who says the caller may see the name |
+|---|---|
+| `GET /clients/opencode/config` | the caller's own `/model_group/info` |
+| `POST /platform/hydrate` (`runtime.models[].limits`) | the Environment's projection |
+| forwarder `GET /v2/model/info?model=<alias>` | LiteLLM's 200 on that same request |
+
+An Environment may name an alias in `spec.runtime.models`
+(`agent-slide-designer` names `ackstorm.smart` and is Available). On the
+`/gemini` native route, where the model rides in the URL path, the forwarder
+strips configured vendor prefixes instead: see
+`forwarder.gemini.stripModelPrefixes` in CLAUDE.md.
 
 ## 17. Runtime groups: tags, not names (measured 2026-09-24, kind cluster)
 

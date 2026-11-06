@@ -898,6 +898,10 @@ with the agent's `ek_` presented: it is the one owned route outside the four
 families (the catch-all is gone — spec D-18), credential required like `/v1`,
 forwarded with the agent's own key; without a credential it is ACH's 401 +
 challenge, and any OTHER `/v2/*` path is a 404.
+A 403 `team not allowed to access model` means the key is not granted that
+exact name. An alias answers from the forwarder's caps cache, so a retarget can
+take an hour to show; a 200 with no row for an alias means its target has no
+deployment in LiteLLM.
 
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
 After migration `000011` the forwarder authenticates to LiteLLM with the

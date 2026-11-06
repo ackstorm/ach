@@ -420,6 +420,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		BIPResolver:      bipCache,    // C1/C4: Postgres-backed BIP cache
 		EnvProvider:      envStore,    // C2/C5: Postgres-backed Env cache
 		TeamsResolver:    teamsResolver,
+		Caps:             litellm.NewCapsCache(ll, logger),
 		AuthnOptions: pamw.AuthnOptions{
 			Challenge: proxy.ChallengeFor(cfg.BaseURL),
 			Headers:   cfg.CredentialHeaders,

@@ -88,8 +88,12 @@ func stripTagsOrReject(w http.ResponseWriter, r *http.Request, routeLabel string
 // route outside the four families (D-18 exception): ach-agent's
 // litellm_usage cost source reads model prices there with its ek_. Same
 // shape as /v1: credential required upstream of here, no precheck, no JWT.
+// LiteLLM has no row for a model-group alias; prepareModelInfo fills that gap.
 func HandlerModelInfo(deps HandlerDeps) http.HandlerFunc {
-	return taggedPassthrough(deps, "/v2/model/info")
+	next := taggedPassthrough(deps, "/v2/model/info")
+	return func(w http.ResponseWriter, r *http.Request) {
+		next(w, prepareModelInfo(r, deps.Deps.Caps))
+	}
 }
 
 // HandlerV1 returns the /v1/* proxy handler. No precheck, no JWT — LiteLLM
