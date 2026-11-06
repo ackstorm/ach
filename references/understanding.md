@@ -460,7 +460,7 @@ project-root containment (only `.mcp.json` allowed at root). State
 
 - **Host has NO Go** — everything via `ach-devtools` container
   (`container_target` macro; 3-context model → `references/makefile.md`).
-  Per-worktree `.gocache` (read-only modcache → `make clean-cache`).
+  One Go build + module cache per machine, shared across worktrees.
 - Test ladder: `test-unit` ~10s → `test-envtest[-fast]` 3-7m → `e2e-full`
   kind+Helm ~6-10m, **cluster KEPT after** (debug loop:
   `logs-*`, `e2e-focus RUN=…`, `cluster-sync` w/ `image.rebuildId` roll).

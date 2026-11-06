@@ -71,8 +71,8 @@ Per-release flow (after the `chore(release): v0.1.0` PR merges):
      change. The per-GOOS/GOARCH cross-compile rebuilds the full
      k8s.io + controller-runtime tree; the prefix fallback keeps that
      heavy tree warm across releases even when `go.sum` shifts. This is
-     distinct from devtools' per-worktree `.gocache/` (which `make`
-     targets use) — only the native cache feeds goreleaser.
+     what feeds goreleaser, which builds on the runner, outside the
+     devtools container `make` targets use.
    - cosign + cyclonedx-gomod installed on PATH (HRD-09).
    - `actions/setup-node` (22, npm cache on `ui/package-lock.json`) +
      `npm --prefix ui ci && npm --prefix ui run build` — the

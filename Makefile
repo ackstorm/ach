@@ -100,9 +100,14 @@ doctor: ## Fast local preflight: docker, devtools image, socket, cache paths, in
 	@docker info >/dev/null 2>&1 && echo "OK   docker daemon reachable" || { echo "FAIL docker daemon unreachable"; exit 1; }
 	@test -S /var/run/docker.sock && echo "OK   /var/run/docker.sock present" || echo "WARN /var/run/docker.sock not a socket on host"
 	@docker image inspect ach-devtools:latest >/dev/null 2>&1 && echo "OK   ach-devtools:latest present" || echo "WARN ach-devtools:latest absent (built on first ./scripts/dev.sh use)"
-	@for d in .gocache/gopath .gocache/build .gocache/envtest .gocache/kube; do test -d "$$d" && echo "OK   $$d" || echo "WARN $$d missing (created on first dev.sh run)"; done
+	@for d in .gocache/gopath .gocache/envtest .gocache/kube; do test -d "$$d" && echo "OK   $$d" || echo "WARN $$d missing (created on first dev.sh run)"; done
 	@./scripts/dev.sh bash -c 'for t in go helm kind kubectl golangci-lint controller-gen setup-envtest; do command -v $$t >/dev/null 2>&1 && echo "OK   (container) $$t" || echo "FAIL (container) $$t MISSING"; done'
 	@test -f .gocache/kube/config && echo "OK   kubeconfig present (.gocache/kube/config)" || echo "INFO no kubeconfig yet (run make cluster-up)"
+
+.PHONY: disk-check
+disk-check: ## Refuse to start a cluster or e2e run with under 5 GB free on the workspace disk.
+	@free=$$(df -Pk . | awk 'NR==2 {print int($$4/1048576)}'); \
+	test "$$free" -ge 5 || { echo "ERROR: $$free GB free on the workspace disk; a cluster or e2e run needs 5" >&2; exit 1; }
 
 .PHONY: doctor-cluster
 doctor-cluster: ## Deep cluster preflight: free ports, values files, chart pins, helm template, image pull/build, kind→docker socket. Touches network.
@@ -617,7 +622,7 @@ ensure-inotify: ## Host-only: raise fs.inotify limits if below kind's needs (bes
 	fi
 
 .PHONY: cluster-up cluster-down cluster-reset cluster-sync cluster-status cluster-image-load
-cluster-up: ensure-inotify ## Bring up canonical kind cluster + hydration (transactional).
+cluster-up: ensure-inotify disk-check ## Bring up canonical kind cluster + hydration (transactional).
 	$(call container_target,_cluster-up)
 _cluster-up:
 	bash scripts/cluster.sh up
@@ -768,7 +773,7 @@ E2E_RUN_ENV = \
 	ACH_SKIP_PHASE6=$(ACH_SKIP_PHASE6) ACH_SKIP_PHASE7=$(ACH_SKIP_PHASE7)
 
 .PHONY: e2e-run e2e-focus e2e-full
-e2e-run: ## Build e2e binaries, then run e2e suite against an already-up cluster.
+e2e-run: disk-check ## Build e2e binaries, then run e2e suite against an already-up cluster.
 	$(call container_target,_e2e-run)
 _e2e-run: _build-e2e
 	# E2E_SKIP_SETUP=1 hands cluster lifecycle to scripts/cluster.sh; without

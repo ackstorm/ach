@@ -51,9 +51,15 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# Persisted caches (gitignored). Pre-create so docker doesn't mkdir them as root.
-mkdir -p "${WORKSPACE}/.gocache/gopath" \
-         "${WORKSPACE}/.gocache/build" \
+# One Go build + module cache per machine, shared by every checkout and worktree:
+# Go's own default locations, safe across concurrent builds. A cache per worktree
+# costs ~6 GB each and a cold build every time. Per-workspace state stays under
+# .gocache (gitignored). Pre-create so docker doesn't mkdir them as root.
+GO_BUILD_CACHE="${HOME}/.cache/go-build"
+GO_MOD_CACHE="${HOME}/go/pkg/mod"
+mkdir -p "${GO_BUILD_CACHE}" \
+         "${GO_MOD_CACHE}" \
+         "${WORKSPACE}/.gocache/gopath" \
          "${WORKSPACE}/.gocache/kube"
 
 # Keep the container-mounted kubeconfig (.gocache/kube/config, exported as
@@ -121,21 +127,25 @@ if [[ $# -eq 0 ]]; then
     set -- bash
 fi
 
-exec docker run --rm "${TTY_ARGS[@]}" \
+# --init: make as PID 1 ignores a forwarded SIGTERM, so a killed client would
+# leave the container running forever with its recipe already dead.
+exec docker run --rm --init "${TTY_ARGS[@]}" \
     --user "$(id -u):$(id -g)" \
     "${DOCKER_GROUP_ADD[@]}" \
     --add-host=host.docker.internal:host-gateway \
     --add-host=ach.e2e.local:127.0.0.1 \
     --network=host \
     -v "${WORKSPACE}:/workspace" \
+    -v "${GO_BUILD_CACHE}:/gocache/build" \
+    -v "${GO_MOD_CACHE}:/gocache/mod" \
     "${WORKTREE_GIT_MOUNT[@]}" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e ACH_IN_DEVTOOLS=1 \
     -e DELETE_ON_FAILURE="${DELETE_ON_FAILURE:-0}" \
     -e HOME=/workspace/.gocache \
     -e GOPATH=/workspace/.gocache/gopath \
-    -e GOCACHE=/workspace/.gocache/build \
-    -e GOMODCACHE=/workspace/.gocache/gopath/pkg/mod \
+    -e GOCACHE=/gocache/build \
+    -e GOMODCACHE=/gocache/mod \
     -e KUBECONFIG=/workspace/.gocache/kube/config \
     -e HOST_PWD="${WORKSPACE}" \
     -w /workspace \

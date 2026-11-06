@@ -4,6 +4,16 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- `scripts/dev.sh` shares one Go build and module cache per machine, Go's own
+  defaults, so a new worktree starts warm. Existing `.gocache/build` and
+  `.gocache/gopath/pkg` directories can be deleted with `make clean-cache`.
+- `make cluster-up` and `make e2e-run` refuse to start with under 5 GB free on
+  the workspace disk.
+
+### Fixed
+- A killed `make` no longer leaves its `ach-devtools` container running.
+
 ## [1.1.6] - 2026-11-06
 
 ### Changed
