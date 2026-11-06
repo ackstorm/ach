@@ -121,7 +121,7 @@ func TestSync_RedirectedDestDoesNotPruneOutsideToolRoot(t *testing.T) {
 		SchemaVersion: "3",
 		Plugins:       []state.FileEntry{{Target: target, Hash: hash.HashBytes(content)}},
 	}
-	if _, err := Sync(prev, &state.File{SchemaVersion: "3"}, achDir, toolRoot, SyncOptions{}); err != nil {
+	if _, err := Sync(prev, &state.File{SchemaVersion: "3"}, achDir, toolRoot, SyncOptions{Global: true}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {

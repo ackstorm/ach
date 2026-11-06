@@ -5,6 +5,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -50,9 +51,19 @@ type HandlerDeps struct {
 // for that, review #5; responses still stream untouched), forward, and let the
 // Director stamp the budget tags. routeLabel is the metrics route dimension.
 func taggedPassthrough(deps HandlerDeps, routeLabel string) http.HandlerFunc {
+	return taggedPassthroughChecked(deps, routeLabel, nil)
+}
+
+// taggedPassthroughChecked is taggedPassthrough with an optional admit step
+// that runs on the scanned body and answers the request itself when it
+// returns false.
+func taggedPassthroughChecked(deps HandlerDeps, routeLabel string, admit func(http.ResponseWriter, *http.Request) bool) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
 		if !stripTagsOrReject(w, r, routeLabel) {
+			return
+		}
+		if admit != nil && !admit(w, r) {
 			return
 		}
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "forwarded")
@@ -77,6 +88,10 @@ func stripTagsOrReject(w http.ResponseWriter, r *http.Request, routeLabel string
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_tags_not_allowed")
 		render.Error(w, http.StatusBadRequest, "client_tags_not_allowed",
 			"budget tags and metadata cannot be sent in form bodies through ACH", reqID)
+	case errors.Is(err, errClientParam):
+		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "client_param_not_allowed")
+		render.Error(w, http.StatusBadRequest, "client_param_not_allowed",
+			"this request parameter cannot be set through ACH", reqID)
 	default:
 		metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), "invalid_request")
 		render.Error(w, http.StatusBadRequest, "invalid_request", "request body is not valid", reqID)
@@ -101,7 +116,36 @@ func HandlerModelInfo(deps HandlerDeps) http.HandlerFunc {
 func HandlerV1(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/v1") }
 
 // HandlerGemini mirrors HandlerV1 for /gemini/*.
-func HandlerGemini(deps HandlerDeps) http.HandlerFunc { return taggedPassthrough(deps, "/gemini") }
+//
+// Only the model routes in geminiPathModel pass (404 route_not_allowed
+// otherwise), and a POST body must be JSON and name no model but the path's
+// (400 model_mismatch), checked on the body the tag scan already buffered.
+func HandlerGemini(deps HandlerDeps) http.HandlerFunc {
+	next := taggedPassthroughChecked(deps, "/gemini", func(w http.ResponseWriter, r *http.Request) bool {
+		model, _ := geminiPathModel(r, deps.Deps.GeminiStripModelPrefixes)
+		if r.Method != http.MethodPost || r.GetBody == nil {
+			return true
+		}
+		rc, _ := r.GetBody()
+		body, err := io.ReadAll(rc)
+		if err == nil && bodyModelMatches(r, body, model, deps.Deps.GeminiStripModelPrefixes) {
+			return true
+		}
+		metrics.IncRequests("/gemini", keyTypeFor(r.Context()), "model_mismatch")
+		render.Error(w, http.StatusBadRequest, "model_mismatch",
+			"the body model must name the model in the path", middleware.RequestIDFromCtx(r.Context()))
+		return false
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := geminiPathModel(r, deps.Deps.GeminiStripModelPrefixes); !ok {
+			metrics.IncRequests("/gemini", keyTypeFor(r.Context()), "route_not_allowed")
+			render.Error(w, http.StatusNotFound, "route_not_allowed",
+				"this route is not available through ACH", middleware.RequestIDFromCtx(r.Context()))
+			return
+		}
+		next(w, r)
+	}
+}
 
 // HandlerMCP returns the /mcp/{name}/* handler — runs precheck.CheckMCP,
 // optional BIP lookup + JWT attach, then proxies. See FWD-03, FWD-05,

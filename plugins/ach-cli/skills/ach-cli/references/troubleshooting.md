@@ -17,8 +17,9 @@
 ## Common situations
 
 - **`ach-cli whoami` says not signed in, or a command returns 401**: sign in again
-  ([login](login.md)). A session also ends when the user is disabled at the identity
-  provider.
+  ([login](login.md)). A session ends when the identity provider refuses the refresh with a
+  dead token; a user who stops refreshing is not detected, and an `ek-` key of a disabled user
+  stays alive until an admin runs `ach-cli admin keys revoke --owner <email>`.
 - **An Environment is missing from `env list`**: no access ([environments](environments.md)).
   If the user was just added to an SSO group, run `ach-cli refresh` (or `ach-cli login`)
   and allow a few minutes for the Environment to reconcile.
@@ -28,6 +29,11 @@
   older CLIs print no warning, so update on that error too.
 - **Hydrate says another hydrate holds the lock**: one is still running in that folder.
   Wait for it, or pass `--lock-timeout 2m`.
+- **Hydrate or uninstall fails `refusing to hydrate:` / `refusing to uninstall:`** (exit 1): a path
+  in the workspace is a symlink that leaves it. Remove the link or point it inside the folder;
+  links that stay inside are fine, and `-g` (global) is exempt from the symlink rule.
+  `state file tracks "<path>"` (hydrate exit 1, uninstall exit 8) means a recorded target is outside
+  the tool's root: restore the config-dir variable used at hydrate time, or remove the state file.
 - **Hydrate cannot detect the tool**: pass `--target`.
 - **Two plugins write the same file**: by default the second is namespaced with its
   plugin name. `--conflict skip|overwrite|refuse` changes that.

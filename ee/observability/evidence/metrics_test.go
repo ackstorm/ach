@@ -127,6 +127,7 @@ func TestFailureOwner(t *testing.T) {
 		{"ProxyException", "403", "you"}, // model outside the caller's access
 		{"Openai.BadRequestError", "400", "you"},
 		{"ProxyModelNotFoundError", "400", "you"},
+		{"BudgetExceededError", "422", "you"},
 		{"BudgetExceededError", "429", "you"},
 		{"Anthropic.RateLimitError", "429", "provider"},
 		{"Anthropic.Timeout", "408", "provider"},

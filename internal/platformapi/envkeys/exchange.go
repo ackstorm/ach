@@ -82,7 +82,6 @@ const (
 	exchangePerClientBurst = 10
 	exchangeGlobalRate     = 10
 	exchangeGlobalBurst    = 50
-	exchangeMaxClients     = 10000
 
 	// The route is anonymous until TokenReview: bound what it reads and what
 	// reaches the audit log.
@@ -114,7 +113,7 @@ const (
 // one exception: it is counted in the metric, not audited.
 func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 	aud := strings.TrimRight(d.Issuer, "/")
-	lim := newExchangeLimiter()
+	lim := NewClientLimiter(exchangePerClientRate, exchangePerClientBurst, exchangeGlobalRate, exchangeGlobalBurst)
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		reqID := middleware.RequestIDFromCtx(ctx)
@@ -139,7 +138,7 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			reject(http.StatusUnauthorized, audit.OutcomeInvalidToken, "a ServiceAccount token issued for this ACH is required", "guard")
 			return
 		}
-		if !lim.allowClient(middleware.ClientIP(r)) {
+		if !lim.AllowClient(middleware.ClientIP(r)) {
 			w.Header().Set("Retry-After", "1")
 			reject(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "rate_limited")
 			return
@@ -155,7 +154,7 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			reject(http.StatusServiceUnavailable, audit.OutcomeNotReady, "token verification unavailable", "keys_unavailable")
 			return
 		}
-		if !lim.allowGlobal() {
+		if !lim.AllowGlobal() {
 			w.Header().Set("Retry-After", "1")
 			reject(http.StatusTooManyRequests, audit.OutcomeRateLimited, "too many exchange requests", "rate_limited")
 			return
@@ -316,27 +315,39 @@ func firstExtra(v authnv1.ExtraValue) string {
 	return v[0]
 }
 
-// exchangeLimiter is a per-client token bucket in front of a global one.
-// ponytail: the client map is cleared when it reaches exchangeMaxClients and
-// is keyed on the first X-Forwarded-For hop, which a caller can forge — the
-// global bucket is the hard bound on TokenReview calls. An LRU keyed on a
-// trusted proxy hop is the upgrade if per-client fairness ever matters.
-type exchangeLimiter struct {
-	mu      sync.Mutex
-	global  *rate.Limiter
-	clients map[string]*rate.Limiter
+// limiterMaxClients caps the per-client buckets a ClientLimiter keeps.
+const limiterMaxClients = 10000
+
+// ClientLimiter is a per-client token bucket in front of a global one, for an
+// anonymous route. The two are asked separately so a route can spend the
+// global budget only on what reaches the expensive step.
+// ponytail: the client map is cleared when it reaches limiterMaxClients and
+// client identity is proxy-supplied, so the per-client bucket is best-effort;
+// the global bucket is the hard bound on the guarded work. An LRU is the
+// upgrade if per-client fairness ever matters.
+type ClientLimiter struct {
+	mu          sync.Mutex
+	global      *rate.Limiter
+	clients     map[string]*rate.Limiter
+	clientRate  rate.Limit
+	clientBurst int
 }
 
-func newExchangeLimiter() *exchangeLimiter {
-	return &exchangeLimiter{
-		global:  rate.NewLimiter(exchangeGlobalRate, exchangeGlobalBurst),
-		clients: map[string]*rate.Limiter{},
+// NewClientLimiter builds the two buckets; rates are tokens per second.
+func NewClientLimiter(clientRate rate.Limit, clientBurst int, globalRate rate.Limit, globalBurst int) *ClientLimiter {
+	return &ClientLimiter{
+		global:      rate.NewLimiter(globalRate, globalBurst),
+		clients:     map[string]*rate.Limiter{},
+		clientRate:  clientRate,
+		clientBurst: clientBurst,
 	}
 }
 
-func (l *exchangeLimiter) allowGlobal() bool { return l.global.Allow() }
+// AllowGlobal takes one token from the global bucket.
+func (l *ClientLimiter) AllowGlobal() bool { return l.global.Allow() }
 
-func (l *exchangeLimiter) allowClient(addr string) bool {
+// AllowClient takes one token from addr's bucket; a RemoteAddr-style port is ignored.
+func (l *ClientLimiter) AllowClient(addr string) bool {
 	if host, _, err := net.SplitHostPort(addr); err == nil {
 		addr = host // RemoteAddr carries a per-connection port
 	}
@@ -344,10 +355,10 @@ func (l *exchangeLimiter) allowClient(addr string) bool {
 	defer l.mu.Unlock()
 	c, ok := l.clients[addr]
 	if !ok {
-		if len(l.clients) >= exchangeMaxClients {
+		if len(l.clients) >= limiterMaxClients {
 			clear(l.clients)
 		}
-		c = rate.NewLimiter(exchangePerClientRate, exchangePerClientBurst)
+		c = rate.NewLimiter(l.clientRate, l.clientBurst)
 		l.clients[addr] = c
 	}
 	return c.Allow()

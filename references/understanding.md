@@ -56,7 +56,7 @@ underlying layer keeps its job:
   plus `environment:<env>` and `key:<ek id>` for an `ek_`. LiteLLM enforces
   each tag independently and in parallel, blocking on the first one whose
   spend exceeds its `max_budget` (post-paid: the crossing request is served,
-  the next is 429). So one user ceiling covers a person's `pk_` AND every
+  the next is refused, HTTP 422). So one user ceiling covers a person's `pk_` AND every
   `ek_` they own across Environments; `Environment.spec.budget` caps an
   Environment's pooled `ek_` spend; `POST`/`PATCH /platform/keys …/budget`
   caps one key. "pk_ for humans, ek_ for workloads" is the contract;

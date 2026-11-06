@@ -100,12 +100,15 @@ ceiling yet, so logging in never overwrites it. The flip side is that raising
 the deployment-wide default does not retune anyone who already has one — this
 route is how you do that.
 
-When a ceiling is reached, the request fails with **HTTP 429** and a body
-naming the counter that blocked:
+When a ceiling is reached, the request fails with **HTTP 422** and a body
+naming the counter that blocked. Retrying does not help until the ceiling is
+raised or the budget resets:
 
 ```json
-{"detail":"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"}
+{"error":{"message":"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget: 25.0","type":"budget_exceeded","param":null,"code":"422"}}
 ```
+
+An MCP tool call carries the same text as `{"detail":"Budget has been exceeded! …"}`.
 
 `Tag=user:…` means your own ceiling, `Tag=environment:…` the Environment's
 pooled one, and `Tag=key:…` that single key's. Raise the named ceiling (or

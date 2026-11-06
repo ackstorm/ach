@@ -119,9 +119,16 @@ func (d OAuthDeps) refreshToken(w http.ResponseWriter, r *http.Request, clientID
 	if err := d.Store.Put(r.Context(), rotatingKind, presented, true, rotatingTTL); err != nil {
 		d.Auth.Logger.Warn("oauth: rotation marker not stored; a racer is told invalid_grant", "err", err)
 	}
-	if _, err := d.revalidateAtIdP(r.Context(), rf.Sub); err != nil {
+	// A record of an ended session never reaches Dex: the replay would rotate
+	// the Dex token of the user's current login, and a Dex refusal would end
+	// that login too.
+	err = d.liveSession(r.Context(), rf.oauthUser)
+	if err == nil {
+		_, err = d.revalidateAtIdP(r.Context(), rf.Sub)
+	}
+	if err != nil {
 		if errors.Is(err, errIdPRefused) {
-			d.Auth.Logger.Info("oauth: refresh refused: identity provider refused", "sub", rf.Sub, "client_id", clientID)
+			d.Auth.Logger.Info("oauth: refresh refused: session ended", "sub", rf.Sub, "client_id", clientID)
 			_ = d.Store.Del(context.WithoutCancel(r.Context()), rotatingKind, presented) // racers: the session is over, fail now
 			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
 			return
@@ -154,7 +161,8 @@ const (
 )
 
 // errIdPRefused: the identity provider no longer honours the user — every
-// session of that user is over (the Dex token and the oauth pk_ are gone).
+// session of that user is over (the Dex token and the oauth pk_ are gone) —
+// or the record in hand belongs to a session EndSessions ended.
 var errIdPRefused = errors.New("oauth: identity provider refused the user")
 
 // dexRefreshTimeout bounds the detached Dex refresh in revalidateAtIdP.
@@ -213,9 +221,18 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []st
 }
 
 // issue answers the grant with a new token pair; false when it answered
-// an error instead and no pair went out.
+// an error instead and no pair went out. Every grant crosses it, so a code or
+// device approval from before an EndSessions buys nothing.
 func (d OAuthDeps) issue(w http.ResponseWriter, r *http.Request, u oauthUser, clientID string) bool {
 	sub, userID := u.Sub, u.UserID
+	if err := d.liveSession(r.Context(), u); err != nil {
+		if errors.Is(err, errIdPRefused) {
+			oauthError(w, 400, "invalid_grant", "the identity provider no longer honours this session")
+			return false
+		}
+		oauthError(w, 500, "server_error", "")
+		return false
+	}
 	var err error
 	if err := d.ensureOAuthPK(r.Context(), sub, userID); err != nil {
 		if errors.Is(err, ErrMintLiteLLM) {
@@ -364,13 +381,38 @@ func (d OAuthDeps) mint(ctx context.Context, email, userID, purpose string) (str
 	return d.Auth.MintPK(ctx, email, userID, purpose)
 }
 
-// EndSessions ends every OAuth session of the user: their shared Dex
-// refresh token goes, so each refresh and console revalidation fails
-// ("no Dex refresh token stored") and each access JWT dies with its
-// revoked pk_ row. A pk_ revoke calls it — without it the next refresh
-// re-minted the revoked credential. A refresh in flight cannot undo it: the
-// rotated Dex token is stored only while the key still exists
-// (OAuthStore.PutIfExists). Logging in again works.
+// EndSessions ends every OAuth session of the user: the session generation
+// moves on, so each refresh record and console session stamped with an
+// earlier one is refused from then on (liveSession), and the shared Dex
+// refresh token goes. Each access JWT dies with its revoked pk_ row. A pk_
+// revoke calls it — without it the next refresh re-minted the revoked
+// credential. A refresh in flight cannot undo it: the rotated Dex token is
+// stored only while the key still exists (OAuthStore.PutIfExists). Logging in
+// again starts new sessions and restores none of the old ones: the Dex token
+// comes back, the generation does not.
 func (d OAuthDeps) EndSessions(ctx context.Context, email string) error {
-	return d.Store.Del(ctx, dexRefreshKind, email)
+	return errors.Join(
+		d.Store.BumpSessionGen(ctx, email, d.sessionGenTTL()),
+		d.Store.Del(ctx, dexRefreshKind, email),
+	)
+}
+
+// sessionGenTTL is the refresh window plus the rotatingTTL a taken refresh
+// token can spend away before a failed grant puts it back with a full
+// RefreshTTL: the counter must outlive that record too.
+func (d OAuthDeps) sessionGenTTL() time.Duration { return d.RefreshTTL + rotatingTTL }
+
+// liveSession is nil while u's record belongs to the user's current session
+// generation, errIdPRefused once EndSessions moved past it. The comparison is
+// strict: a counter that does not match for any reason refuses.
+func (d OAuthDeps) liveSession(ctx context.Context, u oauthUser) error {
+	gen, err := d.Store.SessionGen(ctx, u.Sub, d.sessionGenTTL())
+	if err != nil {
+		return err
+	}
+	if gen != u.SessionGen {
+		d.Auth.Logger.Info("oauth: record of an ended session refused", "sub", u.Sub)
+		return errIdPRefused
+	}
+	return nil
 }

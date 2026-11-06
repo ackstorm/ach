@@ -170,6 +170,14 @@ func (d OAuthDeps) ConsoleSession(ctx context.Context, sid string) (string, bool
 		_ = d.Store.Del(ctx, consoleSessionKind, sid)
 		return "", false, nil
 	}
+	// On every use, not only at revalidation: EndSessions takes effect at once.
+	if err := d.liveSession(ctx, s.oauthUser); err != nil {
+		if errors.Is(err, errIdPRefused) {
+			_ = d.Store.Del(ctx, consoleSessionKind, sid)
+			return "", false, nil
+		}
+		return "", false, err
+	}
 	if now.Before(s.RevalidateAt) {
 		return s.Sub, true, nil
 	}

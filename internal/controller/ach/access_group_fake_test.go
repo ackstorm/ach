@@ -650,6 +650,13 @@ func (f *accessGroupFakeImpl) InjectUpdateErr(name string, err error) {
 	f.updateErrByName[name] = err
 }
 
+// InjectListErr makes GetAccessGroupByName fail.
+func (f *accessGroupFakeImpl) InjectListErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listErr = err
+}
+
 func cloneMirror(m map[string][]string) map[string][]string {
 	out := make(map[string][]string, len(m))
 	for k, v := range m {

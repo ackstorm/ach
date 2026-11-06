@@ -87,6 +87,33 @@ verify offline.
 
 ---
 
+## 1.0 Request-body and route rules on the pass-through families
+
+- `/v1`, `/gemini` and `/a2a` bodies are scanned before anything reaches
+  LiteLLM. A client-set LiteLLM per-request control is refused with 400
+  `client_param_not_allowed`, never stripped: `api_key`, `deployment_id`,
+  `guardrails`, `guardrail_config`
+  (top level, in JSON-RPC `params`, and inside `metadata`/`litellm_metadata`,
+  including `metadata` sent as a JSON string), and any `tools` entry of type
+  `mcp`. Form and multipart bodies refuse the same top-level names. The
+  Environment ceiling lives on the team, not the key.
+- `/gemini` serves exactly `GET /v1beta/models`, `GET /v1beta/models/{model}`
+  and `POST /v1beta/models/{model}:{method}` with `method` one of
+  `generateContent`, `streamGenerateContent`, `countTokens`, `embedContent`,
+  `batchEmbedContents`.
+  `{model}` is one path segment (after the configured prefix strip). Anything
+  else is 404 `route_not_allowed`. On a POST the body `model`, and each `batchEmbedContents` entry model, must name the path
+  model once `models/` and the configured prefixes are stripped, and a body
+  `target_model_names` is refused, else 400 `model_mismatch`. A POST body must
+  be `application/json` (parameters allowed) or carry no Content-Type, else the
+  same 400.
+- Long-lived requests: a request with an ACH identity is re-checked against
+  its key row after 60 s and every 60 s. A definite suspended, revoked, expired
+  or missing row cancels the request (Info log `forwarder: key is no longer
+  live; ending its request`, with `key_id` and `request_id`); a request still
+  waiting on LiteLLM answers 401 `expired_or_revoked`. Postgres errors fail
+  open with a Warn.
+
 ## 1.1 `EkOwnerGate` — ek_ owner access re-check (D-30)
 
 `proxy.EkOwnerGate` sits in the authenticated route group in

@@ -271,6 +271,14 @@ the team model-access path — which is why ACH uses an impossible model name.
   **only** to `default_on` guardrails; a team-attached non-default guardrail
   has no opt-out at any level.
 - `x-litellm-applied-guardrails` names what actually ran, per request.
+- A request body can set guardrails itself (`guardrails`, `guardrail_config`,
+  `metadata.guardrails`), and
+  LiteLLM honours them per request. ACH's ceiling lives on the team, not the
+  key, so the forwarder refuses those fields with 400 `client_param_not_allowed`
+  instead of stripping them.
+- Team-scoped guardrails do not run on `/gemini`, and `embedContent` and
+  `batchEmbedContents` record no spend there. A guardrail ceiling and a budget
+  are therefore not complete on that surface.
 - Team metadata mixes non-string values alongside ACH's ownership markers —
   the reason `teamMetadataStrings` exists (§12).
 - **Not measured**: whether `POST /team/update` omitting `guardrails` keeps
@@ -426,7 +434,7 @@ this section describes.
 | Fact | Evidence |
 |---|---|
 | A LiteLLM **user object**'s `max_budget` is **not enforced** for keys that belong to a team (neither `pk_` nor `ek_`), even with `spend > max_budget`. | 200 throughout |
-| A **team** `max_budget` and a **team-member** `max_budget_in_team` DO cap keys minted into that team. Not used: tags cover the same ground and also cross Environments. | 429 measured on both |
+| A **team** `max_budget` and a **team-member** `max_budget_in_team` DO cap keys minted into that team. Not used: tags cover the same ground and also cross Environments. | refusal measured on both |
 
 ACH therefore writes **no `max_budget` onto any LiteLLM team or user
 object**. Teams stay pure scoping (deny-all shells + access groups).
@@ -488,10 +496,12 @@ is 400 `invalid_request`.
 | Fact | Evidence |
 |---|---|
 | A tag budget is a **budget object**: `LiteLLM_TagTable.budget_id` → `LiteLLM_BudgetTable {max_budget, budget_duration, budget_reset_at, soft_budget, tpm_limit, rpm_limit, max_parallel_requests}`. `/tag/info` returns it nested as `litellm_budget_table`. | `SELECT tag_name, budget_id FROM "LiteLLM_TagTable"` → non-null FK; `/tag/info` body |
-| Tags stamped via the `x-litellm-tags` header are enforced on `/v1/chat/completions`, the Gemini-compatible `/v1beta/models/<m>:generateContent`, the `/gemini` passthrough, and `/mcp/<server>` tools/call. | 429 on all four with a tag over budget |
-| Enforcement runs **before** the upstream call (a `/gemini` passthrough that would 500 upstream still 429s). | 429 vs 500 baseline |
+| Tags stamped via the `x-litellm-tags` header are enforced on `/v1/chat/completions`, the Gemini-compatible `/v1beta/models/<m>:generateContent`, the `/gemini` passthrough, and `/mcp/<server>` tools/call. | 422 on all four with a tag over budget |
+| Enforcement runs **before** the upstream call (a `/gemini` passthrough that would 500 upstream is still refused). | refusal vs 500 baseline |
 | Several tags on one request are enforced **independently and in parallel**; the first tag whose spend exceeds its budget blocks, with **no hierarchy**. Raising that tag's budget unblocks; the next tag to cross then blocks. | user=10/env=0.6/key=1.1, cost 0.25/call: blocked at 0.75 by `environment:`; env→5 unblocks; blocked again at 1.25 by `key:`; user→0.1 blocks immediately |
-| The comparison is `spend > max_budget` (**post-paid**): the request that crosses the line is served, the NEXT one is refused with `{"detail":"Budget has been exceeded! Tag=<tag> Current cost: <x>, Max budget <y>"}` (HTTP 429). | measured body |
+| The comparison is `spend > max_budget` (**post-paid**): the request that crosses the line is served, the NEXT one is refused. | measured |
+| The refusal is **HTTP 422** with no `Retry-After`. `/v1`, `/gemini` and `/a2a` answer `{"error":{"message":"Budget has been exceeded! Tag=<tag> Current cost: <x>, Max budget: <y>","type":"budget_exceeded","param":null,"code":"422"}}`, OpenAI-shaped even on `/v1/messages` and `/gemini`; `/mcp/<server>` tools/call answers `{"detail":"Budget has been exceeded! …"}`. `/mcp` initialize and tools/list, `/v1/models` and `/v2/model/info` stay 200. The forwarder passes all of it through unchanged. | measured through the forwarder, v1.108.1 |
+| ACH keeps LiteLLM's 422 default; `litellm_settings.budget_exceeded_status_code: 429` would change every route above and `exception_status`, never `exception_class` (`BudgetExceededError` either way). An exhausted budget is not transient: on 429 Claude Code, OpenCode, Gemini CLI and pi retry for 16 s to 3.7 min and Codex drops the budget message; on 422 all five stop within seconds and show it. | measured 2026-11-06, v1.108.1 |
 | Budget changes take effect in ≈10 s (cache) on an idle proxy, no key or team touch needed. A **raised** ceiling took **longer than 30 s** to start serving again on the e2e box — allow ~2 min before calling an unblock broken. | measured |
 | Enforcement compares the cache counter `spend:tag:<name>`, falling back to `LiteLLM_TagTable.spend` (`auth_checks._tag_max_budget_check`). That column IS the tag's current-cycle spend: every booked request increments it, and the reset job zeroes it (and the counter) at `budget_reset_at`. A hand-edited column changes nothing while the counter is warm. `LiteLLM_DailyTagSpend` holds the same spend as per-UTC-day history. *(Corrected 2026-10-27: this row used to say the column was NOT the counter.)* | forced `TagTable.spend` had no effect (counter warm); 4 costed calls at 0.25 → `TagTable.spend` 1 and `DailyTagSpend` 1, 4 requests (kind, v1.99.1) |
 | **`/tag/info` carries no spend at all** — the handler builds each entry without the key (`created_at`, `created_by`, `description`, `litellm_budget_table`, `model_info`, `models`, `name`, `updated_at`), and neither does `/tag/list`. A tag's spend is readable only from `GET /tag/daily/activity?tags=<name>&start_date=&end_date=` (whole UTC days, inclusive; `metadata.total_spend` covers ONE page, so page through `has_more`). | key list before and after traffic (kind, v1.99.1); production returned `"spend": null` |
@@ -644,6 +654,12 @@ concrete names (mirrors alitellm-operator's `LiteLLMAccessGroup`):
   200 on a model tagged `e2e-grp` and 403 `team_model_access_denied` on an
   untagged one ("This team can only access models=['e2e-grp']") — LiteLLM
   expands a tag inside `access_model_names`.
+- While an Environment has unresolved references, the reconcile writes only
+  removals: teams and models shrink to existing ∩ desired, an unresolved team
+  leaves `assigned_team_ids`, and an MCP server or agent id leaves only when
+  LiteLLM lists it and the spec no longer wants it. An id LiteLLM does not
+  list stays until the next full write. Nothing is added until every
+  reference resolves.
 - A tag matching nothing is ignored, not unresolved. A group member that
   vanished from the live list after the snapshot is dropped silently.
 - `status.expandedRuntime` lists the names granted ONLY through a group.

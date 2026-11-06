@@ -80,7 +80,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | `/.well-known/opencode` 404 | Request is not reaching `ach-gateway` (ingress rule), or per-service routing lacks the `/.well-known/opencode` → platform-api rule. |
 | `/.well-known/jwks.json` 404 or 5xx | Forwarder not routed, or not Ready (JWT keys missing). |
 | `GET /` answers `console not built` | A custom image built without the console; use the released image. |
-| Environment `AccessGroupSynced=False reason=UnresolvedReferences` | A model, MCP server, A2A agent, guardrail or team named in it does not exist in LiteLLM. The message lists the names. |
+| Environment `AccessGroupSynced=False reason=UnresolvedReferences` | A model, MCP server, A2A agent, guardrail or team named in it does not exist in LiteLLM. The message lists the names. While it lasts, access can shrink: an authorized team whose alias is unknown loses the Environment until it resolves, and nothing is added. |
 | Environment with guardrails stuck with a 403 | Team guardrails need a LiteLLM Enterprise licence; remove `runtime.guardrails` or license LiteLLM. |
 | `ach-cli whoami` works, `env list` empty | See "User signs in but sees no Environments" above. |
 
@@ -91,7 +91,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | LiteLLM 401 for every user; forwarder logs `key material decrypt failed` | platform-api and forwarder use different DEKs, or the DEK changed | Same Secret for both; affected users log in again, `ek-` keys are re-created. |
 | `/ui`, `/key/list`, `/health` are 404 through ACH | By design | Use LiteLLM's own host. |
 | An `ek-` key cannot be created: 403 `key_limit_reached` | `userDefaults.maxKeys` is 0 or reached | `ach-cli admin users limits <email> --max-keys N` or raise the default. |
-| Requests refused with 429 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
+| Requests refused with 422 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
 | Newly granted access takes minutes to work | LiteLLM caches access-group grants per replica (up to ~10 min) | Wait; nothing to fix in ACH. |
 | Dashboards never appear in Grafana | Grafana sidecar does not watch the namespace | `metrics.dashboards.namespace` or the sidecar's search namespace. |
 | Orphan reaper revoked nothing / logs `circuit_breaker` | More candidates than `ACH_ORPHAN_CLEANUP_MAX_REVOKE` | Inspect first with `ACH_ORPHAN_CLEANUP_DRY_RUN=true`, then raise the cap deliberately. |

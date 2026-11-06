@@ -1294,6 +1294,13 @@ func deepHashes(fw adapter.FileWrite, finalAbs string, isTOML bool) (fresh, onDi
 // hits the no-op skip path (FMT-05 byte no-op).
 func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.FileEntry, toolRoot string) (FileWrite, error) {
 	finalAbs := adapter.ResolveDest(toolRoot, fw.Path)
+	// Every runtime and projected write funnels through here. --global skips
+	// the check, see state.CheckContained.
+	if !d.global {
+		if err := state.CheckContained(toolRoot, finalAbs); err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s: %w", d.platformID, err)
+		}
+	}
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
 
 	// Composite pre-staging (D-06): build the per-plugin marked block ONCE so
@@ -1512,6 +1519,10 @@ type SyncOptions struct {
 	// WriteAtomic, no empty-dir pruning. Defaults false; existing
 	// forward-teardown callers are unaffected.
 	DryRun bool
+	// Global marks --global scope, which skips the symlink containment
+	// check: the root is the user's own home, there is no repository, and
+	// dotfile managers legitimately link ~/.claude and the like.
+	Global bool
 }
 
 // SyncStats reports the per-call Sync outcome. Pruned counts entries
@@ -1583,6 +1594,13 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 			base = toolRoot
 		}
 		abs := adapter.ResolveDest(base, e.Target)
+		// Checked for every entry before the first delete, so a refusal
+		// leaves the whole set in place.
+		if !opts.Global {
+			if err := state.CheckContained(base, abs); err != nil {
+				return stats, err
+			}
+		}
 		dels = append(dels, del{entry: e, abs: abs, keys: keys})
 		parentDirs[filepath.Dir(abs)] = struct{}{}
 	}

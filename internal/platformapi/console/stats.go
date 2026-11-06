@@ -143,7 +143,7 @@ func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
 //
 // The spend is the tag's own, over the window LiteLLM enforces it in (the
 // current budget cycle — see litellm.TagInfoEntry.SpendWindowStart), so it
-// is the figure the next 429 is decided on. /tag/info has none to offer.
+// is the figure the next refusal is decided on. /tag/info has none to offer.
 func (d Deps) userTagBudget(ctx context.Context, owner string) *observability.TagBudget {
 	tag := litellm.UserBudgetTag(owner)
 	entry, err := d.LiteLLM.TagInfo(ctx, tag)

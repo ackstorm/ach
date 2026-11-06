@@ -203,6 +203,20 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		return nil
 	}
 
+	// Project scope: nothing below may act through a path that leaves the
+	// workspace (--global skips this, see state.CheckContained).
+	if !in.global {
+		for _, p := range append([]string{achDir, lock.Path(achDir)}, statePaths...) {
+			if cerr := state.CheckContained(workspaceCwd, p); cerr != nil {
+				return &exit.CodedError{
+					Code:    exit.General,
+					Msg:     fmt.Sprintf("refusing to uninstall: %v", cerr),
+					Wrapped: cerr,
+				}
+			}
+		}
+	}
+
 	// (d) Acquire the env lock ONCE (achDir is shared across the env's
 	// per-platform states) mirroring commit.go:step1Lock.
 	lease, err := acquireUninstallLock(cmd, achDir, in.lockTimeout)
@@ -210,6 +224,24 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		return err
 	}
 	defer func() { _ = lease.Release() }()
+
+	// Load every state before tearing any down, so one unsafe file stops the
+	// run with nothing removed.
+	prevs := make([]*state.File, len(statePaths))
+	for i, sp := range statePaths {
+		prev, lerr := state.Load(sp)
+		if lerr == nil {
+			lerr = hydrate.ValidateState(prev, platformOfState(sp), toolRoot, in.global)
+		}
+		if lerr != nil {
+			return &exit.CodedError{
+				Code:    exit.ConfigFile,
+				Msg:     fmt.Sprintf("read %s: %v", filepath.Base(sp), lerr),
+				Wrapped: lerr,
+			}
+		}
+		prevs[i] = prev
+	}
 
 	// (e-g) Tear down each platform's state in turn: scope-filtered survivor set
 	// → inverse-merge teardown → state cleanup. Shared workspace content (prompts/
@@ -228,15 +260,8 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	removed := make([]hydrate.Result, 0, len(statePaths)) // one per matched target, empty or not, so rows stay labelled
 	var totalPruned, totalPreserved int
 	matched := false
-	for _, sp := range statePaths {
-		prev, lerr := state.Load(sp)
-		if lerr != nil {
-			return &exit.CodedError{
-				Code:    exit.ConfigFile,
-				Msg:     fmt.Sprintf("read %s: %v", filepath.Base(sp), lerr),
-				Wrapped: lerr,
-			}
-		}
+	for i, sp := range statePaths {
+		prev := prevs[i]
 		if prev == nil {
 			continue
 		}
@@ -260,6 +285,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			// WriteAtomic / dir-prune inside Sync; the !in.dryRun guard
 			// below covers only the state.json write.
 			DryRun: in.dryRun,
+			Global: in.global,
 		})
 		if serr != nil {
 			return &exit.CodedError{
@@ -276,8 +302,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		totalPruned += stats.Pruned
 		totalPreserved += stats.Preserved
 		changes, _ := hydrate.DiffItems(prev, scopedEmpty)
-		platform := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(sp), "state-"), ".json")
-		removed = append(removed, hydrate.Result{PlatformID: platform, Changes: changes})
+		removed = append(removed, hydrate.Result{PlatformID: platformOfState(sp), Changes: changes})
 	}
 
 	if in.only != nil && !matched {
@@ -295,6 +320,11 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	}
 	u.verb("Finished", "%s in %s", result, elapsed(time.Since(start)))
 	return nil
+}
+
+// platformOfState returns the platform of a state-<platform>.json path.
+func platformOfState(statePath string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(filepath.Base(statePath), "state-"), ".json")
 }
 
 // nothingInstalledMessage names where uninstall looked and which

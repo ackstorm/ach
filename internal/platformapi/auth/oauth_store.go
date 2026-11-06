@@ -15,8 +15,8 @@ import (
 // namespaced "ach:oauth:<kind>:<id>". Kinds: client (DCR registration),
 // pending (an /authorize or device confirmation waiting on Dex), code
 // (single use), refresh (rotated on use), rotating (a refresh a grant holds),
-// device + device_user (RFC 8628). A Redis flush logs every
-// OAuth client out — they re-run the browser flow. Accepted for v1.
+// device + device_user (RFC 8628), session_gen (see SessionGen). A Redis flush
+// logs every OAuth client out — they re-run the browser flow. Accepted for v1.
 type OAuthStore struct {
 	RDB *redis.Client
 }
@@ -65,6 +65,32 @@ func (s *OAuthStore) Take(ctx context.Context, kind, id string, out any) (bool, 
 		return false, err
 	}
 	return true, json.Unmarshal(b, out)
+}
+
+// sessionGenKind holds a counter per user, keyed by the lower-cased email.
+const sessionGenKind = "session_gen"
+
+// SessionGen reads the user's session generation, 0 when absent, and slides
+// its TTL. Every record stamped with a generation is written right after a
+// read, so the counter outlives them all: if it expired under a live record it
+// would restart at 0 and hand the same numbers out again.
+func (s *OAuthStore) SessionGen(ctx context.Context, email string, ttl time.Duration) (int64, error) {
+	gen, err := s.RDB.GetEx(ctx, oauthKey(sessionGenKind, email), ttl).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return gen, err
+}
+
+// BumpSessionGen moves the user's session generation on.
+func (s *OAuthStore) BumpSessionGen(ctx context.Context, email string, ttl time.Duration) error {
+	key := oauthKey(sessionGenKind, email)
+	_, err := s.RDB.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		p.Incr(ctx, key)
+		p.Expire(ctx, key, ttl)
+		return nil
+	})
+	return err
 }
 
 // Del removes one record; absent is not an error.

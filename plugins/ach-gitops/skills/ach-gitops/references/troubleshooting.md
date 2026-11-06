@@ -59,7 +59,7 @@ After fixing a Secret or the upstream, `ach-cli admin refresh <kind> <name>` ret
 | `ExecutionResourcesResolved=False` `ResourceUnresolved` | A runtime name is not in LiteLLM (see `status.unresolvedRuntime`), or a plugin/skill has never been fetched (see `status.unresolvedContextPlugins` / `unresolvedContextSkills`) | Correct the name with `ach-cli admin list models|mcp|a2a|guardrails`; register it in LiteLLM; fix the Plugin/Skill/marketplace first; use `name@marketplace` for marketplace items |
 | same, for a model that works for inference | The name is a LiteLLM `model_group_alias`, which is not in LiteLLM's model catalog | List the underlying model name |
 | same, message starts `snapshot stale (LiteLLM unreachable)` | The operator cannot read LiteLLM | Check `kubectl get llmconn default` |
-| `AccessGroupSynced=False` `UnresolvedReferences` | An MCP server, A2A agent, team alias or guardrail is not in LiteLLM; the message lists which | Fix the name or create it in LiteLLM (ACH never creates teams or guardrails) |
+| `AccessGroupSynced=False` `UnresolvedReferences` | An MCP server, A2A agent, team alias or guardrail is not in LiteLLM; the message lists which | Fix the name or create it in LiteLLM (ACH never creates teams or guardrails). While unresolved, access can shrink (a team with an unknown alias loses the Environment; nothing is added) |
 | `AccessGroupSynced=False` `ShellTeamFailed` with a licence hint | `guardrails` set on a LiteLLM without an Enterprise licence | Empty `guardrails`, or license the proxy |
 | `AccessGroupSynced=False` `ShellTeamFailed` (other) | LiteLLM refused to create or repair the `ach-env-<name>` team | Read the message; check LiteLLM health and the master key |
 | `AccessGroupSynced=False` `AccessGroupCreateFailed` / `AccessGroupUpdateFailed` / `ResolveFailed` | LiteLLM API error during the write or a lookup | Usually transient; persistent means LiteLLM itself is failing |
@@ -83,4 +83,4 @@ without that guardrail.
 | `403 unauthorized_team` on an `ek-` key | The key's owner is no longer in an authorized team; the key is now invalid |
 | MCP backend sees no identity / tool list empty | No BackendIdentityPolicy, `forwardIdentityJWT: false`, or LiteLLM lacks `extra_headers: ["authorization"]` for that server |
 | Plugin or skill missing after hydrate | It is listed bare but lives in a marketplace (needs `@marketplace`), or the user has not re-hydrated since the change |
-| Budget 429 `Budget has been exceeded! Tag=environment:<name>` | The Environment's pooled `budget` is spent; raise `maxBudget` (takes ~10 s to a couple of minutes) or wait for the reset |
+| Budget 422 `Budget has been exceeded! Tag=environment:<name>` | The Environment's pooled `budget` is spent; raise `maxBudget` (takes ~10 s to a couple of minutes) or wait for the reset |

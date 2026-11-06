@@ -33,17 +33,28 @@ import (
 // first hydrate), returns nil with no work. The hydrate orchestrator
 // MAY call this before creating the tmp/ directory.
 //
+// A tmp that is a symlink or not a directory is removed itself and never
+// listed: a repository can commit .ach/, and following the link would wipe
+// its target. The hydrate run checks achDir with CheckContained first.
+//
 // Concurrency: the §6.7 lock (W1-03) is held by the caller around the
 // full 14-step sequence; SweepTmp is therefore single-writer per
 // <ach-dir>. No file-system races with concurrent hydrate processes.
 func SweepTmp(achDir string) error {
 	tmp := filepath.Join(achDir, "tmp")
-	entries, err := os.ReadDir(tmp)
+	info, err := os.Lstat(tmp)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// Idempotent: absent tmp/ is the fresh-workspace branch.
 			return nil
 		}
+		return err
+	}
+	if !info.IsDir() {
+		return os.Remove(tmp)
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
 		return err
 	}
 	for _, entry := range entries {

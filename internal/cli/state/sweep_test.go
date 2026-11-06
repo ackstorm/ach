@@ -144,3 +144,70 @@ func TestSweepTmp_RemoveFails_SwallowsError(t *testing.T) {
 		t.Fatalf("SweepTmp: %v, want nil per spec §6.7 step 2", err)
 	}
 }
+
+// TestSweepTmp_SymlinkRemovesOnlyTheLink: <achDir>/tmp is never followed.
+func TestSweepTmp_SymlinkRemovesOnlyTheLink(t *testing.T) {
+	achDir := t.TempDir()
+	outside := t.TempDir()
+	keep := filepath.Join(outside, "keep")
+	if err := os.WriteFile(keep, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(achDir, "tmp")
+	if err := os.Symlink(outside, tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := state.SweepTmp(achDir); err != nil {
+		t.Fatalf("SweepTmp: %v", err)
+	}
+
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("link target lost its content: %v", err)
+	}
+	if _, err := os.Lstat(tmp); !os.IsNotExist(err) {
+		t.Fatalf("link still present: %v", err)
+	}
+}
+
+func TestSweepTmp_RegularFileRemoved(t *testing.T) {
+	achDir := t.TempDir()
+	tmp := filepath.Join(achDir, "tmp")
+	if err := os.WriteFile(tmp, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SweepTmp(achDir); err != nil {
+		t.Fatalf("SweepTmp: %v", err)
+	}
+	if _, err := os.Lstat(tmp); !os.IsNotExist(err) {
+		t.Fatalf("regular file still present: %v", err)
+	}
+}
+
+// TestSweepTmp_EntrySymlinkNotFollowed: a link inside a real tmp/ goes, its
+// target stays.
+func TestSweepTmp_EntrySymlinkNotFollowed(t *testing.T) {
+	achDir := t.TempDir()
+	outside := t.TempDir()
+	keep := filepath.Join(outside, "keep")
+	if err := os.WriteFile(keep, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(achDir, "tmp")
+	if err := os.Mkdir(tmp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(tmp, "entry")); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SweepTmp(achDir); err != nil {
+		t.Fatalf("SweepTmp: %v", err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("link target lost its content: %v", err)
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("tmp/ not cleared: %v %v", entries, err)
+	}
+}

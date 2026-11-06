@@ -5,11 +5,46 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Changed
+- Docs, the console and the e2e suite follow LiteLLM v1.108's budget refusal:
+  HTTP 422 with `type: budget_exceeded`, not 429. ACH keeps that default
+  because clients stop at once and show why, instead of retrying a request
+  that cannot succeed. The e2e LiteLLM pin moves to v1.108.1.
 - `scripts/dev.sh` shares one Go build and module cache per machine, Go's own
   defaults, so a new worktree starts warm. Existing `.gocache/build` and
   `.gocache/gopath/pkg` directories can be deleted with `make clean-cache`.
 - `make cluster-up` and `make e2e-run` refuse to start with under 5 GB free on
   the workspace disk.
+- ACH requires LiteLLM 1.108 or later.
+- The forwarder refuses request bodies on `/v1`, `/gemini` and `/a2a` that set
+  a LiteLLM per-request control (`api_key`, `deployment_id`, guardrail fields,
+  `mcp` tools) with 400
+  `client_param_not_allowed`. Form bodies refuse the same top-level names.
+- `/gemini` serves only the model routes (`GET /v1beta/models[/{model}]` and
+  `POST /v1beta/models/{model}:{generateContent|streamGenerateContent|countTokens|embedContent|batchEmbedContents}`);
+  other paths answer 404 `route_not_allowed`. A body or batch entry model that differs from
+  the path model, or a POST body whose Content-Type is neither
+  `application/json` nor absent, is 400 `model_mismatch`.
+- Requests that outlive their key end within about a minute of the key being
+  suspended, revoked or expired, including streams and `/v1/realtime`.
+- `POST /platform/oauth/register` answers 413 over 4 KiB and 429 `rate_limited`
+  past a per-address and a global limit, per replica.
+- `ach-cli env hydrate` and `env uninstall` refuse a path in the workspace that
+  resolves outside it (`--global` is exempt). In `--global` mode a recorded
+  absolute target must sit under the tool's config root.
+- While an Environment has unresolved references, the operator applies
+  removals only: access can shrink, nothing is added.
+- `POST /platform/admin/users/{email}/revoke-keys` normalises the email, walks
+  every page of keys and answers 500 if a page fails; rerun it to finish. It
+  ends the user's OAuth sessions once, with or without an active `pk_`, and
+  answers 500 if that fails, after sweeping the keys; rerun it to end them.
+- Ending a user's OAuth sessions also invalidates refresh tokens issued before
+  a later login.
+
+### Documentation
+- Writing a content CR or a `LiteLLMConnection` is equivalent to reading every
+  Secret in the ACH namespace; give such writers admin-tier trust.
+- A user disabled at the IdP keeps working `ek-` keys; offboard with
+  `ach-cli admin keys revoke --owner <email>`.
 
 ### Fixed
 - A killed `make` no longer leaves its `ach-devtools` container running.

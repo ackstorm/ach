@@ -52,8 +52,8 @@ type Deps struct {
 	// SetMaxKeys upserts one person's ek_ key ceiling. Production binds this
 	// to db.SetUserMaxKeys; the function seam keeps handler tests pool-free.
 	SetMaxKeys func(ctx context.Context, email string, maxKeys int) error
-	// EndOAuthSessions ends the owner's OAuth sessions after a pk_ revoke
-	// (nil = no-op).
+	// EndOAuthSessions ends the owner's OAuth sessions on a pk_ revoke and on
+	// the revoke-keys sweep (nil = no-op).
 	EndOAuthSessions func(ctx context.Context, email string) error
 }
 
@@ -159,7 +159,7 @@ func RevokeKeyHandler(deps Deps) http.HandlerFunc {
 // the best-effort LiteLLM call failed, else OutcomeRevoked. This is the
 // DIVERGENT half of DUP-3 — the bulk caller always emits OutcomeRevoked.
 func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID string, w http.ResponseWriter) {
-	litellmOK, err := revokePkInline(ctx, deps, keyID)
+	owner, litellmOK, err := revokePkInline(ctx, deps, keyID)
 	if err != nil {
 		if errors.Is(err, errKeyNotActive) {
 			// Already revoked, expired, or unknown. Per the helper's
@@ -179,6 +179,12 @@ func revokePersonalKey(ctx context.Context, deps Deps, keyID, actor, reqID strin
 		}
 		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", reqID)
 		return
+	}
+
+	if deps.EndOAuthSessions != nil {
+		if err := deps.EndOAuthSessions(ctx, owner); err != nil && deps.Logger != nil {
+			deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
+		}
 	}
 
 	// Audit emission (single event, outcome reflects LiteLLM
@@ -273,14 +279,19 @@ func revokeEnvironmentKey(ctx context.Context, deps Deps, keyID, actor, reqID st
 	render.JSON(w, http.StatusOK, revokeKeyResponse{KeyID: keyID, Status: "revoked"})
 }
 
-// RevokeUserKeysHandler revokes every active pk_ and ek_ row for the
-// URL-decoded email path parameter. The email is matched verbatim
-// (no normalization per §16 DB-05); URL encoding is reversed via
-// url.PathUnescape so `u%40x.com` → `u@x.com`.
+// RevokeUserKeysHandler revokes every live pk_ and ek_ row for the
+// URL-decoded email path parameter, walking every page of both key types.
+// URL encoding is reversed via url.PathUnescape so `u%40x.com` → `u@x.com`,
+// and the email is normalized like the budget and limits routes: logins store
+// it lower-cased.
 //
 // Returns 200 with body {"revoked_count": N, "errors": [...]} even on
-// per-row partial failures; the admin caller decides how to react.
-// Aggregate audit event emitted at end with ActionAdminUsersRevokeKeys.
+// per-row partial failures; the admin caller decides how to react. A list
+// failure on any page is a 500: the sweep is incomplete, and running it again
+// picks up what is left. The user's OAuth sessions end once per call, whatever
+// keys exist; if that fails the sweep still runs and the answer is a 500, so a
+// rerun ends them. Aggregate audit event emitted at end with
+// ActionAdminUsersRevokeKeys.
 func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -290,74 +301,97 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 
 		encoded := chi.URLParam(r, "email")
 		email, err := url.PathUnescape(encoded)
+		email = litellm.NormalizeEmail(email)
 		if err != nil || email == "" {
 			render.Error(w, http.StatusBadRequest, audit.OutcomeInvalidKeyFormat, "invalid email path parameter", reqID)
 			return
 		}
 
-		// Admin operations may use a higher internal cap than the
-		// user-visible §15.5 pagination ceiling. 1000 keeps the unit
-		// of work bounded; a user with >1000 active keys is itself an
-		// anomaly worth flagging.
-		const adminListLimit = 1000
+		const pageSize = 500 // the db list ceiling
 
 		var revokedCount int
 		var errs []string
 
-		// pk_ branch — DB-first per KEY-07.
-		pkRows, _, err := db.ListPersonalKeysByOwner(ctx, deps.Pool, email, adminListLimit, "")
-		if err != nil {
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error listing pk rows", reqID)
-			return
+		// Sessions end before the sweep: until they do, a token refresh can
+		// mint a pk_ the sweep has already passed.
+		var sessionErr error
+		if deps.EndOAuthSessions != nil {
+			sessionErr = deps.EndOAuthSessions(ctx, email)
 		}
-		for _, pk := range pkRows {
-			if pk.Status != "active" {
-				continue
+		if sessionErr != nil && deps.Logger != nil {
+			deps.Logger.Error("admin.revoke-keys: ending the OAuth sessions failed", "err", sessionErr)
+		}
+
+		// pk_ branch — DB-first per KEY-07.
+		for cursor := ""; ; {
+			pkRows, next, err := db.ListPersonalKeysByOwner(ctx, deps.Pool, email, pageSize, cursor)
+			if err != nil {
+				render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error listing pk rows", reqID)
+				return
 			}
-			// Bulk pk_ audit policy DIVERGES from the single handler:
-			// OutcomeRevoked is emitted UNCONDITIONALLY (litellmOK ignored)
-			// — the DB flip is the visible barrier and the aggregate event
-			// does not surface per-row LiteLLM reachability.
-			if _, e := revokePkInline(ctx, deps, pk.KeyID); e != nil {
-				errs = append(errs, "pk:"+pk.KeyID+":"+e.Error())
-				continue
+			for _, pk := range pkRows {
+				if pk.Status != "active" {
+					continue
+				}
+				// Bulk pk_ audit policy DIVERGES from the single handler:
+				// OutcomeRevoked is emitted UNCONDITIONALLY (litellmOK ignored)
+				// — the DB flip is the visible barrier and the aggregate event
+				// does not surface per-row LiteLLM reachability.
+				if _, _, e := revokePkInline(ctx, deps, pk.KeyID); e != nil {
+					errs = append(errs, "pk:"+pk.KeyID+":"+e.Error())
+					continue
+				}
+				if deps.Audit != nil {
+					audit.EmitAudit(ctx, deps.Audit, audit.Event{
+						Action: audit.ActionPkRevoke, Outcome: audit.OutcomeRevoked,
+						Actor: actor, RequestID: reqID, KeyID: pk.KeyID,
+					})
+				}
+				revokedCount++
 			}
-			if deps.Audit != nil {
-				audit.EmitAudit(ctx, deps.Audit, audit.Event{
-					Action: audit.ActionPkRevoke, Outcome: audit.OutcomeRevoked,
-					Actor: actor, RequestID: reqID, KeyID: pk.KeyID,
-				})
+			if next == "" {
+				break
 			}
-			revokedCount++
+			cursor = next
 		}
 
 		// ek_ branch — LiteLLM-first per KEY-08.
-		ekRows, _, err := db.ListEnvironmentKeysByOwner(ctx, deps.Pool, email, adminListLimit, "")
-		if err != nil {
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error listing ek rows", reqID)
-			return
-		}
-		for _, ek := range ekRows {
-			if ek.Status == "revoked" {
-				// Suspended/expired rows are still live in LiteLLM and must
-				// be revoked like an active row — only a truly revoked row
-				// has nothing left to do.
-				continue
+		for cursor := ""; ; {
+			ekRows, next, err := db.ListEnvironmentKeysByOwner(ctx, deps.Pool, email, pageSize, cursor)
+			if err != nil {
+				render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error listing ek rows", reqID)
+				return
 			}
-			// Bulk ek_ audit: revokeEkInline emits BOTH OutcomeLitellmUnreachable
-			// (on LiteLLM fail) and OutcomeRevoked (on success) itself — do NOT add
-			// an audit block here; it would double-emit (DUP-3 divergence guard).
-			if e := revokeEkInline(ctx, deps, &ek, actor, reqID); e != nil {
-				errs = append(errs, "ek:"+ek.KeyID+":"+e.Error())
-				continue
+			for _, ek := range ekRows {
+				if ek.Status == "revoked" {
+					// Suspended/expired rows are still live in LiteLLM and must
+					// be revoked like an active row — only a truly revoked row
+					// has nothing left to do.
+					continue
+				}
+				// Bulk ek_ audit: revokeEkInline emits BOTH OutcomeLitellmUnreachable
+				// (on LiteLLM fail) and OutcomeRevoked (on success) itself — do NOT add
+				// an audit block here; it would double-emit (DUP-3 divergence guard).
+				if e := revokeEkInline(ctx, deps, &ek, actor, reqID); e != nil {
+					errs = append(errs, "ek:"+ek.KeyID+":"+e.Error())
+					continue
+				}
+				revokedCount++
 			}
-			revokedCount++
+			if next == "" {
+				break
+			}
+			cursor = next
 		}
 
+		outcome := audit.OutcomeRevoked
+		if sessionErr != nil {
+			outcome = audit.OutcomeInternalError
+		}
 		if deps.Audit != nil {
 			audit.EmitAudit(ctx, deps.Audit, audit.Event{
 				Action:    audit.ActionAdminUsersRevokeKeys,
-				Outcome:   audit.OutcomeRevoked,
+				Outcome:   outcome,
 				Actor:     actor,
 				RequestID: reqID,
 				Target:    &audit.Target{Kind: "user", Name: email},
@@ -365,6 +399,10 @@ func RevokeUserKeysHandler(deps Deps) http.HandlerFunc {
 			})
 		}
 
+		if sessionErr != nil {
+			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error ending the user's sessions", reqID)
+			return
+		}
 		render.JSON(w, http.StatusOK, userRevokeResponse{RevokedCount: revokedCount, Errors: errs})
 	}
 }
@@ -402,9 +440,9 @@ func (e litellmUnreachableErr) Is(target error) bool {
 
 // revokePkInline performs the pk_ revoke side-effects in WARN-04 order:
 // DB flip first (the visible barrier), then best-effort LiteLLM RevokeKey.
-// Returns (litellmOK, err): err is non-nil only for DB failure / not_active
-// (errKeyNotActive); LiteLLM-unreachable is reported via litellmOK=false
-// (WARN-04: NOT an error).
+// Returns (owner, litellmOK, err): owner is the row's email; err is non-nil
+// only for DB failure / not_active (errKeyNotActive); LiteLLM-unreachable is
+// reported via litellmOK=false (WARN-04: NOT an error).
 //
 // It does NOT emit audit — the caller emits with ITS OWN outcome policy so
 // the divergent single-vs-bulk audit semantics are preserved verbatim:
@@ -412,18 +450,13 @@ func (e litellmUnreachableErr) Is(target error) bool {
 // when !litellmOK, else OutcomeRevoked); the bulk caller emits OutcomeRevoked
 // UNCONDITIONALLY (litellmOK ignored). Because audit moved to the callers,
 // the helper no longer needs actor/reqID.
-func revokePkInline(ctx context.Context, deps Deps, keyID string) (litellmOK bool, err error) {
+func revokePkInline(ctx context.Context, deps Deps, keyID string) (owner string, litellmOK bool, err error) {
 	row, err := db.RevokePersonalKey(ctx, deps.Pool, keyID)
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	if row == nil {
-		return false, errKeyNotActive
-	}
-	if deps.EndOAuthSessions != nil {
-		if err := deps.EndOAuthSessions(ctx, row.OwnerEmail); err != nil && deps.Logger != nil {
-			deps.Logger.Error("pk revoke: ending the owner's OAuth sessions failed", "key_id", keyID, "err", err)
-		}
+		return "", false, errKeyNotActive
 	}
 	litellmOK = true
 	if row.LiteLLMToken != nil && *row.LiteLLMToken != "" {
@@ -436,7 +469,7 @@ func revokePkInline(ctx context.Context, deps Deps, keyID string) (litellmOK boo
 			}
 		}
 	}
-	return litellmOK, nil
+	return row.OwnerEmail, litellmOK, nil
 }
 
 // revokeEkInline runs the LiteLLM-first ek_ revocation side-effects and

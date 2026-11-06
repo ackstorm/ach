@@ -47,8 +47,9 @@ litellmConnection:
   (`ACH_LITELLM_CONNECTION_*`) and creates `LiteLLMConnection/default` in the
   release namespace on boot. Helm cannot create that CR itself in the same
   release that installs its CRD, so do not add one to your manifests.
-- The forwarder reads the connection from Postgres and gets RBAC to read only
-  that Secret (a cross-namespace Role when `namespace` is set).
+- The forwarder reads the connection from Postgres. Its Role in the release
+  namespace reads every Secret there, not one; when `namespace` is set, a second
+  Role in that namespace is limited to the master-key Secret.
 
 Check: `kubectl -n ach get llmconn default` shows `READY=True`. The operator
 also creates the LiteLLM team with alias `default` once the connection is
@@ -143,6 +144,8 @@ order, first match wins. Empty (default) = no rewrite.
 ## Version notes
 
 ACH relies on LiteLLM's virtual keys, teams, access groups, tag budgets and
-MCP gateway. Use a LiteLLM version at least as new as the one the ACH release
-was tested against (its e2e LiteLLM values pin the image), and re-test
+MCP gateway. The minimum LiteLLM is 1.108: below it, a client-set `fallbacks`
+field reaches models outside the caller's Environment. Use a version at least
+as new as the one the ACH release was tested against (its e2e LiteLLM values
+pin the image), and re-test
 Environments going Available after any LiteLLM upgrade.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -15,9 +16,6 @@ import (
 //	/gemini/v1beta/models/<model>:generateContent
 //	/gemini/v1beta/models/<model>:streamGenerateContent
 //	/gemini/v1beta/models/<model>            (model metadata)
-//
-// A /gemini path without it (the OpenAI-compat sub-surface, where the model
-// travels in the JSON body) carries no rewritable model name.
 const modelsSegment = "/models/"
 
 // stripGeminiModelPrefix removes the first matching prefix in prefixes from
@@ -93,4 +91,108 @@ func ParseGeminiStripModelPrefixes(raw string) ([]string, error) {
 		seen[out[i]] = true
 	}
 	return out, nil
+}
+
+// geminiMethods are the POST actions ACH forwards on a model: the chat, token
+// count and embedding calls Gemini clients make. Every other action stays
+// closed until it is reviewed. The two embedding actions record no spend in
+// LiteLLM (references/litellm-permission-model.md).
+var geminiMethods = map[string]bool{
+	"generateContent":       true,
+	"streamGenerateContent": true,
+	"countTokens":           true,
+	"embedContent":          true,
+	"batchEmbedContents":    true,
+}
+
+// geminiPathModel applies the /gemini allowlist to r: the list and get
+// routes on GET, and a model action from geminiMethods on POST, all under
+// /v1beta/models, exact and case-sensitive. The model is one decoded path
+// segment once a configured vendor prefix is stripped, and it is taken
+// literally: an encoded slash, a dot segment, a colon, %, ? or # never names
+// a model.
+// model is "" for the list route.
+func geminiPathModel(r *http.Request, prefixes []string) (model string, ok bool) {
+	rest, found := strings.CutPrefix(r.URL.Path, "/gemini/v1beta/models")
+	if !found || strings.Contains(strings.ToLower(r.URL.RawPath), "%2f") {
+		return "", false
+	}
+	if rest == "" {
+		return "", r.Method == http.MethodGet
+	}
+	tail, found := strings.CutPrefix(rest, "/")
+	if !found {
+		return "", false
+	}
+	model = tail
+	if r.Method == http.MethodPost {
+		var method string
+		model, method, found = strings.Cut(tail, ":")
+		if !found || !geminiMethods[method] {
+			return "", false
+		}
+	} else if r.Method != http.MethodGet {
+		return "", false
+	}
+	// A configured prefix may itself hold a slash ("gemini/"), so it is
+	// stripped before the one-segment test; any other slash stays refused.
+	seg := strings.TrimPrefix(stripGeminiModelPrefix(modelsSegment+model, prefixes), modelsSegment)
+	if seg == "" || seg == "." || seg == ".." || strings.ContainsAny(seg, "/:%?#") {
+		return "", false
+	}
+	return model, true
+}
+
+// normGeminiModel reduces a model name to the form LiteLLM resolves: without
+// a leading "models/" (SDKs send it in bodies) and without a configured
+// vendor prefix.
+func normGeminiModel(name string, prefixes []string) string {
+	name = strings.TrimPrefix(name, "models/")
+	return strings.TrimPrefix(stripGeminiModelPrefix(modelsSegment+name, prefixes), modelsSegment)
+}
+
+// bodyModelMatches reports whether a request body, when there is one, names
+// no model other than the path's: one request addresses one model, and the
+// body must agree with the path on which. Only a JSON object can be compared,
+// so any other declared Content-Type or body shape is refused. The entries of
+// a batchEmbedContents body each name a model too, and must agree the same way.
+func bodyModelMatches(r *http.Request, body []byte, pathModel string, prefixes []string) bool {
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return true
+	}
+	if mt := mediaType(r.Header.Get("Content-Type")); mt != "" && mt != "application/json" {
+		return false
+	}
+	var b map[string]json.RawMessage
+	if json.Unmarshal(body, &b) != nil {
+		return false
+	}
+	// A second model field has no place on these routes.
+	if _, ok := b["target_model_names"]; ok {
+		return false
+	}
+	namesPath := func(raw json.RawMessage) bool {
+		var name string
+		return json.Unmarshal(raw, &name) == nil &&
+			normGeminiModel(name, prefixes) == normGeminiModel(pathModel, prefixes)
+	}
+	if raw, ok := b["model"]; ok && !namesPath(raw) {
+		return false
+	}
+	if !strings.HasSuffix(r.URL.Path, ":batchEmbedContents") {
+		return true
+	}
+	var entries []map[string]json.RawMessage
+	if raw, ok := b["requests"]; ok && json.Unmarshal(raw, &entries) != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e == nil { // a JSON null entry
+			return false
+		}
+		if raw, ok := e["model"]; ok && !namesPath(raw) {
+			return false
+		}
+	}
+	return true
 }

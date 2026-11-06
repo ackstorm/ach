@@ -85,6 +85,7 @@ describe('HowTo — troubleshooting', () => {
     render(<HowTo />);
     expect(screen.getByText(/401 Unauthorized/)).toBeInTheDocument();
     expect(screen.getByText(/429/)).toBeInTheDocument();
+    expect(screen.getByText(/422 Budget exceeded/)).toBeInTheDocument();
   });
 });
 
