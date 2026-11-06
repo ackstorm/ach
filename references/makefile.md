@@ -144,17 +144,15 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 | `shell` | A | Interactive shell inside the devtools container. |
 | `clean-cache` | B | Remove `./.gocache`, first `chmod -R u+w` to unlock Go's read-only modcache. Host-only — runs on the host filesystem as your UID (the dir is yours, not root's). Re-created on next `scripts/dev.sh` use. |
 | `clean` | B | Full clean: `bin/` + `dist/` + `testbin/` + `cover*.out`, then `clean-cache`. Host-only. Tool + service binaries are re-fetched/rebuilt on next `make`. NOT a docker prune — see `clean-docker`. |
+| `disk-check` | B | Refuse to start with under 5 GB free on the workspace disk. Runs before `cluster-up` and `e2e-run`. |
 | `clean-docker` | B | Reclaim docker disk: `docker builder prune -af` (all build cache — the big reclaim, tens of GB) + `docker image prune -f` (dangling/untagged images only). Host-only. **SAFE with a kind cluster up** — never touches running containers, tagged images (kind node / `ach-devtools` / `ach`), or volumes. NOT in the `clean` umbrella (kept docker-free) and deliberately NOT `docker system prune` / `image prune -a` (those evict the kind+devtools images → expensive re-pull/re-build). |
 | `clear` | B | Reclaim BOTH `./.gocache` and docker disk in one go: runs `clean-cache` + `clean-docker`. Host-only. Same safety as its parts (no cluster/volume/tagged-image eviction). |
 
-> **Per-worktree `.gocache` & "Permission denied" on delete.** `scripts/dev.sh`
-> roots every cache under `./.gocache` relative to the workspace, so each git
-> worktree gets its own. Go marks the module cache read-only (`0444` files /
-> `0555` dirs) by design; since you can't unlink entries from a non-writable
-> dir, `rm -rf <worktree>` (or `rm -rf .gocache`) fails with `Permission denied`
-> even though every file is owned by **you, not root**. Fix: `make clean-cache`
-> (or `chmod -R u+w .gocache && rm -rf .gocache`, or `./scripts/dev.sh go clean
-> -modcache -cache`) before removing the worktree.
+> **One Go cache per machine.** `scripts/dev.sh` mounts Go's defaults
+> (`~/.cache/go-build`, `~/go/pkg/mod`), so every checkout and worktree shares
+> them and a new worktree starts warm. `./.gocache` keeps only per-workspace
+> state (`HOME`, `GOPATH`, kubeconfig). `./scripts/dev.sh go clean -cache
+> -modcache` empties the shared caches.
 
 ### Build (`build-`)
 | Target | Ctx | Description |

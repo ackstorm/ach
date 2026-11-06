@@ -129,9 +129,8 @@ jobs:
       # uses for the linux/amd64 + linux/arm64 cross-compiles. Each GOOS/GOARCH
       # combo recompiles the full k8s.io + controller-runtime dep tree; without
       # a warm GOCACHE every release rebuilds it cold (~9m of binary builds).
-      # NOTE: this is the runner's native cache (~/.cache/go-build), distinct
-      # from devtools' per-worktree .gocache/ used by `make` targets — only the
-      # native one feeds goreleaser. restore-keys gives partial reuse even when
+      # NOTE: this is the runner's native cache (~/.cache/go-build), what feeds
+      # goreleaser, which builds outside the devtools container. restore-keys gives partial reuse even when
       # go.sum shifts: unchanged deps still hit by content hash, so the heavy
       # k8s tree stays warm across releases.
       - name: Cache Go build + module caches

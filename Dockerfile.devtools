@@ -103,8 +103,8 @@ RUN go install sigs.k8s.io/controller-tools/cmd/controller-gen@${CONTROLLER_GEN_
     && go clean -cache -modcache
 # ^ The installed binaries land in /usr/local/bin (GOBIN); the Go build +
 #   module caches under /go and /root/.cache are dead weight in the image
-#   (scripts/dev.sh overrides GOCACHE/GOMODCACHE to /workspace/.gocache at
-#   runtime, so the baked-in caches are never read). Clean them in the SAME
+#   (scripts/dev.sh overrides GOCACHE/GOMODCACHE at runtime, so the
+#   baked-in caches are never read). Clean them in the SAME
 #   layer so the saving actually lands — a later `RUN clean` cannot shrink an
 #   earlier layer.
 

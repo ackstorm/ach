@@ -410,8 +410,9 @@ make shell                       # interactive shell in the devtools container
 ```
 
 `scripts/dev.sh` mounts the repo + docker socket, preserves host UID:GID, and
-persists Go caches under `.gocache/` (per-workspace, so **each git worktree gets
-its own**). CI uses a pre-baked GHCR image keyed by
+shares **one Go build and module cache per machine** (Go's defaults,
+`~/.cache/go-build` and `~/go/pkg/mod`), so a new worktree starts warm. Only
+per-workspace state lives under `.gocache/` (`HOME`, `GOPATH`, kubeconfig). CI uses a pre-baked GHCR image keyed by
 `sha256(Dockerfile.devtools)[:12]` (local-build fallback on miss); **the local
 tag is keyed on that same hash**, so editing `Dockerfile.devtools` misses the
 cache and rebuilds on the next call. (It was a fixed `:latest` until
@@ -428,15 +429,11 @@ CI `go mod tidy` drift gate from an ordinary dev command with no signal.
 If a go command now fails on a missing `go.sum` entry, the fix is an explicit
 `go mod tidy`, never loosening the flag.
 
-**Keep the environment clean — `make clean-cache` after each feature.** Go marks
-its module cache read-only (`0444`/`0555`), so a plain `rm -rf .gocache` (or
-`git worktree remove`) fails with `Permission denied` — the files are owned by
-**you, not root**; you just can't unlink from a non-writable dir. `make
-clean-cache` (host-only: `chmod -R u+w` then `rm -rf ./.gocache`) clears it
-safely. Recommended once a feature/worktree is done so stale per-worktree caches
-don't pile up; re-created on next `scripts/dev.sh` use. (`make clean` is the
-broader umbrella — also drops `bin/`/`dist/`/`testbin/`/coverage on top of the
-cache.) For **docker** disk (not the Go cache), `make clean-docker` reclaims
+**Disk.** Go trims the build cache itself; `./scripts/dev.sh go clean -cache
+-modcache` empties both shared caches. `make cluster-up` and `make e2e-run` refuse
+to start with under 5 GB free on the workspace disk (`make disk-check`). `make
+clean-cache` drops `./.gocache`; `make clean` also drops
+`bin/`/`dist/`/`testbin/`/coverage. For **docker** disk, `make clean-docker` reclaims
 build cache + dangling images — **safe with a kind cluster up** (never touches
 running containers, tagged images, or volumes); it is NOT in the `clean`
 umbrella and deliberately avoids `docker system prune` / `image prune -a`.
@@ -508,13 +505,10 @@ A release is confirmed OK when `gh release list -L 1` shows the new version
 as `Latest` AND `gh run list --branch main -L 3` shows its `Release` run
 `success`. Only then, always:
 
-1. `make clean-cache` in the primary checkout and in every worktree whose
-   branch is merged (`.gocache` is 3–9 GB each; a full `/home/coder` once
-   killed a gate mid-run with ENOSPC).
-2. `git worktree remove` + `git branch -D` the merged feature worktrees;
+1. `git worktree remove` + `git branch -D` the merged feature worktrees;
    delete the merged remote branch (`git push origin --delete <branch>`).
-3. `make clean-docker` (safe with kind up).
-4. `git pull --ff-only` on `main` to pick up the merged release commit.
+2. `make clean-docker` (safe with kind up).
+3. `git pull --ff-only` on `main` to pick up the merged release commit.
 
 Never touch another session's worktree or cache while it runs a gate
 (`pgrep -af <worktree-name>`), and never `uv cache clean`: long-running MCP
@@ -527,7 +521,7 @@ Service-specific debugging (content-service 404, forwarder JWT 401,
 SourceReachable rate-limit, AccessGroupSynced, hydrate-golden diff, mcp-echo,
 ConflictWithUIRow (dormant — the Environment upsert takes over UI rows),
 stale image roll) → **`references/troubleshooting.md`**. The
-six below are the cross-cutting workflow traps:
+ones below are the cross-cutting workflow traps:
 
 ### ❌ Prefixing a `make` target with `./scripts/dev.sh`
 `./scripts/dev.sh make test-unit` works but the prefix is redundant —
@@ -543,6 +537,13 @@ until docker logs $(docker ps -q -f ancestor=mock) | grep -q PASS; do sleep 10; 
 `timeout 600 docker logs -f $cid 2>&1 | grep -m1 -E "PASS|FAIL" || { echo FAIL >&2; exit 1; }`
 WHY: when the container exits and is removed, `docker ps -q` is empty,
 `docker logs` errors forever, and the loop never exits.
+
+### ❌ Judging an e2e run by a wrapper's exit code
+`timeout 1500 make e2e-run` that expires, or `make e2e-run | tail`, says nothing
+about the suite. ✅ Only `>>> E2E RESULT: PASS` as the last line is green. Leave
+the run unbounded or bound it well above the ~10 min: a loaded box can spend
+17 min on the cold build alone. WHY: a kill mid-run stops the recipe, so the
+later test groups never run.
 
 ### ❌ Invalid Postgres / Redis URLs in dev hydration
 `ach operator --postgres-url postgres://localhost/ach` → panic. ✅ Always pass
@@ -682,9 +683,6 @@ returns a previous run's key and never grows.
 Merging a worktree branch: from a `git worktree add` worktree, `cd <primary> &&
 git merge --ff-only <branch>` works; a session entered via `EnterWorktree` must
 `ExitWorktree(keep)` first (the isolation hook refuses `git -C`/`cd … && git`).
-A subagent killed mid-`make e2e-focus` leaves an `ach-devtools` container
-running (`make: *** Terminated` in its log): `docker ps | grep ach-devtools`,
-stop it before re-running.
 
 ## External references
 
