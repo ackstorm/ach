@@ -17,9 +17,10 @@
 //     bearing barrier so its ack is required before the DB flip.
 //
 //   - POST /users/{email}/revoke-keys
-//     URL-decodes {email} verbatim (no normalization per Hub §16 DB-05),
-//     iterates every active pk_ and ek_ row owned by that email, and
-//     runs the appropriate revocation sequence per row.
+//     URL-decodes and normalizes {email} (trimmed, lower-cased, like the
+//     budget and limits routes), walks every page of the pk_ and ek_ rows
+//     owned by that email, and runs the appropriate revocation sequence
+//     per live row.
 //
 //   - POST /refresh
 //     Body: {"kind":"plugin|prompt|artifact|pluginmarketplace","name":"..."}

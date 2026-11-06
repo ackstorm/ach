@@ -385,7 +385,16 @@ Hard-won details — do NOT re-derive:
   Render just wrote.
 - **Recorded destinations MAY be absolute under `--global`.** Join them with
   `adapter.ResolveDest`, NEVER bare `filepath.Join`. Applies to
-  `state.FileEntry.Target` and `store.FileRec.RelPath`.
+  `state.FileEntry.Target` and `store.FileRec.RelPath`. An absolute target must
+  sit under that adapter's `adapter.GlobalRoot`; `state.ValidateState` refuses
+  any other, and every `Load` caller applies it.
+- **Project scope never follows a link out of the workspace.** Hydrate and
+  uninstall refuse (`refusing to hydrate:` / `refusing to uninstall:`, exit 1) a
+  path that resolves outside the workspace, naming it; links staying inside are
+  allowed. `--global` is exempt from the symlink rule, not from target
+  validation. A tmp link is discarded, never followed. `Sync` is all or nothing
+  on a containment refusal, and `env uninstall` validates every per-platform
+  state before removing anything.
 - **Conflict namespacing is rooted to the configured destination.** An absolute
   config root whose name contains `skills` must not be mistaken for the
   adapter's `skills/<name>/` route when the resource leaf is prefixed.
@@ -398,8 +407,9 @@ Hard-won details — do NOT re-derive:
   is prepended.
 - **Known ceilings:** `OPENCODE_CONFIG` (a file) and `OPENCODE_CONFIG_DIR` (a
   dir, additive per `paths.ts` but replacing per `global.ts` — verify against
-  the real binary first) are NOT honored. Changing the var between runs without
-  `env hydrate --sync` leaves the old files as orphans.
+  the real binary first) are NOT honored. Changing a config-dir variable between
+  runs makes an absolute state row from the old value fail with `state file
+  tracks ...` until the variable is restored or the state file removed.
 - `ach-cli` only READS these vars; it never sets them. If your shell does not
   export the var, `--global` behaves exactly as before.
 

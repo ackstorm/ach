@@ -26,7 +26,19 @@ var (
 	errInvalidBody = errors.New("request body is not valid")
 	// errClientTags: a form body carrying a tags/metadata field.
 	errClientTags = errors.New("client budget tags are not allowed in form bodies")
+	// errClientParam: a body field LiteLLM honours per request that ACH refuses.
+	errClientParam = errors.New("client-set LiteLLM control is not allowed")
 )
+
+// refusedParams are request fields LiteLLM honours per request, while ACH's
+// Environment ceiling lives on the team, not the key. They are refused, not
+// stripped: dropping one silently changes what the caller gets.
+var refusedParams = []string{
+	"api_key", "deployment_id", "guardrails", "guardrail_config",
+}
+
+// refusedMetaParams are the same kind of field inside metadata objects.
+var refusedMetaParams = []string{"guardrails", "guardrail_config"}
 
 // tagBearing are the body keys LiteLLM reads budget tags from (as "tags", or
 // inside the "metadata" / "litellm_metadata" objects); as form fields they
@@ -57,6 +69,7 @@ func stripBodyTags(r *http.Request) error {
 		return errBodyTooLarge
 	}
 	r.Body = io.NopCloser(bytes.NewReader(raw))
+	r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(raw)), nil }
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
@@ -72,7 +85,7 @@ func stripBodyTags(r *http.Request) error {
 	// first ";", trimmed and lower-cased. mime.ParseMediaType is stricter
 	// (duplicate params -> "") and would disagree on what is a form.
 	ct := r.Header.Get("Content-Type")
-	switch strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0])) {
+	switch mediaType(ct) {
 	case "multipart/form-data":
 		return checkMultipart(raw, boundaryOf(ct))
 	case "application/x-www-form-urlencoded":
@@ -84,6 +97,7 @@ func stripBodyTags(r *http.Request) error {
 		return err
 	}
 	r.Body = io.NopCloser(bytes.NewReader(out))
+	r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(out)), nil }
 	r.ContentLength = int64(len(out))
 	r.Header.Set("Content-Length", strconv.Itoa(len(out)))
 	r.Header.Del("Transfer-Encoding")
@@ -91,9 +105,29 @@ func stripBodyTags(r *http.Request) error {
 	return nil
 }
 
+func mediaType(ct string) string {
+	return strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
+}
+
+// formFieldName drops a trailing "[]": it names the same field.
+func formFieldName(name string) string { return strings.TrimSuffix(name, "[]") }
+
+func isRefusedParam(name string) bool {
+	for _, k := range refusedParams {
+		if strings.EqualFold(formFieldName(name), k) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasTagField(name string) bool {
+	// A bracketed suffix names the same field.
+	if strings.HasPrefix(strings.ToLower(name), "litellm_metadata[") {
+		return true
+	}
 	for _, k := range tagBearing {
-		if strings.EqualFold(name, k) {
+		if strings.EqualFold(formFieldName(name), k) {
 			return true
 		}
 	}
@@ -108,6 +142,9 @@ func checkURLEncoded(raw []byte) error {
 	for k := range q {
 		if hasTagField(k) {
 			return errClientTags
+		}
+		if isRefusedParam(k) {
+			return errClientParam
 		}
 	}
 	return nil
@@ -184,8 +221,12 @@ func checkMultipart(raw []byte, boundary string) error {
 		if err != nil || hasNameAndNameStar(cd[0]) {
 			return errInvalidBody
 		}
-		if hasTagField(strings.TrimSpace(params["name"])) {
+		name := strings.TrimSpace(params["name"])
+		if hasTagField(name) {
 			return errClientTags
+		}
+		if isRefusedParam(name) {
+			return errClientParam
 		}
 	}
 }
@@ -236,6 +277,9 @@ func stripJSONTags(raw []byte) (out []byte, changed bool, err error) {
 // stripObjTags removes "tags" from m and from its "metadata" /
 // "litellm_metadata" objects (re-encoding those that changed), in place.
 func stripObjTags(m map[string]json.RawMessage) (changed bool, err error) {
+	if err := refuseParams(m); err != nil {
+		return false, err
+	}
 	if _, ok := m["tags"]; ok {
 		delete(m, "tags")
 		changed = true
@@ -260,6 +304,11 @@ func stripObjTags(m map[string]json.RawMessage) (changed bool, err error) {
 			}
 			continue
 		}
+		for _, p := range refusedMetaParams {
+			if _, ok := sub[p]; ok {
+				return false, errClientParam
+			}
+		}
 		if _, ok := sub["tags"]; !ok {
 			continue
 		}
@@ -272,4 +321,32 @@ func stripObjTags(m map[string]json.RawMessage) (changed bool, err error) {
 		changed = true
 	}
 	return changed, nil
+}
+
+// refuseParams returns errClientParam when m carries a refused field or a
+// tools entry of type "mcp" (LiteLLM would call MCP servers on the caller's
+// behalf outside the Environment's grants).
+func refuseParams(m map[string]json.RawMessage) error {
+	for _, k := range refusedParams {
+		if _, ok := m[k]; ok {
+			return errClientParam
+		}
+	}
+	var tools []json.RawMessage
+	if json.Unmarshal(m["tools"], &tools) != nil {
+		return nil
+	}
+	for _, raw := range tools {
+		// Exact key: LiteLLM reads "type" case-sensitively, Go's struct
+		// decoding would fold the case.
+		var t map[string]json.RawMessage
+		if json.Unmarshal(raw, &t) != nil {
+			continue
+		}
+		var typ string
+		if json.Unmarshal(t["type"], &typ) == nil && typ == "mcp" {
+			return errClientParam
+		}
+	}
+	return nil
 }

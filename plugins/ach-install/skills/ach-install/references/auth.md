@@ -22,8 +22,12 @@ to the real IdP, and back to `https://<ACH_BASE_URL>/platform/oauth/as-callback`
 
 On each interactive login ACH provisions the user in LiteLLM, adds them to the
 configured teams, and seeds their budget. Access tokens are 1-hour Ed25519
-JWTs; every refresh goes back to Dex with the user's Dex refresh token, so a
-user disabled at the IdP loses access at the next refresh. No API key is
+JWTs; every refresh goes back to Dex with the user's Dex refresh token. A Dex
+400 (reuse, unknown or expired token) ends the user's sessions; a connector
+refusal, such as a user disabled at Google, is Dex 500 and ACH answers 503
+without ending anything. ACH ends a session it sees refused but cannot detect a
+leaver who stops refreshing, and a disabled user's `ek-` keys stay alive: on
+offboarding run `ach-cli admin keys revoke --owner <email>`. No API key is
 minted at login.
 
 Agents and CI do not log in: they use environment keys (`ek-`) that a person

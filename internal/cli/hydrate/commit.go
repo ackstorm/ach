@@ -162,13 +162,20 @@ func newCommit(opts Opts) (*commit, error) {
 			}
 		}
 		statePath = platformStatePath
-		if !opts.DryRun {
-			if merr := state.MigrateLegacyPiState(statePath); merr != nil {
-				return nil, &exit.CodedError{
-					Code:    exit.General,
-					Msg:     fmt.Sprintf("migrate legacy pimono state: %v", merr),
-					Wrapped: merr,
-				}
+	}
+
+	if !opts.Global {
+		if err := checkWorkspacePaths(workspaceCwd, achDir, statePath, opts.Platform); err != nil {
+			return nil, err
+		}
+	}
+
+	if opts.Platform != "" && !opts.DryRun {
+		if merr := state.MigrateLegacyPiState(statePath); merr != nil {
+			return nil, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("migrate legacy pimono state: %v", merr),
+				Wrapped: merr,
 			}
 		}
 	}
@@ -229,6 +236,35 @@ func newCommit(opts Opts) (*commit, error) {
 	return c, nil
 }
 
+// checkWorkspacePaths refuses a project-scope run before it touches anything
+// when one of the paths the engine owns under the workspace leaves it. These
+// are decided here, once; projected targets are checked in publishFile and
+// deleted ones in Sync. <achDir>/tmp is absent from the list: SweepTmp discards
+// a link there instead of refusing it. --global skips this, see
+// state.CheckContained.
+func checkWorkspacePaths(root, achDir, statePath, platform string) error {
+	paths := []string{
+		achDir,
+		statePath,
+		lock.Path(achDir),
+		filepath.Join(root, ".gitignore"),
+		filepath.Join(achDir, "runtime-"+platform),
+	}
+	for _, kind := range []string{kindPrompt, kindPlugin, kindArtifact, kindSkill} {
+		paths = append(paths, filepath.Join(achDir, kind))
+	}
+	for _, p := range paths {
+		if err := state.CheckContained(root, p); err != nil {
+			return &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("refusing to hydrate: %v", err),
+				Wrapped: err,
+			}
+		}
+	}
+	return nil
+}
+
 // run executes the §6.7 14-step commit sequence. Each stepN is an
 // unexported method on *commit; the dispatch loop here checks the
 // TEST-ONLY SIGKILL seam after each step returns AND before stepN+1
@@ -265,6 +301,17 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 
 	// Step 2: sweep tmp.
 	c.step2SweepTmp()
+	if !c.opts.Global {
+		// The sweep's errors are benign, so a link it could not remove is
+		// caught here, before anything is staged through it.
+		if err := state.CheckContained(c.achDir, c.pluginStageRoot()); err != nil {
+			return result, &exit.CodedError{
+				Code:    exit.General,
+				Msg:     fmt.Sprintf("refusing to hydrate: %v", err),
+				Wrapped: err,
+			}
+		}
+	}
 	c.maybeKill(2)
 
 	// Step 3: read state + GuardEnvironment.
@@ -672,6 +719,15 @@ func (c *commit) step3ReadState() (*state.File, error) {
 		}
 	}
 
+	// No --force bypass: every later step trusts these targets.
+	if err := ValidateState(loaded, c.opts.Platform, c.toolRoot, c.opts.Global); err != nil {
+		return nil, &exit.CodedError{
+			Code:    exit.General,
+			Msg:     fmt.Sprintf("read state.json: %v", err),
+			Wrapped: err,
+		}
+	}
+
 	if err := c.stateStore.GuardEnvironment(loaded, c.opts.Environment, c.opts.Force); err != nil {
 		if errors.Is(err, state.ErrEnvironmentGuard) {
 			return nil, &exit.CodedError{
@@ -693,6 +749,17 @@ func (c *commit) step3ReadState() (*state.File, error) {
 			loaded.Environment, c.opts.Environment)
 	}
 	return loaded, nil
+}
+
+// ValidateState applies state.ValidateTargets for one platform's state file.
+// Hydrate and uninstall both call it before acting on a loaded file. Under
+// --global toolRoot is $HOME and an absolute target may live under the
+// adapter's config root, the only place RemapGlobalPath records one.
+func ValidateState(f *state.File, platform, toolRoot string, global bool) error {
+	if global {
+		return state.ValidateTargets(f, adapter.GlobalRoot(platform, toolRoot))
+	}
+	return state.ValidateTargets(f)
 }
 
 // step4ReconcileVsDisk — silent prune of state entries whose target
@@ -967,6 +1034,7 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 	stats, err := syncFn(prev, composed, c.achDir, c.toolRoot, SyncOptions{
 		Force:  c.opts.Force,
 		Stderr: c.opts.Stderr,
+		Global: c.opts.Global,
 	})
 	if err != nil {
 		var ce *exit.CodedError

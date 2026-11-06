@@ -76,8 +76,7 @@ install:
   platform-api pods (platform-api fetches `<issuer>/.well-known/openid-configuration`
   at startup and refuses to start when it cannot).
 - A connector that supports refresh tokens: every ACH token refresh replays
-  the user's Dex refresh token, so a user disabled at the IdP is out within the
-  hour. A login without a Dex refresh token fails loudly.
+  the user's Dex refresh token. A login without a Dex refresh token fails loudly.
 - If login teams should follow IdP groups, a connector configured to emit the
   `groups` claim.
 - Persistent Dex storage (Kubernetes CRDs or a database). In-memory storage

@@ -92,6 +92,10 @@ type oauthUser struct {
 	// Name is the IdP display name, shown by the console; empty when the
 	// IdP sends none.
 	Name string `json:"name,omitempty"`
+	// SessionGen is the user's session generation when this login happened.
+	// It rides every record that descends from the login: code, device,
+	// refresh and console session. Absent reads as 0.
+	SessionGen int64 `json:"session_gen,omitempty"`
 }
 
 // dexRefreshKind stores the user's Dex refresh token (offline_access) —
@@ -254,6 +258,11 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
+	gen, err := d.Store.SessionGen(r.Context(), email, d.sessionGenTTL())
+	if err != nil {
+		htmlError(w, 500, "store unavailable")
+		return
+	}
 	userID, err := d.provision(r.Context(), email, name, groups)
 	if err != nil {
 		_, status, msg := classifyProvisionError(err)
@@ -261,7 +270,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, status, msg)
 		return
 	}
-	u := oauthUser{Sub: email, UserID: userID, Name: name}
+	u := oauthUser{Sub: email, UserID: userID, Name: name, SessionGen: gen}
 	if p.Console {
 		d.consoleFinish(w, r, p, pendingID, u)
 		return

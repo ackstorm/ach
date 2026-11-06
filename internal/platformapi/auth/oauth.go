@@ -15,6 +15,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/platformapi/envkeys"
 )
 
 // OAuthDeps is what the OAuth 2.1 authorization server needs beyond
@@ -53,6 +54,8 @@ type OAuthDeps struct {
 	Mint          func(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error)
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
 	OAuthPKRevoke func(ctx context.Context, keyID string) error
+
+	registerLimit *envkeys.ClientLimiter // built by MountOAuth
 }
 
 func (d OAuthDeps) consentBIP(ctx context.Context, key string) (*db.BIPRow, error) {
@@ -76,6 +79,7 @@ func MountOAuth(d OAuthDeps) func(chi.Router) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	d.registerLimit = envkeys.NewClientLimiter(registerClientRate, registerClientBurst, registerGlobalRate, registerGlobalBurst)
 	return func(r chi.Router) {
 		r.Post("/register", d.register)
 		r.Get("/authorize", d.authorize)

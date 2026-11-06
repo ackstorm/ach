@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -724,7 +725,8 @@ func (r *EnvironmentReconciler) deleteEnvironmentProjection(
 //     matching LiteLLM ID. Distinct from
 //     ExecutionResourcesResolved=False because that condition is about
 //     the Snapshotter (cached, may be stale); this one is about the
-//     fresh-fetched resolver maps.
+//     fresh-fetched resolver maps. Removals still land, additions wait
+//     (see shrinkAccessGroup).
 //   - False/AccessGroupCreateFailed — POST /v1/access_group failed
 //   - False/AccessGroupUpdateFailed — PUT /v1/access_group/{id} failed
 //   - False/ResolveFailed          — one of ListMCPServers /
@@ -847,19 +849,7 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// over the human authorized teams only (the shell has no members).
 	resolvedAuthorizedTeamIDs := slices.Clone(teamIDs)
 
-	if len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved)+len(unresolvedGuardrails) > 0 {
-		return metav1.Condition{
-			Type:   "AccessGroupSynced",
-			Status: metav1.ConditionFalse,
-			Reason: "UnresolvedReferences",
-			Message: fmt.Sprintf(
-				"unresolved: mcpServers=%v a2aAgents=%v authorizedTeams=%v guardrails=%v",
-				mcpUnresolved, agentUnresolved, teamUnresolved, unresolvedGuardrails,
-			),
-			ObservedGeneration: env.Generation,
-			LastTransitionTime: metav1.Now(),
-		}
-	}
+	hasUnresolved := len(mcpUnresolved)+len(agentUnresolved)+len(teamUnresolved)+len(unresolvedGuardrails) > 0
 
 	// The deny-all shell team is what caps this Environment's ek_ keys, and
 	// it joins assigned_team_ids in the SAME write as the authorized teams:
@@ -873,11 +863,19 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// enough teams to exceed the cap), byAlias misses it and ensureShellTeam
 	// sees existingID=="" and CREATEs a brand-new shell team — a duplicate,
 	// unbounded, every single reconcile.
+	//
+	// ensureShellTeam writes spec.runtime.guardrails onto the team, so it waits
+	// for a clean resolution. Until then the shell is only looked up: an absent
+	// one leaves "" in teamIDs, which shrinkAccessGroup never matches.
 	shellAlias := litellm.ShellTeamAlias(env.Name)
-	shellID, sErr := r.ensureShellTeam(ctx, env, byAlias[shellAlias], logger)
-	if sErr != nil {
-		logger.Error(sErr, "shell team reconcile failed", "alias", shellAlias)
-		return shellTeamFailed(env, sErr)
+	shellID := byAlias[shellAlias]
+	if !hasUnresolved {
+		var sErr error
+		shellID, sErr = r.ensureShellTeam(ctx, env, shellID, logger)
+		if sErr != nil {
+			logger.Error(sErr, "shell team reconcile failed", "alias", shellAlias)
+			return shellTeamFailed(env, sErr)
+		}
 	}
 	if !slices.Contains(teamIDs, shellID) {
 		teamIDs = append(teamIDs, shellID)
@@ -922,6 +920,20 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	// and they may change at any moment, so ACH never resolves them.
 	desiredModels := unionSorted(env.Spec.Runtime.Models, env.Spec.Runtime.ModelGroups)
 
+	if hasUnresolved {
+		return r.shrinkAccessGroup(ctx, env, existing, desiredModels, mcpIDs, agentIDs, teamIDs, mcpMap, agentMap, metav1.Condition{
+			Type:   "AccessGroupSynced",
+			Status: metav1.ConditionFalse,
+			Reason: "UnresolvedReferences",
+			Message: fmt.Sprintf(
+				"unresolved: mcpServers=%v a2aAgents=%v authorizedTeams=%v guardrails=%v",
+				mcpUnresolved, agentUnresolved, teamUnresolved, unresolvedGuardrails,
+			),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		}, logger)
+	}
+
 	// Step 3a: POST when absent.
 	if existing == nil {
 		created, cerr := r.LiteLLM.CreateAccessGroup(ctx, litellm.AccessGroupCreateRequest{
@@ -953,6 +965,59 @@ func (r *EnvironmentReconciler) reconcileAccessGroup(
 	r.mirrorUnconverged.Delete(env.Namespace + "/" + env.Name)
 
 	return accessGroupSyncedCondition(env, existing)
+}
+
+// shrinkAccessGroup is the only write for an Environment with unresolved
+// references: what the spec took away is revoked at once and nothing is granted
+// until all references resolve. Models and teams become existing ∩ desired. An
+// MCP server or agent id leaves only when LiteLLM lists it and the spec does not
+// want it: LiteLLM answers 200 with an empty or partial list while its registry
+// loads, so an unlisted id proves nothing. The PUT crosses LEAVE deltas only, so
+// the teams that stay keep their mirror. It returns unresolved unless the PUT
+// fails; an absent group stays absent, and a rename or mirror repair waits for
+// the full write.
+//
+// Two ceilings wait for that full write, when every reference resolves: an id
+// LiteLLM does not list lingers, and a team holding this group only in a stale
+// mirror keeps it, because stripping it takes the two-PUT repair, whose first
+// PUT adds.
+func (r *EnvironmentReconciler) shrinkAccessGroup(
+	ctx context.Context,
+	env *achv1alpha1.Environment,
+	existing *litellm.AccessGroupResponse,
+	desiredModels, mcpIDs, agentIDs, teamIDs []string,
+	mcpMap, agentMap map[string]string,
+	unresolved metav1.Condition,
+	logger logr.Logger,
+) metav1.Condition {
+	if existing == nil {
+		return unresolved
+	}
+	req := litellm.AccessGroupUpdateRequest{
+		AccessModelNames:   intersect(existing.AccessModelNames, desiredModels),
+		AccessMCPServerIDs: withoutListedUnwanted(existing.AccessMCPServerIDs, mcpIDs, mcpMap),
+		AccessAgentIDs:     withoutListedUnwanted(existing.AccessAgentIDs, agentIDs, agentMap),
+		AssignedTeamIDs:    intersect(existing.AssignedTeamIDs, teamIDs),
+	}
+	if sameSet(existing.AccessModelNames, req.AccessModelNames) &&
+		sameSet(existing.AccessMCPServerIDs, req.AccessMCPServerIDs) &&
+		sameSet(existing.AccessAgentIDs, req.AccessAgentIDs) &&
+		sameSet(existing.AssignedTeamIDs, req.AssignedTeamIDs) {
+		return unresolved
+	}
+	if _, err := r.LiteLLM.UpdateAccessGroup(ctx, existing.AccessGroupID, req); err != nil {
+		logger.Error(err, "PUT /v1/access_group/{id} (removals) failed", "id", existing.AccessGroupID)
+		return metav1.Condition{
+			Type:               "AccessGroupSynced",
+			Status:             metav1.ConditionFalse,
+			Reason:             "AccessGroupUpdateFailed",
+			Message:            fmt.Sprintf("LiteLLM UpdateAccessGroup(%s, id=%s) removals failed: %v", env.Name, existing.AccessGroupID, err),
+			ObservedGeneration: env.Generation,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+	logger.Info("removed access group bindings while references are unresolved", "name", env.Name, "id", existing.AccessGroupID)
+	return unresolved
 }
 
 // legacyAccessGroup walks the older access-group name generations
@@ -1139,6 +1204,32 @@ func nonNilStrings(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// intersect returns the elements of a that are also in b, never nil: the PUT
+// body needs `[]` to clear a list.
+func intersect(a, b []string) []string {
+	out := make([]string, 0, len(a))
+	for _, x := range a {
+		if slices.Contains(b, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// withoutListedUnwanted returns existing minus the ids that live (name → id)
+// lists and desired does not want, never nil: the PUT body needs `[]` to clear
+// a list.
+func withoutListedUnwanted(existing, desired []string, live map[string]string) []string {
+	listed := slices.Collect(maps.Values(live))
+	out := make([]string, 0, len(existing))
+	for _, id := range existing {
+		if !slices.Contains(listed, id) || slices.Contains(desired, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // mapResolve splits `names` into (resolvedIDs, unresolvedNames) by

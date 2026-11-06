@@ -271,6 +271,14 @@ the team model-access path — which is why ACH uses an impossible model name.
   **only** to `default_on` guardrails; a team-attached non-default guardrail
   has no opt-out at any level.
 - `x-litellm-applied-guardrails` names what actually ran, per request.
+- A request body can set guardrails itself (`guardrails`, `guardrail_config`,
+  `metadata.guardrails`), and
+  LiteLLM honours them per request. ACH's ceiling lives on the team, not the
+  key, so the forwarder refuses those fields with 400 `client_param_not_allowed`
+  instead of stripping them.
+- Team-scoped guardrails do not run on `/gemini`, and `embedContent` and
+  `batchEmbedContents` record no spend there. A guardrail ceiling and a budget
+  are therefore not complete on that surface.
 - Team metadata mixes non-string values alongside ACH's ownership markers —
   the reason `teamMetadataStrings` exists (§12).
 - **Not measured**: whether `POST /team/update` omitting `guardrails` keeps
@@ -644,6 +652,12 @@ concrete names (mirrors alitellm-operator's `LiteLLMAccessGroup`):
   200 on a model tagged `e2e-grp` and 403 `team_model_access_denied` on an
   untagged one ("This team can only access models=['e2e-grp']") — LiteLLM
   expands a tag inside `access_model_names`.
+- While an Environment has unresolved references, the reconcile writes only
+  removals: teams and models shrink to existing ∩ desired, an unresolved team
+  leaves `assigned_team_ids`, and an MCP server or agent id leaves only when
+  LiteLLM lists it and the spec no longer wants it. An id LiteLLM does not
+  list stays until the next full write. Nothing is added until every
+  reference resolves.
 - A tag matching nothing is ignored, not unresolved. A group member that
   vanished from the live list after the snapshot is dropped silently.
 - `status.expandedRuntime` lists the names granted ONLY through a group.

@@ -23,8 +23,9 @@ import (
 //   - Blank lines (after whitespace trim) ignored
 //   - Lines beginning with '#' (after whitespace trim) ignored
 //   - Leading + trailing whitespace trimmed
-//   - Case-sensitive verbatim comparison (mirrors §16 DB-05
-//     owner_email storage discipline — no normalization)
+//   - Case-sensitive verbatim comparison against the SSO email claim (no
+//     normalization here; the key routes that take an email normalize it
+//     themselves)
 //
 // Behavior on absent / empty / malformed file (D-23):
 //

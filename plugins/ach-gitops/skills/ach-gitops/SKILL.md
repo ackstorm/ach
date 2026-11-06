@@ -153,6 +153,11 @@ user's agent tool by `ach-cli env hydrate`.
 - **Bare name vs `name@marketplace`.** In `context.plugins` and `context.skills`, a bare
   name only matches a standalone Plugin or Skill CR; anything that comes from a
   marketplace must be written `name@<marketplace metadata.name>`.
+- **Content-CR write access is admin-tier.** Writing a content CR (`Plugin`, `Skill`,
+  `Prompt`, `Artifact`, the marketplaces) or a `LiteLLMConnection` is equivalent to reading
+  every Secret in the ACH namespace: `authSecretRef` is resolved with the operator's
+  identity. Whoever can write those kinds gets admin-tier trust; do not delegate them
+  to a team as self-service.
 - **Secrets stay out of Git.** `authSecretRef` names a Kubernetes Secret; create it with
   whatever the repo already uses (External Secrets, Sealed Secrets, SOPS). Never put a
   token in a CR, a comment or a commit.

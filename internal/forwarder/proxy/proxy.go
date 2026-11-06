@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
@@ -203,6 +204,13 @@ func New(deps Deps) *httputil.ReverseProxy {
 		},
 		ModifyResponse: modifyResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// The key ended while the request waited on LiteLLM: no byte has
+			// reached the client, so it gets the answer Authn would give.
+			if errors.Is(context.Cause(r.Context()), errKeyNotLive) {
+				render.Error(w, http.StatusUnauthorized, audit.OutcomeExpiredOrRevoked, "key expired or revoked",
+					middleware.RequestIDFromCtx(r.Context()))
+				return
+			}
 			// Client went away mid-proxy (SSE stream on /mcp or /v1 closed
 			// by the caller): the inbound request context is canceled, NOT
 			// an upstream fault. Nothing to write, no error to log, no

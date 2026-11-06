@@ -264,12 +264,9 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			DefaultNamespaces: map[string]cache.Config{
 				cfg.Namespace: {},
 			},
-			// C1 (REVIEW): the forwarder's Role grants secrets verbs
-			// only with resourceNames: ["ach-jwt-signing-keys"]. K8s
-			// RBAC honors resourceNames on list/watch ONLY when the
-			// request carries fieldSelector=metadata.name=<name> —
-			// without this selector the informer's bare LIST is 403'd
-			// by the apiserver and the pod never reaches Ready.
+			// The informer watches only the JWT signing-keys Secret. The
+			// forwarder's namespace Role reads every Secret in the release
+			// namespace, so the selector narrows the cache, not the grant.
 			ByObject: map[client.Object]cache.ByObject{
 				&corev1.Secret{}: {
 					Field: fields.OneTermEqualSelector("metadata.name", cfg.JWTSecretName),
@@ -412,6 +409,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 
 	out.server = forwarder.Deps{
 		Resolver:         cachedResolver,
+		KeyLive:          keystore.NewKeyLiveDB(pool),
 		Signer:           out.signer,
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,

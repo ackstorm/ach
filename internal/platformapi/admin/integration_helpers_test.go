@@ -118,6 +118,8 @@ type fakeLitellm struct {
 	revokedKeys  []string
 	revokeErr    error
 	order        *recorderOrder
+	// onRevoke runs after each revoke with the running call count.
+	onRevoke func(n int64)
 
 	mu             sync.Mutex
 	deletedTags    []string
@@ -125,7 +127,10 @@ type fakeLitellm struct {
 }
 
 func (f *fakeLitellm) RevokeKey(_ context.Context, keyID string) error {
-	f.revokeCalled.Add(1)
+	n := f.revokeCalled.Add(1)
+	if f.onRevoke != nil {
+		f.onRevoke(n)
+	}
 	f.revokedKeys = append(f.revokedKeys, keyID)
 	if f.order != nil {
 		f.order.record("litellm")

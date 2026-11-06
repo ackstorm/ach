@@ -192,3 +192,9 @@ the schema back. Full procedure: `references/upgrade.md`.
   audit log (on EKS, check the control-plane audit policy). The chart also ships the
   `<release>-keygrant-editor` ClusterRole bound to nobody: bind it to platform admins only,
   since writing a `KeyGrant` is acting as its identity.
+- Writing a content CR (`Plugin`, `Skill`, `Prompt`, `Artifact`, the marketplaces) or a
+  `LiteLLMConnection` is equivalent to reading every Secret in the ACH namespace: the
+  operator resolves `authSecretRef` with its own identity. Give anyone who can write those
+  kinds admin-tier trust, and grant that RBAC only to platform admins.
+- Offboarding: disabling a user at the IdP does not end their `ek-` keys. Run
+  `ach-cli admin keys revoke --owner <email>` (safe to rerun).

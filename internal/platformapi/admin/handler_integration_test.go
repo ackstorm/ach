@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -383,7 +384,8 @@ func TestRevokeUserKeys_HappyPath(t *testing.T) {
 	seedPersonalKey(t, pool, "pkid_u1b", "ch-u1b", "u@x.com", "lt2")
 	seedEnvironmentKey(t, pool, "ekid_u1a", "ch-u1c", "u@x.com", "envX", "lt3")
 
-	ll := &fakeLitellm{}
+	order := &recorderOrder{}
+	ll := &fakeLitellm{order: order}
 	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
@@ -391,6 +393,7 @@ func TestRevokeUserKeys_HappyPath(t *testing.T) {
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 		EndOAuthSessions: func(_ context.Context, e string) error {
+			order.record("sessions")
 			ended = append(ended, e)
 			return nil
 		},
@@ -400,12 +403,160 @@ func TestRevokeUserKeys_HappyPath(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
 	}
-	if len(ended) != 2 || ended[0] != "u@x.com" {
-		t.Fatalf("OAuth sessions ended for %v, want u@x.com per pk_", ended)
+	if len(ended) != 1 || ended[0] != "u@x.com" {
+		t.Fatalf("OAuth sessions ended for %v, want u@x.com once", ended)
+	}
+	if order.steps[0] != "sessions" {
+		t.Fatalf("steps = %v, want the sessions ended before any key", order.steps)
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, `"revoked_count":3`) {
 		t.Fatalf("expected revoked_count=3; got %s", body)
+	}
+}
+
+// =========================== RU-2b: revoke-user-keys pagination and email ===========================
+
+// The list pages cap at 500 rows and revoked rows occupy them too, so the
+// sweep must walk the cursor to the end.
+func TestRevokeUserKeys_RevokesAcrossPages(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+	const n = 501
+	for i := range n {
+		seedPersonalKey(t, pool, fmt.Sprintf("pkid_pg%d", i), fmt.Sprintf("ch-pg%d", i), "u@x.com", "")
+		seedEnvironmentKey(t, pool, fmt.Sprintf("ekid_pg%d", i), fmt.Sprintf("ce-pg%d", i), "u@x.com", "envX", fmt.Sprintf("lt%d", i))
+	}
+	deps := Deps{
+		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/users/u%40x.com/revoke-keys", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), fmt.Sprintf(`"revoked_count":%d`, 2*n)) {
+		t.Fatalf("expected %d revoked: %d %s", 2*n, rec.Code, rec.Body)
+	}
+	var left int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT (SELECT count(*) FROM personal_keys WHERE status <> 'revoked') +
+		       (SELECT count(*) FROM environment_keys WHERE status <> 'revoked')`).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d keys left unrevoked", left)
+	}
+}
+
+// A sweep that could not see every page must not read as complete.
+func TestRevokeUserKeys_ListFailureOnALaterPageIsNot200(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+	for i := range 501 {
+		seedEnvironmentKey(t, pool, fmt.Sprintf("ekid_lf%d", i), fmt.Sprintf("ce-lf%d", i), "u@x.com", "envX", fmt.Sprintf("lt%d", i))
+	}
+	ll := &fakeLitellm{onRevoke: func(n int64) {
+		if n == 500 { // last row of the first page
+			pool.Close()
+		}
+	}}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/users/u%40x.com/revoke-keys", nil)
+	if rec.Code != 500 {
+		t.Fatalf("expected 500 when a later page fails, got %d body=%s", rec.Code, rec.Body)
+	}
+}
+
+// Logins store the email lower-cased; the path may spell it any way.
+func TestRevokeUserKeys_MatchesAnyCase(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+	seedPersonalKey(t, pool, "pkid_mc", "ch-mc", "u@x.com", "lt1")
+	seedEnvironmentKey(t, pool, "ekid_mc", "ce-mc", "u@x.com", "envX", "lt2")
+	deps := Deps{
+		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+	}
+	router := newAdminRouter(t, deps)
+	rec := adminPostJSON(t, router, "/platform/admin/users/U%40X.com/revoke-keys", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"revoked_count":2`) {
+		t.Fatalf("mixed-case email: %d %s", rec.Code, rec.Body)
+	}
+	if rec := adminPostJSON(t, router, "/platform/admin/users/%20/revoke-keys", nil); rec.Code != 400 {
+		t.Fatalf("blank email: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// =========================== RU-2c: revoke-user-keys ends sessions ===========================
+
+func TestRevokeUserKeys_EndsSessionsWithNoActivePk(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+	seedPersonalKey(t, pool, "pkid_ns", "ch-ns", "u@x.com", "lt1")
+	if _, err := db.RevokePersonalKey(context.Background(), pool, "pkid_ns"); err != nil {
+		t.Fatalf("revoke seed: %v", err)
+	}
+	var ended []string
+	deps := Deps{
+		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+		EndOAuthSessions: func(_ context.Context, e string) error {
+			ended = append(ended, e)
+			return nil
+		},
+	}
+	rec := adminPostJSON(t, newAdminRouter(t, deps), "/platform/admin/users/u%40x.com/revoke-keys", nil)
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body)
+	}
+	if len(ended) != 1 || ended[0] != "u@x.com" {
+		t.Fatalf("OAuth sessions ended for %v, want u@x.com once", ended)
+	}
+}
+
+func TestRevokeUserKeys_SessionEndFailureIsNot200AndARerunRepairs(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+	seedPersonalKey(t, pool, "pkid_sf", "ch-sf", "u@x.com", "lt1")
+	seedEnvironmentKey(t, pool, "ekid_sf", "ce-sf", "u@x.com", "envX", "lt2")
+	var calls int
+	endErr := errors.New("store down")
+	ll := &fakeLitellm{}
+	deps := Deps{
+		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(),
+		Audit:     audit.NewLogger(&bytes.Buffer{}),
+		Namespace: testNs,
+		EndOAuthSessions: func(context.Context, string) error {
+			calls++
+			return endErr
+		},
+	}
+	router := newAdminRouter(t, deps)
+	rec := adminPostJSON(t, router, "/platform/admin/users/u%40x.com/revoke-keys", nil)
+	if rec.Code != 500 {
+		t.Fatalf("expected 500 when the sessions stay up, got %d body=%s", rec.Code, rec.Body)
+	}
+	if ll.revokeCalled.Load() != 2 {
+		t.Fatalf("LiteLLM revokes = %d, want the sweep to finish anyway", ll.revokeCalled.Load())
+	}
+
+	endErr = nil
+	rec = adminPostJSON(t, router, "/platform/admin/users/u%40x.com/revoke-keys", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"revoked_count":0`) {
+		t.Fatalf("rerun: %d %s", rec.Code, rec.Body)
+	}
+	if calls != 2 {
+		t.Fatalf("session end calls = %d, want one per run", calls)
 	}
 }
 

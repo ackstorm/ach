@@ -125,7 +125,8 @@ fetched at least once; until then it is listed in `status.unresolvedContextPlugi
 Team aliases, as LiteLLM stores them (`ach-cli admin list teams`). ACH never creates
 these teams: create them in LiteLLM (or let the chart's login enrolment add users to
 them) first. An alias LiteLLM does not know makes `AccessGroupSynced=False` with
-`UnresolvedReferences`.
+`UnresolvedReferences`, and that team loses access to the Environment until the alias
+resolves.
 
 What happens behind it, so you can reason about access:
 
@@ -161,7 +162,7 @@ people using their personal login.
 | Condition | True means | Common False reasons |
 |-----------|-----------|----------------------|
 | `ExecutionResourcesResolved` | Every runtime name exists in LiteLLM and every plugin/skill has content | `ResourceUnresolved` (message lists counts and names) |
-| `AccessGroupSynced` | The LiteLLM access group and shell team match the spec | `UnresolvedReferences`, `ShellTeamFailed`, `AccessGroupCreateFailed`, `AccessGroupUpdateFailed`, `ResolveFailed`, `MirrorUnconverged` |
+| `AccessGroupSynced` | The LiteLLM access group and shell team match the spec | `UnresolvedReferences` (removals still apply, nothing is added), `ShellTeamFailed`, `AccessGroupCreateFailed`, `AccessGroupUpdateFailed`, `ResolveFailed`, `MirrorUnconverged` |
 | `Available` | Both of the above are True | `SubConditionsNotReady`, `PendingSubConditions` |
 | `BudgetSynced` | The `environment:<name>` tag carries the budget | `TagWriteFailed` |
 

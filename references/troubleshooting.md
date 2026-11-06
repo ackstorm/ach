@@ -338,7 +338,11 @@ kubectl get environment demo -n ach-system -o jsonpath='{.status.conditions[?(@.
 ✅ The named MCP server / A2A agent / authorized team does not exist in
 LiteLLM. The reconciler resolves names on each reconcile via
 `ListMCPServers` / `ListA2AAgents` / `ListAllTeams`; any unresolved
-entry flips the condition with the offending list in the message.
+entry flips the condition with the offending list in the message. While
+the condition stays False, access can shrink: an authorized team whose alias
+LiteLLM does not know loses the Environment until the alias resolves, and an
+MCP server or agent grant leaves once LiteLLM lists it and the spec drops it.
+Nothing is added.
 
 Register the missing resource(s):
 ```bash
@@ -413,7 +417,8 @@ hand out a key believing it is protected. Check
 **Scope of that barrier:** it blocks NEW key minting only. Existing
 `ek_` keys keep serving unprotected, hydrate still returns the
 manifest, and the forwarder still proxies — none of those read
-Environment conditions. Fix the name; there is no revocation path for
+Environment conditions. Removals still land while the name is unresolved
+(see the previous entry). Fix the name; there is no revocation path for
 a typo.
 
 A guardrail listed with `defaultOn: true` in `ach-cli admin list guardrails`
@@ -762,13 +767,48 @@ or an empty `x-ach-key` (hand-edited, or a pre-OAuth hydrate), remove it:
 Claude Code disables its OAuth fallback when a credential header is
 configured.
 
+### ❌ A disabled user still has working `ek_` keys
+
+Disabling a user at the IdP does not revoke their keys. ACH ends a session only
+when it sees Dex refuse (400); a leaver who stops refreshing is not detected,
+and an `ek_` never refreshes. Offboard with
+`ach-cli admin keys revoke --owner <email>` (`POST
+/platform/admin/users/{email}/revoke-keys`): the email is normalised, every
+page of both key types is walked, a failed list page is a 500, and rerunning
+picks up what is left. The call also ends the user's OAuth sessions, once and
+with or without an active `pk_` (refresh tokens and web sessions stay dead
+after a new login; issued JWTs live until their `exp`). If that step fails the
+keys are still swept and the answer is a 500: rerun it to end the sessions.
+
+### ❌ A stream or `/v1/realtime` tunnel closes mid-flight
+
+The forwarder re-checks the key row of every request that carries an ACH
+identity after 60 s and every 60 s until it ends. A suspended, revoked, expired
+or missing row ends the request, logged at Info as `forwarder: key is no longer
+live; ending its request` with `key_id` and `request_id`; a request still waiting
+on LiteLLM answers 401 `expired_or_revoked`. A Postgres error fails open with a
+Warn. An oauth `pk_` that `/token` re-mints near its expiry ends a stream open on
+the old row; the client reconnects with its refreshed token.
+
+### ❌ `/gemini` answers 404 `route_not_allowed`, or 400 `model_mismatch`, `client_param_not_allowed`
+
+`/gemini` serves only the model routes listed in `docs/developer-guide/jwt-forwarder.md`;
+files, caches, batches, `predict` and the OpenAI-compatible sub-surface are 404.
+A body or batch entry `model` (or `target_model_names`) that differs from the path model is
+`model_mismatch`, as is a POST body whose Content-Type is neither
+`application/json` (parameters allowed) nor absent. A request body that sets a
+LiteLLM per-request control (`api_key`, `deployment_id`, guardrails,
+an `mcp` tool) is `client_param_not_allowed`: remove the field.
+
 ### ❌ `ach-cli token` / a tool refresh fails `invalid_grant`
 
 The refresh is dead. Since 0.9.8 every ACH refresh replays Dex's refresh
-token (`offline_access`), so the first suspect is the **IdP**: the user was
-disabled at Google/Azure, or Dex's own refresh token expired
-(`expiry.refreshTokens` in the Dex config — `validIfNotUsedFor`,
-`absoluteLifetime`). platform-api logs `oauth: identity provider refused
+token (`offline_access`), so the first suspect is the **IdP** side: Dex's own
+refresh token expired (`expiry.refreshTokens` in the Dex config —
+`validIfNotUsedFor`, `absoluteLifetime`) or was claimed twice. Dex answers all of
+reuse, unknown and expired with the same 400; a user disabled at Google/Azure
+is a connector refusal, Dex 500, which ACH answers 503 and does not end the
+session. platform-api logs `oauth: identity provider refused
 the refresh; sessions ended` and revokes the user's oauth `pk_` (Dex keeps
 ONE refresh token per user+client, so ACH keeps one per user shared by all
 their tools; the other tools fail their next refresh without asking Dex). Otherwise: the ACH refresh token expired

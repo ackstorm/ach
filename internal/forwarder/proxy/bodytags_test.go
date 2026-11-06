@@ -167,6 +167,13 @@ func TestStripBodyTagsRejects(t *testing.T) {
 		{"name and name*", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name*=utf-8''metadata`), errInvalidBody},
 		{"name and name*0*", "multipart/form-data; boundary=" + b, mpRaw(`form-data; name="model"; name*0*=utf-8''meta; name*1*=data`), errInvalidBody},
 		{"multipart without boundary", "multipart/form-data", mp("model"), errInvalidBody},
+		{"form tag field, list suffix", "application/x-www-form-urlencoded", "model=m&tags[]=x", errClientTags},
+		{"form metadata field, encoded list suffix", "application/x-www-form-urlencoded", "metadata%5B%5D=x", errClientTags},
+		{"form tag field, list suffix, other case", "application/x-www-form-urlencoded", "Tags[]=x", errClientTags},
+		{"multipart tag field, list suffix", "multipart/form-data; boundary=" + b, mp("tags[]"), errClientTags},
+		{"multipart metadata field, list suffix", "multipart/form-data; boundary=" + b, mp("litellm_metadata[]"), errClientTags},
+		{"multipart metadata field, bracketed suffix", "multipart/form-data; boundary=" + b, mp("litellm_metadata[tags]"), errClientTags},
+		{"form metadata field, nested brackets", "application/x-www-form-urlencoded", "litellm_metadata[a][b]=x", errClientTags},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -194,6 +201,7 @@ func TestHandlerV1RejectsUnparseableBody(t *testing.T) {
 	for _, c := range []struct{ ct, body, code string }{
 		{"application/json", `{"temperature":NaN,"tags":["user:v"]}`, "invalid_request"},
 		{"application/x-www-form-urlencoded", "metadata=x", "client_tags_not_allowed"},
+		{"application/json", `{"model":"m","api_key":"k"}`, "client_param_not_allowed"},
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/v1/x", strings.NewReader(c.body))
 		req.Header.Set("Content-Type", c.ct)
@@ -211,5 +219,67 @@ func TestStripBodyTagsRepeatedContentType(t *testing.T) {
 	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	if err := stripBodyTags(r); !errors.Is(err, errInvalidBody) {
 		t.Fatalf("err = %v, want errInvalidBody", err)
+	}
+}
+
+func TestStripBodyTagsRefusesClientParams(t *testing.T) {
+	const js = "application/json"
+	var cases []struct{ name, ct, in string }
+	add := func(name, ct, in string) {
+		cases = append(cases, struct{ name, ct, in string }{name, ct, in})
+	}
+	for _, k := range refusedParams {
+		add("top "+k, js, `{"model":"m","`+k+`":[]}`)
+		add("params "+k, js, `{"params":{"`+k+`":"x"}}`)
+		add("form "+k, "application/x-www-form-urlencoded", "model=m&"+k+"=x")
+		add("form list suffix "+k, "application/x-www-form-urlencoded", "model=m&"+k+"[]=x")
+		add("multipart list suffix "+k, "multipart/form-data; boundary=XBOUND",
+			"--XBOUND\r\nContent-Disposition: form-data; name=\""+k+"[]\"\r\n\r\nv\r\n--XBOUND--\r\n")
+	}
+	for _, k := range refusedMetaParams {
+		add("metadata "+k, js, `{"metadata":{"`+k+`":["g"]}}`)
+		add("litellm_metadata "+k, js, `{"litellm_metadata":{"`+k+`":["g"]}}`)
+		add("params metadata "+k, js, `{"params":{"metadata":{"`+k+`":1}}}`)
+		add("string metadata "+k, js, `{"metadata":"{\"`+k+`\":[\"g\"]}"}`)
+		add("metadata "+k+" with tags", js, `{"metadata":{"tags":["x"],"`+k+`":1}}`)
+	}
+	add("mcp tool", js, `{"tools":[{"type":"mcp","server_label":"s"}]}`)
+	add("mcp tool after function", js, `{"tools":[{"type":"function"},{"type":"mcp"}]}`)
+	add("mcp tool after non-object", js, `{"tools":["x",{"type":"mcp"}]}`)
+	add("mcp tool with other-case key beside type", js, `{"tools":[{"type":"mcp","TYPE":"function"}]}`)
+	add("mcp tool with mixed-case key of other kind", js, `{"tools":[{"type":"mcp","Type":1}]}`)
+	add("params mcp tool", js, `{"params":{"tools":[{"type":"mcp"}]}}`)
+	const b = "XBOUND"
+	add("multipart api_key", "multipart/form-data; boundary="+b,
+		"--"+b+"\r\nContent-Disposition: form-data; name=\"api_key\"\r\n\r\nv\r\n--"+b+"--\r\n")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, _, err := stripped(t, c.ct, c.in); !errors.Is(err, errClientParam) {
+				t.Fatalf("err = %v, want errClientParam", err)
+			}
+		})
+	}
+}
+
+func TestStripBodyTagsAllowsOrdinaryFields(t *testing.T) {
+	for _, in := range []string{
+		`{"model":"m","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"f"}}]}`,
+		`{"model":"m","metadata":{"trace":"t"},"extra_body":{"fallbacks":[]}}`,
+		`{"model":"m","fallbacks":["g"],"context_window_fallbacks":["g"],"content_policy_fallbacks":["g"]}`,
+		`{"model":"m","router_settings_override":{"fallbacks":[{"m":["g"]}]}}`,
+		`{"model":"m","tools":"x"}`,
+	} {
+		got, _, err := stripped(t, "application/json", in)
+		if err != nil || string(got) != in {
+			t.Fatalf("err = %v, body = %q, want byte-identical %q", err, got, in)
+		}
+	}
+	form := "model=m&timestamp_granularities[]=word"
+	if got, _, err := stripped(t, "application/x-www-form-urlencoded", form); err != nil || string(got) != form {
+		t.Fatalf("err = %v, body = %q, want byte-identical %q", err, got, form)
+	}
+	got, _, err := stripped(t, "application/json", `{"model":"m","tags":["x"],"tools":[{"type":"function"}]}`)
+	if err != nil || strings.Contains(string(got), "tags") {
+		t.Fatalf("tags not stripped: err = %v, body = %q", err, got)
 	}
 }

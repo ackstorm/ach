@@ -812,3 +812,471 @@ func TestAccessGroupSynced_MigratesV0619Name(t *testing.T) {
 		t.Errorf("expected 0 CREATE calls (rename in place); got %d", n)
 	}
 }
+
+// createEnvAwaitingAG creates an Environment and waits for AccessGroupSynced
+// to report status + reason, returning that condition.
+func createEnvAwaitingAG(
+	t *testing.T,
+	name string,
+	teams []string,
+	runtime achv1alpha1.RuntimeBlock,
+	status metav1.ConditionStatus,
+	reason string,
+) *metav1.Condition {
+	t.Helper()
+	ctx := context.Background()
+	cr := &achv1alpha1.Environment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
+		Spec: achv1alpha1.EnvironmentSpec{
+			AuthorizedTeams: teams,
+			Runtime:         runtime,
+			Context:         achv1alpha1.ContextBlock{},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Environment: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
+
+	var got achv1alpha1.Environment
+	if !Eventually(func() bool {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
+			return false
+		}
+		c := agCondition(&got)
+		return c != nil && c.Status == status && c.Reason == reason
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("expected %s/%s, conditions = %+v", status, reason, got.Status.Conditions)
+	}
+	return agCondition(&got)
+}
+
+// storedGroup reads the fake's access group back.
+func storedGroup(t *testing.T, name string) *litellm.AccessGroupResponse {
+	t.Helper()
+	g, err := accessGroupFake.GetAccessGroupByName(context.Background(), name)
+	if err != nil || g == nil {
+		t.Fatalf("stored group %s: %v, %v", name, g, err)
+	}
+	return g
+}
+
+// A team taken out of the spec leaves the group while another reference is
+// unresolved, its members' user shells go with it, and the shells still
+// entitled stay. An unresolved team goes too: LiteLLM answered and does not
+// know it.
+func TestAccessGroupUnresolved_RemovedTeamLeaves(t *testing.T) {
+	const (
+		env   = "test-env-unres-removed"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeamMembers("t-kept", "kept", litellm.TeamMemberRole{UserID: "kept@x.com"})
+	accessGroupFake.SeedTeamMembers("t-removed", "removed", litellm.TeamMemberRole{UserID: "gone@x.com"})
+	accessGroupFake.SeedUserShellPresent("kept@x.com")
+	accessGroupFake.SeedUserShellPresent("gone@x.com")
+	shell := accessGroupFake.SeedShellTeam(env)
+	assigned := []string{"t-kept", "t-removed", "t-unknown", shell, "ach-user-kept@x.com", "ach-user-gone@x.com"}
+	for _, id := range assigned {
+		accessGroupFake.SeedTeamMirror(id, gid)
+	}
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: group,
+		AssignedTeamIDs: assigned,
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-unknown"}
+	c := createEnvAwaitingAG(t, env, []string{"kept", "unknown"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	want := "unresolved: mcpServers=[mcp-unknown] a2aAgents=[] authorizedTeams=[unknown] guardrails=[]"
+	if c.Message != want {
+		t.Errorf("message = %q; want %q", c.Message, want)
+	}
+	wantTeams := []string{"t-kept", shell, "ach-user-kept@x.com"}
+	if got := storedGroup(t, group).AssignedTeamIDs; !sameSet(got, wantTeams) {
+		t.Errorf("assigned_team_ids = %v; want %v", got, wantTeams)
+	}
+	if m := accessGroupFake.Mirror("t-removed"); slices.Contains(m, gid) {
+		t.Errorf("t-removed mirror = %v; want the group gone", m)
+	}
+}
+
+// What the spec dropped goes, what the spec added waits, even when it resolves.
+func TestAccessGroupUnresolved_GainsNothing(t *testing.T) {
+	const (
+		env   = "test-env-unres-gains"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("added", "t-added")
+	accessGroupFake.SeedMCP("mcp-kept", "m-kept")
+	accessGroupFake.SeedMCP("mcp-added", "m-added")
+	accessGroupFake.SeedMCP("mcp-dropped", "m-dropped")
+	accessGroupFake.SeedAgent("agent-kept", "a-kept")
+	accessGroupFake.SeedAgent("agent-added", "a-added")
+	accessGroupFake.SeedAgent("agent-dropped", "a-dropped")
+	shell := accessGroupFake.SeedShellTeam(env)
+	accessGroupFake.SeedTeamMirror("t-kept", gid)
+	accessGroupFake.SeedTeamMirror(shell, gid)
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      gid,
+		AccessGroupName:    group,
+		AccessModelNames:   []string{"model-kept", "model-dropped"},
+		AccessMCPServerIDs: []string{"m-kept", "m-dropped"},
+		AccessAgentIDs:     []string{"a-kept", "a-dropped"},
+		AssignedTeamIDs:    []string{"t-kept", shell},
+	})
+
+	rt := achv1alpha1.RuntimeBlock{
+		Models:     []string{"model-kept", "model-added"},
+		MCPServers: []string{"mcp-kept", "mcp-added", "mcp-unknown"},
+		A2AAgents:  []string{"agent-kept", "agent-added"},
+	}
+	createEnvAwaitingAG(t, env, []string{"kept", "added"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	g := storedGroup(t, group)
+	if !sameSet(g.AccessModelNames, []string{"model-kept"}) {
+		t.Errorf("models = %v", g.AccessModelNames)
+	}
+	if !sameSet(g.AccessMCPServerIDs, []string{"m-kept"}) {
+		t.Errorf("mcp = %v", g.AccessMCPServerIDs)
+	}
+	if !sameSet(g.AccessAgentIDs, []string{"a-kept"}) {
+		t.Errorf("agents = %v", g.AccessAgentIDs)
+	}
+	if !sameSet(g.AssignedTeamIDs, []string{"t-kept", shell}) {
+		t.Errorf("assigned_team_ids = %v", g.AssignedTeamIDs)
+	}
+	if m := accessGroupFake.Mirror("t-added"); len(m) != 0 {
+		t.Errorf("t-added mirror = %v; want empty", m)
+	}
+}
+
+// LiteLLM answers 200 [] while its registry loads: an empty list removes no
+// MCP or agent grant, even though every name is unresolved.
+func TestAccessGroupUnresolved_EmptyLiveListsKeepGrants(t *testing.T) {
+	const (
+		env   = "test-env-unres-emptylive"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	shell := accessGroupFake.SeedShellTeam(env)
+	accessGroupFake.SeedTeamMirror("t-kept", gid)
+	accessGroupFake.SeedTeamMirror(shell, gid)
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      gid,
+		AccessGroupName:    group,
+		AccessMCPServerIDs: []string{"m-wanted", "m-other"},
+		AccessAgentIDs:     []string{"a-wanted", "a-other"},
+		AssignedTeamIDs:    []string{"t-kept", shell},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-wanted"}
+	rt.A2AAgents = []string{"agent-wanted"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if n := accessGroupFake.UpdateCallsFor(group); n != 0 {
+		t.Errorf("update calls = %d; want 0", n)
+	}
+	g := storedGroup(t, group)
+	if !sameSet(g.AccessMCPServerIDs, []string{"m-wanted", "m-other"}) {
+		t.Errorf("mcp = %v", g.AccessMCPServerIDs)
+	}
+	if !sameSet(g.AccessAgentIDs, []string{"a-wanted", "a-other"}) {
+		t.Errorf("agents = %v", g.AccessAgentIDs)
+	}
+}
+
+// A partial list keeps every id it does not show.
+func TestAccessGroupUnresolved_PartialLiveListKeepsUnseen(t *testing.T) {
+	const (
+		env   = "test-env-unres-partial"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedMCP("mcp-seen", "m-seen")
+	accessGroupFake.SeedAgent("agent-seen", "a-seen")
+	shell := accessGroupFake.SeedShellTeam(env)
+	accessGroupFake.SeedTeamMirror("t-kept", gid)
+	accessGroupFake.SeedTeamMirror(shell, gid)
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      gid,
+		AccessGroupName:    group,
+		AccessMCPServerIDs: []string{"m-seen", "m-unseen"},
+		AccessAgentIDs:     []string{"a-seen", "a-unseen"},
+		AssignedTeamIDs:    []string{"t-kept", shell},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-seen", "mcp-unseen"}
+	rt.A2AAgents = []string{"agent-seen", "agent-unseen"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if n := accessGroupFake.UpdateCallsFor(group); n != 0 {
+		t.Errorf("update calls = %d; want 0", n)
+	}
+}
+
+// An id LiteLLM lists and the spec no longer wants leaves, in the same PUT that
+// keeps an id LiteLLM does not list.
+func TestAccessGroupUnresolved_ListedSpecRemovalLeaves(t *testing.T) {
+	const (
+		env   = "test-env-unres-listed"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedMCP("mcp-removed", "m-removed")
+	accessGroupFake.SeedAgent("agent-removed", "a-removed")
+	shell := accessGroupFake.SeedShellTeam(env)
+	accessGroupFake.SeedTeamMirror("t-kept", gid)
+	accessGroupFake.SeedTeamMirror(shell, gid)
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      gid,
+		AccessGroupName:    group,
+		AccessMCPServerIDs: []string{"m-removed", "m-unseen"},
+		AccessAgentIDs:     []string{"a-removed", "a-unseen"},
+		AssignedTeamIDs:    []string{"t-kept", shell},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	g := storedGroup(t, group)
+	if !sameSet(g.AccessMCPServerIDs, []string{"m-unseen"}) {
+		t.Errorf("mcp = %v", g.AccessMCPServerIDs)
+	}
+	if !sameSet(g.AccessAgentIDs, []string{"a-unseen"}) {
+		t.Errorf("agents = %v", g.AccessAgentIDs)
+	}
+}
+
+// Clearing a list needs `[]` on the wire: absent keeps it.
+func TestAccessGroupUnresolved_ClearsEmptiedList(t *testing.T) {
+	const (
+		env   = "test-env-unres-clear"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedMCP("mcp-dropped", "m-dropped")
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:      gid,
+		AccessGroupName:    group,
+		AccessMCPServerIDs: []string{"m-dropped"},
+		AssignedTeamIDs:    []string{"t-kept"},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.A2AAgents = []string{"agent-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if got := storedGroup(t, group).AccessMCPServerIDs; len(got) != 0 {
+		t.Errorf("mcp = %v; want cleared", got)
+	}
+}
+
+// With nothing to take away the group is left alone, whether it matches the
+// spec or the spec only wants to add.
+func TestAccessGroupUnresolved_NoPutWhenNothingToRemove(t *testing.T) {
+	const (
+		env   = "test-env-unres-noput"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("added", "t-added")
+	shell := accessGroupFake.SeedShellTeam(env)
+	accessGroupFake.SeedTeamMirror("t-kept", gid)
+	accessGroupFake.SeedTeamMirror(shell, gid)
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: group,
+		AssignedTeamIDs: []string{"t-kept", shell},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept", "added"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if n := accessGroupFake.UpdateCallsFor(group); n != 0 {
+		t.Errorf("update calls = %d; want 0", n)
+	}
+}
+
+// A group that does not exist stays that way, and the shell team, which
+// carries the spec's guardrails, is not written either.
+func TestAccessGroupUnresolved_NoGroupNoWrites(t *testing.T) {
+	const env = "test-env-unres-nogroup"
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+
+	rt := emptyRuntimeBlock()
+	rt.Guardrails = []string{"guardrail-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if n := accessGroupFake.CreateCallsFor("ach-env-" + env); n != 0 {
+		t.Errorf("create calls = %d; want 0", n)
+	}
+	accessGroupFake.mu.Lock()
+	defer accessGroupFake.mu.Unlock()
+	if n := accessGroupFake.teamCreateCalls["ach-env-"+env]; n != 0 {
+		t.Errorf("shell team create calls = %d; want 0", n)
+	}
+}
+
+// An unresolved guardrail must not reach the shell team, and removals still
+// land.
+func TestAccessGroupUnresolved_GuardrailLeavesShellAlone(t *testing.T) {
+	const (
+		env   = "test-env-unres-guardrail"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("removed", "t-removed")
+	shell := accessGroupFake.SeedShellTeam(env)
+	for _, id := range []string{"t-kept", "t-removed", shell} {
+		accessGroupFake.SeedTeamMirror(id, gid)
+	}
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: group,
+		AssignedTeamIDs: []string{"t-kept", "t-removed", shell},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.Guardrails = []string{"guardrail-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if got := storedGroup(t, group).AssignedTeamIDs; !sameSet(got, []string{"t-kept", shell}) {
+		t.Errorf("assigned_team_ids = %v", got)
+	}
+	accessGroupFake.mu.Lock()
+	defer accessGroupFake.mu.Unlock()
+	if n := accessGroupFake.teamUpdateCalls[shell]; n != 0 {
+		t.Errorf("shell team update calls = %d; want 0", n)
+	}
+}
+
+// A failed LiteLLM read is not an answer: nothing is removed on it.
+func TestAccessGroupUnresolved_FailedReadNoPut(t *testing.T) {
+	for name, inject := range map[string]func(){
+		"team info": func() { accessGroupFake.InjectTeamInfoErr("t-kept", errors.New("litellm down")) },
+		"group":     func() { accessGroupFake.InjectListErr(errors.New("litellm down")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := "test-env-unres-readfail-" + strings.ReplaceAll(name, " ", "")
+			group := "ach-env-" + env
+			accessGroupFake.Reset()
+			accessGroupFake.SeedTeamMembers("t-kept", "kept")
+			accessGroupFake.SeedTeam("removed", "t-removed")
+			shell := accessGroupFake.SeedShellTeam(env)
+			accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+				AccessGroupID:   "ag-uuid-" + group,
+				AccessGroupName: group,
+				AssignedTeamIDs: []string{"t-kept", "t-removed", shell},
+			})
+			inject()
+
+			rt := emptyRuntimeBlock()
+			rt.MCPServers = []string{"mcp-unknown"}
+			createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "ResolveFailed")
+
+			if n := accessGroupFake.UpdateCallsFor(group); n != 0 {
+				t.Errorf("update calls = %d; want 0", n)
+			}
+		})
+	}
+}
+
+// A removal LiteLLM refused is reported as that, not as unresolved names.
+func TestAccessGroupUnresolved_PutFailureReported(t *testing.T) {
+	const (
+		env   = "test-env-unres-putfail"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("removed", "t-removed")
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: group,
+		AssignedTeamIDs: []string{"t-kept", "t-removed"},
+	})
+	accessGroupFake.InjectUpdateErr(group, errors.New("litellm refused"))
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "AccessGroupUpdateFailed")
+}
+
+// Removals reach a group still under a legacy name; the rename stays with the
+// fully resolved write.
+func TestAccessGroupUnresolved_LegacyGroupShrinksUnrenamed(t *testing.T) {
+	const (
+		env = "test-env-unres-legacy"
+		gid = "ag-uuid-legacy-" + env
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("removed", "t-removed")
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: env,
+		AssignedTeamIDs: []string{"t-kept", "t-removed"},
+	})
+
+	rt := emptyRuntimeBlock()
+	rt.MCPServers = []string{"mcp-unknown"}
+	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
+
+	if got := storedGroup(t, env).AssignedTeamIDs; !sameSet(got, []string{"t-kept"}) {
+		t.Errorf("assigned_team_ids = %v", got)
+	}
+}
+
+// With every reference resolved the write is the whole desired state: an
+// added team joins.
+func TestAccessGroupResolved_AddsAndRemoves(t *testing.T) {
+	const (
+		env   = "test-env-resolved-both"
+		group = "ach-env-" + env
+		gid   = "ag-uuid-" + group
+	)
+	accessGroupFake.Reset()
+	accessGroupFake.SeedTeam("kept", "t-kept")
+	accessGroupFake.SeedTeam("added", "t-added")
+	accessGroupFake.SeedTeam("removed", "t-removed")
+	shell := accessGroupFake.SeedShellTeam(env)
+	for _, id := range []string{"t-kept", "t-removed", shell} {
+		accessGroupFake.SeedTeamMirror(id, gid)
+	}
+	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
+		AccessGroupID:   gid,
+		AccessGroupName: group,
+		AssignedTeamIDs: []string{"t-kept", "t-removed", shell},
+	})
+
+	createEnvAwaitingAG(t, env, []string{"kept", "added"}, emptyRuntimeBlock(), metav1.ConditionTrue, "Synced")
+
+	if got := storedGroup(t, group).AssignedTeamIDs; !sameSet(got, []string{"t-kept", "t-added", shell}) {
+		t.Errorf("assigned_team_ids = %v", got)
+	}
+}
