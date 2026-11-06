@@ -154,16 +154,6 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 
-		// 1b. Agent keys identify themselves to the backend through LiteLLM,
-		// never through the human identity JWT.
-		if kc.KeyType == keys.PrefixEk {
-			r.Header.Del("Authorization")
-			metrics.IncJWTSuppressed(kind, "agent_key")
-			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
-			rp.ServeHTTP(w, r)
-			return
-		}
-
 		// 2. BIP resolve. BIPResolver.Resolve returns nil for no-policy
 		//    AND for explicit opt-out (winner.ForwardIdentityJWT == false);
 		//    both collapse to "no_policy" at the metrics layer per
@@ -171,6 +161,11 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		//    (internal/forwarder/bipcache, issue #34 C1).
 		winner := deps.BIPResolver.Resolve(kind, name)
 		if winner == nil {
+			// An ek_ reaches a backend with its JWT or with nothing: a client
+			// Authorization never travels with an agent key.
+			if kc.KeyType == keys.PrefixEk {
+				r.Header.Del("Authorization")
+			}
 			metrics.IncJWTSuppressed(kind, "no_policy")
 			metrics.IncRequests(routeLabel, keyTypeLabel, "forwarded")
 			if deps.Deps.Logger != nil {
@@ -184,13 +179,19 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 
-		// 3. Sign + stash for Director.
+		// 3. Sign + stash for Director. An ek_ acts as its owner, so the only
+		//    claim that tells it from the owner's pk_ is azp, for audit.
+		var azp string
+		if kc.KeyType == keys.PrefixEk {
+			azp = "ek:" + kc.Environment
+		}
 		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
 			Iss:    deps.BaseURL,
 			Sub:    kc.OwnerEmail,
 			Aud:    audPrefix + name,
 			Email:  kc.OwnerEmail,
 			Groups: filterShellTeams(granted),
+			Azp:    azp,
 		})
 		if err != nil {
 			metrics.IncJWTSuppressed(kind, "signing_failure")

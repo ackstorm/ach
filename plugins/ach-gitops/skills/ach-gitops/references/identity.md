@@ -12,9 +12,10 @@ EdDSA JWT per request and sends it as `Authorization: Bearer <jwt>`:
 | Claim | Value |
 |-------|-------|
 | `iss` | the ACH base URL |
-| `sub`, `email` | the caller's email |
+| `sub`, `email` | the caller's email; for an `ek-` key, its owner's |
 | `aud` | `mcp:<name>` or `a2a:<name>` |
-| `groups` | the caller's LiteLLM team aliases (omitted when empty) |
+| `groups` | the caller's LiteLLM team aliases (omitted when empty); for an `ek-` key, its owner's |
+| `azp` | `ek:<environment>` for an `ek-` key, for audit; absent for a person |
 | `iat`, `exp` | issue time, +120 s |
 
 The backend verifies it against the ACH JWKS at `<iss>/.well-known/jwks.json`, checking
@@ -74,9 +75,10 @@ both or neither; `consentBroker` only on `MCPServer`.
 - **No status.** The operator writes no conditions on a BIP; `kubectl get bip` shows
   target and `ForwardJWT` only, and `ach-cli admin list bips` shows `projected` once it
   reached the database.
-- **Personal logins only.** The JWT is minted for people (OAuth or `pk-` keys). Requests
-  made with an `ek-` environment key get no JWT and no `Authorization` header; a backend
-  that requires identity refuses them.
+- **An `ek-` key acts as its owner.** It gets the JWT its owner's login would get for
+  that target, plus `azp`. The JWT adds identity, never permission: the Environment still
+  decides what the key reaches, and the backend what that person may do. Without a policy
+  it gets no JWT and no `Authorization` header.
 - **Consent flow.** With `consentBroker`, ACH probes the backend through the forwarder at
   login; only when it answers `auth_required` does it chain the browser through the
   broker, then probes again. Templates such as `${BASE_DOMAIN}` in the URL are fine if

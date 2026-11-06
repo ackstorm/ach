@@ -29,6 +29,7 @@ type Verified struct {
 	Iat    int64
 	Exp    int64
 	Groups []string
+	Azp    string
 }
 
 // Verifier resolves Ed25519 public keys via a KeyCache and validates
@@ -115,7 +116,8 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Verified, error) {
 		}
 	}
 
-	return Verified{Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp, Groups: groups}, nil
+	azp, _ := claims["azp"].(string) // optional, "ek:<environment>" on agent-key tokens
+	return Verified{Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp, Groups: groups, Azp: azp}, nil
 }
 
 func claimInt(m jwtv5.MapClaims, k string) int64 {

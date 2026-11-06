@@ -5,6 +5,7 @@ package precheck
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -78,9 +79,9 @@ func TestCheckMCP_PC1_InvalidKeyType(t *testing.T) {
 }
 
 func TestCheckMCP_PC2_EkAuthorized(t *testing.T) {
-	env := envRow("demo", []string{"foo", "bar"}, nil, nil)
+	env := envRow("demo", []string{"foo", "bar"}, nil, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
-	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
+	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}
 	if _, err := CheckMCP(context.Background(), kc, "foo", deps); err != nil {
 		t.Errorf("err = %v; want nil", err)
 	}
@@ -179,9 +180,9 @@ func TestCheckMCP_PC12_PkPicksCorrectEnv(t *testing.T) {
 }
 
 func TestCheckA2A_PC13_EkPath(t *testing.T) {
-	env := envRow("demo", nil, []string{"agent-foo", "agent-bar"}, nil)
+	env := envRow("demo", nil, []string{"agent-foo", "agent-bar"}, []string{"team-a"})
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
-	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
+	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}
 
 	if _, err := CheckA2A(context.Background(), kc, "agent-foo", deps); err != nil {
 		t.Errorf("PC13-authorized: err = %v; want nil", err)
@@ -197,18 +198,31 @@ func TestCheckA2A_PC13_EkPath(t *testing.T) {
 	}
 }
 
-// PC15: ek_ authorized → returns the Environment's authorizedTeams verbatim.
-func TestCheckMCP_PC15_EkReturnsEnvTeams(t *testing.T) {
-	env := envRow("demo", []string{"foo"}, nil, []string{"team-a", "team-b"})
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
-	deps := Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}
-
-	groups, err := CheckMCP(context.Background(), kc, "foo", deps)
-	if err != nil {
-		t.Fatalf("err = %v; want nil", err)
+// PC15: ek_ authorized → the owner's teams ∩ every Environment hosting name,
+// exactly what the owner's pk_ gets, never the bound Environment's whole set.
+func TestCheckMCP_PC15_EkReturnsOwnerPkTeams(t *testing.T) {
+	bound := envRow("demo", []string{"foo"}, nil, []string{"team-a", "team-x"})
+	other := envRow("other", []string{"foo"}, nil, []string{"team-b"})
+	ek := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	pk := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
+	deps := Deps{
+		EnvProvider:   newEnvProvider(bound, other),
+		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
 	}
-	if len(groups) != 2 || groups[0] != "team-a" || groups[1] != "team-b" {
-		t.Errorf("groups = %v; want [team-a team-b]", groups)
+
+	ekGroups, err := CheckMCP(context.Background(), ek, "foo", deps)
+	if err != nil {
+		t.Fatalf("ek_ err = %v; want nil", err)
+	}
+	pkGroups, err := CheckMCP(context.Background(), pk, "foo", deps)
+	if err != nil {
+		t.Fatalf("pk_ err = %v; want nil", err)
+	}
+	// EnvProvider.List iterates a map: membership matters, not order.
+	slices.Sort(ekGroups)
+	slices.Sort(pkGroups)
+	if !slices.Equal(ekGroups, pkGroups) || !slices.Equal(ekGroups, []string{"team-a", "team-b"}) {
+		t.Errorf("ek_ groups = %v, pk_ groups = %v; want both [team-a team-b]", ekGroups, pkGroups)
 	}
 }
 

@@ -81,6 +81,6 @@ without that guardrail.
 | Grant is `Synced` but some requests 403 for a few minutes | LiteLLM caches access-group grants per replica (600 s default) |
 | A brand-new user reaches nothing for a few minutes | Their personal shell team is attached on the next Environment reconcile |
 | `403 unauthorized_team` on an `ek-` key | The key's owner is no longer in an authorized team; the key is now invalid |
-| MCP backend sees no identity / tool list empty | No BackendIdentityPolicy, `forwardIdentityJWT: false`, the caller uses an `ek-` key, or LiteLLM lacks `extra_headers: ["authorization"]` for that server |
+| MCP backend sees no identity / tool list empty | No BackendIdentityPolicy, `forwardIdentityJWT: false`, or LiteLLM lacks `extra_headers: ["authorization"]` for that server |
 | Plugin or skill missing after hydrate | It is listed bare but lives in a marketplace (needs `@marketplace`), or the user has not re-hydrated since the change |
 | Budget 429 `Budget has been exceeded! Tag=environment:<name>` | The Environment's pooled `budget` is spent; raise `maxBudget` (takes ~10 s to a couple of minutes) or wait for the reset |

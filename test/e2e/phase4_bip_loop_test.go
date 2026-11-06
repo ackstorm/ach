@@ -30,6 +30,7 @@ package e2e
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -95,13 +96,23 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 		}
 	})
 
-	t.Run("agent_key_gets_no_jwt", func(t *testing.T) {
+	t.Run("agent_key_gets_owner_jwt", func(t *testing.T) {
 		ek := mustAcquireEkBoundToEnv(t, "demo")
 		resetMcpEchoCapture(t, mcpEchoLocal)
+		callEchoViaForwarder(t, gatewayLocal, pk, bipJWTRouteName, "hola-owner")
+		owner := readMcpEchoCapture(t, mcpEchoLocal)
+		resetMcpEchoCapture(t, mcpEchoLocal)
 		callEchoViaForwarder(t, gatewayLocal, ek, bipJWTRouteName, "hola-agent")
-		snap := readMcpEchoCapture(t, mcpEchoLocal)
-		if snap.JWTPresent || snap.AuthorizationSeen != "" {
-			t.Fatalf("ek_: jwt_present=%v authorization=%q, want none", snap.JWTPresent, snap.AuthorizationSeen)
+		agent := readMcpEchoCapture(t, mcpEchoLocal)
+		if !owner.JWTPresent || !agent.JWTPresent {
+			t.Fatalf("jwt_present: owner=%v agent=%v, want both", owner.JWTPresent, agent.JWTPresent)
+		}
+		if agent.JWTClaims.Azp != "ek:demo" || owner.JWTClaims.Azp != "" {
+			t.Fatalf("azp: agent=%q owner=%q, want ek:demo and empty", agent.JWTClaims.Azp, owner.JWTClaims.Azp)
+		}
+		if agent.JWTClaims.Sub != owner.JWTClaims.Sub ||
+			!slices.Equal(agent.JWTClaims.Groups, owner.JWTClaims.Groups) {
+			t.Fatalf("agent claims %+v differ from owner claims %+v", agent.JWTClaims, owner.JWTClaims)
 		}
 	})
 }

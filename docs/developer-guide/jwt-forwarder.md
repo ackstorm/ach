@@ -72,10 +72,13 @@ granted that name.
                                           └──────────────┘
 ```
 
-Agent keys (`ek_`) never receive the BIP JWT: the Forwarder strips any client
-`Authorization` header and the backend identifies the agent through
-`x-litellm-api-key` → `/v2/user/info`. `forwardIdentityJWT` governs human
-`pk_`/OAuth callers only.
+An agent key (`ek_`) acts as its owner: its JWT carries the key row's
+`owner_email` and the same `groups` the owner's `pk_` gets for that target, plus
+`azp` for audit. The JWT adds identity, never permission: `checkEk` and
+`EkOwnerGate` (§1.1) decide the request, and the backend decides what that
+identity may do. With no policy or an opt-out, an `ek_` gets no JWT and any
+client `Authorization` is stripped. A backend cannot identify a caller through
+the LiteLLM key: LiteLLM v1.106+ never forwards it to MCP backends.
 
 The Forwarder is the only ACH service that mints JWTs. It signs with
 the `current` slot of the `ach-jwt-signing-keys` Secret (Ed25519 / 32-byte
@@ -116,6 +119,7 @@ refresh once access returns, with no re-mint and no JWT-path change.
 | `sub`         | Bare `<owner-email>` (no namespace prefix)       | Hub §9.1   |
 | `email`       | Bare `<owner-email>` (mirrors `sub`); **omitted when empty** — additive, for consumers that key by email | — |
 | `groups`      | Caller's LiteLLM team aliases (ACH does no UUID→alias translation — see below), deduplicated + sorted, ACH's internal shell teams stripped; **omitted entirely when empty** — additive, see below | — |
+| `azp`         | `ek:<environment>` on a token minted for an agent key, for audit; **omitted** for `pk_`/OAuth callers. Additive, grants nothing | — |
 | `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
 | `iat`         | Unix seconds at mint time                        | RFC 7519   |
 | `exp`         | `iat + 120`                                      | FWD-07     |
@@ -132,8 +136,8 @@ email is empty. The legacy `<namespace>/<email>` `sub` form is **gone**
 
 **`nbf` is intentionally omitted.** With a 120 s `exp` it would add only
 clock-skew risk for no security gain — `exp` is the sole time bound. The minted
-claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`
-and `groups`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
+claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`,
+`groups` and `azp`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
 `exp` only and MUST NOT require `nbf`.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;
@@ -150,7 +154,7 @@ group-owned resources.
 | Key type | `groups` |
 |----------|----------|
 | `pk_` | the caller's LiteLLM teams ∩ `authorizedTeams` of active Environments whose `runtime.mcpServers` (or `runtime.a2aAgents`) contains `<name>` |
-| `ek_` | its Environment's `authorizedTeams` |
+| `ek_` | the same set for the key's `owner_email`: identical to the owner's `pk_` groups for that target, never the Environment's full `authorizedTeams`, which would grant teams the owner is not in |
 
 Both are sorted, deduplicated, and stripped of ACH's internal shell teams
 (`ach-env-*`, `ach-user-*`). The claim is **omitted entirely** when the set
@@ -164,15 +168,13 @@ ships through unchanged. Renaming a LiteLLM team therefore changes the
 claim; a backend keying on the old alias stops matching.
 
 **Staleness.** There is no revocation channel: a backend trusts the claim
-for the token's life. Two distinct vectors, two distinct bounds. Removing a
-user from a LiteLLM team affects the `pk_` path only (the 60s
-team-membership cache) and takes effect at the backend after at most
-`exp` (120s) + 60s ≈ 180s. Dropping a team from
-`Environment.spec.authorizedTeams` affects **both** key types — `ek_`
-groups read the Environment row directly, and `pk_` groups intersect
-against it — and bounds on `exp` (120s) + the `envstore` package's 5-minute
-NOTIFY-loss safety-net refresh (`internal/forwarder/envstore/store.go`)
-≈ ~7 minutes worst case.
+for the token's life. Two distinct vectors, two distinct bounds, each
+applying to both key types. Removing a user from a LiteLLM team (the 60s
+team-membership cache, read on the owner for an `ek_`) takes effect at the
+backend after at most `exp` (120s) + 60s ≈ 180s. Dropping a team from
+`Environment.spec.authorizedTeams` bounds on `exp` (120s) + the `envstore`
+package's 5-minute NOTIFY-loss safety-net refresh
+(`internal/forwarder/envstore/store.go`) ≈ ~7 minutes worst case.
 
 ---
 

@@ -74,6 +74,7 @@ type jwtClaimsCapture struct {
 	Iat    int64    `json:"Iat"`
 	Exp    int64    `json:"Exp"`
 	Groups []string `json:"Groups"`
+	Azp    string   `json:"Azp"`
 }
 
 type captureSnap struct {
