@@ -14,6 +14,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/keycrypt"
 	"github.com/ackstorm/ach/internal/keys"
+	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/render"
 )
@@ -62,6 +63,10 @@ type Deps struct {
 	// rewrite; it is NOT required for any other part of the proxy.
 	BaseURL string
 
+	// Caps is the master-key view that describes a model-group alias on
+	// GET /v2/model/info (modelinfo.go). Nil leaves that route a plain relay.
+	Caps *litellm.CapsCache
+
 	// GeminiStripModelPrefixes are vendor prefixes removed from the model
 	// name on the /gemini route only (chart forwarder.gemini.
 	// stripModelPrefixes -> ACH_GEMINI_STRIP_MODEL_PREFIXES), in declared
@@ -85,9 +90,10 @@ type Deps struct {
 //  3. Strip + rewrite headers (Plan 04-01 — pure function).
 //  4. JWT attach LAST — strip has already cleared any client Authorization.
 //
-// ModifyResponse is HEADER-ONLY (issue #177) everywhere but GET /v1/models,
-// whose small JSON list it filters by model mode (models.go): it rewrites the
-// resource_metadata pointer in a 401/403 WWW-Authenticate challenge so it names
+// ModifyResponse is HEADER-ONLY (issue #177) everywhere but two small JSON
+// reads: GET /v1/models, filtered by model mode (models.go), and GET
+// /v2/model/info?model=<alias>, answered for the alias (modelinfo.go). It
+// rewrites the resource_metadata pointer in a 401/403 WWW-Authenticate challenge so it names
 // ACH rather than LiteLLM's own front door. It runs BEFORE the body is copied
 // and buffers nothing, so streaming pass-through (D-05) is unaffected — the
 // constraint that comment always encoded is that the BODY is never touched, and
@@ -101,7 +107,10 @@ func New(deps Deps) *httputil.ReverseProxy {
 		if publicBase != nil {
 			rewriteChallengeHost(resp, publicBase)
 		}
-		return filterModelList(resp)
+		if err := filterModelList(resp); err != nil {
+			return err
+		}
+		return addAliasInfo(resp)
 	}
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {

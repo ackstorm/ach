@@ -13,6 +13,7 @@ import (
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
 	"github.com/ackstorm/ach/internal/forwarder/proxy"
 	"github.com/ackstorm/ach/internal/keystore"
+	"github.com/ackstorm/ach/internal/litellm"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/go-chi/chi/v5"
 )
@@ -37,6 +38,8 @@ type Deps struct {
 	LiteLLMUpstream  *url.URL
 	// AuthnOptions: the RFC 9728 challenge on 401 + the declared credential headers.
 	AuthnOptions pamw.AuthnOptions
+	// Caps describes model-group aliases on GET /v2/model/info. See proxy.Deps.
+	Caps *litellm.CapsCache
 	// GeminiStripModelPrefixes: vendor prefixes removed from the model name
 	// on /gemini only (ACH_GEMINI_STRIP_MODEL_PREFIXES). See proxy.Deps.
 	GeminiStripModelPrefixes []string
@@ -67,6 +70,7 @@ func New(deps Deps) http.Handler {
 			Logger:           deps.Logger,
 			KeyEncryptionKey: deps.KeyEncryptionKey,
 			BaseURL:          deps.BaseURL,
+			Caps:             deps.Caps,
 
 			GeminiStripModelPrefixes: deps.GeminiStripModelPrefixes,
 		},

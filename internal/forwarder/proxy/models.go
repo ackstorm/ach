@@ -74,15 +74,10 @@ func filterModelList(resp *http.Response) error {
 	if !ok || resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Encoding") != "" {
 		return nil
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxTagScanBody+1))
-	_ = resp.Body.Close()
+	raw, err := bufferBody(resp)
 	if err != nil {
 		return err
 	}
-	if len(raw) > maxTagScanBody {
-		return errBodyTooLarge // never pass a truncated list off as whole (502)
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(raw))
 	var list map[string]json.RawMessage
 	var items []json.RawMessage
 	if json.Unmarshal(raw, &list) != nil || json.Unmarshal(list["data"], &items) != nil {
@@ -100,6 +95,27 @@ func filterModelList(resp *http.Response) error {
 	if list["data"], err = json.Marshal(kept); err != nil {
 		return err
 	}
+	return replaceBody(resp, list)
+}
+
+// bufferBody reads a whole upstream JSON answer and leaves resp.Body
+// rewound. An oversize one is an error (502), so a truncated answer is
+// never passed off as whole.
+func bufferBody(resp *http.Response) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxTagScanBody+1))
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxTagScanBody {
+		return nil, errBodyTooLarge
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(raw))
+	return raw, nil
+}
+
+// replaceBody swaps the answer for list, keeping its length headers honest.
+func replaceBody(resp *http.Response, list map[string]json.RawMessage) error {
 	out, err := json.Marshal(list)
 	if err != nil {
 		return err

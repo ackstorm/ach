@@ -20,7 +20,12 @@ Nothing else is proxied (spec D-18): there is no catch-all, so `/ui`,
 `/key/*`, `/health`, `/model/*`… are 404 here and live on LiteLLM's own host.
 The one owned exception is `GET /v2/model/info` — ach-agent's `litellm_usage`
 cost source prices its responses there with its `ek_` — which follows the
-`/v1` rules (credential required, caller's own key forwarded, no JWT).
+`/v1` rules (credential required, caller's own key forwarded, no JWT). LiteLLM
+has no row for a `model_group_alias`, so `?model=<alias>` goes upstream
+unchanged and a 200 is answered with the alias's own row: the target
+deployment's allow-listed caps from the master-key `litellm.CapsCache`
+(`proxy/modelinfo.go`). A 403 stands: it is LiteLLM saying the caller is not
+granted that name.
 
 ---
 

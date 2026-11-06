@@ -15,6 +15,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   background recipe for MCP sign-in, so they hand over the link instead of
   hanging the session on the browser wait.
 
+### Fixed
+- `GET /v2/model/info?model=<alias>` returns a row for a LiteLLM model-group
+  alias, with the target model's vision, PDF, token-limit, tool and cost fields.
+  Agents on an alias such as `ackstorm.smart` no longer lose images from tool
+  results or run unpriced. A name the caller is not granted stays a 403.
+
 ### Removed
 - The `pre-push` git hook, with `make pre-push`, `make hooks` and `make verify`.
   CI is the gate. Delete `.git/hooks/pre-push` from existing clones.
