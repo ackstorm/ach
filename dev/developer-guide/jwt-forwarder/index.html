@@ -1891,7 +1891,12 @@ Nothing else is proxied (spec D-18): there is no catch-all, so <code>/ui</code>,
 <code>/key/*</code>, <code>/health</code>, <code>/model/*</code>… are 404 here and live on LiteLLM's own host.
 The one owned exception is <code>GET /v2/model/info</code> — ach-agent's <code>litellm_usage</code>
 cost source prices its responses there with its <code>ek_</code> — which follows the
-<code>/v1</code> rules (credential required, caller's own key forwarded, no JWT).</p>
+<code>/v1</code> rules (credential required, caller's own key forwarded, no JWT). LiteLLM
+has no row for a <code>model_group_alias</code>, so <code>?model=&lt;alias&gt;</code> goes upstream
+unchanged and a 200 is answered with the alias's own row: the target
+deployment's allow-listed caps from the master-key <code>litellm.CapsCache</code>
+(<code>proxy/modelinfo.go</code>). A 403 stands: it is LiteLLM saying the caller is not
+granted that name.</p>
 <hr />
 <h2 id="1-end-to-end-flow">1. End-to-end flow<a class="headerlink" href="#1-end-to-end-flow" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌────────────┐  x-ach-key: pk_…           ┌──────────────┐
