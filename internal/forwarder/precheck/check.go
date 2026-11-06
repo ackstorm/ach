@@ -51,10 +51,9 @@ const (
 //     Environment.spec.authorizedTeams[] of at least one Environment whose
 //     spec.runtime.mcpServers[] contains <name>.
 //
-// On success the first return is the set of teams that GRANTED the access —
-// the Environment's authorizedTeams for ek_, the caller∩Environment
-// intersection for pk_. The proxy filters and normalizes it into the JWT
-// "groups" claim; the authorization decision itself is unchanged.
+// On success the first return is the set of teams that GRANTED the access:
+// the caller∩Environment intersection, where an ek_ caller is its owner. The
+// proxy filters and normalizes it into the JWT "groups" claim.
 //
 // On failure returns a typed sentinel; the caller (Plan 04-07 handler)
 // translates the sentinel to an HTTP outcome via render.Error.
@@ -127,21 +126,19 @@ func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps
 // kc.Environment (resolved by Phase 3 keystore.EkResolve). Missing or
 // name-not-in-list both fail closed as ErrUnauthorizedResource per D-15
 // narrow error surface.
-func checkEk(_ context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
+func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
 	row, ok := deps.EnvProvider.Get(kc.Environment)
 	if !ok {
 		return nil, ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
 	}
 	for _, n := range runtimeList(row, kind) {
 		if n == name {
-			// An ek_ has no human behind it: its groups are the whole
-			// authorizedTeams set of the one Environment it is bound to.
-			//
-			// This slice aliases the envstore cache row's backing array
-			// (Store.Get copies the row struct, not the slice) — callers
-			// MUST NOT mutate it in place (e.g. an in-place sort); build a
-			// fresh slice instead, as filterShellTeams already does.
-			return row.AuthorizedTeams, nil
+			// An ek_ acts as its owner: its groups are the owner's pk_ groups
+			// for this target, never the Environment's whole authorizedTeams,
+			// which would grant teams the owner is not in. EkOwnerGate has
+			// already proved the owner holds this Environment, so the verdict
+			// here can only repeat the gate's.
+			return checkPk(ctx, kc, name, deps, kind)
 		}
 	}
 	return nil, ErrUnauthorizedResource

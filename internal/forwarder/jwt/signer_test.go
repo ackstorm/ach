@@ -515,6 +515,15 @@ func TestEd25519Signer_Sign_GroupsClaim(t *testing.T) {
 		t.Fatalf("groups = %v; want [team-a team-b]", raw)
 	}
 
+	// Azp set → "azp" present; unset → key omitted.
+	withAzp := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x", Azp: "ek:demo"})
+	if withAzp["azp"] != "ek:demo" {
+		t.Fatalf("azp = %v; want ek:demo", withAzp["azp"])
+	}
+	if _, ok := withGroups["azp"]; ok {
+		t.Fatalf("azp present without Azp: %v", withGroups)
+	}
+
 	// Nil Groups → key omitted entirely (ach-memory reads absent as "no groups").
 	none := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x"})
 	if _, ok := none["groups"]; ok {

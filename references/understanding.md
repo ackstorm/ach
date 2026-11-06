@@ -230,19 +230,19 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
 - **JWT trust path** (`/mcp`, `/a2a`; authoritative:
   `docs/developer-guide/jwt-forwarder.md`): BIP opts in → forwarder mints
   EdDSA `{iss=ACH_BASE_URL, sub=<bare owner-email> (hard-cut from the old
-  ns/email form — do NOT split on '/'; on ek_ this is the minting admin's
-  email, not the agent), email (additive, omitted when empty), groups
+  ns/email form — do NOT split on '/'; on ek_ this is the owner's email,
+  not the agent), email (additive, omitted when empty), groups
   (additive, LiteLLM team aliases as authored — ACH does no UUID→alias
   translation — omitted when empty; pk_=caller's teams ∩ union of
   authorizedTeams across active Envs whose runtime.mcpServers/a2aAgents
-  contains <name>, ek_=own Env's authorizedTeams; ach-env-*/ach-user-* shell
-  teams stripped), aud=mcp:<name>|a2a:<name>, iat, exp=iat+120}`. **No nbf,
-  no jti.** Staleness, two vectors: exp(120s)+60s teams-cache=~180s worst
-  case for a LiteLLM team-membership change (pk_ only, same window the pk_
-  precheck already runs on); exp(120s)+envstore's 5-min NOTIFY-loss safety-net
+  contains <name>, ek_=the same set for its owner; ach-env-*/ach-user-* shell
+  teams stripped), azp (`ek:<environment>` on ek_ only, audit), aud=mcp:<name>|a2a:<name>,
+  iat, exp=iat+120}`. An ek_ acts as its owner: its JWT equals the owner's pk_
+  JWT apart from azp. **No nbf, no jti.** Staleness, two vectors, both key
+  types: exp(120s)+60s teams-cache=~180s worst case for a LiteLLM
+  team-membership change; exp(120s)+envstore's 5-min NOTIFY-loss safety-net
   refresh (`internal/forwarder/envstore/store.go`)=~7min worst case for an
-  authorizedTeams edit (both key types — ek_ reads the row directly, pk_
-  intersects against it). JWKS `Cache-Control: max-age=3600` forces ≥24h
+  authorizedTeams edit. JWKS `Cache-Control: max-age=3600` forces ≥24h
   rotation overlap. Fail-closed
   default: no BIP → Authorization stripped, nothing attached (no smuggling).
   LiteLLM MCP gateway needs `extra_headers: ["authorization"]` +
@@ -263,8 +263,8 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
   to the caller's own key; everything else (incl. `Host`) passes as it came. `ek_`
   runtime traffic gets the `<environment>` tag injected; `pk_` untagged.
 - **Precheck** (mcp/a2a only, before JWT): ek → name ∈ bound Environment's
-  runtime list (O(1) cache, terminating fail-closed); pk → LiteLLM team
-  intersect (unreachable → `503 litellm_unreachable`). `/v1`+`/gemini` skip
+  runtime list (O(1) cache, terminating fail-closed), then the pk rule on its
+  owner; pk → LiteLLM team intersect (unreachable → `503 litellm_unreachable`). `/v1`+`/gemini` skip
   (model authz delegated to LiteLLM).
 - **`ek_` effective state** (unified-console §7, D-29/D-30): on top of the
   above, an `ek_` now carries five effective states — Active, Suspended,

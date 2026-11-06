@@ -15,8 +15,8 @@ import (
 //
 // ach-env-<name> and ach-user-<email> are ACH's own permission plumbing
 // (references/litellm-permission-model.md) and carry no meaning to a
-// backend, so they never leave the forwarder. On the pk_ path the
-// precheck intersection already excludes them — a human belongs to their
+// backend, so they never leave the forwarder. The precheck intersection
+// already excludes them — a human belongs to their
 // own ach-user-* shell but never to an ach-env-* one, and authorizedTeams
 // is spec-authored so it holds neither. The filter is therefore defense in
 // depth, catching only an administrator who writes a shell alias into

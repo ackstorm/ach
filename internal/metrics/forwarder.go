@@ -130,7 +130,7 @@ func (c *ForwarderCollectors) IncJWTSigned(kind string) {
 // per Hub §18.5:
 //
 //	kind   ∈ {MCPServer, A2AAgent}
-//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure, agent_key}
+//	reason ∈ {no_policy, policy_opt_out, signing_failure, list_failure}
 //
 // list_failure is emitted when the BIP cache List call returns a
 // transient error (cache desync, mid-rotation indexer, etc.) — the

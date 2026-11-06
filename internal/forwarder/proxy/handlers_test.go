@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -282,64 +284,91 @@ func TestHandlerV1_EkTagStamping(t *testing.T) {
 	}
 }
 
-// H3: Agent keys never receive a BIP JWT, even when the policy opts in.
-func TestHandlerMCP_EkNoJWT(t *testing.T) {
-	upstream, rec := upstreamSpy()
-	defer upstream.Close()
-
-	env := makeEnvRow("demo", []string{"server-x"}, nil, nil)
-	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
-
-	signer := &mockSigner{returnToken: "ACH-TOKEN"}
-	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver(bipRow))
-
-	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
-	r := requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, "")
-
-	// Need chi route-context for URLParam
-	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("name", "server-x")
-	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-
-	w := httptest.NewRecorder()
-	HandlerMCP(deps)(w, r)
-
-	if rec.Calls() != 1 {
-		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
-	}
-	if rec.LastAuth() != "" {
-		t.Errorf("Authorization = %q; want empty", rec.LastAuth())
-	}
-	if signer.signCalls != 0 {
-		t.Errorf("signer called %d times; want 0", signer.signCalls)
-	}
-}
-
-func TestHandlerMCPAndA2A_AgentKeyStripsAuthorization(t *testing.T) {
+// H3: with a BIP, an ek_ carries exactly its owner's pk_ claims plus azp, and
+// that JWT replaces any client Authorization.
+func TestHandlerMCPAndA2A_EkJWTEqualsOwnerPkJWT(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		h    func(HandlerDeps) http.HandlerFunc
-		kind string
-		path string
+		name   string
+		h      func(HandlerDeps) http.HandlerFunc
+		kind   string
+		target string
+		path   string
 	}{
-		{name: "mcp", h: HandlerMCP, kind: "MCPServer", path: "/mcp/server-x"},
-		{name: "a2a", h: HandlerA2A, kind: "A2AAgent", path: "/a2a/agent-x"},
+		{name: "mcp", h: HandlerMCP, kind: "MCPServer", target: "server-x", path: "/mcp/server-x"},
+		{name: "a2a", h: HandlerA2A, kind: "A2AAgent", target: "agent-x", path: "/a2a/agent-x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			upstream, rec := upstreamSpy()
 			defer upstream.Close()
-			env := makeEnvRow("demo", []string{"server-x"}, []string{"agent-x"}, nil)
-			bip := makeBIPRow("pol-a", tc.kind, strings.TrimPrefix(strings.TrimPrefix(tc.path, "/mcp/"), "/a2a/"), true)
+			// "other" also hosts the target: the owner's pk_ is granted through
+			// both Environments, so the ek_ bound to "demo" carries both teams.
+			bound := makeEnvRow("demo", []string{"server-x"}, []string{"agent-x"}, []string{"team-a"})
+			other := makeEnvRow("other", []string{"server-x"}, []string{"agent-x"}, []string{"team-b"})
 			signer := &mockSigner{returnToken: "ACH-TOKEN"}
-			deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver(bip))
+			deps := mkDeps(t, upstream, signer, precheck.Deps{
+				EnvProvider:   newEnvProvider(bound, other),
+				TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
+			}, newBIPResolver(makeBIPRow("pol-a", tc.kind, tc.target, true)))
+
+			mint := func(kc middleware.KeyContext) jwt.Claims {
+				t.Helper()
+				r := requestWithKC(t, http.MethodPost, tc.path, kc, "{}")
+				r.Header.Set("Authorization", "Bearer client-token")
+				chiWithName(tc.h(deps))(httptest.NewRecorder(), r)
+				if rec.LastAuth() != "Bearer ACH-TOKEN" {
+					t.Fatalf("upstream Authorization = %q; want the minted JWT", rec.LastAuth())
+				}
+				return signer.lastClaims
+			}
+
+			pk := mint(middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"})
+			ek := mint(middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"})
+
+			if ek.Azp != "ek:demo" {
+				t.Errorf("ek_ azp = %q; want ek:demo", ek.Azp)
+			}
+			if pk.Azp != "" {
+				t.Errorf("pk_ azp = %q; want empty", pk.Azp)
+			}
+			ek.Azp = ""
+			if !reflect.DeepEqual(ek, pk) {
+				t.Errorf("ek_ claims = %+v; want the owner's pk_ claims %+v", ek, pk)
+			}
+			if !slices.Equal(ek.Groups, []string{"team-a", "team-b"}) {
+				t.Errorf("groups = %v; want [team-a team-b]", ek.Groups)
+			}
+		})
+	}
+}
+
+// Without a BIP an ek_ gets no JWT, and a client Authorization never reaches
+// the backend. An opted-out BIP resolves to nil too, so it takes this branch.
+func TestHandlerMCPAndA2A_EkNoPolicyStripsAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    func(HandlerDeps) http.HandlerFunc
+		path string
+	}{
+		{name: "mcp", h: HandlerMCP, path: "/mcp/server-x"},
+		{name: "a2a", h: HandlerA2A, path: "/a2a/agent-x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream, rec := upstreamSpy()
+			defer upstream.Close()
+			env := makeEnvRow("demo", []string{"server-x"}, []string{"agent-x"}, []string{"team-a"})
+			signer := &mockSigner{returnToken: "ACH-TOKEN"}
+			deps := mkDeps(t, upstream, signer, precheck.Deps{
+				EnvProvider:   newEnvProvider(env),
+				TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}},
+			}, newBIPResolver())
 			kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 			r := requestWithKC(t, http.MethodPost, tc.path, kc, "{}")
 			r.Header.Set("Authorization", "Bearer client-token")
-			rctx := chi.NewRouteContext()
-			rctx.URLParams.Add("name", strings.TrimPrefix(strings.TrimPrefix(tc.path, "/mcp/"), "/a2a/"))
-			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
-			tc.h(deps)(httptest.NewRecorder(), r)
+			chiWithName(tc.h(deps))(httptest.NewRecorder(), r)
+			if rec.Calls() != 1 {
+				t.Fatalf("upstream calls = %d; want 1", rec.Calls())
+			}
 			if rec.LastAuth() != "" {
 				t.Fatalf("upstream Authorization = %q; want empty", rec.LastAuth())
 			}
@@ -355,9 +384,9 @@ func TestHandlerMCP_NoPolicyNoJWT(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
-	env := makeEnvRow("demo", []string{"server-x"}, nil, nil)
+	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team-a"})
 	signer := &mockSigner{}
-	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}, newBIPResolver())
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x", kc, "")
@@ -550,38 +579,31 @@ func TestClassifyPrecheckErr(t *testing.T) {
 	}
 }
 
-// Agent keys do not mint a JWT, so Environment team aliases never become
-// backend identity claims on this path.
-func TestHandlerMCP_EkNoGroupsClaim(t *testing.T) {
+// An ek_ never carries a team its owner is not in, even one its Environment
+// authorizes, and ACH's shell teams never reach the backend.
+func TestHandlerMCP_EkGroupsExcludeTeamsOwnerLacks(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
 
-	// "ach-env-demo" is the Environment's own shell team; it must not reach
-	// the backend even when someone lists it in authorizedTeams by hand.
 	env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team-b", "ach-env-demo", "team-a"})
 	bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
 
 	signer := &mockSigner{returnToken: "ACH-TOKEN"}
-	deps := mkDeps(t, upstream, signer, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver(bipRow))
+	deps := mkDeps(t, upstream, signer, precheck.Deps{
+		EnvProvider:   newEnvProvider(env),
+		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "ach-env-demo"}},
+	}, newBIPResolver(bipRow))
 
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	r := requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, "")
-
-	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("name", "server-x")
-	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-
 	w := httptest.NewRecorder()
-	HandlerMCP(deps)(w, r)
+	chiWithName(HandlerMCP(deps))(w, r)
 
 	if rec.Calls() != 1 {
 		t.Fatalf("upstream calls = %d; w body=%s", rec.Calls(), w.Body.String())
 	}
-	if signer.signCalls != 0 {
-		t.Errorf("signer calls = %d; want 0", signer.signCalls)
-	}
-	if rec.LastAuth() != "" {
-		t.Errorf("Authorization = %q; want empty", rec.LastAuth())
+	if got := signer.lastClaims.Groups; !slices.Equal(got, []string{"team-a"}) {
+		t.Errorf("groups = %v; want [team-a]", got)
 	}
 }
 
@@ -670,8 +692,8 @@ func chiWithName(h http.HandlerFunc) http.HandlerFunc {
 func TestHandlerA2A_StripsBodyTags(t *testing.T) {
 	upstream, rec := upstreamSpy()
 	defer upstream.Close()
-	env := makeEnvRow("demo", nil, []string{"agent-x"}, nil)
-	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+	env := makeEnvRow("demo", nil, []string{"agent-x"}, []string{"team-a"})
+	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{teams: []string{"team-a"}}}, newBIPResolver())
 	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
 	do := func(body string) *httptest.ResponseRecorder {
 		r := requestWithKC(t, http.MethodPost, "/a2a/agent-x", kc, body)

@@ -4,6 +4,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- Agent keys get the backend identity JWT: on an `/mcp` or `/a2a` target with a
+  `forwardIdentityJWT` policy, an `ek_` arrives as its owner, with the same
+  `sub`, `email` and `groups` as the owner's `pk_`, plus an `azp` claim
+  (`ek:<environment>`) for audit. MCP backends no longer need the LiteLLM key,
+  which LiteLLM v1.106+ stops forwarding.
+
 ## [1.1.5] - 2026-11-06
 
 ### Changed
