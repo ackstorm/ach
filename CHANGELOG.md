@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-06
+
 ### Changed
 - Agent keys get the backend identity JWT: on an `/mcp` or `/a2a` target with a
   `forwardIdentityJWT` policy, an `ek_` arrives as its owner, with the same
