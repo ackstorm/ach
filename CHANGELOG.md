@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-06
+
 ### Changed
 - Docs, the console and the e2e suite follow LiteLLM v1.108's budget refusal:
   HTTP 422 with `type: budget_exceeded`, not 429. ACH keeps that default
