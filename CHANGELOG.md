@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-11-06
+
 ### Changed
 - Releases go through a PR: `make release-cut` opens it with the rotated
   CHANGELOG and manifest bumps, and the merged commit is what gets tagged.
