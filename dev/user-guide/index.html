@@ -1465,10 +1465,12 @@ is durable: the deployment-wide default is seeded only onto a tag that has no
 ceiling yet, so logging in never overwrites it. The flip side is that raising
 the deployment-wide default does not retune anyone who already has one — this
 route is how you do that.</p>
-<p>When a ceiling is reached, the request fails with <strong>HTTP 429</strong> and a body
-naming the counter that blocked:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget 25.0"</span><span class="p">}</span>
+<p>When a ceiling is reached, the request fails with <strong>HTTP 422</strong> and a body
+naming the counter that blocked. Retrying does not help until the ceiling is
+raised or the budget resets:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span><span class="nt">"error"</span><span class="p">:{</span><span class="nt">"message"</span><span class="p">:</span><span class="s2">"Budget has been exceeded! Tag=key:ekid_… Current cost: 25.4, Max budget: 25.0"</span><span class="p">,</span><span class="nt">"type"</span><span class="p">:</span><span class="s2">"budget_exceeded"</span><span class="p">,</span><span class="nt">"param"</span><span class="p">:</span><span class="kc">null</span><span class="p">,</span><span class="nt">"code"</span><span class="p">:</span><span class="s2">"422"</span><span class="p">}}</span>
 </code></pre></div>
+<p>An MCP tool call carries the same text as <code>{"detail":"Budget has been exceeded! …"}</code>.</p>
 <p><code>Tag=user:…</code> means your own ceiling, <code>Tag=environment:…</code> the Environment's
 pooled one, and <code>Tag=key:…</code> that single key's. Raise the named ceiling (or
 wait for its reset window) and traffic resumes within about ten seconds.

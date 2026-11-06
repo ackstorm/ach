@@ -956,6 +956,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#10-request-body-and-route-rules-on-the-pass-through-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0 Request-body and route rules on the pass-through families
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1576,6 +1587,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#10-request-body-and-route-rules-on-the-pass-through-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.0 Request-body and route rules on the pass-through families
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#11-ekownergate-ek_-owner-access-re-check-d-30" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1950,6 +1972,33 @@ the <code>current</code> slot of the <code>ach-jwt-signing-keys</code> Secret (E
 raw seed). The JWKS endpoint exposes the public half so any backend can
 verify offline.</p>
 <hr />
+<h2 id="10-request-body-and-route-rules-on-the-pass-through-families">1.0 Request-body and route rules on the pass-through families<a class="headerlink" href="#10-request-body-and-route-rules-on-the-pass-through-families" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>/v1</code>, <code>/gemini</code> and <code>/a2a</code> bodies are scanned before anything reaches
+  LiteLLM. A client-set LiteLLM per-request control is refused with 400
+  <code>client_param_not_allowed</code>, never stripped: <code>api_key</code>, <code>deployment_id</code>,
+  <code>guardrails</code>, <code>guardrail_config</code>
+  (top level, in JSON-RPC <code>params</code>, and inside <code>metadata</code>/<code>litellm_metadata</code>,
+  including <code>metadata</code> sent as a JSON string), and any <code>tools</code> entry of type
+  <code>mcp</code>. Form and multipart bodies refuse the same top-level names. The
+  Environment ceiling lives on the team, not the key.</li>
+<li><code>/gemini</code> serves exactly <code>GET /v1beta/models</code>, <code>GET /v1beta/models/{model}</code>
+  and <code>POST /v1beta/models/{model}:{method}</code> with <code>method</code> one of
+  <code>generateContent</code>, <code>streamGenerateContent</code>, <code>countTokens</code>, <code>embedContent</code>,
+  <code>batchEmbedContents</code>.
+  <code>{model}</code> is one path segment (after the configured prefix strip). Anything
+  else is 404 <code>route_not_allowed</code>. On a POST the body <code>model</code>, and each <code>batchEmbedContents</code> entry model, must name the path
+  model once <code>models/</code> and the configured prefixes are stripped, and a body
+  <code>target_model_names</code> is refused, else 400 <code>model_mismatch</code>. A POST body must
+  be <code>application/json</code> (parameters allowed) or carry no Content-Type, else the
+  same 400.</li>
+<li>Long-lived requests: a request with an ACH identity is re-checked against
+  its key row after 60 s and every 60 s. A definite suspended, revoked, expired
+  or missing row cancels the request (Info log <code>forwarder: key is no longer
+  live; ending its request</code>, with <code>key_id</code> and <code>request_id</code>); a request still
+  waiting on LiteLLM answers 401 <code>expired_or_revoked</code>. Postgres errors fail
+  open with a Warn.</li>
+</ul>
 <h2 id="11-ekownergate-ek_-owner-access-re-check-d-30">1.1 <code>EkOwnerGate</code> — ek_ owner access re-check (D-30)<a class="headerlink" href="#11-ekownergate-ek_-owner-access-re-check-d-30" title="Permanent link">&para;</a></h2>
 <p><code>proxy.EkOwnerGate</code> sits in the authenticated route group in
 <code>internal/forwarder/server.go</code>, immediately after <code>middleware.Authn</code> and
