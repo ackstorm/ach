@@ -12,7 +12,7 @@
 //   §3 API keys    — COLLAPSED by default (not every account may mint keys):
 //                    mint a key (link to the Keys tab) + curl/Python/TypeScript
 //                    to the `ackstorm.fast` model alias against the user's gateway.
-//   §4 No terminal — chat-UI cards (ACKstorm Chat, hosted; OpenCode Desktop, coming soon).
+//   §4 No terminal — chat-UI card (ACKstorm Chat, hosted).
 //
 // PERSONALIZATION (no rebuild): the gateway base URL is read live from the
 // session (`me.endpoint` === settings.api_public_url, e.g. https://api.<domain>);
@@ -53,8 +53,6 @@ import { AUTH_HEADER, FALLBACK_API_BASE, KEY_PLACEHOLDER } from '@/lib/api-snipp
 import { TAB_PILL, TAB_PILL_LIST } from '@/lib/ui';
 import { useConfigStore } from '@/stores/config';
 import { useSessionStore } from '@/stores/session';
-import { StatusPill } from '@/components/ui/StatusPill';
-import { COMING_SOON } from '@/lib/status';
 
 // Featured model alias for the quickstart (locked copy — the standard alias).
 const MODEL_ALIAS = 'ackstorm.fast';
@@ -923,8 +921,6 @@ gemini`,
                   <span className="font-sans text-sm font-semibold text-text-primary">
                     ACKstorm Chat
                   </span>
-                  {/* Hosted + ready -> the open-in-new icon is accent green
-                      (OpenCode Desktop's stays muted since it is not wired yet). */}
                   <ExternalLink
                     className="size-4 text-primary"
                     aria-hidden="true"
@@ -942,34 +938,6 @@ gemini`,
                 </span>
               </a>
               )}
-
-              {/* OpenCode Desktop (the openwork app) — coming soon (not yet wired to the gateway) */}
-              <a
-                href="https://github.com/different-ai/openwork"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex flex-col gap-2 panel p-5 transition-colors hover:border-primary"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2">
-                    <span className="font-sans text-sm font-semibold text-text-primary">
-                      OpenCode Desktop
-                    </span>
-                    <StatusPill tone={COMING_SOON.tone}>{COMING_SOON.label}</StatusPill>
-                  </span>
-                  <ExternalLink
-                    className="size-4 text-text-tertiary transition-colors group-hover:text-primary"
-                    aria-hidden="true"
-                  />
-                </div>
-                <p className="font-sans text-sm leading-relaxed text-text-secondary">
-                  OpenCode as a desktop app. Gateway support is on the way — not
-                  available yet.
-                </p>
-                <span className="hidden mt-1 break-all font-mono text-[11px] text-text-tertiary">
-                  github.com/different-ai/openwork
-                </span>
-              </a>
             </div>
           </Section>
 

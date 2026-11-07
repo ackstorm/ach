@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -387,45 +388,59 @@ func fixtureHeadSHA(t *testing.T, bare string) string {
 	return string(out[:40])
 }
 
-// TestFetcher_AuthHeader_NotURL asserts the token reaches git via
-// http.extraHeader and is NEVER embedded in the URL position of the
-// clone command. Token in URL would land in /proc/<pid>/cmdline AND
-// in `git config remote.origin.url` on disk — both are leak paths
-// (T-02-02-02).
-func TestFetcher_AuthHeader_NotURL(t *testing.T) {
-	args := buildGitInvocation(
-		"clone",
-		"ghp_secrettoken",
-		AuthBearer,
-		"https://github.com/octo/repo.git",
-		"/tmp/x",
-	)
-	for _, a := range args {
-		if strings.Contains(a, "ghp_secrettoken@") {
-			t.Fatalf("token in URL form: %v", args)
-		}
+// TestFetcher_AuthHeader_EnvNotArgs asserts the token reaches git through
+// GIT_CONFIG_* in the environment and never appears in the command's args,
+// neither in the URL position nor as a -c value (both are visible in
+// /proc/<pid>/cmdline).
+func TestFetcher_AuthHeader_EnvNotArgs(t *testing.T) {
+	args := buildGitInvocation("clone", "--", "https://github.com/octo/repo.git", "/tmp/x")
+	if strings.Contains(strings.Join(args, " "), "ghp_secrettoken") {
+		t.Fatalf("token in args: %v", args)
 	}
-	hasHeader := false
-	for _, a := range args {
-		if a == "http.extraHeader=Authorization: Bearer ghp_secrettoken" {
-			hasHeader = true
+	env := gitEnv([]string{"PATH=/bin"}, "ghp_secrettoken", AuthBearer)
+	for _, want := range []string{
+		"PATH=/bin",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=http.extraHeader",
+		"GIT_CONFIG_VALUE_0=Authorization: Bearer ghp_secrettoken",
+	} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env lacks %q: %v", want, env)
 		}
-	}
-	if !hasHeader {
-		t.Fatalf("expected http.extraHeader=Authorization: Bearer …; args=%v", args)
 	}
 }
 
-// TestFetcher_AuthHeader_EmptyTokenNoArg asserts that when the token is
-// empty (anonymous fetch) buildGitInvocation does NOT prepend the
-// http.extraHeader arg.
-func TestFetcher_AuthHeader_EmptyTokenNoArg(t *testing.T) {
-	args := buildGitInvocation("clone", "", AuthBearer, "https://example.com/x.git", "/tmp/x")
-	for _, a := range args {
-		if strings.HasPrefix(a, "http.extraHeader=") {
-			t.Fatalf("unexpected extraHeader on empty token: %v", args)
+// TestGitEnv_AppendsToCallerConfig asserts a GIT_CONFIG_COUNT already set in
+// the parent environment is extended, not replaced.
+func TestGitEnv_AppendsToCallerConfig(t *testing.T) {
+	base := []string{"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=a.b", "GIT_CONFIG_VALUE_0=1", "GIT_CONFIG_KEY_1=c.d", "GIT_CONFIG_VALUE_1=2"}
+	env := gitEnv(base, "tok", AuthBearer)
+	for _, want := range []string{"GIT_CONFIG_KEY_0=a.b", "GIT_CONFIG_KEY_1=c.d", "GIT_CONFIG_KEY_2=http.extraHeader", "GIT_CONFIG_VALUE_2=Authorization: Bearer tok"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env lacks %q: %v", want, env)
 		}
 	}
+	// The last GIT_CONFIG_COUNT wins in a process environment.
+	var count string
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "GIT_CONFIG_COUNT="); ok {
+			count = v
+		}
+	}
+	if count != "3" {
+		t.Errorf("effective GIT_CONFIG_COUNT = %q, want 3", count)
+	}
+}
+
+// TestFetcher_AuthHeader_EmptyTokenNoConfig asserts an anonymous fetch adds
+// no GIT_CONFIG_* to the environment.
+func TestFetcher_AuthHeader_EmptyTokenNoConfig(t *testing.T) {
+	for _, kv := range gitEnv([]string{"PATH=/bin"}, "", AuthBearer) {
+		if strings.HasPrefix(kv, "GIT_CONFIG_") {
+			t.Fatalf("unexpected %q on empty token", kv)
+		}
+	}
+	args := buildGitInvocation("clone", "https://example.com/x.git", "/tmp/x")
 	// Subcommand follows the protocol-allow config pins (Task 8) but
 	// before any further args.
 	foundSubcommand := false
@@ -620,60 +635,19 @@ func TestClassifyError_Exported(t *testing.T) {
 	}
 }
 
-// TestRedactArgs_RedactsExtraHeader confirms the extraHeader token is
-// scrubbed from log output (the process arg is still visible via
-// /proc/<pid>/cmdline, but logs are a separate sink under our control).
-func TestRedactArgs_RedactsExtraHeader(t *testing.T) {
-	args := []string{
-		"-c", "http.extraHeader=Authorization: Bearer ghp_supersecret",
-		"clone", "https://github.com/x/y.git", "/tmp/x",
-	}
-	out := redactArgs(args)
-	for _, a := range out {
-		if strings.Contains(a, "ghp_supersecret") {
-			t.Fatalf("token leaked: %v", out)
-		}
-	}
-	if out[1] != "http.extraHeader=Authorization: Bearer ***" {
-		t.Errorf("redaction shape unexpected: %q", out[1])
-	}
-}
-
-// TestBuildGitInvocation_BasicOAuth2 asserts the GitLab Basic-auth scheme
-// emits Authorization: Basic base64("oauth2:"+token) — the form self-hosted
-// GitLab honors where Bearer 401s — and never leaks the raw token.
-func TestBuildGitInvocation_BasicOAuth2(t *testing.T) {
-	args := buildGitInvocation(
-		"ls-remote", "glpat-xyz", AuthBasicOAuth2,
-		"--refs", "https://git.example.com/g/p.git",
-	)
-	want := "http.extraHeader=Authorization: Basic " +
+// TestGitEnv_BasicOAuth2 asserts the GitLab Basic-auth scheme emits
+// Authorization: Basic base64("oauth2:"+token) and never the raw token.
+func TestGitEnv_BasicOAuth2(t *testing.T) {
+	env := gitEnv(nil, "glpat-xyz", AuthBasicOAuth2)
+	want := "GIT_CONFIG_VALUE_0=Authorization: Basic " +
 		base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-xyz"))
-	found := false
-	for _, a := range args {
-		if a == want {
-			found = true
+	if !slices.Contains(env, want) {
+		t.Fatalf("expected %q in env; got %v", want, env)
+	}
+	for _, kv := range env {
+		if strings.Contains(kv, "glpat-xyz") {
+			t.Fatalf("raw token leaked: %q", kv)
 		}
-		if strings.Contains(a, "glpat-xyz") && a != want {
-			t.Fatalf("raw token leaked outside the Basic header: %q", a)
-		}
-	}
-	if !found {
-		t.Fatalf("expected %q in args; got %v", want, args)
-	}
-}
-
-// TestRedactArgs_RedactsBasicHeader asserts the base64 Basic credential is
-// scrubbed from logged args (only the scheme word survives).
-func TestRedactArgs_RedactsBasicHeader(t *testing.T) {
-	blob := base64.StdEncoding.EncodeToString([]byte("oauth2:glpat-supersecret"))
-	in := []string{"-c", "http.extraHeader=Authorization: Basic " + blob, "ls-remote"}
-	out := redactArgs(in)
-	if out[1] != "http.extraHeader=Authorization: Basic ***" {
-		t.Fatalf("basic header not redacted: %q", out[1])
-	}
-	if strings.Contains(strings.Join(out, " "), blob) {
-		t.Fatalf("base64 credential leaked: %v", out)
 	}
 }
 
@@ -681,7 +655,7 @@ func TestRedactArgs_RedactsBasicHeader(t *testing.T) {
 // the explicit protocol allow-list so an accidental file:// or ssh://
 // URL cannot be honored. Defense in depth per PR #9 review finding #7.
 func TestFetcher_PinsProtocolAllow(t *testing.T) {
-	args := buildGitInvocation("clone", "tok", AuthBearer, "https://example.com/x.git", "/tmp/x")
+	args := buildGitInvocation("clone", "https://example.com/x.git", "/tmp/x")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "protocol.allow=never") {
 		t.Errorf("expected protocol.allow=never; got %q", joined)

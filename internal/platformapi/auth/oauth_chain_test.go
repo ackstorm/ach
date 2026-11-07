@@ -56,6 +56,11 @@ func newFakeBroker(t *testing.T) *fakeBroker {
 
 func chainFixture(t *testing.T, probe probeOutcome) (*asFixture, *fakeBroker) {
 	t.Helper()
+	return chainFixtureAudience(t, probe, "broker-store")
+}
+
+func chainFixtureAudience(t *testing.T, probe probeOutcome, audience string) (*asFixture, *fakeBroker) {
+	t.Helper()
 	b := newFakeBroker(t)
 	f := withFakeDex(newAS(t), "U@X.com")
 	calls := 0
@@ -70,7 +75,7 @@ func chainFixture(t *testing.T, probe probeOutcome) (*asFixture, *fakeBroker) {
 		return probeOK
 	}
 	f.deps.ConsentBIP = func(context.Context, string) (*db.BIPRow, error) {
-		return &db.BIPRow{ConsentBroker: b.srv.URL + "/broker", ConsentAudience: "broker-store"}, nil
+		return &db.BIPRow{ConsentBroker: b.srv.URL + "/broker", ConsentAudience: audience}, nil
 	}
 	f.mount()
 	return f, b
@@ -164,5 +169,35 @@ func TestBrokerCallback_BurnsChainOnBindingFailure(t *testing.T) {
 	}
 	if w := f.do(t, "GET", "/platform/oauth/broker-callback?state="+chainID, nil, cookie); w.Code != http.StatusBadRequest {
 		t.Fatalf("burned chain replay: %d", w.Code)
+	}
+}
+
+func TestReservedConsentAudience(t *testing.T) {
+	for aud, want := range map[string]bool{
+		"ach": true, "ach-ek": true, "custom-oauth-aud": true, "mcp:demo": true, "a2a:agent": true,
+		"broker-store": false, "echo": false, "ach-memory": false, "mcp": false,
+	} {
+		if got := reservedConsentAudience(aud, "custom-oauth-aud"); got != want {
+			t.Errorf("reservedConsentAudience(%q) = %v, want %v", aud, got, want)
+		}
+	}
+}
+
+// A policy whose consentAudience is one ACH itself accepts must never get a
+// signed hint: the flow degrades to the plain login, no broker hop.
+func TestChain_RefusesReservedAudience(t *testing.T) {
+	for _, aud := range []string{"ach", "ach-ek", "mcp:demo", "a2a:x"} {
+		t.Run(aud, func(t *testing.T) {
+			f, b := chainFixtureAudience(t, probeAuthRequired, aud)
+			cid := registerClient(t, f)
+			w := f.do(t, "GET", chainAuthorizeURL(cid), nil, nil)
+			state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+			cs := w.Result().Cookies()
+			cookie := map[string]string{"Cookie": cs[0].Name + "=" + cs[0].Value}
+			w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+			if loc := w.Header().Get("Location"); strings.HasPrefix(loc, b.srv.URL) || len(b.hints) != 0 {
+				t.Fatalf("hint signed for reserved audience %q: %s", aud, loc)
+			}
+		})
 	}
 }

@@ -215,7 +215,8 @@ func TestConsole_IdPDenialAtLoginIs401(t *testing.T) {
 }
 
 func TestConsole_NextIsLocalOnly(t *testing.T) {
-	for in, want := range map[string]string{"/keys": "/keys", "//evil": "/", "https://e/": "/", "": "/", "/a\\b": "/"} {
+	for in, want := range map[string]string{"/keys": "/keys", "//evil": "/", "https://e/": "/", "": "/", "/a\\b": "/",
+		"/\t/evil": "/", "/\n/evil": "/", "/\r/evil": "/", "/a\x00b": "/", "/a\x7fb": "/"} {
 		if got := safeNext(in); got != want {
 			t.Fatalf("safeNext(%q) = %q, want %q", in, got, want)
 		}

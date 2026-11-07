@@ -394,7 +394,11 @@ Hard-won details — do NOT re-derive:
   allowed. `--global` is exempt from the symlink rule, not from target
   validation. A tmp link is discarded, never followed. `Sync` is all or nothing
   on a containment refusal, and `env uninstall` validates every per-platform
-  state before removing anything.
+  state before removing anything. `ach-cli local plugin|skill install|update|
+  uninstall` follow the same rule in `manager.Commit`/`manager.Uninstall` (they
+  take `global`; `UninstallPlan` too): every destination is checked before the
+  first write, merge, delete or prune, so a refusal leaves nothing behind;
+  `update` and multi-target `install` check all targets before touching any.
 - **Conflict namespacing is rooted to the configured destination.** An absolute
   config root whose name contains `skills` must not be mistaken for the
   adapter's `skills/<name>/` route when the resource leaf is prefixed.

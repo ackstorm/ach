@@ -24,6 +24,7 @@ the GitOps sync succeeded before debugging ACH.
 | `guardrails entries must be unique` | Remove the duplicate |
 | `forwardIdentityJWT is REQUIRED` | Set it explicitly, `true` or `false` |
 | `consentBroker and consentAudience are set together` | Set both or neither |
+| `consentAudience must not be ach, ach-ek, or start with mcp: or a2a:` | Pick the audience the backend's broker validates; those values are ACH's own |
 | `consentBroker is only valid for MCPServer targets` | Remove it from the `A2AAgent` policy |
 | `LiteLLMConnection name must be 'default'` | Do not manage this CR from Git; see `identity.md` |
 | pattern / should match `^[^/\\?#%...` | A name in an Environment list contains `/`, whitespace, `?`, `#` or `%` |
@@ -78,6 +79,7 @@ without that guardrail.
 | Symptom | Likely cause |
 |---------|--------------|
 | `env list` does not show the Environment | The user is in none of its `authorizedTeams`, or the team alias in the CR does not match LiteLLM (check the conditions) |
+| Environments lose access after a LiteLLM team was renamed | `authorizedTeams` holds team aliases: change the LiteLLM alias and every `spec.authorizedTeams` entry together. `default` is special: every login needs a team with that alias, so never rename it |
 | Grant is `Synced` but some requests 403 for a few minutes | LiteLLM caches access-group grants per replica (600 s default) |
 | A brand-new user reaches nothing for a few minutes | Their personal shell team is attached on the next Environment reconcile |
 | `403 unauthorized_team` on an `ek-` key | The key's owner is no longer in an authorized team; the key is now invalid |

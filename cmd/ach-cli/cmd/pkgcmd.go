@@ -371,7 +371,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		Use:   "install <name@repo>...",
 		Short: fmt.Sprintf("Fetch and install a %s from a registered repo", kindStr),
 		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := cmd.Context()
 
 			targets, err := parseTargets(flagTargets)
@@ -398,6 +398,10 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: load installed: %v", err)}
 			}
+			// A later refusal or failure must not leave files written by an
+			// earlier ref or target untracked.
+			dirty := false
+			defer saveInstalledOnError(&retErr, &dirty, installed)
 
 			// One fetch cache for the whole invocation: a repo (esp. a
 			// marketplace) is cloned once and reused across every plugin/skill
@@ -447,6 +451,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				defer func() { _ = os.RemoveAll(rr.StageDir) }() //nolint:gocritic
 				vlogf(cmd.ErrOrStderr(), flagVerbose, "  resolved %s @ %s\n", ref, shortSHA(rr.ResolvedSHA))
 
+				var plans []targetPlan
 				for _, targetID := range targets {
 					vlogf(cmd.ErrOrStderr(), flagVerbose, "  projecting → %s\n", targetID)
 					writes, err := manager.Project(rr.StageDir, targetID, pluginPrefix(kind, name))
@@ -479,8 +484,23 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						reportDryRunWrites(cmd.OutOrStdout(), ref, targetID, resolved)
 						continue
 					}
+					plans = append(plans, targetPlan{targetID: targetID, resolved: resolved, actions: actions})
+				}
 
-					recs, err := manager.Commit(root, name, resolved)
+				// Containment is decided for every target before the first
+				// write, so a refusal on a later target leaves nothing behind.
+				for _, pl := range plans {
+					if err := manager.CheckCommit(root, flagGlobal, pl.resolved); err != nil {
+						return &exit.CodedError{
+							Code: exit.General,
+							Msg:  fmt.Sprintf("install: %s → %s: %v", ref, pl.targetID, err),
+						}
+					}
+				}
+				for _, pl := range plans {
+					targetID, resolved, actions := pl.targetID, pl.resolved, pl.actions
+
+					recs, err := manager.Commit(root, flagGlobal, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -520,6 +540,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
 					upsertInstalled(installed, entry)
+					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
@@ -549,6 +570,75 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Resolve + project and print the plan, but write nothing")
 	_ = c.MarkFlagRequired("target")
 	return c
+}
+
+// targetPlan is one install target after projection and conflict resolution,
+// before anything is written.
+type targetPlan struct {
+	targetID string
+	resolved []manager.PlannedWrite
+	actions  []manager.ConflictAction
+}
+
+// updatePlan is one installed entry's re-projection, before the old files are
+// removed.
+type updatePlan struct {
+	entry    store.InstalledEntry
+	resolved []manager.PlannedWrite
+	actions  []manager.ConflictAction
+}
+
+// saveInstalledOnError persists the installed record when a run fails after
+// it already wrote files, so those files stay tracked.
+func saveInstalledOnError(retErr *error, dirty *bool, installed *store.InstalledFile) {
+	if *retErr != nil && *dirty {
+		_ = store.SaveInstalled(installed)
+	}
+}
+
+// planUpdate projects the new version for one installed entry's target and
+// resolves conflicts, touching nothing on disk.
+func planUpdate(
+	stageDir, root string, global bool, kind pkgKind, name, ref string,
+	e store.InstalledEntry, installed *store.InstalledFile, policy conflict.Policy,
+) (updatePlan, error) {
+	writes, err := manager.Project(stageDir, e.Target, pluginPrefix(kind, name))
+	if err != nil {
+		return updatePlan{}, &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("update: project for %s: %v", e.Target, err),
+		}
+	}
+	remapGlobalWrites(global, root, e.Target, writes)
+	owners := ownersAt(installed, ref, e.Target)
+	resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, conflictRoot(global, root, e.Target))
+	if err != nil {
+		return updatePlan{}, &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("update: %s → %s: %v", ref, e.Target, err),
+		}
+	}
+	return updatePlan{entry: e, resolved: resolved, actions: actions}, nil
+}
+
+// checkUpdatePlans refuses an update whose old files or new writes leave the
+// project through a link, before anything is removed.
+func checkUpdatePlans(root string, global bool, ref string, plans []updatePlan) error {
+	for _, pl := range plans {
+		err := func() error {
+			if _, err := manager.UninstallPlan(root, global, pl.entry.Files); err != nil {
+				return err
+			}
+			return manager.CheckCommit(root, global, pl.resolved)
+		}()
+		if err != nil {
+			return &exit.CodedError{
+				Code: exit.General,
+				Msg:  fmt.Sprintf("update: %s → %s: %v", ref, pl.entry.Target, err),
+			}
+		}
+	}
+	return nil
 }
 
 // ---- uninstall --------------------------------------------------------------
@@ -596,7 +686,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 			// prints the read-only plan (per-file remove/modify/skip/absent).
 			processEntry := func(e store.InstalledEntry) error {
 				if flagDryRun {
-					plan, perr := manager.UninstallPlan(root, e.Files)
+					plan, perr := manager.UninstallPlan(root, flagGlobal, e.Files)
 					if perr != nil {
 						return &exit.CodedError{Code: exit.General,
 							Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, perr)}
@@ -608,7 +698,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					}
 					return nil
 				}
-				skipped, unErr := manager.Uninstall(root, e.Files)
+				skipped, unErr := manager.Uninstall(root, flagGlobal, e.Files)
 				if unErr != nil {
 					return &exit.CodedError{Code: exit.General,
 						Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, unErr)}
@@ -685,7 +775,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "update [<name@repo>...]",
 		Short: fmt.Sprintf("Re-resolve and re-install %ss (all if no args)", kindStr),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := cmd.Context()
 
 			// Root for re-install; uninstall uses same root derived from stored files.
@@ -704,6 +794,10 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("update: load installed: %v", err)}
 			}
+			// A later refusal or failure must not leave files written by an
+			// earlier ref or target untracked.
+			dirty := false
+			defer saveInstalledOnError(&retErr, &dirty, installed)
 
 			repos, err := store.LoadRepos()
 			if err != nil {
@@ -788,6 +882,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					continue
 				}
 
+				var plans []updatePlan
 				for _, e := range entries {
 					if rr.ResolvedSHA == e.ResolvedSHA {
 						_, _ = fmt.Fprintf(cmd.OutOrStdout(),
@@ -795,8 +890,27 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						continue
 					}
 
+					// Conflict resolution runs against OTHER refs' files at the
+					// target (ownersAt excludes the same ref).
+					pl, err := planUpdate(rr.StageDir, root, flagGlobal, kind, name, ref, e, installed, policy)
+					if err != nil {
+						return err
+					}
+					plans = append(plans, pl)
+				}
+
+				// Containment is decided for the old files and the new writes
+				// of every target before anything is removed, so a refusal
+				// keeps the old install and its record.
+				if err := checkUpdatePlans(root, flagGlobal, ref, plans); err != nil {
+					return err
+				}
+
+				for _, pl := range plans {
+					e, resolved, actions := pl.entry, pl.resolved, pl.actions
+
 					// Uninstall old files.
-					skipped, err := manager.Uninstall(root, e.Files)
+					skipped, err := manager.Uninstall(root, flagGlobal, e.Files)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -807,29 +921,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 					}
 
-					// Re-install.
-					writes, err := manager.Project(rr.StageDir, e.Target, pluginPrefix(kind, name))
-					if err != nil {
-						return &exit.CodedError{
-							Code: exit.General,
-							Msg:  fmt.Sprintf("update: project for %s: %v", e.Target, err),
-						}
-					}
-					remapGlobalWrites(flagGlobal, root, e.Target, writes)
-					// Conflict resolution against OTHER refs' files at this target
-					// (the ref's own old files were removed by Uninstall above and
-					// ownersAt excludes the same ref, so no self-collision).
-					owners := ownersAt(installed, ref, e.Target)
-					namespaceRoot := conflictRoot(flagGlobal, root, e.Target)
-					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, namespaceRoot)
-					if err != nil {
-						return &exit.CodedError{
-							Code: exit.General,
-							Msg:  fmt.Sprintf("update: %s → %s: %v", ref, e.Target, err),
-						}
-					}
-
-					recs, err := manager.Commit(root, name, resolved)
+					recs, err := manager.Commit(root, flagGlobal, name, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -865,6 +957,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
 					upsertInstalled(installed, newEntry)
+					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),

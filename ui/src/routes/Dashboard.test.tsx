@@ -54,7 +54,6 @@ function makeMe(overrides: Partial<SessionMe> = {}): SessionMe {
     name: 'Alice Example',
     is_admin: false,
     enterprise: false,
-    openwork_enabled: false,
     suspend_propagation_seconds: 60,
     keys_used: null,
     max_keys: null,

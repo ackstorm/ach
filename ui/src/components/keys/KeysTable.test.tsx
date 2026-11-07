@@ -60,7 +60,6 @@ beforeEach(() => {
         name: 'alice@example.com',
         is_admin: false,
         enterprise: false,
-        openwork_enabled: false,
         suspend_propagation_seconds: 60,
         keys_used: null,
         max_keys: null,

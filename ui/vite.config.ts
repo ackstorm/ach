@@ -28,8 +28,6 @@ export default defineConfig(() => {
       port: 5173,
       proxy: {
         '/platform': 'http://localhost:8080',
-        '/openwork': 'http://localhost:8080',
-        '/api/den': 'http://localhost:8080',
       },
     },
     // Pin the formatting locale so expectations do not depend on the runner's.

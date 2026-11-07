@@ -60,8 +60,22 @@ func New(spec *achv1alpha1.HTTPSource) (*Fetcher, error) {
 		return nil, fmt.Errorf("http: spec is nil: %w", sources.ErrUpstreamInvalid)
 	}
 	return &Fetcher{
-		spec:       spec,
-		httpClient: &nethttp.Client{Timeout: defaultTimeout},
+		spec: spec,
+		httpClient: &nethttp.Client{
+			Timeout: defaultTimeout,
+			// net/http strips only Authorization and cookies across hosts;
+			// the Secret-valued header has a free-form name and must not
+			// leave the host it was addressed to.
+			CheckRedirect: func(req *nethttp.Request, via []*nethttp.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("http: stopped after 10 redirects: %w", sources.ErrUpstreamInvalid)
+				}
+				if ref := spec.AuthSecretRef; ref != nil && (req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host) {
+					req.Header.Del(ref.HeaderName)
+				}
+				return nil
+			},
+		},
 	}, nil
 }
 

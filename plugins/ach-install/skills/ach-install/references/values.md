@@ -11,7 +11,7 @@ trust that.
 - Minimal production values
 - Global
 - Components (operator, platformApi, forwarder, gateway, contentService, migrate)
-- Integrations (litellmConnection, security, genai, openwork, ingress, metrics)
+- Integrations (litellmConnection, security, genai, ingress, metrics)
 - Enterprise (classifier, platformApi.observability)
 - Environment variables without a chart value
 
@@ -184,7 +184,7 @@ security:
 
 Detail: `references/litellm.md`, `references/prerequisites.md`.
 
-### genai and openwork
+### genai
 
 ```yaml
 genai:
@@ -194,17 +194,6 @@ genai:
   defaultModel: ""
   defaultSmallModel: ""
   defaultEnvironment: ""
-
-openwork:
-  enabled: false             # OpenWork desktop organisation server under /openwork and /api/den
-  orgName: ACH
-  orgSlug: ach
-  brandAppName: ACH
-  brandLogoUrl: ""
-  brandIconUrl: ""
-  accentColor: ""
-  blockedCommands: []        # non-empty disables interactive terminals in the desktop app
-  blockBrowserUploads: false
 ```
 
 Detail on `genai`: `references/opencode.md`.

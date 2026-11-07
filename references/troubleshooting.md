@@ -780,6 +780,10 @@ with or without an active `pk_` (refresh tokens and web sessions stay dead
 after a new login; issued JWTs live until their `exp`). If that step fails the
 keys are still swept and the answer is a 500: rerun it to end the sessions.
 
+A suspected stolen refresh token is handled the same way: run
+`ach-cli admin keys revoke --owner <email>`, which ends the user's OAuth
+sessions and revokes the oauth `pk_`; the user signs in again.
+
 ### ❌ A stream or `/v1/realtime` tunnel closes mid-flight
 
 The forwarder re-checks the key row of every request that carries an ACH

@@ -44,7 +44,7 @@ func ServiceRoutes(namespace string) []Route {
 		// a trailing slash or any other /v2 path falls to "/" below).
 		{Prefix: "/v2/model/info", Upstream: forwarder},
 		// The console (D-26): platform-api serves the embedded SPA at "/"
-		// with an SPA fallback (and /openwork + /api/den when the Den is on).
+		// with an SPA fallback.
 		// Nothing LiteLLM serves is reachable here — /ui, /key/*, /health…
 		// live on LiteLLM's own host (D-18). net/http's mux keeps the longer
 		// prefixes above (and /healthz, /metrics) ahead of it.

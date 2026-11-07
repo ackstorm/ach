@@ -36,6 +36,9 @@ ACH's source of truth. Every service reads it; the operator writes it.
 - DSN in `ACH_DB_URL`, full form only:
   `postgres://ach:<password>@<host>:5432/ach?sslmode=<mode>`. A DSN missing the
   user, port or scheme panics at startup and looks like a network fault.
+  Percent-encode the password (`/` as `%2F`, `?` as `%3F`, `#` as `%23`,
+  `%` as `%25`, `[` as `%5B`) or pick one made of letters and digits; a DSN
+  that does not parse fails `ach migrate` with a fixed message.
 - The forwarder, platform-api and content-service keep in-memory caches fed by
   Postgres `LISTEN/NOTIFY`. Point them at Postgres directly or through a
   session-mode pooler; a transaction-mode pooler drops `LISTEN`.

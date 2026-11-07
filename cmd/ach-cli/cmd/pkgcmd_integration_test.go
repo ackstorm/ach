@@ -15,6 +15,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -403,6 +404,70 @@ func TestPluginCmd_Update_SHADrift(t *testing.T) {
 	}
 	if v2SHA == v1SHA {
 		t.Errorf("resolvedSHA did not change after update: %s", v2SHA)
+	}
+}
+
+// TestPluginCmd_Update_RefusedKeepsOldInstall: a new version that projects a
+// file under a directory linked out of the project is refused before the old
+// install is removed, and the record keeps the old resolved SHA.
+func TestPluginCmd_Update_RefusedKeepsOldInstall(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	work := makeWorkingPluginRepo(t, "v1")
+	run := func(args ...string) error {
+		var buf bytes.Buffer
+		cmd := newRepoCmd()
+		if args[0] == "plugin" {
+			cmd = newPluginCmd()
+			args = args[1:]
+		}
+		cmd.SetOut(&buf)
+		cmd.SetErr(&buf)
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			return fmt.Errorf("%w (output: %s)", err, buf.String())
+		}
+		return nil
+	}
+	dest := t.TempDir()
+	if err := run("add", "git:file://"+work, "--name", "rk"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run("plugin", "install", "rk@rk", "--target", "claude", "--dir", dest); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.LoadInstalled()
+
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dest, ".claude", "agents")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(work, "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "agents", "a.md"), []byte("agent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runPkgGit(t, work, "add", "-A")
+	runPkgGit(t, work, "commit", "-m", "v2")
+	if err := run("update", "rk"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := run("plugin", "update", "rk@rk", "--dir", dest); err == nil {
+		t.Fatal("update through a linked dir succeeded")
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, ".claude", "commands", "rk", "c.md")); err != nil || string(b) != "v1" {
+		t.Errorf("old file = %q, %v; want v1 kept", b, err)
+	}
+	if ents, _ := os.ReadDir(outside); len(ents) != 0 {
+		t.Errorf("outside dir written: %v", ents)
+	}
+	after, _ := store.LoadInstalled()
+	if len(after.Installed) != len(before.Installed) || after.Installed[0].ResolvedSHA != before.Installed[0].ResolvedSHA {
+		t.Errorf("record changed: %+v -> %+v", before.Installed, after.Installed)
 	}
 }
 

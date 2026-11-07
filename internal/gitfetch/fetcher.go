@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,12 +73,11 @@ type Spec struct {
 	// Cleaned before use; traversal + symlinks rejected. Empty → whole worktree.
 	Subtree string
 
-	// Token, when non-empty, is sent to git via
-	//   git -c http.extraHeader="Authorization: <scheme> <cred>" <subcommand>
-	// where <scheme> is governed by AuthScheme (Bearer by default; Basic
-	// oauth2:<token> for GitLab). The credential never lands in the URL
-	// position (which would leak via /proc/<pid>/cmdline AND persist on
-	// disk in `git config remote.origin.url`). ssh:// URLs are left
+	// Token, when non-empty, is sent to git as an Authorization header through
+	// the environment (see gitEnv), where <scheme> is governed by AuthScheme
+	// (Bearer by default; Basic oauth2:<token> for GitLab). The credential never
+	// lands in the URL position (which would persist on disk in
+	// `git config remote.origin.url`) nor in the process arguments. ssh:// URLs are left
 	// unchanged; auth-via-SSH-key is out of scope for v1alpha1.
 	Token string
 
@@ -190,8 +190,8 @@ func (f *Fetcher) Fetch(ctx context.Context) (*Result, error) {
 	defer cancel()
 
 	// git clone --depth=1 --branch=<ref> <url> <dst>
-	// Auth (when spec.Token != "") rides on -c http.extraHeader= prepended
-	// inside runGit; never URL-injected.
+	// Auth (when spec.Token != "") rides on the environment set by runGit
+	// (gitEnv); never URL-injected.
 	if err := runGit(ctx, cloneDir, spec.Token, spec.AuthScheme, "clone", "--depth=1", "--branch="+spec.Ref, "--no-tags", "--single-branch", "--", cloneURL, cloneDir); err != nil {
 		cleanupOnErr()
 		return nil, ClassifyError(err)
@@ -264,25 +264,10 @@ func validateURL(u string) error {
 }
 
 // buildGitInvocation returns the full args slice for a git subcommand.
-// token, when non-empty, is prepended as
-//
-//	-c http.extraHeader=Authorization: <scheme> <credential>
-//
-// so it never appears in the URL position of any arg (the URL form
-// would persist on disk via `git config remote.origin.url` AND remain
-// visible in /proc/<pid>/cmdline). The extraHeader value itself is
-// also in cmdline for the duration of the subprocess, which is
-// unavoidable without GIT_ASKPASS plumbing — but it is colocated in
-// one auditable arg slot and is redacted by redactArgs in any logs.
-//
-// The scheme (Bearer vs Basic oauth2) is chosen by the caller via
-// AuthScheme; see authHeaderValue.
-//
-// token is positional + mandatory so callers cannot accidentally
-// forget it (which under the previous variadic-last convention would
-// silently put a real arg in the token slot — see PR #9 follow-up
-// review finding #4).
-func buildGitInvocation(subcommand, token string, scheme AuthScheme, args ...string) []string {
+// Credentials never appear in it: they travel in the environment (gitEnv), so
+// they are absent from the URL position (which would persist in
+// `git config remote.origin.url`) and from /proc/<pid>/cmdline.
+func buildGitInvocation(subcommand string, args ...string) []string {
 	// Pin allowed wire protocols. v1alpha1 only ever issues https://
 	// clone URLs in production; the operator never accepts user-
 	// supplied URLs at this layer. Block everything else (ssh://, git://,
@@ -299,35 +284,54 @@ func buildGitInvocation(subcommand, token string, scheme AuthScheme, args ...str
 		"-c", "protocol.file.allow=user",
 	}
 
-	if token == "" {
-		out := append([]string(nil), configPins...)
-		out = append(out, subcommand)
-		return append(out, args...)
-	}
-	prefix := append([]string(nil), configPins...)
-	prefix = append(prefix,
-		"-c", "http.extraHeader=Authorization: "+authHeaderValue(token, scheme),
-		subcommand,
+	out := append([]string(nil), configPins...)
+	out = append(out, subcommand)
+	return append(out, args...)
+}
+
+// gitEnv returns the environment for a git subprocess: base plus the
+// non-interactive and low-speed settings. A non-empty token adds
+// `http.extraHeader=Authorization: <scheme> <credential>` as the next
+// GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n pair after any already in base, so
+// config the caller's environment set through GIT_CONFIG_COUNT is kept. The
+// scheme (Bearer vs Basic oauth2) is chosen by the caller via AuthScheme; see
+// authHeaderValue. Needs git >= 2.31.
+func gitEnv(base []string, token string, scheme AuthScheme) []string {
+	env := append(base[:len(base):len(base)],
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_HTTP_LOW_SPEED_LIMIT=1000",
+		"GIT_HTTP_LOW_SPEED_TIME=60",
 	)
-	return append(prefix, args...)
+	if token == "" {
+		return env
+	}
+	n := 0
+	for _, kv := range base {
+		if v, ok := strings.CutPrefix(kv, "GIT_CONFIG_COUNT="); ok {
+			if c, err := strconv.Atoi(v); err == nil && c >= 0 {
+				n = c
+			}
+		}
+	}
+	return append(env,
+		"GIT_CONFIG_COUNT="+strconv.Itoa(n+1),
+		"GIT_CONFIG_KEY_"+strconv.Itoa(n)+"=http.extraHeader",
+		"GIT_CONFIG_VALUE_"+strconv.Itoa(n)+"=Authorization: "+authHeaderValue(token, scheme),
+	)
 }
 
 // runGit runs a git subcommand without --recurse-submodules (security:
 // arbitrary git submodule URLs in a marketplace plugin would be a
 // remote-fetch primitive). Inherits ctx for the wall-clock cap.
 //
-// token, when non-empty, lands as -c http.extraHeader=Authorization:
-// Bearer <token> via buildGitInvocation. Pass "" for purely local
+// token, when non-empty, is sent as an Authorization header through the
+// environment (gitEnv). Pass "" for purely local
 // subcommands that don't touch the remote (e.g. checkout).
 func runGit(ctx context.Context, workdir, token string, scheme AuthScheme, subcommand string, args ...string) error {
-	full := buildGitInvocation(subcommand, token, scheme, args...)
+	full := buildGitInvocation(subcommand, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Dir = workdir
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_HTTP_LOW_SPEED_LIMIT=1000",
-		"GIT_HTTP_LOW_SPEED_TIME=60",
-	)
+	cmd.Env = gitEnv(os.Environ(), token, scheme)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// CommandContext SIGKILLs git on ctx expiry ("signal: killed"); name
@@ -499,23 +503,12 @@ func (c *cloneReadCloser) Close() error {
 	return os.RemoveAll(c.cloneDir)
 }
 
-// redactArgs strips embedded tokens from git subcommand args before
-// logging. Covers two leak shapes:
-//
-//   - https://<token>@host/... — the legacy URL-injection form. Should
-//     not appear in fresh code paths after the buildGitInvocation swap,
-//     but logged-arg redaction stays defensive so an accidental URL
-//     credential doesn't reach disk.
-//   - http.extraHeader=Authorization: {Bearer <token> | Basic <base64>} —
-//     the credential is scrubbed, the scheme word preserved.
+// redactArgs strips a credential embedded in an https://<token>@host/... URL
+// argument before the args are logged.
 func redactArgs(args []string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
 		switch {
-		case strings.HasPrefix(a, "http.extraHeader=Authorization: Bearer "):
-			out[i] = "http.extraHeader=Authorization: Bearer ***"
-		case strings.HasPrefix(a, "http.extraHeader=Authorization: Basic "):
-			out[i] = "http.extraHeader=Authorization: Basic ***"
 		case strings.HasPrefix(a, "https://") && strings.Contains(a, "@"):
 			at := strings.LastIndex(a, "@")
 			out[i] = "https://***" + a[at:]

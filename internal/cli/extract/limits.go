@@ -68,8 +68,8 @@ type Limits struct {
 }
 
 // MaxBytesForKind returns the per-kind uncompressed byte cap. A return
-// value of 0 means "no cap" — used for KindPrompt (single opaque file,
-// no archive, size-bounded upstream by the Content Service).
+// value of 0 means "no cap". A prompt body may arrive as a gzip archive, so
+// it shares the skill cap.
 func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 	switch k {
 	case KindPlugin:
@@ -79,7 +79,7 @@ func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 	case KindSkill:
 		return l.MaxExtractedSkillBytes
 	case KindPrompt:
-		return 0
+		return l.MaxExtractedSkillBytes
 	}
 	// Unknown kind — fall through to the plugin cap. NOTE: this is not the
 	// most-restrictive cap, despite what this comment used to claim; the

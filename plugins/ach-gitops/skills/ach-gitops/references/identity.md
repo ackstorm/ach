@@ -56,10 +56,11 @@ spec:
 | `spec.target.name` | The LiteLLM server or agent name, exactly the route segment. DNS-1123 subdomain: lowercase letters, digits, `-` and `.` |
 | `spec.forwardIdentityJWT` | Required, no default. `false` is an explicit "no JWT" and behaves like no policy |
 | `spec.consentBroker` | Optional, `http(s)://` issuer URL of the backend's own OAuth broker. `MCPServer` targets only |
-| `spec.consentAudience` | Audience placed in the signed `login_hint` sent to the broker. Set together with `consentBroker`, or neither |
+| `spec.consentAudience` | Audience placed in the signed `login_hint` sent to the broker. Set together with `consentBroker`, or neither. Never `ach`, `ach-ek`, or a value starting with `mcp:` or `a2a:` (ACH accepts those audiences) |
 
 Admission enforces: `forwardIdentityJWT` present; `consentBroker` and `consentAudience`
-both or neither; `consentBroker` only on `MCPServer`.
+both or neither; `consentAudience` not one of the reserved values above;
+`consentBroker` only on `MCPServer`.
 
 ### Things to know
 

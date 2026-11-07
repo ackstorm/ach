@@ -20,6 +20,8 @@ ach-cli local plugin uninstall <plugin>@<repo>
 
 - A source is `github:owner/repo[#ref]` or `git:https://host/path[.git][#ref]`; the
   default ref is `main`. Local paths are not supported.
+- `git` >= 2.31 must be on `PATH`; a private-repo token is handed to it through the
+  environment.
 - Private repos: `--token`, else `GITHUB_TOKEN` (github:) or `GITLAB_TOKEN` (git:).
   Some GitLab setups need `--auth basic-oauth2`.
 - `--path <dir>` on `repo add` points at the folder that holds a skills repo's

@@ -110,7 +110,6 @@ describe('CreateKeyModal — form view', () => {
         name: 'Alice Example',
         is_admin: false,
         enterprise: false,
-        openwork_enabled: false,
         suspend_propagation_seconds: 60,
         keys_used: 2,
         max_keys: 2,

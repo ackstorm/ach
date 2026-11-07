@@ -20,7 +20,7 @@ func TestCommit_AbsoluteDest(t *testing.T) {
 	dest := filepath.Join(cfg, "skills", "demo", "SKILL.md")
 	writes := []PlannedWrite{{Path: dest, Content: []byte("# demo\n"), Merge: adapter.MergeReplace}}
 
-	recs, err := Commit(root, "demo", writes)
+	recs, err := Commit(root, true, "demo", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestCommit_AbsoluteDest(t *testing.T) {
 	}
 
 	// Round-trip: Uninstall must resolve the absolute RelPath, not join it.
-	skipped, uerr := Uninstall(root, recs)
+	skipped, uerr := Uninstall(root, true, recs)
 	if uerr != nil {
 		t.Fatalf("Uninstall: %v", uerr)
 	}
@@ -54,14 +54,14 @@ func TestUninstallPlan_AbsoluteDest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recs, err := Commit(root, "demo", []PlannedWrite{
+	recs, err := Commit(root, true, "demo", []PlannedWrite{
 		{Path: dest, Content: body, Merge: adapter.MergeReplace},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	plan, perr := UninstallPlan(root, recs)
+	plan, perr := UninstallPlan(root, true, recs)
 	if perr != nil {
 		t.Fatalf("UninstallPlan: %v", perr)
 	}
@@ -73,7 +73,7 @@ func TestUninstallPlan_AbsoluteDest(t *testing.T) {
 // TestCommit_RelativeDestUnchanged pins the default (non-redirected) behavior.
 func TestCommit_RelativeDestUnchanged(t *testing.T) {
 	root := t.TempDir()
-	recs, err := Commit(root, "demo", []PlannedWrite{
+	recs, err := Commit(root, false, "demo", []PlannedWrite{
 		{Path: ".claude/skills/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})
 	if err != nil {

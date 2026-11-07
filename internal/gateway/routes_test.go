@@ -65,7 +65,7 @@ func TestRootRouteIsLastMatch(t *testing.T) {
 	}
 	mux := h.(*http.ServeMux)
 	for path, want := range map[string]string{
-		"/": "/", "/index.html": "/", "/assets/app.js": "/", "/openwork": "/", "/api/den/v1/me": "/", "/clients/opencode/config": "/", "/ui": "/",
+		"/": "/", "/index.html": "/", "/assets/app.js": "/", "/clients/opencode/config": "/", "/ui": "/",
 		"/v2/model/info": "/v2/model/info", "/v2/other": "/",
 		"/.well-known/opencode": "/.well-known/opencode", "/.well-known/jwks.json": "/.well-known/",
 		"/platform/keys": "/platform/", "/content/x": "/content/", "/v1/models": "/v1/", "/healthz": "/healthz",

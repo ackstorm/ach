@@ -27,7 +27,6 @@ const ME: SessionMe = {
   name: 'alice@example.com',
   is_admin: false,
   enterprise: false,
-  openwork_enabled: false,
   suspend_propagation_seconds: 60,
   keys_used: 2,
   max_keys: 5,
@@ -79,7 +78,6 @@ describe('session store', () => {
       email: 'alice@example.com',
       name: '',
       is_admin: false,
-      openwork_enabled: false,
       suspend_propagation_seconds: 60,
       keys_used: 2,
       max_keys: 5,
@@ -116,7 +114,6 @@ describe('session store', () => {
       data: {
         email: 'alice@example.com',
         is_admin: false,
-        openwork_enabled: false,
         suspend_propagation_seconds: 60,
         keys_used: 2,
         max_keys: 5,

@@ -36,12 +36,10 @@ const lsRemoteTimeout = 30 * time.Second
 // "refs/tags/v1", "refs/pull/123/head") get a one-shot lookup with no
 // namespace expansion.
 //
-// authToken, when non-empty, is sent via
-// `-c http.extraHeader=Authorization: <scheme> <cred>` (scheme selected
-// by the trailing AuthScheme arg — Bearer by default, Basic oauth2:<token>
-// for GitLab) so it never appears in the URL (URL injection leaks via
-// /proc/<pid>/cmdline AND via local git config — both threats are closed
-// by construction).
+// authToken, when non-empty, is sent as an Authorization header through the
+// environment (gitEnv; scheme selected by the trailing AuthScheme arg —
+// Bearer by default, Basic oauth2:<token> for GitLab) so it appears neither
+// in the URL nor in the process arguments.
 //
 // Errors are classified via [ClassifyError] so the caller observes the
 // same internal/sources sentinel set as a Fetch failure does.
@@ -63,7 +61,7 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 		patterns = []string{"refs/heads/" + ref, "refs/tags/" + ref}
 	}
 
-	full := buildGitInvocation("ls-remote", authToken, scheme, "--refs", "--", url)
+	full := buildGitInvocation("ls-remote", "--refs", "--", url)
 	full = append(full, patterns...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	// git ls-remote forks git-remote-http(s) which inherits the
@@ -73,11 +71,7 @@ func LsRemote(ctx context.Context, url, ref, authToken string, scheme AuthScheme
 	// waiting for EOF that never arrives. WaitDelay closes the pipes
 	// from our side a beat after the process exits.
 	cmd.WaitDelay = 2 * time.Second
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_HTTP_LOW_SPEED_LIMIT=1000",
-		"GIT_HTTP_LOW_SPEED_TIME=60",
-	)
+	cmd.Env = gitEnv(os.Environ(), authToken, scheme)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// CommandContext SIGKILLs git on ctx expiry (e.g. a credential helper

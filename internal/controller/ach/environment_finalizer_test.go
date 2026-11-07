@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
-	"github.com/ackstorm/ach/internal/litellm"
 )
 
 // TestEnvironmentFinalizerAddRemove exercises the full Hub §6.5 drain:
@@ -121,59 +120,5 @@ func TestEnvironmentFinalizerAddRemove(t *testing.T) {
 			got)
 	} else {
 		t.Logf("OP-02: litellmCounter=%d (>= 2 — DeleteAccessGroup + DeleteTagByName both invoked)", got)
-	}
-}
-
-// TestFinalizer_DeletesLegacyNamedAccessGroup asserts that a group left under
-// an OLDER name generation is still removed on Environment deletion. The seed
-// carries the v0.6.19 ach-<env> name; the reconcile adopts it by id and renames
-// it in place to the canonical ach-env-<env>, then delete must still sweep it.
-// The finalizer deletes the group under EVERY generation (ach-env-<env>,
-// ach-<env>, bare <env>) so nothing survives regardless of which name it
-// wound up under — this test asserts all three names are absent afterward.
-func TestFinalizer_DeletesLegacyNamedAccessGroup(t *testing.T) {
-	ctx := context.Background()
-	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("default", "t-uuid-default")
-	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
-		AccessGroupID:   "ag-v0619-del",
-		AccessGroupName: "ach-test-env-fin-legacy",
-	})
-
-	cr := &achv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-env-fin-legacy", Namespace: WatchNamespace},
-		Spec: achv1alpha1.EnvironmentSpec{
-			AuthorizedTeams: []string{"default"},
-			Runtime:         emptyRuntimeBlock(),
-			Context:         achv1alpha1.ContextBlock{},
-		},
-	}
-	if err := k8sClient.Create(ctx, cr); err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
-	// Wait for the reconcile to land (proves the finalizer was added — a
-	// prerequisite for Delete to drain rather than no-op).
-	if !Eventually(func() bool {
-		var got achv1alpha1.Environment
-		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got); err != nil {
-			return false
-		}
-		c := agCondition(&got)
-		return c != nil && c.Status == metav1.ConditionTrue && c.Reason == "Synced"
-	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatalf("access group did not sync before delete")
-	}
-
-	if err := k8sClient.Delete(ctx, cr); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if !Eventually(func() bool {
-		bare, _ := accessGroupFake.GetAccessGroupByName(ctx, "test-env-fin-legacy")
-		v0619, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-test-env-fin-legacy")
-		canon, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-env-test-env-fin-legacy")
-		return bare == nil && v0619 == nil && canon == nil
-	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatal("finalizer left a group behind (bare, v0.6.19, or canonical)")
 	}
 }

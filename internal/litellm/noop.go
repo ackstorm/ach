@@ -247,9 +247,6 @@ func (c *NoopClient) GetAccessGroupByName(_ context.Context, name string) (*Acce
 func (c *NoopClient) UpdateAccessGroup(_ context.Context, id string, req AccessGroupUpdateRequest) (*AccessGroupResponse, error) {
 	c.Log.Info("stub: would update LiteLLM access group", "id", id)
 	resp := &AccessGroupResponse{AccessGroupID: id}
-	if req.AccessGroupName != nil {
-		resp.AccessGroupName = *req.AccessGroupName
-	}
 	if req.AccessModelNames != nil {
 		resp.AccessModelNames = req.AccessModelNames
 	}

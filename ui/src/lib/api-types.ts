@@ -22,7 +22,6 @@ export interface SessionMe {
   is_admin: boolean;
   /** Helm enterprise.enabled: false = Enterprise pages are marked "Enterprise only". */
   enterprise: boolean;
-  openwork_enabled: boolean;
   /** UI notice bound for suspend propagation (spec §8.2). */
   suspend_propagation_seconds: number;
   /** Number of non-revoked ek_ keys held by the caller, or null if unavailable. */

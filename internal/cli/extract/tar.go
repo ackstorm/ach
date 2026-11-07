@@ -160,11 +160,7 @@ func Extract(
 			// this archive) so the cap is cumulative across entries — N
 			// files each just under the per-file cap can no longer extract
 			// N × maxBytes. (#4)
-			remaining := maxBytes - res.BytesWritten
-			if maxBytes <= 0 {
-				remaining = 0 // 0 => capWriter treats as "no cap" (existing semantics)
-			}
-			fw, written, err := writeRegular(target, hdr, tr, remaining)
+			fw, written, err := writeRegular(target, hdr, tr, maxBytes > 0, maxBytes-res.BytesWritten)
 			if err != nil {
 				return res, err
 			}
@@ -263,18 +259,20 @@ func maskMode(recorded int64) os.FileMode {
 }
 
 // capWriter wraps an io.Writer and tracks cumulative byte count
-// against maxBytes. If maxBytes is 0, the cap is disabled (prompts
-// path). A Write that would push count past maxBytes returns
-// ErrBombCapExceeded BEFORE the underlying writer is touched —
-// guaranteeing no bytes from the offending entry land on disk.
+// against maxBytes. When capped is false there is no cap; a zero
+// maxBytes with capped true is an exhausted budget. A Write that would
+// push count past maxBytes returns ErrBombCapExceeded BEFORE the
+// underlying writer is touched — guaranteeing no bytes from the
+// offending entry land on disk.
 type capWriter struct {
 	w        io.Writer
+	capped   bool
 	maxBytes int64
 	written  int64
 }
 
 func (c *capWriter) Write(p []byte) (int, error) {
-	if c.maxBytes > 0 && c.written+int64(len(p)) > c.maxBytes {
+	if c.capped && c.written+int64(len(p)) > c.maxBytes {
 		return 0, fmt.Errorf("%w: would write %d bytes past cap %d",
 			ErrBombCapExceeded, c.written+int64(len(p)), c.maxBytes)
 	}
@@ -293,6 +291,7 @@ func writeRegular(
 	target string,
 	hdr *tar.Header,
 	tr *tar.Reader,
+	capped bool,
 	maxBytes int64,
 ) (FileWrite, int64, error) {
 	// Ensure the parent directory exists (tar archives don't always
@@ -311,7 +310,7 @@ func writeRegular(
 		return FileWrite{}, 0, fmt.Errorf("extract: create %s: %w", target, err)
 	}
 
-	cap := &capWriter{w: f, maxBytes: maxBytes}
+	cap := &capWriter{w: f, capped: capped, maxBytes: maxBytes}
 	_, copyErr := io.Copy(cap, tr)
 	closeErr := f.Close()
 

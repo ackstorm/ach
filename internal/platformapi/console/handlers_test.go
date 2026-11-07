@@ -158,11 +158,10 @@ func do(t *testing.T, d Deps, path string, ctx context.Context) *httptest.Respon
 
 func TestBootstrap(t *testing.T) {
 	d := testDeps(t)
-	d.OpenWorkEnabled = true
 	rec := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", true))
 	var got map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &got)
-	if rec.Code != 200 || got["email"] != "u@x.com" || got["is_admin"] != true || got["openwork_enabled"] != true || got["suspend_propagation_seconds"] != float64(60) {
+	if rec.Code != 200 || got["email"] != "u@x.com" || got["is_admin"] != true || got["suspend_propagation_seconds"] != float64(60) {
 		t.Fatalf("%d %v", rec.Code, got)
 	}
 	if got["enterprise"] != false {
