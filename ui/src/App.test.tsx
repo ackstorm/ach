@@ -51,7 +51,6 @@ const ME: SessionMe = {
   name: 'Alice Example',
   is_admin: false,
   enterprise: true,
-  openwork_enabled: false,
   suspend_propagation_seconds: 60,
   keys_used: null,
   max_keys: null,

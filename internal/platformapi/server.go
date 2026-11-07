@@ -27,7 +27,6 @@ import (
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/objects"
 	"github.com/ackstorm/ach/internal/platformapi/opencode"
-	"github.com/ackstorm/ach/internal/platformapi/openwork"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
 
@@ -135,9 +134,6 @@ type Deps struct {
 	// Enterprise is ACH_ENTERPRISE; the console hides or marks Enterprise pages when false.
 	Enterprise bool
 
-	// OpenWork is the Den configuration (ACH_OPENWORK_*); off by default,
-	// and mounted only alongside the OAuth AS (it needs the console session).
-	OpenWork openwork.Config
 	// GenAIProvider is the client-neutral provider name ACH configures its
 	// clients with (ACH_GENAI_PROVIDER_NAME): the OpenCode provider id the
 	// plugin signs in and the config names.
@@ -251,10 +247,6 @@ func New(deps Deps) http.Handler {
 				return db.ActiveOAuthPK(ctx, deps.Pool, email)
 			},
 		}
-		// OpenWork Den (spec §12): handoff page under /openwork, API under
-		// /api/den + /openwork/api/den. No-op unless openwork.enabled.
-		openwork.Mount(r, openwork.Deps{Config: deps.OpenWork, Store: od.Store, BaseURL: deps.BaseURL,
-			CookieName: auth.ConsoleCookieName(deps.InsecureCookie), Session: od.ConsoleSession})
 	}
 
 	envkeysDeps := envkeys.Deps{
@@ -327,7 +319,7 @@ func New(deps Deps) http.Handler {
 		console.Mount(r, console.Deps{
 			Store: deps.Store, DB: newEnvkeysDB(deps.Pool), LiteLLM: deps.LiteLLM,
 			AsUser:           func(key string) console.UserReads { return deps.LiteLLMREST.AsUser(key) },
-			KeyEncryptionKey: deps.KeyEncryptionKey, OpenWorkEnabled: deps.OpenWork.Enabled, Enterprise: deps.Enterprise,
+			KeyEncryptionKey: deps.KeyEncryptionKey, Enterprise: deps.Enterprise,
 			Allowance: func(ctx context.Context, email string) (int, int, error) {
 				return db.UserKeyAllowance(ctx, deps.Pool, email, deps.DefaultMaxKeys)
 			},
@@ -374,10 +366,8 @@ func New(deps Deps) http.Handler {
 
 	// The console at "/" (D-26). chi's NotFound is the fallback for every
 	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
-	// 404s so the fallback never shadows the API. With the Den on, the
-	// origin-only OpenWork sign-in URL "/?desktopAuth=1" is rescued to
-	// /openwork here (D-26: on "/" only).
-	r.NotFound(console.SPA(console.Dist(), deps.OpenWork.Enabled).ServeHTTP)
+	// 404s so the fallback never shadows the API.
+	r.NotFound(console.SPA(console.Dist()).ServeHTTP)
 
 	return r
 }

@@ -20,30 +20,8 @@ import (
 // a fresh UUID), so the name prefix is the whole of the coherence available.
 const AccessGroupPrefix = "ach-env-"
 
-// LegacyAccessGroupPrefix is the v0.6.19 access-group prefix, kept only so the
-// self-migrating lookup can adopt-and-rename a group minted before the ach-env-
-// rename. Drop it (and the middle generation in AccessGroupNameGenerations) a
-// version after every group in the wild carries the canonical prefix.
-const LegacyAccessGroupPrefix = "ach-"
-
 // AccessGroupName is the canonical LiteLLM access-group name for an Environment.
 func AccessGroupName(env string) string { return AccessGroupPrefix + env }
-
-// AccessGroupNameGenerations returns every name an Environment's access group
-// may carry in the wild, newest first:
-//
-//	ach-env-<env>   canonical (this release)
-//	ach-<env>       v0.6.19
-//	<env>           pre-v0.6.19
-//
-// The reconciler's fallback lookup and the finalizer both walk this: the lookup
-// adopts a hit BY ID and the drift PUT renames it in place to generations[0]
-// (id + assigned_team_ids preserved, so no key loses grants); the finalizer
-// deletes every generation idempotently so no group survives a delete that
-// raced ahead of the rename.
-func AccessGroupNameGenerations(env string) []string {
-	return []string{AccessGroupName(env), LegacyAccessGroupPrefix + env, env}
-}
 
 // CreateAccessGroup issues POST /v1/access_group. Returns the
 // AccessGroupResponse (UUID, name, current bindings). Replaces the

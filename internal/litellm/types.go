@@ -369,12 +369,11 @@ type AccessGroupCreateRequest struct {
 // wedging convergence; callers MUST pass a non-nil `[]string{}` (not nil)
 // for the empty case, since only `[]` — not `null` — is a proven clear.
 //
-// AccessGroupName/Description are pointers the reconciler never sends
-// (genuine keep-on-absent), and AssignedKeyIDs keeps `omitempty` because
+// Description is a pointer the reconciler never sends (genuine
+// keep-on-absent), and AssignedKeyIDs keeps `omitempty` because
 // the reconciler does NOT manage key assignment — absent must mean keep,
 // never clear.
 type AccessGroupUpdateRequest struct {
-	AccessGroupName    *string  `json:"access_group_name,omitempty"`
 	Description        *string  `json:"description,omitempty"`
 	AccessModelNames   []string `json:"access_model_names"`
 	AccessMCPServerIDs []string `json:"access_mcp_server_ids"`

@@ -32,6 +32,9 @@
 - **Hydrate or uninstall fails `refusing to hydrate:` / `refusing to uninstall:`** (exit 1): a path
   in the workspace is a symlink that leaves it. Remove the link or point it inside the folder;
   links that stay inside are fine, and `-g` (global) is exempt from the symlink rule.
+  `ach-cli local plugin|skill install|update|uninstall` refuse the same way (`commit:` /
+  `uninstall:` ... `leaves the workspace`, exit 1), for example a `.claude` or `.mcp.json`
+  linked outside the project.
   `state file tracks "<path>"` (hydrate exit 1, uninstall exit 8) means a recorded target is outside
   the tool's root: restore the config-dir variable used at hydrate time, or remove the state file.
 - **Hydrate cannot detect the tool**: pass `--target`.

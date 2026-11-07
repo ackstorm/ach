@@ -70,7 +70,9 @@ spec:
               consentAudience:
                 description: |-
                   ConsentAudience is the audience placed in the signed login_hint sent to
-                  ConsentBroker. Set it together with consentBroker.
+                  ConsentBroker. Set it together with consentBroker. It must not be an
+                  audience ACH accepts itself: ach, ach-ek, or a value starting with mcp:
+                  or a2a:.
                 minLength: 1
                 type: string
               consentBroker:
@@ -207,6 +209,11 @@ spec:
           rule: has(self.spec.forwardIdentityJWT)
         - message: consentBroker and consentAudience are set together
           rule: has(self.spec.consentBroker) == has(self.spec.consentAudience)
+        - message: 'consentAudience must not be ach, ach-ek, or start with mcp: or
+            a2a: (ACH accepts those audiences)'
+          rule: '!has(self.spec.consentAudience) || !(self.spec.consentAudience in
+            [''ach'', ''ach-ek''] || self.spec.consentAudience.startsWith(''mcp:'')
+            || self.spec.consentAudience.startsWith(''a2a:''))'
         - message: consentBroker is only valid for MCPServer targets
           rule: '!has(self.spec.consentBroker) || self.spec.target.kind == ''MCPServer'''
     served: true

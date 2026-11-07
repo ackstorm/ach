@@ -70,10 +70,13 @@ func tagsForContext(ctx context.Context) []string {
 // passthrough credential slot, or a raw LiteLLM key in Authorization) could
 // present `x-litellm-tags: user:victim@corp` and book their spend against
 // someone else's ceiling, pushing that ceiling over budget. A client never
-// chooses its own attribution.
+// chooses its own attribution. LiteLLM's pass-through also merges a plain
+// "tags" header into the request tags and charges each of them, so that one
+// goes too.
 func stampTags(req *http.Request) {
 	req.Header.Del(tagsHeader)
 	req.Header.Del(headerTags)
+	req.Header.Del("Tags")
 	tags := tagsForContext(req.Context())
 	if len(tags) == 0 {
 		return

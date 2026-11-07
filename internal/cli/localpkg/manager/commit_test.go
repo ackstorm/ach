@@ -52,7 +52,7 @@ func TestCommit_MergeReplace(t *testing.T) {
 		{Path: "subdir/file.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, "test-plugin", writes)
+	recs, err := Commit(root, false, "test-plugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCommit_MergeDeep(t *testing.T) {
 		},
 	}
 
-	recs, err := Commit(root, "test-plugin", writes)
+	recs, err := Commit(root, false, "test-plugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestCommit_MergeComposite(t *testing.T) {
 		{Path: "CLAUDE.md", Content: content, Merge: adapter.MergeComposite, Keys: []string{"myplugin"}},
 	}
 
-	recs, err := Commit(root, "myplugin", writes)
+	recs, err := Commit(root, false, "myplugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestCommit_MergeComposite_CompositeIDFallback(t *testing.T) {
 	writes := []PlannedWrite{
 		{Path: "CLAUDE.md", Content: []byte("body"), Merge: adapter.MergeComposite},
 	}
-	recs, err := Commit(root, "fallback-id", writes)
+	recs, err := Commit(root, false, "fallback-id", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
 			Keys:    []string{"mcpServers.demo"},
 		},
 	}
-	recs, err := Commit(root, "demo", writes)
+	recs, err := Commit(root, false, "demo", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 		writes[i].Path = adapter.RemapGlobalPath("opencode", root, writes[i].Path)
 	}
 
-	recs, err := Commit(root, "myplugin", writes)
+	recs, err := Commit(root, false, "myplugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -304,12 +304,12 @@ func TestUninstall_RemovesFiles(t *testing.T) {
 		{Path: "subdir/b.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, "myplugin", writes)
+	recs, err := Commit(root, false, "myplugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	skipped, err := Uninstall(root, recs)
+	skipped, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestUninstall_SkipsModifiedFiles(t *testing.T) {
 		{Path: "file.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, "myplugin", writes)
+	recs, err := Commit(root, false, "myplugin", writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestUninstall_SkipsModifiedFiles(t *testing.T) {
 		t.Fatalf("modify file: %v", err)
 	}
 
-	skipped, err := Uninstall(root, recs)
+	skipped, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestUninstall_MissingFileIsNoOp(t *testing.T) {
 	files := []store.FileRec{
 		{RelPath: "nonexistent/file.txt", Hash: "xxh3:deadbeef"},
 	}
-	skipped, err := Uninstall(root, files)
+	skipped, err := Uninstall(root, false, files)
 	if err != nil {
 		t.Fatalf("Uninstall with missing file: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestUninstall_EmptyDirPruned(t *testing.T) {
 		{RelPath: "a/b/file.txt", Hash: hash.HashBytes(content)},
 	}
 
-	_, err := Uninstall(root, recs)
+	_, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestUninstall_NonEmptyDirPreserved(t *testing.T) {
 		{RelPath: "subdir/file1.txt", Hash: hash.HashBytes(content)},
 	}
 
-	_, err := Uninstall(root, recs)
+	_, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestUninstall_CompositeInverseMerge(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"plugA"}},
 	}
-	skipped, err := Uninstall(root, recs)
+	skipped, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestUninstall_CompositeEmptiesFileDeletes(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"only"}},
 	}
-	if _, err := Uninstall(root, recs); err != nil {
+	if _, err := Uninstall(root, false, recs); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	if _, err := os.Stat(abs); !os.IsNotExist(err) {
@@ -528,7 +528,7 @@ func TestUninstall_DeepInverseMergeJSON(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers.srvA"}},
 	}
-	skipped, err := Uninstall(root, recs)
+	skipped, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestUninstall_DeepInverseMergeTOML(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: ".codex/config.toml", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcp_servers.srvA"}},
 	}
-	if _, err := Uninstall(root, recs); err != nil {
+	if _, err := Uninstall(root, false, recs); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	out, err := os.ReadFile(abs)
@@ -605,7 +605,7 @@ func TestUninstall_DeepEmptiesFileDeletes(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers"}},
 	}
-	if _, err := Uninstall(root, recs); err != nil {
+	if _, err := Uninstall(root, false, recs); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 	if _, err := os.Stat(abs); !os.IsNotExist(err) {
@@ -627,7 +627,7 @@ func TestUninstall_DeepNonParseableSkips(t *testing.T) {
 	recs := []store.FileRec{
 		{RelPath: ".claude/settings.json", Hash: "xxh3:stale", Merge: "deep", Keys: []string{"mcpServers.x"}},
 	}
-	skipped, err := Uninstall(root, recs)
+	skipped, err := Uninstall(root, false, recs)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
@@ -645,7 +645,7 @@ func TestUninstall_DeepNonParseableSkips(t *testing.T) {
 // touching disk.
 func TestUninstallPlan_MatchesUninstall(t *testing.T) {
 	root := t.TempDir()
-	recs, err := Commit(root, "myplugin", []PlannedWrite{
+	recs, err := Commit(root, false, "myplugin", []PlannedWrite{
 		{Path: "keep/clean.txt", Content: []byte("clean"), Merge: adapter.MergeReplace},
 		{Path: "keep/edited.txt", Content: []byte("orig"), Merge: adapter.MergeReplace},
 	})
@@ -658,7 +658,7 @@ func TestUninstallPlan_MatchesUninstall(t *testing.T) {
 	}
 	recs = append(recs, store.FileRec{RelPath: "keep/gone.txt", Hash: "xxh3:none"})
 
-	plan, err := UninstallPlan(root, recs)
+	plan, err := UninstallPlan(root, false, recs)
 	if err != nil {
 		t.Fatalf("UninstallPlan: %v", err)
 	}

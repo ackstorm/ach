@@ -34,7 +34,16 @@ const (
 // conflict resolution, so every downstream consumer keys on one path string.
 // compositeID is used as the marker id for MergeComposite writes (typically
 // the plugin/skill name).
-func Commit(root, compositeID string, writes []PlannedWrite) ([]store.FileRec, error) {
+//
+// Project scope (global false) refuses a destination that leaves root through
+// a symlink (see state.CheckContained). Every destination is checked before
+// the first write, merge or mkdir, so a refusal leaves nothing behind. Global
+// scope skips the check: the root is the user's home and dotfile managers
+// legitimately link ~/.claude out of it.
+func Commit(root string, global bool, compositeID string, writes []PlannedWrite) ([]store.FileRec, error) {
+	if err := CheckCommit(root, global, writes); err != nil {
+		return nil, err
+	}
 	recs := make([]store.FileRec, 0, len(writes))
 
 	for _, w := range writes {
@@ -194,6 +203,35 @@ func classifyReplace(f store.FileRec, body []byte) uninstallOp {
 	return opRemove
 }
 
+// CheckCommit reports whether Commit would refuse writes for leaving root
+// through a symlink, without touching disk.
+func CheckCommit(root string, global bool, writes []PlannedWrite) error {
+	for _, w := range writes {
+		if err := checkContained(root, global, adapter.ResolveDest(root, w.Path)); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+	}
+	return nil
+}
+
+// checkUninstall is CheckCommit for the recorded paths of an uninstall.
+func checkUninstall(root string, global bool, files []store.FileRec) error {
+	for _, f := range files {
+		if err := checkContained(root, global, adapter.ResolveDest(root, f.RelPath)); err != nil {
+			return fmt.Errorf("uninstall: %w", err)
+		}
+	}
+	return nil
+}
+
+// checkContained applies state.CheckContained in project scope only.
+func checkContained(root string, global bool, abs string) error {
+	if global {
+		return nil
+	}
+	return state.CheckContained(root, abs)
+}
+
 // Uninstall removes a package's recorded files under root, applying the
 // classifyUninstall verdict for each: opRemove deletes the file (pruning now-
 // empty ancestor dirs up to but not including root), opModify rewrites the
@@ -201,7 +239,13 @@ func classifyReplace(f store.FileRec, body []byte) uninstallOp {
 // RelPath as skipped (drift — never clobbered). Missing files are treated as
 // already-removed. A remove failure is best-effort (non-fatal, no prune above
 // it). Returns the list of skipped RelPaths and any unexpected error.
-func Uninstall(root string, files []store.FileRec) (skipped []string, err error) {
+// Project scope refuses a recorded path that leaves root through a symlink;
+// every path is checked before the first read, rewrite, delete or prune, so a
+// refusal leaves nothing behind. Global scope skips the check, as Commit does.
+func Uninstall(root string, global bool, files []store.FileRec) (skipped []string, err error) {
+	if cerr := checkUninstall(root, global, files); cerr != nil {
+		return nil, cerr
+	}
 	for _, f := range files {
 		abs := adapter.ResolveDest(root, f.RelPath)
 		body, rerr := os.ReadFile(abs)
@@ -249,8 +293,11 @@ type UninstallVerdict struct {
 
 // UninstallPlan classifies each recorded file WITHOUT touching disk — the read-
 // only twin of Uninstall, sharing classifyUninstall so the preview matches the
-// act exactly. A missing file reports "absent".
-func UninstallPlan(root string, files []store.FileRec) ([]UninstallVerdict, error) {
+// act exactly, containment refusal included. A missing file reports "absent".
+func UninstallPlan(root string, global bool, files []store.FileRec) ([]UninstallVerdict, error) {
+	if err := checkUninstall(root, global, files); err != nil {
+		return nil, err
+	}
 	out := make([]UninstallVerdict, 0, len(files))
 	for _, f := range files {
 		body, rerr := os.ReadFile(adapter.ResolveDest(root, f.RelPath))

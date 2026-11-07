@@ -65,7 +65,9 @@ type BackendIdentityPolicySpec struct {
 	ConsentBroker string `json:"consentBroker,omitempty"`
 
 	// ConsentAudience is the audience placed in the signed login_hint sent to
-	// ConsentBroker. Set it together with consentBroker.
+	// ConsentBroker. Set it together with consentBroker. It must not be an
+	// audience ACH accepts itself: ach, ach-ek, or a value starting with mcp:
+	// or a2a:.
 	//
 	// +optional
 	// +kubebuilder:validation:MinLength=1
@@ -106,6 +108,7 @@ type BackendIdentityPolicyStatus struct {
 // +kubebuilder:resource:scope=Namespaced,shortName=bip
 // +kubebuilder:validation:XValidation:rule="has(self.spec.forwardIdentityJWT)",message="BackendIdentityPolicy.spec.forwardIdentityJWT is REQUIRED with no default (CRD-08)"
 // +kubebuilder:validation:XValidation:rule="has(self.spec.consentBroker) == has(self.spec.consentAudience)",message="consentBroker and consentAudience are set together"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.consentAudience) || !(self.spec.consentAudience in ['ach', 'ach-ek'] || self.spec.consentAudience.startsWith('mcp:') || self.spec.consentAudience.startsWith('a2a:'))",message="consentAudience must not be ach, ach-ek, or start with mcp: or a2a: (ACH accepts those audiences)"
 // +kubebuilder:validation:XValidation:rule="!has(self.spec.consentBroker) || self.spec.target.kind == 'MCPServer'",message="consentBroker is only valid for MCPServer targets"
 // +kubebuilder:printcolumn:name="Target-Kind",type=string,JSONPath=".spec.target.kind"
 // +kubebuilder:printcolumn:name="Target-Name",type=string,JSONPath=".spec.target.name"

@@ -724,26 +724,21 @@ func TestAccessGroupSynced_MirrorHealthy(t *testing.T) {
 	}
 }
 
-// A pre-rename group named "<env>" (no ach- prefix) is adopted by id and
-// renamed to "ach-env-<env>" in place — id and assigned_team_ids preserved, no
-// second group created.
-func TestAccessGroupSynced_MigratesLegacyName(t *testing.T) {
+// foreignGroupUntouched creates an Environment, waits for it to sync, deletes
+// it, and asserts each seeded foreign group survives both with its id and
+// without any write, while the Environment's own ach-env-<env> group is made
+// and then removed.
+func foreignGroupUntouched(t *testing.T, envName string, foreign ...*litellm.AccessGroupResponse) {
+	t.Helper()
 	ctx := context.Background()
 	accessGroupFake.Reset()
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
-	// Legacy group already exists under the bare env name with the SAME
-	// bindings the reconciler will compute, so ONLY the name drifts.
-	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
-		AccessGroupID:      "ag-legacy-uuid",
-		AccessGroupName:    "test-env-ag-migrate",
-		AccessModelNames:   []string{},
-		AccessMCPServerIDs: []string{},
-		AccessAgentIDs:     []string{},
-		AssignedTeamIDs:    []string{"t-uuid-default", "id-ach-env-test-env-ag-migrate"},
-	})
+	for _, g := range foreign {
+		accessGroupFake.SeedExisting(g)
+	}
 
 	cr := &achv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-env-ag-migrate", Namespace: WatchNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: envName, Namespace: WatchNamespace},
 		Spec: achv1alpha1.EnvironmentSpec{
 			AuthorizedTeams: []string{"default"},
 			Runtime:         emptyRuntimeBlock(),
@@ -753,64 +748,49 @@ func TestAccessGroupSynced_MigratesLegacyName(t *testing.T) {
 	if err := k8sClient.Create(ctx, cr); err != nil {
 		t.Fatalf("create Environment: %v", err)
 	}
-	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
-
+	own := litellm.AccessGroupName(envName)
 	if !Eventually(func() bool {
-		g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-env-test-env-ag-migrate")
-		return g != nil && g.AccessGroupID == "ag-legacy-uuid"
+		g, _ := accessGroupFake.GetAccessGroupByName(ctx, own)
+		return g != nil
 	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatal("legacy group was not renamed in place to ach-env-test-env-ag-migrate")
+		t.Fatalf("group %s was not created", own)
 	}
-	// No second group under the bare name, and no CREATE was issued.
-	if g, _ := accessGroupFake.GetAccessGroupByName(ctx, "test-env-ag-migrate"); g != nil {
-		t.Error("bare-name group should be gone after in-place rename")
+	if err := k8sClient.Delete(ctx, cr); err != nil {
+		t.Fatalf("delete: %v", err)
 	}
-	if n := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-migrate"); n != 0 {
-		t.Errorf("expected 0 CREATE calls (rename in place); got %d", n)
+	if !Eventually(func() bool {
+		g, _ := accessGroupFake.GetAccessGroupByName(ctx, own)
+		return g == nil
+	}, 15*time.Second, 250*time.Millisecond) {
+		t.Fatalf("group %s survived the Environment", own)
+	}
+	for _, f := range foreign {
+		g, _ := accessGroupFake.GetAccessGroupByName(ctx, f.AccessGroupName)
+		if g == nil || g.AccessGroupID != f.AccessGroupID {
+			t.Errorf("foreign group %s was removed or replaced: %+v", f.AccessGroupName, g)
+		}
+		if n := accessGroupFake.UpdateCallsFor(f.AccessGroupName); n != 0 {
+			t.Errorf("foreign group %s was written %d times", f.AccessGroupName, n)
+		}
 	}
 }
 
-// TestAccessGroupSynced_MigratesV0619Name covers the middle generation: a group
-// already named ach-<env> (minted by v0.6.19) is adopted by id and renamed in
-// place to the canonical ach-env-<env>, with no CREATE and no second group.
-func TestAccessGroupSynced_MigratesV0619Name(t *testing.T) {
-	ctx := context.Background()
-	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("default", "t-uuid-default")
-	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
-		AccessGroupID:      "ag-midgen-uuid",
-		AccessGroupName:    "ach-test-env-ag-midgen",
-		AccessModelNames:   []string{},
-		AccessMCPServerIDs: []string{},
-		AccessAgentIDs:     []string{},
-		AssignedTeamIDs:    []string{"t-uuid-default", "id-ach-env-test-env-ag-midgen"},
+// Environment env-foo owns ach-env-env-foo only: the group ach-env-foo
+// (Environment foo's) is neither adopted by the lookup nor deleted with it.
+func TestAccessGroup_OtherEnvironmentsGroupUntouched(t *testing.T) {
+	foreignGroupUntouched(t, "env-foo", &litellm.AccessGroupResponse{
+		AccessGroupID:   "ag-foreign-foo",
+		AccessGroupName: "ach-env-foo",
 	})
+}
 
-	cr := &achv1alpha1.Environment{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-env-ag-midgen", Namespace: WatchNamespace},
-		Spec: achv1alpha1.EnvironmentSpec{
-			AuthorizedTeams: []string{"default"},
-			Runtime:         emptyRuntimeBlock(),
-			Context:         achv1alpha1.ContextBlock{},
-		},
-	}
-	if err := k8sClient.Create(ctx, cr); err != nil {
-		t.Fatalf("create Environment: %v", err)
-	}
-	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), cr) })
-
-	if !Eventually(func() bool {
-		g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-env-test-env-ag-midgen")
-		return g != nil && g.AccessGroupID == "ag-midgen-uuid"
-	}, 15*time.Second, 250*time.Millisecond) {
-		t.Fatal("v0.6.19 group was not renamed in place to ach-env-test-env-ag-midgen")
-	}
-	if g, _ := accessGroupFake.GetAccessGroupByName(ctx, "ach-test-env-ag-midgen"); g != nil {
-		t.Error("v0.6.19-name group should be gone after in-place rename")
-	}
-	if n := accessGroupFake.CreateCallsFor("ach-env-test-env-ag-midgen"); n != 0 {
-		t.Errorf("expected 0 CREATE calls (rename in place); got %d", n)
-	}
+// An Environment named like a group LiteLLM already holds (bare or ach-<name>)
+// leaves that group alone.
+func TestAccessGroup_SameNamedForeignGroupUntouched(t *testing.T) {
+	foreignGroupUntouched(t, "shared-grp",
+		&litellm.AccessGroupResponse{AccessGroupID: "ag-foreign-bare", AccessGroupName: "shared-grp"},
+		&litellm.AccessGroupResponse{AccessGroupID: "ag-foreign-ach", AccessGroupName: "ach-shared-grp"},
+	)
 }
 
 // createEnvAwaitingAG creates an Environment and waits for AccessGroupSynced
@@ -1225,31 +1205,6 @@ func TestAccessGroupUnresolved_PutFailureReported(t *testing.T) {
 	rt := emptyRuntimeBlock()
 	rt.MCPServers = []string{"mcp-unknown"}
 	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "AccessGroupUpdateFailed")
-}
-
-// Removals reach a group still under a legacy name; the rename stays with the
-// fully resolved write.
-func TestAccessGroupUnresolved_LegacyGroupShrinksUnrenamed(t *testing.T) {
-	const (
-		env = "test-env-unres-legacy"
-		gid = "ag-uuid-legacy-" + env
-	)
-	accessGroupFake.Reset()
-	accessGroupFake.SeedTeam("kept", "t-kept")
-	accessGroupFake.SeedTeam("removed", "t-removed")
-	accessGroupFake.SeedExisting(&litellm.AccessGroupResponse{
-		AccessGroupID:   gid,
-		AccessGroupName: env,
-		AssignedTeamIDs: []string{"t-kept", "t-removed"},
-	})
-
-	rt := emptyRuntimeBlock()
-	rt.MCPServers = []string{"mcp-unknown"}
-	createEnvAwaitingAG(t, env, []string{"kept"}, rt, metav1.ConditionFalse, "UnresolvedReferences")
-
-	if got := storedGroup(t, env).AssignedTeamIDs; !sameSet(got, []string{"t-kept"}) {
-		t.Errorf("assigned_team_ids = %v", got)
-	}
 }
 
 // With every reference resolved the write is the whole desired state: an

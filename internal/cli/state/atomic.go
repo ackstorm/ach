@@ -78,6 +78,11 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	// rename source — by the instant rename(2) completes the final
 	// path is already at the target mode, closing T-07-W5-02-02's
 	// TOCTOU window between rename and the next caller's open).
+	// An existing file's permission bits are a ceiling: a rewrite never
+	// widens a file the user or an earlier hydrate made narrower.
+	if st, serr := os.Stat(path); serr == nil {
+		mode &= st.Mode().Perm()
+	}
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		cleanup()

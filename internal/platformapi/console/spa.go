@@ -30,10 +30,8 @@ var apiPrefixes = []string{"/platform/", "/healthz", "/livez", "/readyz"}
 
 // SPA returns the "/" handler: a real file is served as is (hashed assets
 // immutable), anything else gets index.html (client-side routing) with
-// no-store. openworkHandoff turns "/?desktopAuth=1" into a redirect to
-// /openwork (D-26: the origin-only OpenWork sign-in URL is rescued on "/"
-// only).
-func SPA(fsys fs.FS, openworkHandoff bool) http.Handler {
+// no-store.
+func SPA(fsys fs.FS) http.Handler {
 	files := http.FileServer(http.FS(fsys))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -45,10 +43,6 @@ func SPA(fsys fs.FS, openworkHandoff bool) http.Handler {
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if p == "/" && openworkHandoff && r.URL.Query().Get("desktopAuth") == "1" {
-			http.Redirect(w, r, "/openwork?"+r.URL.RawQuery, http.StatusFound)
 			return
 		}
 		name := strings.TrimPrefix(p, "/")

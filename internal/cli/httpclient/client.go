@@ -247,6 +247,11 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")
 	}
+	// net/http strips only Authorization and cookies across origins; the ACH
+	// key must not leave the origin it was addressed to.
+	if req.URL.Scheme != orig.URL.Scheme || req.URL.Host != orig.URL.Host {
+		req.Header.Del("x-ach-key")
+	}
 	return nil
 }
 

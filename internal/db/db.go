@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	neturl "net/url"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -84,6 +85,11 @@ func Migrate(url string, migrationsPath string) error {
 	if url == "" {
 		return ErrEmptyURL
 	}
+	// The driver's errors quote the DSN, password included: a DSN that does
+	// not parse, or carries no user, is reported without its text, and every later error is scrubbed.
+	if u, err := neturl.Parse(url); err != nil || u.User == nil {
+		return errors.New("db: ACH_DB_URL is not a valid URL (percent-encode special characters in the password)")
+	}
 	migrateURL := url
 	if rest, ok := strings.CutPrefix(url, "postgres://"); ok {
 		migrateURL = "pgx5://" + rest
@@ -92,11 +98,28 @@ func Migrate(url string, migrationsPath string) error {
 	}
 	m, err := migrate.New("file://"+migrationsPath, migrateURL)
 	if err != nil {
-		return fmt.Errorf("db: construct migrator: %w", err)
+		return fmt.Errorf("db: construct migrator: %s", redactDSN(err, url, migrateURL))
 	}
 	defer func() { _, _ = m.Close() }()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("db: apply migrations: %w", err)
+		return fmt.Errorf("db: apply migrations: %s", redactDSN(err, url, migrateURL))
 	}
 	return nil
+}
+
+// redactDSN renders err with the DSN and its password removed.
+func redactDSN(err error, urls ...string) string {
+	secrets := append([]string{}, urls...)
+	for _, u := range urls {
+		if p, perr := neturl.Parse(u); perr == nil && p.User != nil {
+			if pw, ok := p.User.Password(); ok && pw != "" {
+				secrets = append(secrets, pw, neturl.QueryEscape(pw))
+			}
+		}
+	}
+	msg := err.Error()
+	for _, s := range secrets {
+		msg = strings.ReplaceAll(msg, s, "<redacted>")
+	}
+	return msg
 }

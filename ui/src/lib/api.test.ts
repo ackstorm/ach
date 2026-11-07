@@ -68,7 +68,7 @@ describe('apiFetch mid-session 401 notification', () => {
 
   test('a 401 on a non-/platform URL does NOT notify', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resp401()));
-    await apiFetch('/openwork/x');
+    await apiFetch('/other/x');
     expect(notifyUnauthorized).not.toHaveBeenCalled();
   });
 

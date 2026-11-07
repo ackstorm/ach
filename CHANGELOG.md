@@ -4,6 +4,46 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- `ach migrate` never prints the database URL or password: a DSN that does not
+  parse fails with a fixed message and driver errors are scrubbed. Percent-encode
+  special characters in the password (see the `ach-install` prerequisites).
+- `ach-cli` no longer sends `x-ach-key` to a different origin on a redirect.
+- The http source no longer forwards its Secret-valued header across a
+  cross-host redirect.
+- `ach-cli local plugin install` and `uninstall` never widen the mode of an
+  existing file: a `0600` runtime config stays `0600`.
+- The forwarder drops a client `tags` header: only ACH sets request tags, on every
+  route.
+- The forwarder refuses a multipart body whose Content-Type repeats `boundary`
+  or carries a starred `boundary*` with 400 `invalid_request`.
+- An archive that fills its extraction cap exactly no longer lifts the cap for
+  the entries after it; prompt archives share the skill cap.
+- The console login `next=` refuses control characters, so a browser cannot
+  normalise it to another origin.
+- Release images are signed by digest, not by tag.
+- `ach-cli local plugin|skill` install, update and uninstall refuse a project
+  destination that leaves the folder through a symlink, as `env hydrate` does;
+  `--global` is unchanged.
+- A BackendIdentityPolicy `consentAudience` of `ach`, `ach-ek`, or starting with
+  `mcp:` or `a2a:` is refused at admission, and the consent login skips the
+  broker hop for such a value already stored.
+- A private-repo token reaches `git` through its environment, not its command
+  line (needs git 2.31 or later for `ach-cli local`).
+
+### Removed
+- The operator no longer looks up or deletes an Environment's access group under
+  the names `ach-<env>` or `<env>`; only `ach-env-<env>` is used.
+- OpenWork and its Den API: the `openwork.*` chart values and the `/openwork`,
+  `/api/den` routes are gone, and the console bootstrap no longer carries
+  `openwork_enabled`.
+
+### Upgrade notes
+- An install on v0.6.19 or earlier that jumps straight to this release leaves
+  each Environment's old access group (named `ach-<env>` or `<env>`) in LiteLLM,
+  orphaned and still bound to its teams; delete it by hand. Installs that ran
+  any later release are unaffected.
+
 ## [1.1.7] - 2026-11-06
 
 ### Changed

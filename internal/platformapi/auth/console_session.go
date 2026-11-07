@@ -42,10 +42,17 @@ func consoleCookie(value string, insecure bool, maxAge int) *http.Cookie {
 }
 
 // safeNext keeps the post-login redirect on this origin: a local absolute
-// path, never a scheme or a protocol-relative host.
+// path, never a scheme or a protocol-relative host. Browsers drop tabs and
+// newlines and read a backslash as a slash before parsing, so any control
+// character or backslash is refused.
 func safeNext(next string) string {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, "\\") {
 		return "/"
+	}
+	for i := 0; i < len(next); i++ {
+		if next[i] < 0x20 || next[i] == 0x7f {
+			return "/"
+		}
 	}
 	return next
 }

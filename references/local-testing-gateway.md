@@ -137,7 +137,7 @@ npm --prefix ui run dev
 ```
 
 `npm run dev` serves the SPA on `http://localhost:5173` and proxies
-`/platform`, `/openwork`, and `/api/den` to `http://localhost:8080`
+`/platform` to `http://localhost:8080`
 (`ui/vite.config.ts` `server.proxy`) — everything else (JS/CSS/HMR) is
 served locally by Vite. Log in through the console UI at `:5173` as normal
 (`kilgore@kilgore.trout`); the session cookie is set for `localhost` by the

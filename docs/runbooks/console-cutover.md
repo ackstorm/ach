@@ -315,7 +315,7 @@ psql "$ACH_DB" -c "select count(*) from environment_keys where status<>'revoked'
       between a re-enabled handler and an internet-supplied identity. Either way,
       fix the comment, which still calls it "LiteLLM's impersonation contract".
 - [ ] **Archive alitellm-auth** on GitHub (owner). `references/upstream-sync.md`:
-      mark the ported pieces (Den, fixtures, tests, brand marks) with the archive
+      mark the ported pieces (fixtures, tests, brand marks) with the archive
       date. `NOTICE`: the attribution row **stays** — Apache-2.0 provenance does
       not expire.
 - [ ] **ACH docs** — `references/understanding.md` (console at

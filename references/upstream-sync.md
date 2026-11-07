@@ -186,18 +186,6 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 | `.golangci.yml` | n/a — cosmetic only | Annotated exclude-rules with single-line justifications, dropped redundant `lll` entry from the SA1019 rule. No behavior change. No alitellm sync. |
 
 
-## 2026-09-21 — OpenWork Den ported from alitellm-auth (unified console, spec D-15/§12)
-
-Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c06176204292abb57f` (Apache-2.0, same org).
-Ported to Go (re-synced to `7605a9c`): Connect MCP (`/v1/mcp/token`, `/mcp/agent`, `mcp.go`) ships an empty catalog and `connectEnabled` is `true`. ACH hardcodes `allowZenModel=false`.
-
-| ach file | alitellm-auth file | Notes |
-|---|---|---|
-| `internal/platformapi/openwork/den.go`, `handoff.go`, `config.go` | `src/api/app/openwork.py` | Same routes, error envelope, id derivations (`user_<sha256[:24]>`, `organization_<sha256[:16]>`, `orgmember_…`), empty-catalog payloads verbatim; grants `Take`n from the AS's OAuthStore |
-| `internal/platformapi/openwork/handoff.html` | `src/api/app/templates/openwork_handoff.html` | Jinja → `html/template`; `DeepLink` is `template.URL` so the `openwork:` scheme survives |
-| `internal/platformapi/openwork/brand/openwork-{logo,icon}.svg` | `src/api/brand/openwork-{logo,icon}.svg` | Verbatim |
-| `internal/platformapi/openwork/den_test.go` | `src/api/tests/test_openwork.py` | Case-for-case port; Connect MCP cases in `mcp_test.go` |
-
 ## 2026-09-28 — OpenCode auth plugin taken from alitellm-auth (removed 2026-09-29)
 
 ACH briefly served an unmodified copy of alitellm-auth `clients/opencode` as an npm tarball. OpenCode v2 rejects tarball URLs, so the plugin moved to its own public repo (`github.com/ackstorm/opencode-oidc-provider`) and ACH now only points at it from `GET /.well-known/opencode` (`genai.opencodePluginSpec`). No ACH file is grafted from it any more.
@@ -208,7 +196,7 @@ Source repository: `ackstorm/alitellm-auth` @ `4e38245f0e382780424a81c0617620429
 
 | ach file | alitellm-auth file | Notes |
 |---|---|---|
-| `ui/**` | `src/ui/**` (minus `dist/`, `node_modules/`) | One copy, no fork drift — `ui/` is the new home; the alitellm-auth tree retires in Phase 4. Components + styling untouched; only the data-layer seams (`lib/api.ts`, `lib/api-types.ts`, `hooks/*`, `stores/*`, `App.tsx`, `routes/Login.tsx`, the logout link) are rewired to the ACH console contracts. `vite.config.ts`: `base: '/'`, `outDir ../internal/platformapi/console/dist`, dev proxy `/platform`+`/openwork`+`/api/den`; `package.json` name `ach-console`. |
+| `ui/**` | `src/ui/**` (minus `dist/`, `node_modules/`) | One copy, no fork drift — `ui/` is the new home; the alitellm-auth tree retires in Phase 4. Components + styling untouched; only the data-layer seams (`lib/api.ts`, `lib/api-types.ts`, `hooks/*`, `stores/*`, `App.tsx`, `routes/Login.tsx`, the logout link) are rewired to the ACH console contracts. `vite.config.ts`: `base: '/'`, `outDir ../internal/platformapi/console/dist`, dev proxy `/platform`; `package.json` name `ach-console`. |
 
 ## 2026-09-22 — stats fold ported to Go (unified console Phase 3, Task 1)
 

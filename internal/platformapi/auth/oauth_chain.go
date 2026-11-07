@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
+	"github.com/ackstorm/ach/internal/keystore"
 )
 
 const (
@@ -115,8 +116,24 @@ func (d OAuthDeps) httpClient() *http.Client {
 	return &http.Client{Timeout: 10 * time.Second}
 }
 
+// reservedConsentAudience reports an audience a login_hint must never carry:
+// the hint is signed with the key that signs ACH tokens, so an audience ACH
+// itself accepts (its OAuth audience, the exchange audience, or an MCP/A2A
+// route namespace) would make the hint usable as a credential. The CRD
+// validation of consentAudience refuses the same values.
+func reservedConsentAudience(aud, oauthAudience string) bool {
+	return aud == oauthAudience || aud == "ach" || aud == keystore.ExchangeAudience ||
+		strings.HasPrefix(aud, "mcp:") || strings.HasPrefix(aud, "a2a:")
+}
+
 func (d OAuthDeps) chainStart(w http.ResponseWriter, r *http.Request, c oauthChain) {
-	meta, err := d.brokerMetadata(r.Context(), c.Broker)
+	var meta brokerEndpoints
+	var err error
+	if reservedConsentAudience(c.Audience, d.Audience) {
+		err = errors.New("consentAudience is reserved")
+	} else {
+		meta, err = d.brokerMetadata(r.Context(), c.Broker)
+	}
 	if err == nil {
 		var clientID string
 		clientID, err = d.brokerClientID(r.Context(), c.Broker, meta.Registration)

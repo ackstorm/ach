@@ -180,16 +180,31 @@ func hasNameAndNameStar(cd string) bool {
 
 // boundaryOf returns the multipart boundary, or "" when none can be found.
 func boundaryOf(ct string) string {
+	// Go keeps boundary and boundary* apart while other parsers merge or
+	// prefer one, so any starred form leaves no boundary to trust.
+	for _, p := range strings.Split(ct, ";")[1:] {
+		if k, _, _ := strings.Cut(p, "="); strings.HasPrefix(strings.ToLower(strings.TrimSpace(k)), "boundary*") {
+			return ""
+		}
+	}
 	if _, params, err := mime.ParseMediaType(ct); err == nil {
 		return params["boundary"]
 	}
-	// Strict parse failed (e.g. duplicate params): take the first boundary=.
+	// Strict parse failed (e.g. duplicate params): take the boundary=, but
+	// not when there are several, since parsers disagree on which one wins.
+	boundary, n := "", 0
 	for _, p := range strings.Split(ct, ";")[1:] {
 		if k, v, ok := strings.Cut(p, "="); ok && strings.EqualFold(strings.TrimSpace(k), "boundary") {
-			return strings.Trim(strings.TrimSpace(v), `"`)
+			if n == 0 {
+				boundary = strings.Trim(strings.TrimSpace(v), `"`)
+			}
+			n++
 		}
 	}
-	return ""
+	if n > 1 {
+		return ""
+	}
+	return boundary
 }
 
 // checkMultipart refuses any part that names a tag-bearing field. Starlette

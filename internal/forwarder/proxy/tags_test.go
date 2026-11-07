@@ -125,6 +125,30 @@ func TestDirectorOverwritesSpoofedTagHeader(t *testing.T) {
 	}
 }
 
+// LiteLLM's pass-through merges a plain "tags" header into the request tags and
+// charges each of them, so a client's value never reaches it.
+func TestDirectorDropsClientTagsHeader(t *testing.T) {
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+	for name, kc := range map[string]*middleware.KeyContext{
+		"identity":    {KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9"},
+		"no identity": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/gemini/v1beta/models/m:generateContent", strings.NewReader("{}"))
+			req.Header.Set("Tags", "user:victim@corp")
+			if kc != nil {
+				req = req.WithContext(ctxWith(*kc))
+			}
+
+			rp.Director(req)
+
+			if got := req.Header.Values("tags"); len(got) != 0 {
+				t.Fatalf("tags header reached upstream: %v", got)
+			}
+		})
+	}
+}
+
 // A client "Connection: X-Litellm-Tags" makes ReverseProxy delete that header
 // AFTER Director, so the budget tags must survive end to end (review #13).
 func TestConnectionHeaderCannotStripBudgetTags(t *testing.T) {

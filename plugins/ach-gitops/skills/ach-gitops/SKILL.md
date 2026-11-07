@@ -133,10 +133,9 @@ user's agent tool by `ach-cli env hydrate`.
   `ek-` key issued for it, then removes its LiteLLM access group and shell team. Every
   agent or CI job holding one of those keys breaks. Add the new Environment, migrate
   keys, then delete the old one.
-- **Never name an Environment `X` when LiteLLM already has an access group `X` or
-  `ach-X`.** Those are older ACH naming schemes, so the operator adopts such a group by
-  ID, renames it and rewrites its grants, silently taking it over. ACH's own group is
-  `ach-env-<environment>`; check LiteLLM's access groups before picking a name.
+- **Never name an Environment so that `ach-env-<environment>` is a group LiteLLM
+  already has.** The operator adopts a group of that name by ID and rewrites its
+  grants, silently taking it over. Check LiteLLM's access groups before picking a name.
 - **Grants only add.** A user in several authorized teams reaches the union of every
   Environment granted to those teams. There is no deny list; to take something away,
   remove it from every Environment that grants it.

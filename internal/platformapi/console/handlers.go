@@ -59,7 +59,6 @@ type Deps struct {
 	LiteLLM          litellm.Client // environments.CallerMayRead (teams lookup)
 	AsUser           func(key string) UserReads
 	KeyEncryptionKey []byte
-	OpenWorkEnabled  bool
 	Enterprise       bool // ACH_ENTERPRISE
 	Audit            *slog.Logger
 	Logger           *slog.Logger
@@ -107,7 +106,6 @@ func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"chat_url":                    d.ChatURL,
 		"provider_name":               d.ProviderName,
 		"is_admin":                    kc.IsAdmin,
-		"openwork_enabled":            d.OpenWorkEnabled,
 		"enterprise":                  d.Enterprise,
 		"suspend_propagation_seconds": SuspendPropagationSeconds,
 		"keys_used":                   nil,

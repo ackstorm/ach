@@ -107,7 +107,8 @@ Per-release flow (after the `chore(release): v0.1.0` PR merges):
      - `sboms:` block generates the CycloneDX SBOM via cyclonedx-gomod.
      - `signs:` block signs the checksums file with cosign keyless OIDC.
      - `docker_signs:` block signs all image artifacts (per-arch +
-       manifest list) with cosign keyless OIDC.
+       manifest list) with cosign keyless OIDC, by digest
+       (`${artifact}@${digest}`), never by the mutable tag.
    - Pushes the chart to
      `oci://ghcr.io/ackstorm/charts/ach:<X.Y.Z>`.
 Orphan-tag posture: **the tag is pushed BEFORE goreleaser runs**, so a
