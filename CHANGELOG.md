@@ -4,6 +4,14 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- A rollout no longer cuts open requests after 10 s: gateway, forwarder and
+  platform-api leave their Service before stopping (`shutdown.drainSeconds`,
+  default 10) and let open requests finish for up to `shutdown.timeoutSeconds`
+  (default 120, `ACH_SHUTDOWN_TIMEOUT`).
+- platform-api has a readiness probe on `/readyz`, so it gets no traffic before
+  Postgres and Valkey answer.
+
 ## [1.1.8] - 2026-11-07
 
 ### Fixed

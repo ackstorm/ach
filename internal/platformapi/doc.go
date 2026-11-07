@@ -13,10 +13,10 @@
 //     /platform/environments, /platform/admin). All routes live under /platform/ per API-01;
 //     health probes are the only carve-out.
 //
-//  2. Manager.Runnable wrap — `NewRunnable(addr, handler, logger)`
-//     returns an http.Server tied to the controller-runtime manager's
-//     signal context (D-20). Graceful shutdown via
-//     http.Server.Shutdown(ctx, 10s) per D-03.
+//  2. Manager.Runnable wrap — `NewRunnable(addr, handler, logger,
+//     shutdownTimeout)` returns an http.Server tied to the signal
+//     context. Graceful shutdown via http.Server.Shutdown bounded by
+//     ACH_SHUTDOWN_TIMEOUT.
 //
 // Code structure per D-24:
 //

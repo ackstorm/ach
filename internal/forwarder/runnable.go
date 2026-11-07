@@ -24,11 +24,13 @@ type Runnable struct {
 	TrafficHandler http.Handler
 	HealthHandler  http.Handler
 	Logger         *slog.Logger
+	// ShutdownTimeout bounds how long open requests may finish after a
+	// stop signal (ACH_SHUTDOWN_TIMEOUT).
+	ShutdownTimeout time.Duration
 }
 
 // Start runs both servers and blocks until either ctx is cancelled or one
-// listener fails. On cancellation both servers receive a 10s graceful
-// shutdown. On failure the OTHER server is also shut down before return.
+// listener fails. On cancellation both servers drain for ShutdownTimeout. On failure the OTHER server is also shut down before return.
 func (r *Runnable) Start(ctx context.Context) error {
 	traffic := &http.Server{
 		Addr:              r.TrafficAddr,
@@ -72,7 +74,7 @@ func (r *Runnable) Start(ctx context.Context) error {
 	}()
 
 	shutdown := func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), r.ShutdownTimeout)
 		defer cancel()
 		_ = traffic.Shutdown(shutdownCtx)
 		_ = health.Shutdown(shutdownCtx)

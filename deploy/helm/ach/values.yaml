@@ -591,6 +591,15 @@ metrics:
     # with `label` above loses to it.
     labels: {}
 
+# shutdown: how gateway, forwarder and platform-api stop on a rollout or
+# drain. The pod first waits drainSeconds (preStop) so it leaves its Service,
+# then stops accepting connections and lets open requests (model streams, MCP
+# sessions) run for up to timeoutSeconds; whatever is still open after that is
+# cut. The pod grace period is drainSeconds + timeoutSeconds + 5.
+shutdown:
+  drainSeconds: 10
+  timeoutSeconds: 120
+
 # extraEnv: list of additional env vars to inject into every component's
 # main container. Each item is {name, value}.
 extraEnv: []

@@ -119,6 +119,7 @@ type forwarderConfig struct {
 	RedisDB          int
 	TrafficBindAddr  string
 	HealthBindAddr   string
+	ShutdownTimeout  time.Duration // ACH_SHUTDOWN_TIMEOUT
 	Namespace        string
 	JWTSecretName    string
 }
@@ -188,6 +189,10 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 	cfg.TrafficBindAddr = config.EnvOr("ACH_FORWARDER_BIND_ADDRESS", ":8080")
 	cfg.HealthBindAddr = config.EnvOr("FORWARDER_HEALTH_BIND_ADDRESS", ":8081")
 	cfg.JWTSecretName = config.EnvOr("ACH_JWT_SECRET_NAME", jwt.SecretName)
+	cfg.ShutdownTimeout, err = config.MustEnvDurationAtLeast("ACH_SHUTDOWN_TIMEOUT", 10*time.Second, time.Second)
+	if err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -255,11 +260,15 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 
 	out.redis = newRedisClient(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.RedisTLS)
 
+	// The manager stops waiting on runnables after this; it must cover the
+	// traffic server's drain.
+	managerGrace := cfg.ShutdownTimeout + 5*time.Second
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 forwarderScheme,
-		LeaderElection:         false,
-		HealthProbeBindAddress: "0",
-		Metrics:                metricsserver.Options{BindAddress: "0"},
+		Scheme:                  forwarderScheme,
+		LeaderElection:          false,
+		GracefulShutdownTimeout: &managerGrace,
+		HealthProbeBindAddress:  "0",
+		Metrics:                 metricsserver.Options{BindAddress: "0"},
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
 				cfg.Namespace: {},
@@ -448,11 +457,12 @@ func runForwarderServer(ctx context.Context, deps *forwarderProcessDeps, cfg *fo
 	composedTraffic.Handle("/", trafficHandler)
 
 	runnable := &forwarder.Runnable{
-		TrafficAddr:    cfg.TrafficBindAddr,
-		HealthAddr:     cfg.HealthBindAddr,
-		TrafficHandler: composedTraffic,
-		HealthHandler:  healthHandler,
-		Logger:         deps.logger,
+		TrafficAddr:     cfg.TrafficBindAddr,
+		HealthAddr:      cfg.HealthBindAddr,
+		TrafficHandler:  composedTraffic,
+		HealthHandler:   healthHandler,
+		Logger:          deps.logger,
+		ShutdownTimeout: cfg.ShutdownTimeout,
 	}
 	if err := deps.manager.Add(runnable); err != nil {
 		return fmt.Errorf("manager.Add(forwarder.Runnable): %w", err)

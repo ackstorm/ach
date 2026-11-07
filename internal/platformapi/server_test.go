@@ -303,7 +303,7 @@ func TestRunnable_R2_ListenError(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	rn := NewRunnable(addr, handler, logger)
+	rn := NewRunnable(addr, handler, logger, 10*time.Second)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -316,7 +316,7 @@ func TestRunnable_R2_ListenError(t *testing.T) {
 // TestRunnable_NeedLeaderElection asserts the runnable opts out of
 // leader election per D-20.
 func TestRunnable_NeedLeaderElection(t *testing.T) {
-	rn := NewRunnable(":0", http.NotFoundHandler(), nil)
+	rn := NewRunnable(":0", http.NotFoundHandler(), nil, 10*time.Second)
 	if rn.NeedLeaderElection() {
 		t.Errorf("ServerRunnable.NeedLeaderElection() = true, want false")
 	}

@@ -103,6 +103,7 @@ type platformAPIConfig struct {
 	RedisDB           int
 	AllowlistPath     string
 	BindAddr          string
+	ShutdownTimeout   time.Duration // ACH_SHUTDOWN_TIMEOUT
 	Namespace         string
 	InsecureCookie    bool
 	// UserBudget is the default per-user spend ceiling (ACH_USER_MAX_BUDGET
@@ -197,6 +198,10 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	}
 	cfg.AllowlistPath = config.EnvOr("ACH_ADMIN_ALLOWLIST_PATH", "/etc/ach/admins/admins.txt")
 	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8080")
+	cfg.ShutdownTimeout, err = config.MustEnvDurationAtLeast("ACH_SHUTDOWN_TIMEOUT", 10*time.Second, time.Second)
+	if err != nil {
+		return nil, err
+	}
 	// The SSO state cookie's hardening is DERIVED from the externally-
 	// visible scheme (ACH_BASE_URL) — no separate flag. An https base
 	// (production / TLS-terminating ingress) gets the hardened
@@ -565,7 +570,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 // shutdown semantics) and waits on the supplied context. Issue #34 dropped
 // the controller-runtime manager — the runnable now starts directly on its
 // own goroutine and the signal context drives shutdown.
-func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bindAddr string) error {
+func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bindAddr string, shutdownTimeout time.Duration) error {
 	httpHandler := platformapi.New(deps.server)
 
 	// Plan 05-06 Task 4 / D-10: /metrics is served on the SAME port as
@@ -579,7 +584,7 @@ func runPlatformAPIServer(ctx context.Context, deps *platformAPIProcessDeps, bin
 	composed.Handle("/metrics", deps.metricsHandler)
 	composed.Handle("/", httpHandler)
 
-	runnable := platformapi.NewRunnable(bindAddr, composed, deps.server.Logger)
+	runnable := platformapi.NewRunnable(bindAddr, composed, deps.server.Logger, shutdownTimeout)
 	return runnable.Start(ctx)
 }
 
@@ -607,7 +612,7 @@ func runPlatformAPI(_ *cobra.Command, _ []string) error {
 		"baseURL", cfg.BaseURL,
 	)
 
-	if err := runPlatformAPIServer(ctx, deps, cfg.BindAddr); err != nil {
+	if err := runPlatformAPIServer(ctx, deps, cfg.BindAddr, cfg.ShutdownTimeout); err != nil {
 		if !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("runServer: %w", err)
 		}
