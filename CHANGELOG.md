@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-11-07
+
 ### Fixed
 - A rollout no longer cuts open requests after 10 s: gateway, forwarder and
   platform-api leave their Service before stopping (`shutdown.drainSeconds`,
