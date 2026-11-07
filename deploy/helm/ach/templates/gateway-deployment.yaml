@@ -37,7 +37,7 @@ spec:
       {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.gateway.initContainers)) }}
       {{- . | nindent 6 }}
       {{- end }}
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: {{ add .Values.shutdown.drainSeconds .Values.shutdown.timeoutSeconds 5 }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -55,6 +55,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: ACH_SHUTDOWN_TIMEOUT
+              value: "{{ .Values.shutdown.timeoutSeconds }}s"
             - name: ACH_GATEWAY_BIND_ADDRESS
               value: ":8080"
             {{- with .Values.gateway.extraEnv }}
@@ -75,6 +77,10 @@ spec:
               port: http
             initialDelaySeconds: 2
             periodSeconds: 5
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ .Values.shutdown.drainSeconds }}
           resources: {{ toYaml .Values.gateway.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false

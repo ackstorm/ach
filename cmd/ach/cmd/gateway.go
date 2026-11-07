@@ -56,6 +56,10 @@ func runGateway(_ *cobra.Command, _ []string) error {
 
 	namespace := config.EnvOr("POD_NAMESPACE", "ach-system")
 	bindAddr := config.EnvOr("ACH_GATEWAY_BIND_ADDRESS", ":8080")
+	shutdownTimeout, err := config.MustEnvDurationAtLeast("ACH_SHUTDOWN_TIMEOUT", 10*time.Second, time.Second)
+	if err != nil {
+		return err
+	}
 
 	rootCtx := ctrl.SetupSignalHandler()
 
@@ -110,7 +114,7 @@ func runGateway(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown failed: %w", err)

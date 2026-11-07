@@ -21,11 +21,12 @@ import (
 //   - IdleTimeout       120s
 //   - MaxHeaderBytes    1 MiB
 //
-// Graceful shutdown via http.Server.Shutdown(ctx, 10s) tied to the
-// manager signal context.
+// Graceful shutdown via http.Server.Shutdown bounded by shutdownTimeout,
+// tied to the signal context.
 type ServerRunnable struct {
-	srv    *http.Server
-	logger *slog.Logger
+	srv             *http.Server
+	logger          *slog.Logger
+	shutdownTimeout time.Duration
 
 	// listener is set ONLY by tests (via newRunnableWithListener) so
 	// the suite can drive Start without binding to a real port. When
@@ -37,7 +38,7 @@ type ServerRunnable struct {
 // NewRunnable constructs a *ServerRunnable wrapping the supplied handler
 // with the D-03 timeout config. The logger is used ONLY for the
 // "draining" log line when the signal context is cancelled.
-func NewRunnable(addr string, handler http.Handler, logger *slog.Logger) *ServerRunnable {
+func NewRunnable(addr string, handler http.Handler, logger *slog.Logger, shutdownTimeout time.Duration) *ServerRunnable {
 	return &ServerRunnable{
 		srv: &http.Server{
 			Addr:              addr,
@@ -48,7 +49,8 @@ func NewRunnable(addr string, handler http.Handler, logger *slog.Logger) *Server
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20, // 1 MiB
 		},
-		logger: logger,
+		logger:          logger,
+		shutdownTimeout: shutdownTimeout,
 	}
 }
 
@@ -57,14 +59,13 @@ func NewRunnable(addr string, handler http.Handler, logger *slog.Logger) *Server
 // configured Addr. Used by server_test.go to exercise lifecycle
 // without hitting a real port.
 func newRunnableWithListener(handler http.Handler, l net.Listener, logger *slog.Logger) *ServerRunnable {
-	rn := NewRunnable("", handler, logger)
+	rn := NewRunnable("", handler, logger, 10*time.Second)
 	rn.listener = l
 	return rn
 }
 
 // Start blocks until ctx is cancelled OR ListenAndServe returns. On
-// cancellation the runnable drains via Shutdown with a 10s timeout
-// per D-03; ListenAndServe's http.ErrServerClosed is folded to nil
+// cancellation the runnable drains via Shutdown for shutdownTimeout; ListenAndServe's http.ErrServerClosed is folded to nil
 // (clean shutdown) so the manager sees Start return without error.
 func (s *ServerRunnable) Start(ctx context.Context) error {
 	errCh := make(chan error, 1)
@@ -86,7 +87,7 @@ func (s *ServerRunnable) Start(ctx context.Context) error {
 		if s.logger != nil {
 			s.logger.Info("platform-api: signal received, draining")
 		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
 		return s.srv.Shutdown(shutdownCtx)
 	}
