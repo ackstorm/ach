@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-07
+
 ### Fixed
 - `ach migrate` never prints the database URL or password: a DSN that does not
   parse fails with a fixed message and driver errors are scrubbed. Percent-encode
