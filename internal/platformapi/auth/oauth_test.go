@@ -66,6 +66,7 @@ type asFixture struct {
 	// refuse (the IdP disabled the user) or to be unreachable.
 	dexRefresh func(rt string) (string, error)
 	dexSeen    []string
+	refusals   []string
 	// dexGroups is the `groups` claim the refreshed id_token carries.
 	dexGroups []string
 	// now is the fixture clock once mountConsole pinned deps.Now.
@@ -95,6 +96,10 @@ func newAS(t *testing.T) *asFixture {
 		f.dexSeen = append(f.dexSeen, rt)
 		rotated, err := f.dexRefresh(rt)
 		return rotated, f.dexGroups, err
+	}
+	f.deps.IdPRefusal = func(_ context.Context, email string, refused bool) error {
+		f.refusals = append(f.refusals, fmt.Sprintf("%s=%v", email, refused))
+		return nil
 	}
 	f.mount()
 	return f

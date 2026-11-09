@@ -199,6 +199,11 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []st
 			return nil, fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
 		}
 		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", sub, "err", err)
+		if dexUpstreamRejected(err) {
+			if rerr := d.idpRefusal(ctx, sub, true); rerr != nil {
+				d.Auth.Logger.Error("oauth: recording the IdP refusal failed; the user's ek_ keys still resolve", "sub", sub, "err", rerr)
+			}
+		}
 		_ = d.Store.Del(ctx, dexRefreshKind, sub)
 		if cur, lerr := d.lookupOAuthPK(ctx, sub); lerr == nil && cur != nil {
 			if rerr := d.revokeOAuthPK(ctx, cur.KeyID); rerr != nil {
