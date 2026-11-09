@@ -95,9 +95,9 @@ type ContextItem struct {
 	DownloadURL string `json:"downloadUrl"`
 }
 
-// profileAuth is the AUTH cell for a profile: session (OAuth login), key
+// ProfileAuth is the AUTH cell for a profile: session (OAuth login), key
 // (a machine profile's Key) or none.
-func profileAuth(dep *config.Profile) string {
+func ProfileAuth(dep *config.Profile) string {
 	switch {
 	case dep.OAuth != nil:
 		return "session"
@@ -133,7 +133,7 @@ func FormatProfileList(f *config.File) string {
 		if name == f.Default {
 			current = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, dep.URL, profileAuth(dep), len(dep.Keys))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, dep.URL, ProfileAuth(dep), len(dep.Keys))
 	}
 	_ = tw.Flush()
 	return sb.String()
@@ -152,7 +152,7 @@ func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "Profile\t%s\n", name)
 	_, _ = fmt.Fprintf(tw, "URL\t%s\n", dep.URL)
-	auth := profileAuth(dep)
+	auth := ProfileAuth(dep)
 	if auth == "key" {
 		auth += " " + mask(dep.Key)
 	}

@@ -287,7 +287,8 @@ name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
 (`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;
 `admin keys revoke --owner <email>`. Every network command takes `--profile`,
 `--key <name|ek-…>`, `--verbose`; only the list/read commands (`env list`,
-`env search`, `env status`, `keys list`, `admin list` (also `yaml`), `admin keys list`) also
+`env search`, `env describe`, `env status`, `keys list`, `keys create`, `admin list` (also `yaml`),
+`admin keys list`, `profile list`, `profile show`, `whoami`, `token`) also
 take `-o table|json`. Env vars: `ACH_PROFILE`,
 `ACH_KEY`, `ACH_URL` (login prefill), `ACH_URL`+`ACH_KEY` = synthetic mode (no
 config file), `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config profiles

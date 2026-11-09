@@ -46,6 +46,15 @@ type envKeysCreateResponse struct {
 	Plaintext string `json:"plaintext"`
 }
 
+// createdKeyView is the `keys create -o json` document.
+type createdKeyView struct {
+	Name        string  `json:"name"`
+	ID          string  `json:"id"`
+	Environment string  `json:"environment"`
+	Key         string  `json:"key"`
+	ExpiresAt   *string `json:"expires_at"`
+}
+
 func newKeysCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:   "keys",
@@ -83,6 +92,7 @@ func newKeysCreateCmd() *cobra.Command {
 		budgetDuration string
 		maxBudget      float64
 		noSave         bool
+		out            outputFlag
 	)
 	cmd := &cobra.Command{
 		Use:   "create <environment>",
@@ -94,6 +104,8 @@ under that name. The key is printed to stdout exactly once.
 
 --no-save prints it without saving — for CI pipelines and secret managers
 that read stdout.
+
+-o json prints {name, id, environment, key, expires_at} instead of the bare key.
 
 --expires takes a number of days (90d), a duration (720h) or a date
 (2026-12-31T00:00:00Z). --max-budget caps what this key can spend (USD),
@@ -143,10 +155,11 @@ optionally per --budget-duration (30d); your own total budget still applies.`,
 			if cmd.Flags().Changed("max-budget") {
 				body.Budget = &keyBudget{MaxBudget: maxBudget, BudgetDuration: budgetDuration}
 			}
-			return runKeysCreate(cmd, c, hc, body, noSave)
+			return runKeysCreate(cmd, c, hc, body, noSave, out.v == outputJSON)
 		},
 	}
 	registerCredFlags(cmd, &f)
+	registerOutputFlag(cmd, &out, "table", outputJSON)
 	cmd.Flags().StringVar(&name, "name", "", "What the key is for; also the name it is saved under (required)")
 	cmd.Flags().StringVar(&expires, "expires", "", "Expiry: 90d, a duration (720h) or an RFC3339 date")
 	cmd.Flags().Float64Var(&maxBudget, "max-budget", 0, "Spend cap for this key, in USD")
@@ -222,7 +235,7 @@ func fetchEnvNamesBestEffort(ctx context.Context, hc *httpclient.Client) []strin
 	return names
 }
 
-func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysCreateBody, noSave bool) error {
+func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysCreateBody, noSave, asJSON bool) error {
 	stdout, stderr := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	var resp envKeysCreateResponse
 	if err := hc.Do(cmd.Context(), http.MethodPost, "/platform/keys", body, &resp); err != nil {
@@ -235,7 +248,18 @@ func runKeysCreate(cmd *cobra.Command, c cred, hc *httpclient.Client, body keysC
 	}
 	// The one and only time the plaintext is printed; stdout carries
 	// nothing else so it is pipe-safe.
-	_, _ = fmt.Fprintln(stdout, resp.Plaintext)
+	if asJSON {
+		var expires *string
+		if body.ExpiresAt != "" {
+			expires = &body.ExpiresAt
+		}
+		if err := writeJSON(stdout, createdKeyView{Name: body.Name, ID: resp.KeyID,
+			Environment: body.Environment, Key: resp.Plaintext, ExpiresAt: expires}); err != nil {
+			return err
+		}
+	} else {
+		_, _ = fmt.Fprintln(stdout, resp.Plaintext)
+	}
 	if noSave || c.Profile == nil {
 		_, _ = fmt.Fprintf(stderr, "Key ID: %s (revoke with: ach-cli keys revoke %s)\n", resp.KeyID, resp.KeyID)
 		return nil
