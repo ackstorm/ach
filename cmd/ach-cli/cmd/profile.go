@@ -74,8 +74,24 @@ func saveProfiles(path string, f *config.File) error {
 	return nil
 }
 
+// profileView is the `profile list|show -o json` document. It carries no
+// credential: only the name, the Hub URL, the auth kind and a count.
+type profileView struct {
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Auth      string `json:"auth"`
+	Current   bool   `json:"current"`
+	SavedKeys int    `json:"saved_keys"`
+}
+
+func newProfileView(f *config.File, name string, dep *config.Profile) profileView {
+	return profileView{Name: name, URL: dep.URL, Auth: render.ProfileAuth(dep),
+		Current: name == f.Default, SavedKeys: len(dep.Keys)}
+}
+
 func newProfileListCmd() *cobra.Command {
-	return &cobra.Command{
+	var out outputFlag
+	c := &cobra.Command{
 		Use:   "list",
 		Short: "List profiles (* marks the default)",
 		Args:  cobra.NoArgs,
@@ -84,14 +100,28 @@ func newProfileListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if out.v == outputJSON {
+				views := []profileView{}
+				if f != nil {
+					for _, n := range f.ProfileNames() {
+						views = append(views, newProfileView(f, n, f.Profiles[n]))
+					}
+				}
+				return writeJSON(cmd.OutOrStdout(), views)
+			}
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatProfileList(f))
 			return nil
 		},
 	}
+	registerOutputFlag(c, &out, "table", outputJSON)
+	return c
 }
 
 func newProfileShowCmd() *cobra.Command {
-	var reveal bool
+	var (
+		reveal bool
+		out    outputFlag
+	)
 	c := &cobra.Command{
 		Use:   "show [name]",
 		Short: "Show one profile and its saved keys (masked unless --reveal)",
@@ -112,11 +142,15 @@ func newProfileShowCmd() *cobra.Command {
 				}
 				return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 			}
+			if out.v == outputJSON {
+				return writeJSON(cmd.OutOrStdout(), newProfileView(f, resolved, dep))
+			}
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatProfileShow(resolved, dep, reveal))
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&reveal, "reveal", false, "Print the keys in full")
+	c.Flags().BoolVar(&reveal, "reveal", false, "Print the keys in full (table only; -o json never prints a key)")
+	registerOutputFlag(c, &out, "table", outputJSON)
 	return c
 }
 

@@ -3,9 +3,12 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -14,6 +17,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/lock"
 	"github.com/ackstorm/ach/internal/cli/synthetic"
+	"github.com/ackstorm/ach/internal/keys"
 )
 
 // tokenLockTimeout bounds the wait for a concurrent helper. Claude Code and
@@ -29,11 +33,16 @@ const tokenLockTimeout = 30 * time.Second
 // one and strand the other); a key profile prints its Key. Every
 // diagnostic goes to stderr.
 func newTokenCmd() *cobra.Command {
-	var flagProfile string
+	var (
+		flagProfile string
+		out         outputFlag
+	)
 	cmd := &cobra.Command{
 		Use:   "token",
 		Short: "Print the active profile's token, or its key (credential helper)",
-		Args:  cobra.NoArgs,
+		Long: `Print the credential and nothing else. -o json prints {token, type, expires_at}
+(type jwt or ek; expires_at is null for a key).`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateSession}); err != nil {
 				return err
@@ -74,12 +83,45 @@ func newTokenCmd() *cobra.Command {
 					Code: exit.General, Msg: fmt.Sprintf("profile %q has no login; run `ach-cli login`", name),
 				}
 			}
+			if out.v == outputJSON {
+				return writeJSON(cmd.OutOrStdout(), newTokenView(tok))
+			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), tok)
 			return err
 		},
 	}
 	cmd.Flags().StringVar(&flagProfile, "profile", "", "Use this profile instead of the active one")
+	registerOutputFlag(cmd, &out, "table", outputJSON)
 	return cmd
+}
+
+// tokenView is the `token -o json` document.
+type tokenView struct {
+	Token     string  `json:"token"`
+	Type      string  `json:"type"`
+	ExpiresAt *string `json:"expires_at"`
+}
+
+// newTokenView describes tok. A JWT's expiry is its exp claim, read without
+// verifying the signature: the token is the caller's own and the value only
+// says when to ask again. A key carries no expiry the profile records.
+func newTokenView(tok string) tokenView {
+	v := tokenView{Token: tok, Type: "ek"}
+	if !strings.HasPrefix(tok, "ek-") {
+		v.Type = "jwt"
+	}
+	if keys.LooksLikeJWS(tok) {
+		if b, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1]); err == nil {
+			var c struct {
+				Exp int64 `json:"exp"`
+			}
+			if json.Unmarshal(b, &c) == nil && c.Exp > 0 {
+				s := time.Unix(c.Exp, 0).UTC().Format(time.RFC3339)
+				v.ExpiresAt = &s
+			}
+		}
+	}
+	return v
 }
 
 func init() { rootCmd.AddCommand(newTokenCmd()) }

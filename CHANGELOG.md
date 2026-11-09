@@ -18,6 +18,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - `POST /platform/keys/exchange` answers 403 `idp_refused` for a refused
   identity and mints nothing. The admin key inventory shows the reason
   `idp_refused` (`ach-cli admin keys list -o json`), as does the owner's own list.
+- `ach-cli token`, `whoami`, `keys create`, `env describe`, `profile list` and
+  `profile show` take `-o json`.
 
 ### Fixed
 - platform-api presents a user's Dex refresh token once per refresh. A refused

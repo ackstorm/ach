@@ -170,11 +170,16 @@ func newEnvDescribeCmd() *cobra.Command {
 	var (
 		flagMetadataOnly bool
 		f                credFlags
+		out              outputFlag
 	)
 	c := &cobra.Command{
 		Use:   "describe <name>",
 		Short: "Show one environment's runtime + context manifest",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Show one environment's runtime + context manifest.
+
+-o json prints the environment object (name, status, description,
+conditions) and skips the manifest request.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// C4: friendly missing-arg hint before any credential resolution.
 			if len(args) == 0 {
@@ -192,6 +197,10 @@ func newEnvDescribeCmd() *cobra.Command {
 			view, err := findEnvironmentByName(cmd.Context(), hc, name)
 			if err != nil {
 				return err
+			}
+
+			if out.v == outputJSON {
+				return writeJSON(cmd.OutOrStdout(), view)
 			}
 
 			if flagMetadataOnly {
@@ -217,6 +226,7 @@ func newEnvDescribeCmd() *cobra.Command {
 	c.Flags().BoolVar(&flagMetadataOnly, "metadata-only", false,
 		"Skip the /platform/hydrate call (faster, env metadata only)")
 	registerCredFlags(c, &f)
+	registerOutputFlag(c, &out, "table", outputJSON)
 	return c
 }
 

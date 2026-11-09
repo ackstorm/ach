@@ -28,6 +28,9 @@ ach-cli keys revoke <name|ekid_…>                                   # for good
   cannot run `keys list` until then: an administrator sees reason `idp_refused` in
   `ach-cli admin keys list --owner <email> -o json`.
 
+`keys create -o json` prints `{"name","id","environment","key","expires_at"}` (`expires_at`
+is `null` when the key never expires) instead of the bare key.
+
 ## Using a key
 
 Store it in the consumer's secret store. Send it as the `x-ach-key` header (or
