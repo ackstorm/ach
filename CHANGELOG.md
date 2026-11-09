@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- platform-api presents a user's Dex refresh token once per refresh. A refused
+  refresh was sent to Dex twice, which Dex can read as token reuse and which then
+  ended every session of that user.
+
 ## [1.1.9] - 2026-11-07
 
 ### Fixed
