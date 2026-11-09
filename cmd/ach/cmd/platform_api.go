@@ -562,7 +562,6 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		ObservabilityExtra: extra,
 		Metrics:            platformAPICollectors,
 	}
-	go platformapi.RunIdPSweep(ctx, out.server)
 	return out, nil
 }
 
@@ -597,7 +596,8 @@ func runPlatformAPI(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("validateConfig: %w", err)
 	}
 
-	ctx := ctrl.SetupSignalHandler()
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
 	deps, err := buildPlatformAPIDeps(ctx, cfg, logger)
 	if err != nil {
 		if deps != nil {
@@ -606,6 +606,19 @@ func runPlatformAPI(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("buildDeps: %w", err)
 	}
 	defer deps.close()
+
+	// The sweep's Dex replay must store the rotated token before Valkey and
+	// Postgres close: a rotated token never stored is "claimed twice" at the
+	// next replay, which ends every session of the user.
+	swept := make(chan struct{})
+	go func() {
+		defer close(swept)
+		platformapi.RunIdPSweep(ctx, deps.server)
+	}()
+	defer func() {
+		cancel()
+		<-swept
+	}()
 
 	logger.Info("platform-api starting",
 		"bind", cfg.BindAddr,
