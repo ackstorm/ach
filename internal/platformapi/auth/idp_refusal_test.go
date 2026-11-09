@@ -47,6 +47,26 @@ func TestRevalidate_RecordsOnlyTheUpstreamRejection(t *testing.T) {
 	}
 }
 
+// A refusal that could not be recorded keeps the Dex token, so the next
+// replay meets the same upstream rejection and records it then.
+func TestRevalidate_KeepsTheDexTokenWhenTheRefusalIsNotRecorded(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	ctx := context.Background()
+	_ = f.store.Put(ctx, dexRefreshKind, "u@x.com", "dex-rt", time.Hour)
+	f.dexRefresh = func(string) (string, error) {
+		return "", dexAnswer(400, "invalid_grant", dexUpstreamRejection)
+	}
+	f.deps.IdPRefusal = func(context.Context, string, bool) error { return errors.New("db down") }
+	if _, err := f.deps.revalidateAtIdP(ctx, "u@x.com"); !errors.Is(err, errIdPRefused) {
+		t.Fatalf("err = %v, want errIdPRefused", err)
+	}
+	var rt string
+	if ok, err := f.store.Get(ctx, dexRefreshKind, "u@x.com", &rt); !ok || err != nil || rt != "dex-rt" {
+		t.Fatalf("Dex token = %q (ok=%v err=%v), want it kept", rt, ok, err)
+	}
+}
+
 // A login the IdP accepted lifts an earlier refusal.
 func TestASCallback_LiftsTheIdPRefusal(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
