@@ -389,7 +389,7 @@ resolver cache move.
 | Active | `active` | Enabled, unexpired, not revoked, and owner has Environment access. | None required. |
 | Suspended | `suspended` | Manually disabled by the owner. | Explicit resume, subject to current access and validity. |
 | Expired | `expired` | Optional expiration time has been reached. | Create a new credential; expiry is not editable in v1. |
-| Invalid | `invalid` | Owner no longer has authorization for the Environment, or the identity provider refused the owner (`idp_refusals`). | Automatically usable when access returns, unless another condition prevents it. |
+| Invalid | `invalid` | Owner no longer has authorization for the Environment, or the identity provider refused the owner (`idp_refusals`). | Automatically usable when access returns, unless another condition prevents it; an IdP refusal clears at the owner's next login. |
 | Revoked | `revoked` | Permanently withdrawn. | Cannot be recovered; create a new credential. |
 
 Effective-state priority: **Revoked → Expired → Suspended → Invalid → Active.**

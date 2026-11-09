@@ -14,7 +14,8 @@ import (
 
 // KeyLive reports whether the key row behind an authenticated request still
 // authorises traffic: (false, nil) is a definite suspended, revoked, expired
-// or missing row, and an error says nothing about the key.
+// or missing row, or an ek_ whose owner the upstream IdP refused, and an
+// error says nothing about the key.
 //
 // It reads the row by id, so every identity kind answers the same way: a
 // pk_, an OAuth or trusted-IdP token (their oauth pk_ row), an ek_ and an
