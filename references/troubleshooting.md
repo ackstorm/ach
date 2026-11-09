@@ -1437,11 +1437,15 @@ user, where the email chain costs three), trusting only an answer for exactly
 that id (the placeholder carries the admin's teams); only a miss falls through
 to the email chain. The SSO login backfills `user_email` on the record.
 
-### An ek_ answers 401 and `keys list` shows `invalid` / `idp_refused`
+### An ek_ answers 401 and `admin keys list -o json` shows reason `idp_refused`
 
 The upstream IdP refused the key's owner (Dex: "The upstream identity provider
 rejected the refresh token.": the user is suspended, disabled or deleted at the
 identity provider behind Dex).
 Every ek_ the owner holds stops resolving until they log in again
-(`ach-cli login`), which lifts the refusal. Rows: `SELECT * FROM idp_refusals`.
+(`ach-cli login`), which lifts the refusal. The refusal also revokes the
+owner's oauth `pk_`, so the owner cannot run `keys list` (where such a key
+reads `invalid`, reason `idp_refused`) until that login; an admin sees it in
+`ach-cli admin keys list --owner <email> -o json` (status stays the SQL one,
+`reasons: ["idp_refused"]`). Rows: `SELECT * FROM idp_refusals`.
 Check Dex logs for `failed to refresh identity` at info level for that user.

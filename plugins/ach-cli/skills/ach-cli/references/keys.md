@@ -24,7 +24,9 @@ ach-cli keys revoke <name|ekid_…>                                   # for good
 - A key reads `invalid` in `keys list` when its owner lost access to its Environment
   (reason `no_access`) or the organisation's identity provider no longer accepts the
   owner (reason `idp_refused`). It stops working until access comes back; for
-  `idp_refused`, until the owner signs in again with `ach-cli login`.
+  `idp_refused`, until the owner signs in again with `ach-cli login`. A refused owner
+  cannot run `keys list` until then: an administrator sees reason `idp_refused` in
+  `ach-cli admin keys list --owner <email> -o json`.
 
 ## Using a key
 
