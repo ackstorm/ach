@@ -13,7 +13,7 @@ import (
 
 // ConditionView is a k8s-free mirror of one metav1.Condition as serialized by
 // the platform-api environments handler (json keys match the wire shape). The
-// CLI decodes conditions into this so `env describe` can explain WHY an
+// CLI decodes conditions into this so `environment describe` can explain WHY an
 // environment is not ready, without importing k8s.io/apimachinery.
 type ConditionView struct {
 	Type    string `json:"type"`
@@ -75,7 +75,7 @@ type BlockView struct {
 // Endpoint surfaces the per-runtime `endpoint` JSON key emitted by the
 // server's hydrate handler — the W3 contract anchors here: every
 // rendered runtime row exposes this string verbatim so the user can
-// inspect runtime wiring via `ach-cli env describe`. The Name field is a
+// inspect runtime wiring via `ach-cli environment describe`. The Name field is a
 // local convenience (the server emits {id, endpoint} only — Name is
 // populated by the caller from the same source as ID when present).
 type RuntimeItem struct {
@@ -88,7 +88,7 @@ type RuntimeItem struct {
 // DownloadURL surfaces the per-context-entry `downloadUrl` JSON key
 // emitted by the server's hydrate handler — the W3 contract anchors
 // here: every rendered context row exposes this string verbatim so
-// the user can inspect content routing via `ach-cli env describe`.
+// the user can inspect content routing via `ach-cli environment describe`.
 type ContextItem struct {
 	Name        string `json:"name"`
 	ID          string `json:"id"`
@@ -158,7 +158,7 @@ func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
 	return sb.String()
 }
 
-// FormatEnvList renders the per-env table for `ach-cli env list`. Empty
+// FormatEnvList renders the per-env table for `ach-cli environment list`. Empty
 // input → stable "No environments visible" stub.
 func FormatEnvList(envs []EnvView) string {
 	if len(envs) == 0 {
@@ -167,7 +167,7 @@ func FormatEnvList(envs []EnvView) string {
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
 	// No NAMESPACE column: every Environment lives in the release namespace,
-	// so it only took the width the description needs (`env describe` shows it).
+	// so it only took the width the description needs (`environment describe` shows it).
 	_, _ = fmt.Fprintln(tw, "NAME\tSTATUS\tDESCRIPTION")
 	for _, e := range envs {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", e.Name, e.Status, truncateField(e.Description, 80))
@@ -177,7 +177,7 @@ func FormatEnvList(envs []EnvView) string {
 }
 
 // orEM returns s unchanged when non-empty, or emDash when empty — matches the
-// keys list empty-cell convention so env describe looks consistent.
+// keys list empty-cell convention so environment describe looks consistent.
 func orEM(s string) string {
 	if s == "" {
 		return emDash

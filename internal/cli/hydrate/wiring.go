@@ -1031,7 +1031,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 		if err != nil {
 			return err
 		}
-		// Source carries the skill name for per-resource grouping in 'env status'
+		// Source carries the skill name for per-resource grouping in 'environment status'
 		// (U5). The adapter destination path always contains a /skills/<name>/
 		// segment, so we extract it regardless of adapter prefix depth.
 		entry.Source = skillNameFromPath(entry.Target, adapter.GlobalRoot(d.platformID, toolRoot))

@@ -11,7 +11,7 @@ this page is for a person at a keyboard.
 ```bash
 ach-cli login <url>           # browser → SSO → "Signed in to ACH"
 ach-cli token                 # prints ONE line: a fresh access token
-ach-cli env hydrate <env>     # writes the tools' configs (no credential inside — see below)
+ach-cli environment hydrate <env>     # writes the tools' configs (no credential inside — see below)
 ```
 
 On a terminal `login` asks how to finish: **1)** the browser on this
@@ -69,7 +69,7 @@ above.
 
 No tool runs OAuth against a model base URL. Each takes a **command that
 prints a credential to stdout**; `ach-cli token` is that command. `ach-cli
-env hydrate --models` writes the wiring for you when you are signed in as a
+environment hydrate --models` writes the wiring for you when you are signed in as a
 person (OAuth or a `pk_` — never for an `ek_`; without `--models` hydrate
 leaves the tool's model login alone, and removes wiring an earlier `--models`
 run wrote). `ach-cli` must be on `PATH` — the tools spawn

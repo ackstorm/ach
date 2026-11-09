@@ -14,9 +14,9 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
-// newEnvCloneCmd builds `ach-cli env clone <env> [dir]`: git-clone semantics
+// newEnvCloneCmd builds `ach-cli environment clone <env> [dir]`: git-clone semantics
 // over the hydrate engine. It creates <dir> (default ./<env>), refuses a
-// non-empty destination and hydrates into it. A later bare `ach-cli env hydrate`
+// non-empty destination and hydrates into it. A later bare `ach-cli environment hydrate`
 // inside the folder updates it (the "pull") from what .ach/ records.
 func newEnvCloneCmd() *cobra.Command {
 	var (
@@ -35,13 +35,13 @@ func newEnvCloneCmd() *cobra.Command {
 a destination that exists and is not empty. On failure the folder is removed
 if clone created it.
 
-To update later: cd <dir> && ach-cli env hydrate
+To update later: cd <dir> && ach-cli environment hydrate
 
 An empty folder has nothing to autodetect, so --target (or ACH_TARGET) is
 required.
 
 Example:
-  ach-cli env clone aws-rw --target claude-code`,
+  ach-cli environment clone aws-rw --target claude-code`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env, dir := args[0], args[0]
 			if len(args) == 2 {

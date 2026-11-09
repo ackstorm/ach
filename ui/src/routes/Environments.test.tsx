@@ -72,7 +72,7 @@ describe('Environments page', () => {
     render(<Environments />);
 
     expect(screen.getByText('claude-sonnet-5-5')).toBeTruthy();
-    expect(screen.getByText('ach-cli env hydrate platform-dev --dir ./platform-dev --target opencode').closest('.codeblock')).toHaveClass('inline');
+    expect(screen.getByText('ach-cli environment hydrate platform-dev --dir ./platform-dev --target opencode').closest('.codeblock')).toHaveClass('inline');
     fireEvent.click(screen.getByRole('button', { name: /create key in this env/i }));
     const state = useCreateKeyModalStore.getState();
     expect(state.open).toBe(true);

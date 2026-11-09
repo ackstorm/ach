@@ -141,7 +141,7 @@ func TestUninstall_RemovedFlags(t *testing.T) {
 	c := newUninstallCmd()
 	for _, name := range []string{"include-runtime", "target", "output"} {
 		if c.Flags().Lookup(name) != nil {
-			t.Errorf("--%s must be removed from env uninstall", name)
+			t.Errorf("--%s must be removed from environment uninstall", name)
 		}
 	}
 	if f := c.Flags().ShorthandLookup("g"); f == nil || f.Name != "global" {

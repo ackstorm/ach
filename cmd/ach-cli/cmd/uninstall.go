@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli env uninstall` (LIFE-01, D-25/D-27/D-28/D-29) is a THIN cobra leaf
+// `ach-cli environment uninstall` (LIFE-01, D-25/D-27/D-28/D-29) is a THIN cobra leaf
 // that tears down the active workspace+environment projection by reusing
 // the existing hydrate.Sync inverse-merge engine — it creates NO second
 // deletion path.
@@ -61,7 +61,7 @@ type uninstallInputs struct {
 	only        *hydrate.Item // --only
 }
 
-// newUninstallCmd returns a fresh `ach-cli env uninstall` cobra.Command.
+// newUninstallCmd returns a fresh `ach-cli environment uninstall` cobra.Command.
 // Factory shape matches the other ach-cli leaves so tests construct an
 // isolated tree per t.Run.
 func newUninstallCmd() *cobra.Command {
@@ -79,7 +79,7 @@ func newUninstallCmd() *cobra.Command {
 		Use:   "uninstall <name>",
 		Args:  cobra.ExactArgs(1),
 		Short: "Remove the projected resource set for the active workspace+environment",
-		Long: `Tear down the projected resources ach-cli env hydrate installed for the
+		Long: `Tear down the projected resources ach-cli environment hydrate installed for the
 active workspace+environment, reusing the same inverse-merge engine that
 hydrate --sync uses. uninstall removes the WHOLE projection in scope, or
 one plugin/skill with --only; preview with --dry-run.
@@ -101,7 +101,7 @@ blocks are removed; other contributors' and the user's keys survive.
 User-edited projected files are preserved unless --force (drift-wins).
 
 Example:
-  ach-cli env uninstall frontend-dev --only plugin/code-review -g`,
+  ach-cli environment uninstall frontend-dev --only plugin/code-review -g`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var only *hydrate.Item
 			if flagOnly != "" {

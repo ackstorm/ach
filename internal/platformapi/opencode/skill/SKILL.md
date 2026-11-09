@@ -79,7 +79,7 @@ Windows, run it from Git Bash.
 ### 3. See your Environments
 
 ```bash
-ach-cli env list
+ach-cli environment list
 ```
 
 An Environment is what a tool may use: models, MCP servers, skills, plugins. If one the
@@ -88,17 +88,17 @@ user needs is missing, they do not have access to it: an ACH administrator grant
 If the user named an Environment, install that one into the current folder:
 
 ```bash
-ach-cli env hydrate <name> --target opencode
+ach-cli environment hydrate <name> --target opencode
 ```
 
 {{#default_env}}
 ### 4. Install the baseline for every project
 
 The organization's baseline Environment is `{{default_env}}`. Check whether it is
-already installed (`ach-cli env status {{default_env}} -g`); if not, propose it:
+already installed (`ach-cli environment status {{default_env}} -g`); if not, propose it:
 
 ```bash
-ach-cli env hydrate {{default_env}} -g --target opencode
+ach-cli environment hydrate {{default_env}} -g --target opencode
 ```
 
 This writes into `~/.config/opencode/` its MCP servers (enabled), skills, commands and

@@ -26,7 +26,7 @@ Run a long-running service:
 Run a one-shot job:
   ach migrate
 
-For the user-facing CLI (login/whoami/logout/config/env/env-keys/
+For the user-facing CLI (login/whoami/logout/config/environment/env-keys/
 hydrate/admin), use the sibling 'ach-cli' binary.`,
 	Version: Version,
 	RunE: func(cmd *cobra.Command, args []string) error {

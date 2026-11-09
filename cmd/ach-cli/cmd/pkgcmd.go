@@ -71,7 +71,7 @@ func preferredLens(kind pkgKind, caps []store.Capability) string {
 	return ""
 }
 
-// parseTargets is the ONE --target / ACH_TARGET parser (env hydrate and
+// parseTargets is the ONE --target / ACH_TARGET parser (environment hydrate and
 // local install/uninstall): values split on commas AND repeat, each part
 // resolves through hydrate.ResolvePlatform (adapter ids + aliases; an unknown
 // part's error lists every registered id), deduped in order. An effectively
@@ -188,7 +188,7 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 // collisionWarn writes a stderr warning for each just-written file (recs) whose
 // relative path is already owned by a DIFFERENT installed entry at the same
 // target — surfacing the otherwise-silent last-wins overwrite. Local install has
-// no managed conflict policy (the governed `env hydrate` flow does, via
+// no managed conflict policy (the governed `environment hydrate` flow does, via
 // --conflict namespace|skip|overwrite|refuse); this at least tells the user a
 // previously-installed file was clobbered instead of losing it silently.
 //

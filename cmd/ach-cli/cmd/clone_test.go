@@ -38,7 +38,7 @@ func setupClone(t *testing.T, fail bool) string {
 	return cwd
 }
 
-// The clone hydrates into ./<env>; .ach/ records what a bare `env hydrate`
+// The clone hydrates into ./<env>; .ach/ records what a bare `environment hydrate`
 // needs to update it.
 func TestEnvClone_DefaultDir(t *testing.T) {
 	cwd := setupClone(t, false)

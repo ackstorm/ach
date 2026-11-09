@@ -25,7 +25,7 @@ Cutting a release (stable example, `v0.1.0`):
 
 Before cutting, check whether the range since the last tag changes anything the
 agent guidance tells users' agents to do: the `<provider>-ach` bootstrap
-(`internal/platformapi/opencode/skill/SKILL.md` — install, login, `env list`,
+(`internal/platformapi/opencode/skill/SKILL.md` — install, login, `environment list`,
 named and default hydrate, the OpenCode sign-in flow) and the `plugins/` marketplace
 (`ach-cli` commands/flags, CRD fields for `ach-gitops`, chart values for
 `ach-install`). If it does, fix it in the release, not after, and bump the

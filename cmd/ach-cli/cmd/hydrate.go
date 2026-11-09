@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli env hydrate` ships in two dispatch modes per the Phase 7 W3-05
+// `ach-cli environment hydrate` ships in two dispatch modes per the Phase 7 W3-05
 // refactor (D-03 + D-04):
 //
 //   - Engine path (default) — invokes the full
@@ -89,7 +89,7 @@ var hydrateHTTPClient *http.Client
 // pipeline. Mirrors the swapHTTPClientForTest seam.
 var hydrateRunFn = hydrate.Run
 
-// newHydrateCmd returns a fresh `ach-cli env hydrate` cobra.Command. Factory
+// newHydrateCmd returns a fresh `ach-cli environment hydrate` cobra.Command. Factory
 // shape matches login/whoami/logout so tests can construct an isolated
 // tree per t.Run.
 func newHydrateCmd() *cobra.Command {
@@ -157,7 +157,7 @@ key is already scoped to one environment). Without <name>, every environment
 already hydrated in this folder (.ach/) is updated with its recorded targets.
 
 Example:
-  ach-cli env hydrate frontend-dev --only plugin/code-review -g --target claude-code
+  ach-cli environment hydrate frontend-dev --only plugin/code-review -g --target claude-code
 
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
@@ -208,7 +208,7 @@ Exit codes:
 	return cmd
 }
 
-// hydrateFlags are the hydrate flags `env hydrate` and `launch` share; one
+// hydrateFlags are the hydrate flags `environment hydrate` and `launch` share; one
 // registration keeps their names, defaults and help text identical.
 type hydrateFlags struct {
 	noWarnings  bool
@@ -307,7 +307,7 @@ type hydrateInputs struct {
 	envEnvironment string
 	envTarget      string
 
-	// cloneDir is set by `env clone`: adds the "cd <dir>" update hint.
+	// cloneDir is set by `environment clone`: adds the "cd <dir>" update hint.
 	cloneDir string
 }
 
@@ -423,7 +423,7 @@ func assertScopeFlags(in hydrateInputs) error {
 		}
 		if in.environment == "" && in.envEnvironment == "" {
 			return &exit.CodedError{Code: exit.General,
-				Msg: "--only needs an environment: ach-cli env hydrate <env> --only <kind>/<name>"}
+				Msg: "--only needs an environment: ach-cli environment hydrate <env> --only <kind>/<name>"}
 		}
 	}
 	if in.wait && in.lockTimeout > 0 {
@@ -563,9 +563,9 @@ func hydrateEnv(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effective
 	return results, nil
 }
 
-// runHydrateWorkspace drives the bare `env hydrate` (no positional <name>, no
+// runHydrateWorkspace drives the bare `environment hydrate` (no positional <name>, no
 // ACH_ENVIRONMENT): it re-hydrates every environment already recorded under
-// <root>/.ach/ (what `env clone` or an earlier `env hydrate` left behind), each
+// <root>/.ach/ (what `environment clone` or an earlier `environment hydrate` left behind), each
 // with its recorded targets, best-effort (a failing env is recorded and the
 // run continues), one row per env. Exits non-zero if any env failed.
 func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
@@ -585,7 +585,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: "nothing hydrated in this folder yet: name an Environment (or set " +
-				"ACH_ENVIRONMENT), or create the folder with `ach-cli env clone <name>`",
+				"ACH_ENVIRONMENT), or create the folder with `ach-cli environment clone <name>`",
 		}
 	}
 
@@ -711,7 +711,7 @@ type summaryMeta struct {
 	noWarnings bool              // --no-warnings → drop the hints
 	models     bool              // --models → model-endpoint helper wiring requested
 	dryRun     bool              // --dry-run → nothing was written
-	cloneDir   string            // env clone's folder → "cd <dir>" hint
+	cloneDir   string            // environment clone's folder → "cd <dir>" hint
 }
 
 func newSummaryMeta(in hydrateInputs, bearer string) summaryMeta {
@@ -868,7 +868,7 @@ var mcpLoginCmd = map[string]string{
 func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	var hints []string
 	if meta.cloneDir != "" {
-		hints = append(hints, fmt.Sprintf("cd %s && ach-cli env hydrate  — to update later", meta.cloneDir))
+		hints = append(hints, fmt.Sprintf("cd %s && ach-cli environment hydrate  — to update later", meta.cloneDir))
 	}
 	first := false
 	var logins []string

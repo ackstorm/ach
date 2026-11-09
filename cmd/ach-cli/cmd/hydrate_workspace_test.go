@@ -112,7 +112,7 @@ func TestRunHydrateWorkspace_NothingHydrated(t *testing.T) {
 	cwd := t.TempDir()
 	t.Cleanup(chdir(t, cwd))
 	err := runHydrateWorkspace(testCmd(t), hydrateInputs{output: cwd}, "https://hub.example", "pk_x")
-	if err == nil || !strings.Contains(err.Error(), "env clone") {
-		t.Fatalf("empty folder should point at env clone, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "environment clone") {
+		t.Fatalf("empty folder should point at environment clone, got %v", err)
 	}
 }

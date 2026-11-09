@@ -169,7 +169,7 @@ type FileWrite struct {
 	Keys       []string
 
 	// Source is the resource name (skill/plugin name) this file was
-	// projected from, for per-resource grouping in 'env status'. Set by
+	// projected from, for per-resource grouping in 'environment status'. Set by
 	// projectPlugins/projectSkills in wiring.go; empty for adapter runtime
 	// and extractor-produced files.
 	Source string

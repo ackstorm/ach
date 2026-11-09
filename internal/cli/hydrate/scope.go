@@ -78,7 +78,7 @@ func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state
 
 // BuildItemRemoved returns prev minus the item's rows (plugin: Plugins where
 // Source==name; skill: Skills where Source==name) — the survivor set
-// `env uninstall --only` feeds to Sync. ok=false when no row matched. prev
+// `environment uninstall --only` feeds to Sync. ok=false when no row matched. prev
 // is never mutated.
 func BuildItemRemoved(prev *state.File, it Item) (out *state.File, ok bool) {
 	cp := *prev

@@ -1695,9 +1695,9 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	}
 }
 
-// TestHydrateOnly_InstallThenUninstallOnePlugin: `env hydrate --only
+// TestHydrateOnly_InstallThenUninstallOnePlugin: `environment hydrate --only
 // plugin/caveman` writes that plugin's files and nothing else (no other
-// plugin/skill, no runtime config), `env status` lists it, and `env
+// plugin/skill, no runtime config), `environment status` lists it, and `env
 // uninstall --only plugin/caveman` removes it again — the state file goes
 // with it, since caveman was the only thing recorded.
 func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
@@ -1752,7 +1752,7 @@ func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
 	}
 
 	if status := run("env", "status", phase7DemoEnvironment); !strings.Contains(status, "caveman") {
-		t.Errorf("env status does not list caveman:\n%s", status)
+		t.Errorf("environment status does not list caveman:\n%s", status)
 	}
 
 	run("env", "uninstall", phase7DemoEnvironment, "--only", "plugin/caveman", "--dir", ws)

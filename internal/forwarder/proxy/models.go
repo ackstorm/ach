@@ -16,7 +16,7 @@ import (
 // what the console labels "chat". A chat client (LibreChat at
 // chat.<domain>) would otherwise offer embedding, transcription, image…
 // models it cannot use. ?types=<mode>[,<mode>…] adds LiteLLM modes on top;
-// ?types=all turns the filter off. ACH's own views (console, env describe)
+// ?types=all turns the filter off. ACH's own views (console, environment describe)
 // read LiteLLM / the projection directly and are never filtered; any future
 // ACH-internal call through here MUST pass ?types=all
 // (TestNoInternalModelListWithoutTypesAll is a heuristic guard for it).

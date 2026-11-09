@@ -22,7 +22,7 @@
 //
 //	1. Acquire pk_ + seed XDG (phase7AcquirePk / phase7SeedXdgConfig), wait
 //	   the demo Environment Available, allocate a fresh phase7Workspace.
-//	2. env hydrate demo --target <id> --dir <ws>  (CONTEXT-slice
+//	2. environment hydrate demo --target <id> --dir <ws>  (CONTEXT-slice
 //	   projection: NOT --only-runtime, so plugin projection runs). Assert exit 0.
 //	3. assertProjectedNativeDirs — projected resources in native dirs, NOT at
 //	   verbatim source paths (SC2).

@@ -20,7 +20,7 @@ import (
 
 // credFlags are the credential flags every network command carries.
 // Insecure is not registered here: only commands with their own --insecure
-// (env hydrate) set it, to load an http:// profile.
+// (environment hydrate) set it, to load an http:// profile.
 type credFlags struct {
 	Profile  string
 	Key      string

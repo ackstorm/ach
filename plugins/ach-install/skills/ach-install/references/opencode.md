@@ -32,7 +32,7 @@ Behind it:
   `ach-cli`, signs in, lists Environments and hydrates
   `genai.defaultEnvironment` globally.
 - MCP servers are not in that config: they reach OpenCode only through a
-  hydrated Environment (`ach-cli env hydrate <env> --target opencode`).
+  hydrated Environment (`ach-cli environment hydrate <env> --target opencode`).
 
 ## The values
 
@@ -52,7 +52,7 @@ genai:
 | `opencodePluginSpec` | `ACH_OPENCODE_PLUGIN_SPEC` | npm or git spec of the sign-in plugin. Git specs point at the repo root pinned to a tag. Empty disables the manifest's plugin. Keep the chart default unless told otherwise; the plugin lives in `github.com/ackstorm/opencode-oidc-provider`. |
 | `opencodeExtraProviders` | `ACH_OPENCODE_EXTRA_PROVIDERS` | Other provider ids allowed in the model picker next to `providerName` (e.g. `claude-code` for a plugin users install themselves). On OpenCode v2 a user's own config cannot widen this list, so any provider users bring must be listed here. Same id rule; a bad id refuses to start. |
 | `defaultModel` / `defaultSmallModel` | `ACH_GENAI_DEFAULT_MODEL` / `ACH_GENAI_DEFAULT_SMALL_MODEL` | Bare LiteLLM model names (no provider prefix). Emitted as `config.model` / `config.small_model` only for users whose own chat model list contains that name; otherwise omitted and OpenCode picks the first model. A user's own opencode.json wins. |
-| `defaultEnvironment` | `ACH_GENAI_DEFAULT_ENVIRONMENT` | The Environment the onboarding skill hydrates globally (`ach-cli env hydrate <name> -g`). Empty drops that step. Make it an Environment every user can read (e.g. authorized for team `default`), and include the `ach-cli` plugin in it so users' agents get the full `ach-cli` skill. |
+| `defaultEnvironment` | `ACH_GENAI_DEFAULT_ENVIRONMENT` | The Environment the onboarding skill hydrates globally (`ach-cli environment hydrate <name> -g`). Empty drops that step. Make it an Environment every user can read (e.g. authorized for team `default`), and include the `ach-cli` plugin in it so users' agents get the full `ach-cli` skill. |
 
 ## Choosing `providerName`
 

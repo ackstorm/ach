@@ -4,7 +4,7 @@
 // package path: `repo` (register a git/marketplace source), `plugin`, and
 // `skill` (install/uninstall/update/list a name@repo into per-tool adapter
 // dirs). Re-parented under `local` (G9) to separate it visually + semantically
-// from the governed `env` path (platform-api → Dex → hydrate).
+// from the governed `environment` path (platform-api → Dex → hydrate).
 
 package cmd
 
@@ -18,7 +18,7 @@ func newLocalCmd() *cobra.Command {
 		Long: `Local, ungoverned developer path — installs directly from git into your
 adapter dirs. NOT governed by the ACH Hub (no Environment, no authorization,
 no audit, no central reproducibility). For governed/reproducible distribution
-use 'ach-cli env hydrate'.`,
+use 'ach-cli environment hydrate'.`,
 		RunE: helpOrUnknownSubcommand,
 	}
 	parent.AddCommand(newRepoCmd(), newPluginCmd(), newSkillCmd())

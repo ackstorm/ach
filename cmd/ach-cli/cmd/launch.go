@@ -27,7 +27,7 @@ var launchTools = map[string]string{
 
 const launchToolList = "claude, codex, gemini, opencode, pi"
 
-// newLaunchCmd builds `ach-cli launch <tool>`: `env hydrate` for one target,
+// newLaunchCmd builds `ach-cli launch <tool>`: `environment hydrate` for one target,
 // then the tool started in the hydrated folder with the terminal handed over.
 func newLaunchCmd() *cobra.Command {
 	var (
@@ -39,7 +39,7 @@ func newLaunchCmd() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		Short: "Hydrate an Environment, then start the agent tool in it",
 		Long: `Hydrate an Environment for one tool (same engine and flags as
-` + "`ach-cli env hydrate`" + `), then start the tool in --dir (default: the
+` + "`ach-cli environment hydrate`" + `), then start the tool in --dir (default: the
 current directory). With no --environment and no ACH_ENVIRONMENT, every
 Environment already hydrated in that folder (.ach/) is updated for the tool.
 If hydrate fails, the tool is not started. ach-cli exits with the tool's exit

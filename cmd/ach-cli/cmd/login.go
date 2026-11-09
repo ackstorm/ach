@@ -196,7 +196,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	if err := config.Save(configPath, file); err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli env list` to see your Environments\n", name)
+	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli environment list` to see your Environments\n", name)
 	return nil
 }
 

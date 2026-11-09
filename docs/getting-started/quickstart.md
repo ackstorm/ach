@@ -58,8 +58,8 @@ then:
 
 ```bash
 ach-cli login https://<ACH host>
-ach-cli env list                                       # quickstart is listed
-ach-cli env clone quickstart --target claude-code      # creates ./quickstart and hydrates it
+ach-cli environment list                                       # quickstart is listed
+ach-cli environment clone quickstart --target claude-code      # creates ./quickstart and hydrates it
 ```
 
 Start Claude Code inside `./quickstart`: it has the `ach-cli` skill, so from there you
@@ -69,7 +69,7 @@ can ask it to install more Environments, create keys or sign in to MCP servers.
 ## 3. Clean up
 
 ```bash
-ach-cli env uninstall quickstart --dir ./quickstart
+ach-cli environment uninstall quickstart --dir ./quickstart
 kubectl -n ach delete -f quickstart.yaml
 ```
 

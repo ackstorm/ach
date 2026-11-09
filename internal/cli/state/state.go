@@ -48,7 +48,7 @@ type FileEntry struct {
 	Merge      string   `json:"merge,omitempty"`
 	Keys       []string `json:"keys,omitempty"`
 	// Source is the resource (skill/artifact/prompt) name this file came
-	// from, for per-resource grouping in 'env status'; empty for
+	// from, for per-resource grouping in 'environment status'; empty for
 	// adapter/runtime files.
 	Source string `json:"source,omitempty"`
 }

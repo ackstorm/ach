@@ -11,7 +11,7 @@ import (
 )
 
 // ConflictAction records one resolved clash for the caller to report. The
-// policy is the governed `env hydrate` --conflict enum (internal/cli/conflict)
+// policy is the governed `environment hydrate` --conflict enum (internal/cli/conflict)
 // so the two install paths behave consistently. NOTE the local installer is
 // stateful and sequential: the FIRST-installed resource keeps its natural
 // name; a LATER install that clashes is the one prefixed (we never

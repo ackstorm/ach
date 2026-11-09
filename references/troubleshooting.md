@@ -67,9 +67,9 @@ WHY: registration is anonymous and Dex signs a logged-in user in silently, so
 any `https` redirect host could collect a victim's authorization code (review
 #1, 2026-10-09). Only list hosts you trust with your users' codes.
 
-### ❌ `ach-cli env hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
+### ❌ `ach-cli environment hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
 ```bash
-ach-cli env hydrate demo          # profile logged in via `ach-cli login` (OAuth)
+ach-cli environment hydrate demo          # profile logged in via `ach-cli login` (OAuth)
 # /platform/hydrate succeeds, then the first /content/<kind>/<name> GET 400s
 ```
 ✅ Content-service must verify the OAuth access token hydrate sends in
@@ -514,7 +514,7 @@ revoke the old one (`ach-cli keys revoke <pkid_…>` or an admin force-revoke).
 
 ### ❌ Hydrate output ≠ examples/hydrate.json ✅ Normalize golden against cluster base URL
 ```bash
-./bin/ach-cli env hydrate demo > /tmp/hydrate-test.json
+./bin/ach-cli environment hydrate demo > /tmp/hydrate-test.json
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
@@ -546,7 +546,7 @@ Two remedies, in preference order:
    response shape legitimately changed — new field, schemaVersion bump, an
    Environment fixture edit):
    ```bash
-   ./bin/ach-cli env hydrate demo > examples/hydrate.json
+   ./bin/ach-cli environment hydrate demo > examples/hydrate.json
    git diff examples/hydrate.json   # audit — should be the intended shape change
    ```
 
@@ -561,7 +561,7 @@ phantom regression.
 
 ### ❌ `--global` content landed somewhere the agent doesn't read it
 
-**Symptom:** `ach-cli env hydrate --global` / `skill install --global` reports
+**Symptom:** `ach-cli environment hydrate --global` / `skill install --global` reports
 success, but the agent CLI never sees the skill/MCP server.
 
 **Cause A — the var was not exported to ach-cli.** ach-cli READS the tool's
@@ -580,18 +580,18 @@ config prefix redirects. `CODEX_HOME` does NOT move `.agents/skills/**`, and
 `internal/cli/CLAUDE.md` "Global-scope root resolution".
 
 **Orphans after switching profiles.** Changing the var between runs leaves the
-previously written files at the OLD location — a plain `env hydrate` writes the
-new copies and forgets the old entries. Remedy: run `ach-cli env hydrate --sync`
-(prunes the old destinations), or `ach-cli env uninstall <name>` BEFORE
+previously written files at the OLD location — a plain `environment hydrate` writes the
+new copies and forgets the old entries. Remedy: run `ach-cli environment hydrate --sync`
+(prunes the old destinations), or `ach-cli environment uninstall <name>` BEFORE
 switching the variable.
 
-### ❌ `ach-cli env hydrate` exits 1 "environment is required" ✅ pass the positional `<name>` (engine namespaces state by env)
+### ❌ `ach-cli environment hydrate` exits 1 "environment is required" ✅ pass the positional `<name>` (engine namespaces state by env)
 The hydrate ENGINE namespaces its `<ach-dir>` by Environment in BOTH scopes
 (`<cwd>/.ach/<environment>/` in project scope, `$HOME/.ach/<environment>/` under
 `--global`) per CLI spec §8.1. So the positional `<name>` (or `ACH_ENVIRONMENT`) is
 REQUIRED for any single-env engine run — including the `ek_` credential path, which
 used to treat it as optional. Two exemptions: `--raw` (it short-circuits before the
-engine), and a **bare** `ach-cli env hydrate` (no `<name>`, no `ACH_ENVIRONMENT`)
+engine), and a **bare** `ach-cli environment hydrate` (no `<name>`, no `ACH_ENVIRONMENT`)
 inside a folder that already has `.ach/<env>/`: it re-hydrates each recorded
 Environment best-effort (exit ≠0 if any fails).
 
@@ -600,11 +600,11 @@ state (`.ach/<envA>/`, `.ach/<envB>/`) and DON'T clobber each other. NOTE: the
 adapter-native projection (`.claude/`, `.codex/`, …) is single-path by
 construction — agents read fixed config locations — so two Environments UNION in
 the same `.claude/` (each surgically tracked + independently uninstallable via
-`ach-cli env uninstall <env>`).
+`ach-cli environment uninstall <env>`).
 
 A pre-namespacing flat `<cwd>/.ach/state.json` (or a pre-per-platform
 `.ach/<env>/state.json`) is NOT migrated any more and is ignored: re-hydrate
-from scratch. `ach-cli env status`
+from scratch. `ach-cli environment status`
 with no `<env>` argument (project scope) enumerates ALL `.ach/<env>/` so a
 multi-env project lists every installed set.
 
@@ -721,7 +721,7 @@ admin; they are not routable through ACH.
 (any LiteLLM mode, comma-separated) or `?types=all`. A chat model that is
 missing has the wrong `mode` in LiteLLM: set `model_info.mode: chat` on its
 deployment. A model with no `mode` at all is always listed.
-The console Models page and `ach-cli env describe` are not affected — they do
+The console Models page and `ach-cli environment describe` are not affected — they do
 not read `/v1/models`; if a model is missing THERE, it is a grant/projection
 problem, not this filter.
 
@@ -1354,7 +1354,7 @@ A model/small_model the user set in their own opencode.json always wins.
 Expected after `opencode auth login https://<ach>` + `opencode auth login <provider>`
 + `opencode service restart`: `opencode models` lists only `<provider>/*`.
 `/clients/opencode/config` carries no MCP servers (since 2026-10-08): `opencode mcp list`
-shows only what a hydrated Environment wrote (`ach-cli env hydrate <env> --target opencode`,
+shows only what a hydrated Environment wrote (`ach-cli environment hydrate <env> --target opencode`,
 `-g` or `--dir`), so an empty list there means nothing was hydrated, not a login fault.
 Observed 2026-09-29, three separate causes:
 
@@ -1424,12 +1424,12 @@ answers **500**, which ACH maps to 503, not to "sessions ended". The prod Dex
 `refreshTokens.validIfNotUsedFor: 720h` ends a session idle for 30 days — an
 accepted cap below `RefreshTTL` (90 d).
 
-### ❌ `env list` empty / `403 unauthorized_team` for one user whose LiteLLM `user_email` is NULL
+### ❌ `environment list` empty / `403 unauthorized_team` for one user whose LiteLLM `user_email` is NULL
 
 A LiteLLM user created out-of-band (token-factory) with `user_id=<email>` but a
 NULL `user_email` was invisible to `UserInfoByEmail` (`/user/info?user_email=`
 answers the `default_user_id` placeholder, `/user/list?user_email=` has no
-match) → zero teams everywhere (env list, hydrate, `ek_` create, forwarder
+match) → zero teams everywhere (environment list, hydrate, `ek_` create, forwarder
 `/mcp`/`/a2a` precheck). `UserInfoByEmail` now asks
 `/user/info?user_id=<email>` FIRST (one round-trip for every ACH-provisioned
 user, where the email chain costs three), trusting only an answer for exactly

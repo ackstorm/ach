@@ -22,15 +22,15 @@ func synthTestEnv(t *testing.T) {
 
 // networkCommands are one invocation per network command family.
 var networkCommands = map[string][]string{
-	"whoami":       {"whoami"},
-	"env list":     {"env", "list"},
-	"env describe": {"env", "describe", "demo"},
-	"env hydrate":  {"env", "hydrate", "demo", "--no-warnings"},
-	"keys create":  {"keys", "create", "demo", "--name", "ci"},
-	"keys list":    {"keys", "list"},
-	"keys revoke":  {"keys", "revoke", "ekid_abc", "--yes"},
-	"admin list":   {"admin", "list", "plugins"},
-	"env fetch":    {"env", "fetch", "demo", "prompt", "p"},
+	"whoami":               {"whoami"},
+	"environment list":     {"env", "list"},
+	"environment describe": {"env", "describe", "demo"},
+	"environment hydrate":  {"env", "hydrate", "demo", "--no-warnings"},
+	"keys create":          {"keys", "create", "demo", "--name", "ci"},
+	"keys list":            {"keys", "list"},
+	"keys revoke":          {"keys", "revoke", "ekid_abc", "--yes"},
+	"admin list":           {"admin", "list", "plugins"},
+	"environment fetch":    {"env", "fetch", "demo", "prompt", "p"},
 }
 
 func runSynthRoot(t *testing.T, args ...string) (string, string, exit.Code, error) {

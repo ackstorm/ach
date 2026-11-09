@@ -321,7 +321,7 @@ func TestConfig_SkillDefaultEnvironment(t *testing.T) {
 		_, m := newFixtureWith(t, "", "", env).get(t, "Bearer "+goodTok)
 		sk := m["skills"].([]any)[0].(map[string]any)
 		md := sk["files"].(map[string]any)["SKILL.md"].(string)
-		if sk["name"] != "acme-ach" || strings.Contains(md, "ach-cli env hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
+		if sk["name"] != "acme-ach" || strings.Contains(md, "ach-cli environment hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
 			t.Fatalf("%q: skill %v", env, sk)
 		}
 	}

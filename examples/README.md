@@ -25,11 +25,11 @@ for the object the operator reconciles in e2e, look there.
 |------|------|-------|
 | `prometheus-servicemonitor.yaml`      | `ServiceMonitor`                           | Example Prometheus scrape config for the ach metrics endpoints. |
 | `prometheus-alertrules.yaml`          | `PrometheusRule`                           | Recommended ACH alert rules (LiteLLM unreachable, stale content cache, pk_ on runtime route, external-ref refresh failures, Environment unavailable). |
-| `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli env hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |
+| `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli environment hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |
 | `keygrant.yaml`                       | `KeyGrant`                                 | Lets the `ach-agent/ach-agent-control` ServiceAccount exchange its pod token for `ai.run@ackstorm.com`'s `agent-k8s-doctor` credential (see `docs/user-guide/key-exchange.md`). |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
 | `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
-| `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli env hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
+| `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli environment hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo
 
@@ -50,7 +50,7 @@ make cluster-up
 make build-all
 export ACH_INSECURE=1                                      # or pass --insecure per command
 ./bin/ach-cli login http://localhost:8080                  # OAuth: browser here, or a code from any browser
-./bin/ach-cli env hydrate demo --raw > hydrate.json        # POST /platform/hydrate, body verbatim
+./bin/ach-cli environment hydrate demo --raw > hydrate.json        # POST /platform/hydrate, body verbatim
 ```
 
 > **Tip — pre-fill the login URL:** `ach-cli login` without a URL prompts for
@@ -98,12 +98,12 @@ ach-cli keys create prod --name ci-bot   # prints ek-... once
 
 # 2. (on the agent) register a profile from that key — no SSO:
 ach-cli profile add prod --url https://ach.example --key ek-...
-ach-cli env hydrate prod
+ach-cli environment hydrate prod
 
 # or skip disk config entirely (secrets stay in env, ideal for CI):
 export ACH_URL=https://ach.example
 export ACH_KEY=ek-...
-ach-cli env hydrate prod
+ach-cli environment hydrate prod
 ```
 
 ## Rotating / cleaning up your own keys
@@ -204,13 +204,13 @@ ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (set
 Notes:
 - `--target` takes adapter ids (`claude-code`, `codex`, `gemini-cli`,
   `opencode`, `pi`) or their aliases (`claude`, `gemini`, `pimono`), comma-separated
-  or repeated — the same vocabulary as `env hydrate --target`. MCP/`AGENTS.md` contributions deep-/composite-merge into the
+  or repeated — the same vocabulary as `environment hydrate --target`. MCP/`AGENTS.md` contributions deep-/composite-merge into the
   tool's native config and are inverse-merged on uninstall (other plugins' and
   your own keys survive).
 - `--path` is the **skills-marketplace root hint** only (e.g. `skills` for an
   `anthropics/skills`-style monorepo); v1 does not narrow a direct plugin/skill
   that lives in a subdirectory.
-- This is the **local-first** path. `ach-cli env hydrate <name>` remains the
+- This is the **local-first** path. `ach-cli environment hydrate <name>` remains the
   **governed** flow (CR-defined Environment, server-mediated, full conflict
   policy).
 

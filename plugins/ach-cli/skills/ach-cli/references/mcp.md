@@ -32,11 +32,11 @@ check the tool's list.
 
 ## A server the tool does not show
 
-Hydrate again (`ach-cli env hydrate`), then list again. If it is still missing:
+Hydrate again (`ach-cli environment hydrate`), then list again. If it is still missing:
 
 ```bash
-ach-cli env describe <environment>    # the MCP servers each Environment provides
-ach-cli env search <server>           # which of your Environments has it
+ach-cli environment describe <environment>    # the MCP servers each Environment provides
+ach-cli environment search <server>           # which of your Environments has it
 ```
 
 If none of the user's Environments provides it, it is not available to them: say so and

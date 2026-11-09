@@ -12,6 +12,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `~/.config/ach/config.yaml` still loads, is never read, and is dropped on the
   next write; those keys keep working on the server until revoked, and
   `keys revoke <name>` still finds them.
+- `ach-cli environment` is the command's name and `--environment` the flag's
+  everywhere (`keys list` and `admin keys list` took `--env`); `env` and
+  `--env` keep working as aliases on every command.
 
 ## [1.1.10] - 2026-11-09
 

@@ -464,7 +464,7 @@ func TestHydrate_PK_EnvironmentFromEnv(t *testing.T) {
 // Phase 7 W3-05 engine-path tests
 // ============================================================================
 
-// TestNewHydrateCmd_FlagsRegistered pins the env hydrate flag surface.
+// TestNewHydrateCmd_FlagsRegistered pins the environment hydrate flag surface.
 func TestNewHydrateCmd_FlagsRegistered(t *testing.T) {
 	cmd := newHydrateCmd()
 	wantFlags := []string{
@@ -865,7 +865,7 @@ func TestHydrate_Help_MentionsConflict(t *testing.T) {
 // TestResolvePlatformList covers the multi-target --target parser: comma-split,
 // whitespace trimming, alias resolution, dedup (order-preserving), and the
 // unknown-id / empty-value error paths. This is the asymmetry fix that lets
-// `env hydrate --target codex,opencode` mirror local `plugin install`.
+// `environment hydrate --target codex,opencode` mirror local `plugin install`.
 func TestResolvePlatformList(t *testing.T) {
 	cases := []struct {
 		name    string

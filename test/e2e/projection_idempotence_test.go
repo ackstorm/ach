@@ -20,7 +20,7 @@
 //
 //	1. Acquire pk_ + seed XDG, wait the demo Environment Available, allocate a
 //	   fresh phase7Workspace.
-//	2. First `env hydrate demo --target <id> --dir <ws>`; assert
+//	2. First `environment hydrate demo --target <id> --dir <ws>`; assert
 //	   exit 0. snapshotProjectedFiles → before; sha256(state.json) → stateBefore.
 //	3. Second hydrate, identical inputs + SAME workspace; assert exit 0 — the
 //	   auto-claim over the byte-matching pre-existing owned files (NOT a drift

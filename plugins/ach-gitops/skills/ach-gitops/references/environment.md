@@ -15,7 +15,7 @@ metadata:
 spec:
   description: |
     Backend dev: library docs (Context7), code-review plugin, PDF skill.
-  notice: "Re-run ach-cli env hydrate after the weekly plugin update."
+  notice: "Re-run ach-cli environment hydrate after the weekly plugin update."
   authorizedTeams:
     - backend
     - platform
@@ -54,8 +54,8 @@ spec:
 | `spec.authorizedTeams` | yes, >= 1 | LiteLLM team **aliases** whose members may use the Environment |
 | `spec.runtime` | no (defaults `{}`) | What LiteLLM lets callers reach |
 | `spec.context` | no (defaults `{}`) | What hydrate installs |
-| `spec.description` | no, <= 2048 chars | Catalog text shown by `ach-cli env list` (truncated) and `env describe` |
-| `spec.notice` | no, <= 2048 chars | Shown only after `ach-cli env hydrate`; operational reminders |
+| `spec.description` | no, <= 2048 chars | Catalog text shown by `ach-cli environment list` (truncated) and `environment describe` |
+| `spec.notice` | no, <= 2048 chars | Shown only after `ach-cli environment hydrate`; operational reminders |
 | `spec.budget.maxBudget` | when `budget` is set, >= 0 | Spend ceiling in USD |
 | `spec.budget.budgetDuration` | no | Reset window, e.g. `30d`; empty means it never resets |
 
