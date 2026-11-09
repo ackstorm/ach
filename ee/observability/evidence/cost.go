@@ -54,7 +54,7 @@ FORMAT JSON`
 const costCacheSQL = `
 SELECT provided_model_name AS model,
        sum(toFloat64OrZero(metadata_values[indexOf(metadata_names, 'attributes.litellm.cost.input')])) AS recorded_input_cost,
-       sum(usage_details['input']) AS input,
+       sum(` + fullInputSQL + `) AS input,
        sum(usage_details['input_cached_tokens']) AS cache_read,
        sum(usage_details['input_cache_creation']) AS cache_write
 FROM default.events_full AS source FINAL

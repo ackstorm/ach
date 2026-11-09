@@ -145,7 +145,7 @@ SELECT project_id, trace_id,
        anyIf(name, parent_span_id = '') AS root_name,
        anyIf(metadata_values[indexOf(metadata_names, 'attributes.gen_ai.response.id')], type = 'GENERATION' AND startsWith(name, 'chat ')) AS request_id,
        anyIf(provided_model_name, type = 'GENERATION' AND startsWith(name, 'chat ')) AS model,
-       sumIf(usage_details['input'], type = 'GENERATION' AND startsWith(name, 'chat ')) AS input_tokens,
+       sumIf(` + fullInputSQL + `, type = 'GENERATION' AND startsWith(name, 'chat ')) AS input_tokens,
        sumIf(usage_details['output'], type = 'GENERATION' AND startsWith(name, 'chat ')) AS output_tokens,
        sumIf(cost_details['total'], type = 'GENERATION' AND startsWith(name, 'chat ')) AS cost,
        anyIf(metadata_values[indexOf(metadata_names, 'attributes.litellm.metadata.user_api_key_alias')], type = 'GENERATION' AND startsWith(name, 'chat ')) AS key_alias,
@@ -173,7 +173,7 @@ SELECT project_id, user_id, trace_id, span_id, parent_span_id, ifNull(session_id
        formatDateTime(start_time, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS start_time, formatDateTime(end_time, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS end_time,
        type, name, level, provided_model_name,
        metadata_values[indexOf(metadata_names, 'attributes.gen_ai.response.id')] AS response_id,
-       cost_details['total'] AS cost, usage_details['input'] AS input_tokens, usage_details['output'] AS output_tokens
+       cost_details['total'] AS cost, ` + fullInputSQL + ` AS input_tokens, usage_details['output'] AS output_tokens
 FROM default.events_full AS source FINAL
 WHERE is_deleted = 0 AND (__UNOWNED_SCOPE__)
   AND source.start_time >= parseDateTime64BestEffort({start:String}, 6, 'UTC')

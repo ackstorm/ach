@@ -102,7 +102,7 @@ WHERE is_deleted = 0 AND (__SCOPE__)
   AND type = 'GENERATION'`
 
 const genUsage = `
-       sumIf(usage_details['input'], mapContains(usage_details, 'input')) AS input_tokens,
+       sumIf(` + fullInputSQL + `, mapContains(usage_details, 'input')) AS input_tokens,
        sumIf(usage_details['output'], mapContains(usage_details, 'output')) AS output_tokens,
        sumIf(toFloat64(cost_details['total']), mapContains(cost_details, 'total')) AS cost,
        countIf(mapContains(usage_details, 'input') OR mapContains(usage_details, 'output')) AS measured,

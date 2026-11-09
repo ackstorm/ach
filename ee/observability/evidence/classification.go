@@ -26,7 +26,7 @@ import (
 const classificationSQL = `
 WITH own AS (
   SELECT project_id, ifNull(session_id, '') AS sid, count() AS gens,
-         sumIf(usage_details['input'], mapContains(usage_details, 'input')) AS in_tokens,
+         sumIf(` + fullInputSQL + `, mapContains(usage_details, 'input')) AS in_tokens,
          sumIf(usage_details['output'], mapContains(usage_details, 'output')) AS out_tokens,
          sumIf(toFloat64(cost_details['total']), mapContains(cost_details, 'total')) AS spend
   FROM default.events_full AS source FINAL

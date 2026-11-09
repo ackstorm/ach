@@ -25,6 +25,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - The chart's Grafana dashboards load with auto-refresh off, so an open
   dashboard does not re-query its datasources on a timer; refresh by hand or
   pick an interval.
+- Enterprise observability counts a generation's whole input under both
+  Langfuse usage conventions (`input` with or without cache reads and writes):
+  the Overview's uncached input ratio is no longer negative, its cache-read
+  share stays at or below 100%, and sessions, traces, workloads, classification
+  and the cost cache comparison stop undercounting input.
 - platform-api presents a user's Dex refresh token once per refresh. A refused
   refresh was sent to Dex twice, which Dex can read as token reuse and which then
   ended every session of that user.

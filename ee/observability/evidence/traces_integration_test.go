@@ -196,6 +196,9 @@ func TestContextSQLOnRealClickHouse(t *testing.T) {
 		gen("a", "a@x", "map('input',1000,'output',10,'input_cached_tokens',900,'input_cache_creation',0,'completion_details.reasoning',4)", "['Skill','Bash']"),
 		// no cache, no reasoning keys: must not count as observed zeros
 		gen("b", "a@x", "map('input',3000,'output',30)", "['Bash']"),
+		// Anthropic convention: input is only the uncached part, total adds the
+		// cache and the reasoning kept outside output: a 1000-token input
+		gen("d", "a@x", "map('input',2,'output',10,'input_cached_tokens',900,'input_cache_creation',98,'output_reasoning_tokens',5,'total',1015)", "[]"),
 		// another user's generation: never counted
 		gen("c", "b@x", "map('input',99999,'output',1)", "['Bash','Bash']"),
 	}, ","))
@@ -207,17 +210,17 @@ func TestContextSQLOnRealClickHouse(t *testing.T) {
 	if err != nil || rep.Provenance.State != "available" || rep.ToolProvenance.State != "available" {
 		t.Fatalf("err=%v provenance=%+v tools=%+v", err, rep.Provenance, rep.ToolProvenance)
 	}
-	if rep.GenerationCount == nil || *rep.GenerationCount != 2 {
-		t.Fatalf("generations = %v, want 2 (b@x excluded)", rep.GenerationCount)
+	if rep.GenerationCount == nil || *rep.GenerationCount != 3 {
+		t.Fatalf("generations = %v, want 3 (b@x excluded)", rep.GenerationCount)
 	}
-	if v, u := rep.TokenRatio.Value, rep.TokenRatio.UncachedValue; v == nil || *v != 100 || u == nil || *u != 77.5 || rep.TokenRatio.Coverage != 2 {
-		t.Errorf("ratio = %+v, want 4000/40 and uncached 3100/40", rep.TokenRatio)
+	if v, u := rep.TokenRatio.Value, rep.TokenRatio.UncachedValue; v == nil || *v != 100 || u == nil || *u != 64 || rep.TokenRatio.Coverage != 3 {
+		t.Errorf("ratio = %+v, want 5000/50 and uncached 3200/50", rep.TokenRatio)
 	}
-	if v := rep.CacheReadShare.Value; v == nil || *v != 0.9 || rep.CacheReadShare.Coverage != 1 || rep.CacheCoverage != 1 {
-		t.Errorf("cache share = %+v coverage=%d, want 900/1000 over the one row that carries it", rep.CacheReadShare, rep.CacheCoverage)
+	if v := rep.CacheReadShare.Value; v == nil || *v != 0.9 || rep.CacheReadShare.Coverage != 2 || rep.CacheCoverage != 2 {
+		t.Errorf("cache share = %+v coverage=%d, want 1800/2000 over the two rows that carry it", rep.CacheReadShare, rep.CacheCoverage)
 	}
-	if rep.CacheCreationTokens == nil || *rep.CacheCreationTokens != 0 || rep.CacheCreationCoverage != 1 {
-		t.Errorf("cache creation = %v/%d, want an observed 0 on one row", rep.CacheCreationTokens, rep.CacheCreationCoverage)
+	if rep.CacheCreationTokens == nil || *rep.CacheCreationTokens != 98 || rep.CacheCreationCoverage != 2 {
+		t.Errorf("cache creation = %v/%d, want 0+98 on two rows", rep.CacheCreationTokens, rep.CacheCreationCoverage)
 	}
 	if v := rep.Reasoning.Share; v == nil || *v != 0.4 || rep.Reasoning.Coverage != 1 {
 		t.Errorf("reasoning = %+v, want 4/10 over one row", rep.Reasoning)
