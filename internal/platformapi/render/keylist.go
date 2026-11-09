@@ -35,7 +35,7 @@ type KeyListRow struct {
 // KeyRow builds one KeyListRow from a db.KeyListItem plus a caller-supplied
 // status/reasons pair. GET /platform/keys passes envkeys.EffectiveState's
 // derived output; the admin inventory passes the raw SQL-level it.Status
-// with nil reasons (D-20 — admins get no Invalid derivation).
+// (D-20 — admins get no Invalid derivation) with only reason idp_refused.
 func KeyRow(it db.KeyListItem, status string, reasons []string) KeyListRow {
 	row := KeyListRow{
 		KeyID:      it.KeyID,

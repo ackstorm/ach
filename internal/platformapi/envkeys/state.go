@@ -18,7 +18,8 @@ const (
 // EffectiveState folds the persisted status (ListKeys already says
 // 'expired' when the clock does) and the access verdict into the visible
 // state, by priority Revoked → Expired → Suspended → Invalid → Active
-// (§7.1), plus the secondary facts as reasons.
+// (§7.1), plus the secondary facts as reasons. Invalid also covers an
+// owner the upstream IdP refused.
 func EffectiveState(it db.KeyListItem, access accessVerdict) (string, []string) {
 	if it.Type != "ek" {
 		return it.Status, nil
@@ -38,7 +39,10 @@ func EffectiveState(it db.KeyListItem, access accessVerdict) (string, []string) 
 	case accessUnverified:
 		reasons = append(reasons, "access_unverified")
 	}
-	if it.Status == statusActive && access == accessLost {
+	if it.OwnerRefused {
+		reasons = append(reasons, "idp_refused")
+	}
+	if it.Status == statusActive && (access == accessLost || it.OwnerRefused) {
 		return statusInvalid, reasons
 	}
 	return it.Status, reasons

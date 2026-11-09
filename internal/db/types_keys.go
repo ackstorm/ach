@@ -92,7 +92,8 @@ type EkKeyInfo struct {
 	// Requester is "<namespace>/<serviceaccount>" for an exchange key
 	// (migration 000026). Empty for a manual key and for read paths that do
 	// not select it.
-	Requester string
+	Requester    string
+	OwnerRefused bool // GetEnvironmentKey only: the upstream IdP refused the owner (idp_refusals)
 }
 
 // PkInsertRow is the value-struct argument to InsertPersonalKey. Fields match

@@ -776,6 +776,29 @@ func TestAdminKeysList_OwnerSuspendedJSON(t *testing.T) {
 	}
 }
 
+// TestAdminKeysList_JSONKeepsReasons: -o json prints each row's reasons,
+// where an admin sees an IdP-refused owner.
+func TestAdminKeysList_JSONKeepsReasons(t *testing.T) {
+	adminTestEnv(t)
+	srv := newAdminTestServer(t)
+	defer srv.Close()
+	srv.keysListBody = map[string]any{
+		"items": []map[string]any{
+			{"key_id": "ekid_a", "type": "ek", "owner_email": "x@y", "status": "active", "reasons": []string{"idp_refused"}},
+		},
+		"next_cursor": "",
+	}
+	seedAdminConfig(t, srv.URL)
+
+	out, _, code, err := executeAdmin(t, "", "keys", "list", "-o", "json")
+	if err != nil || code != exit.OK {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if !strings.Contains(out, `"reasons": [`) || !strings.Contains(out, `"idp_refused"`) {
+		t.Fatalf("reasons missing:\n%s", out)
+	}
+}
+
 // TestAdminUsersBudget_Patch: `admin users budget` PATCHes the escaped
 // email's budget route with max_budget + budget_duration.
 func TestAdminUsersBudget_Patch(t *testing.T) {

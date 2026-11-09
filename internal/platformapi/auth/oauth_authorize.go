@@ -258,6 +258,13 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, 500, "store unavailable")
 		return
 	}
+	// The IdP accepted this login: lift an earlier refusal so the user's
+	// ek_ keys resolve again.
+	if err := d.idpRefusal(r.Context(), email, false); err != nil {
+		d.Auth.Logger.Error("oauth: lifting the IdP refusal failed", "err", err)
+		htmlError(w, 500, "store unavailable")
+		return
+	}
 	gen, err := d.Store.SessionGen(r.Context(), email, d.sessionGenTTL())
 	if err != nil {
 		htmlError(w, 500, "store unavailable")
@@ -397,6 +404,17 @@ func (d OAuthDeps) dexRefresh(ctx context.Context, refresh string) (string, []st
 func dexDenied(err error) bool {
 	var re *oauth2.RetrieveError
 	return errors.As(err, &re) && re.Response != nil && re.Response.StatusCode == http.StatusBadRequest
+}
+
+// dexUpstreamRejection is the error_description Dex gives an invalid_grant
+// when the upstream IdP refused the connector's refresh (dexidp/dex#5132):
+// the user is gone at the IdP. Dex's other invalid_grant answers (a token
+// reused or expired) are about the token, not the user.
+const dexUpstreamRejection = "The upstream identity provider rejected the refresh token."
+
+func dexUpstreamRejected(err error) bool {
+	var re *oauth2.RetrieveError
+	return errors.As(err, &re) && re.ErrorDescription == dexUpstreamRejection
 }
 
 func (d OAuthDeps) provision(ctx context.Context, email, name string, groups []string) (string, error) {

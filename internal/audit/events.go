@@ -122,4 +122,5 @@ const (
 	OutcomeNotGranted   = "not_granted"
 	OutcomeRateLimited  = "rate_limited"
 	OutcomeKeySuspended = "key_suspended"
+	OutcomeIdPRefused   = "idp_refused"
 )
