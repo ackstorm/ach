@@ -55,6 +55,7 @@ type OAuthDeps struct {
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
 	OAuthPKRevoke func(ctx context.Context, keyID string) error
 	IdPRefusal    func(ctx context.Context, email string, refused bool) error
+	EkOwnersInUse func(ctx context.Context) ([]string, error)
 
 	registerLimit *envkeys.ClientLimiter // built by MountOAuth
 }

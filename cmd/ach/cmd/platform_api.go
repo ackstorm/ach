@@ -562,6 +562,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		ObservabilityExtra: extra,
 		Metrics:            platformAPICollectors,
 	}
+	go platformapi.RunIdPSweep(ctx, out.server)
 	return out, nil
 }
 
