@@ -14,18 +14,26 @@ import (
 // Every ratio has its own matched population (rows that carry both sides), and
 // a measurement no row carries stays null, never an observed zero.
 //
-// usage_details semantics, measured on Langfuse events_full: input_cached_tokens
-// is part of input, and completion_details.reasoning is part of output (total is
-// always input + output), so both are shares and never added to a total.
-
 // ponytail: aggregate per request, no cache; add one when the console polls it.
+
+// fullInputSQL is a generation's whole input, cache reads and writes
+// included. Langfuse events_full mixes two usage_details conventions
+// (measured on production, 2026-11): in most rows input includes
+// input_cached_tokens and input_cache_creation and total = input + output; in
+// the rest (Anthropic-style) input is only the uncached part and total =
+// input + input_cached_tokens + input_cache_creation + output, plus
+// output_reasoning_tokens when that key is present (reasoning outside output).
+// total - output - output_reasoning_tokens is the whole input under both;
+// a row without total keeps input. Read usage_details['input'] directly and
+// cache reads exceed input. completion_details.reasoning is part of output.
+const fullInputSQL = `if(mapContains(usage_details, 'total'), usage_details['total'] - usage_details['output'] - usage_details['output_reasoning_tokens'], toInt64(usage_details['input']))`
 
 var contextBands = []string{"<50K", "50–100K", "100–200K", "200–300K", ">=300K"}
 
 // mapContains is what tells a missing measurement from an observed 0: reading
 // an absent key returns 0.
 const contextUsageSQL = `
-WITH if(mapContains(usage_details, 'input'), toNullable(usage_details['input']), NULL) AS input_tokens,
+WITH if(mapContains(usage_details, 'input'), toNullable(` + fullInputSQL + `), NULL) AS input_tokens,
      if(mapContains(usage_details, 'output'), toNullable(usage_details['output']), NULL) AS output_tokens,
      if(mapContains(usage_details, 'input_cached_tokens'), toNullable(usage_details['input_cached_tokens']), NULL) AS cache_tokens,
      if(mapContains(usage_details, 'input_cache_creation'), toNullable(usage_details['input_cache_creation']), NULL) AS cache_creation,
@@ -134,8 +142,8 @@ type InputSummary struct {
 }
 
 // TokenRatio is input over output on generations carrying both. Uncached
-// excludes cache-read tokens (input includes them): the part of the input
-// the provider processed at full price.
+// excludes cache-read tokens (input includes them, see fullInputSQL): the
+// part of the input the provider processed at full price.
 type TokenRatio struct {
 	InputTokens         *float64 `json:"input_tokens"`
 	OutputTokens        *float64 `json:"output_tokens"`
