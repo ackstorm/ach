@@ -52,6 +52,9 @@ func keyLive(
 			if err != nil || row == nil {
 				return false, err
 			}
+			if row.OwnerRefused {
+				return false, nil
+			}
 			status, expires = row.Status, row.ExpiresAt
 		}
 		return status == "active" && (expires == nil || time.Now().Before(*expires)), nil

@@ -35,6 +35,7 @@ func TestKeyLive(t *testing.T) {
 		{name: "suspended ek", keyType: keys.PrefixEk, ek: &db.EkKeyInfo{Status: "suspended"}},
 		{name: "revoked ek", keyType: keys.PrefixEk, ek: &db.EkKeyInfo{Status: "revoked"}},
 		{name: "ek past expires_at", keyType: keys.PrefixEk, ek: &db.EkKeyInfo{Status: "active", ExpiresAt: &past}},
+		{name: "ek of a refused owner", keyType: keys.PrefixEk, ek: &db.EkKeyInfo{Status: "active", OwnerRefused: true}},
 		{name: "ek row gone", keyType: keys.PrefixEk},
 		{name: "ek read fails", keyType: keys.PrefixEk, err: boom, wantErr: boom},
 	}
