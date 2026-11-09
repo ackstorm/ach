@@ -78,6 +78,9 @@ func TestEkOwnersInUse(t *testing.T) {
 		       ('ekid_b', 'h_b', 'env1', 'b@x.example', 'b', 'active',  now() - interval '10 days'),
 		       ('ekid_c', 'h_c', 'env1', 'c@x.example', 'c', 'revoked', now()),
 		       ('ekid_d', 'h_d', 'env1', 'd@x.example', 'd', 'active',  now())`)
+	mustExec(t, ctx, pool, `
+		INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name, status, last_used_at, expires_at)
+		VALUES ('ekid_e', 'h_e', 'env1', 'e@x.example', 'e', 'active', now(), now() - interval '1 hour')`)
 	if err := db.SetIdPRefused(ctx, pool, "d@x.example", true); err != nil {
 		t.Fatal(err)
 	}
