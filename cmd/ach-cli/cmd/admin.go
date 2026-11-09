@@ -52,7 +52,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/render"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -345,7 +344,7 @@ func runAdminList(cmd *cobra.Command, kind, output string, f *adminCredFlags) er
 		}
 	}
 
-	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f.credFlags)
 	if err != nil {
 		return err
 	}
@@ -554,7 +553,7 @@ func runAdminKeysList(cmd *cobra.Command, f *adminCredFlags, output,
 		}
 	}
 
-	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f.credFlags)
 	if err != nil {
 		return err
 	}
@@ -645,7 +644,7 @@ func runAdminKeysRevoke(cmd *cobra.Command, keyID string, f *adminCredFlags) err
 		}
 	}
 
-	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f.credFlags)
 	if err != nil {
 		return err
 	}
@@ -731,7 +730,7 @@ func runAdminRevokeOwnerKeys(cmd *cobra.Command, email string, f *adminCredFlags
 		}
 	}
 
-	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f.credFlags)
 	if err != nil {
 		return err
 	}
@@ -756,7 +755,7 @@ func adminUserPatch(cmd *cobra.Command, f *adminCredFlags, email, leaf string, b
 	if err := validateEmail(email); err != nil {
 		return err
 	}
-	c, err := resolveCred(cmd.Context(), f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(cmd.Context(), f.credFlags)
 	if err != nil {
 		return err
 	}
@@ -879,7 +878,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 		}
 	}
 
-	c, err := resolveCred(ctx, f.credFlags, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f.credFlags)
 	if err != nil {
 		return err
 	}

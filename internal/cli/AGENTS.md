@@ -54,7 +54,7 @@ ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target 
 ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` updates every env recorded under .ach/
 ach-cli env status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli launch <claude|codex|gemini|opencode|pi> [--environment <env>] [hydrate flags] [-- tool args]   # runHydrate for that one target (no env = every env recorded under the folder's .ach/, like bare env hydrate), then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with env hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target
-ach-cli keys create <env> [--name n] [--expires 90d] [--max-budget X] [--no-save] | list [--env e] [--status …] [-o]
+ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--env e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
 ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
 ach-cli admin keys list [--owner e] [--type pk|ek] [--status …] | revoke <id> | revoke --owner <email>
@@ -66,22 +66,25 @@ ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [-
 ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
 ```
 
-Every network command takes `--profile`, `--key <name|ek-…>`, `--verbose`
+Every network command takes `--profile`, `--key <ek-…>`, `--verbose`
 (`registerCredFlags`, cred.go). Only the list/read commands also take
-`-o table|json` (`registerOutputFlag`): `env list`, `env search`, `env status`, `keys list`,
-`admin list` (also `yaml`), `admin keys list`.
+`-o table|json` (`registerOutputFlag`): `env list`, `env search`, `env describe`,
+`env status`, `keys list`, `keys create`, `admin list` (also `yaml`),
+`admin keys list`, `profile list`, `profile show`, `whoami`, `token`.
 Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
 prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
 `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config `~/.config/ach/config.yaml`
-profiles carry `url`, `key` (a machine profile's ek-), `keys: {name: {id, key}}`
-(saved by `keys create`) and `oauth`; an old file with `pk:`/`ek:` fails to load
-with a "delete and re-login" hint (no migration).
+profiles carry `url`, `key` (a machine profile's ek-) and `oauth`. `keys create`
+prints the key once and stores it nowhere; a leftover `keys:` block (saved
+copies from ach-cli ≤ 1.1.10) loads into `Profile.StaleKeys`, which `Load`
+clears, so it is never read and the next write drops it. An old file with
+`pk:`/`ek:` fails to load with a "delete and re-login" hint (no migration).
 
 `keys list` shows the caller's own ek- keys only (`NAME ENVIRONMENT STATUS
 EXPIRES ID`), `--status active` by default (`suspended|expired|invalid|revoked|all`).
-`keys revoke|suspend|resume|budget` take a saved name or an `ekid_…`; revoke
-also deletes the saved copy. Personal (pk-) keys are not a user concept: they
-come from `login` and only `admin keys` sees them. `TestHelp_Vocabulary`
+`keys revoke|suspend|resume|budget` take a key name (looked up on the server,
+unique among your non-revoked keys) or an `ekid_…`. Personal (pk-) keys are
+not a user concept: they come from `login` and only `admin keys` sees them. `TestHelp_Vocabulary`
 (help_jargon_test.go) fails the build if pk-/pk_/pkid_/ek_ appear in help
 outside `admin`, or an example says `ach <cmd>` instead of `ach-cli`.
 

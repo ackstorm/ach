@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // contentFetchKinds is the closed set of content kinds the Content Service
@@ -80,7 +79,7 @@ func runEnvFetch(cmd *cobra.Command, env, kind, name string, f credFlags, file s
 		}
 	}
 
-	c, err := resolveCred(ctx, f, synthetic.GateAPI)
+	c, err := resolveCred(ctx, f)
 	if err != nil {
 		return err
 	}

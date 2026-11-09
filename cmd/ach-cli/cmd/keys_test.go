@@ -15,7 +15,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 )
 
@@ -101,21 +100,10 @@ func (s *keysTestServer) lastGet(path string) keysReq {
 	return keysReq{}
 }
 
-// seedKeysProfile writes profile "p" (a session) with the given saved keys.
-func seedKeysProfile(t *testing.T, url string, saved map[string]config.SavedKey) string {
+// seedKeysProfile writes profile "p" (a session).
+func seedKeysProfile(t *testing.T, url string) string {
 	t.Helper()
-	p := oauthProfile(url)
-	p.Keys = saved
-	return seedProfile(t, "p", p)
-}
-
-func loadProfileP(t *testing.T, path string) *config.Profile {
-	t.Helper()
-	f, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f.Profiles["p"]
+	return seedProfile(t, "p", oauthProfile(url))
 }
 
 func executeKeys(t *testing.T, stdin string, args ...string) (string, string, exit.Code, error) {
@@ -132,12 +120,18 @@ func newRootCmdForTest() *cobra.Command {
 	return root
 }
 
-func TestKeysCreate_SavesByNameAndPrintsOnce(t *testing.T) {
+// The key is printed once on stdout and written nowhere: the config file is
+// left byte for byte as it was.
+func TestKeysCreate_PrintsOnceSavesNothing(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	path := seedKeysProfile(t, srv.URL, nil)
+	path := seedKeysProfile(t, srv.URL)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	stdout, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo")
+	stdout, stderr, code, err := executeKeys(t, "", "create", "demo", "--name", "demo")
 	if err != nil || code != exit.OK {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -151,31 +145,8 @@ func TestKeysCreate_SavesByNameAndPrintsOnce(t *testing.T) {
 	if stdout != testEKSaved+"\n" {
 		t.Errorf("stdout = %q; want the plaintext exactly once", stdout)
 	}
-	if got := loadProfileP(t, path).Keys["demo"]; got != (config.SavedKey{ID: "ekid_new", Key: testEKSaved}) {
-		t.Errorf("saved = %+v", got)
-	}
-}
-
-// A 2xx without key_id/plaintext (e.g. a redirected POST answered by the
-// list endpoint) must fail loudly: nothing printed, nothing saved.
-func TestKeysCreate_IncompleteResponseSavesNothing(t *testing.T) {
-	credTestEnv(t)
-	srv := newKeysTestServer(t)
-	srv.createResp = map[string]any{}
-	path := seedKeysProfile(t, srv.URL, nil)
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := newKeysCmd()
-	cmd.SilenceUsage = true // as the real root does; keep stdout to what RunE writes
-	stdout, _, code, err := executeCommand(t, cmd, "create", "demo", "--name", "demo")
-	if code != exit.General || err == nil || !strings.Contains(err.Error(), "incomplete response") {
-		t.Fatalf("code=%d err=%v", code, err)
-	}
-	if stdout != "" {
-		t.Errorf("stdout = %q; want empty", stdout)
+	if !strings.Contains(stderr, "Key ID: ekid_new") {
+		t.Errorf("stderr = %q; want the key id", stderr)
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {
@@ -186,28 +157,32 @@ func TestKeysCreate_IncompleteResponseSavesNothing(t *testing.T) {
 	}
 }
 
-func TestKeysCreate_RefusesSavedName(t *testing.T) {
+// A 2xx without key_id/plaintext (e.g. a redirected POST answered by the
+// list endpoint) must fail loudly: nothing printed.
+func TestKeysCreate_IncompleteResponsePrintsNothing(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, map[string]config.SavedKey{"demo": {ID: "ekid_old", Key: testEK}})
+	srv.createResp = map[string]any{}
+	seedKeysProfile(t, srv.URL)
 
-	_, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo")
-	if code != exit.General || err == nil ||
-		!strings.Contains(err.Error(), `a key named "demo" is already saved in profile "p"; pick --name or revoke it`) {
+	cmd := newKeysCmd()
+	cmd.SilenceUsage = true // as the real root does; keep stdout to what RunE writes
+	stdout, _, code, err := executeCommand(t, cmd, "create", "demo", "--name", "demo")
+	if code != exit.General || err == nil || !strings.Contains(err.Error(), "incomplete response") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
-	if len(srv.writes()) != 0 {
-		t.Errorf("no POST may be sent: %+v", srv.writes())
+	if stdout != "" {
+		t.Errorf("stdout = %q; want empty", stdout)
 	}
 }
 
 func TestKeysCreate_ExpiresAndBudget(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 
 	if _, _, _, err := executeKeys(t, "", "create", "demo", "--name", "demo", "--expires", "90d",
-		"--max-budget", "20", "--budget-duration", "30d", "--no-save"); err != nil {
+		"--max-budget", "20", "--budget-duration", "30d"); err != nil {
 		t.Fatal(err)
 	}
 	var body struct {
@@ -248,7 +223,7 @@ func TestParseExpires(t *testing.T) {
 func TestKeysCreate_BudgetDurationNeedsMaxBudget(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 	_, _, code, err := executeKeys(t, "", "create", "demo", "--name", "demo", "--budget-duration", "30d")
 	if code != exit.General || err == nil || !strings.Contains(err.Error(), "--max-budget") {
 		t.Fatalf("code=%d err=%v", code, err)
@@ -262,7 +237,7 @@ func TestKeysCreate_MissingOrUnknownEnvListsYours(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
 	srv.envs = []string{"frontend-dev", "platform"}
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 
 	for _, args := range [][]string{{"create", "--name", "x"}, {"create", "ghost", "--name", "x"}} {
 		_, _, code, err := executeKeys(t, "", args...)
@@ -278,9 +253,9 @@ func TestKeysCreate_MissingOrUnknownEnvListsYours(t *testing.T) {
 func TestKeysCreate_NameRequired(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 
-	for _, args := range [][]string{{"create", "demo"}, {"create", "demo", "--name", " ", "--no-save"}} {
+	for _, args := range [][]string{{"create", "demo"}, {"create", "demo", "--name", " "}} {
 		_, _, code, err := executeKeys(t, "", args...)
 		if code != exit.General || err == nil || !strings.Contains(err.Error(), "--name is required") {
 			t.Errorf("%v: code=%d err=%v", args, code, err)
@@ -304,7 +279,7 @@ func TestKeysList_QueryStatusAndColumns(t *testing.T) {
 	srv := newKeysTestServer(t)
 	srv.listItems = []map[string]any{{"key_id": "ekid_1", "type": "ek", "environment": "demo", "name": "laptop",
 		"status": "active", "created_at": "2026-01-01T00:00:00Z"}}
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 
 	out, _, _, err := executeKeys(t, "", "list")
 	if err != nil {
@@ -351,49 +326,10 @@ func TestKeysList_BogusStatus(t *testing.T) {
 	}
 }
 
-func TestKeysRevoke_SavedName(t *testing.T) {
-	credTestEnv(t)
-	srv := newKeysTestServer(t)
-	path := seedKeysProfile(t, srv.URL, map[string]config.SavedKey{
-		"laptop": {ID: "ekid_lap", Key: testEK}, "ci": {ID: "ekid_ci", Key: testEKSaved},
-	})
-
-	out, _, _, err := executeKeys(t, "y\n", "revoke", "laptop")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w := srv.writes(); len(w) != 1 || w[0].Method != http.MethodDelete || w[0].Path != "/platform/keys/ekid_lap" {
-		t.Fatalf("writes = %+v", w)
-	}
-	keys := loadProfileP(t, path).Keys
-	if _, ok := keys["laptop"]; ok || keys["ci"].ID != "ekid_ci" {
-		t.Errorf("saved keys after revoke = %+v", keys)
-	}
-	if !strings.Contains(out, "Revoked laptop (ekid_lap)") {
-		t.Errorf("stdout = %q", out)
-	}
-}
-
-func TestKeysRevoke_IDRemovesSavedCopy(t *testing.T) {
-	credTestEnv(t)
-	srv := newKeysTestServer(t)
-	path := seedKeysProfile(t, srv.URL, map[string]config.SavedKey{"laptop": {ID: "ekid_x", Key: testEK}})
-
-	if _, _, _, err := executeKeys(t, "", "revoke", "ekid_x", "--yes"); err != nil {
-		t.Fatal(err)
-	}
-	if w := srv.writes(); len(w) != 1 || w[0].Path != "/platform/keys/ekid_x" {
-		t.Fatalf("writes = %+v", w)
-	}
-	if len(loadProfileP(t, path).Keys) != 0 {
-		t.Error("the saved entry holding that id must be removed")
-	}
-}
-
 func TestKeysRevoke_ServerNameLookup(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 	row := func(id, status string) map[string]any {
 		return map[string]any{"key_id": id, "name": "ci", "status": status}
 	}
@@ -429,7 +365,7 @@ func TestKeysRevoke_ServerNameLookup(t *testing.T) {
 func TestKeysRevoke_ConfirmNoCancels(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 	if _, _, code, err := executeKeys(t, "n\n", "revoke", "ekid_x"); err == nil || code != exit.General {
 		t.Fatalf("code=%d err=%v", code, err)
 	}
@@ -441,7 +377,7 @@ func TestKeysRevoke_ConfirmNoCancels(t *testing.T) {
 func TestKeysRevoke_RejectsPlaintextAndFriendly404(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, nil)
+	seedKeysProfile(t, srv.URL)
 	_, _, _, err := executeKeys(t, "", "revoke", testEK, "--yes")
 	if err == nil || !strings.Contains(err.Error(), "not the key itself") {
 		t.Fatalf("plaintext: err=%v", err)
@@ -456,7 +392,8 @@ func TestKeysRevoke_RejectsPlaintextAndFriendly404(t *testing.T) {
 func TestKeysSuspendResume(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, map[string]config.SavedKey{"laptop": {ID: "ekid_lap", Key: testEK}})
+	seedKeysProfile(t, srv.URL)
+	srv.listItems = []map[string]any{{"key_id": "ekid_lap", "name": "laptop", "status": "active"}}
 
 	for _, verb := range []string{"suspend", "resume"} {
 		if _, _, _, err := executeKeys(t, "", verb, "laptop"); err != nil {
@@ -479,7 +416,8 @@ func TestKeysSuspendResume(t *testing.T) {
 func TestKeysBudget(t *testing.T) {
 	credTestEnv(t)
 	srv := newKeysTestServer(t)
-	seedKeysProfile(t, srv.URL, map[string]config.SavedKey{"laptop": {ID: "ekid_lap", Key: testEK}})
+	seedKeysProfile(t, srv.URL)
+	srv.listItems = []map[string]any{{"key_id": "ekid_lap", "name": "laptop", "status": "active"}}
 
 	if _, _, _, err := executeKeys(t, "", "budget", "laptop", "--max-budget", "20"); err != nil {
 		t.Fatal(err)

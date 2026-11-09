@@ -106,28 +106,22 @@ func TestWhoami_JSON(t *testing.T) {
 }
 
 func TestKeysCreate_JSON(t *testing.T) {
-	for _, noSave := range []bool{false, true} {
-		credTestEnv(t)
-		srv := newKeysTestServer(t)
-		seedKeysProfile(t, srv.URL, nil)
-		args := []string{"create", "demo", "--name", "laptop", "-o", "json"}
-		if noSave {
-			args = append(args, "--no-save")
-		}
-		stdout, stderr, _, err := executeKeys(t, "", args...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		m := decodeJSON(t, stdout)
-		if m["name"] != "laptop" || m["id"] != "ekid_new" || m["environment"] != "demo" || m["key"] != testEKSaved {
-			t.Errorf("noSave=%v: %v", noSave, m)
-		}
-		if v, ok := m["expires_at"]; !ok || v != nil {
-			t.Errorf("expires_at must be present and null: %v", m)
-		}
-		if !strings.Contains(stderr, "revoke with") {
-			t.Errorf("revoke hint must stay on stderr: %q", stderr)
-		}
+	credTestEnv(t)
+	srv := newKeysTestServer(t)
+	seedKeysProfile(t, srv.URL)
+	stdout, stderr, _, err := executeKeys(t, "", "create", "demo", "--name", "laptop", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := decodeJSON(t, stdout)
+	if m["name"] != "laptop" || m["id"] != "ekid_new" || m["environment"] != "demo" || m["key"] != testEKSaved {
+		t.Errorf("%v", m)
+	}
+	if v, ok := m["expires_at"]; !ok || v != nil {
+		t.Errorf("expires_at must be present and null: %v", m)
+	}
+	if !strings.Contains(stderr, "revoke with") {
+		t.Errorf("revoke hint must stay on stderr: %q", stderr)
 	}
 }
 
@@ -204,8 +198,8 @@ func TestProfileListShow_JSON(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if len(list) != 2 || list[0]["name"] != "ci" || list[0]["auth"] != "key" || list[0]["current"] != false ||
-		list[0]["saved_keys"] != 0.0 || list[1]["name"] != "prod" || list[1]["url"] != "https://prod.example" ||
-		list[1]["auth"] != authSession || list[1]["current"] != true || list[1]["saved_keys"] != 1.0 {
+		list[1]["name"] != "prod" || list[1]["url"] != "https://prod.example" ||
+		list[1]["auth"] != authSession || list[1]["current"] != true {
 		t.Errorf("list: %v", list)
 	}
 	shown, _, _, err := executeProfile(t, "show", "ci", "-o", "json")
@@ -213,10 +207,10 @@ func TestProfileListShow_JSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := decodeJSON(t, shown)
-	if m["name"] != "ci" || m["auth"] != "key" || m["current"] != false || m["saved_keys"] != 0.0 {
+	if m["name"] != "ci" || m["auth"] != "key" || m["current"] != false {
 		t.Errorf("show: %v", m)
 	}
-	for _, secret := range []string{testEK, testEKSaved, "ekid_lap", "h.p.s"} {
+	for _, secret := range []string{testEK, "h.p.s"} {
 		if strings.Contains(out, secret) || strings.Contains(shown, secret) {
 			t.Errorf("secret %q leaked", secret)
 		}

@@ -9,10 +9,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 )
 
-const (
-	testEK1 = "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAabcd"
-	testEK2 = "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1234"
-)
+const testEK1 = "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAabcd"
 
 func TestFormatProfileList(t *testing.T) {
 	if got := FormatProfileList(&config.File{}); !strings.Contains(got, "No profiles configured") {
@@ -21,14 +18,13 @@ func TestFormatProfileList(t *testing.T) {
 	got := FormatProfileList(&config.File{Default: "prod", Profiles: map[string]*config.Profile{
 		"ci":   {URL: "https://ci.example", Key: testEK1},
 		"none": {URL: "https://n.example"},
-		"prod": {URL: "https://prod.example", OAuth: &config.OAuthCreds{AccessToken: "a.b.c"},
-			Keys: map[string]config.SavedKey{"a": {ID: "ekid_a", Key: testEK1}, "b": {ID: "ekid_b", Key: testEK2}}},
+		"prod": {URL: "https://prod.example", OAuth: &config.OAuthCreds{AccessToken: "a.b.c"}},
 	}})
 	want := []string{
-		"CURRENT NAME URL AUTH SAVED KEYS",
-		"ci https://ci.example key 0",
-		"none https://n.example none 0",
-		"* prod https://prod.example session 2",
+		"CURRENT NAME URL AUTH",
+		"ci https://ci.example key",
+		"none https://n.example none",
+		"* prod https://prod.example session",
 	}
 	lines := strings.Split(strings.TrimSpace(got), "\n")
 	if len(lines) != len(want) {
@@ -42,22 +38,21 @@ func TestFormatProfileList(t *testing.T) {
 }
 
 func TestFormatProfileShow(t *testing.T) {
-	dep := &config.Profile{URL: "https://hub.example", Key: testEK1,
-		Keys: map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: testEK2}}}
+	dep := &config.Profile{URL: "https://hub.example", Key: testEK1}
 	got := FormatProfileShow("ci", dep, false)
-	for _, w := range []string{"Profile  ci", "URL      https://hub.example", "Auth     key ek-****abcd", "laptop  ek-****1234  (ekid_1)"} {
+	for _, w := range []string{"Profile  ci", "URL      https://hub.example", "Auth     key ek-****abcd"} {
 		if !strings.Contains(got, w) {
 			t.Errorf("missing %q in:\n%s", w, got)
 		}
 	}
-	if strings.Contains(got, testEK1) || strings.Contains(got, testEK2) {
+	if strings.Contains(got, testEK1) {
 		t.Errorf("plaintext leaked without reveal:\n%s", got)
 	}
 	rev := FormatProfileShow("ci", dep, true)
-	if !strings.Contains(rev, testEK1) || !strings.Contains(rev, testEK2) {
-		t.Errorf("reveal must print the keys in full:\n%s", rev)
+	if !strings.Contains(rev, testEK1) {
+		t.Errorf("reveal must print the key in full:\n%s", rev)
 	}
-	if s := FormatProfileShow("p", &config.Profile{URL: "https://x", OAuth: &config.OAuthCreds{}}, false); !strings.Contains(s, "Auth     session") || !strings.Contains(s, "(none)") {
+	if s := FormatProfileShow("p", &config.Profile{URL: "https://x", OAuth: &config.OAuthCreds{}}, false); !strings.Contains(s, "Auth     session") {
 		t.Errorf("oauth profile:\n%s", s)
 	}
 }

@@ -15,18 +15,16 @@ func executeProfile(t *testing.T, args ...string) (string, string, exit.Code, er
 	return executeCommand(t, newProfileCmd(), args...)
 }
 
-// seedProfiles writes two profiles: prod (session, default, one saved key)
-// and ci (machine key).
+// seedProfiles writes two profiles: prod (session, default) and ci
+// (machine key).
 func seedProfiles(t *testing.T) string {
 	t.Helper()
 	path, err := config.Path()
 	if err != nil {
 		t.Fatal(err)
 	}
-	prod := oauthProfile("https://prod.example")
-	prod.Keys = map[string]config.SavedKey{"laptop": {ID: "ekid_lap", Key: testEKSaved}}
 	if err := config.Save(path, &config.File{Default: "prod", Profiles: map[string]*config.Profile{
-		"prod": prod, "ci": {URL: "https://ci.example", Key: testEK},
+		"prod": oauthProfile("https://prod.example"), "ci": {URL: "https://ci.example", Key: testEK},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +53,7 @@ func TestProfileList(t *testing.T) {
 		lines = append(lines, strings.Join(strings.Fields(l), " "))
 	}
 	want := []string{
-		"CURRENT NAME URL AUTH SAVED KEYS", "ci https://ci.example key 0", "* prod https://prod.example session 1",
+		"CURRENT NAME URL AUTH", "ci https://ci.example key", "* prod https://prod.example session",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got:\n%s", out)
@@ -69,13 +67,14 @@ func TestProfileShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, w := range []string{"URL      https://prod.example", "Auth     session", "laptop  ek-****save  (ekid_lap)"} {
+	for _, w := range []string{"URL      https://prod.example", "Auth     session"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("missing %q:\n%s", w, out)
 		}
 	}
-	if strings.Contains(out, testEKSaved) {
-		t.Error("key leaked without --reveal")
+	out, _, _, err = executeProfile(t, "show", "ci")
+	if err != nil || strings.Contains(out, testEK) || !strings.Contains(out, "ek-****") {
+		t.Fatalf("key must be masked without --reveal: %v\n%s", err, out)
 	}
 	out, _, _, err = executeProfile(t, "show", "ci", "--reveal")
 	if err != nil || !strings.Contains(out, "Auth     key "+testEK) {

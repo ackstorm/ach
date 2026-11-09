@@ -109,8 +109,7 @@ func ProfileAuth(dep *config.Profile) string {
 }
 
 // FormatProfileList renders `profile list`: CURRENT (* on the default),
-// NAME, URL, AUTH (session|key|none) and SAVED KEYS (keys saved in this
-// profile — not the server-side count `whoami` reports as Keys), sorted by name.
+// NAME, URL and AUTH (session|key|none), sorted by name.
 func FormatProfileList(f *config.File) string {
 	if f == nil || len(f.Profiles) == 0 {
 		return "No profiles configured\n"
@@ -123,7 +122,7 @@ func FormatProfileList(f *config.File) string {
 
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH\tSAVED KEYS")
+	_, _ = fmt.Fprintln(tw, "CURRENT\tNAME\tURL\tAUTH")
 	for _, name := range names {
 		dep := f.Profiles[name]
 		if dep == nil {
@@ -133,48 +132,29 @@ func FormatProfileList(f *config.File) string {
 		if name == f.Default {
 			current = "*"
 		}
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", current, name, dep.URL, ProfileAuth(dep), len(dep.Keys))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", current, name, dep.URL, ProfileAuth(dep))
 	}
 	_ = tw.Flush()
 	return sb.String()
 }
 
-// FormatProfileShow renders `profile show`: URL, Auth and every saved key
-// as `name  ek-****abcd  (ekid_…)`. Key plaintext is masked unless reveal.
+// FormatProfileShow renders `profile show`: name, URL and Auth. A machine
+// profile's key is masked unless reveal.
 func FormatProfileShow(name string, dep *config.Profile, reveal bool) string {
-	mask := func(s string) string {
-		if reveal {
-			return s
-		}
-		return config.Mask(s)
-	}
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "Profile\t%s\n", name)
 	_, _ = fmt.Fprintf(tw, "URL\t%s\n", dep.URL)
 	auth := ProfileAuth(dep)
 	if auth == "key" {
-		auth += " " + mask(dep.Key)
+		key := dep.Key
+		if !reveal {
+			key = config.Mask(key)
+		}
+		auth += " " + key
 	}
 	_, _ = fmt.Fprintf(tw, "Auth\t%s\n", auth)
-	if len(dep.Keys) == 0 {
-		_, _ = fmt.Fprintln(tw, "Keys\t(none)")
-	}
 	_ = tw.Flush()
-	if len(dep.Keys) > 0 {
-		_, _ = fmt.Fprintln(&sb, "Keys")
-		kw := tabwriter.NewWriter(&sb, 0, 0, 2, ' ', 0)
-		names := make([]string, 0, len(dep.Keys))
-		for n := range dep.Keys {
-			names = append(names, n)
-		}
-		sort.Strings(names)
-		for _, n := range names {
-			k := dep.Keys[n]
-			_, _ = fmt.Fprintf(kw, "  %s\t%s\t(%s)\n", n, mask(k.Key), k.ID)
-		}
-		_ = kw.Flush()
-	}
 	return sb.String()
 }
 

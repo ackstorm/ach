@@ -22,8 +22,7 @@ func newProfileCmd() *cobra.Command {
 		Short: "Manage your profiles (~/.config/ach/config.yaml)",
 		Long: `Manage the profiles in ~/.config/ach/config.yaml. A profile is a Hub URL
 plus a credential: an OAuth session from ach-cli login, or a machine key
-(ek-…) from ach-cli profile add. Keys made with keys create are saved in it
-by name.
+(ek-…) from ach-cli profile add.
 
 With ACH_URL and ACH_KEY both set (synthetic mode) every verb exits 1.`,
 		RunE: helpOrUnknownSubcommand,
@@ -75,21 +74,19 @@ func saveProfiles(path string, f *config.File) error {
 }
 
 // profileView is the `profile list|show -o json` document. It carries no
-// credential: only the name, the Hub URL, the auth kind and a count.
+// credential: only the name, the Hub URL and the auth kind.
 type profileView struct {
-	Name      string `json:"name"`
-	URL       string `json:"url"`
-	Auth      string `json:"auth"`
-	Current   bool   `json:"current"`
-	SavedKeys int    `json:"saved_keys"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Auth    string `json:"auth"`
+	Current bool   `json:"current"`
 }
 
 func newProfileView(f *config.File, name string, dep *config.Profile) profileView {
 	if dep == nil {
 		dep = &config.Profile{}
 	}
-	return profileView{Name: name, URL: dep.URL, Auth: render.ProfileAuth(dep),
-		Current: name == f.Default, SavedKeys: len(dep.Keys)}
+	return profileView{Name: name, URL: dep.URL, Auth: render.ProfileAuth(dep), Current: name == f.Default}
 }
 
 func newProfileListCmd() *cobra.Command {
@@ -127,7 +124,7 @@ func newProfileShowCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show one profile and its saved keys (masked unless --reveal)",
+		Short: "Show one profile (a machine profile's key masked unless --reveal)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, f, err := requireProfiles()
@@ -152,7 +149,7 @@ func newProfileShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().BoolVar(&reveal, "reveal", false, "Print the keys in full (table only; -o json never prints a key)")
+	c.Flags().BoolVar(&reveal, "reveal", false, "Print the profile's key in full (table only; -o json never prints a key)")
 	registerOutputFlag(c, &out, "table", outputJSON)
 	return c
 }
@@ -228,7 +225,7 @@ func newProfileRemoveCmd() *cobra.Command {
 func newProfileRenameCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rename <old> <new>",
-		Short: "Rename a profile (keeps its credential and saved keys)",
+		Short: "Rename a profile (keeps its credential)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, f, err := requireProfiles()
@@ -272,12 +269,10 @@ func newProfileAddCmd() *cobra.Command {
 		Short: "Add a machine profile that signs in with a key (no browser)",
 		Long: `Add a profile that authenticates with an environment key (ek-…) instead
 of an OAuth session — for CI and agent boxes where a browser login is not
-possible. Make the key with ach-cli keys create --no-save on a signed-in
-machine.
+possible. Make the key with ach-cli keys create on a signed-in machine.
 
 The first profile added becomes the default; --default makes this one the
-default anyway. --force overwrites a profile of the same name (its saved
-keys are kept).`,
+default anyway. --force overwrites a profile of the same name.`,
 		Example: `  ach-cli profile add ci --url https://hub.example.com --key ek-…`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -321,11 +316,7 @@ func runProfileAdd(cmd *cobra.Command, name, url, key string, setDefault, force,
 		return &exit.CodedError{Code: exit.General,
 			Msg: fmt.Sprintf("profile %q already exists; pass --force to overwrite", name)}
 	}
-	dep := &config.Profile{URL: url, Key: key}
-	if existing != nil {
-		dep.Keys = existing.Keys
-	}
-	file.Profiles[name] = dep
+	file.Profiles[name] = &config.Profile{URL: url, Key: key}
 	if setDefault || file.Default == "" {
 		file.Default = name
 	}

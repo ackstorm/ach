@@ -94,7 +94,7 @@ you already minted instead:
 
 ```bash
 # 1. (on a human machine) mint a key scoped to one environment:
-ach-cli keys create prod --name ci-bot --no-save   # prints ek-... once
+ach-cli keys create prod --name ci-bot   # prints ek-... once
 
 # 2. (on the agent) register a profile from that key — no SSO:
 ach-cli profile add prod --url https://ach.example --key ek-...
@@ -106,20 +106,16 @@ export ACH_KEY=ek-...
 ach-cli env hydrate prod
 ```
 
-On your own machine, `keys create` saves the key in your profile under its
-name, and `--key <name>` (or `ACH_KEY=<name>`) picks it for one command:
-`ach-cli env hydrate stg --key stg-bot`.
-
 ## Rotating / cleaning up your own keys
 
-Your environment keys are yours to manage (no admin needed), by saved name or
-by `ekid_…`:
+Your environment keys are yours to manage (no admin needed), by name or by
+`ekid_…`:
 
 ```bash
 ach-cli keys list                        # NAME ENVIRONMENT STATUS EXPIRES ID
 ach-cli keys suspend ci-bot              # pause it; keys resume ci-bot undoes it
 ach-cli keys budget ci-bot --max-budget 20 --budget-duration 30d
-ach-cli keys revoke ci-bot               # for good; also drops the saved copy
+ach-cli keys revoke ci-bot               # for good
 ```
 
 Note: a key is scoped to ONE Environment; your sign-in session (`ach-cli

@@ -50,20 +50,16 @@ type File struct {
 }
 
 // Profile is one named entry under `profiles:` — a URL plus the
-// profile's own credential (OAuth block or Key) and the saved keys.
-// `url:` is the only required field.
+// profile's own credential (OAuth block or Key). `url:` is the only
+// required field.
 type Profile struct {
-	URL   string              `yaml:"url"`
-	Key   string              `yaml:"key,omitempty"`  // machine profile credential (ek-…), from `profile add`
-	Keys  map[string]SavedKey `yaml:"keys,omitempty"` // keys created with `keys create`, by name
-	OAuth *OAuthCreds         `yaml:"oauth,omitempty"`
-}
-
-// SavedKey is one key created with `keys create`: the id lets
-// `keys revoke <name>` reach the server, the plaintext is the credential.
-type SavedKey struct {
-	ID  string `yaml:"id"`  // ekid_…
-	Key string `yaml:"key"` // ek-… plaintext
+	URL   string      `yaml:"url"`
+	Key   string      `yaml:"key,omitempty"` // machine profile credential (ek-…), from `profile add`
+	OAuth *OAuthCreds `yaml:"oauth,omitempty"`
+	// StaleKeys accepts a `keys:` block (plaintext ek- copies written by
+	// ach-cli up to 1.1.10) so such a file still loads. Load clears it, so
+	// it is never read and the next Save drops it from disk.
+	StaleKeys yaml.Node `yaml:"keys,omitempty"`
 }
 
 // OAuthCreds is what `ach-cli login` stores: the DCR client id
@@ -209,6 +205,11 @@ func LoadWithInsecure(path string, warn func(format string, args ...any), allowI
 	}
 	if err := validateProfiles(&f, allowInsecure); err != nil {
 		return nil, err
+	}
+	for _, p := range f.Profiles {
+		if p != nil {
+			p.StaleKeys = yaml.Node{}
+		}
 	}
 	return &f, nil
 }

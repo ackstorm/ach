@@ -33,13 +33,12 @@ func executeLogout(t *testing.T, args ...string) (string, string, exit.Code, err
 	return outBuf.String(), errBuf.String(), exit.General, err
 }
 
-// TestLogout_ClearsSessionAndKey_KeepsSavedKeys: logout clears OAuth and
-// Key, keeps URL, default and the saved keys.
-func TestLogout_ClearsSessionAndKey_KeepsSavedKeys(t *testing.T) {
+// TestLogout_ClearsSessionAndKey: logout clears OAuth and Key, keeps URL
+// and default.
+func TestLogout_ClearsSessionAndKey(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	p := oauthProfile("https://hub.example")
 	p.Key = testEK
-	p.Keys = map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: testEKSaved}}
 	path := seedConfig(t, dir, "prod", p)
 
 	stdout, _, code, err := executeLogout(t)
@@ -57,10 +56,7 @@ func TestLogout_ClearsSessionAndKey_KeepsSavedKeys(t *testing.T) {
 	if dep.OAuth != nil || dep.Key != "" {
 		t.Errorf("OAuth=%v Key=%q; want both cleared", dep.OAuth, dep.Key)
 	}
-	if dep.Keys["laptop"] != (config.SavedKey{ID: "ekid_1", Key: testEKSaved}) {
-		t.Errorf("saved keys clobbered: %+v", dep.Keys)
-	}
-	if !strings.Contains(stdout, `Signed out of "prod" (saved keys kept; revoke them with keys revoke)`) {
+	if strings.TrimSpace(stdout) != `Signed out of "prod"` {
 		t.Errorf("stdout = %q", stdout)
 	}
 }

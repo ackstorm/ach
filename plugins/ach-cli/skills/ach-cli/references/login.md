@@ -41,20 +41,20 @@ one, `default`.
 
 ```bash
 ach-cli profile list                 # * marks the default
-ach-cli profile show [name]          # its URL and saved keys (masked; --reveal prints them)
-ach-cli profile list -o json         # [{name,url,auth,current,saved_keys}]; show -o json is one such object, never a key
+ach-cli profile show [name]          # its URL and auth (a machine key masked; --reveal prints it)
+ach-cli profile list -o json         # [{name,url,auth,current}]; show -o json is one such object, never a key
 ach-cli profile use <name>           # make it the default
 ach-cli profile rename <old> <new>
 ach-cli profile remove <name>        # --force for the default one
-ach-cli logout                       # end the session; URL and saved keys stay
+ach-cli logout                       # end the session; the URL stays
 ```
 
 Any command takes `--profile <name>` (or `ACH_PROFILE`) to use another profile once.
 
 ### A machine that cannot open a browser for good (CI, an agent box)
 
-Make an environment key on a signed-in machine (see [keys](keys.md),
-`--no-save`), then on the target machine:
+Make an environment key on a signed-in machine (see [keys](keys.md)), then on
+the target machine:
 
 ```bash
 ach-cli profile add ci --url <platform URL> --key ek-…

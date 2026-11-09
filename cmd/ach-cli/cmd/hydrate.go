@@ -62,7 +62,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -344,7 +343,7 @@ func runHydrate(cmd *cobra.Command, in hydrateInputs) error {
 	}
 
 	in.cred.Insecure = in.insecure
-	c, err := resolveCred(cmd.Context(), in.cred, synthetic.GateAPI)
+	c, err := resolveCred(cmd.Context(), in.cred)
 	if err != nil {
 		return err
 	}

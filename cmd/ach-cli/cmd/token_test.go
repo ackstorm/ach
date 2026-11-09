@@ -170,12 +170,12 @@ func TestToken_KeyProfilePrintsKey(t *testing.T) {
 		t.Fatalf("stdout=%q err=%v", stdout, err)
 	}
 	if err := config.Save(path, &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
-		URL: "https://ach.example.com", Keys: map[string]config.SavedKey{"prod": {ID: "ekid_1", Key: testEK}},
+		URL: "https://ach.example.com",
 	}}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, _, err := executeCommand(t, newTokenCmd()); err == nil {
-		t.Fatal("a profile with only saved keys must not print a credential")
+		t.Fatal("a profile with no credential must not print one")
 	}
 }
 
