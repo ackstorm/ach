@@ -4,6 +4,31 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- When the identity provider behind Dex refuses a user (suspended, disabled or
+  deleted there), every `ek_` that user owns, KeyGrant exchange keys included,
+  stops working until they sign in again. ACH acts only on Dex's upstream
+  rejection (400 `invalid_grant`, "The upstream identity provider rejected the
+  refresh token."), so it needs a Dex build with dexidp/dex#5132 and a connector
+  that reports the refusal (dexidp/dex#5143); `saml`, `oauth`, `keystone` and
+  `authproxy` never do, and `ach-cli admin keys revoke --owner` stays the
+  offboarding step there.
+- platform-api re-validates, once a day, the owners of `ek_` keys used in the
+  last 7 days, so a user who never signs in again is still caught.
+- `POST /platform/keys/exchange` answers 403 `idp_refused` for a refused
+  identity and mints nothing. The admin key inventory shows the reason
+  `idp_refused` (`ach-cli admin keys list -o json`), as does the owner's own list.
+- `ach-cli token`, `whoami`, `keys create`, `env describe`, `profile list` and
+  `profile show` take `-o json`.
+
+### Fixed
+- The chart's Grafana dashboards load with auto-refresh off, so an open
+  dashboard does not re-query its datasources on a timer; refresh by hand or
+  pick an interval.
+- platform-api presents a user's Dex refresh token once per refresh. A refused
+  refresh was sent to Dex twice, which Dex can read as token reuse and which then
+  ended every session of that user.
+
 ## [1.1.9] - 2026-11-07
 
 ### Fixed

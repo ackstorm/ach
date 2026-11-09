@@ -188,21 +188,7 @@ func New(deps Deps) http.Handler {
 	r.Get("/readyz", readyHandler(deps.Pool, deps.Redis))
 
 	// Dex + LiteLLM provisioning deps shared by the OAuth AS.
-	authDeps := auth.Deps{
-		IDTokenVerifier:  deps.IDTokenVerifier,
-		OAuth2Cfg:        deps.OAuth2Cfg,
-		LiteLLM:          deps.LiteLLM,
-		UserBudget:       deps.UserBudget,
-		Teams:            deps.Teams,
-		Pool:             deps.Pool,
-		Pepper:           deps.Pepper,
-		KeyEncryptionKey: deps.KeyEncryptionKey,
-		Audit:            deps.Audit,
-		Logger:           deps.Logger,
-		Namespace:        deps.Namespace,
-		Issuer:           deps.BaseURL,
-		InsecureCookie:   deps.InsecureCookie,
-	}
+	authDeps := authDepsFrom(deps)
 	// OAuth 2.1 AS (unauthenticated by nature: every endpoint is reached by
 	// a client that does not yet hold a credential).
 	authnOpts := deps.AuthnOptions
@@ -400,4 +386,34 @@ func readyHandler(pool *pgxpool.Pool, redisClient *redis.Client) http.HandlerFun
 		}
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// authDepsFrom is the Dex + LiteLLM provisioning deps the OAuth AS shares.
+func authDepsFrom(deps Deps) auth.Deps {
+	return auth.Deps{
+		IDTokenVerifier:  deps.IDTokenVerifier,
+		OAuth2Cfg:        deps.OAuth2Cfg,
+		LiteLLM:          deps.LiteLLM,
+		UserBudget:       deps.UserBudget,
+		Teams:            deps.Teams,
+		Pool:             deps.Pool,
+		Pepper:           deps.Pepper,
+		KeyEncryptionKey: deps.KeyEncryptionKey,
+		Audit:            deps.Audit,
+		Logger:           deps.Logger,
+		Namespace:        deps.Namespace,
+		Issuer:           deps.BaseURL,
+		InsecureCookie:   deps.InsecureCookie,
+	}
+}
+
+// RunIdPSweep runs the OAuth AS's IdP sweep hourly with the deps its routes
+// use, until ctx ends. A no-op without the OAuth AS.
+func RunIdPSweep(ctx context.Context, deps Deps) {
+	if deps.OAuth == nil {
+		return
+	}
+	od := *deps.OAuth
+	od.Auth = authDepsFrom(deps)
+	od.RunIdPSweep(ctx, time.Hour)
 }

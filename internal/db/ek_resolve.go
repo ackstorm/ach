@@ -27,7 +27,7 @@ import (
 
 // EkResolve is the Hub §8.1 ek_ resolve + debounced last_used_at UPDATE.
 //
-// Zero rows ⇒ revoked / unknown ⇒ returns (nil, nil). One row ⇒ valid; the
+// Zero rows ⇒ revoked / unknown / owner refused by the IdP ⇒ returns (nil, nil). One row ⇒ valid; the
 // caller receives the full EkKeyInfo (Environment, OwnerEmail, Name,
 // LiteLLMUserID, LiteLLMToken).
 //
@@ -51,6 +51,8 @@ func EkResolve(ctx context.Context, pool *pgxpool.Pool, credentialHashHex string
 		 WHERE credential_hash = $1
 		   AND status = 'active'
 		   AND (expires_at IS NULL OR expires_at > now())
+		   AND NOT EXISTS (SELECT 1 FROM idp_refusals r
+		                    WHERE r.email = lower(environment_keys.owner_email))
 		RETURNING key_id, environment, owner_email, name,
 		          litellm_user_id, litellm_token, litellm_key_material_enc, expires_at
 	`

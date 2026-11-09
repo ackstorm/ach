@@ -78,4 +78,5 @@ or remove exactly that later without touching the user's own settings.
   Claude Code, `bro-ladder` elsewhere), so they never shadow a built-in.
 - Every network command takes `--profile <name>`, `--key <saved name|ek-…>` and
   `--verbose` (request headers to stderr, credentials redacted). List and read commands
-  take `-o json` for machine-readable output: prefer it when you parse the result.
+  take `-o json` for machine-readable output: prefer it when you parse the result. So do
+  `token`, `whoami`, `keys create`, `env describe` and `profile list|show`.

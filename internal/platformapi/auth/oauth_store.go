@@ -15,10 +15,16 @@ import (
 // namespaced "ach:oauth:<kind>:<id>". Kinds: client (DCR registration),
 // pending (an /authorize or device confirmation waiting on Dex), code
 // (single use), refresh (rotated on use), rotating (a refresh a grant holds),
-// device + device_user (RFC 8628), session_gen (see SessionGen). A Redis flush
+// device + device_user (RFC 8628), session_gen (see SessionGen), idp_check (see Claim). A Redis flush
 // logs every OAuth client out — they re-run the browser flow. Accepted for v1.
 type OAuthStore struct {
 	RDB *redis.Client
+}
+
+// Claim sets the record only when absent (SET NX); true when this caller
+// took it. Replicas share a periodic job per id through it.
+func (s *OAuthStore) Claim(ctx context.Context, kind, id string, ttl time.Duration) (bool, error) {
+	return s.RDB.SetNX(ctx, oauthKey(kind, id), 1, ttl).Result()
 }
 
 func oauthKey(kind, id string) string { return "ach:oauth:" + kind + ":" + id }

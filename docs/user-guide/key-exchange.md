@@ -92,6 +92,7 @@ previous one, which stays valid until it expires.
 | 404 | `environment_not_found` | no such Environment |
 | 503 | `not_ready` | the Environment is not synced yet, TokenReview is unavailable (it times out after 5 s), or the cluster's ServiceAccount keys cannot be read |
 | 403 | `unauthorized_team` | the identity's teams do not intersect `authorizedTeams` |
+| 403 | `idp_refused` | the identity provider refused the identity; it must sign in to ACH again |
 | 409 | `key_suspended` | the exchange key was suspended (by its owner or an admin) |
 
 The JWT's lifetime (and the response's `expires_in`) is
