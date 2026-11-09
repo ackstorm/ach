@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -33,17 +32,13 @@ type credFlags struct {
 func registerCredFlags(cmd *cobra.Command, f *credFlags) {
 	cmd.Flags().StringVar(&f.Profile, "profile", "", "Use this profile instead of the active one")
 	cmd.Flags().StringVar(&f.Key, "key", "",
-		"Authenticate with a key: a name saved in the profile, or a raw ek-… key")
+		"Authenticate with an environment key (ek-…)")
 	cmd.Flags().BoolVar(&f.Verbose, "verbose", false, "Dump request headers to stderr (credentials redacted)")
 }
 
-// cred is a resolved credential. Profile, File and Path are nil/"" in
-// synthetic mode (there is no config file).
+// cred is a resolved credential.
 type cred struct {
 	BaseURL, Bearer, ProfileName string
-	Profile                      *config.Profile
-	File                         *config.File
-	Path                         string
 }
 
 // resolveCred picks the Hub URL + bearer for a network command:
@@ -52,10 +47,10 @@ type cred struct {
 //     overrides ACH_KEY.
 //   - otherwise the profile (--profile → ACH_PROFILE → default → sole one),
 //     and the bearer --key → ACH_KEY → the profile's own credential (OAuth
-//     access token, else its Key). A key value is raw when it is an ek-…,
-//     else a name looked up in the profile's saved keys.
-func resolveCred(ctx context.Context, f credFlags, gate synthetic.Gate) (cred, error) {
-	if err := synthetic.GuardCommand(synthetic.Params{Gate: gate, ProfileFlag: f.Profile, KeyFlag: f.Key}); err != nil {
+//     access token, else its Key). A --key / ACH_KEY value must be an ek-….
+func resolveCred(ctx context.Context, f credFlags) (cred, error) {
+	guard := synthetic.Params{Gate: synthetic.GateAPI, ProfileFlag: f.Profile, KeyFlag: f.Key}
+	if err := synthetic.GuardCommand(guard); err != nil {
 		return cred{}, err
 	}
 	if synthetic.IsActive() {
@@ -80,7 +75,7 @@ func resolveCred(ctx context.Context, f credFlags, gate synthetic.Gate) (cred, e
 	if err != nil {
 		return cred{}, &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("%v; run `ach-cli login`", err), Wrapped: err}
 	}
-	c := cred{BaseURL: prof.URL, ProfileName: name, Profile: prof, File: file, Path: path}
+	c := cred{BaseURL: prof.URL, ProfileName: name}
 	key := f.Key
 	if key == "" {
 		key = os.Getenv("ACH_KEY")
@@ -97,17 +92,9 @@ func resolveCred(ctx context.Context, f credFlags, gate synthetic.Gate) (cred, e
 	case synthetic.IsRawKey(key):
 		c.Bearer = key
 	default:
-		saved, ok := prof.Keys[key]
-		if !ok {
-			hint := "it has no saved keys (`ach-cli keys create <env>` saves one)"
-			if len(prof.Keys) > 0 {
-				hint = "saved keys: " + strings.Join(slices.Sorted(maps.Keys(prof.Keys)), ", ")
-			}
-			return cred{}, &exit.CodedError{Code: exit.General,
-				// The value is not echoed: it may be a mistyped secret.
-				Msg: fmt.Sprintf("--key / ACH_KEY names no key saved in profile %q; %s", name, hint)}
-		}
-		c.Bearer = saved.Key
+		return cred{}, &exit.CodedError{Code: exit.General,
+			// The value is not echoed: it may be a mistyped secret.
+			Msg: "--key / ACH_KEY must be an ek-… key"}
 	}
 	return c, nil
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -69,7 +68,7 @@ Exit codes: 0 success, 3 not authorized, 6 network error.`,
 }
 
 func doWhoami(cmd *cobra.Command, f credFlags, output string) error {
-	c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
+	c, err := resolveCred(cmd.Context(), f)
 	if err != nil {
 		return err
 	}

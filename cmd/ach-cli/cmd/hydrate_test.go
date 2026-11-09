@@ -268,14 +268,10 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 	dir := whoamiTestEnv(t)
 	mock := newHydrateMock(t, []byte(canonicalHydrateJSON))
 
-	seedConfig(t, dir, "prod", &config.Profile{
-		URL: mock.server.URL,
-		Keys: map[string]config.SavedKey{"local-laptop": {
-			ID: "ekid_local-laptop", Key: "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"}},
-	})
+	seedConfig(t, dir, "prod", &config.Profile{URL: mock.server.URL})
 	swapHTTPClientForTest(t, &hydrateHTTPClient, mock.server.Client())
 
-	stdout, stderr, code, err := executeHydrate(t, "--key", "local-laptop")
+	stdout, stderr, code, err := executeHydrate(t, "--key", testEK)
 	if err != nil {
 		t.Fatalf("hydrate ek_: %v", err)
 	}
@@ -288,8 +284,8 @@ func TestHydrate_EK_NoEnvironmentRequired(t *testing.T) {
 	if strings.Contains(stderr, "not Environment-scoped") {
 		t.Errorf("stderr emitted pk_ warning for an ek_ run: %q", stderr)
 	}
-	if *mock.lastKey != "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij" {
-		t.Errorf("x-ach-key = %q; want ek_ resolved from label", *mock.lastKey)
+	if *mock.lastKey != testEK {
+		t.Errorf("x-ach-key = %q; want the --key value", *mock.lastKey)
 	}
 	// Body should be either empty struct or omit environment entirely.
 	if strings.Contains(*mock.lastBody, `"environment"`) {
@@ -309,7 +305,7 @@ func TestHydrate_EK_WrongEnvironment_403_Exit1(t *testing.T) {
 	// (not_admin / unauthorized_team) → maps to General (1).
 	runExitCodeMatrixCase(t, http.StatusForbidden,
 		"wrong_environment", "ek bound elsewhere", "req_x",
-		exit.General, "--key", "l", "demo", "--no-warnings")
+		exit.General, "--key", testEK, "demo", "--no-warnings")
 }
 
 // Test 8: no credential resolvable at all → exit 1 with `ach login`
@@ -404,8 +400,6 @@ func runExitCodeMatrixCase(t *testing.T, status int, errCode, errMsg, reqID stri
 	seedConfig(t, dir, "prod", &config.Profile{
 		URL:   ts.URL,
 		OAuth: testOAuth(),
-		Keys: map[string]config.SavedKey{"l": {
-			ID: "ekid_l", Key: "ek-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghij"}},
 	})
 	swapHTTPClientForTest(t, &hydrateHTTPClient, ts.Client())
 
@@ -437,7 +431,7 @@ func TestHydrate_400_Exit1(t *testing.T) {
 	// Use ek_ so the client-side --environment gate doesn't trip.
 	runExitCodeMatrixCase(t, http.StatusBadRequest,
 		"missing_environment", "env required", "req_q",
-		exit.General, "--key", "l")
+		exit.General, "--key", testEK)
 }
 
 // Test: ACH_ENVIRONMENT env-var satisfies the pk_ --environment

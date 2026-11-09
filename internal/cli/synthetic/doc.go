@@ -7,9 +7,8 @@
 //
 //   - login, logout, token and every profile command exit 1 (there is no
 //     config file to read or write).
-//   - keys create exits 1 unless --no-save (nowhere to save the key).
 //   - --profile / ACH_PROFILE exit 1 (there is no profile to pick).
-//   - --key <name> exits 1 (a saved name needs a profile to look it up in).
+//   - a --key / ACH_KEY that is not an ek-… exits 1.
 //
 // ACH_URL alone is not synthetic mode: it only pre-fills the login URL.
 package synthetic

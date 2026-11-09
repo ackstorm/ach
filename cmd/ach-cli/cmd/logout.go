@@ -14,16 +14,16 @@ import (
 )
 
 // newLogoutCmd returns `ach-cli logout`: it clears the profile's own
-// credential (OAuth session and Key) and keeps its URL and saved keys, so a
-// later login resumes without re-prompting for the URL.
+// credential (OAuth session and Key) and keeps its URL, so a later login
+// resumes without re-prompting for the URL.
 func newLogoutCmd() *cobra.Command {
 	var flagProfile string
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Sign out of the active profile (saved keys are kept)",
+		Short: "Sign out of the active profile",
 		Long: `Sign out of the active profile: its session (and machine key, if it has
-one) is removed from ~/.config/ach/config.yaml. The URL and the keys saved
-with keys create stay; revoke those with ach-cli keys revoke.
+one) is removed from ~/.config/ach/config.yaml; the URL stays. Keys made
+with keys create keep working until you revoke them (ach-cli keys revoke).
 
 With ACH_URL and ACH_KEY both set (synthetic mode) logout exits 1.`,
 		Args: cobra.NoArgs,
@@ -59,7 +59,7 @@ func doLogout(cmd *cobra.Command, flagProfile string) error {
 	if err := config.Save(configPath, file); err != nil {
 		return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Signed out of %q (saved keys kept; revoke them with keys revoke)\n", name)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Signed out of %q\n", name)
 	return nil
 }
 

@@ -4,6 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- `ach-cli keys create` prints the key once and stores it nowhere: put it in the
+  secret store of whatever uses it. `--no-save` is gone, `--key` / `ACH_KEY`
+  take only an `ek-…` key (no saved name), and `profile list|show` no longer
+  show saved keys (`saved_keys` left `-o json`). A `keys:` block in an existing
+  `~/.config/ach/config.yaml` still loads, is never read, and is dropped on the
+  next write; those keys keep working on the server until revoked, and
+  `keys revoke <name>` still finds them.
+
 ## [1.1.10] - 2026-11-09
 
 ### Added

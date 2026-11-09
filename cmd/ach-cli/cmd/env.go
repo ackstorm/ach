@@ -36,7 +36,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/render"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // envHTTPClient is a test-only package-level seam — same pattern as
@@ -287,7 +286,7 @@ func newEnvDescribeView(env render.EnvView, h *render.HydrateView) envDescribeVi
 // buildEnvHTTPClient resolves the credential and builds the client wired
 // to envHTTPClient (test-seam aware).
 func buildEnvHTTPClient(cmd *cobra.Command, f credFlags) (*httpclient.Client, error) {
-	c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
+	c, err := resolveCred(cmd.Context(), f)
 	if err != nil {
 		return nil, err
 	}

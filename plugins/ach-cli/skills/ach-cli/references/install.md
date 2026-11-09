@@ -40,5 +40,5 @@ ach-cli --version
 ## Update
 
 Run the same commands again: they install the latest release over the old one. Compare
-`ach-cli --version` before and after. The profile and saved keys in
+`ach-cli --version` before and after. The profiles in
 `~/.config/ach/config.yaml` are untouched.

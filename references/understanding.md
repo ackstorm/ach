@@ -426,14 +426,14 @@ marker-block (covers credential-bearing files) → cleanup.
 
 ## 9. CLI command tree (ach-cli)
 
-`login [url]` (OAuth: loopback or device grant) · `logout` (keeps saved keys) ·
+`login [url]` (OAuth: loopback or device grant) · `logout` ·
 `whoami` (always remote: `GET /platform/console/bootstrap` → user, budget, key
 allowance) · `token` · `profile list/show/use/add/rename/remove`
 (multi-profile `~/.config/ach/config.yaml`, 0600/0700, https-only unless
 `--insecure`/`ACH_INSECURE` — G19) · `env list/describe/clone/hydrate/status/uninstall/fetch`
 (`hydrate|uninstall --only plugin|skill/<name>`, `--dir`, `-g`, `--target a,b`) ·
 `keys create/list/revoke/suspend/resume/budget` (the caller's own ek- keys;
-create saves `{id, key}` under `keys.<name>` unless `--no-save`) ·
+create prints the key once and stores it nowhere) ·
 `admin list <kind>` (objects + `models|mcp|a2a|teams|guardrails`) ·
 `admin keys list/revoke [--owner]` · `admin users budget|limits` ·
 `admin refresh` (exit 3 on not_admin) ·

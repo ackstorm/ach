@@ -5,11 +5,10 @@ job, a script) use ACH within ONE Environment. It is long-lived and secret. Have
 user run `keys create` in their own terminal, so the key never passes through the chat.
 
 ```bash
-ach-cli keys create <environment> --name <what-it-is-for>          # shown once, saved in the profile under that name
-ach-cli keys create <environment> --name ci-deploy --no-save       # CI / a secrets manager: stdout only, not saved
+ach-cli keys create <environment> --name <what-it-is-for>          # printed once, stored nowhere: put it in a secret store
 ach-cli keys list                                                   # --status all|suspended|expired|invalid|revoked, --env <env>
 ach-cli keys suspend <name|ekid_…>                                  # pause it; keys resume undoes it
-ach-cli keys revoke <name|ekid_…>                                   # for good; also deletes the saved copy
+ach-cli keys revoke <name|ekid_…>                                   # for good
 ```
 
 - `--name` is required: it is how the user and the console tell keys apart.
@@ -38,6 +37,6 @@ Store it in the consumer's secret store. Send it as the `x-ach-key` header (or
 `<platform URL>/mcp/<server>` for MCP. `GET <platform URL>/v1/models` lists chat models;
 add `?types=embedding` (any model mode, comma-separated) or `?types=all` for the others.
 
-To run `ach-cli` itself with a key: `--key <saved name|ek-…>` on any command, or set
+To run `ach-cli` itself with a key: `--key ek-…` on any command, or set
 `ACH_KEY` (with `ACH_URL`, no config file is needed at all). `ach-cli env hydrate`
 with a key needs no Environment name: the key already names one.

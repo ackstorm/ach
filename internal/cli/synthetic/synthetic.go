@@ -22,9 +22,6 @@ const (
 	// GateSession — login, logout, token, profile *: refused (they read or
 	// write the config file).
 	GateSession
-	// GateKeysCreate — keys create that saves the new key into the profile
-	// (no --no-save): refused, there is no file to save into.
-	GateKeysCreate
 )
 
 // Params is what a command passes to GuardCommand. Env vars are read via
@@ -43,7 +40,7 @@ func IsActive() bool {
 	return Getenv("ACH_URL") != "" && Getenv("ACH_KEY") != ""
 }
 
-// IsRawKey reports whether s is an ek-… key rather than a saved key name.
+// IsRawKey reports whether s is an ek-… key.
 func IsRawKey(s string) bool {
 	p, err := keys.ClassifyBearer(s)
 	return err == nil && p == keys.PrefixEk
@@ -58,11 +55,8 @@ func GuardCommand(p Params) error {
 	refuse := func(msg string) error {
 		return &exit.CodedError{Code: exit.General, Msg: msg + " (ACH_URL + ACH_KEY are set: no config file is used)"}
 	}
-	switch p.Gate {
-	case GateSession:
+	if p.Gate == GateSession {
 		return refuse("this command is not available in synthetic mode")
-	case GateKeysCreate:
-		return refuse("keys create needs --no-save in synthetic mode")
 	}
 	if p.ProfileFlag != "" || Getenv("ACH_PROFILE") != "" {
 		return refuse("--profile / ACH_PROFILE cannot be used in synthetic mode")
@@ -72,7 +66,7 @@ func GuardCommand(p Params) error {
 		key = Getenv("ACH_KEY")
 	}
 	if !IsRawKey(key) {
-		return refuse("--key / ACH_KEY must be a raw ek-… key in synthetic mode; a saved key name needs a profile")
+		return refuse("--key / ACH_KEY must be an ek-… key")
 	}
 	return nil
 }

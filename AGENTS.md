@@ -286,13 +286,15 @@ has no admin bypass. The console's Environments tab mirrors this (admin-only
 name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
 (`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;
 `admin keys revoke --owner <email>`. Every network command takes `--profile`,
-`--key <name|ek-…>`, `--verbose`; only the list/read commands (`env list`,
+`--key <ek-…>`, `--verbose`; only the list/read commands (`env list`,
 `env search`, `env describe`, `env status`, `keys list`, `keys create`, `admin list` (also `yaml`),
 `admin keys list`, `profile list`, `profile show`, `whoami`, `token`) also
 take `-o table|json`. Env vars: `ACH_PROFILE`,
 `ACH_KEY`, `ACH_URL` (login prefill), `ACH_URL`+`ACH_KEY` = synthetic mode (no
 config file), `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config profiles
-hold `url`/`key`/`keys: {name: {id, key}}`/`oauth`; a pre-redesign file
+hold `url`/`key`/`oauth`; `keys create` prints the key once and stores it
+nowhere, and a leftover `keys:` block (saved copies from ach-cli ≤ 1.1.10)
+loads but is never read and is dropped on the next write; a pre-redesign file
 (`pk:`/`ek:`) fails with a delete-and-re-login hint (no migration).
 `env clone <env> [dir]` is the git-clone shape: creates `./<env>` (or `dir`),
 refuses a non-empty destination, hydrates into it (`--target` required —

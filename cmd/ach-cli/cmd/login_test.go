@@ -154,18 +154,12 @@ func TestLogin_DeviceGrant_WritesOAuthProfile(t *testing.T) {
 	}
 }
 
-// TestLogin_SecondLogin_ReusesClientAndKeepsKeys: the cached DCR client id is
-// reused on the same Hub and the profile's saved keys survive a re-login.
-func TestLogin_SecondLogin_ReusesClientAndKeepsKeys(t *testing.T) {
+// TestLogin_SecondLogin_ReusesClient: the cached DCR client id is reused on
+// the same Hub.
+func TestLogin_SecondLogin_ReusesClient(t *testing.T) {
 	loginTestEnv(t)
 	ts := newLoginTestServer(t, "one")
 	if _, _, _, err := executeLogin(t, "", "--profile", "prod", ts.URL, "--no-browser"); err != nil {
-		t.Fatal(err)
-	}
-	path, _ := config.Path()
-	f := loadConfig(t)
-	f.Profiles["prod"].Keys = map[string]config.SavedKey{"demo": {ID: "ekid_keep", Key: testEK}}
-	if err := config.Save(path, f); err != nil {
 		t.Fatal(err)
 	}
 	ts.accessToken = "two"
@@ -173,7 +167,7 @@ func TestLogin_SecondLogin_ReusesClientAndKeepsKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	dep := loadConfig(t).Profiles["prod"]
-	if dep.OAuth.AccessToken != "two" || dep.Keys["demo"].ID != "ekid_keep" {
+	if dep.OAuth.AccessToken != "two" {
 		t.Fatalf("profile after re-login: %+v", dep)
 	}
 	if atomic.LoadInt32(&ts.registrations) != 1 {

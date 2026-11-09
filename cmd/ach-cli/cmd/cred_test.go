@@ -13,7 +13,6 @@ import (
 
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // Well-formed ek-… keys (ek- + 64 base64url chars) for the cmd tests.
@@ -68,10 +67,6 @@ func wantExit(t *testing.T, err error, code exit.Code, sub string) {
 	}
 }
 
-func savedKeyProfile() *config.Profile {
-	return &config.Profile{URL: "https://h", Keys: map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: testEKSaved}}}
-}
-
 func TestResolveCred_ProfilePrecedence(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -86,11 +81,8 @@ func TestResolveCred_ProfilePrecedence(t *testing.T) {
 		{name: "raw --key beats ACH_KEY", profile: oauthProfile("https://h"),
 			flagKey: testEK, envKey: testEKEnv, want: testEK},
 		{name: "ACH_KEY raw", profile: oauthProfile("https://h"), envKey: testEKEnv, want: testEKEnv},
-		{name: "--key name from saved keys", profile: savedKeyProfile(),
-			flagKey: "laptop", want: testEKSaved},
-		{name: "ACH_KEY name from saved keys", profile: savedKeyProfile(),
-			envKey: "laptop", want: testEKSaved},
-		{name: "unknown name", profile: oauthProfile("https://h"), flagKey: "x", wantErr: `no key saved in profile "p"`},
+		{name: "--key not an ek-", profile: oauthProfile("https://h"), flagKey: "laptop", wantErr: "must be an ek-… key"},
+		{name: "ACH_KEY not an ek-", profile: oauthProfile("https://h"), envKey: "laptop", wantErr: "must be an ek-… key"},
 		{name: "no credential", profile: &config.Profile{URL: "https://h"}, wantErr: `profile "p" has no credential`},
 	}
 	for _, tc := range cases {
@@ -98,7 +90,7 @@ func TestResolveCred_ProfilePrecedence(t *testing.T) {
 			credTestEnv(t)
 			t.Setenv("ACH_KEY", tc.envKey)
 			seedProfile(t, "p", tc.profile)
-			c, err := resolveCred(context.Background(), credFlags{Key: tc.flagKey}, synthetic.GateAPI)
+			c, err := resolveCred(context.Background(), credFlags{Key: tc.flagKey})
 			if tc.wantErr != "" {
 				wantExit(t, err, exit.General, tc.wantErr)
 				return
@@ -106,7 +98,7 @@ func TestResolveCred_ProfilePrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if c.Bearer != tc.want || c.BaseURL != "https://h" || c.ProfileName != "p" || c.Profile == nil {
+			if c.Bearer != tc.want || c.BaseURL != "https://h" || c.ProfileName != "p" {
 				t.Fatalf("got %+v; want bearer %q", c, tc.want)
 			}
 		})
@@ -118,25 +110,25 @@ func TestResolveCred_Synthetic(t *testing.T) {
 	t.Setenv("ACH_URL", "https://synth")
 	t.Setenv("ACH_KEY", testEKEnv)
 
-	c, err := resolveCred(context.Background(), credFlags{}, synthetic.GateAPI)
-	if err != nil || c.BaseURL != "https://synth" || c.Bearer != testEKEnv || c.Profile != nil {
+	c, err := resolveCred(context.Background(), credFlags{})
+	if err != nil || c.BaseURL != "https://synth" || c.Bearer != testEKEnv {
 		t.Fatalf("env credential: %+v %v", c, err)
 	}
-	c, err = resolveCred(context.Background(), credFlags{Key: testEK}, synthetic.GateAPI)
+	c, err = resolveCred(context.Background(), credFlags{Key: testEK})
 	if err != nil || c.Bearer != testEK {
 		t.Fatalf("raw --key must override ACH_KEY: %+v %v", c, err)
 	}
-	_, err = resolveCred(context.Background(), credFlags{Profile: "p"}, synthetic.GateAPI)
+	_, err = resolveCred(context.Background(), credFlags{Profile: "p"})
 	wantExit(t, err, exit.General, "--profile")
-	_, err = resolveCred(context.Background(), credFlags{Key: "laptop"}, synthetic.GateAPI)
-	wantExit(t, err, exit.General, "saved key name needs a profile")
+	_, err = resolveCred(context.Background(), credFlags{Key: "laptop"})
+	wantExit(t, err, exit.General, "must be an ek-… key")
 }
 
 func TestResolveCred_ACHURLAloneUsesProfile(t *testing.T) {
 	credTestEnv(t)
 	t.Setenv("ACH_URL", "https://prefill-only")
 	seedProfile(t, "p", &config.Profile{URL: "https://h", Key: testEK})
-	c, err := resolveCred(context.Background(), credFlags{}, synthetic.GateAPI)
+	c, err := resolveCred(context.Background(), credFlags{})
 	if err != nil || c.BaseURL != "https://h" || c.Bearer != testEK {
 		t.Fatalf("got %+v %v", c, err)
 	}
@@ -144,7 +136,7 @@ func TestResolveCred_ACHURLAloneUsesProfile(t *testing.T) {
 
 func TestResolveCred_NoConfig(t *testing.T) {
 	credTestEnv(t)
-	_, err := resolveCred(context.Background(), credFlags{}, synthetic.GateAPI)
+	_, err := resolveCred(context.Background(), credFlags{})
 	wantExit(t, err, exit.General, "ach-cli login")
 }
 

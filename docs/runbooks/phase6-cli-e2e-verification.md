@@ -51,7 +51,7 @@ echo "EXIT=$?"
   keys          Manage your environment keys (ek-…)
   local         Local, ungoverned developer package path (repo/plugin/skill)
   login         Sign in to a Hub (browser on this machine, or a code from any browser)
-  logout        Sign out of the active profile (saved keys are kept)
+  logout        Sign out of the active profile
   profile       Manage your profiles (~/.config/ach/config.yaml)
   token         Print the active profile's token, or its key (credential helper)
   whoami        Show who you are signed in as, your budget and your key allowance

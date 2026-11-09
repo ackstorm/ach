@@ -76,7 +76,7 @@ or remove exactly that later without touching the user's own settings.
   OpenCode signed in with ACH already gets its models from ACH and never needs it.
 - Plugin commands and skills land namespaced by the plugin name (`/bro:ladder` in
   Claude Code, `bro-ladder` elsewhere), so they never shadow a built-in.
-- Every network command takes `--profile <name>`, `--key <saved name|ek-…>` and
+- Every network command takes `--profile <name>`, `--key <ek-…>` and
   `--verbose` (request headers to stderr, credentials redacted). List and read commands
   take `-o json` for machine-readable output: prefer it when you parse the result. So do
   `token`, `whoami`, `keys create`, `env describe` and `profile list|show`.

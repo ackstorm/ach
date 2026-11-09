@@ -26,7 +26,7 @@ var networkCommands = map[string][]string{
 	"env list":     {"env", "list"},
 	"env describe": {"env", "describe", "demo"},
 	"env hydrate":  {"env", "hydrate", "demo", "--no-warnings"},
-	"keys create":  {"keys", "create", "demo", "--name", "ci", "--no-save"},
+	"keys create":  {"keys", "create", "demo", "--name", "ci"},
 	"keys list":    {"keys", "list"},
 	"keys revoke":  {"keys", "revoke", "ekid_abc", "--yes"},
 	"admin list":   {"admin", "list", "plugins"},
@@ -58,7 +58,7 @@ func TestSyntheticGuard_KeyNameRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			synthTestEnv(t)
 			_, _, code, err := runSynthRoot(t, append(args, "--key", "laptop")...)
-			if err == nil || code != exit.General || !strings.Contains(err.Error(), "saved key name needs a profile") {
+			if err == nil || code != exit.General || !strings.Contains(err.Error(), "must be an ek-… key") {
 				t.Fatalf("code=%d err=%v; want exit 1 for a key name", code, err)
 			}
 		})
@@ -71,7 +71,6 @@ func TestSyntheticGuard_SessionCommandsRefused(t *testing.T) {
 		{"profile", "list"}, {"profile", "show"}, {"profile", "use", "p"},
 		{"profile", "add", "ci", "--url", "https://h", "--key", testEK},
 		{"profile", "rename", "a", "b"}, {"profile", "remove", "p", "--force"},
-		{"keys", "create", "demo", "--name", "ci"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			synthTestEnv(t)

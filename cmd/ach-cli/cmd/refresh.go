@@ -7,8 +7,6 @@ import (
 	"net/http"
 
 	"github.com/spf13/cobra"
-
-	"github.com/ackstorm/ach/internal/cli/synthetic"
 )
 
 // refreshHTTPClient is the test seam for the refresh HTTP transport.
@@ -29,7 +27,7 @@ added, never removed. Needs a login session (ach-cli login), not a key.
 Exit codes: 0 success, 3 not authorized (log in again), 6 network error.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
+			c, err := resolveCred(cmd.Context(), f)
 			if err != nil {
 				return err
 			}

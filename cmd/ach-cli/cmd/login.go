@@ -188,13 +188,8 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
 	}
 
-	// Step 6 — save. Only the profile's own credential changes; the saved
-	// keys on it are kept.
-	dep := &config.Profile{URL: url, OAuth: creds}
-	if existing != nil {
-		dep.Keys = existing.Keys
-	}
-	file.Profiles[name] = dep
+	// Step 6 — save.
+	file.Profiles[name] = &config.Profile{URL: url, OAuth: creds}
 	if file.Default == "" {
 		file.Default = name
 	}

@@ -50,7 +50,7 @@ func TestIsActive(t *testing.T) {
 func TestGuardCommand_OutsideSyntheticAllowsEverything(t *testing.T) {
 	clearAchEnv(t)
 	t.Setenv("ACH_URL", "https://hub.test")
-	for _, g := range []synthetic.Gate{synthetic.GateAPI, synthetic.GateSession, synthetic.GateKeysCreate} {
+	for _, g := range []synthetic.Gate{synthetic.GateAPI, synthetic.GateSession} {
 		if err := synthetic.GuardCommand(synthetic.Params{Gate: g, ProfileFlag: "p", KeyFlag: "name"}); err != nil {
 			t.Errorf("gate %d: %v", g, err)
 		}
@@ -66,9 +66,8 @@ func TestGuardCommand_Synthetic(t *testing.T) {
 		t.Fatalf("raw --key: %v", err)
 	}
 	wantGeneral(t, synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateSession}), "not available in synthetic mode")
-	wantGeneral(t, synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateKeysCreate}), "--no-save")
 	wantGeneral(t, synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateAPI, ProfileFlag: "p"}), "--profile")
-	wantGeneral(t, synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateAPI, KeyFlag: "laptop"}), "saved key name needs a profile")
+	wantGeneral(t, synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateAPI, KeyFlag: "laptop"}), "must be an ek-… key")
 }
 
 func TestGuardCommand_SyntheticRefusesACHProfileAndNamedACHKey(t *testing.T) {

@@ -632,11 +632,10 @@ positional `login <url>` → `ACH_URL` → prompt).
 Fix: `unset ACH_KEY; ach-cli login https://hub.example.com`.
 
 ### ❌ Every ach-cli command fails `uses a removed field (pk/ek)` ✅ delete the config and log in again
-The config file changed shape (profiles now hold `key:` and `keys: {name: {id,
-key}}`); an older `~/.config/ach/config.yaml` with `pk:`/`ek:` is refused, with
-no migration: `rm ~/.config/ach/config.yaml && ach-cli login <url>`. Saved `ek-`
-keys in the old file still work server-side — re-save one with
-`ach-cli profile add <name> --url <url> --key ek-…`, or revoke it.
+Profiles hold `url:`, `key:` and `oauth:`; an older `~/.config/ach/config.yaml`
+with `pk:`/`ek:` is refused, with no migration: `rm ~/.config/ach/config.yaml &&
+ach-cli login <url>`. `ek-` keys in the old file still work server-side — use
+one with `ach-cli profile add <name> --url <url> --key ek-…`, or revoke it.
 
 ### ❌ ach-mcp-echo returns 401 invalid_token from /mcp/demo-mcp-echo
 ```bash

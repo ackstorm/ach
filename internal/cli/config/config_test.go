@@ -445,25 +445,46 @@ func TestLoad_NewShapeRoundTrips(t *testing.T) {
 	in := &config.File{Default: "p", Profiles: map[string]*config.Profile{"p": {
 		URL:   "https://ach.test",
 		Key:   "ek-machine",
-		Keys:  map[string]config.SavedKey{"laptop": {ID: "ekid_1", Key: "ek-laptop"}},
 		OAuth: &config.OAuthCreds{ClientID: "oc_1", AccessToken: "a.b.c"},
 	}}}
 	if err := config.Save(path, in); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
-	for _, want := range []string{"key: ek-machine", "keys:", "id: ekid_1"} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("saved yaml missing %q:\n%s", want, raw)
-		}
+	if !strings.Contains(string(raw), "key: ek-machine") || strings.Contains(string(raw), "keys:") {
+		t.Errorf("saved yaml:\n%s", raw)
 	}
 	out, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := out.Profiles["p"]
-	if p.Key != "ek-machine" || p.Keys["laptop"] != (config.SavedKey{ID: "ekid_1", Key: "ek-laptop"}) || p.OAuth == nil || p.OAuth.ClientID != "oc_1" {
+	if p.Key != "ek-machine" || p.OAuth == nil || p.OAuth.ClientID != "oc_1" {
 		t.Fatalf("round trip mismatch: %+v", p)
+	}
+}
+
+// TestLoad_StaleKeysDroppedOnSave: a file with a `keys:` block (saved key
+// copies) still loads, and the next Save removes the block from disk.
+func TestLoad_StaleKeysDroppedOnSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "default: p\nprofiles:\n  p:\n    url: https://ach.test\n    keys:\n      laptop:\n        id: ekid_1\n        key: ek-laptop\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("a keys: block must not fail the load: %v", err)
+	}
+	if err := config.Save(path, f); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "keys:") || strings.Contains(string(raw), "ek-laptop") {
+		t.Fatalf("keys: block survived the save:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "url: https://ach.test") {
+		t.Fatalf("profile lost:\n%s", raw)
 	}
 }
 
