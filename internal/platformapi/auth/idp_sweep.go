@@ -52,13 +52,29 @@ func (d OAuthDeps) sweepIdP(ctx context.Context) {
 			continue
 		}
 		var rt string
-		if ok, _ := d.Store.Get(ctx, dexRefreshKind, email, &rt); !ok {
+		ok, err := d.Store.Get(ctx, dexRefreshKind, email, &rt)
+		if err != nil {
+			d.Auth.Logger.Warn("oauth: idp sweep: reading the Dex refresh token failed", "owner", email, "err", err)
+			d.releaseIdPCheck(ctx, email)
+			continue
+		}
+		if !ok {
 			d.Auth.Logger.Info("oauth: idp sweep: no Dex refresh token stored; owner not verifiable at the IdP", "owner", email)
 			continue
 		}
 		if _, err := d.revalidateAtIdP(ctx, email); err != nil && !errors.Is(err, errIdPRefused) {
 			d.Auth.Logger.Warn("oauth: idp sweep: owner not verifiable at the IdP", "owner", email, "err", err)
+			if errors.Is(err, ErrIdPUnreachable) {
+				d.releaseIdPCheck(ctx, email)
+			}
 		}
+	}
+}
+
+// releaseIdPCheck drops the owner's claim so the next sweep checks again.
+func (d OAuthDeps) releaseIdPCheck(ctx context.Context, email string) {
+	if err := d.Store.Del(ctx, idpCheckKind, email); err != nil {
+		d.Auth.Logger.Warn("oauth: idp sweep: releasing the claim failed", "owner", email, "err", err)
 	}
 }
 

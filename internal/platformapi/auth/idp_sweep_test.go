@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -30,5 +31,28 @@ func TestSweepIdP_ReplaysEachOwnerOncePerPeriod(t *testing.T) {
 	}
 	if len(f.refusals) != 0 {
 		t.Fatalf("refusals = %v, want none", f.refusals)
+	}
+}
+
+// A check that could not reach a verdict releases the claim: an unreachable
+// Dex, or a Valkey read error, is retried at the next sweep.
+func TestSweepIdP_RetriesAnOwnerWithoutAVerdict(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	ctx := context.Background()
+	_ = f.store.Put(ctx, dexRefreshKind, "a@x.com", "rt-a", time.Hour)
+	_ = f.store.RDB.Set(ctx, oauthKey(dexRefreshKind, "bad@x.com"), "not json", time.Hour).Err()
+	f.deps.EkOwnersInUse = func(context.Context) ([]string, error) {
+		return []string{"a@x.com", "bad@x.com"}, nil
+	}
+	f.dexRefresh = func(string) (string, error) { return "", errors.New("dial tcp: connection refused") }
+
+	f.deps.sweepIdP(ctx)
+	f.deps.sweepIdP(ctx)
+	if len(f.dexSeen) != 2 {
+		t.Fatalf("Dex replays = %v, want rt-a on each sweep", f.dexSeen)
+	}
+	if claimed, err := f.store.Claim(ctx, idpCheckKind, "bad@x.com", time.Minute); err != nil || !claimed {
+		t.Fatalf("claim after a Valkey read error: %v %v, want released", claimed, err)
 	}
 }
