@@ -4,8 +4,6 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
-## [1.1.10] - 2026-11-09
-
 ### Added
 - When the identity provider behind Dex refuses a user (suspended, disabled or
   deleted there), every `ek_` that user owns, KeyGrant exchange keys included,
