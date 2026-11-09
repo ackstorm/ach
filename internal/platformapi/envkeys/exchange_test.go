@@ -50,6 +50,12 @@ type fakeExchangeDB struct {
 	winner   *db.EkKeyInfo // answered once an insert race has been lost
 	finds    int
 	owner    string // owner the last FindExchangeKey received
+	refused  bool   // the identity is recorded in idp_refusals
+	refErr   error
+}
+
+func (f *fakeExchangeDB) IdPRefused(context.Context, string) (bool, error) {
+	return f.refused, f.refErr
 }
 
 func (f *fakeExchangeDB) ListKeyGrantsForIdentity(_ context.Context, _ string, identity string) ([]db.KeyGrantRow, error) {
@@ -349,6 +355,40 @@ func TestExchange_SuspendedKeyIsRefused(t *testing.T) {
 	f.xdb.existing = &db.EkKeyInfo{KeyID: "ekid_s", Status: "suspended"}
 	rec := f.do(t, saToken(exAudience), okBody, "")
 	if rec.Code != http.StatusConflict || errorCode(t, rec) != "key_suspended" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+// An identity the upstream IdP refused gets no JWT and no new key, whether
+// its exchange key exists yet or not.
+func TestExchange_IdPRefusedIdentityIsRefused(t *testing.T) {
+	for name, existing := range map[string]*db.EkKeyInfo{
+		"existing key": {KeyID: "ekid_live", Status: "active"},
+		"first use":    nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newExchangeFixture(t)
+			f.xdb.refused = true
+			f.xdb.existing = existing
+			rec := f.do(t, saToken(exAudience), okBody, "")
+			if rec.Code != http.StatusForbidden || errorCode(t, rec) != "idp_refused" {
+				t.Fatalf("%d %s", rec.Code, rec.Body)
+			}
+			if f.fdb.inserted != nil || f.llm.lastKeyGenerateReq != nil {
+				t.Fatalf("a refused identity minted a key: %+v", f.fdb.inserted)
+			}
+			if !strings.Contains(f.audit.String(), `"outcome":"idp_refused"`) {
+				t.Fatalf("audit: %s", f.audit)
+			}
+		})
+	}
+}
+
+func TestExchange_IdPRefusalReadFailureIs500(t *testing.T) {
+	f := newExchangeFixture(t)
+	f.xdb.refErr = fmt.Errorf("boom")
+	rec := f.do(t, saToken(exAudience), okBody, "")
+	if rec.Code != http.StatusInternalServerError || f.fdb.inserted != nil {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }

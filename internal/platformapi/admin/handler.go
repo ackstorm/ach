@@ -679,10 +679,16 @@ func ListKeysHandler(deps Deps) http.HandlerFunc {
 		}
 		// D-20: admins get the SQL-level status verbatim — no Invalid
 		// derivation (that needs a per-owner TeamsResolver lookup the bulk
-		// admin inventory does not do).
+		// admin inventory does not do). An IdP-refused owner is named by
+		// reason: their keys stop resolving, and the owner cannot list them
+		// without a working pk_.
 		rows := make([]render.KeyListRow, 0, len(items))
 		for _, it := range items {
-			rows = append(rows, render.KeyRow(it, it.Status, nil))
+			var reasons []string
+			if it.OwnerRefused {
+				reasons = []string{"idp_refused"}
+			}
+			rows = append(rows, render.KeyRow(it, it.Status, reasons))
 		}
 		render.KeyList(w, rows, next)
 	}

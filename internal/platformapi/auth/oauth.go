@@ -54,8 +54,17 @@ type OAuthDeps struct {
 	Mint          func(ctx context.Context, email, userID, purpose string) (string, db.PkInsertRow, error)
 	OAuthPKLookup func(ctx context.Context, email string) (*db.PkKeyInfo, error)
 	OAuthPKRevoke func(ctx context.Context, keyID string) error
+	IdPRefusal    func(ctx context.Context, email string, refused bool) error
+	EkOwnersInUse func(ctx context.Context) ([]string, error)
 
 	registerLimit *envkeys.ClientLimiter // built by MountOAuth
+}
+
+func (d OAuthDeps) idpRefusal(ctx context.Context, email string, refused bool) error {
+	if d.IdPRefusal != nil {
+		return d.IdPRefusal(ctx, email, refused)
+	}
+	return db.SetIdPRefused(ctx, d.Auth.Pool, email, refused)
 }
 
 func (d OAuthDeps) consentBIP(ctx context.Context, key string) (*db.BIPRow, error) {

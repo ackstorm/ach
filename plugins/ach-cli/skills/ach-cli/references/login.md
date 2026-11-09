@@ -5,6 +5,7 @@
 ```bash
 ach-cli login            # URL from the argument, else ACH_URL, else a prompt
 ach-cli whoami           # who you are, your budget and how many keys you may create
+ach-cli whoami -o json   # {profile,url,user,auth,budget,keys}; budget and keys are null when unavailable
 ach-cli refresh          # after joining an SSO group: pick up its teams, no browser
 ```
 
@@ -41,6 +42,7 @@ one, `default`.
 ```bash
 ach-cli profile list                 # * marks the default
 ach-cli profile show [name]          # its URL and saved keys (masked; --reveal prints them)
+ach-cli profile list -o json         # [{name,url,auth,current,saved_keys}]; show -o json is one such object, never a key
 ach-cli profile use <name>           # make it the default
 ach-cli profile rename <old> <new>
 ach-cli profile remove <name>        # --force for the default one
@@ -66,4 +68,5 @@ in "synthetic mode" from those two variables alone. In that mode `login`, `logou
 
 `ach-cli token` prints a fresh access token for the active profile (or its key for a key
 profile). It is meant as a credential helper that other tools call; never print it to
-the chat yourself.
+the chat yourself. `ach-cli token -o json` prints `{"token","type","expires_at"}` (`type` is
+`jwt` or `ek`; `expires_at` is `null` for a key).

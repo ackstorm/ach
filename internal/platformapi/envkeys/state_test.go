@@ -34,3 +34,14 @@ func TestEffectiveState_Priority(t *testing.T) {
 		t.Fatal("pk_ rows never derive invalid")
 	}
 }
+
+func TestEffectiveState_IdPRefusedOwner(t *testing.T) {
+	refused := db.KeyListItem{Type: "ek", Status: "active", OwnerRefused: true}
+	if got, reasons := EffectiveState(refused, accessGranted); got != "invalid" || !reflect.DeepEqual(reasons, []string{"idp_refused"}) {
+		t.Fatalf("active ek of a refused owner: %s %v, want invalid [idp_refused]", got, reasons)
+	}
+	refused.Status = "suspended"
+	if got, reasons := EffectiveState(refused, accessLost); got != "suspended" || !reflect.DeepEqual(reasons, []string{"suspended", "no_access", "idp_refused"}) {
+		t.Fatalf("suspended ek of a refused owner: %s %v", got, reasons)
+	}
+}

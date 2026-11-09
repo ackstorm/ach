@@ -175,7 +175,8 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 // one check both the /token refresh grant and the console session run.
 // nil: the IdP still honours the user and the rotated token is stored;
 // groups is the refreshed `groups` claim (nil when Dex sent none).
-// errIdPRefused: sessions ended (Dex token deleted, oauth pk_ revoked).
+// errIdPRefused: sessions ended (oauth pk_ revoked; the Dex token deleted,
+// unless an upstream rejection could not be recorded in idp_refusals).
 // ErrIdPUnreachable: Dex did not answer — nothing changed, retry later.
 //
 // It runs on a context the client cannot cancel: Dex rotates the token
@@ -199,7 +200,18 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []st
 			return nil, fmt.Errorf("%w: %v", ErrIdPUnreachable, err)
 		}
 		d.Auth.Logger.Info("oauth: identity provider refused the refresh; sessions ended", "sub", sub, "err", err)
-		_ = d.Store.Del(ctx, dexRefreshKind, sub)
+		recorded := true
+		if dexUpstreamRejected(err) {
+			if rerr := d.idpRefusal(ctx, sub, true); rerr != nil {
+				// The Dex token stays so the next replay meets the same
+				// rejection and records it.
+				recorded = false
+				d.Auth.Logger.Error("oauth: recording the IdP refusal failed; the user's ek_ keys still resolve", "sub", sub, "err", rerr)
+			}
+		}
+		if recorded {
+			_ = d.Store.Del(ctx, dexRefreshKind, sub)
+		}
 		if cur, lerr := d.lookupOAuthPK(ctx, sub); lerr == nil && cur != nil {
 			if rerr := d.revokeOAuthPK(ctx, cur.KeyID); rerr != nil {
 				d.Auth.Logger.Error("oauth: revoke of the oauth pk_ after IdP refusal failed", "key_id", cur.KeyID, "err", rerr)

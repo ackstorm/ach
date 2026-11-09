@@ -82,7 +82,9 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	const sql = `
 		SELECT key_id, credential_hash, environment, owner_email, name,
 		       litellm_user_id, litellm_token,
-		       status, created_at, last_used_at, revoked_at, expires_at, COALESCE(requester, '')
+		       status, created_at, last_used_at, revoked_at, expires_at, COALESCE(requester, ''),
+		       EXISTS (SELECT 1 FROM idp_refusals r
+		                WHERE r.email = lower(environment_keys.owner_email))
 		  FROM environment_keys
 		 WHERE key_id = $1
 	`
@@ -90,7 +92,7 @@ func GetEnvironmentKey(ctx context.Context, pool *pgxpool.Pool, keyID string) (*
 	err := pool.QueryRow(ctx, sql, keyID).Scan(
 		&r.KeyID, &r.CredentialHash, &r.Environment, &r.OwnerEmail, &r.Name,
 		&r.LiteLLMUserID, &r.LiteLLMToken,
-		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt, &r.ExpiresAt, &r.Requester,
+		&r.Status, &r.CreatedAt, &r.LastUsedAt, &r.RevokedAt, &r.ExpiresAt, &r.Requester, &r.OwnerRefused,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -329,6 +331,8 @@ func ExchangeKeyResolve(ctx context.Context, pool *pgxpool.Pool, keyID string) (
 		   AND issued_via = 'exchange'
 		   AND status = 'active'
 		   AND (expires_at IS NULL OR expires_at > now())
+		   AND NOT EXISTS (SELECT 1 FROM idp_refusals r
+		                    WHERE r.email = lower(environment_keys.owner_email))
 		RETURNING key_id, environment, owner_email, name,
 		          litellm_user_id, litellm_token, litellm_key_material_enc, expires_at, requester
 	`

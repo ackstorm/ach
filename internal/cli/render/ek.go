@@ -31,16 +31,17 @@ import (
 // preserved (matches the omitempty contract in the server's wire
 // shape).
 type KeyRowView struct {
-	KeyID       string  `json:"key_id"`
-	Type        string  `json:"type"`        // "pk" | "ek"
-	Environment string  `json:"environment"` // "" for pk
-	Name        string  `json:"name"`        // "" for pk
-	OwnerEmail  string  `json:"owner_email"`
-	Status      string  `json:"status"`
-	CreatedAt   string  `json:"created_at"`
-	LastUsedAt  *string `json:"last_used_at,omitempty"`
-	RevokedAt   *string `json:"revoked_at,omitempty"`
-	ExpiresAt   *string `json:"expires_at,omitempty"`
+	KeyID       string   `json:"key_id"`
+	Type        string   `json:"type"`        // "pk" | "ek"
+	Environment string   `json:"environment"` // "" for pk
+	Name        string   `json:"name"`        // "" for pk
+	OwnerEmail  string   `json:"owner_email"`
+	Status      string   `json:"status"`
+	CreatedAt   string   `json:"created_at"`
+	LastUsedAt  *string  `json:"last_used_at,omitempty"`
+	RevokedAt   *string  `json:"revoked_at,omitempty"`
+	ExpiresAt   *string  `json:"expires_at,omitempty"`
+	Reasons     []string `json:"reasons,omitempty"`
 }
 
 // emDash is the em dash placeholder for empty optional cells (U+2014).

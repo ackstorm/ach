@@ -14,6 +14,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -731,6 +732,48 @@ func TestAdminListKeysHandler_AllOwnersWithOwnerFilter(t *testing.T) {
 	}
 	if strings.Contains(body, "ekid_admin1") {
 		t.Errorf("owner filter leaked other owner's key: %s", body)
+	}
+}
+
+// TestAdminListKeysHandler_ShowsIdPRefusedOwner: the inventory keeps the
+// SQL status and names an IdP-refused owner's ek_ with reason idp_refused.
+func TestAdminListKeysHandler_ShowsIdPRefusedOwner(t *testing.T) {
+	pool, cleanup := setupPostgres(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO environment_keys (key_id, credential_hash, environment, owner_email, name)
+		 VALUES ('ekid_refused', 'h1', 'env1', 'Leaver@x.example', 'k'),
+		        ('ekid_fine', 'h2', 'env1', 'stays@x.example', 'k');
+		 INSERT INTO idp_refusals (email) VALUES ('leaver@x.example')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	router := newAdminRouter(t, Deps{
+		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
+		Allowlist: adminAllowlist(), Audit: discardLogger(), Logger: discardLogger(),
+	})
+
+	rec := adminGetRequest(t, router, "/platform/admin/keys")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			KeyID   string   `json:"key_id"`
+			Status  string   `json:"status"`
+			Reasons []string `json:"reasons"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, it := range body.Items {
+		got[it.KeyID] = it.Status + " " + strings.Join(it.Reasons, ",")
+	}
+	if got["ekid_refused"] != "active idp_refused" || got["ekid_fine"] != "active " {
+		t.Fatalf("rows = %v", got)
 	}
 }
 

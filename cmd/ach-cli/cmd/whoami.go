@@ -18,6 +18,9 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 )
 
+// authSession is the Auth value of an OAuth login.
+const authSession = "session"
+
 // unavailable is printed for a field the Hub could not report.
 const unavailable = "unavailable"
 
@@ -33,11 +36,15 @@ type bootstrapView struct {
 		Spend          *float64 `json:"spend"` // null: the cycle spend could not be read
 		MaxBudget      *float64 `json:"max_budget"`
 		BudgetDuration *string  `json:"budget_duration"`
+		ResetAt        *string  `json:"reset_at"`
 	} `json:"budget"`
 }
 
 func newWhoamiCmd() *cobra.Command {
-	var f credFlags
+	var (
+		f   credFlags
+		out outputFlag
+	)
 	cmd := &cobra.Command{
 		Use:   "whoami",
 		Short: "Show who you are signed in as, your budget and your key allowance",
@@ -53,14 +60,15 @@ func newWhoamiCmd() *cobra.Command {
 Exit codes: 0 success, 3 not authorized, 6 network error.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return doWhoami(cmd, f)
+			return doWhoami(cmd, f, out.v)
 		},
 	}
 	registerCredFlags(cmd, &f)
+	registerOutputFlag(cmd, &out, "table", outputJSON)
 	return cmd
 }
 
-func doWhoami(cmd *cobra.Command, f credFlags) error {
+func doWhoami(cmd *cobra.Command, f credFlags, output string) error {
 	c, err := resolveCred(cmd.Context(), f, synthetic.GateAPI)
 	if err != nil {
 		return err
@@ -70,15 +78,56 @@ func doWhoami(cmd *cobra.Command, f credFlags) error {
 	if err := hc.Do(cmd.Context(), http.MethodGet, "/platform/console/bootstrap", nil, &b); err != nil {
 		return mapVerifyError(err)
 	}
+	if output == outputJSON {
+		return writeJSON(cmd.OutOrStdout(), newWhoamiView(c, b))
+	}
 	writeWhoami(cmd.OutOrStdout(), c, b)
 	return nil
 }
 
-func writeWhoami(w io.Writer, c cred, b bootstrapView) {
-	auth := "session"
-	if !keys.LooksLikeJWS(c.Bearer) {
-		auth = "key " + config.Mask(c.Bearer)
+// whoamiView is the `whoami -o json` document: the facts the table prints.
+type whoamiView struct {
+	Profile string        `json:"profile"`
+	URL     string        `json:"url"`
+	User    string        `json:"user"`
+	Auth    string        `json:"auth"`
+	Budget  *budgetView   `json:"budget"`
+	Keys    *keyCountView `json:"keys"`
+}
+
+type budgetView struct {
+	Spend          *float64 `json:"spend"`
+	MaxBudget      *float64 `json:"max_budget"`
+	BudgetDuration *string  `json:"budget_duration"`
+	ResetAt        *string  `json:"reset_at"`
+}
+
+type keyCountView struct {
+	Held    int `json:"held"`
+	Allowed int `json:"allowed"`
+}
+
+func newWhoamiView(c cred, b bootstrapView) whoamiView {
+	v := whoamiView{Profile: c.ProfileName, URL: c.BaseURL, User: b.Email, Auth: whoamiAuth(c)}
+	if b.Budget != nil {
+		bv := budgetView(*b.Budget)
+		v.Budget = &bv
 	}
+	if b.KeysUsed != nil && b.MaxKeys != nil {
+		v.Keys = &keyCountView{Held: *b.KeysUsed, Allowed: *b.MaxKeys}
+	}
+	return v
+}
+
+func whoamiAuth(c cred) string {
+	if keys.LooksLikeJWS(c.Bearer) {
+		return authSession
+	}
+	return "key " + config.Mask(c.Bearer)
+}
+
+func writeWhoami(w io.Writer, c cred, b bootstrapView) {
+	auth := whoamiAuth(c)
 	budget := unavailable
 	if b.Budget != nil {
 		spend := "unknown"
