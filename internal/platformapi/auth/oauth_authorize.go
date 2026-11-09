@@ -312,6 +312,10 @@ func mcpKeyFromResource(resources []string, base string) string {
 func (d OAuthDeps) dexConfig() *oauth2.Config {
 	cfg := *d.Auth.OAuth2Cfg // copy: only the redirect differs from the console's
 	cfg.RedirectURL = strings.TrimRight(d.Issuer, "/") + "/platform/oauth/as-callback"
+	// Explicit, because the go-oidc endpoint leaves it unset: x/oauth2 then
+	// probes, and a refused token request is resent with the secret in the
+	// body — the same Dex refresh token presented twice per failed refresh.
+	cfg.Endpoint.AuthStyle = oauth2.AuthStyleInHeader
 	return &cfg
 }
 
