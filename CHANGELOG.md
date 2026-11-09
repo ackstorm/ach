@@ -22,6 +22,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `profile show` take `-o json`.
 
 ### Fixed
+- The chart's Grafana dashboards load with auto-refresh off, so an open
+  dashboard does not re-query its datasources on a timer; refresh by hand or
+  pick an interval.
 - platform-api presents a user's Dex refresh token once per refresh. A refused
   refresh was sent to Dex twice, which Dex can read as token reuse and which then
   ended every session of that user.
