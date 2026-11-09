@@ -85,6 +85,9 @@ type profileView struct {
 }
 
 func newProfileView(f *config.File, name string, dep *config.Profile) profileView {
+	if dep == nil {
+		dep = &config.Profile{}
+	}
 	return profileView{Name: name, URL: dep.URL, Auth: render.ProfileAuth(dep),
 		Current: name == f.Default, SavedKeys: len(dep.Keys)}
 }

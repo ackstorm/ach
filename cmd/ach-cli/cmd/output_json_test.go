@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,9 +66,8 @@ func TestToken_JSON(t *testing.T) {
 	}
 }
 
-const whoamiProfile = "p-json"
-
 func TestWhoami_JSON(t *testing.T) {
+	const whoamiProfile = "p-json"
 	dir := whoamiTestEnv(t)
 	ts := bootstrapServer(t, map[string]any{
 		"email": "jc@example.com", "keys_used": 3, "max_keys": 5,
@@ -134,22 +134,61 @@ func TestKeysCreate_JSON(t *testing.T) {
 func TestEnvDescribe_JSON(t *testing.T) {
 	dir := envTestEnv(t)
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/platform/environments/demo" {
+		switch r.URL.Path {
+		case "/platform/environments/demo":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo", "status": "Available", "description": "d",
+				"conditions": []map[string]any{{"type": "Available", "status": "True"}}})
+		case "/platform/environments/bare":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "bare"})
+		case "/platform/hydrate":
+			_ = json.NewEncoder(w).Encode(map[string]any{"schemaVersion": "v1", "environment": "demo",
+				"runtime": map[string]any{"models": []map[string]any{{"id": "m1", "endpoint": "https://x/v1"}}},
+				"context": map[string]any{"plugins": []map[string]any{{"name": "p", "id": "p", "downloadUrl": "https://x/p"}}}})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"name": "demo", "status": "Available", "description": "d"})
 	}))
 	defer ts.Close()
 	seedEnvConfig(t, dir, "prod", &config.Profile{URL: ts.URL, Key: testEK})
 	swapHTTPClientForTest(t, &envHTTPClient, ts.Client())
+
 	out, _, _, err := executeEnv(t, "describe", "demo", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := decodeJSON(t, out)
-	if m["name"] != "demo" || m["status"] != "Available" || m["description"] != "d" {
+	env, _ := m["environment"].(map[string]any)
+	rt, _ := m["runtime"].(map[string]any)
+	cx, _ := m["context"].(map[string]any)
+	models, _ := rt["models"].([]any)
+	plugins, _ := cx["plugins"].([]any)
+	if env["name"] != "demo" || env["status"] != "Available" || env["description"] != "d" ||
+		len(models) != 1 || len(plugins) != 1 {
 		t.Errorf("got %v", m)
+	}
+	if g, ok := rt["guardrails"].([]any); !ok || len(g) != 0 {
+		t.Errorf("empty axes must be [], got %v", rt)
+	}
+
+	// Empty environment, hydrate skipped: every key present.
+	out, _, _, err = executeEnv(t, "describe", "bare", "--metadata-only", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = decodeJSON(t, out)
+	env, _ = m["environment"].(map[string]any)
+	if c, ok := env["conditions"].([]any); !ok || len(c) != 0 {
+		t.Errorf("conditions must be []: %v", env)
+	}
+	for _, k := range []string{"namespace", "status", "description"} {
+		if v, ok := env[k]; !ok || v != "" {
+			t.Errorf("%s must be present and empty: %v", k, env)
+		}
+	}
+	for _, k := range []string{"runtime", "context"} {
+		if v, ok := m[k]; !ok || v != nil {
+			t.Errorf("%s must be present and null: %v", k, m)
+		}
 	}
 }
 
@@ -180,6 +219,23 @@ func TestProfileListShow_JSON(t *testing.T) {
 	for _, secret := range []string{testEK, testEKSaved, "ekid_lap", "h.p.s"} {
 		if strings.Contains(out, secret) || strings.Contains(shown, secret) {
 			t.Errorf("secret %q leaked", secret)
+		}
+	}
+}
+
+func TestProfile_NilEntryJSON(t *testing.T) {
+	dir := credTestEnv(t)
+	if err := os.MkdirAll(filepath.Join(dir, "ach"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "ach", "config.yaml")
+	if err := os.WriteFile(cfg, []byte("default: x\nprofiles:\n  x:\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list", "-o", "json"}, {"show", "x", "-o", "json"}} {
+		out, _, _, err := executeProfile(t, args...)
+		if err != nil || !strings.Contains(out, `"auth": "none"`) {
+			t.Errorf("%v: err=%v out=%s", args, err, out)
 		}
 	}
 }

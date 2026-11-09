@@ -177,8 +177,10 @@ func newEnvDescribeCmd() *cobra.Command {
 		Short: "Show one environment's runtime + context manifest",
 		Long: `Show one environment's runtime + context manifest.
 
--o json prints the environment object (name, status, description,
-conditions) and skips the manifest request.`,
+-o json prints {environment, runtime, context}: the environment's name,
+namespace, status, description and conditions, then the same runtime and
+context lists the table shows. runtime and context are null when the manifest
+is unavailable or skipped with --metadata-only.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// C4: friendly missing-arg hint before any credential resolution.
@@ -199,27 +201,23 @@ conditions) and skips the manifest request.`,
 				return err
 			}
 
-			if out.v == outputJSON {
-				return writeJSON(cmd.OutOrStdout(), view)
-			}
-
-			if flagMetadataOnly {
-				_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatEnvDescribe(view, nil, false))
-				return nil
-			}
-
-			h, err := callHydrate(cmd.Context(), hc, name)
-			if err != nil {
-				// CLI-12 graceful admin fallback: 403 unauthorized_team
-				// → exit 0 with `(unavailable)` markers.
-				var sErr *httpclient.ServerError
-				if errors.As(err, &sErr) && sErr.Status == http.StatusForbidden && sErr.Code == "unauthorized_team" {
-					_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatEnvDescribe(view, nil, false))
-					return nil
+			var h *render.HydrateView
+			if !flagMetadataOnly {
+				h, err = callHydrate(cmd.Context(), hc, name)
+				if err != nil {
+					// CLI-12 graceful admin fallback: 403 unauthorized_team
+					// → exit 0 with `(unavailable)` markers.
+					var sErr *httpclient.ServerError
+					if !errors.As(err, &sErr) || sErr.Status != http.StatusForbidden || sErr.Code != "unauthorized_team" {
+						return err
+					}
+					h = nil
 				}
-				return err
 			}
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatEnvDescribe(view, h, true))
+			if out.v == outputJSON {
+				return writeJSON(cmd.OutOrStdout(), newEnvDescribeView(view, h))
+			}
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatEnvDescribe(view, h, h != nil))
 			return nil
 		},
 	}
@@ -228,6 +226,62 @@ conditions) and skips the manifest request.`,
 	registerCredFlags(c, &f)
 	registerOutputFlag(c, &out, "table", outputJSON)
 	return c
+}
+
+// envDescribeView is the `env describe -o json` document. Every key is
+// always present: an absent value is null (runtime, context) or empty.
+type envDescribeView struct {
+	Environment envObjectView `json:"environment"`
+	Runtime     *runtimeView  `json:"runtime"`
+	Context     *contextView  `json:"context"`
+}
+
+type envObjectView struct {
+	Name        string                 `json:"name"`
+	Namespace   string                 `json:"namespace"`
+	Status      string                 `json:"status"`
+	Description string                 `json:"description"`
+	Conditions  []render.ConditionView `json:"conditions"`
+}
+
+type runtimeView struct {
+	Models     []render.RuntimeItem `json:"models"`
+	MCPServers []render.RuntimeItem `json:"mcp_servers"`
+	A2AAgents  []render.RuntimeItem `json:"a2a_agents"`
+	Guardrails []string             `json:"guardrails"`
+}
+
+type contextView struct {
+	Prompts   []render.ContextItem `json:"prompts"`
+	Plugins   []render.ContextItem `json:"plugins"`
+	Artifacts []render.ContextItem `json:"artifacts"`
+	Skills    []render.ContextItem `json:"skills"`
+}
+
+// orEmpty keeps a nil slice an empty JSON array.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+func newEnvDescribeView(env render.EnvView, h *render.HydrateView) envDescribeView {
+	v := envDescribeView{Environment: envObjectView{
+		Name: env.Name, Namespace: env.Namespace, Status: env.Status,
+		Description: env.Description, Conditions: orEmpty(env.Conditions),
+	}}
+	if h != nil {
+		v.Runtime = &runtimeView{
+			Models: orEmpty(h.Runtime.Models), MCPServers: orEmpty(h.Runtime.MCPServers),
+			A2AAgents: orEmpty(h.Runtime.A2AAgents), Guardrails: orEmpty(h.Runtime.Guardrails),
+		}
+		v.Context = &contextView{
+			Prompts: orEmpty(h.Context.Prompts), Plugins: orEmpty(h.Context.Plugins),
+			Artifacts: orEmpty(h.Context.Artifacts), Skills: orEmpty(h.Context.Skills),
+		}
+	}
+	return v
 }
 
 // buildEnvHTTPClient resolves the credential and builds the client wired

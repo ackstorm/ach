@@ -16,8 +16,10 @@ ach-cli env search <text>              # find a plugin, skill, MCP server… acr
 - `env describe --metadata-only` skips the content lookup and is faster when you only
   need the description and runtime.
 - `-o json` on `env list`, `env search` and `env describe` gives output you can parse.
-  `env describe -o json` prints the environment object (`name`, `status`, `description`,
-  `conditions`) and skips the content lookup.
+  `env describe -o json` prints `{"environment","runtime","context"}`: the environment's
+  `name`, `namespace`, `status`, `description` and `conditions` (`[]` when none), then the
+  runtime and context lists the table shows. `runtime` and `context` are `null` when the
+  content lookup is unavailable or skipped with `--metadata-only`.
 
 If the Environment the user needs is not listed, they do not have access to it. Signing
 in again will not help: a platform administrator grants it by adding one of the user's
