@@ -11,16 +11,17 @@ import (
 
 // KeyListItem is the secret-free projection of one key (pk_ or ek_) for listing.
 type KeyListItem struct {
-	KeyID       string
-	Type        string // "pk" | "ek"
-	OwnerEmail  string
-	Environment *string // nil for pk
-	Name        *string // nil for pk
-	Status      string
-	CreatedAt   time.Time
-	LastUsedAt  *time.Time
-	RevokedAt   *time.Time
-	ExpiresAt   *time.Time // ek only; nil = perpetual. pk expiry is deliberately not projected (see below).
+	KeyID        string
+	Type         string // "pk" | "ek"
+	OwnerEmail   string
+	Environment  *string // nil for pk
+	Name         *string // nil for pk
+	Status       string
+	CreatedAt    time.Time
+	LastUsedAt   *time.Time
+	RevokedAt    *time.Time
+	ExpiresAt    *time.Time // ek only; nil = perpetual. pk expiry is deliberately not projected (see below).
+	OwnerRefused bool       // ek only: the upstream IdP refused the owner (idp_refusals)
 }
 
 // KeyListFilter narrows ListKeys. Zero-value fields mean "no filter".
@@ -70,7 +71,8 @@ WITH combined AS (
            CASE WHEN status = 'active'
                  AND LEAST(expires_at, created_at + interval '90 days') <= now()
                 THEN 'expired' ELSE status END AS status,
-           created_at, last_used_at, revoked_at, NULL::timestamptz AS expires_at
+           created_at, last_used_at, revoked_at, NULL::timestamptz AS expires_at,
+           false AS owner_refused
     FROM personal_keys
     UNION ALL
     SELECT key_id, 'ek'::text AS key_type, owner_email,
@@ -78,11 +80,13 @@ WITH combined AS (
            CASE WHEN status IN ('active','suspended')
                  AND expires_at IS NOT NULL AND expires_at <= now()
                 THEN 'expired' ELSE status END AS status,
-           created_at, last_used_at, revoked_at, expires_at
+           created_at, last_used_at, revoked_at, expires_at,
+           EXISTS (SELECT 1 FROM idp_refusals r
+                    WHERE r.email = lower(environment_keys.owner_email)) AS owner_refused
     FROM environment_keys
 )
 SELECT key_id, key_type, owner_email, environment, name,
-       status, created_at, last_used_at, revoked_at, expires_at
+       status, created_at, last_used_at, revoked_at, expires_at, owner_refused
 FROM combined
 WHERE ($1::text IS NULL OR owner_email = $1)
   AND ($2::text = ''   OR key_type   = $2)
@@ -106,7 +110,7 @@ LIMIT $7`
 		var it KeyListItem
 		if err := rows.Scan(
 			&it.KeyID, &it.Type, &it.OwnerEmail, &it.Environment, &it.Name,
-			&it.Status, &it.CreatedAt, &it.LastUsedAt, &it.RevokedAt, &it.ExpiresAt,
+			&it.Status, &it.CreatedAt, &it.LastUsedAt, &it.RevokedAt, &it.ExpiresAt, &it.OwnerRefused,
 		); err != nil {
 			return nil, "", err
 		}
