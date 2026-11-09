@@ -1436,3 +1436,12 @@ match) → zero teams everywhere (env list, hydrate, `ek_` create, forwarder
 user, where the email chain costs three), trusting only an answer for exactly
 that id (the placeholder carries the admin's teams); only a miss falls through
 to the email chain. The SSO login backfills `user_email` on the record.
+
+### An ek_ answers 401 and `keys list` shows `invalid` / `idp_refused`
+
+The upstream IdP refused the key's owner (Dex: "The upstream identity provider
+rejected the refresh token.": the user is suspended, disabled or deleted at the
+identity provider behind Dex).
+Every ek_ the owner holds stops resolving until they log in again
+(`ach-cli login`), which lifts the refusal. Rows: `SELECT * FROM idp_refusals`.
+Check Dex logs for `failed to refresh identity` at info level for that user.

@@ -21,8 +21,10 @@ ach-cli keys revoke <name|ekid_…>                                   # for good
 - Each user may hold a limited number of non-revoked keys; `ach-cli whoami` shows
   held / allowed. `403 key_limit_reached` means revoke one or ask an administrator to
   raise the limit.
-- A key reads `invalid` in `keys list` when its owner lost access to its Environment. It
-  stops working until access comes back.
+- A key reads `invalid` in `keys list` when its owner lost access to its Environment
+  (reason `no_access`) or the organisation's identity provider no longer accepts the
+  owner (reason `idp_refused`). It stops working until access comes back; for
+  `idp_refused`, until the owner signs in again with `ach-cli login`.
 
 ## Using a key
 
