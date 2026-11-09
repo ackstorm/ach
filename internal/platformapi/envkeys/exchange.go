@@ -38,6 +38,7 @@ type TokenReviewFunc func(ctx context.Context, token, audience string) (authnv1.
 type exchangeDB interface {
 	ListKeyGrantsForIdentity(ctx context.Context, ns, identity string) ([]db.KeyGrantRow, error)
 	FindExchangeKey(ctx context.Context, owner, environment, requester string) (*db.EkKeyInfo, error)
+	IdPRefused(ctx context.Context, email string) (bool, error)
 }
 
 // ExchangeDeps is Deps plus what POST /platform/keys/exchange alone needs.
@@ -107,7 +108,9 @@ const (
 // on error or after 5 s), one grant allows the tuple (403
 // not_granted, one code for every miss; the audit names which), the
 // Environment exists and is synced (404 / 503), the identity's teams
-// intersect authorizedTeams (403 unauthorized_team). Exactly one
+// intersect authorizedTeams (403 unauthorized_team), the upstream IdP has
+// not refused the identity (403 idp_refused: its keys would not resolve, so
+// nothing is minted and no JWT issued). Exactly one
 // platform.ek.exchange audit event per request from the body check onwards,
 // never carrying a token. A global-limit 429 after a valid signature is the
 // one exception: it is counted in the metric, not audited.
@@ -214,6 +217,16 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			return
 		}
 		if cr.validateTeamMembership(env) {
+			return
+		}
+		refused, err := d.ExchangeDB.IdPRefused(ctx, identity)
+		if err != nil {
+			d.Logger.Error("envkeys.exchange: idp refusal read failed", "err", err)
+			deny(http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", "")
+			return
+		}
+		if refused {
+			deny(http.StatusForbidden, audit.OutcomeIdPRefused, "the identity provider refused this identity; it must sign in to ACH again", "")
 			return
 		}
 		keyID, ok := cr.stableKey(env)

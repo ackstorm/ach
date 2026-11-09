@@ -218,7 +218,8 @@ audience, `system:serviceaccount:`, pod-name + pod-uid extras; 401
 `invalid_token`), ONE `KeyGrant` naming identity + Environment + `<ns>/<sa>`
 together (403 `not_granted` for every miss; the audit names which), the
 Environment exists and is synced (404/503), the identity's teams ∩
-`authorizedTeams` (403 `unauthorized_team`). Success: the tuple's ONE stable
+`authorizedTeams` (403 `unauthorized_team`), the identity is not in
+`idp_refusals` (403 `idp_refused`: no JWT, nothing minted). Success: the tuple's ONE stable
 `ek_` (`issued_via='exchange'`, `requester`, name `exchange:<ns>/<sa>`,
 minted on first use by the create path's `mint`; the partial unique index
 `environment_keys_exchange_tuple_uniq` makes racing first exchanges converge;

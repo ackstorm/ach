@@ -33,6 +33,9 @@ func TestIdPRefusal_BlocksTheOwnersKeysUntilLifted(t *testing.T) {
 	if err := db.SetIdPRefused(ctx, pool, "leaver@b.example", true); err != nil {
 		t.Fatal(err)
 	}
+	if refused, err := db.IdPRefused(ctx, pool, "Leaver@B.example"); err != nil || !refused {
+		t.Fatalf("IdPRefused: %v %v, want true", refused, err)
+	}
 	if info, err := db.EkResolve(ctx, pool, "h_manual"); err != nil || info != nil {
 		t.Fatalf("EkResolve of a refused owner: %v %v, want nil nil", info, err)
 	}
@@ -54,6 +57,9 @@ func TestIdPRefusal_BlocksTheOwnersKeysUntilLifted(t *testing.T) {
 	}
 	if info, err := db.EkResolve(ctx, pool, "h_manual"); err != nil || info == nil {
 		t.Fatalf("EkResolve after the refusal is lifted: %v %v, want a row", info, err)
+	}
+	if refused, err := db.IdPRefused(ctx, pool, "leaver@b.example"); err != nil || refused {
+		t.Fatalf("IdPRefused after the lift: %v %v, want false", refused, err)
 	}
 }
 

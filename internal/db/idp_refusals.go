@@ -26,6 +26,15 @@ func SetIdPRefused(ctx context.Context, pool *pgxpool.Pool, email string, refuse
 	return nil
 }
 
+// IdPRefused reports whether email is recorded in idp_refusals.
+func IdPRefused(ctx context.Context, pool *pgxpool.Pool, email string) (bool, error) {
+	var refused bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM idp_refusals WHERE email = lower($1))`, email).Scan(&refused); err != nil {
+		return false, fmt.Errorf("db: IdPRefused: %w", err)
+	}
+	return refused, nil
+}
+
 // EkOwnersInUse lists, lower-cased, the owners of an active, unexpired ek_
 // used within window, leaving out owners already refused.
 func EkOwnersInUse(ctx context.Context, pool *pgxpool.Pool, window time.Duration) ([]string, error) {
