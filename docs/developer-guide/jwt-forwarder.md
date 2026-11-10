@@ -939,9 +939,6 @@ Backend logs to look for:
 - [Writing an MCP backend](../runbooks/writing-an-mcp-backend.md) —
   backend-side verification posture, common pitfalls, and a runnable
   Go reference.
-- [LiteLLM Custom Auth](litellm-custom-auth.md) — the parallel trust
-  path for `/v1` chat completions (impersonation via
-  `X-Litellm-Api-Key` + `X-Litellm-Key-Id`, NOT the JWT path).
 - [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go) —
   authoritative implementation of the signer.
 - [`test/e2e/mcp-echo/`](https://github.com/ackstorm/ach/tree/main/test/e2e/mcp-echo) —

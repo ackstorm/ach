@@ -47,8 +47,7 @@ ach/
 │   │                                                          the chart" below
 │   ├── dashboards/           the Grafana dashboard JSON LIVES here (not a copy;
 │   │                          docs + validator in examples/grafana/)
-│                            (deploy/kustomize/ deleted 2026-07-17 — Helm is the
-│                             only supported install; see ach-project-spec.md)
+│                            (Helm is the only supported install)
 ├── docs/                    ← mkdocs site (api-reference auto-gen)
 ├── examples/                ← CURATED user-facing samples + golden hydrate.json
 │   │                          (independent of the synced fixtures below; NOT

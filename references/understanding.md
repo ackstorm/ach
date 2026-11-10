@@ -9,9 +9,7 @@
 > Complements (does not duplicate): `CLAUDE.md` (navigation hub),
 > `references/repo-layout.md`, `references/makefile.md`,
 > `references/troubleshooting.md` (25 service failure modes),
-> `references/release-pipeline.md`, `docs/developer-guide/jwt-forwarder.md`,
-> `docs/ach-project-spec.md` (CTO-level review brief), `spec/*.md` (frozen
-> normative specs).
+> `references/release-pipeline.md`, `docs/developer-guide/jwt-forwarder.md`.
 
 ---
 
@@ -256,9 +254,7 @@ disabled them 2026-06-25 → 2026-09-15; removed.)
   key OUT of the data path (survives only for teams precheck + admin ops).
   `x-litellm-key-id` delegation no longer sent; pre-000011 keys have NULL
   material → 401, re-mint. Director collapses `/mcp/<n>/…` to the bare
-  `/mcp/<n>` (LiteLLM admin-only route guard). The old master-key
-  impersonation doc (`docs/developer-guide/litellm-custom-auth.md`) describes
-  the superseded path.
+  `/mcp/<n>` (LiteLLM admin-only route guard).
 - **Header rewrite** (every route): drop `x-ach-*`, set `x-litellm-api-key`
   to the caller's own key; everything else (incl. `Host`) passes as it came. `ek_`
   runtime traffic gets the `<environment>` tag injected; `pk_` untagged.
@@ -491,7 +487,7 @@ answer 403 `enterprise_only`, the classifier refuses to run, the chart renders n
 taxonomy or Thanos setting, and the console marks them "Enterprise only". `make qa-edition` guards the boundary (CI lint job).
 See `AGENTS.md` "Editions".
 
-## 11. Known gaps / accepted trade-offs (from `docs/ach-project-spec.md` §4)
+## 11. Known gaps / accepted trade-offs
 
 1. e2e not a CI gate (local discipline). 2. Every change goes through a PR,
 hotfixes included.
@@ -508,9 +504,6 @@ admin-only (no ACL model yet). 5. UI write path Environment-only.
   `email` claim; **no nbf** (spec mandates nbf).
 - BIP duplicate tiebreak: name-ASC **LAST** wins, NO `DuplicateTarget`
   status (spec said lowest-wins + status).
-- LiteLLM data-path auth: per-user key material (000011/000014) supersedes
-  the master-key impersonation protocol in
-  `docs/developer-guide/litellm-custom-auth.md` (kept as history).
 - `NameConflict` reason deleted (v0.2.5+): marketplace-scoped
   `name@marketplace` refs make cross-marketplace conflicts impossible;
   intra-marketplace dups soft-skip (`DuplicateName` in message).
