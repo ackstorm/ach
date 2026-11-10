@@ -318,7 +318,7 @@ psql "$ACH_DB" -c "select count(*) from environment_keys where status<>'revoked'
       mark the ported pieces (fixtures, tests, brand marks) with the archive
       date. `NOTICE`: the attribution row **stays** — Apache-2.0 provenance does
       not expire.
-- [ ] **ACH docs** — `references/understanding.md` (console at
+- [ ] **ACH docs** — `docs/developer-guide/architecture.md` (console at
       `https://ach.${GENAI_BASE_DOMAIN}/`, LiteLLM on `api.`, no plugin, no
       alitellm-auth); one sentence in `CLAUDE.md` / `AGENTS.md` Quick-context.
 - [ ] **ACH commit** — `docs: console cutover complete — alitellm-auth retired`
