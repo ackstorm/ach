@@ -42,11 +42,9 @@ const (
 // Returns the merged bytes (for hashing/state if the caller wants them). This
 // is the forward counterpart to syncDeep{JSON,TOML}'s removal.
 //
-// Concurrency note (security 2.4 — accept-disposition): the read-merge-write
-// sequence is NOT atomic against external writers. The <achDir>/lock flock
-// excludes other ach-cli processes, but a concurrent editor save on the
-// runtime-config file between our read and our atomic-rename will be silently
-// clobbered. Pragmatic trade-off for v1; see CLAUDE.md "Common failure modes".
+// The <achDir>/lock flock excludes other ach-cli processes; an editor saving
+// the file mid-merge is handled by state.RewriteFile, which merges again on
+// the saved bytes instead of overwriting them.
 func MergeForward(abs string, ours []byte, mode os.FileMode) ([]byte, error) {
 	switch strings.ToLower(filepath.Ext(abs)) {
 	case extJSON:
@@ -76,23 +74,24 @@ func MergeDoc(abs string, ours []byte, mode os.FileMode, isTOML bool) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("mergeForward decode rendered %s: %w", format, err)
 	}
-	existing := map[string]any{}
-	if body, err := os.ReadFile(abs); err == nil {
+	var out []byte
+	err = state.RewriteFile(abs, mode, func(body []byte) ([]byte, bool, error) {
+		existing := map[string]any{}
 		if len(bytes.TrimSpace(body)) > 0 {
 			if derr := UnmarshalDoc(body, &existing, isTOML); derr != nil {
-				return nil, fmt.Errorf("mergeForward decode existing %s %s: %w", format, abs, derr)
+				return nil, false, fmt.Errorf("mergeForward decode existing %s %s: %w", format, abs, derr)
 			}
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("mergeForward read %s: %w", abs, err)
-	}
-	DeepMergeInto(existing, oursMap)
-	out, err := EncodeDoc(existing, isTOML)
+		DeepMergeInto(existing, oursMap)
+		enc, eerr := EncodeDoc(existing, isTOML)
+		if eerr != nil {
+			return nil, false, fmt.Errorf("mergeForward encode %s %s: %w", format, abs, eerr)
+		}
+		out = enc
+		return out, true, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("mergeForward encode %s %s: %w", format, abs, err)
-	}
-	if err := state.WriteAtomic(abs, out, mode); err != nil {
-		return nil, fmt.Errorf("mergeForward write %s %s: %w", format, abs, err)
+		return nil, fmt.Errorf("mergeForward %s %s: %w", format, abs, err)
 	}
 	return out, nil
 }
@@ -307,21 +306,16 @@ func isEmptyMap(v any) bool {
 // custom builder). Any forged inner markers in untrusted plugin prose are
 // inert text inside the outer boundary (T-02-03 marker-injection mitigation).
 //
-// mode is the file permission applied via state.WriteAtomic (typically 0o644
+// mode is the file permission applied via state.RewriteFile (typically 0o644
 // for host memory files like CLAUDE.md which carry no credential).
 func WriteComposite(abs, id string, block []byte, mode os.FileMode) error {
-	body, rerr := os.ReadFile(abs)
-	if rerr != nil && !os.IsNotExist(rerr) {
-		return rerr
-	}
-	var merged []byte
 	re := PluginMarkerRE(id)
-	if re.Match(body) {
-		merged = re.ReplaceAll(body, block)
-	} else {
-		merged = append(append([]byte(nil), body...), block...)
-	}
-	return state.WriteAtomic(abs, merged, mode)
+	return state.RewriteFile(abs, mode, func(body []byte) ([]byte, bool, error) {
+		if re.Match(body) {
+			return re.ReplaceAll(body, block), true, nil
+		}
+		return append(append([]byte(nil), body...), block...), true, nil
+	})
 }
 
 // CompositeBlock wraps content in the per-id composite markers

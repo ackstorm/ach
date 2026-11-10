@@ -17,7 +17,6 @@ package gitignore
 
 import (
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -67,11 +66,18 @@ func Ensure(dir string, entries []string) (bool, error) {
 	}
 
 	path := filepath.Join(dir, ".gitignore")
-	orig, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
-	}
+	wrote := false
+	err := state.RewriteFile(path, 0o644, func(orig []byte) ([]byte, bool, error) {
+		next, ok := render(orig, maps.Clone(want))
+		wrote = ok
+		return next, ok, nil
+	})
+	return wrote, err
+}
 
+// render returns orig with want merged into the managed block, and false
+// when nothing changes.
+func render(orig []byte, want map[string]struct{}) ([]byte, bool) {
 	lines := splitLines(string(orig))
 	before, inside, after, hadBlock := extractBlock(lines)
 
@@ -82,7 +88,7 @@ func Ensure(dir string, entries []string) (bool, error) {
 		}
 	}
 	if len(want) == 0 {
-		return false, nil
+		return nil, false
 	}
 	merged := slices.Sorted(maps.Keys(want))
 
@@ -109,12 +115,9 @@ func Ensure(dir string, entries []string) (bool, error) {
 
 	next := strings.Join(out, "\n") + "\n"
 	if next == string(orig) {
-		return false, nil
+		return nil, false
 	}
-	if err := state.WriteAtomic(path, []byte(next), 0o644); err != nil {
-		return false, err
-	}
-	return true, nil
+	return []byte(next), true
 }
 
 // splitLines splits s into lines, dropping exactly one trailing newline so a

@@ -257,7 +257,7 @@ func Uninstall(root string, global bool, files []store.FileRec) (skipped []strin
 			return skipped, fmt.Errorf("uninstall: read %s: %w", f.RelPath, rerr)
 		}
 
-		op, newContent, cerr := classifyUninstall(f, body)
+		op, _, cerr := classifyUninstall(f, body)
 		if cerr != nil {
 			return skipped, fmt.Errorf("uninstall: %w", cerr)
 		}
@@ -265,7 +265,16 @@ func Uninstall(root string, global bool, files []store.FileRec) (skipped []strin
 		case opSkip:
 			skipped = append(skipped, f.RelPath)
 		case opModify:
-			if werr := state.WriteAtomic(abs, newContent, 0o644); werr != nil {
+			// Re-classified on the bytes RewriteFile reads, so an edit saved
+			// since the read above is kept rather than overwritten.
+			werr := state.RewriteFile(abs, 0o644, func(cur []byte) ([]byte, bool, error) {
+				if cur == nil {
+					return nil, false, nil
+				}
+				op, out, err := classifyUninstall(f, cur)
+				return out, err == nil && op == opModify, err
+			})
+			if werr != nil {
 				return skipped, fmt.Errorf("uninstall: rewrite %s: %w", f.RelPath, werr)
 			}
 		case opRemove:
