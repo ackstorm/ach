@@ -22,8 +22,9 @@ enterprise:
   enabled: true
 ```
 
-The chart passes it to platform-api and the classifier as `ACH_ENTERPRISE`. Running the
-Enterprise features in production requires an ACKstorm Enterprise licence agreement.
+The chart passes it to platform-api and the classifier as `ACH_ENTERPRISE`. Enabling the
+Enterprise features, in any environment, requires a signed agreement with ACKstorm,
+evaluation included. Running the image with Enterprise disabled needs none.
 
 ## With Enterprise disabled
 
@@ -41,5 +42,6 @@ Enterprise features in production requires an ACKstorm Enterprise licence agreem
 The core is under the [Apache License 2.0](https://github.com/ackstorm/ach/blob/main/LICENSE).
 The code under `ee/`, `ui/src/ee/` and `cmd/ach/ee.go` is under the ACKstorm Enterprise
 License ([`ee/LICENSE`](https://github.com/ackstorm/ach/blob/main/ee/LICENSE),
-[`ui/src/ee/LICENSE`](https://github.com/ackstorm/ach/blob/main/ui/src/ee/LICENSE)),
-a draft pending legal review.
+[`ui/src/ee/LICENSE`](https://github.com/ackstorm/ach/blob/main/ui/src/ee/LICENSE)).
+You may read that code and redistribute it inside the official images; using it requires
+an agreement with ACKstorm.

@@ -5,6 +5,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Changed
+- Enterprise licence (`ee/LICENSE`): enabling the Enterprise features in any
+  environment, evaluation included, needs a signed agreement with ACKstorm.
+  Development and test use without one is no longer granted. Running the
+  image with `enterprise.enabled: false` needs no agreement.
 - Leaver detection (added in 1.1.10) needs the Dex connector fixes
   dexidp/dex#5142 (`google`) and dexidp/dex#5144 (`gitlab`, `microsoft`,
   `github`, `gitea`, `bitbucketcloud`), merged 2026-11-10. No Dex release
