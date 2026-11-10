@@ -164,7 +164,7 @@ the schema back. Full procedure: `references/upgrade.md`.
   or the default is raised. Intentional, but surprising on day one.
 - **`platformApi.admins` starts empty**: every admin route answers 403 until
   emails are listed. platform-api reads the list once at start and matches it
-  case-sensitively, so restart platform-api after changing it.
+  case-sensitively; changing it rolls platform-api on the next `helm upgrade`.
 - **What fails the render** (`helm template` shows it): a leftover `profile:`
   value other than `full`; `litellmConnection.enabled` with an empty endpoint or
   Secret ref; empty `security.*.secretRef` names; with Enterprise on,

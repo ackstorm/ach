@@ -54,6 +54,8 @@ spec:
         {{- with .Values.image.rebuildId }}
         ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
         {{- end }}
+        # The admin list is read once at startup: a new one restarts the pod.
+        ach.ackstorm.ai/admins-checksum: {{ toYaml (.Values.platformApi.admins | default list) | sha256sum }}
         {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
         # The taxonomy file is read once at startup: a new one restarts the pod.
         ach.ackstorm.ai/taxonomy-checksum: {{ toYaml .Values.classifier.taxonomy | sha256sum }}
