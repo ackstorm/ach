@@ -15,6 +15,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   includes them yet (v2.46.1 does not). The 1.1.10 entry cited the tracking
   issue dexidp/dex#5143 instead.
 
+### Documentation
+- Supported LiteLLM range stated in the install guide: 1.108.0 or later,
+  tested with 1.108.1.
+- ACH follows Semantic Versioning: a breaking change bumps the major version
+  and is listed under `### Breaking`.
+
 ## [1.1.12] - 2026-11-10
 
 ### Added

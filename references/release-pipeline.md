@@ -21,6 +21,26 @@ commit already passed `ci-ok`. Because the tag precedes the build, a failure in
 goreleaser or the chart push **does leave an orphan tag on origin** — see
 "Orphan-tag posture" below.
 
+## Versioning
+
+ACH follows [Semantic Versioning](https://semver.org). The version covers
+everything a user or operator touches: `ach-cli` commands, flags and output
+formats, the HTTP API, Helm values, CRD fields and their defaults.
+
+| Change | Bump |
+|--------|------|
+| Removes or renames any of the above, changes a default, or makes a working setup fail | major |
+| Adds something, backward compatible | minor |
+| Fixes behaviour to match what is documented | patch |
+
+The CRDs are `v1alpha1`, but a breaking CRD change still bumps the major
+version. A breaking change is listed under `### Breaking` in `CHANGELOG.md`,
+first in its release section, with the step an operator takes.
+
+`make release-cut` merges the release PR only after every check passes,
+the E2E suite included; a failed check leaves the PR open and nothing is
+published.
+
 Cutting a release (stable example, `v0.1.0`):
 
 Before cutting, check whether the range since the last tag changes anything the

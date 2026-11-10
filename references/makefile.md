@@ -235,7 +235,7 @@ write ad-hoc `until …; do sleep N; done` loops — add a `wait-*` target.
 | Target | Ctx | Description |
 |--------|-----|-------------|
 | `release-bump VERSION=X.Y.Z` | B | Bump version across manifests (used by `release-cut`). |
-| `release-cut VERSION=X.Y.Z` | B | Rotates the CHANGELOG, bumps manifests, opens the `chore(release)` PR with auto-merge. Merging publishes. |
+| `release-cut VERSION=X.Y.Z` | B | Rotates the CHANGELOG, bumps manifests, opens the `chore(release)` PR, waits up to 60 min for every check (E2E included), then merges. Merging publishes. A failed check leaves the PR open. |
 
 ### Docs (`docs-`)
 | Target | Ctx | Description |

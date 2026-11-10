@@ -59,7 +59,13 @@ config cache.
 ## LiteLLM
 
 ACH governs access to a LiteLLM proxy; it does not replace it. See
-`references/litellm.md` for the configuration ACH relies on. Before install:
+`references/litellm.md` for the configuration ACH relies on.
+
+Supported LiteLLM: **1.108.0 or later**. Each ACH release is tested end to end
+with the version pinned in `test/e2e/cluster/01-base/litellm.values.yaml`
+(1.108.1 today); a newer LiteLLM is expected to work but is untested.
+
+Before install:
 
 - LiteLLM running with its own Postgres, reachable in-cluster (default value
   `http://litellm.litellm.svc.cluster.local:4000`).
