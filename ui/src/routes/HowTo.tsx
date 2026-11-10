@@ -71,7 +71,7 @@ const TOC = [
 
 // A collapsed <details> target (the API-keys section) is opened first, so the
 // jump lands on its content rather than a closed summary.
-function scrollToSection(id: string): void {
+export function scrollToSection(id: string): void {
   const el = document.getElementById(id);
   if (el instanceof HTMLDetailsElement) el.open = true;
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -80,7 +80,7 @@ function scrollToSection(id: string): void {
 // ── Section ──────────────────────────────────────────────────────────────────
 // A titled content block with a scroll anchor (`id`) the TOC targets. `scroll-mt`
 // keeps the heading clear of the top edge when scrolled into view.
-function Section({
+export function Section({
   id,
   icon: Icon,
   title,
@@ -112,10 +112,10 @@ function Section({
 }
 
 // ── EndpointChip ─────────────────────────────────────────────────────────────
-// The gateway base URL with a Copy button (moved here from the Keys page). It
-// shows apiBase, the same value every snippet uses. Copy writes only that public
+// A page's base URL with a Copy button: here apiBase, the value every snippet
+// uses; on the ach-cli page the URL to sign in to. Copy writes only that public
 // URL, on an explicit click.
-function EndpointChip({ endpoint }: { endpoint: string }) {
+export function EndpointChip({ endpoint }: { endpoint: string }) {
   const { copied, copy } = useCopyFeedback();
   return (
     <div className="flex min-w-0 items-center gap-3 panel px-4 py-2">

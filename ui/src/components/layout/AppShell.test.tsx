@@ -91,6 +91,8 @@ describe('AppShell — sidebar nav', () => {
     expect(screen.getByRole('link', { name: 'Keys' })).toHaveAttribute('href', '/keys');
     expect(screen.getByRole('link', { name: 'Environments' })).toHaveAttribute('href', '/environments');
     expect(screen.getByRole('link', { name: 'How-to' })).toHaveAttribute('href', '/howto');
+    expect(screen.getByRole('navigation', { name: 'Help' })).toContainElement(screen.getByRole('link', { name: 'ach-cli' }));
+    expect(screen.getByRole('link', { name: 'ach-cli' })).toHaveAttribute('href', '/howto/ach-cli');
     expect(screen.getByRole('link', { name: 'Models' })).toHaveAttribute('href', '/models');
     expect(screen.getByRole('link', { name: 'MCPs' })).toHaveAttribute('href', '/mcp');
     expect(screen.getByRole('link', { name: 'A2A' })).toHaveAttribute('href', '/a2a');
@@ -114,13 +116,16 @@ describe('AppShell — sidebar nav', () => {
     expect(screen.queryByRole('link', { name: 'Cost' })).toBeNull();
   });
 
-  it('breadcrumb: Overview has no group; How-to sits under Help', () => {
+  it('breadcrumb: Overview has no group; How-to and ach-cli sit under Help', () => {
     const { container, unmount } = render(<MemoryRouter><AppShell me={ME} config={CONFIG} /></MemoryRouter>);
     expect(container.querySelector('.top')!.textContent).not.toMatch(/Observability/);
     expect(container.querySelector('.top strong')).toHaveTextContent('Overview');
     unmount();
     const howto = render(<MemoryRouter initialEntries={['/howto']}><AppShell me={ME} config={CONFIG} /></MemoryRouter>);
     expect(howto.container.querySelector('.top')!.textContent).toMatch(/Help\/How-to/);
+    howto.unmount();
+    const cli = render(<MemoryRouter initialEntries={['/howto/ach-cli']}><AppShell me={ME} config={CONFIG} /></MemoryRouter>);
+    expect(cli.container.querySelector('.top')!.textContent).toMatch(/Help\/ach-cli/);
   });
 
   it('no static workspace badge; the budget mini sits just above the user menu', () => {
