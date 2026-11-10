@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.12] - 2026-11-10
+
 ### Added
 - `ach-cli` suggests the command you meant at every level, not only the top:
   `ach-cli keys revkoe` → `revoke`. Common synonyms also point to the right
