@@ -20,8 +20,8 @@ installCRDs: true
 # ACH Enterprise features (ee/, ACKstorm Enterprise License): conversation
 # classification, observability analytics except the console Overview, and
 # traces. Off: their API routes answer 403 enterprise_only, the classifier
-# refuses to run and the console marks them "Enterprise only". Running them
-# in production requires an ACKstorm Enterprise licence agreement.
+# refuses to run and the console marks them "Enterprise only". Enabling them
+# in any environment requires a signed agreement with ACKstorm.
 enterprise:
   enabled: false
 

@@ -85,7 +85,7 @@ feature goes in `ee/` and registers through `internal/edition`.**
 - **One image, one console**: `ghcr.io/ackstorm/ach` always links the Enterprise
   code (`cmd/ach/ee.go` → `ee/register`) and embeds the single console (`ui/` →
   `internal/platformapi/console/dist`). Helm `enterprise.enabled` → `ACH_ENTERPRISE`
-  turns the features on; production use needs an ACKstorm Enterprise licence agreement.
+  turns the features on; enabling them anywhere needs a signed ACKstorm agreement.
 - **Seam**: `internal/edition` — `RegisterCommand`/`RegisterPlatformAPI`. Disabled, the
   Enterprise `/platform/observability/*` routes answer 403 `enterprise_only`,
   `ach classifier` exits with "ACH Enterprise feature: set Helm enterprise.enabled=true",
