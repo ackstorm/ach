@@ -49,6 +49,7 @@ stale line there is a broken instruction for every user. Validate with
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Architecture/contract shift that invalidates the whole-system brief | `references/understanding.md` |
 | Anything a user or operator can see (behavior, output, chart, install requirement) | `CHANGELOG.md` `[Unreleased]` entry in the same PR; tests, CI and agent-only docs need none. A correction to something an earlier entry told users is itself an entry |
+| Breaking change (removes/renames a command, flag, API field, Helm value or CRD field, changes a default) | `### Breaking` entry first in `[Unreleased]`, with the operator's step; the release bumps the major version (`references/release-pipeline.md` "Versioning") |
 
 ## Quick context
 

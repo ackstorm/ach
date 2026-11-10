@@ -381,7 +381,7 @@ release-bump: ## Internal: bump version across all manifests. Used by release-cu
 	@echo "Manifests bumped to v$(VERSION)."
 
 .PHONY: release-cut
-release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR and auto-merge it on ci-ok. Usage: make release-cut VERSION=X.Y.Z
+release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR, wait for every check (E2E included) and merge. Usage: make release-cut VERSION=X.Y.Z
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -399,9 +399,18 @@ release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR and auto-mer
 	git commit -m "chore(release): v$(VERSION)"
 	git push -u origin release/v$(VERSION)
 	gh pr create --base main --title "chore(release): v$(VERSION)" --body "Release v$(VERSION). Merging fires release.yml."
-	gh pr merge --rebase --auto --delete-branch
 	git switch main
-	@echo "Auto-merge is set; release.yml fires when ci-ok passes."
+	@pr=$$(gh pr view release/v$(VERSION) --json number -q .number); \
+	for i in $$(seq 1 30); do \
+		n=$$(gh pr view $$pr --json statusCheckRollup -q '.statusCheckRollup | length'); \
+		[ "$$n" -gt 0 ] && break; sleep 10; \
+	done; \
+	[ "$$n" -gt 0 ] || { echo "ERROR: no checks started on PR #$$pr within 5 min" >&2; exit 1; }; \
+	echo "Waiting for every check on PR #$$pr (E2E included, up to 60 min)..."; \
+	timeout 3600 gh pr checks $$pr --watch --fail-fast --interval 30 || \
+		{ echo "ERROR: a check failed or timed out on PR #$$pr; nothing was merged" >&2; exit 1; }; \
+	gh pr merge $$pr --rebase --delete-branch; \
+	echo "Merged; release.yml publishes v$(VERSION)."
 
 ##@ Build
 
