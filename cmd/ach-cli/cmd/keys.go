@@ -91,9 +91,10 @@ func newKeysCreateCmd() *cobra.Command {
 		out            outputFlag
 	)
 	cmd := &cobra.Command{
-		Use:   "create <environment>",
-		Args:  cobra.MaximumNArgs(1),
-		Short: "Create a key for an Environment",
+		Use:        "create <environment>",
+		SuggestFor: []string{"new", "add"},
+		Args:       cobra.MaximumNArgs(1),
+		Short:      "Create a key for an Environment",
 		Long: `Create an environment key (ek-…) named --name (required: what the key is
 for, so you and the console can tell keys apart). The key is printed to
 stdout exactly once and stored nowhere else: put it in the secret store of
@@ -441,6 +442,7 @@ func newKeysRevokeCmd() *cobra.Command {
 	cmd.Example = `  ach-cli keys revoke laptop
   ach-cli keys revoke ekid_01j0zxyz --yes`
 	cmd.Flags().BoolVar(&yes, "yes", false, "Do not ask for confirmation")
+	cmd.SuggestFor = []string{"delete", "rm"} // "remove" is within typo distance
 	return cmd
 }
 

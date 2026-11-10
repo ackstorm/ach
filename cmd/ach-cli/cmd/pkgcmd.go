@@ -368,9 +368,10 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
-		Use:   "install <name@repo>...",
-		Short: fmt.Sprintf("Fetch and install a %s from a registered repo", kindStr),
-		Args:  cobra.MinimumNArgs(1),
+		Use:        "install <name@repo>...",
+		SuggestFor: []string{"add"},
+		Short:      fmt.Sprintf("Fetch and install a %s from a registered repo", kindStr),
+		Args:       cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := cmd.Context()
 
@@ -652,9 +653,10 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
-		Use:   "uninstall <name@repo>...",
-		Short: fmt.Sprintf("Remove an installed %s", kindStr),
-		Args:  cobra.MinimumNArgs(1),
+		Use:        "uninstall <name@repo>...",
+		SuggestFor: []string{"remove", "rm"},
+		Short:      fmt.Sprintf("Remove an installed %s", kindStr),
+		Args:       cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot(flagGlobal, flagDest)
 			if err != nil {
@@ -773,8 +775,9 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
-		Use:   "update [<name@repo>...]",
-		Short: fmt.Sprintf("Re-resolve and re-install %ss (all if no args)", kindStr),
+		Use:        "update [<name@repo>...]",
+		SuggestFor: []string{"upgrade"},
+		Short:      fmt.Sprintf("Re-resolve and re-install %ss (all if no args)", kindStr),
 		RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 			ctx := cmd.Context()
 

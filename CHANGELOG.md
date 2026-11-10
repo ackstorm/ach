@@ -4,6 +4,14 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli` suggests the command you meant at every level, not only the top:
+  `ach-cli keys revkoe` → `revoke`. Common synonyms also point to the right
+  command: `update` → `upgrade`, `ach-cli hydrate` → `environment`,
+  `environment pull|sync` → `hydrate`, `environment show` → `describe`,
+  `keys delete|new` → `revoke`|`create`, `local plugin|skill upgrade|add` →
+  `update`|`install`, `rm` → `remove`/`uninstall`/`revoke`.
+
 ## [1.1.11] - 2026-11-10
 
 ### Added
