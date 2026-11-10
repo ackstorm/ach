@@ -17,8 +17,10 @@ func TestVersionWarning(t *testing.T) {
 		name, cli, server string
 		warns             bool
 	}{
-		{"differs", "1.1.2", "1.2.0", true},
-		{"cli newer", "1.3.0", "1.2.0", true},
+		{"cli older", "1.1.2", "1.2.0", true},
+		{"compared as numbers", "1.1.9", "1.1.10", true},
+		{"cli newer", "1.3.0", "1.2.0", false},
+		{"snapshot cli", "1.1.11-SNAPSHOT-abc", "1.2.0", false},
 		{"equal", "1.2.0", "1.2.0", false},
 		{"equal with v prefix", "v1.2.0", "1.2.0", false},
 		{"dev cli", "dev", "1.2.0", false},
@@ -48,6 +50,9 @@ func TestVersionWarning(t *testing.T) {
 
 			if got := strings.Count(stderr.String(), "warning: ach-cli"); got != map[bool]int{true: 1, false: 0}[tc.warns] {
 				t.Fatalf("warned %d times, want warns=%v: %q", got, tc.warns, stderr.String())
+			}
+			if tc.warns && !strings.Contains(stderr.String(), "hint: upgrade with `ach-cli upgrade`") {
+				t.Fatalf("warning without the upgrade hint: %q", stderr.String())
 			}
 		})
 	}

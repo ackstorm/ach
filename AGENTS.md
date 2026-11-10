@@ -260,7 +260,7 @@ console revalidation never enrol, by design: the per-team LiteLLM lookups stay
 off the hourly path.
 
 User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
-`logout`/`whoami`/`refresh`/`token`/`profile`/`environment`/`keys`/`admin`/`local`/`launch` (workspace verbs
+`logout`/`whoami`/`refresh`/`token`/`profile`/`environment`/`keys`/`admin`/`local`/`launch`/`upgrade` (workspace verbs
 `clone`/`hydrate`/`status`/`uninstall`/`fetch` live under `environment`, e.g. `ach-cli environment hydrate`;
 `launch <claude|codex|gemini|opencode|pi> [--environment <env>]` = `environment hydrate` for that
 one target (no env = every Environment recorded under the folder's `.ach/`), then starts
@@ -308,7 +308,10 @@ There is no `ach.yaml`/`env save` and no legacy state migration (removed
 The workspace verbs print a git-style per-item diff (`+ ~ - !`) framed by
 `Hydrating …`/`Finished …` (conventions: `internal/cli/AGENTS.md`).
 Every API response behind Authn carries `X-ACH-Server-Version`; `ach-cli` warns on stderr,
-once per run, when it differs from its own version (`dev` on either side is not compared).
+once per run, when it is OLDER than the server (`hint: upgrade with \`ach-cli upgrade\``); a newer
+CLI is not warned, and a version that is not plain major.minor.patch (`dev`) is not compared.
+`ach-cli upgrade [--version X.Y.Z]` replaces the running binary with a GitHub release
+(latest by default), sha256-checked against the release's `checksums.txt`.
 `internal/cli/manifest` decodes `POST /platform/hydrate` strictly, so a new response field
 breaks every older `ach-cli`: add it to `ContentRef` and release the CLI first.
 `runtime.models[].limits` (`{context, output}`, either key absent when unknown, no defaults)

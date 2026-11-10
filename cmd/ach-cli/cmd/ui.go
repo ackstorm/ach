@@ -43,6 +43,7 @@ const (
 
 var verbColor = map[string]string{
 	"Cloning": green, "Hydrating": green, "Removing": green, "Finished": green, "Launching": green,
+	"Checking": green, "Downloading": green, "Verifying": green, "Replacing": green,
 	"error": red, "Warning": yellow, "hint": dim, "Note": dim, "Notice": dim,
 }
 
