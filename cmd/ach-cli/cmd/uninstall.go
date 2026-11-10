@@ -76,9 +76,10 @@ func newUninstallCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "uninstall <name>",
-		Args:  cobra.ExactArgs(1),
-		Short: "Remove the projected resource set for the active workspace+environment",
+		Use:        "uninstall <name>",
+		SuggestFor: []string{"remove", "rm"},
+		Args:       cobra.ExactArgs(1),
+		Short:      "Remove the projected resource set for the active workspace+environment",
 		Long: `Tear down the projected resources ach-cli environment hydrate installed for the
 active workspace+environment, reusing the same inverse-merge engine that
 hydrate --sync uses. uninstall removes the WHOLE projection in scope, or

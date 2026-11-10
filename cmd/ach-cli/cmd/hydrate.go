@@ -106,9 +106,10 @@ func newHydrateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "hydrate [env]",
-		Args:  cobra.MaximumNArgs(1),
-		Short: "Install an Environment's content and MCP/A2A config into your agent tool",
+		Use:        "hydrate [env]",
+		SuggestFor: []string{"pull", "sync"},
+		Args:       cobra.MaximumNArgs(1),
+		Short:      "Install an Environment's content and MCP/A2A config into your agent tool",
 		Long: `Download an environment's content (prompts, skills, artifacts) into your
 agent tool's config directory, and wire up its runtime (MCP / A2A; models
 only with --models).

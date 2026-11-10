@@ -223,9 +223,10 @@ func newRepoListCmd() *cobra.Command {
 // newRepoRemoveCmd returns the `ach-cli repo remove <name>` leaf.
 func newRepoRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Unregister a repo (idempotent)",
-		Args:  cobra.ExactArgs(1),
+		Use:        "remove <name>",
+		SuggestFor: []string{"rm"},
+		Short:      "Unregister a repo (idempotent)",
+		Args:       cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			repos, err := store.LoadRepos()

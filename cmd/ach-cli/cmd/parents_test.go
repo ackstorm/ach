@@ -75,3 +75,45 @@ func TestRoot_UnknownSubcommand_Exit1(t *testing.T) {
 		t.Errorf("ach-cli frobnicate: error = %q; want it to mention unknown command", err.Error())
 	}
 }
+
+// TestSuggestions asserts an unknown command names the one command meant:
+// typos at any level, and the synonyms each command lists in SuggestFor.
+func TestSuggestions(t *testing.T) {
+	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"update"}, "upgrade"},
+		{[]string{"self-update"}, "upgrade"},
+		{[]string{"lgoin"}, "login"},
+		{[]string{"hydrate"}, "environment"},
+		{[]string{"status"}, "environment"},
+		{[]string{"environment", "hydarte"}, "hydrate"},
+		{[]string{"environment", "pull"}, "hydrate"},
+		{[]string{"environment", "show"}, "describe"},
+		{[]string{"environment", "rm"}, "uninstall"},
+		{[]string{"keys", "revkoe"}, "revoke"},
+		{[]string{"keys", "remove"}, "revoke"},
+		{[]string{"keys", "delete"}, "revoke"},
+		{[]string{"keys", "new"}, "create"},
+		{[]string{"keys", "ls"}, "list"},
+		{[]string{"local", "plugin", "upgrade"}, "update"},
+		{[]string{"local", "skill", "add"}, "install"},
+		{[]string{"local", "plugin", "rm"}, "uninstall"},
+		{[]string{"local", "repo", "rm"}, "remove"},
+		{[]string{"profile", "rm"}, "remove"},
+	}
+	for _, c := range cases {
+		t.Run(strings.Join(c.args, " "), func(t *testing.T) {
+			_, _, _, err := executeCommand(t, rootCmd, c.args...)
+			if err == nil {
+				t.Fatal("expected an unknown-command error")
+			}
+			_, after, ok := strings.Cut(err.Error(), "Did you mean this?\n")
+			if got := strings.Fields(after); !ok || len(got) != 1 || got[0] != c.want {
+				t.Errorf("error = %q; want the one suggestion %q", err.Error(), c.want)
+			}
+		})
+	}
+}

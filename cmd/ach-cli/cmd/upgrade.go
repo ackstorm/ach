@@ -41,8 +41,9 @@ const onWindows = runtime.GOOS == "windows"
 func newUpgradeCmd() *cobra.Command {
 	var version string
 	cmd := &cobra.Command{
-		Use:   "upgrade",
-		Short: "Replace this ach-cli with the latest release",
+		Use:        "upgrade",
+		SuggestFor: []string{"update", "self-update"},
+		Short:      "Replace this ach-cli with the latest release",
 		Long: `Download ach-cli from the GitHub releases page, check its sha256 against the
 release's checksums.txt, and replace the running binary in place. Profiles in
 ~/.config/ach/config.yaml are untouched.

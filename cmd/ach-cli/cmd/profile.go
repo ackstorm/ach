@@ -181,9 +181,10 @@ func newProfileUseCmd() *cobra.Command {
 func newProfileRemoveCmd() *cobra.Command {
 	var force bool
 	c := &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Delete a profile (--force for the default one)",
-		Args:  cobra.ExactArgs(1),
+		Use:        "remove <name>",
+		SuggestFor: []string{"rm"},
+		Short:      "Delete a profile (--force for the default one)",
+		Args:       cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, f, err := requireProfiles()
 			if err != nil {
