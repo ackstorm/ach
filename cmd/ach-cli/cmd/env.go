@@ -59,7 +59,9 @@ func newEnvCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:     "environment",
 		Aliases: []string{"env"},
-		Short:   "Inspect environments visible to the active credential",
+		// The workspace verbs live under environment; people type them at the top.
+		SuggestFor: []string{"hydrate", "clone", "status", "uninstall", "fetch"},
+		Short:      "Inspect environments visible to the active credential",
 		Long: `Inspect environments visible to the active credential.
 
 environment list + describe are read-only and synthetic-mode friendly.
@@ -173,8 +175,9 @@ func newEnvDescribeCmd() *cobra.Command {
 		out              outputFlag
 	)
 	c := &cobra.Command{
-		Use:   "describe <name>",
-		Short: "Show one environment's runtime + context manifest",
+		Use:        "describe <name>",
+		SuggestFor: []string{"show"},
+		Short:      "Show one environment's runtime + context manifest",
 		Long: `Show one environment's runtime + context manifest.
 
 -o json prints {environment, runtime, context}: the environment's name,

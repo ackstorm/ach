@@ -240,3 +240,14 @@ describe('App driver — mid-session 401 wiring', () => {
     expect(markExpiredSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('App driver — ach-cli guide', () => {
+  it('#/howto/ach-cli renders the guide and marks only its link current', async () => {
+    window.location.hash = '#/howto/ach-cli';
+    useSessionStore.setState({ status: 200, hasLoaded: true, me: ME });
+    renderApp();
+    expect(await screen.findByRole('heading', { level: 1, name: 'ach-cli' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'ach-cli' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'How-to' })).not.toHaveAttribute('aria-current');
+  });
+});
