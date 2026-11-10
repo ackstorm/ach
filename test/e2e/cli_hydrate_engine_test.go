@@ -377,7 +377,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 // phase7Sc1RunEk drives a single sc1_*_ek subtest. The ek_ is minted
 // via `ach-cli keys create` against the seeded XDG; per CLI-04 the
 // ek_ binds the environment, so the hydrate call omits --environment
-// and passes --key <label>.
+// and passes --key <ek-…>.
 func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -387,14 +387,14 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	phase7DemoEnvironmentReady(t)
 
 	label := "e2e-phase7-" + platformID + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	_ = phase7CreateEkKey(t, xdg, label)
+	ek := phase7CreateEkKey(t, xdg, label)
 
 	output := phase7Workspace(t)
 	// --environment is required for any engine run (D1: state is namespaced by
 	// environment), including the ek_ credential path.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
-		"--key", label,
+		"--key", ek,
 		"--target", platformID,
 		"--dir", output,
 	)

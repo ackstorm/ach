@@ -219,10 +219,8 @@ func phase7SeedXdgConfig(t *testing.T, baseURL string, creds userCreds) string {
 // --name <label>` against the seeded XDG_CONFIG_HOME and returns the
 // minted ek_ plaintext. Used by the sc1_*_ek subtests to exercise the
 // ek_ credential path — pk_-only subtests do NOT call this helper.
-//
-// The minted ek_ is also persisted into the config.yaml under the
-// supplied label (D-07 always-persist), so subsequent `ach-cli hydrate
-// --key <label>` invocations resolve it from the same XDG.
+// keys create stores the key nowhere, so callers pass the returned value
+// to --key.
 //
 // On any non-zero exit or unparseable stdout, the subtest fails fast
 // with the captured stdout + stderr in the error message — no silent

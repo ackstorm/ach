@@ -193,7 +193,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 	}
 
 	// ek_ credential path: prove `keys create` mints an ek_ and that
-	// `hydrate --key <label>` projects with it. --environment is required
+	// `hydrate --key <ek-…>` projects with it. --environment is required
 	// (D1: engine state is namespaced by environment) even for ek_. One
 	// platform is enough to exercise the credential branch.
 	t.Run("ek_path_claude_code", func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		stdout, stderr, err := phase7RunAchCli(t, xdg,
 			"env", "hydrate", phase7DemoEnvironment,
 			"--target", "claude-code",
-			"--key", "allplatforms-ek",
+			"--key", ek,
 			"--dir", output,
 		)
 		code, runErr := phase7StripExitErr(err)
