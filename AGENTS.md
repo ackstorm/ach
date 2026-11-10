@@ -5,11 +5,12 @@ the section for your task, then follow the MANDATORY Reading Table into the
 deeper docs. Reading the MANDATORY entry before touching the corresponding code
 is non-negotiable.
 
-> **Lean on purpose** (loaded every conversation). Deep narrative in
-> `references/`: `understanding.md` (**whole-system mental model — read FIRST
-> in a fresh session instead of re-exploring the repo**), `repo-layout.md`,
-> `release-pipeline.md`, `makefile.md`, `troubleshooting.md` (service-specific
-> debugging), `litellm-permission-model.md`.
+> **Lean on purpose** (loaded every conversation). A fresh session starts with
+> `docs/user-guide/concepts.md` + `docs/developer-guide/architecture.md` (the
+> system in two pages), then this file. Per-service contracts live in
+> `references/services/`; workflow detail in `references/` (`repo-layout.md`,
+> `release-pipeline.md`, `makefile.md`, `troubleshooting.md`,
+> `litellm-permission-model.md`, `known-gaps.md`).
 
 ## Documentation hygiene — update docs IN THE SAME COMMIT
 
@@ -47,7 +48,7 @@ stale line there is a broken instruction for every user. Validate with
 | Helm value / install prerequisite / upgrade step | `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
-| Architecture/contract shift that invalidates the whole-system brief | `references/understanding.md` |
+| Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/developer-guide/architecture.md` |
 | Anything a user or operator can see (behavior, output, chart, install requirement) | `CHANGELOG.md` `[Unreleased]` entry in the same PR; tests, CI and agent-only docs need none. A correction to something an earlier entry told users is itself an entry |
 | Breaking change (removes/renames a command, flag, API field, Helm value or CRD field, changes a default) | `### Breaking` entry first in `[Unreleased]`, with the operator's step; the release bumps the major version (`references/release-pipeline.md` "Versioning") |
 
@@ -63,9 +64,7 @@ local package manager `local repo`/`local plugin`/`local skill`) that drops the
 k8s.io/* + controller-runtime deps. Both
 share `internal/cli/*`. Go (controller-runtime, k8s.io/* per `go.mod`).
 
-**One install topology** (the former `identity` profile — platform-api +
-forwarder in front of one LiteLLM host, no operator — was removed
-2026-09-21; the chart fails the render on a leftover `profile: identity`).
+**One install topology** (the chart fails the render on a `profile: identity` value).
 The e2e cluster runs one release: `ach.e2e.local`.
 
 A React console lives in `ui/` (imported from `alitellm-auth`), built by
@@ -134,22 +133,13 @@ scope and the base Reader the Enterprise readers wrap, and
                                     │                       │                │
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
-**Source of truth (Phase D, #34)**: the operator writes Postgres
+**Source of truth**: the operator writes Postgres
 (13 projection tables incl. `key_grants`, `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
 `marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels
-emitted by `with_tx_notify`. CRDs are no longer the read path for any
-non-operator service. **GitOps-wins UI write path (G2)**: the platform-api UI
-Objects API (`/platform/objects`, Environment only in v1) also writes
-`origin='ui'` draft rows; the operator is always authoritative and TAKES OVER a
-matching `ui` row on CR apply (`origin` 'ui'→'cr', `locked=TRUE`), while the UI
-is fenced from operator-owned rows (`403 immutable_via_ui`). Round-trip: draft
-in UI → `GET …/yaml` export → commit + `kubectl apply` → operator takeover.
-The export renders the spec stored verbatim in `environments.spec` (jsonb,
-migration 000024 — written by the operator and the UI path), NOT the per-field
-columns: those carry the operator's runtime-group expansion and lack e.g.
-`budget`; they are rebuilt only for a row older than 000024. The forwarder's only remaining k8s read is the
+emitted by `with_tx_notify`. CRDs are not the read path for any
+non-operator service. The platform-api UI writes `origin='ui'` draft Environments; the operator takes a draft over when the matching CR is applied (GitOps wins) — `references/services/platform-api.md`. The forwarder's only remaining k8s read is the
 `ach-jwt-signing-keys` Secret informer; the platform-api's only k8s
 touchpoints are the Dex leg of the OAuth AS and TokenReview for
 `POST /platform/keys/exchange` (a cluster-wide `system:auth-delegator`
@@ -159,7 +149,7 @@ Content-service runs **by default** as a **sidecar in the operator Pod**
 (co-located because the artifact PVC is RWO) — no `ach-content-service`
 Deployment. Set `contentService.standalone=true` + an RWX `operator.cache`
 (accessMode `ReadWriteMany` + a storageClassName) to split it into its own
-N-replica `ach-content-service` Deployment for HA (G16); the operator stays the
+N-replica `ach-content-service` Deployment for HA; the operator stays the
 sole cache writer, content-service mounts it readOnly.
 operator, platform-api, and forwarder are independent Deployments, each running
 the same `ach` image with `args: ["<mode>"]`. The `ach gateway` Deployment is an
@@ -185,146 +175,22 @@ convenience**, not a co-equal mode.
 
 | Service mode | Subcommand | Owns |
 |--------------|------------|------|
-| operator        | `ach operator`        | Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag budget (condition `BudgetSynced`; absent budget publishes no condition, and the §6.5 drain reaps the tag + its budget object unconditionally); hourly LiteLLM orphan-key reaper scoped to keys stamped `metadata.ach_issuer == ACH_BASE_URL` (required) — never another release's or foreign keys; managed set = every non-revoked row across `personal_keys`+`environment_keys` — suspended/expired/invalid `ek_` rows are never reaped, only a revoked row's lingering LiteLLM key is (that reap IS the revoke retry, D-23) |
-| platform-api    | `ach platform-api`    | REST + `pk_`/`ek_` lifecycle (an `ek_` is minted ONLY into its Environment's deny-all shell team `ach-env-<env>` — no models, no object_permission, no access-group binding; a `pk_` is minted into the caller's per-user deny-all shell team `ach-user-<email>` (provisioned idempotently at mint; a duplicate answer then triggers one drift-repair — `GET /team/info`, and `POST /team/update` only when the team is ACH-owned AND drifted — the user shell's only repair path, since no reconciler owns it; failures are logged, never fatal to the login) with a matching key expiry — grants attach via the operator, not platform-api; see `references/litellm-permission-model.md`; `POST /platform/keys` (ek_ create, optional future-dated `expires_at` else 400 `invalid_argument`, enforced by ACH only — no LiteLLM `duration`; optional `budget: {max_budget, budget_duration?}` capping THAT key through its own `key:<id>` tag, written after the row commits — a refused write is 502 `litellm_rejected`, never a silently uncapped key) + `PATCH /platform/keys/{id}/budget` (owner-scoped like suspend/resume, 400 unless `max_budget` is present and >= 0, 409 on a revoked key, 409 `budget_managed_by_grant` on an exchange key (its KeyGrant owns the ceiling), 204; ~10s to take effect through LiteLLM's tag cache) + `POST /platform/keys/{id}/suspend`/`/resume` (ek_ only, idempotent; suspend `DEL`s the resolver cache entry, ≤60s enforcement bound, which also covers requests already running (re-checked every 60 s, see the forwarder row); resume 409 on revoked/expired, 403 `unauthorized_team` when access is lost) + `DELETE /platform/keys/{id}` (ek_ revoke from any state, idempotent; also caller-scoped pk self-revoke, owner==caller, NOT admin-gated, `?force=true` overrides the active-key 409 guard; a pk_ revoke (self or admin) also ends the owner's OAuth sessions — they must log in again); combined read `GET /platform/keys` (pk_ callers only — an ek_ is 401 `invalid_key_type`, as is an ek_ on the pkid_ revoke branch; five effective states active/suspended/expired/invalid/revoked, priority Revoked→Expired→Suspended→Invalid→Active, D-30 `invalid`=owner lost Environment access or the IdP refused the owner (`idp_refusals`), `?status=` filters on the effective state, `reasons` subset of `suspended|expired|no_access|access_unverified|idp_refused`) + `GET /platform/admin/keys` (SQL-level status only, no Invalid derivation, reason `idp_refused` on an IdP-refused owner's ek_, `?status=` also accepts `suspended`) + admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`, G2) + `PATCH /platform/admin/users/{email}/budget` (admin-gated; sets that person's whole-footprint ceiling on their `user:<email>` tag — same body and rule as the ek_ route, 204, a never-logged-in user is created not refused; durable — a login never overwrites it) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`) + **OAuth 2.1 AS — the only login** (`/platform/oauth/{register,authorize,as-callback,device_authorization,device,token}`: DCR (`/register` answers 413 over 4 KiB, 400 on a bad record, 429 `rate_limited` past a per-address and a global bucket, per replica; https redirect_uris only on `platformApi.oauth.redirectHosts` -> `ACH_OAUTH_REDIRECT_HOSTS`, default: loopback only; enforced at register AND `/authorize`), code+PKCE S256 via Dex, RFC 8628 device grant for headless hosts (`ach-cli login --no-browser`), refresh rotation **re-validated at the IdP** — `offline_access` at Dex, ONE Dex refresh token per user in Valkey (Dex keeps one per user+client and a new login replaces it, so every tool of the user shares and rotates it), every ACH refresh replays it, a Dex 400 (reuse, unknown or expired token) ends all the user's sessions and revokes the oauth `pk_`, while a Dex 500 (a connector failure Dex does not classify as an upstream rejection) and an unreachable Dex are both a 503 and end nothing; a Dex answer of the upstream rejection (`invalid_grant`, "The upstream identity provider rejected the refresh token.") also records the owner in `idp_refusals`, and every `ek_` they own (exchange keys included) stops resolving until they log in again (the login deletes the row); an hourly platform-api sweep replays, at most once per owner per 24 h (Valkey `idp_check` claim), the Dex token of every owner whose `ek_` was used in the last 7 days, so a leaver who never logs in again is caught within a day, whatever IdP Dex fronts, provided the Dex build includes dexidp/dex#5132 (the upstream rejection) and the connector's own fix (dexidp/dex#5142 for `google`, dexidp/dex#5144 for `gitlab`, `microsoft`, `github`, `gitea` and `bitbucketcloud`; neither is in Dex v2.46.1); connectors that never contact the upstream on refresh (`saml`, `oauth`, `keystone`, `authproxy`) cannot, and their offboarding stays `POST /platform/admin/users/{email}/revoke-keys`; an owner with no Dex token in Valkey is only logged ("owner not verifiable at the IdP"); other Dex 400s (reuse, expiry) end sessions but never refuse keys; `revoke-keys` (`ach-cli admin keys revoke --owner`; email normalised, every page walked, 500 if a list page fails, safe to rerun) remains the explicit offboarding step; no `pk_` is minted at login; `provisionUser` SEEDS the chart-configured default ceiling (`platformApi.userDefaults` → `ACH_USER_MAX_BUDGET`/`ACH_USER_BUDGET_DURATION`) onto the caller's `user:<email>` tag at login, but only while that tag carries no budget (one `/tag/info` read first), so an admin's `PATCH /platform/admin/users/{email}/budget` survives later logins and changing the chart default does NOT retune anyone already seeded; both the read and the write are fail-loud AT THE CALLBACK. The same seed also runs from `ensureOAuthPK`, the funnel EVERY grant crosses (login, `/token` refresh, device grant, console revalidation): a user provisioned before the default existed only ever refreshes and would otherwise never be seeded at all. There it is BEST-EFFORT — this path carries token refresh, so failing it on a LiteLLM blip would sign out every active user at once; what is missing is a ceiling, not a credential, and the next grant retries. The no-clobber guard lives inside `upsertUserBudgetTag`, so an admin's ceiling is safe on every call site — one ceiling covers their pk_ and every ek_ they own; issues 1h Ed25519 JWTs signed with the mounted `ach-jwt-signing-keys` seed (`ACH_JWT_SECRET_DIR`, re-read every 30 s so a rotation needs no restart); each user's JWT resolves to one `personal_keys` row with `purpose='oauth'`, re-minted at `/token` when LiteLLM no longer lists its key (one `GET /key/list` per issue); RFC 8414/9728 documents are served by the forwarder) + the **OpenCode install manifest** for that AS (`GET /.well-known/opencode`, anonymous, public data only; the gateway routes that exact path to platform-api, the rest of `/.well-known/` stays on the forwarder: `opencode auth login https://<ACH_BASE_URL>` (engines v1 and v2) installs the plugin `genai.opencodePluginSpec` → `ACH_OPENCODE_PLUGIN_SPEC` (default `git+https://github.com/ackstorm/opencode-oidc-provider.git#v<tag>`, empty = unmounted) with options `{api, platform, provider}`, plus `config.enabled_providers: [<provider>, ...genai.opencodeExtraProviders]` (→ `ACH_OPENCODE_EXTRA_PROVIDERS`, comma-separated, same id rule, refused at start otherwise; only those providers in the picker; v1: the user's opencode.json overrides it; v2: it cannot, anomalyco/opencode#59267) — `provider` is `genai.providerName` → `ACH_GENAI_PROVIDER_NAME`, default `ai-platform`; `auth.command` is `echo ok` filler (OpenCode requires an auth block and spawns it shell-less via cross-spawn; the plugin ignores its credential; `/bin/echo` exists on Linux/macOS and cross-spawn runs a non-.exe name through `cmd.exe /c` on Windows — `opencode` itself is often not on PATH); the user then signs in with `opencode auth login <provider>` (v1: `-p <provider>`), browser loopback or the RFC 8628 device grant; ACH ships no plugin code — `github.com/ackstorm/opencode-oidc-provider` owns it (shared with alitellm-auth); `ACH_GENAI_PROVIDER_NAME` must match the plugin's `^[a-z0-9][a-z0-9-]{0,63}$` or platform-api refuses to start) + **per-user OpenCode config** `GET /clients/opencode/config` (outside Authn; schema `ackstorm.opencode-config/1`, shared with alitellm-auth; 200 for ANY Bearer — an ACH OAuth token that does not verify, or whose oauth `pk_` is revoked, gets the empty baseline `auth:"invalid"`; 401 only without a Bearer; never 5xx — a LiteLLM/DB failure serves the user's last good body from Valkey (`opencode_config`, 30 d, `stale:true`); `no-store`. Optional `config.model`/`config.small_model` = `<provider>/<name>` from `genai.defaultModel`/`defaultSmallModel` (`ACH_GENAI_DEFAULT_MODEL`/`_SMALL_MODEL`, bare names, empty = off), emitted ONLY when the name is a key in the user's own model map (else omitted, OpenCode picks the first); never in the static `/.well-known/opencode`; the user's own opencode.json wins (the plugin merges `config` under it); part of `version` via `config`. Models = the user's own chat `/model_group/info` rows, plus those with no mode (absent or `""`; the deployment's mode from `/v2/model/info` decides when LiteLLM knows it — same rule as the forwarder's `/v1/models`) (minus `a2a/<agent>`: LiteLLM lists a granted agent there but refuses it as a model) under provider `genai.providerName`, enriched (never widened) by master-key `/v2/model/info` + `router_settings.model_group_alias`, cached per replica 1 h stale-while-revalidate; NO `mcp` key (since 2026-10-08; the plugin treats a missing `mcp` as none): MCP servers reach OpenCode only through a hydrated Environment (`ach-cli environment hydrate --target opencode`); the retired `genai.mcpEnabledEnvironments` / `ACH_GENAI_MCP_ENABLED_ENVIRONMENTS` is ignored if still set; `skills` = ONE embedded skill named `<provider>-ach` (`internal/platformapi/opencode/skill/SKILL.md`, a single self-contained file — the plugin writes only `files["SKILL.md"]`, ≤256 KB; platform-api refuses to start when `<provider>-ach` breaks the plugin's kebab-case ≤64 rule; the plugin deletes a skill the server stops listing): a minimal bootstrap — install `ach-cli` from the GitHub release, login, `environment list`, hydrate an Environment the user named into the folder, and `genai.defaultEnvironment` → `ACH_GENAI_DEFAULT_ENVIRONMENT` globally (`{{default_env}}`; step cut when empty); everything after that comes from the `ach-cli` plugin that Environment carries (`plugins/ach-cli`), so the default Environment should list `ach-cli@<marketplace>` — update the bootstrap when those commands change) + **web console session** (`/platform/console/session/{login,logout}`: the same AS in-process — a `Console` pending, cookie `__Host-ach_console` HttpOnly/Lax, revalidated at the IdP every AccessTTL through the shared Dex refresh token, logout deletes the web session ONLY) + the cookie→`KeyContext` adapter (`middleware.AuthnOptions.Cookie`: same handlers as a bearer; cookie + any API credential = 400 `ambiguous_credentials`; non-safe methods need `Sec-Fetch-Site: same-origin` or `Origin`==host, D-28) + `/platform/console/{bootstrap,capabilities}` (bootstrap also carries `budget` for personal (pk) callers only: the caller's `user:<email>` tag as `{spend, max_budget, budget_duration, reset_at}` — `max_budget`/`budget_duration`/`reset_at` null without a ceiling (`reset_at` = LiteLLM's `budget_reset_at`, verbatim; `/stats`'s `budget.reset_at` is the same value; `spend` = the tag's OWN spend over the current cycle (never before the tag's `created_at`) → now, summed from master-key `/tag/daily/activity` across all pages — `/tag/info` carries no spend; the cycle start is one CALENDAR step before `budget_reset_at` (`30d` = a month — LiteLLM's reset grid), rounded to the nearest UTC-day bucket (≤12 h skew); `/stats`'s `budget.current` is the same figure), `spend` null (ceiling still shown) when the cycle spend cannot be read, the whole field null when the tag is absent, the caller is an ek_ (no `/tag/info` call is made — mirrors `/platform/console/stats`, which 401s an ek_), or `/tag/info` fails, never an HTTP error; `ach-cli whoami` prints it (`Budget   unavailable` for an ek_ credential); Personal scope = LiteLLM reads as the user's OWN key via `litellm.UserView`, public projections only, deny-all-only or empty = `provisioning` (both sentinels recognised — `no-default-models` since 2026-09-22, legacy `__deny_all__` still read for shells an older ACH wrote); Environment scope = the projection behind `environments.CallerMayRead`) + `/platform/console/{stats,latency}` (GET, pk_-only — same guard as `capabilities`, 401 `invalid_key_type` for an `ek_`; each folds the caller's OWN LiteLLM window into `observability.{Stats,Latency}Contract` plus a top-level `"data_scope":"user"` always, D-13/AC-16 — user-global, never Environment-scoped, and includes traffic sent through any `ek_` the same owner holds; `stats`'s per-key rows relabel an ACH-managed key's alias to its ek_ `name`, or `"personal"` for the pk_ row, and folds every row the owner's OWN key set does not account for (another product's key, a sibling ACH release's, one made by hand in LiteLLM) into a single `external key` row — summed, never dropped, so the block still covers the whole user-global window; ownership is decided by the owner's key rows, not a metadata issuer check, since each release tracks its keys in its own DB; independent degradation — a failed prior-window read only drops `capabilities.deltas` (all `totals.deltas.*` null), a failed `/tag/info` read only degrades `budget.source` to `"unknown"` (the budget panel reports the caller's own `user:<email>` tag — the ceiling the forwarder enforces — read with the MASTER client, `source: "tag"`), a failed CURRENT-window read is a hard 502 `litellm_rejected` (4xx/`Auth401Error`) or 503 `litellm_unreachable` (transport/5xx) — never a master-key retry, §10.1; `latency`'s `/spend/logs/v2` fetch degrades to 200 `{"available":false,"reason":"unavailable"}` on a 401 `role=unknown`, or `"fetch_failed"` on any other error, never an HTTP error) + **personal traces** `GET /platform/observability/traces[/{trace_id}]` (Enterprise: `ee/platformapi/obsapi` over `ee/observability/evidence`, enabled by `enterprise.enabled`; without it every `/platform/observability/*` route answers 403 `enterprise_only` (core serves none); the guard, window and error mapping are `internal/platformapi/obsapi`'s; pk_-only, an ek_ or no key context is 401 `invalid_key_type` before any read; the caller's email comes ONLY from the key context via `evidence.NewUserScope`, never from the request; thin net/http ClickHouse client as the read-only `ach_observability_ro` user (metadata columns, never input/output), `FINAL`+`is_deleted=0` on `events_full`; a trace holding any span of another user is never served; unknown or foreign trace = 404 `trace_not_found` (no oracle), source failure = 503 `not_ready`, never upstream text; dates `YYYY-MM-DD` UTC, default 30 d, max 31 d; `ACH_OBSERVABILITY_CLICKHOUSE_URL` unset = 503 `not_ready`, set = `_USER`, `_PASSWORD` and `ACH_OBSERVABILITY_LANGFUSE_PROJECT_IDS` all required or startup fails; chart `platformApi.observability.{clickhouseUrl,secretName,projectIds,thanosUrl}`) + the same guard and window on the Enterprise `GET /platform/observability/{sessions[/{session_id}],context,workloads,cost,latency,performance,classification}` (`sessions` groups the caller's traces by session, `sessions/{id}` is its turn-and-tool execution; whole-window aggregates of the caller's generations; a measurement no row carries is null with a reason, never 0; `workloads` takes the User-Agent from the trace's unowned gateway span and sums tokens + cost per runtime; `classification` joins the caller's in-window sessions to the classifier's `ach_classification_category` v3 scores in `default.scores` (granted columns only, never `comment`/`string_value`; no grant = unavailable provenance, never a 5xx) and reports per category + `coverage` labelled/sessions; `cost` keeps zero-cost (subscription) generations out of every denominator and prices the cache saving from LiteLLM list prices scaled per model by recorded/list — Vertex `eu` bills `regional_endpoint_uplift_multiplier` 1.1x; `performance` reads LiteLLM gateway series from Thanos by `user=<email>` (`ACH_OBSERVABILITY_THANOS_URL`, Enterprise-only, refused at start while disabled; optional, unset = `not_instrumented`)); `/platform/console/stats` `budget.projection` carries the cycle's spend linearly to `reset_at` (null `no_cycle`/`too_early`/`spend_unknown`) and `budget.cycle_series` (`[{date, spend}]`) the same tag read's per-day rows, summing to `budget.current` + the console SPA at `/` (`internal/platformapi/console`, `go:embed all:dist`, chi `NotFound` fallback; "console not built" until `make ui-build`) + **BIP-declared consent** (an MCP `BackendIdentityPolicy` may name one `consentBroker` + `consentAudience` — never `ach`, `ach-ek` or an `mcp:`/`a2a:` prefix, refused by the CRD rule and again in `chainStart`, since the hint is signed with the token key; ACH probes the backend through the forwarder, performs one broker metadata/DCR/PKCE hop only when the outcome is `auth_required`, then re-probes before issuing the code; no broker code is redeemed) |
-| forwarder       | `ach forwarder`       | JWT trust path, `/v1`/`/gemini`/`mcp`/`a2a` rewrite; anonymous `/.well-known/jwks.json` + **ACH-composed** RFC 8414 (`/.well-known/oauth-authorization-server`) + RFC 9728 (`/.well-known/oauth-protected-resource[/v1|/gemini|/mcp/<n>|/a2a/<n>]`) documents (LiteLLM's PRM is no longer relayed; both are served on the path's SHAPE and never on whether the named server exists — an unknown but well-formed `/mcp/<n>` still gets a 200 document, so the anonymous surface is not an existence oracle, D-15); Authn reads the **declared** credential slots (`forwarder.headers` → `ACH_CREDENTIAL_HEADERS`, in order; defaults `x-ach-key`, `x-api-key`): `mode: resolve` → pk_/ek_ resolved, header removed, the caller's own LiteLLM key forwarded as `x-litellm-api-key`; `mode: passthrough` → the backend's own key forwarded as it came + mirrored to `x-litellm-api-key`, no ACH identity; a `pk-`/`ek-` value is resolved in ANY slot (passthrough and `Authorization` included) and removed — an ACH key never reaches LiteLLM; every other header passes as it came. `/gemini` ALSO rewrites the model name in the path (`forwarder.gemini.stripModelPrefixes` → `ACH_GEMINI_STRIP_MODEL_PREFIXES`, a JSON list, declared order, first match wins): LiteLLM registers a model as `<vendor>.<model>` while a native Gemini client addresses it by its bare Google name, so the listed prefixes are stripped from the segment AFTER `/models/` — anchored there precisely so an entry like `gemini/` cannot match ACH's own `/gemini` route prefix. Empty/unset = no rewrite. `/v1` has no equivalent and will not get one: the model travels in the JSON body there and the Director never reads `req.Body` (D-05 streaming) — use LiteLLM's own `model_group_alias` for that surface. Every authenticated request is **stamped with the LiteLLM budget tags** in the Director — `x-litellm-tags: user:<email>[,environment:<env>,key:<ek id>]` (ek_ gets all three, pk_ only `user:`, no ACH identity gets none), which is how ALL of ACH's spend ceilings reach `/v1`, `/gemini`, `/mcp`, `/a2a` and `/v2/model/info` alike; budgets live ONLY on tags, never on a LiteLLM team or user object (measured — see `references/litellm-permission-model.md` §15), and the FWD-06 `metadata.tags` body injection is gone, and client-supplied body tags (`tags`, `metadata.tags`, `litellm_metadata.tags`) are stripped from JSON request bodies on `/v1`, `/gemini` and `/a2a` (also under the JSON-RPC `params`; review #5; 32 MiB cap, 413 `request_too_large`), fail-closed: every non-form body is scanned as JSON whatever its Content-Type (string `metadata` included), a non-empty body that is not valid JSON is 400 `invalid_request`, and a form body with a `tags`/`metadata`/`litellm_metadata` field is 400 `client_tags_not_allowed`. With no declared slot present, `Authorization: Bearer` is resolved only when it is ours: ACH's own OAuth token (JWS-shaped; a JWS that does not verify is 401 + challenge so MCP clients re-auth) or a `pk-`/`ek-` key — anything else there (LiteLLM's UI bearer, a raw key) is not ours: forwarded untouched with no ACH identity (no precheck, no BIP JWT, no env tag), LiteLLM authenticates it. Nothing presented at all → 401 + `WWW-Authenticate: Bearer resource_metadata=…`. **Trusted external IdP** (`forwarder.trustedIdP` → `ACH_TRUSTED_IDP_{ISSUER,AUDIENCES,CLAIM}`, off when the issuer is empty, issuer without audiences refuses to start): a JWS whose unverified `iss` equals that ONE issuer (Dex, for LibreChat) is verified (RS256 discovery JWKS, exp, aud list, claim non-empty, `email_verified` not false) and resolves to the user's EXISTING oauth `pk_` — never minted; each use slides that row like a plain pk_ (7 d, 90 d cap); no live row → 403 `ach_login_required` (names the console), issuer down → 503 `idp_unreachable`; detail in `docs/developer-guide/jwt-forwarder.md`. `GET /v1/models` lists only `chat`/`completion` models by default (the console's "chat"; a model without a LiteLLM `mode`, absent or `""`, stays); `?types=<LiteLLM mode>[,…]` adds others, `?types=all` disables the filter (`proxy/models.go`, one of the forwarder's two response-body rewrites); ACH's own views (console, `environment describe`) never read it, and any ACH-internal call through it must pass `?types=all` (heuristic guard test `proxy/models_selfcall_test.go`). Request bodies on `/v1`, `/gemini` and `/a2a` are refused with 400 `client_param_not_allowed` when they set a LiteLLM per-request control: `api_key`, `deployment_id`, `guardrails`, `guardrail_config` (also inside `metadata`/`litellm_metadata`, string `metadata` included), or a `tools` entry of type `mcp`; form and multipart bodies refuse the same top-level names. The Environment ceiling lives on the team, not the key, so these are refused, never stripped. `/gemini` serves only `GET /v1beta/models`, `GET /v1beta/models/{m}` and `POST /v1beta/models/{m}:{generateContent|streamGenerateContent|countTokens|embedContent|batchEmbedContents}` (anything else 404 `route_not_allowed`); a body `model`, a `batchEmbedContents` entry model (or any `target_model_names`) that does not name the path's model, or a POST body whose Content-Type is neither `application/json` (parameters allowed) nor absent, is 400 `model_mismatch`. A request with an ACH identity is re-checked against its key row after 60 s and every 60 s until it ends (streams, `/v1/realtime`): a suspended, revoked, expired or missing row ends it (a request still waiting on LiteLLM answers 401 `expired_or_revoked`); Postgres errors fail open with a Warn. There is **no catch-all** (D-18): a path outside `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>`, `/.well-known` is 404 — LiteLLM's own surface (`/ui`, `/key/*`, `/health`…) lives on LiteLLM's own host, never behind ACH. One owned exception: `GET /v2/model/info` (credential required, forwarded like `/v1`) because ach-agent's `litellm_usage` cost source prices there with its `ek_`. LiteLLM has no row for a `model_group_alias`, so `?model=<alias>` goes upstream unchanged (LiteLLM's 403 for a name the caller is not granted stands) and a 200 is answered with the alias's own row: the target deployment's allow-listed caps from a master-key `litellm.CapsCache`, refreshed hourly (`proxy/modelinfo.go`, the other response-body rewrite; `references/litellm-permission-model.md` §16); an alias whose target LiteLLM does not describe passes through. OAuth JWTs have no consent scopes and there is no static scope gate; a BIP JWT carries identity only and an ek_ acts as its owner (`sub`/`email`/`groups` equal the owner's pk_ JWT for that target, plus `azp: ek:<environment>`), while an ek_ with no BIP gets no JWT and no Authorization upstream; the `EkOwnerGate` middleware re-checks D-30 owner Environment-access on every authenticated family (`/v1`, `/gemini`, `/mcp`, `/a2a`, `/v2/model/info`) for `ek_` callers only — access lost is 403 `unauthorized_team`, a TeamsResolver failure is 503 `litellm_unreachable`, never a verdict |
+| operator        | `ach operator`        | Reconciles the ACH CRDs; sole writer of LiteLLM access groups, shell-team attachments (`assigned_team_ids`) and tag budgets; hourly orphan-key reaper. Contract → `references/services/operator.md` |
+| platform-api    | `ach platform-api`    | REST API: keys (`pk_`/`ek_` lifecycle, budgets, limits), the OAuth 2.1 AS over Dex (the only login), hydrate, admin, UI objects, the console and its session, the OpenCode endpoints, Enterprise observability routes. Contract → `references/services/platform-api.md`; key exchange → `references/services/key-exchange.md` |
+| forwarder       | `ach forwarder`       | Data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>`, `/.well-known`: resolves ACH credentials, forwards the caller's own LiteLLM key, stamps budget tags, strips client tags, refuses per-request LiteLLM controls, mints per-target BIP JWTs; no catch-all. Contract → `references/services/forwarder.md` |
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)`; `x-ach-key` takes `pk_`/`ek_` OR an OAuth JWT (hydrate from an OAuth profile) — verified against the same `ach-jwt-signing-keys` seed, mounted as files (`ACH_JWT_SECRET_DIR`, required, sidecar AND standalone; re-read every 30 s like platform-api's signer, so a key rotation needs no restart) |
-| gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA, D-26); no LiteLLM path outside the ACH families is reachable through ACH (D-18) — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. It needs no database. |
+| gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA); no LiteLLM path outside the ACH families is reachable through ACH — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. It needs no database. |
 | migrate         | `ach migrate`         | Postgres schema migrations |
-| classifier      | `ach classifier`      | Async job (chart `classifier.enabled`, off by default; one replica; secrets only from `classifier.secretName`, never `extraEnv`): **Enterprise** (`ee/classifier/`; needs `enterprise.enabled`; disabled, it exits with a pointer to it, and the chart renders nothing): labels idle Langfuse sessions with one taxonomy category, reads ClickHouse as `ach_classification_ro` (input/output on `events_full` and `SELECT` on `scores` granted: a session already holding a non-`trivial` score for the current taxonomy is never listed again, so each is paid for once; every query `FINAL`+project+`is_deleted=0`+`GENERATION`, `input` read one row by the full sorting key), model `ackstorm.smart` through the gateway, categories from `classifier.taxonomy` (empty = built-in v3; intro, output format, `other`/`trivial` fixed in code), writes a NUMERIC Langfuse score with category metadata; no Langfuse keys = dry run. The taxonomy (`classifier.taxonomy`, empty = built-in `v3`) is mounted into platform-api too (`ACH_CLASSIFIER_TAXONOMY_FILE`): the console reads only that version's scores. Detail and the decision-model (Jev) option → `docs/developer-guide/conversation-classifier.md` |
+| classifier      | `ach classifier`      | **Enterprise** async job (chart `classifier.enabled`, needs `enterprise.enabled`): labels idle Langfuse sessions with one taxonomy category. Detail → `docs/developer-guide/conversation-classifier.md` |
 
-Per-user `ek_` key ceiling: `POST /platform/keys` returns 403
-`key_limit_reached` once the caller holds `max_keys` non-revoked rows (active,
-suspended, or expired; revoked never counts). The ceiling is the Postgres
-`user_limits` row for that email, otherwise
-`platformApi.userDefaults.maxKeys` → `ACH_USER_MAX_KEYS` (0 = deny by default).
-It is read fresh on every create and never seeded at login; admins are not
-exempt and grant themselves with `PATCH /platform/admin/users/{email}/limits`.
-That admin route accepts `{"max_keys": N}` (N >= 0), upserts the Postgres row,
-returns 204, and takes effect on the next create without a cache delay.
+Per-user key ceiling and login team enrolment → `references/services/platform-api.md`;
+key exchange and `KeyGrant` → `references/services/key-exchange.md`.
 
-Key exchange (`POST /platform/keys/exchange`, outside the `pk_`/`ek_` Authn
-subtree): `Authorization: Bearer <pod-bound ServiceAccount token>` whose
-audience is `ACH_BASE_URL` without a trailing slash, body
-`{"identity","environment"}`. Guards before any API-server call: a compact
-JWS whose unverified `aud` names that audience (else 401 `invalid_token`),
-a per-client (first `X-Forwarded-For` hop) rate limit (429 `rate_limited`),
-the token's signature, issuer and `exp` verified locally against the
-cluster's ServiceAccount JWKS (`/openid/v1/jwks`, issuer from
-`/.well-known/openid-configuration`; RS256/ES256 only; cached 10 min, an
-unknown `kid` refetches at most once a minute, a failed refetch serves the
-cache; 401 `invalid_token`, or 503 `not_ready` with no JWKS at all), and only
-then the global rate limit (429) — so forged tokens neither drain the global
-budget nor reach TokenReview. Then, first failure answers: TokenReview (authenticated,
-audience, `system:serviceaccount:`, pod-name + pod-uid extras; 401
-`invalid_token`), ONE `KeyGrant` naming identity + Environment + `<ns>/<sa>`
-together (403 `not_granted` for every miss; the audit names which), the
-Environment exists and is synced (404/503), the identity's teams ∩
-`authorizedTeams` (403 `unauthorized_team`), the identity is not in
-`idp_refusals` (403 `idp_refused`: no JWT, nothing minted). Success: the tuple's ONE stable
-`ek_` (`issued_via='exchange'`, `requester`, name `exchange:<ns>/<sa>`,
-minted on first use by the create path's `mint`; the partial unique index
-`environment_keys_exchange_tuple_uniq` makes racing first exchanges converge;
-it never counts against `max_keys`; a suspended one is 409 `key_suspended`;
-its `key:<id>` budget is the lowest covering `spec.budget`) and a JWT
-`iss=ACH_BASE_URL aud=ach-ek sub=<ekid_> jti`, lifetime
-`platformApi.keyExchange.tokenTTL` → `ACH_KEY_EXCHANGE_TOKEN_TTL` (15m, 1m
-to 1h), answered as `{token, expires_in, key_id}`. The raw `ek_` never leaves
-ACH. `keystore.NewExchangeResolver` (forwarder, content-service,
-platform-api; wraps the OAuth resolver inside the Redis cache) accepts that JWT
-wherever an `ek_` goes (`x-ach-key` or `Authorization`) only while a grant
-still allows its tuple. One `platform.ek.exchange` audit event per request
-from the body check onwards, never a token; requests the earlier guards
-reject, and a global-limit 429 after a valid signature, are counted in
-`ach_key_exchange_rejected_total{reason}` and not audited. Only RS256/ES256
-ServiceAccount signing keys are supported.
-The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and writes the lowest covering `spec.budget` onto every other one's `key:<id>` tag; dropping `spec.budget` keeps the last ceiling. Each sweep also deletes `key_grants` rows whose `KeyGrant` no longer exists; deleting a grant revokes only the keys it covered. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`. Writing a `KeyGrant` is acting as its identity: the chart ships ClusterRole `<release>-keygrant-editor` bound to nobody and aggregates no ACH role into `admin`/`edit` (`make helm-render-check` check 8; e2e `kubectl auth can-i`).
-
-Login team enrolment (`platformApi.teams` → `ACH_TEAMS_DEFAULT`/`_USER`/`_SSO`, JSON):
-at every interactive login (`as-callback` — CLI loopback, device grant, console;
-never token refresh) `provisionUser` adds the USER (never a key) to LiteLLM teams
-by alias. `default` teams (chart default `[default]`, ≥1 required at start) are
-mandatory — a missing one fails the login (`default_team_missing`; the operator self-bootstraps only the alias `default`, any other default team must already exist). `users`
-(email → teams) and `sso` (Dex `groups` claim value → teams; the Dex scope
-`groups` is requested, the upstream connector must emit it) are best-effort and
-additive: a team absent from LiteLLM is skipped (log `login: team does not
-exist`) and retried at the next login, a LiteLLM error never blocks the login, a
-removed mapping never detaches. LiteLLM is the source of truth — ACH never
-creates these teams. The `ek_`-create fallback that provisions a user LiteLLM does not know uses the same default list. Keys match case-insensitively. Access to an Environment
-follows at its next reconcile (the operator attaches the user's shell team).
-`ach-cli refresh` → `POST /platform/refresh` (pk_ only, else 401
-`invalid_key_type`) re-runs the `users`/`sso` enrolment on demand without a
-browser: it replays the user's shared Dex refresh token (the same IdP
-revalidation as `/token`; refused = 401 `ach_login_required`, Dex down = 503
-`idp_unreachable`) and reads `groups` from the refreshed id_token (the Google
-connector re-reads the Directory API on refresh); 204. The `/token` refresh and
-console revalidation never enrol, by design: the per-team LiteLLM lookups stay
-off the hourly path.
-
-User CLI = separate `ach-cli` binary (NOT in the service image): `login [url]`/
-`logout`/`whoami`/`refresh`/`token`/`profile`/`environment`/`keys`/`admin`/`local`/`launch`/`upgrade` (workspace verbs
-`clone`/`hydrate`/`status`/`uninstall`/`fetch` live under `environment`, e.g. `ach-cli environment hydrate`;
-`launch <claude|codex|gemini|opencode|pi> [--environment <env>]` = `environment hydrate` for that
-one target (no env = every Environment recorded under the folder's `.ach/`), then starts
-the tool in `--dir` (exits with the tool's code; no tool on PATH, nothing to hydrate or a
-failed hydrate = nothing starts);
-`environment hydrate|uninstall <env> --only plugin/<name>` (or `skill/<name>`) touches one item;
-`--dir`/`-g` pick the root, `--target a,b` the tools; a plugin's commands and
-skills land namespaced by the plugin name — `/bro:ladder` in Claude Code,
-`bro-ladder` elsewhere — standalone Skills keep theirs, see
-`internal/cli/AGENTS.md`). `environment list` shows only the
-Environments the caller's teams are authorized for — admins included (`GET
-/platform/environments` filters every caller); `environment list --admin` sends `?all=true`,
-the admin-only full inventory (403 `not_admin` otherwise), and `admin list
-environments` always does. `environment search <text>` reads that same list and matches
-client-side, case-insensitively, against each Environment's name + description and
-every context/runtime item NAME (no frontmatter, no server endpoint; every word must
-match; `--admin` like `environment list`). `environment describe <env>` reads `GET
-/platform/environments/{name}`, where admins still read any Environment (as do
-hydrate and the console reads); `keys create` stays team-scoped — the ek_ mint
-has no admin bypass. The console's Environments tab mirrors this (admin-only
-"Show all environments" toggle). `keys` = the caller's own
-`ek-` keys (`create <env>`/`list`/`revoke`/`suspend`/`resume`/`budget`, by saved
-name or `ekid_`); `admin list <kind>` also covers the LiteLLM runtime catalog
-(`models|mcp|a2a|teams|guardrails`); `admin users budget|limits <email>`;
-`admin keys revoke --owner <email>`. Every network command takes `--profile`,
-`--key <ek-…>`, `--verbose`; only the list/read commands (`environment list`,
-`environment search`, `environment describe`, `environment status`, `keys list`, `keys create`, `admin list` (also `yaml`),
-`admin keys list`, `profile list`, `profile show`, `whoami`, `token`) also
-take `-o table|json`. Env vars: `ACH_PROFILE`,
-`ACH_KEY`, `ACH_URL` (login prefill), `ACH_URL`+`ACH_KEY` = synthetic mode (no
-config file), `ACH_TARGET`, `ACH_ENVIRONMENT`, `ACH_INSECURE`. Config profiles
-hold `url`/`key`/`oauth`; `keys create` prints the key once and stores it
-nowhere, and a leftover `keys:` block (saved copies from ach-cli ≤ 1.1.10)
-loads but is never read and is dropped on the next write; a pre-redesign file
-(`pk:`/`ek:`) fails with a delete-and-re-login hint (no migration).
-`environment clone <env> [dir]` is the git-clone shape: creates `./<env>` (or `dir`),
-refuses a non-empty destination, hydrates into it (`--target` required —
-nothing to autodetect), and removes the folder it created on failure; `env
-hydrate` stays the in-place reconcile (the "pull"); without `--target` it
-autodetects the workspace's agent, and errors when none or several are found. Bare `ach-cli environment hydrate`
-(no `<name>`, no `ACH_ENVIRONMENT`) re-hydrates every Environment recorded under
-`.ach/`, each with its recorded targets, best-effort (exit ≠0 if any fails).
-There is no `ach.yaml`/`env save` and no legacy state migration (removed
-2026-10-23): `.ach/<env>/state-<platform>.json` is the only state layout.
-The workspace verbs print a git-style per-item diff (`+ ~ - !`) framed by
-`Hydrating …`/`Finished …` (conventions: `internal/cli/AGENTS.md`).
-Every API response behind Authn carries `X-ACH-Server-Version`; `ach-cli` warns on stderr,
-once per run, when it is OLDER than the server (`hint: upgrade with \`ach-cli upgrade\``); a newer
-CLI is not warned, and a version that is not plain major.minor.patch (`dev`) is not compared.
-`ach-cli upgrade [--version X.Y.Z]` replaces the running binary with a GitHub release
-(latest by default), sha256-checked against the release's `checksums.txt`.
-`internal/cli/manifest` decodes `POST /platform/hydrate` strictly, so a new response field
-breaks every older `ach-cli`: add it to `ContentRef` and release the CLI first.
-`runtime.models[].limits` (`{context, output}`, either key absent when unknown, no defaults)
-comes from `litellm.CapsCache` (`DeploymentCaps`, aliases resolved), the same view as the
-per-user OpenCode config; a LiteLLM failure omits it, hydrate stays 200.
-
-Plus the **serverless local package manager** under `ach-cli local` — `repo` (register a GitHub/git
-marketplace or direct plugin/skill source), `plugin` and `skill`
-(`install`/`uninstall`/`update`/`list` a `name@repo` into per-tool adapter dirs
-via `--target`, `--dir`/`-g`, no Environment/CRD ceremony). `environment` is the governed remote
-object; `repo`/`plugin`/`skill` are the local-first quick path.
+User CLI = separate `ach-cli` binary (NOT in the service image), sharing `internal/cli/*`:
+login/profiles, `environment` (list, search, describe, clone, hydrate, status, uninstall,
+fetch), `launch`, `keys`, `admin`, `upgrade`, and the serverless local package manager
+`local repo|plugin|skill`. Command surface, conventions and the server contracts it
+depends on → `internal/cli/AGENTS.md`.
 
 Critical paths:
 - CRD apply → reconciler → state mutation (k8s + Postgres) → status condition
@@ -333,7 +199,7 @@ Critical paths:
 - Environment reconcile → resolve refs against LiteLLM → `POST /v1/access_group`; `Available=True` = `ExecutionResourcesResolved` + `AccessGroupSynced`
 - Environment reconcile → deny-all shell team `ach-env-<name>` (sentinels: `models=["no-default-models"]` — LiteLLM's own value, which it filters out of `/v1/models`; an invented sentinel leaked into every member's catalog as a phantom model (§5), `agents=["00000000-0000-0000-0000-000000000000"]`) → joined into the access group's `assigned_team_ids` alongside `spec.authorizedTeams`; `ach-cli keys create` mints the `ek_` into that team, which is the only reliable ceiling on a key. A `pk_` is capped symmetrically by a per-user deny-all shell `ach-user-<email>`: platform-api provisions the shell + sets it as the key's `team_id` (+ matching key `duration`) at the first OAuth token issue; the **operator is the sole writer of `assigned_team_ids`** and, on every Environment reconcile, attaches the shell of each entitled member (live `GET /team/info` membership, `user_id == email`) — so one `pk_` reaches the union of the user's entitlements, fail-closed until the next reconcile for a brand-new shell
 - BackendIdentityPolicy → operator RBAC → forwarder cache → per-target JWT mint → upstream
-- `POST /platform/keys/{id}/suspend`/`/resume` → ACH-only state flip + resolver cache `DEL` (the backing LiteLLM key is never touched); `expired`/`invalid` are derived at read/use time from the clock and the D-30 owner-access check, never persisted
+- `POST /platform/keys/{id}/suspend`/`/resume` → ACH-only state flip + resolver cache `DEL` (the backing LiteLLM key is never touched); `expired`/`invalid` are derived at read/use time from the clock and the owner-access check, never persisted
 
 On-disk tree + the **synced-fixtures vs examples** distinction →
 `references/repo-layout.md`. (Agents confuse the `test/e2e/cluster/` synced
@@ -346,7 +212,12 @@ independent collections.)
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
-| Fresh session / whole-system comprehension ("understand the project") | `references/understanding.md` (complete mental model — replaces re-exploring the repo) |
+| Fresh session / whole-system comprehension ("understand the project") | `docs/user-guide/concepts.md` + `docs/developer-guide/architecture.md`, then this file |
+| Changing platform-api (keys, OAuth AS, console, OpenCode endpoints, admin, observability routes) | `references/services/platform-api.md` |
+| Changing the forwarder (any route, header, body check) | `references/services/forwarder.md` |
+| Changing the operator (reconcilers, LiteLLM writes, budgets, content fetch) | `references/services/operator.md` |
+| Key exchange / `KeyGrant` | `references/services/key-exchange.md` |
+| Proposing to fix a limitation, or reporting one as a bug | `references/known-gaps.md` (accepted trade-offs) |
 | Any `make` command / command organization | `references/makefile.md` (command list + 3-context model) |
 | Repo layout / synced fixtures / examples | `references/repo-layout.md` + `verify_all` in `scripts/cluster.sh` |
 | Adding/auditing a CRD kind (any archetype) | `references/adding-a-cr-kind.md` (kind-lifecycle checklist + archetype matrix) |
@@ -424,10 +295,8 @@ shares **one Go build and module cache per machine** (Go's defaults,
 per-workspace state lives under `.gocache/` (`HOME`, `GOPATH`, kubeconfig). CI uses a pre-baked GHCR image keyed by
 `sha256(Dockerfile.devtools)[:12]` (local-build fallback on miss); **the local
 tag is keyed on that same hash**, so editing `Dockerfile.devtools` misses the
-cache and rebuilds on the next call. (It was a fixed `:latest` until
-2026-07-31, and dev.sh only builds when the image is ABSENT — so a Dockerfile
-edit silently changed nothing locally while CI ran the new image. Old
-hash-tagged images linger; `make clean-docker` reclaims them.) Tool versions
+cache and rebuilds on the next call (dev.sh builds only when the tagged image is
+ABSENT). Old hash-tagged images linger; `make clean-docker` reclaims them. Tool versions
 pinned in `Dockerfile.devtools` + `go.mod`.
 
 The container sets **`GOFLAGS=-mod=readonly`** (the Go ≥1.16 default, pinned so
@@ -610,44 +479,11 @@ symptom is "my edit reverted." Documented as a known v1 trade-off (security
   container in the operator Pod** (RWO artifacts PVC forces co-location). Toggle
   topology via `deploy/helm/ach/values.yaml` `*.enabled` flags. Each Deployment
   carries `args: ["<mode>"]`.
-- **Environment two-axis status**: `ExecutionResourcesResolved`
-  (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
-  content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
-  IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
-  rolls both up — that's what `ach-cli environment hydrate` / the demo gate on.
-  `spec.runtime.{modelGroups,mcpServerGroups,agentGroups}` take LiteLLM
-  access-group TAGS: model tags pass through to LiteLLM (never resolved by
-  ACH, so absent from hydrate/console); MCP/agent tags are expanded by the
-  operator from the LiteLLM snapshot into `runtime_*` + the access group
-  (`status.expandedRuntime`); no-match tags are ignored; stock LiteLLM stores
-  no `agent_access_groups` — see `references/litellm-permission-model.md` §17.
-  `spec.runtime.guardrails` (LiteLLM guardrail names) **requires a LiteLLM
-  Enterprise licence** — team-scoped guardrails are premium-gated, so on an
-  unlicensed proxy a non-empty list 403s at attach (the Environment never goes
-  Available) AND on every request from a key in that team. Empty is exempt;
-  global `default_on` guardrails run ungated and need no ACH config at all.
-  It resolves against LiteLLM
-  like the other runtime names; an unresolved one fails `AccessGroupSynced`,
-  blocking new `ek_` mints but not hydrate or forwarded traffic; while it is unresolved, removals
-  still land (teams and models shrink to existing ∩ desired, an unresolved team leaves
-  `assigned_team_ids`, an MCP or agent id leaves only when LiteLLM lists it and the spec drops it) and nothing is added. Guardrail coverage is **EK-only**. `ek_` keys live in the
-  Environment's shell team and inherit its guardrails; `pk_` keys live in
-  `ach-user-<email>` and reach the Environment through the access group,
-  which carries no guardrail field, so **human CLI traffic to the same
-  models is unguarded**. This is a known v1 limitation, not a bug.
-- **Skill content kind**: a `Skill` CR (agentskills.io `SKILL.md` directory)
-  mirrors **Plugin** end-to-end (fetch → `SKILL.md` Stage-2 validation gate →
-  `skill/<name>.tar.gz` → `skills` projection → content-service
-  `/content/skill/{name}` gzip). On hydrate it rides the plugin-mirrored stage
-  root: extract to `<tmp>/skill/<name>`, nest under a synthetic `skills/<name>/`,
-  then the EXISTING claudecode `skills/**/* → .claude/skills/**/*` rule projects
-  it via `route.Project` (`projectSkills`). `SkillMarketplace` is a follow-up.
-- **BIP + Environment forwarder read-path (Postgres-as-SoT, #34)**: operator
-  projects BIPs/Environments → tables, emitting `NOTIFY ach_*_changed` from the
-  same tx via `with_tx_notify`. The forwarder's `internal/forwarder/bipcache` +
-  `internal/forwarder/envstore` each run a `db.Listener` + 5-min periodic
-  refresh (LISTEN/NOTIFY is at-most-once on session loss). JWT mint reads the
-  in-memory cache — no per-request Postgres/k8s hit.
+
+
+
+- **Operator semantics** (Environment two-axis status, the Skill kind, the BIP/Environment
+  read path, marketplace parsing, `spec.<git>.path` narrowing) → `references/services/operator.md`.
 - **SPDX-only license headers**: every `*.go` (outside `vendor/`,
   `zz_generated*.go`, `mock_*.go`) starts with
   `// SPDX-License-Identifier: Apache-2.0` (`LicenseRef-ACKstorm-EE` under `ee/` and
@@ -702,42 +538,3 @@ Project docs may lag — verify current APIs with Context7 / DeepWiki / WebSearc
 - **Dex SSO**: WebFetch `https://dexidp.io/docs/` (OIDC connector/discovery).
 - **goreleaser v2**: https://goreleaser.com — watch the `dockers` → `dockers_v2`
   migration (deferred; configs validate today).
-- **Claude Code plugin / marketplace schemas**: JSON Schemas at schemastore.org
-  (narrative: code.claude.com/docs/en/plugin-marketplaces). The parser
-  (`internal/controller/ach/marketplace_parse.go`) follows the real schema with
-  one drift ack: `url`-Kind entries carry an optional `path` (→ `git-subdir`).
-  Plugin manifests (`.claude-plugin/plugin.json`) are **optional** per the
-  schema; the Stage-2 gate (`verifyPluginContents`, `marketplace_manifest.go`)
-  accepts a plugin that has the manifest OR ≥1 convention component
-  (`commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/`themes/`/
-  `monitors/`, or root `SKILL.md`/`.mcp.json`/`.lsp.json`). Only a tar with
-  none of these fails `UpstreamInvalid`.
-- **SkillMarketplace discovery is convention-based, NOT index-based**: unlike
-  `PluginMarketplace` (which parses `.claude-plugin/marketplace.json`), a
-  `SkillMarketplace` fetches the repo as one tar.gz and tree-walks it
-  (`skillmarketplace_discover.go` `discoverSkillsInTree`) for every directory
-  one level under the skills-root (`spec.<git>.path`) whose
-  `<dir>/SKILL.md` frontmatter `name` == `<dir>` (agentskills.io ships no index).
-  For git sources an **unset `path` defaults to `skills`** (controller-side, in
-  `skillMarketplaceSubPath`) — the dominant `anthropics/skills`-style monorepo
-  layout; skill dirs at the **repo root** opt out with `path: "."`. The default
-  is NOT a `+kubebuilder:default` on the shared `GitHubSource.Path` (that would
-  wrongly fetch-narrow the OBJECT kinds Plugin/Artifact/Prompt/Skill).
-  A `SkillMarketplace` is a **discovery** kind (like `PluginMarketplace`), NOT a
-  narrow-at-fetch object: it strips `spec.<git>.path` before fetch (whole-repo
-  tar, via `withoutGitPath`) and uses `path` only as the POST-FETCH skills-root
-  tree-walk hint (`discoverSkillsInTree` + `sliceSkillSubtree` per skill). Each
-  discovered skill is sliced into its own `skill-marketplace/<mkt>/<name>.tar.gz`
-  and folded into the admin SKILLS inventory as `<skill>@<marketplace>` (mirrors
-  the plugin merge).
-- **`spec.<git>.path` narrows at FETCH time for OBJECT kinds (F1)**: the shared
-  per-provider fetchers honor `spec.path` — a **directory** narrows to that
-  subtree's contents (git on-disk via `git.tarSubtree`; legacy REST via
-  `sources.NarrowArchiveSubtree`), a single **file** returns its raw bytes
-  (Prompt, Artifact `scope=object`). Applies to the served/hydrated objects:
-  `Plugin`, `Skill`, `Artifact`, `Prompt`. The fetcher infers file-vs-dir from
-  the path shape (Artifact `scope` is orthogonal — it only drives cache-file
-  naming; a CR's `scope` should match its path target). DISCOVERY kinds
-  (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and
-  walk the whole repo. Symlinked / traversal / missing paths →
-  `UpstreamInvalid`.

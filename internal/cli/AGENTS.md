@@ -435,7 +435,7 @@ were rewritten clean-room from the Codex docs on 2026-10-28 for that reason.
   claude/opencode/**gemini**. `transforms.py` / `paths.py` / `mcp_config.py`.
   The ONLY reference for gemini (TOML commands, `Tool`-suffix tool names).
 
-### Status vs the references (audited 2026-06)
+### Status vs the references
 
 **Faithful:** claude (no-op canonical), codex (field-lift + bearer/header
 surgery per the Codex config reference).
@@ -459,14 +459,14 @@ truth for opencode's strict schema.**
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage
-  lifts it) — security hardening WR-01 (no plugin-injected MCP registrations).
+  lifts it) — security hardening (no plugin-injected MCP registrations).
 - opencode color→hex (`normalizeOpencodeColorField`) + command-frontmatter
   whitelist (`opencodeCommandFrontmatter`) — NOT in OpenPackage; added because
   opencode *strictly* validates `color` and chokes on claude's
   `argument-hint: [a] [b]` (invalid YAML). Verified empirically.
 - containment: drop OpenPackage's `root/**/*` fallback.
 
-**Closed gaps (hand-ported 2026-06-09 — user chose hand-port over full data-driven adoption):**
+**Hand-ported transforms (chosen over a data-driven port of the references):**
 - ✅ **opencode agent tools** lowercase + rename map (`AskUserQuestion→question`,
   `NotebookEdit→notebook`, `ExitPlanMode→exitplan`) — `normalizeOpencodeToolName`
   in `opencode.go`. opencode's tool registry is lowercase; a PascalCase `Read`
@@ -514,6 +514,38 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   ackstorm install. `ResolveWithCache` is the cached entry; `Resolve` is the
   nil-cache wrapper.
 
+## Server contracts the CLI depends on
+
+- **Environment visibility.** `environment list` (`GET /platform/environments`)
+  shows only the Environments the caller's teams are authorized for, admins
+  included. `environment list --admin` sends `?all=true`, the admin-only full
+  inventory (403 `not_admin` otherwise); `admin list environments` always does.
+  `environment describe`, hydrate and the console reads let an admin read any
+  Environment. `keys create` stays team-scoped: the `ek_` mint has no admin
+  bypass. The console's Environments tab mirrors this (admin-only "Show all
+  environments" toggle).
+- **`environment search <text>`** reads that same list and matches
+  client-side, case-insensitively, against each Environment's name +
+  description and every context/runtime item NAME (no frontmatter, no server
+  endpoint); every word must match. `--admin` works as for `environment list`.
+- **Version warning.** Every API response behind Authn carries
+  `X-ACH-Server-Version`; `ach-cli` warns on stderr, once per run, when it is
+  OLDER than the server (`hint: upgrade with \`ach-cli upgrade\``). A newer CLI
+  is not warned; a version that is not plain major.minor.patch (`dev`) is not
+  compared.
+- **Strict hydrate manifest.** `internal/cli/manifest` decodes
+  `POST /platform/hydrate` strictly, so a new response field breaks every older
+  `ach-cli`: add it to `ContentRef` and release the CLI first.
+- **Model limits.** `runtime.models[].limits` (`{context, output}`, either key
+  absent when unknown, no defaults) comes from `litellm.CapsCache`
+  (`DeploymentCaps`, aliases resolved), the same view as the per-user OpenCode
+  config; a LiteLLM failure omits it and hydrate stays 200.
+- **Target autodetection.** Without `--target`, `environment hydrate` detects
+  the workspace's agent and errors when it finds none or several;
+  `environment clone` requires `--target` (an empty folder has nothing to detect).
+- **State layout.** `.ach/<env>/state-<platform>.json` is the only workspace
+  state layout; there is no `ach.yaml` and no state migration.
+
 ## Build / test / gotchas
 
 - Host has NO Go — `make build-cli`, `make test-unit`, `make qa-lint-changed`
@@ -542,12 +574,3 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   switch in `resolvePluginMarketplace`.
 - **Root-file overwrite**: containment drops project-root destinations; never
   overwrite the user's `CLAUDE.md`/`README.md`.
-
-## Future: GitOps CR export (design note, not built)
-
-`installed.json` is a superset of what an `Environment` CR needs (`repo`+
-`resolvedSHA` = external-ref pin, `target` = adapter, `files` = manifest). A
-future `ach-cli environment export` can SERIALIZE local state → Environment/Plugin/Skill
-CR YAML for gitops — this is a state serializer and does NOT require adopting
-OpenPackage's universal-format import/export hub. The hub would only be needed to
-*capture* arbitrary pre-existing tool configs (the `import` direction).
