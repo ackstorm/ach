@@ -35,6 +35,14 @@ plugin's `version` (both manifests):
 git diff "$(git describe --tags --abbrev=0)"..HEAD --stat -- cmd/ach-cli internal/cli internal/platformapi/opencode api deploy/helm/ach/values.yaml plugins
 ```
 
+Then check that `[Unreleased]` covers the range: each commit below is either
+in it or deliberately left out (tests, CI, agent-only docs). The release notes
+are that section, so a missing entry is missing from the release page.
+
+```bash
+git log --oneline "$(git describe --tags --abbrev=0)"..HEAD
+```
+
 ```bash
 # `[Unreleased]` must not be empty: `scripts/changelog.sh rotate` refuses it.
 # Preconditions: on main, clean tree, in sync with origin/main.

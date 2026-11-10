@@ -48,6 +48,7 @@ stale line there is a broken instruction for every user. Validate with
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Architecture/contract shift that invalidates the whole-system brief | `references/understanding.md` |
+| Anything a user or operator can see (behavior, output, chart, install requirement) | `CHANGELOG.md` `[Unreleased]` entry in the same PR; tests, CI and agent-only docs need none. A correction to something an earlier entry told users is itself an entry |
 
 ## Quick context
 
