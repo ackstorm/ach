@@ -4,7 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli upgrade` replaces the running `ach-cli` with the latest GitHub
+  release (or `--version X.Y.Z`), checked against the release's
+  `checksums.txt`.
+
 ### Changed
+- `ach-cli` warns only when it is older than the server, as `warning: ach-cli
+  X is older than the server (Y)` plus `hint: upgrade with \`ach-cli
+  upgrade\``; a newer CLI is no longer warned.
 - `ach-cli keys create` prints the key once and stores it nowhere: put it in the
   secret store of whatever uses it. `--no-save` is gone, `--key` / `ACH_KEY`
   take only an `ek-…` key (no saved name), and `profile list|show` no longer

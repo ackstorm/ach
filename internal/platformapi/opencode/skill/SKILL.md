@@ -59,6 +59,8 @@ Expand-Archive ach-cli.zip -DestinationPath "$env:LOCALAPPDATA\ach-cli" -Force
 # open a new terminal, then: ach-cli --version
 ```
 
+An `ach-cli` that is already installed updates itself with `ach-cli upgrade`.
+
 ### 2. Sign in
 
 Same single sign-on as OpenCode. `ach-cli login` waits up to 10 minutes for the browser,

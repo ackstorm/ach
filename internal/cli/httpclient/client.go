@@ -32,9 +32,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // defaultTimeout is the wall-clock cap on a single Do/DoRaw call
@@ -215,14 +218,15 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	return resp, nil
 }
 
-// warnOnVersionMismatch tells the user, once per process, that this CLI and the
-// server differ. It runs before any decoding, so a response this CLI cannot
-// read still prints the warning next to the failure. A dev build on either
-// side, or a server that sends no version, is not compared.
+// warnOnVersionMismatch tells the user, once per process, that this CLI is
+// older than the server and how to upgrade it. It runs before any decoding, so
+// a response this CLI cannot read still prints the warning next to the
+// failure. A newer CLI is fine (the CLI ships first), and a version that is
+// not plain major.minor.patch (dev, a snapshot, none sent) is not compared.
 func (c *Client) warnOnVersionMismatch(resp *http.Response) {
 	cli := strings.TrimPrefix(CLIVersion, "v")
 	server := strings.TrimPrefix(resp.Header.Get(serverVersionHeader), "v")
-	if cli == "" || cli == "dev" || server == "" || server == "dev" || cli == server {
+	if !older(cli, server) {
 		return
 	}
 	versionWarning.Do(func() {
@@ -230,8 +234,45 @@ func (c *Client) warnOnVersionMismatch(resp *http.Response) {
 		if c.Stderr != nil {
 			w = c.Stderr
 		}
-		_, _ = fmt.Fprintf(w, "warning: ach-cli %s does not match server %s; if this command fails, update ach-cli\n", cli, server)
+		label := "warning:"
+		if f, ok := w.(*os.File); ok && term.IsTerminal(int(f.Fd())) && os.Getenv("NO_COLOR") == "" {
+			label = "\x1b[33mwarning:\x1b[0m"
+		}
+		_, _ = fmt.Fprintf(w, "%s ach-cli %s is older than the server (%s)\nhint: upgrade with `ach-cli upgrade`\n",
+			label, cli, server)
 	})
+}
+
+// older reports whether version a is below b; false when either is not
+// plain major.minor.patch.
+func older(a, b string) bool {
+	va, okA := parseVersion(a)
+	vb, okB := parseVersion(b)
+	if !okA || !okB {
+		return false
+	}
+	for i := range va {
+		if va[i] != vb[i] {
+			return va[i] < vb[i]
+		}
+	}
+	return false
+}
+
+func parseVersion(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 // checkRedirect refuses to follow a redirect of a write. net/http turns a

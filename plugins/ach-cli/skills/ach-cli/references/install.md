@@ -39,6 +39,14 @@ ach-cli --version
 
 ## Update
 
-Run the same commands again: they install the latest release over the old one. Compare
-`ach-cli --version` before and after. The profiles in
-`~/.config/ach/config.yaml` are untouched.
+```bash
+ach-cli upgrade                    # the latest release
+ach-cli upgrade --version 1.1.8    # a given release
+```
+
+It downloads the release for this OS and CPU, checks it against `checksums.txt`, and
+replaces the running binary in place; the profiles in `~/.config/ach/config.yaml` are
+untouched. A binary in a directory the user cannot write (`/usr/local/bin`) fails with
+`permission denied`: rerun with `sudo`, or install under `~/.local/bin`. An `ach-cli`
+that answers `unknown command "upgrade"` predates the command: run the install commands
+above again instead.
