@@ -5,6 +5,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- Console: an ach-cli guide under Help (`#/howto/ach-cli`): install and
+  update, sign in and profiles, Environments, environment keys and local
+  packages.
 - `ach-cli upgrade` replaces the running `ach-cli` with the latest GitHub
   release (or `--version X.Y.Z`), checked against the release's
   `checksums.txt`.
