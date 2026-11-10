@@ -555,6 +555,12 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   container does NOT see host config.** Smoke-test the local package manager with
   the HOST binary, not inside the container.
 - SPDX header on every new `*.go`: `// SPDX-License-Identifier: Apache-2.0`.
+- **A file the user may also edit is rewritten only through
+  `state.RewriteFile`** (tool config, `CLAUDE.md`/`GEMINI.md`, `.gitignore`):
+  it re-reads the file just before the rename and re-runs the merge when an
+  editor saved it in between, so the save is kept. The `<achDir>/lock` flock
+  only excludes other `ach-cli` runs. `state.WriteAtomic` alone is for files
+  ACH owns outright (state, whole-file replace, the store).
 - Memory rule: smoke-test the built `ach-cli` before any release — the gates
   miss the localpkg path.
 

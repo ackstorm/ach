@@ -8,7 +8,6 @@ to close it; `ROADMAP.md` says which ones are scheduled.
 | Gap | Effect | Notes |
 |-----|--------|-------|
 | E2E does not gate pull requests | A PR can merge with a red `e2e.yml` | `make release-cut` waits for E2E on the release PR; run `make e2e-full` locally before merging a change to the e2e surfaces. |
-| Hydrate vs editor save | An edit saved to a tool's config file while `ach-cli environment hydrate` runs is lost; the next hydrate re-merges ACH's keys | An mtime re-check before the rename closes it (roadmap "Now"). |
 | Environment authoring is admin-only | No per-object ACLs, no team self-service | Writing a content CR or a `LiteLLMConnection` is equivalent to reading every Secret in the ACH namespace (`authSecretRef` resolves with the operator's identity), so writers need admin-tier trust. |
 | UI write path is Environment-only | The console drafts Environments, no other kind | GitOps wins: the operator takes a draft over on CR apply. |
 | Content service HA needs RWX | `contentService.standalone=true` needs a `ReadWriteMany` `operator.cache` | Default is the sidecar on an RWO volume. |

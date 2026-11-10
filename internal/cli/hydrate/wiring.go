@@ -1829,30 +1829,32 @@ func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error
 		warnPreserved(opts.Stderr, abs, "composite row names no plugin block; refusing to inverse-merge")
 		return true, nil
 	}
-	body, err := os.ReadFile(abs)
-	if err != nil {
-		return false, fmt.Errorf("sync read composite %s: %w", abs, err)
-	}
 	markerRE := merge.PluginMarkerRE(e.Keys[0])
-	if !markerRE.Match(body) {
-		warnPreserved(opts.Stderr, abs,
-			"composite marker not found; refusing to inverse-merge")
-		return true, nil
-	}
-	// Marker confirmed present → this entry would-prune. Preview: stop
-	// before the rewrite.
-	if opts.DryRun {
-		return false, nil
-	}
-	updated := markerRE.ReplaceAll(body, nil)
+	preserved := false
 	// 0o644 — composite host memory files (CLAUDE.md/GEMINI.md) carry NO
 	// credential; the forward merge.WriteComposite path writes 0o644, so the
 	// inverse-merge MUST match or it silently downgrades the file mode on
 	// every plugin-block removal.
-	if err := state.WriteAtomic(abs, updated, 0o644); err != nil {
-		return false, fmt.Errorf("sync write composite %s: %w", abs, err)
+	err := state.RewriteFile(abs, 0o644, func(body []byte) ([]byte, bool, error) {
+		if body == nil {
+			return nil, false, fmt.Errorf("sync read composite %s: %w", abs, os.ErrNotExist)
+		}
+		preserved = !markerRE.Match(body)
+		// Marker confirmed present → this entry would-prune. Preview: stop
+		// before the rewrite.
+		if preserved || opts.DryRun {
+			return nil, false, nil
+		}
+		return markerRE.ReplaceAll(body, nil), true, nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("sync composite %s: %w", abs, err)
 	}
-	return false, nil
+	if preserved {
+		warnPreserved(opts.Stderr, abs,
+			"composite marker not found; refusing to inverse-merge")
+	}
+	return preserved, nil
 }
 
 // syncDeep handles MergeDeep by removing the listed Keys[] paths
@@ -1890,34 +1892,37 @@ func syncDeepDoc(e state.FileEntry, abs string, isTOML, dryRun bool) (bool, erro
 	if isTOML {
 		format = "TOML"
 	}
-	body, err := os.ReadFile(abs)
+	empty := false
+	// 0o600 — deep-merge inverse rewrites the same credential-
+	// bearing adapter runtime-config file.
+	err := state.RewriteFile(abs, 0o600, func(body []byte) ([]byte, bool, error) {
+		if body == nil {
+			return nil, false, fmt.Errorf("sync read %s %s: %w", format, abs, os.ErrNotExist)
+		}
+		var root map[string]any
+		if err := merge.UnmarshalDoc(body, &root, isTOML); err != nil {
+			return nil, false, fmt.Errorf("sync decode %s %s: %w", format, abs, err)
+		}
+		out, isEmpty, err := merge.PruneDottedKeys(root, e.Keys, isTOML)
+		if err != nil {
+			return nil, false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
+		}
+		empty = isEmpty
+		// Preview: the document was decoded and the inverse-merge resolved
+		// (both rewrite and whole-file delete count as pruned). Stop before
+		// any disk write. An emptied document is deleted below, not rewritten.
+		if dryRun || empty {
+			return nil, false, nil
+		}
+		return out, true, nil
+	})
 	if err != nil {
-		return false, fmt.Errorf("sync read %s %s: %w", format, abs, err)
+		return false, fmt.Errorf("sync %s %s: %w", format, abs, err)
 	}
-	var root map[string]any
-	if err := merge.UnmarshalDoc(body, &root, isTOML); err != nil {
-		return false, fmt.Errorf("sync decode %s %s: %w", format, abs, err)
-	}
-	out, empty, err := merge.PruneDottedKeys(root, e.Keys, isTOML)
-	if err != nil {
-		return false, fmt.Errorf("sync encode %s %s: %w", format, abs, err)
-	}
-	// Preview: the document was decoded and the inverse-merge resolved
-	// (both rewrite and whole-file delete count as pruned). Stop before
-	// any disk write.
-	if dryRun {
-		return false, nil
-	}
-	if empty {
+	if empty && !dryRun {
 		if rerr := os.Remove(abs); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 			return false, fmt.Errorf("sync remove %s %s: %w", format, abs, rerr)
 		}
-		return false, nil
-	}
-	// 0o600 — deep-merge inverse rewrites the same credential-
-	// bearing adapter runtime-config file (CR-01).
-	if err := state.WriteAtomic(abs, out, 0o600); err != nil {
-		return false, fmt.Errorf("sync write %s %s: %w", format, abs, err)
 	}
 	return false, nil
 }
