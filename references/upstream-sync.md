@@ -174,7 +174,6 @@ alitellm with sed renames. Bumped image newTag to `v0.0.1`.
 | `CHANGELOG.md` | n/a | Bootstrap entry for v0.0.1 scaffolding. |
 | `SECURITY.md`, `CONTRIBUTING.md`, `PUBLISH.md`, `CLAUDE.md` | same | Sed rename `alitellm-operator` → `ach`. CLAUDE.md adapted to ach domain (waiters expanded to include `wait-postgres`, `wait-redis`, `wait-dex`, `wait-platform-api`, `wait-forwarder`, `wait-content-service`; single-binary `ach <mode>` invocation pattern noted). |
 | `MAINTAINERS.md` | n/a | Single maintainer entry (jcm). |
-| `ROADMAP.md` | `ach-old/.planning/ROADMAP.md` | Copied verbatim from ach-old plan numbering. **Doc-polish TODO**: trim ach-old plan-numbering / phase content to focus on user-visible roadmap items; the current copy still references internal plan IDs (e.g. "Phase 1: Foundation"), which are not meaningful to external readers. |
 
 ## 2026-05-25 (TODO item 1 — post-bootstrap hardening, branch `fix/post-bootstrap-hardening`)
 

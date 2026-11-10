@@ -32,7 +32,7 @@ builds:
     env:
       - CGO_ENABLED=0
     # User CLI: ships for the three desktop OSes. Windows is amd64-only
-    # per ROADMAP Phase 7 distribution targets (windows/arm64 ignored
+    # (windows/arm64 ignored
     # below); linux + darwin ship both arches. The Windows advisory lock
     # uses LockFileEx (internal/cli/lock/lock_windows.go, D-23).
     goos:
