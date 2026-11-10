@@ -103,9 +103,9 @@ platformApi:
 Rendered into the ConfigMap `ach-platform-api-admins`, read at startup. Empty
 means every admin route answers 403 `not_admin` (safe default). Admins can list
 every Environment and key, set any user's budget and key limit, and revoke
-other people's keys. The file is read once at startup and the pod template does
-not change with it, so after editing the list run
-`kubectl -n ach rollout restart deploy/ach-platform-api`. Matching is
+other people's keys. The file is read once at startup; the pod template carries
+a checksum of the list, so `helm upgrade` with a changed list rolls
+platform-api (sessions live in Valkey and survive the restart). Matching is
 case-sensitive: write each email exactly as the IdP sends it.
 
 ## Login team enrolment

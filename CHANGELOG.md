@@ -8,7 +8,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Built with Go 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash in
   `net/http`).
 
+### Fixed
+- `ach-cli environment hydrate`, `environment uninstall` and `ach-cli local`
+  no longer overwrite an edit saved to a tool's config file, `CLAUDE.md`,
+  `GEMINI.md` or `.gitignore` while they run: they merge again on the saved
+  file, and stop with an error, writing nothing, if it keeps changing.
+
 ### Changed
+- Changing `platformApi.admins` restarts platform-api on the next
+  `helm upgrade`; before, the new list applied only after a manual restart.
 - Enterprise licence (`ee/LICENSE`): enabling the Enterprise features in any
   environment, evaluation included, needs a signed agreement with ACKstorm.
   Development and test use without one is no longer granted. Running the

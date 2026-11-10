@@ -114,8 +114,8 @@ platformApi:
   args: ["platform-api"]
   # admins: emails allowed on the admin endpoints (ach-cli admin …, the
   # console's admin views), mounted as /etc/ach/admins/admins.txt. Read once
-  # at start and matched case-sensitively, so a change needs a platform-api
-  # restart. Empty = no admins (every admin call is 403 not_admin).
+  # at start and matched case-sensitively; changing it restarts platform-api
+  # on the next helm upgrade. Empty = no admins (every admin call is 403 not_admin).
   admins: []
   # headers: the credential slots platform-api reads, in order (same shape as
   # forwarder.headers). resolve only — platform-api does not proxy, so a

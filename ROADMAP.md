@@ -16,8 +16,6 @@ one before it ships; dates are not promised. Shipped work is in
 | Human documentation | A concepts page with a glossary (`pk_`, `ek_`, Environment, KeyGrant, BackendIdentityPolicy, shell team) and an architecture page. Superseded documents removed. |
 | Enterprise licence | The final text for the code under `ee/`: any use of the Enterprise features needs a signed agreement with ACKstorm, evaluation included. |
 | Release discipline | Semantic versioning (a breaking change bumps the major version), a `Breaking` section in the changelog, the end-to-end suite green before every release, and a published supported LiteLLM range. |
-| Hydrate: concurrent-edit safety | `ach-cli environment hydrate` re-checks a tool's config file before replacing it, so an editor save during hydrate is no longer lost. |
-| Admin list reload | Changes to the admin list apply without restarting platform-api. |
 
 ## Next — extend the identity lead
 
