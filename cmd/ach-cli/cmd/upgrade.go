@@ -252,7 +252,7 @@ func replaceBinary(exe string, bin []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+	if err := os.Chmod(tmp.Name(), 0o755); err != nil { // #nosec G302 -- an executable needs its exec bit
 		return err
 	}
 	if !onWindows {
