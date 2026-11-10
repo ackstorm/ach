@@ -168,11 +168,6 @@ func testPhase6EnvList(t *testing.T) {
 // whoami --key` invocation (which reads the ek from the same XDG
 // config the previous step wrote to) or careful subtest-ordering, and
 // either would only re-prove the W2 unit-test coverage.
-//
-// The persistence side-effect (D-07 always-persist) means the ek_ is
-// now in the temp XDG_CONFIG_HOME's config.yaml under
-// `profiles.demo.keys.e2e-test-key` — useful for cleanup/inspection
-// when running with -keep or under a manual XDG export.
 func testPhase6EnvKeysCreate(t *testing.T) {
 	t.Helper()
 	phase6SuiteGuard(t)
