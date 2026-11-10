@@ -78,7 +78,7 @@ without that guardrail.
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `env list` does not show the Environment | The user is in none of its `authorizedTeams`, or the team alias in the CR does not match LiteLLM (check the conditions) |
+| `environment list` does not show the Environment | The user is in none of its `authorizedTeams`, or the team alias in the CR does not match LiteLLM (check the conditions) |
 | Environments lose access after a LiteLLM team was renamed | `authorizedTeams` holds team aliases: change the LiteLLM alias and every `spec.authorizedTeams` entry together. `default` is special: every login needs a team with that alias, so never rename it |
 | Grant is `Synced` but some requests 403 for a few minutes | LiteLLM caches access-group grants per replica (600 s default) |
 | A brand-new user reaches nothing for a few minutes | Their personal shell team is attached on the next Environment reconcile |

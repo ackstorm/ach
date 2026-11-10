@@ -37,7 +37,7 @@ func TestEmptyKeysMessage(t *testing.T) {
 	for _, tc := range []struct{ status, env, want string }{
 		{"active", "", "No active keys (try --status all)\n"},
 		{"active", "nope", "No active keys for environment \"nope\" (try --status all)\n"},
-		{"all", "nope", "No keys for environment \"nope\" (check the name with `ach-cli env list`)\n"},
+		{"all", "nope", "No keys for environment \"nope\" (check the name with `ach-cli environment list`)\n"},
 		{"all", "", "No keys; `ach-cli keys create <env>` makes one\n"},
 	} {
 		if got := emptyKeysMessage(tc.status, tc.env); got != tc.want {

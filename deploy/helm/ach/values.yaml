@@ -358,7 +358,7 @@ genai:
   defaultSmallModel: ""
   # The Environment the onboarding skill (<providerName>-ach, shipped by
   # /clients/opencode/config) tells users to hydrate globally:
-  # `ach-cli env hydrate <defaultEnvironment> -g`. Empty = no such step.
+  # `ach-cli environment hydrate <defaultEnvironment> -g`. Empty = no such step.
   # List ach-cli@<marketplace> in it (docs/user-guide/agent-plugins.md): the
   # skill hands every later step over to that plugin. MCP servers reach
   # OpenCode only from a hydrated Environment; a leftover

@@ -9,7 +9,7 @@ import (
 )
 
 // CatalogView is the slice of one GET /platform/environments row that
-// `ach-cli env search` reads: the Environment's own name + description and
+// `ach-cli environment search` reads: the Environment's own name + description and
 // the NAMES of what it serves. Names only — the server stores no skill or
 // plugin description, so neither does the search.
 type CatalogView struct {
@@ -77,7 +77,7 @@ func Search(envs []CatalogView, query string) []SearchHit {
 	return hits
 }
 
-// FormatSearch renders the `ach-cli env search` table, plus the install
+// FormatSearch renders the `ach-cli environment search` table, plus the install
 // command when a plugin or skill matched.
 func FormatSearch(hits []SearchHit) string {
 	if len(hits) == 0 {
@@ -93,7 +93,7 @@ func FormatSearch(hits []SearchHit) string {
 	}
 	_ = tw.Flush()
 	if installable {
-		sb.WriteString("\nInstall one: ach-cli env hydrate <environment> --only <kind>/<name>\n")
+		sb.WriteString("\nInstall one: ach-cli environment hydrate <environment> --only <kind>/<name>\n")
 	}
 	return sb.String()
 }

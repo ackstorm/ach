@@ -20,7 +20,7 @@
 - [ ] **Content pipeline (F1)** — fetch → Stage-2 gate → cache → content-service serve (narrow-at-fetch for objects; whole-repo for discovery)
 - [ ] **Admin inventory** — kind appears in platform-api admin object inventory
 - [ ] **Admin refresh** — admin-triggered re-fetch/re-check path
-- [ ] **Hydrate** — projected by `ach-cli env hydrate`
+- [ ] **Hydrate** — projected by `ach-cli environment hydrate`
 - [ ] **Metrics** — reconcile + serve Prometheus metrics
 - [ ] **Docs / spec** — `CLAUDE.md` + `references/`/`docs/` + frozen spec updated in this PR
 - [ ] **Tests** — unit + envtest + e2e fixtures where the kind participates

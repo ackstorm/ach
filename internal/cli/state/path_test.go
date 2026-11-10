@@ -116,8 +116,8 @@ func TestResolvePlatformPath(t *testing.T) {
 }
 
 // TestListStatePaths enumerates every per-platform state-<platform>.json for an
-// environment (a non-platform state.json is ignored) — this is what `env status` /
-// `env uninstall` use so a multi-target hydrate's targets are all visible and
+// environment (a non-platform state.json is ignored) — this is what `environment status` /
+// `environment uninstall` use so a multi-target hydrate's targets are all visible and
 // none is orphaned.
 func TestListStatePaths(t *testing.T) {
 	cwd := t.TempDir()

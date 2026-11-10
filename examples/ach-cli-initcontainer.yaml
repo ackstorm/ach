@@ -1,6 +1,6 @@
 # ach-cli as an InitContainer (G4) — headless agent workspace bootstrap.
 #
-# The ghcr.io/ackstorm/ach-cli image runs `env hydrate` in an initContainer,
+# The ghcr.io/ackstorm/ach-cli image runs `environment hydrate` in an initContainer,
 # writing the projected agent config into a shared emptyDir BEFORE the main
 # agent container starts. The agent container then reads a fully-hydrated
 # /workspace with no SSO / no browser — the credential is an ek- key
@@ -26,7 +26,7 @@ spec:
   initContainers:
     - name: hydrate
       image: ghcr.io/ackstorm/ach-cli:latest
-      # env hydrate <ENV> --target claude-code --dir /workspace
+      # environment hydrate <ENV> --target claude-code --dir /workspace
       args:
         - env
         - hydrate

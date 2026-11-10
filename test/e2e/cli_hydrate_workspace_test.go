@@ -2,14 +2,14 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-// Bare `ach-cli env hydrate` e2e — the workspace re-hydrate contract.
+// Bare `ach-cli environment hydrate` e2e — the workspace re-hydrate contract.
 //
 // Drives the host-built ach-cli against the kept kind cluster (per CLAUDE.md
 // "E2E debug loop"):
 //
 //  1. Hydrate two fixture Environments (demo, env-valid) into a temp
 //     workspace, each --target claude-code.
-//  2. Bare `ach-cli env hydrate` (no <name>, no ACH_ENVIRONMENT, no --target)
+//  2. Bare `ach-cli environment hydrate` (no <name>, no ACH_ENVIRONMENT, no --target)
 //     — re-hydrates every Environment recorded under .ach/ with its recorded
 //     targets, best-effort.
 //  3. Assert exit 0 and that both envs report OK.
@@ -38,7 +38,7 @@ import (
 var workspaceEnvs = []string{"demo", "env-valid"}
 
 // runAchCliInDir is a cwd-aware sibling of phase7RunAchCli: it sets cmd.Dir
-// so the cwd-relative commands (bare `env hydrate`) operate on
+// so the cwd-relative commands (bare `environment hydrate`) operate on
 // the temp workspace rather than the e2e package directory. Same env hygiene
 // as phase7RunAchCliEnv (synthetic-mode vars stripped, XDG seeded,
 // ACH_INSECURE=1 for the http:// local gateway).

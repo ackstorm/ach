@@ -53,7 +53,7 @@ first, then walk the matrix.
    inventory (read path). Discovery items fold in as `<item>@<marketplace>`.
 7. **Admin refresh** — an admin-triggered refresh path that re-fetches / re-checks
    the source on demand (not only on the periodic timer).
-8. **Hydrate** — `ach-cli env hydrate` projects the kind into the workspace via the
+8. **Hydrate** — `ach-cli environment hydrate` projects the kind into the workspace via the
    adapter route rules. `Environment` is the hydrate *root*; objects ride the
    per-component projection.
 9. **Metrics** — Prometheus counters/gauges for reconcile outcome and (if served)
@@ -96,7 +96,7 @@ first, then walk the matrix.
    wants to force-refresh.
 4. The marketplace itself is not hydrated; its **discovered items** are, via their
    object archetype.
-5. `Environment` is the hydrate root (`ach-cli env hydrate`);
+5. `Environment` is the hydrate root (`ach-cli environment hydrate`);
    `BackendIdentityPolicy` is not hydrated.
 6. `KeyGrant` has a projection table but no NOTIFY: its readers (the exchange
    handler and the exchange-JWT resolvers) query `key_grants` per request,

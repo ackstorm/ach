@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli env status` is the read-only installed-resource inventory surface
+// `ach-cli environment status` is the read-only installed-resource inventory surface
 // (LIFE-03 / D-31). It is a STATIC read of <ach-dir>/state.json v2 — NO
 // network, NO re-derivation, NO drift column. It loads the state file for
 // the active workspace+environment scope, walks the projection buckets
@@ -49,7 +49,7 @@ func resolveListWorkspaceCwd() (string, error) {
 	return os.Getwd()
 }
 
-// newEnvStatusCmd returns the `ach-cli env status` leaf — a thin,
+// newEnvStatusCmd returns the `ach-cli environment status` leaf — a thin,
 // static-read cobra command. All formatting lives in the render package
 // (env-list convention); RunE only resolves the state path, loads, walks
 // the buckets into []render.StateEntryView, and delegates rendering.
@@ -65,7 +65,7 @@ func newEnvStatusCmd() *cobra.Command {
 		Short: "Show installed/projected resources from state.json",
 		Long: `Show the installed/projected resources recorded in state.json.
 
-env status is a local read of the workspace (or global) state — no network
+environment status is a local read of the workspace (or global) state — no network
 call. By default it prints, per Environment, its targets and scope, the
 installed items grouped by kind, and every projected file you edited since
 the last hydrate. Use --files (-f) to list every projected file with its
@@ -163,7 +163,7 @@ empty JSON array under -o json) and exits 0.`,
 					where = "the global scope ($HOME/.ach)"
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"No resources installed in %s; run `ach-cli env hydrate <env>` (see `ach-cli env list`)\n", where)
+					"No resources installed in %s; run `ach-cli environment hydrate <env>` (see `ach-cli environment list`)\n", where)
 				return nil
 			}
 			if flagFiles {
@@ -248,7 +248,7 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 	return out
 }
 
-// renderStatus is the default `env status` view: per Environment, its targets
+// renderStatus is the default `environment status` view: per Environment, its targets
 // and scope, the installed items grouped by kind, and every projected file the
 // user edited since the last hydrate (a missing file is not "edited": the next
 // hydrate re-creates it).
@@ -321,7 +321,7 @@ func renderStatus(u *ui, files []*state.File, cwd string, global bool) error {
 		anyEdited = anyEdited || len(edited) > 0
 	}
 	if anyEdited {
-		u.verb("hint", "ach-cli env hydrate --force  — discards local edits")
+		u.verb("hint", "ach-cli environment hydrate --force  — discards local edits")
 	}
 	return nil
 }

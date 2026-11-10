@@ -151,7 +151,7 @@ curl -sS -o /dev/null -w 'api/health %{http_code}\n' https://api.${GENAI_BASE_DO
 curl -fsS https://ach.${GENAI_BASE_DOMAIN}/.well-known/oauth-authorization-server | jq .issuer
 curl -fsS https://ach.${GENAI_BASE_DOMAIN}/.well-known/oauth-protected-resource   | jq .resource
 ach-cli login https://ach.${GENAI_BASE_DOMAIN} && ach-cli whoami
-ach-cli env hydrate <an existing Environment>
+ach-cli environment hydrate <an existing Environment>
 kubectl -n ach get environments.ach.ackstorm.ai
 
 # D-29 watch — 0 until a user acts; the first non-zero crosses the boundary
@@ -351,7 +351,7 @@ psql "$ACH_DB" -c "select count(*) from environment_keys where status<>'revoked'
 
 - [ ] `https://ach.${GENAI_BASE_DOMAIN}/` = console; `/ui`, `/key/*`, `/health` =
       404 **at ACH** and still live on `api.` (AC-24)
-- [ ] `ach-cli login`, `env hydrate`, `ek_` forwarding unchanged (AC-23)
+- [ ] `ach-cli login`, `environment hydrate`, `ek_` forwarding unchanged (AC-23)
 - [ ] console stats/latency for a real user include `ek_` traffic,
       `data_scope: "user"` (AC-16)
 - [ ] no `x_user_id_auth.py`, no `custom_auth`, no alitellm-auth Deployment

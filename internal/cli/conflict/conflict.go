@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package conflict holds the shared --conflict policy enum used by both the
-// governed `env hydrate` projection leg (internal/cli/hydrate) and the local
+// governed `environment hydrate` projection leg (internal/cli/hydrate) and the local
 // package manager (internal/cli/localpkg/manager) so the two install paths
 // accept the same spellings and default identically.
 package conflict

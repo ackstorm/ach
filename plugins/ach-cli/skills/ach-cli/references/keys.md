@@ -6,7 +6,7 @@ user run `keys create` in their own terminal, so the key never passes through th
 
 ```bash
 ach-cli keys create <environment> --name <what-it-is-for>          # printed once, stored nowhere: put it in a secret store
-ach-cli keys list                                                   # --status all|suspended|expired|invalid|revoked, --env <env>
+ach-cli keys list                                                   # --status all|suspended|expired|invalid|revoked, --environment <env>
 ach-cli keys suspend <name|ekid_…>                                  # pause it; keys resume undoes it
 ach-cli keys revoke <name|ekid_…>                                   # for good
 ```
@@ -38,5 +38,5 @@ Store it in the consumer's secret store. Send it as the `x-ach-key` header (or
 add `?types=embedding` (any model mode, comma-separated) or `?types=all` for the others.
 
 To run `ach-cli` itself with a key: `--key ek-…` on any command, or set
-`ACH_KEY` (with `ACH_URL`, no config file is needed at all). `ach-cli env hydrate`
+`ACH_KEY` (with `ACH_URL`, no config file is needed at all). `ach-cli environment hydrate`
 with a key needs no Environment name: the key already names one.

@@ -465,7 +465,7 @@ type PlannedWrite struct {
 // The adapter must be registered (via blank-import of its subpackage) and
 // implement route.RuleProvider. Returns an empty slice (no error) when the
 // adapter has no projection rules. A non-empty plugin namespaces the plugin's
-// commands and skills with its name, exactly as `env hydrate` does; a
+// commands and skills with its name, exactly as `environment hydrate` does; a
 // standalone skill passes "".
 func Project(stageDir, adapterID, plugin string) ([]PlannedWrite, error) {
 	ad, ok := adapter.Lookup(adapterID)
@@ -501,7 +501,7 @@ func Project(stageDir, adapterID, plugin string) ([]PlannedWrite, error) {
 		// destination here — EXCEPT .mcp.json, which is Claude Code's per-project
 		// MCP registry (the file claude actually reads for plugin MCP servers);
 		// a plugin that ships MCP is useless without it. This is the local
-		// installer only — governed `env hydrate` (internal/cli/hydrate) keeps
+		// installer only — governed `environment hydrate` (internal/cli/hydrate) keeps
 		// the shared rules intact.
 		if path.Dir(fw.Path) == "." && path.Base(fw.Path) != ".mcp.json" {
 			continue

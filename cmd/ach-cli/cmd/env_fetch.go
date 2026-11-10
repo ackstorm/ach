@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach-cli env fetch <env> <kind> <name>` — a low-level debug command that
+// `ach-cli environment fetch <env> <kind> <name>` — a low-level debug command that
 // streams a single content artifact straight from the Content Service to
 // stdout (or --file), with NO extraction and NO adapter projection. It is
 // the credential-resolution + x-ach-key/x-ach-environment path that `env
@@ -28,7 +28,7 @@ var contentFetchKinds = map[string]struct{}{
 	"skill":    {},
 }
 
-// newEnvFetchCmd returns `env fetch <env> <kind> <name>`.
+// newEnvFetchCmd returns `environment fetch <env> <kind> <name>`.
 func newEnvFetchCmd() *cobra.Command {
 	var (
 		f    credFlags
@@ -41,13 +41,13 @@ func newEnvFetchCmd() *cobra.Command {
 
 kind ∈ {prompt, plugin, artifact, skill}. No extraction, no adapter
 projection — the response body is written as-is to stdout (or --file).
-For normal workspace setup use 'ach-cli env hydrate'.
+For normal workspace setup use 'ach-cli environment hydrate'.
 
 The Environment is always sent as x-ach-environment; with an ek- key it
 must be the key's own Environment.
 
 Example:
-  ach-cli env fetch frontend-dev plugin code-review --file code-review.tar.gz`,
+  ach-cli environment fetch frontend-dev plugin code-review --file code-review.tar.gz`,
 		Args:          cobra.ExactArgs(3),
 		SilenceUsage:  true,
 		SilenceErrors: true,

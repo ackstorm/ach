@@ -47,7 +47,7 @@ func TestDispatchAndRender_ServerHint(t *testing.T) {
 	err := fmt.Errorf("hydrate: %w", &httpclient.ServerError{Status: 404, Code: "environment_not_found"})
 	exit.DispatchAndRender(err, &buf)
 	if !strings.HasPrefix(buf.String(), "error: hydrate: 404") ||
-		!strings.Contains(buf.String(), "\nhint: run `ach-cli env list`") {
+		!strings.Contains(buf.String(), "\nhint: run `ach-cli environment list`") {
 		t.Errorf("missing hint: %q", buf.String())
 	}
 	buf.Reset()

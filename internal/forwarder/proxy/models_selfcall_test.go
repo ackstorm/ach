@@ -77,7 +77,7 @@ func TestBadSelfCall(t *testing.T) {
 }
 
 // TestNoInternalModelListWithoutTypesAll guards FUTURE internal callers. Today
-// no ACH view lists models through the forwarder (console, env describe and
+// no ACH view lists models through the forwarder (console, environment describe and
 // hydrate read LiteLLM or the projection directly), but GET /v1/models hides
 // non-chat models by default (models.go), so any ACH-internal call to it must
 // carry ?types=all in the same literal. Heuristic: only literal "/v1/models…"

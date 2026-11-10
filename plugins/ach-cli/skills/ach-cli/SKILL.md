@@ -30,7 +30,7 @@ Before changing anything, read the state yourself. These commands only read:
 ```bash
 command -v ach-cli && ach-cli --version
 ach-cli whoami          # profile, URL, user, auth (session or ek- key), budget, keys
-ach-cli env status      # what is installed in this folder (-g <env> for global)
+ach-cli environment status      # what is installed in this folder (-g <env> for global)
 ```
 
 Then ask once whether the user is setting up THIS machine (where you run) or another
@@ -57,7 +57,7 @@ announcing a next step: run it in the same reply, or end with a question.
 
 An **Environment** is a named bundle the platform team publishes: models, MCP servers,
 A2A agents (runtime) plus plugins, skills, prompts and artifacts (context). Access is
-by team: `ach-cli env list` shows only the Environments the user's teams may use.
+by team: `ach-cli environment list` shows only the Environments the user's teams may use.
 **Hydrating** writes an Environment into an agent tool's own config, either globally
 (`-g`, every project) or into a folder (that folder and everything under it). A
 **target** is the tool: `claude-code`, `codex`, `gemini-cli`, `opencode`, `pi`. Hydrate
@@ -67,9 +67,9 @@ or remove exactly that later without touching the user's own settings.
 ## Defaults worth knowing
 
 - Global first: the organization's baseline Environment usually goes in once with
-  `ach-cli env hydrate <env> -g --target <tool>`; project-specific ones go into folders.
-- `--target` is optional on `env hydrate` inside a folder that already has one tool's
-  config (it is autodetected; it errors when it finds none or several). `env clone` and
+  `ach-cli environment hydrate <env> -g --target <tool>`; project-specific ones go into folders.
+- `--target` is optional on `environment hydrate` inside a folder that already has one tool's
+  config (it is autodetected; it errors when it finds none or several). `environment clone` and
   `-g` always need it, since there is nothing to detect. `ACH_TARGET` is the same.
 - Models: by default a tool keeps its own model login. `--models` also sends that tool's
   model traffic through ACH (Claude Code and Codex; needs `ach-cli` on the `PATH`).
@@ -79,4 +79,4 @@ or remove exactly that later without touching the user's own settings.
 - Every network command takes `--profile <name>`, `--key <ek-…>` and
   `--verbose` (request headers to stderr, credentials redacted). List and read commands
   take `-o json` for machine-readable output: prefer it when you parse the result. So do
-  `token`, `whoami`, `keys create`, `env describe` and `profile list|show`.
+  `token`, `whoami`, `keys create`, `environment describe` and `profile list|show`.

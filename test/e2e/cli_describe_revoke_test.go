@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-// Phase 6 CLI render + lifecycle e2e — drives `ach-cli env describe`,
+// Phase 6 CLI render + lifecycle e2e — drives `ach-cli environment describe`,
 // `keys create/list/revoke`, and the hydrate target-autodetect path against
 // the kept kind cluster, asserting on the REAL server's response shape.
 //
@@ -33,7 +33,7 @@ func TestPhase6CLIRenderAndLifecycle(t *testing.T) {
 	t.Run("hydrate_autodetect_friendly_error", testPhase6HydrateAutodetectError)
 }
 
-// testPhase6EnvDescribeRender asserts `ach env describe demo` against the live
+// testPhase6EnvDescribeRender asserts `ach-cli environment describe demo` against the live
 // cluster renders the two contract fixes:
 //   - Context table has NO ID column (it always duplicated NAME) → the header
 //     row is exactly KIND / NAME / DOWNLOADURL.
@@ -50,10 +50,10 @@ func testPhase6EnvDescribeRender(t *testing.T) {
 	stdout, stderr, err := phase6RunAch(t, xdg, "env", "describe", phase6DemoEnvironment)
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
-		t.Fatalf("ach env describe: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+		t.Fatalf("ach-cli environment describe: exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
 	}
 	if code != 0 {
-		t.Fatalf("ach env describe: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
+		t.Fatalf("ach-cli environment describe: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
 	}
 
 	lines := strings.Split(string(stdout), "\n")
@@ -68,7 +68,7 @@ func testPhase6EnvDescribeRender(t *testing.T) {
 		}
 	}
 	if ctxHeader == nil {
-		t.Fatalf("ach env describe: no Context header (DOWNLOADURL) found:\n%s", stdout)
+		t.Fatalf("ach-cli environment describe: no Context header (DOWNLOADURL) found:\n%s", stdout)
 	}
 	if got, want := strings.Join(ctxHeader, " "), "KIND NAME DOWNLOADURL"; got != want {
 		t.Errorf("Context header = %q, want %q (the redundant ID column must be gone):\n%s", got, want, stdout)
@@ -87,10 +87,10 @@ func testPhase6EnvDescribeRender(t *testing.T) {
 		}
 	}
 	if !sawMcp {
-		t.Fatalf("ach env describe: no mcpServer runtime rows found (demo fixture should have them):\n%s", stdout)
+		t.Fatalf("ach-cli environment describe: no mcpServer runtime rows found (demo fixture should have them):\n%s", stdout)
 	}
 	if !sawDashedName {
-		t.Errorf("ach env describe: mcpServer empty NAME not rendered as em dash '—':\n%s", stdout)
+		t.Errorf("ach-cli environment describe: mcpServer empty NAME not rendered as em dash '—':\n%s", stdout)
 	}
 }
 
@@ -147,7 +147,7 @@ func testPhase6KeysRevokeConfirmation(t *testing.T) {
 	}
 }
 
-// testPhase6HydrateAutodetectError asserts that `ach env hydrate` against an
+// testPhase6HydrateAutodetectError asserts that `ach-cli environment hydrate` against an
 // EMPTY workspace (no agent adapter present) fails with the friendly
 // "no agent target detected" prompt naming the closed set — rather than a
 // false "multiple agent targets" match or an opaque error. Driving --dir at
@@ -165,13 +165,13 @@ func testPhase6HydrateAutodetectError(t *testing.T) {
 		"env", "hydrate", phase6DemoEnvironment, "--dir", emptyWorkspace)
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
-		t.Fatalf("env hydrate (autodetect): exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
+		t.Fatalf("environment hydrate (autodetect): exec error: %v\nstdout=%s\nstderr=%s", runErr, stdout, stderr)
 	}
 	if code == 0 {
-		t.Fatalf("env hydrate (autodetect): exit 0, want non-zero on no-target\nstdout=%s\nstderr=%s", stdout, stderr)
+		t.Fatalf("environment hydrate (autodetect): exit 0, want non-zero on no-target\nstdout=%s\nstderr=%s", stdout, stderr)
 	}
 	combined := string(stdout) + string(stderr)
 	if !strings.Contains(combined, "no agent target detected") {
-		t.Errorf("env hydrate (autodetect): missing friendly 'no agent target detected' prompt:\nstdout=%s\nstderr=%s", stdout, stderr)
+		t.Errorf("environment hydrate (autodetect): missing friendly 'no agent target detected' prompt:\nstdout=%s\nstderr=%s", stdout, stderr)
 	}
 }

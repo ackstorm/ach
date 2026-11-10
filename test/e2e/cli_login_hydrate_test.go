@@ -45,7 +45,7 @@ import (
 
 // TestPhase6CLI is the single top-level umbrella for the Phase 6 CLI
 // e2e suite. Each subtest maps to one of the load-bearing CLI flows
-// the Phase 6 plans landed (login → whoami → env list → keys
+// the Phase 6 plans landed (login → whoami → environment list → keys
 // create → hydrate). The hydrate-golden-diff subtest is the headline
 // invariant — the byte-for-byte assertion vs examples/hydrate.json
 // (normalized for cluster host) is what the demo collapse hangs on.
@@ -132,7 +132,7 @@ func testPhase6WhoamiVerifyPk(t *testing.T) {
 	}
 }
 
-// testPhase6EnvList asserts `ach env list` exits 0 and the stdout
+// testPhase6EnvList asserts `ach-cli environment list` exits 0 and the stdout
 // contains the row for the demo Environment (the standard cluster
 // fixture from examples/04-environment-demo.yaml).
 func testPhase6EnvList(t *testing.T) {
@@ -145,15 +145,15 @@ func testPhase6EnvList(t *testing.T) {
 	stdout, stderr, err := phase6RunAch(t, xdg, "env", "list")
 	code, runErr := phase6StripExitErr(err)
 	if runErr != nil {
-		t.Fatalf("ach env list: exec error: %v\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach-cli environment list: exec error: %v\nstdout=%s\nstderr=%s",
 			runErr, stdout, stderr)
 	}
 	if code != 0 {
-		t.Fatalf("ach env list: exit %d (want 0)\nstdout=%s\nstderr=%s",
+		t.Fatalf("ach-cli environment list: exit %d (want 0)\nstdout=%s\nstderr=%s",
 			code, stdout, stderr)
 	}
 	if !phase6Contains(stdout, phase6DemoEnvironment) {
-		t.Errorf("ach env list: stdout missing 'demo' environment row; got=%s", stdout)
+		t.Errorf("ach-cli environment list: stdout missing 'demo' environment row; got=%s", stdout)
 	}
 }
 
@@ -168,11 +168,6 @@ func testPhase6EnvList(t *testing.T) {
 // whoami --key` invocation (which reads the ek from the same XDG
 // config the previous step wrote to) or careful subtest-ordering, and
 // either would only re-prove the W2 unit-test coverage.
-//
-// The persistence side-effect (D-07 always-persist) means the ek_ is
-// now in the temp XDG_CONFIG_HOME's config.yaml under
-// `profiles.demo.keys.e2e-test-key` — useful for cleanup/inspection
-// when running with -keep or under a manual XDG export.
 func testPhase6EnvKeysCreate(t *testing.T) {
 	t.Helper()
 	phase6SuiteGuard(t)

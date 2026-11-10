@@ -1,6 +1,6 @@
 # Errors, exit codes, admin commands
 
-## Exit codes (`env hydrate`, `env clone`, most network commands)
+## Exit codes (`environment hydrate`, `environment clone`, most network commands)
 
 | Code | Meaning | Do |
 |---|---|---|
@@ -9,7 +9,7 @@
 | 2 | local edits would be lost | Show the user the file; keep it, or `--force` on their say-so |
 | 3 | not authorized | No access to that Environment or command: an administrator grants it |
 | 4 | wrong Environment for this key | An `ek-` works for its own Environment only |
-| 5 | state mismatch | The `.ach/` state does not match the files; `env status`, then hydrate again |
+| 5 | state mismatch | The `.ach/` state does not match the files; `environment status`, then hydrate again |
 | 6 | network error | Check the URL in `ach-cli whoami` and the connection; retry |
 | 7 | file-name collision | Two items write the same file; see `--conflict` |
 | 8 | config read/write error | `~/.config/ach/config.yaml` or the tool's config is unreadable or not writable |
@@ -20,7 +20,7 @@
   ([login](login.md)). A session ends when the identity provider refuses the refresh with a
   dead token; a user who stops refreshing is not detected, and an `ek-` key of a disabled user
   stays alive until an admin runs `ach-cli admin keys revoke --owner <email>`.
-- **An Environment is missing from `env list`**: no access ([environments](environments.md)).
+- **An Environment is missing from `environment list`**: no access ([environments](environments.md)).
   If the user was just added to an SSO group, run `ach-cli refresh` (or `ach-cli login`)
   and allow a few minutes for the Environment to reconcile.
 - **`warning: ach-cli X does not match server Y`**: this CLI and the ACH server are on
@@ -57,7 +57,7 @@ ach-cli admin keys list --owner <email>    # every key, any owner
 ach-cli admin keys revoke <id> | --owner <email>
 ach-cli admin users budget <email> --max-budget <USD> --budget-duration 30d
 ach-cli admin users limits <email> --max-keys <N>
-ach-cli env list --admin                   # every Environment, not only your teams'
+ach-cli environment list --admin                   # every Environment, not only your teams'
 ```
 
 `admin list` shows sync status per object (`Synced`, `Degraded(<reason>)`, `STALE`),

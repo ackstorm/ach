@@ -14,7 +14,7 @@ func TestAPISkill(t *testing.T) {
 		!strings.Contains(md, "ach-cli login https://ach.test --no-browser") ||
 		!strings.Contains(md, "`https://ach.test`") || !strings.Contains(md, "opencode auth login ackstorm") ||
 		!strings.Contains(md, "opencode auth login https://ach.test`") ||
-		!strings.Contains(md, "ach-cli env hydrate ackstorm -g --target opencode") ||
+		!strings.Contains(md, "ach-cli environment hydrate ackstorm -g --target opencode") ||
 		strings.Contains(md, "{{") {
 		t.Fatalf("%v", s)
 	}
@@ -24,8 +24,8 @@ func TestAPISkill(t *testing.T) {
 
 	// No default Environment: its step is cut, the rest is unchanged.
 	bare := apiSkill("https://ach.test/", "ackstorm", "")["files"].(map[string]string)["SKILL.md"]
-	if strings.Contains(bare, "-g --target opencode") || strings.Contains(bare, "{{") || !strings.Contains(bare, "ach-cli env list") ||
-		!strings.Contains(bare, "ach-cli env hydrate <name> --target opencode") ||
+	if strings.Contains(bare, "-g --target opencode") || strings.Contains(bare, "{{") || !strings.Contains(bare, "ach-cli environment list") ||
+		!strings.Contains(bare, "ach-cli environment hydrate <name> --target opencode") ||
 		!strings.Contains(bare, "\n\n### Sign in to MCP servers\n") || !strings.Contains(bare, "nohup opencode mcp auth <server>") {
 		t.Fatal(bare)
 	}

@@ -47,12 +47,12 @@ func executeEnv(t *testing.T, args ...string) (string, string, exit.Code, error)
 }
 
 // TestEnv_Reparent_HydrateStatusUninstall asserts the Phase 2.3 clean
-// break: hydrate / status / uninstall resolve UNDER the `env` parent and
+// break: hydrate / status / uninstall resolve UNDER the `environment` parent and
 // the old top-level names are gone from rootCmd.
 func TestEnv_Reparent_HydrateStatusUninstall(t *testing.T) {
 	parent := newEnvCmd()
 
-	// Each reorged child must resolve under `env`.
+	// Each reorged child must resolve under `environment`.
 	for _, name := range []string{"hydrate", "status", "uninstall"} {
 		var found bool
 		for _, sub := range parent.Commands() {
@@ -62,7 +62,7 @@ func TestEnv_Reparent_HydrateStatusUninstall(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("`env %s` not registered under the env parent", name)
+			t.Errorf("`environment %s` not registered under the environment parent", name)
 		}
 	}
 
@@ -102,7 +102,7 @@ func TestEnv_List_SinglePage(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "list")
 	if err != nil {
-		t.Fatalf("env list: %v", err)
+		t.Fatalf("environment list: %v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
@@ -157,7 +157,7 @@ func TestEnv_List_JSON(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "list", "-o", "json")
 	if err != nil || code != exit.OK {
-		t.Fatalf("env list -o json: code=%d err=%v", code, err)
+		t.Fatalf("environment list -o json: code=%d err=%v", code, err)
 	}
 	var got []map[string]any
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
@@ -172,7 +172,7 @@ func TestEnv_List_JSON(t *testing.T) {
 	}
 }
 
-// TestEnv_Search asserts env search reads the env list, joins its words
+// TestEnv_Search asserts environment search reads the environment list, joins its words
 // into one query, honours --admin, and prints [] (not null) for no match.
 func TestEnv_Search(t *testing.T) {
 	dir := envTestEnv(t)
@@ -195,7 +195,7 @@ func TestEnv_Search(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "search", "WEB", "design")
 	if err != nil || code != exit.OK {
-		t.Fatalf("env search: code=%d err=%v", code, err)
+		t.Fatalf("environment search: code=%d err=%v", code, err)
 	}
 	if !strings.Contains(stdout, "web-design") || strings.Contains(stdout, "threejs") ||
 		!strings.Contains(stdout, "--only <kind>/<name>") {
@@ -207,7 +207,7 @@ func TestEnv_Search(t *testing.T) {
 
 	stdout, _, _, err = executeEnv(t, "search", "figma", "--admin", "-o", "json")
 	if err != nil {
-		t.Fatalf("env search -o json: %v", err)
+		t.Fatalf("environment search -o json: %v", err)
 	}
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, []byte(stdout)); err != nil ||
@@ -270,7 +270,7 @@ func TestEnv_List_Pagination(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "list")
 	if err != nil {
-		t.Fatalf("env list pagination: %v", err)
+		t.Fatalf("environment list pagination: %v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
@@ -307,7 +307,7 @@ func TestEnv_List_LimitFlag(t *testing.T) {
 
 	_, _, code, err := executeEnv(t, "list", "--limit", "10")
 	if err != nil {
-		t.Fatalf("env list --limit 10: %v", err)
+		t.Fatalf("environment list --limit 10: %v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
@@ -409,7 +409,7 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "describe", "demo")
 	if err != nil {
-		t.Fatalf("env describe: %v", err)
+		t.Fatalf("environment describe: %v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0", code)
@@ -454,7 +454,7 @@ func TestEnv_Describe_403_GracefulFallback(t *testing.T) {
 
 	stdout, _, code, err := executeEnv(t, "describe", "demo")
 	if err != nil {
-		t.Fatalf("env describe 403 graceful: err=%v", err)
+		t.Fatalf("environment describe 403 graceful: err=%v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0 (graceful CLI-12)", code)
@@ -543,7 +543,7 @@ func TestEnv_Describe_NotFound(t *testing.T) {
 	}
 }
 
-// TestEnvDescribe_NoArg_Friendly verifies that `env describe` with no argument
+// TestEnvDescribe_NoArg_Friendly verifies that `environment describe` with no argument
 // returns a friendly usage hint (C4), not cobra's terse "accepts 1 arg(s)".
 func TestEnvDescribe_NoArg_Friendly(t *testing.T) {
 	envTestEnv(t)
@@ -551,7 +551,7 @@ func TestEnvDescribe_NoArg_Friendly(t *testing.T) {
 	if err == nil || code != exit.General {
 		t.Fatalf("want exit 1 for missing env name; got code=%d err=%v", code, err)
 	}
-	if !strings.Contains(err.Error(), "ach-cli env describe <name>") {
+	if !strings.Contains(err.Error(), "ach-cli environment describe <name>") {
 		t.Errorf("want usage hint; got %q", err.Error())
 	}
 }
@@ -570,9 +570,9 @@ func TestEnv_Describe_UnknownFlag(t *testing.T) {
 	}
 }
 
-// TestEnv_SyntheticMode_Allowed asserts env list/describe DO work in
+// TestEnv_SyntheticMode_Allowed asserts environment list/describe DO work in
 // synthetic mode (read-only commands; per plan note, config-mutating
-// commands like login/logout/config gate on synthetic, but env list/
+// commands like login/logout/config gate on synthetic, but environment list/
 // describe are synthetic-friendly per CLI-08 profile resolution).
 func TestEnv_SyntheticMode_Allowed(t *testing.T) {
 	envTestEnv(t)
@@ -592,7 +592,7 @@ func TestEnv_SyntheticMode_Allowed(t *testing.T) {
 
 	_, _, code, err := executeEnv(t, "list")
 	if err != nil {
-		t.Fatalf("env list synthetic: %v", err)
+		t.Fatalf("environment list synthetic: %v", err)
 	}
 	if code != exit.OK {
 		t.Errorf("code = %d; want 0 (synthetic-friendly)", code)

@@ -44,7 +44,7 @@ type Deps struct {
 // ListHandler returns GET /platform/environments. Filters by team
 // intersection for EVERY caller, admins included — it is a personal list.
 // ?all=true returns every row and is admin-only (the full inventory behind
-// `ach-cli env list --admin` / `admin list environments`); paginates via
+// `ach-cli environment list --admin` / `admin list environments`); paginates via
 // ?limit + ?cursor.
 //
 // Error matrix (Hub §15.5):

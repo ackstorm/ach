@@ -1,7 +1,7 @@
 # Agent plugins
 
 ACH ships guidance for AI coding agents as a plugin marketplace named `ach`, at the root
-of this repository. It works with Claude Code and Codex, and through `ach-cli env
+of this repository. It works with Claude Code and Codex, and through `ach-cli environment
 hydrate` with every tool ACH supports.
 
 | Plugin | For | What it covers |
@@ -25,7 +25,7 @@ Codex reads the same marketplace from `.agents/plugins/marketplace.json`.
 ## Serve them through ACH
 
 Register the repository as a `PluginMarketplace` and list the plugins in an Environment;
-users then get them with `ach-cli env hydrate`:
+users then get them with `ach-cli environment hydrate`:
 
 ```yaml
 apiVersion: ach.ackstorm.ai/v1alpha1

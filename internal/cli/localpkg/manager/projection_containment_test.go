@@ -2,7 +2,7 @@
 
 // Containment + command-format scoping for the local installer's projection.
 // These assert two local-installer policies enforced in manager.Project,
-// independent of the shared adapter rules used by governed `env hydrate`:
+// independent of the shared adapter rules used by governed `environment hydrate`:
 //
 //   - Containment: write NOTHING outside the target adapter's dot-dir. The
 //     AGENTS.md→CLAUDE.md / →GEMINI.md composites are the only rules that land a

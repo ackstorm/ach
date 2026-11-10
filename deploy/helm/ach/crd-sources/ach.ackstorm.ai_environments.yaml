@@ -157,7 +157,7 @@ spec:
               description:
                 description: |-
                   Description is optional catalog metadata describing what this Environment
-                  is. It is surfaced in `ach-cli env list` (truncated) and `env describe`
+                  is. It is surfaced in `ach-cli environment list` (truncated) and `environment describe`
                   (full) — the browse-time "what is this" text, distinct from Notice's
                   post-hydrate advisory. Plain text, not interpreted; empty renders nothing.
                 maxLength: 2048
@@ -165,7 +165,7 @@ spec:
               notice:
                 description: |-
                   Notice is an optional free-text advisory shown to the user ONLY after
-                  `ach-cli env hydrate` (it is not surfaced in `env list` / `env describe`
+                  `ach-cli environment hydrate` (it is not surfaced in `environment list` / `environment describe`
                   — use Description for catalog metadata). Use it for operational reminders
                   ("re-login after key rotation") or model guidance ("works best with the
                   openai-* models"). Plain text, not interpreted; empty renders nothing.

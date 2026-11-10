@@ -521,7 +521,7 @@ func newAdminKeysListCmd() *cobra.Command {
 	cmd.Flags().StringVar(&owner, "owner", "", "Filter by owner email")
 	cmd.Flags().StringVar(&keyType, "type", "", "Filter by type: pk|ek")
 	cmd.Flags().StringVar(&status, "status", "active", "Filter by status: active|suspended|revoked|expired|all")
-	cmd.Flags().StringVar(&environment, "env", "", "Filter by environment (ek- only)")
+	cmd.Flags().StringVar(&environment, "environment", "", "Filter by environment (ek- only)")
 	cmd.Flags().StringVar(&cursor, "cursor", "", "Pagination cursor")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Max rows per page")
 	// withYes=false — read-only, no confirmation prompt.

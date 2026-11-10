@@ -82,7 +82,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | `GET /` answers `console not built` | A custom image built without the console; use the released image. |
 | Environment `AccessGroupSynced=False reason=UnresolvedReferences` | A model, MCP server, A2A agent, guardrail or team named in it does not exist in LiteLLM. The message lists the names. While it lasts, access can shrink: an authorized team whose alias is unknown loses the Environment until it resolves, and nothing is added. |
 | Environment with guardrails stuck with a 403 | Team guardrails need a LiteLLM Enterprise licence; remove `runtime.guardrails` or license LiteLLM. |
-| `ach-cli whoami` works, `env list` empty | See "User signs in but sees no Environments" above. |
+| `ach-cli whoami` works, `environment list` empty | See "User signs in but sees no Environments" above. |
 
 ## Runtime symptoms after install
 

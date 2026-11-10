@@ -41,7 +41,7 @@ Boundary regression test: `go list -deps ./cmd/ach-cli` must show no
 
 Four noun groups. `--target` is the platform selector everywhere: a
 StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
-`env hydrate` and `local`, ids + aliases from `adapter.Lookup`.
+`environment hydrate` and `local`, ids + aliases from `adapter.Lookup`.
 
 ```
 # session + profiles
@@ -49,12 +49,12 @@ ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
 ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
 
 # governed remote object (CR-defined, server-mediated)
-ach-cli env list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
-ach-cli env hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
-ach-cli env clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `env hydrate` updates every env recorded under .ach/
-ach-cli env status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <claude|codex|gemini|opencode|pi> [--environment <env>] [hydrate flags] [-- tool args]   # runHydrate for that one target (no env = every env recorded under the folder's .ach/, like bare env hydrate), then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with env hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target
-ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--env e] [--status …] [-o]
+ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
+ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
+ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
+ach-cli environment status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli launch <claude|codex|gemini|opencode|pi> [--environment <env>] [hydrate flags] [-- tool args]   # runHydrate for that one target (no env = every env recorded under the folder's .ach/, like bare environment hydrate), then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target
+ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
 ach-cli admin list <kind|all> [-o table|json|yaml]     # objects + models|mcp|a2a|teams|guardrails
 ach-cli admin keys list [--owner e] [--type pk|ek] [--status …] | revoke <id> | revoke --owner <email>
@@ -68,8 +68,8 @@ ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-
 
 Every network command takes `--profile`, `--key <ek-…>`, `--verbose`
 (`registerCredFlags`, cred.go). Only the list/read commands also take
-`-o table|json` (`registerOutputFlag`): `env list`, `env search`, `env describe`,
-`env status`, `keys list`, `keys create`, `admin list` (also `yaml`),
+`-o table|json` (`registerOutputFlag`): `environment list`, `environment search`, `environment describe`,
+`environment status`, `keys list`, `keys create`, `admin list` (also `yaml`),
 `admin keys list`, `profile list`, `profile show`, `whoami`, `token`.
 Env vars: `ACH_PROFILE`, `ACH_KEY` (same rule as `--key`), `ACH_URL` (login
 prefill), `ACH_URL`+`ACH_KEY` together = synthetic mode (no config file),
@@ -90,7 +90,7 @@ outside `admin`, or an example says `ach <cmd>` instead of `ach-cli`.
 
 **Errors say what to do next.** Two shared hooks, use them instead of
 per-command text: `exit.DispatchAndRender` prints a `hint:` line for a server
-error code in `serverHints` (e.g. `environment_not_found` → `env list`), and
+error code in `serverHints` (e.g. `environment_not_found` → `environment list`), and
 `withUsageOnArgErrors` (root.go) appends the usage line to every bare cobra
 arity error (a validator returning a `*exit.CodedError` is left alone).
 
@@ -107,7 +107,7 @@ plan — written/removed nothing. `outdated` re-resolves each installed ref's SH
 per-file `remove`/`modify`/`skip`/`absent` verdict), so the `--dry-run` preview
 can never drift from the real removal.
 
-### Output of the workspace verbs (`env clone`/`hydrate`/`status`/`uninstall`)
+### Output of the workspace verbs (`environment clone`/`hydrate`/`status`/`uninstall`)
 
 One voice, rendered only through `cmd/ach-cli/cmd/ui.go`: a cargo-style
 right-aligned 12-col verb column (`Cloning`, `Hydrating`, `Removing`,
@@ -128,14 +128,14 @@ leaves no `.ach/` behind) and renders through a no-write dispatcher (`withDryRun
 `publishFile` classifies, writes nothing), so its list is the real run's —
 `~` included (#205). With several targets, each target's list is printed under
 its name unless all are identical (`ui.targetItems`, shared by hydrate and
-`env uninstall`, #204); a target with no change gets its own row (`up to date`,
+`environment uninstall`, #204); a target with no change gets its own row (`up to date`,
 or `nothing to remove` on uninstall), so the others stay labelled.
 
 ## Architecture: the UNIFIED projection engine
 
 **Both** paths converge on `route.Project`:
 
-- `env hydrate` → `internal/cli/hydrate/wiring.go` type-asserts the adapter to
+- `environment hydrate` → `internal/cli/hydrate/wiring.go` type-asserts the adapter to
   `route.RuleProvider` → `route.ProjectPlugin(adapter.ProjectionRules(), stageDir, plugin)`
   for a plugin, `route.Project(…)` for a standalone Skill.
 - local `plugin/skill install` → `manager.Project` (`localpkg/manager/manager.go`)
@@ -215,7 +215,7 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
 ### Multi-Environment workspaces — cross-env skill de-collision
 
 Several specialist Environments (slides / sheets / images / frontend) hydrated
-into ONE workspace is a supported, intended shape: a bare `ach-cli env
+into ONE workspace is a supported, intended shape: a bare `ach-cli environment
 hydrate` re-hydrates every env recorded under `.ach/` best-effort. State is per-env (`.ach/<env>/state-<platform>.json`) but the
 adapter tree is single-path by construction, so the envs **union** in the same
 `.claude/` (`state.ResolvePath`'s doc comment is the contract).
@@ -239,7 +239,7 @@ different target writes a different tree. NOT covered: `Plugin` (same problem);
 prompts/artifacts extract
 to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
-cross-env reference counting, so `env uninstall <a>` removes a file `<b>` also
+cross-env reference counting, so `environment uninstall <a>` removes a file `<b>` also
 projected (self-heals on `<b>`'s next hydrate).
 
 ### Hydrate state invariants — `Sync` keep set + `--only` merge
@@ -264,13 +264,13 @@ projected (self-heals on `<b>`'s next hydrate).
   codex (empty `[a2a_agents]` table) report a phantom edit on every
   re-hydrate/uninstall. A drift verdict is also dropped when disk already
   equals what we write (heals rows recorded with an older hash scope).
-- **`env hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
+- **`environment hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
   or `<env>-<name>` for a de-collided skill; plus any Source the fresh render
   carries — the per-run stage holds only that item). Prompts/artifacts are refused:
   they are never recorded in state, so they could not be removed again.
-  `env uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
+  `environment uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
   item's rows) to the same `Sync`, skipping per-platform states without it.
   Under `--only`, other items' installed replace-files are collision claims
   (`installedClaims`: raw or namespaced Target) — namespace/refuse act as in a
@@ -278,9 +278,9 @@ projected (self-heals on `<b>`'s next hydrate).
   row as publish prior; the runtime-wins MCP drop uses the prior state's
   `Adapter.Files` keys since runtime is not written. An `--only` reinstall
   whose new version drops/renames a file leaves the old file on disk
-  untracked (same as a non-sync hydrate); run a full `env hydrate --sync` to
+  untracked (same as a non-sync hydrate); run a full `environment hydrate --sync` to
   clean it.
-- `env uninstall` default removes EVERYTHING hydrate wrote
+- `environment uninstall` default removes EVERYTHING hydrate wrote
   (`BuildScopedEmpty(prev, !onlyRuntime, onlyRuntime)`); `--only-runtime` keeps
   context.
 
@@ -293,7 +293,7 @@ guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
 in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
 
-- `env hydrate` → `commit.go` `step12bGitignore` (entries = `.ach/` + the
+- `environment hydrate` → `commit.go` `step12bGitignore` (entries = `.ach/` + the
   top-level dir/file of every projected/written file).
 - local `plugin/skill install`/`update` → `pkgcmd.go` `ensureProjectGitignore`
   (entries = the top-level dir/file of every installed file).
@@ -333,13 +333,13 @@ asserted in e2e — not a bug).
 **Model-endpoint helper wiring (opt-in `--models`, person hydrate only).**
 Off by default — the tool keeps its own model login (and a helper that names
 `ach-cli` breaks the tool when the binary is only a shell alias, not on PATH).
-With `env hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
+With `environment hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
 `commit.renderContext` → `adapter.WithHelperBaseURL`), claude-code additionally deep-merges
 `.claude/settings.json` (`apiKeyHelper: "ach-cli token"` +
 `env.ANTHROPIC_BASE_URL: <hub>`) and codex adds `model_provider = "ach"` +
 `[model_providers.ach]` (`base_url <hub>/v1`, `wire_api responses`,
 `[auth] command = "ach-cli token"`, `refresh_interval_ms 300000`) to its
-`config.toml` — keys tracked, so `env uninstall` prunes them. An `ek-` bearer
+`config.toml` — keys tracked, so `environment uninstall` prunes them. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
@@ -396,7 +396,7 @@ Hard-won details — do NOT re-derive:
   path that resolves outside the workspace, naming it; links staying inside are
   allowed. `--global` is exempt from the symlink rule, not from target
   validation. A tmp link is discarded, never followed. `Sync` is all or nothing
-  on a containment refusal, and `env uninstall` validates every per-platform
+  on a containment refusal, and `environment uninstall` validates every per-platform
   state before removing anything. `ach-cli local plugin|skill install|update|
   uninstall` follow the same rule in `manager.Commit`/`manager.Uninstall` (they
   take `global`; `UninstallPlan` too): every destination is checked before the
@@ -405,7 +405,7 @@ Hard-won details — do NOT re-derive:
 - **Conflict namespacing is rooted to the configured destination.** An absolute
   config root whose name contains `skills` must not be mistaken for the
   adapter's `skills/<name>/` route when the resource leaf is prefixed.
-- **Sync cleanup is boundary-safe.** `env hydrate --sync` prunes empty
+- **Sync cleanup is boundary-safe.** `environment hydrate --sync` prunes empty
   directories only beneath its known ACH and tool roots. Redirected external
   config roots remain intact after managed files are removed; stale empty
   directories there are harmless and are not traversed.
@@ -546,7 +546,7 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 
 `installed.json` is a superset of what an `Environment` CR needs (`repo`+
 `resolvedSHA` = external-ref pin, `target` = adapter, `files` = manifest). A
-future `ach-cli env export` can SERIALIZE local state → Environment/Plugin/Skill
+future `ach-cli environment export` can SERIALIZE local state → Environment/Plugin/Skill
 CR YAML for gitops — this is a state serializer and does NOT require adopting
 OpenPackage's universal-format import/export hub. The hub would only be needed to
 *capture* arbitrary pre-existing tool configs (the `import` direction).

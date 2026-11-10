@@ -103,7 +103,7 @@ curl -fsS $BASE/.well-known/oauth-authorization-server | jq .issuer
 # 4. A human signs in end to end (browser or device code)
 ach-cli login $BASE            # --no-browser on a headless host
 ach-cli whoami
-ach-cli env list
+ach-cli environment list
 ```
 
 Then apply a first Environment in the release namespace and wait for it:
@@ -123,7 +123,7 @@ spec:
 
 ```bash
 kubectl -n $NS wait env/starter --for=condition=Available --timeout=2m
-ach-cli env list                 # the signed-in user, if in team "default", sees it
+ach-cli environment list                 # the signed-in user, if in team "default", sees it
 ```
 
 `Available=True` proves the whole loop: operator ↔ Postgres ↔ LiteLLM. Writing

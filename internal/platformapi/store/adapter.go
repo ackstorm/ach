@@ -66,7 +66,7 @@ import (
 // RuntimeBlock / ContextBlock CRD types this view embeds. The issue-34
 // pgxpool port (commit dc4cf20) accidentally dropped these tags, which
 // silently flipped the wire to PascalCase (Go's zero-tag default) and
-// broke `ach env list`. The flattened shape + the new namespace / origin
+// broke `ach-cli environment list`. The flattened shape + the new namespace / origin
 // / locked / resourceVersion fields are intentional (Postgres SoT); only
 // the missing tags were a regression.
 type EnvironmentView struct {
@@ -133,7 +133,7 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 }
 
 // deriveStatus collapses the condition set into a single status string for
-// the `ach env list` STATUS column. Available=True → "Available"; an
+// the `ach-cli environment list` STATUS column. Available=True → "Available"; an
 // Available=False/Unknown surfaces its reason (e.g. "UnresolvedReferences")
 // so the operator sees why; no Available condition yet → "" (not-yet-
 // reconciled, rendered as a blank cell).

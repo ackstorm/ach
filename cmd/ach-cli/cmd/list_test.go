@@ -193,7 +193,7 @@ func TestList_OutToBuffer(t *testing.T) {
 	}
 }
 
-// TestStatus_PositionalEnvJSON asserts `env status demo -o json` reads only
+// TestStatus_PositionalEnvJSON asserts `environment status demo -o json` reads only
 // demo's state (the old `--environment demo --json` output).
 func TestStatus_PositionalEnvJSON(t *testing.T) {
 	dir := writeListState(t, `{"schemaVersion":"3","environment":"demo",
@@ -221,7 +221,7 @@ func TestStatus_PositionalEnvJSON(t *testing.T) {
 	}
 }
 
-// TestStatus_GlobalRequiresEnv asserts `env status -g` without an env exits 1.
+// TestStatus_GlobalRequiresEnv asserts `environment status -g` without an env exits 1.
 func TestStatus_GlobalRequiresEnv(t *testing.T) {
 	_, code, err := executeList(t, t.TempDir(), "-g")
 	if err == nil || code != exit.General || !strings.Contains(err.Error(), "an environment is required with -g") {
@@ -234,7 +234,7 @@ func TestStatus_RemovedFlags(t *testing.T) {
 	c := newEnvStatusCmd()
 	for _, name := range []string{"json", "environment", "target"} {
 		if c.Flags().Lookup(name) != nil {
-			t.Errorf("--%s must be removed from env status", name)
+			t.Errorf("--%s must be removed from environment status", name)
 		}
 	}
 }
@@ -256,7 +256,7 @@ func TestStatus_DefaultView(t *testing.T) {
 		" Environment prod (claude-code · project)\n",
 		"             ✓ plugin  superpowers\n",
 		"             ! edited  a.md\n",
-		"        hint ach-cli env hydrate --force",
+		"        hint ach-cli environment hydrate --force",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

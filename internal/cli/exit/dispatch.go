@@ -49,5 +49,5 @@ func DispatchAndRender(err error, stderr io.Writer) Code {
 
 // serverHints is the next step for a server error code the user can act on.
 var serverHints = map[string]string{
-	"environment_not_found": "run `ach-cli env list` to see the Environments you can use",
+	"environment_not_found": "run `ach-cli environment list` to see the Environments you can use",
 }

@@ -28,7 +28,7 @@ reviewed in PRs, reconciled by an operator, audited centrally.
 
 Two consumption surfaces:
 
-1. **Developer workspaces** — `ach-cli login` + `ach-cli env hydrate` →
+1. **Developer workspaces** — `ach-cli login` + `ach-cli environment hydrate` →
    local AI tools (Claude Code, Codex, Gemini CLI, OpenCode, Pi) configured
    with exactly the models/keys/skills the team is authorized for.
 2. **Running agents** — agents run under the separate `ach-agent` project
@@ -412,9 +412,9 @@ marker-block (covers credential-bearing files) → cleanup.
   `$HOME/.ach/<env>/` global); per-platform `state-<platform>.json` is the
   only layout (no legacy migration). Runtime mirrors
   (`runtime-<platform>/{mcp,a2a,model}.json`) credential-free.
-- Bare `env hydrate` re-hydrates every env + targets recorded under `.ach/`,
-  best-effort per env. `env clone <env> [dir]` = mkdir + hydrate (git-clone
-  shape). `env uninstall` reuses Sync.
+- Bare `environment hydrate` re-hydrates every env + targets recorded under `.ach/`,
+  best-effort per env. `environment clone <env> [dir]` = mkdir + hydrate (git-clone
+  shape). `environment uninstall` reuses Sync.
 - Exit codes (closed matrix, `internal/cli/exit`): 0 ok · 1 general ·
   2 drift · 3 auth · 4 env-mismatch · 5 schema-mismatch · 6 network/503 ·
   7 collision-refuse (auto-claim differing bytes) · 8 config file.
@@ -430,7 +430,7 @@ marker-block (covers credential-bearing files) → cleanup.
 `whoami` (always remote: `GET /platform/console/bootstrap` → user, budget, key
 allowance) · `token` · `profile list/show/use/add/rename/remove`
 (multi-profile `~/.config/ach/config.yaml`, 0600/0700, https-only unless
-`--insecure`/`ACH_INSECURE` — G19) · `env list/describe/clone/hydrate/status/uninstall/fetch`
+`--insecure`/`ACH_INSECURE` — G19) · `environment list/describe/clone/hydrate/status/uninstall/fetch`
 (`hydrate|uninstall --only plugin|skill/<name>`, `--dir`, `-g`, `--target a,b`) ·
 `keys create/list/revoke/suspend/resume/budget` (the caller's own ek- keys;
 create prints the key once and stores it nowhere) ·

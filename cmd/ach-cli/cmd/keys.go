@@ -291,7 +291,7 @@ or all.`,
 	}
 	registerCredFlags(cmd, &f)
 	registerOutputFlag(cmd, &out, "table", outputJSON)
-	cmd.Flags().StringVar(&environment, "env", "", "Only keys of this Environment")
+	cmd.Flags().StringVar(&environment, "environment", "", "Only keys of this Environment")
 	cmd.Flags().StringVar(&status, "status", "active", "active|suspended|expired|invalid|revoked|all")
 	return cmd
 }
@@ -309,7 +309,7 @@ func emptyKeysMessage(status, environment string) string {
 	case status != statusAll:
 		return what + " (try --status all)\n"
 	case environment != "":
-		return what + " (check the name with `ach-cli env list`)\n"
+		return what + " (check the name with `ach-cli environment list`)\n"
 	default:
 		return what + "; `ach-cli keys create <env>` makes one\n"
 	}

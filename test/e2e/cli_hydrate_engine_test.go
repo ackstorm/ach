@@ -377,7 +377,7 @@ func phase7Sc1RunPk(t *testing.T, platformID, runtimePath string) {
 // phase7Sc1RunEk drives a single sc1_*_ek subtest. The ek_ is minted
 // via `ach-cli keys create` against the seeded XDG; per CLI-04 the
 // ek_ binds the environment, so the hydrate call omits --environment
-// and passes --key <label>.
+// and passes --key <ek-…>.
 func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	t.Helper()
 	phase7SuiteGuard(t)
@@ -387,14 +387,14 @@ func phase7Sc1RunEk(t *testing.T, platformID, runtimePath string) {
 	phase7DemoEnvironmentReady(t)
 
 	label := "e2e-phase7-" + platformID + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	_ = phase7CreateEkKey(t, xdg, label)
+	ek := phase7CreateEkKey(t, xdg, label)
 
 	output := phase7Workspace(t)
 	// --environment is required for any engine run (D1: state is namespaced by
 	// environment), including the ek_ credential path.
 	stdout, stderr, err := phase7RunAchCli(t, xdg,
 		"env", "hydrate", phase7DemoEnvironment,
-		"--key", label,
+		"--key", ek,
 		"--target", platformID,
 		"--dir", output,
 	)
@@ -1695,9 +1695,9 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	}
 }
 
-// TestHydrateOnly_InstallThenUninstallOnePlugin: `env hydrate --only
+// TestHydrateOnly_InstallThenUninstallOnePlugin: `environment hydrate --only
 // plugin/caveman` writes that plugin's files and nothing else (no other
-// plugin/skill, no runtime config), `env status` lists it, and `env
+// plugin/skill, no runtime config), `environment status` lists it, and `env
 // uninstall --only plugin/caveman` removes it again — the state file goes
 // with it, since caveman was the only thing recorded.
 func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
@@ -1752,7 +1752,7 @@ func TestHydrateOnly_InstallThenUninstallOnePlugin(t *testing.T) {
 	}
 
 	if status := run("env", "status", phase7DemoEnvironment); !strings.Contains(status, "caveman") {
-		t.Errorf("env status does not list caveman:\n%s", status)
+		t.Errorf("environment status does not list caveman:\n%s", status)
 	}
 
 	run("env", "uninstall", phase7DemoEnvironment, "--only", "plugin/caveman", "--dir", ws)

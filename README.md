@@ -4,7 +4,7 @@ Multi-service Kubernetes control plane for managing AI agent configurations:
 operator + platform API + forwarder + content service + CLI. The long-running
 services ship as a single Go binary (`ach`) with cobra subcommands; the
 user-facing CLI ships as a separate `ach-cli` binary (login/whoami/logout/
-config/env/keys/hydrate/admin).
+config/environment/keys/hydrate/admin).
 
 ## Quick start
 
@@ -15,7 +15,7 @@ the `demo` Environment the example uses):
 
 ```bash
 ach-cli login https://ach.local.test           # one-time SSO (browser or device code)
-ach-cli env hydrate demo --raw > hydrate.json
+ach-cli environment hydrate demo --raw > hydrate.json
 ```
 
 The `hydrate.json` byte output reproduces `examples/hydrate.json`
@@ -47,7 +47,7 @@ flowchart LR
     CRDS -- reconcile --> OP
     OP -- "project rows + NOTIFY" --> PG
     PG -. "READ ROWS + LISTEN ach_*_changed" .-> PA & FW & CS
-    CLI -- "login / env hydrate" --> PA
+    CLI -- "login / environment hydrate" --> PA
     PA --- DEX
     PA -- "hydrate manifest → content" --> CS
     AG -- "self-hydrate (ek_)" --> PA

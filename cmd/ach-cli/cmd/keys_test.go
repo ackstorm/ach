@@ -294,7 +294,7 @@ func TestKeysList_QueryStatusAndColumns(t *testing.T) {
 		t.Errorf("table:\n%s", out)
 	}
 
-	if _, _, _, err := executeKeys(t, "", "list", "--status", "invalid", "--env", "demo"); err != nil {
+	if _, _, _, err := executeKeys(t, "", "list", "--status", "invalid", "--environment", "demo"); err != nil {
 		t.Fatal(err)
 	}
 	if q := srv.lastGet("/platform/keys").Query; q != "environment=demo&status=invalid&type=ek" {

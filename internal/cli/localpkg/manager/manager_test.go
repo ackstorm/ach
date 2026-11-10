@@ -648,7 +648,7 @@ func TestResolve_PluginMarketplace_WholeRepoEntry(t *testing.T) {
 }
 
 // TestProject_PluginNamespacesCommandsAndSkills: a local plugin install gets
-// the same <plugin> prefix as `env hydrate`, so /greet becomes /tools:greet.
+// the same <plugin> prefix as `environment hydrate`, so /greet becomes /tools:greet.
 func TestProject_PluginNamespacesCommandsAndSkills(t *testing.T) {
 	stageDir := t.TempDir()
 	for rel, body := range map[string]string{

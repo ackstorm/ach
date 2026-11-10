@@ -88,7 +88,7 @@ func TestProjectSkills_RootSKILLMD(t *testing.T) {
 }
 
 // writeForeignSkillState lays down a sibling environment's per-platform state
-// file claiming the named skills, as a prior `env hydrate <other>` would.
+// file claiming the named skills, as a prior `environment hydrate <other>` would.
 func writeForeignSkillState(t *testing.T, achRoot, env, platform string, skills ...string) {
 	t.Helper()
 	f := &state.File{SchemaVersion: "3", Environment: env}

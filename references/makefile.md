@@ -130,7 +130,7 @@ the container boundary). `make doctor-cluster` runs a deep preflight
 > `demo-mcp-nojwt.echo`, then blocks until every synced object is healthy.
 > This strengthened readiness contract is shared by both `cluster-up` and
 > `cluster-sync`.
-> Unrelated to `ach-cli env hydrate` / `/platform/hydrate`, which materialize
+> Unrelated to `ach-cli environment hydrate` / `/platform/hydrate`, which materialize
 > workspace artifacts.
 
 ## Command vocabulary

@@ -92,7 +92,7 @@ func TestEnvFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	}
 }
 
-// TestEnvFetch_FileFlag_EkSendsEnvironment — `env fetch demo plugin foo --file x`
+// TestEnvFetch_FileFlag_EkSendsEnvironment — `environment fetch demo plugin foo --file x`
 // writes the body to x and sends x-ach-environment: demo even for an ek- key.
 func TestEnvFetch_FileFlag_EkSendsEnvironment(t *testing.T) {
 	srv := newContentTestServer(t)

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
@@ -78,4 +79,14 @@ func withUsageOnArgErrors(root *cobra.Command) {
 
 func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("ach-cli %s\n", Version))
+	rootCmd.SetGlobalNormalizationFunc(envFlagAlias)
+}
+
+// envFlagAlias makes --env a spelling of --environment on every command;
+// cobra propagates it to subcommands added later.
+func envFlagAlias(_ *pflag.FlagSet, name string) pflag.NormalizedName {
+	if name == "env" {
+		name = "environment"
+	}
+	return pflag.NormalizedName(name)
 }

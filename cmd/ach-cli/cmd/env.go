@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// `ach env` is the read-only environments surface (CLI-12 / spec
+// `ach-cli environment` is the read-only environments surface (CLI-12 / spec
 // §5.5). Read-only children:
 //
 //   - list      GET /platform/environments, paginating next_cursor
@@ -41,7 +41,7 @@ import (
 // envHTTPClient is a test-only package-level seam — same pattern as
 // whoamiHTTPClient. nil → fresh stdlib client at Do time. Tests
 // targeting httptest.NewTLSServer set this to the test server's
-// TLS-trusting client so env list/describe can reach the ephemeral
+// TLS-trusting client so environment list/describe can reach the ephemeral
 // cert without bloating the package API with per-call hooks.
 var envHTTPClient *http.Client
 
@@ -53,15 +53,16 @@ const defaultEnvListLimit = 100
 // pathEnvironments is the environments list endpoint.
 const pathEnvironments = "/platform/environments"
 
-// newEnvCmd returns a fresh `ach env` parent cobra.Command with
-// the 2 children registered.
+// newEnvCmd returns a fresh `ach-cli environment` parent cobra.Command
+// (alias `env`) with its children registered.
 func newEnvCmd() *cobra.Command {
 	parent := &cobra.Command{
-		Use:   "env",
-		Short: "Inspect environments visible to the active credential",
+		Use:     "environment",
+		Aliases: []string{"env"},
+		Short:   "Inspect environments visible to the active credential",
 		Long: `Inspect environments visible to the active credential.
 
-env list + describe are read-only and synthetic-mode friendly.
+environment list + describe are read-only and synthetic-mode friendly.
 describe gracefully degrades on 403 unauthorized_team — printing
 '(unavailable)' for runtime + context and exiting 0.
 `,
@@ -80,7 +81,7 @@ describe gracefully degrades on 403 unauthorized_team — printing
 	return parent
 }
 
-// newEnvListCmd returns the `ach env list` leaf.
+// newEnvListCmd returns the `ach-cli environment list` leaf.
 func newEnvListCmd() *cobra.Command {
 	var (
 		flagLimit int
@@ -115,8 +116,8 @@ func newEnvListCmd() *cobra.Command {
 	return c
 }
 
-// newEnvSearchCmd returns the `ach-cli env search <text>` leaf. It reads the
-// same list as `env list` — names only, no new endpoint — and matches it here.
+// newEnvSearchCmd returns the `ach-cli environment search <text>` leaf. It reads the
+// same list as `environment list` — names only, no new endpoint — and matches it here.
 func newEnvSearchCmd() *cobra.Command {
 	var (
 		flagAdmin bool
@@ -133,8 +134,8 @@ description and the name of every plugin, skill, prompt, artifact, MCP
 server, model and A2A agent it serves. Several words must all match.
 Only names are searched, not what is written inside a skill or plugin.
 `,
-		Example: `  ach-cli env search finops
-  ach-cli env search web design -o json`,
+		Example: `  ach-cli environment search finops
+  ach-cli environment search web design -o json`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hc, err := buildEnvHTTPClient(cmd, f)
@@ -164,7 +165,7 @@ Only names are searched, not what is written inside a skill or plugin.
 	return c
 }
 
-// newEnvDescribeCmd returns the `ach env describe <name>` leaf.
+// newEnvDescribeCmd returns the `ach-cli environment describe <name>` leaf.
 func newEnvDescribeCmd() *cobra.Command {
 	var (
 		flagMetadataOnly bool
@@ -186,8 +187,8 @@ is unavailable or skipped with --metadata-only.`,
 			if len(args) == 0 {
 				return &exit.CodedError{
 					Code: exit.General,
-					Msg: "missing environment.\n  Usage: ach-cli env describe <name>\n" +
-						"  Run 'ach-cli env list' to see available environments.",
+					Msg: "missing environment.\n  Usage: ach-cli environment describe <name>\n" +
+						"  Run 'ach-cli environment list' to see available environments.",
 				}
 			}
 			name := args[0]
@@ -227,7 +228,7 @@ is unavailable or skipped with --metadata-only.`,
 	return c
 }
 
-// envDescribeView is the `env describe -o json` document. Every key is
+// envDescribeView is the `environment describe -o json` document. Every key is
 // always present: an absent value is null (runtime, context) or empty.
 type envDescribeView struct {
 	Environment envObjectView `json:"environment"`
@@ -328,7 +329,8 @@ func findEnvironmentByName(ctx context.Context, hc *httpclient.Client, name stri
 	if errors.As(err, &sErr) && sErr.Status == http.StatusNotFound {
 		return render.EnvView{}, &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("environment %q not found; run `ach-cli env list` to see the Environments you can use", name),
+			Msg: fmt.Sprintf("environment %q not found; run `ach-cli environment list` "+
+				"to see the Environments you can use", name),
 		}
 	}
 	return view, err

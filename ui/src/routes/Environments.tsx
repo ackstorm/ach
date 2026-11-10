@@ -136,7 +136,7 @@ function EnvironmentCard({ env, outsideTeams }: { env: EnvironmentRow; outsideTe
             ))}
         </div>
 
-        <CodeBlock inline code={`ach-cli env hydrate ${env.name} --dir ./${env.name} --target opencode`} />
+        <CodeBlock inline code={`ach-cli environment hydrate ${env.name} --dir ./${env.name} --target opencode`} />
 
         <div className="flex flex-wrap items-center gap-3">
           {!outsideTeams && isKeyable(env) && (

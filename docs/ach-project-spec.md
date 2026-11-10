@@ -9,7 +9,7 @@ Version reviewed: v0.6.10 · Date: 2026-07-13 · Audience: CTO / CIO / CEO + eng
 
 ACH (Agent Capability Hub) is a Kubernetes-native control plane for **declarative, governed configuration of AI agents**. It gives an organization one place to define what an AI agent (or a developer's AI tooling) is allowed to use — models, MCP servers, A2A peers, prompts, skills, artifacts, credentials — and delivers that configuration to two consumption surfaces:
 
-1. **Developer workspaces** — a developer runs `ach-cli login` + `ach-cli env hydrate` and their local AI tools (Claude Code, Gemini CLI, Codex, OpenCode) are configured with exactly the models, keys, and skills their team is authorized for.
+1. **Developer workspaces** — a developer runs `ach-cli login` + `ach-cli environment hydrate` and their local AI tools (Claude Code, Gemini CLI, Codex, OpenCode) are configured with exactly the models, keys, and skills their team is authorized for.
 2. **Running agents** — agents run under the separate `ach-agent` project (github.com/ackstorm/ach-agent), which self-configures against ACH through its public API (`POST /platform/hydrate`, `GET /v2/model/info`, the model and MCP routes) with an `ek_`.
 
 The business problem: AI usage inside companies is exploding with zero governance — every developer pastes API keys into local config, every team wires its own agents, nobody can answer "who can use which model, with which data, at what cost." ACH answers that with GitOps: capabilities are declared as Kubernetes resources, reviewed in pull requests, reconciled by an operator, and audited centrally. Cost and access control ride on LiteLLM (virtual keys, teams, budgets); identity rides on the company SSO (Dex/OIDC).
@@ -64,7 +64,7 @@ flowchart LR
     CRDS -- reconcile --> OP
     OP -- "project rows + NOTIFY" --> PG
     PG -. "READ ROWS + LISTEN ach_*_changed" .-> PA & FW & CS
-    CLI -- "login / env hydrate" --> PA
+    CLI -- "login / environment hydrate" --> PA
     PA --- DEX
     PA -- "hydrate manifest → content" --> CS
     AG -- "self-hydrate (ek_)" --> PA
@@ -73,7 +73,7 @@ flowchart LR
 ```
 
 - **One Go binary, five logic modes** (`ach operator|platform-api|forwarder|content-service|migrate`), each an independent Helm Deployment sharing one image. A sixth mode, `gateway`, is an optional logic-free edge proxy.
-- **Separate `ach-cli` binary** for end users (drops all k8s dependencies): login/keys/env/admin/runtime + the serverless local package manager.
+- **Separate `ach-cli` binary** for end users (drops all k8s dependencies): login/keys/environment/admin/runtime + the serverless local package manager.
 - **Postgres is the source of truth** for all non-operator reads. The operator projects CRD state into 12 projection tables (3 more — personal/environment keys, runtime catalog — are platform-api-owned) and emits `NOTIFY ach_*_changed` in the same transaction; platform-api, forwarder, and content-service read rows and LISTEN — no service except the operator reads CRDs. This decouples the read path from the k8s API server (performance, blast radius) and is the foundation for the UI.
 - **Content service** streams artifact/skill tarballs via `sendfile(2)`; runs as an operator-Pod sidecar by default (RWO cache PVC) with an optional standalone N-replica mode for HA (requires RWX storage).
 - **Design scale envelope**: a single-cluster, single-org control plane — on the order of hundreds of developers and tens-to-hundreds of Environments/agents, with content objects in the tens of MB. The sidecar content-service is sized for this envelope; the standalone RWX mode exists only for deployments beyond it.
@@ -142,7 +142,7 @@ Grouped by horizon. Items marked ⭐ are my (Claude's) additions beyond what's a
 - **UI expansion** — extend the Objects API beyond Environment (Skills and EnvKeys are the obvious next kinds: highest-touch for non-admin users). The GitOps-wins takeover pattern is already proven; this is mostly handler + view work.
 - **Team self-service with a minimal ACL model** — rather than per-object ACLs, a coarse "team owns namespace-prefix" rule would unlock self-service Environments without inventing an authz engine. (Revisits the deliberate admin-only decision with a bounded scope.)
 - **Skill/content provenance** ⭐ — marketplaces fetch tarballs from git; add digest pinning (record + verify the upstream SHA on every refresh, alert on unexpected drift) and optionally cosign/sigstore verification for curated marketplaces. This is the AI supply-chain story CISOs are starting to ask for, and ACH's centralized fetch pipeline is the perfect enforcement point.
-- **Cost & usage reporting** ⭐ — LiteLLM already tracks spend per virtual key/team; surface it in `ach-cli` (`ach-cli env status --usage`) and the admin API. For the CEO conversation: this turns ACH from a cost *control* into a cost *visibility* product — "spend per team per model per week" is a slide execs actually want.
+- **Cost & usage reporting** ⭐ — LiteLLM already tracks spend per virtual key/team; surface it in `ach-cli` (`ach-cli environment status --usage`) and the admin API. For the CEO conversation: this turns ACH from a cost *control* into a cost *visibility* product — "spend per team per model per week" is a slide execs actually want.
 - **Windows/portable hydrate targets** — the adapter registry is pluggable; adding targets (Cursor, Zed, JetBrains AI) is incremental and each one widens the addressable user base.
 
 ### Longer-term (strategic bets)
@@ -166,7 +166,7 @@ Grouped by horizon. Items marked ⭐ are my (Claude's) additions beyond what's a
 ## Appendix A — Key flows (for the technical deep-dive)
 
 - **Login**: `ach-cli login` → platform-api → Dex SSO → `provisionUser` (LiteLLM mint) → `pk_` issuance.
-- **Hydrate**: `ach-cli env hydrate` → platform-api `/platform/hydrate` → content-service → workspace projection into per-tool adapter dirs (multi-target, per-platform state, marker-bounded .gitignore for credential-bearing files).
+- **Hydrate**: `ach-cli environment hydrate` → platform-api `/platform/hydrate` → content-service → workspace projection into per-tool adapter dirs (multi-target, per-platform state, marker-bounded .gitignore for credential-bearing files).
 - **Environment reconcile**: resolve refs against LiteLLM → `POST /v1/access_group`; `Available = ExecutionResourcesResolved ∧ AccessGroupSynced`.
 - **Backend call**: agent → forwarder → BIP cache → per-target JWT mint → upstream (LiteLLM auth via caller's own virtual key).
 

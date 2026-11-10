@@ -24,7 +24,7 @@ Git (YAML) --GitOps--> CRs --ACH operator--> Postgres projection --> platform-ap
                                      +--> LiteLLM: access group, shell team, budget tag
                                      +--> fetches upstream content (git/S3/GCS/HTTP) into a cache
 
-user/agent: ach-cli env hydrate <env>  -> manifest + plugins/skills/prompts/artifacts
+user/agent: ach-cli environment hydrate <env>  -> manifest + plugins/skills/prompts/artifacts
             ek-/pk- key or OAuth token  -> forwarder -> LiteLLM (models, /mcp, /a2a)
 ```
 
@@ -38,10 +38,10 @@ The kinds fall into five groups:
 | Exchange | `KeyGrant` | Projects the grant to Postgres; platform-api lets a named pod ServiceAccount exchange its token for a JWT of one identity's key in one Environment; the operator revokes keys no grant allows any more |
 | Connection | `LiteLLMConnection` | The single `default` link to LiteLLM, normally created by the operator from Helm values |
 
-An Environment is the unit people see (`ach-cli env list`), hydrate, and mint `ek-`
+An Environment is the unit people see (`ach-cli environment list`), hydrate, and mint `ek-`
 keys for. The runtime half (models, MCP servers, agents, guardrails) is enforced by
 LiteLLM; the context half (plugins, skills, prompts, artifacts) is installed into the
-user's agent tool by `ach-cli env hydrate`.
+user's agent tool by `ach-cli environment hydrate`.
 
 ## Read the reference for the kind you are touching
 
