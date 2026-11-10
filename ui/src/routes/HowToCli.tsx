@@ -61,7 +61,7 @@ export function HowToCli() {
   return (
     <div className="catalog-page flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-5">
-        <div>
+        <div className="min-w-0 flex-[1_1_20rem]">
           <h1 className="text-[23px] font-semibold leading-tight tracking-tight text-text-primary">
             ach-cli
           </h1>
