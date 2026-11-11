@@ -227,6 +227,14 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	// ─── Success / NotModified. ───
 	applyReconcileConditions(&st.Conditions, ReasonSynced, sourceReachableMessage(view.SourceSpec), cr.GetGeneration())
 	st.UpstreamRev = result.UpstreamRev
+	st.LatestUpstreamRev = result.LatestUpstreamRev
+	applyUpdateAvailable(&st.Conditions, sources.PinnedCommit(view.SourceSpec), st.UpstreamRev,
+		st.LatestUpstreamRev, sources.WatchedRef(view.SourceSpec), cr.GetGeneration())
+	if result.NotModified && cfg.db != nil && result.LatestUpstreamRev != "" {
+		if err := achdb.SetExternalRefLatestRev(ctx, cfg.db, cfg.kind, cr.GetName(), result.LatestUpstreamRev); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	if result.NotModified {
 		if st.StorageLocation == "" {
 			st.StorageLocation = finalPath

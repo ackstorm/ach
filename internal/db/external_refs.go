@@ -48,6 +48,7 @@ type ExternalRef struct {
 	Name                    string    // CR metadata.name
 	StorageLocation         string    // absolute path the rename(2) published to
 	UpstreamRev             string    // FetchResult.UpstreamRev (commit SHA / ETag / generation)
+	LatestUpstreamRev       string    // FetchResult.LatestUpstreamRev: head of the git source's ref
 	LastSuccessfulRefresh   time.Time // last successful refresh wall-clock
 	NextRefreshAt           time.Time // when the next reconcile should run
 	MaxStalenessSeconds     int64     // spec.refresh.maxStaleness in seconds
@@ -69,11 +70,13 @@ const upsertExternalRefSQL = `
 	INSERT INTO external_refs
 	    (kind, name, storage_location, upstream_rev,
 	     last_successful_refresh, next_refresh_at,
-	     max_staleness_seconds, force_refresh_requested_at, origin, locked)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, 'cr', TRUE)
+	     max_staleness_seconds, force_refresh_requested_at, origin, locked,
+	     latest_upstream_rev)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, 'cr', TRUE, $8)
 	ON CONFLICT (kind, name) DO UPDATE SET
 	    storage_location           = EXCLUDED.storage_location,
 	    upstream_rev               = EXCLUDED.upstream_rev,
+	    latest_upstream_rev        = EXCLUDED.latest_upstream_rev,
 	    last_successful_refresh    = EXCLUDED.last_successful_refresh,
 	    next_refresh_at            = EXCLUDED.next_refresh_at,
 	    max_staleness_seconds      = EXCLUDED.max_staleness_seconds,
@@ -94,6 +97,7 @@ func UpsertExternalRefTx(ctx context.Context, tx pgx.Tx, r ExternalRef) error {
 	return upsertReturning(ctx, tx, upsertExternalRefSQL, "UpsertExternalRef("+r.Kind+"/"+r.Name+")",
 		r.Kind, r.Name, r.StorageLocation, r.UpstreamRev,
 		r.LastSuccessfulRefresh, r.NextRefreshAt, r.MaxStalenessSeconds,
+		r.LatestUpstreamRev,
 	)
 }
 
@@ -110,7 +114,8 @@ func GetExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name string) 
 		       COALESCE(last_successful_refresh, 'epoch'::timestamptz),
 		       COALESCE(next_refresh_at, 'epoch'::timestamptz),
 		       max_staleness_seconds,
-		       COALESCE(force_refresh_requested_at, '0001-01-01 00:00:00+00'::timestamptz)
+		       COALESCE(force_refresh_requested_at, '0001-01-01 00:00:00+00'::timestamptz),
+		       COALESCE(latest_upstream_rev, '')
 		  FROM external_refs
 		 WHERE kind = $1 AND name = $2
 	`
@@ -118,7 +123,7 @@ func GetExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name string) 
 	if err := pool.QueryRow(ctx, sql, kind, name).Scan(
 		&r.Kind, &r.Name, &r.StorageLocation, &r.UpstreamRev,
 		&r.LastSuccessfulRefresh, &r.NextRefreshAt, &r.MaxStalenessSeconds,
-		&r.ForceRefreshRequestedAt,
+		&r.ForceRefreshRequestedAt, &r.LatestUpstreamRev,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -173,3 +178,15 @@ func DeleteExternalRef(ctx context.Context, pool *pgxpool.Pool, kind, name strin
 // environment_keys.go, and active_keys.go can all share the classifier
 // without duplication). Both files live in the same `db` package so the
 // move was source-only — call sites resolve through package-level scope.
+
+// SetExternalRefLatestRev records the head of a pinned source's ref on a
+// refresh that served nothing new (NotModified), so the inventory still
+// reports a newer revision. No row is not an error.
+func SetExternalRefLatestRev(ctx context.Context, pool *pgxpool.Pool, kind, name, rev string) error {
+	if _, err := pool.Exec(ctx,
+		`UPDATE external_refs SET latest_upstream_rev = $3 WHERE kind = $1 AND name = $2`,
+		kind, name, rev); err != nil {
+		return fmt.Errorf("db: SetExternalRefLatestRev(%s/%s): %w", kind, name, err)
+	}
+	return nil
+}

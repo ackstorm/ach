@@ -101,6 +101,34 @@ func TestUpsertExternalRef_Update(t *testing.T) {
 	}
 }
 
+// TestExternalRef_LatestUpstreamRev: the upsert stores the head of the
+// watched ref, and SetExternalRefLatestRev moves it without a refetch.
+func TestExternalRef_LatestUpstreamRev(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := db.UpsertExternalRef(ctx, pool, db.ExternalRef{
+		Kind: "plugin", Name: "p", StorageLocation: "/var/cache/ach/plugin/p.tar.gz",
+		UpstreamRev: "pinned", LatestUpstreamRev: "head-1",
+		LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Minute), MaxStalenessSeconds: 60,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if got, err := db.GetExternalRef(ctx, pool, "plugin", "p"); err != nil || got.LatestUpstreamRev != "head-1" {
+		t.Fatalf("after upsert: %+v err=%v", got, err)
+	}
+	if err := db.SetExternalRefLatestRev(ctx, pool, "plugin", "p", "head-2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.GetExternalRef(ctx, pool, "plugin", "p")
+	if err != nil || got.LatestUpstreamRev != "head-2" || got.UpstreamRev != "pinned" {
+		t.Fatalf("after set: %+v err=%v", got, err)
+	}
+}
+
 // TestUpsertExternalRef_ClearsForceRefresh: set force_refresh_requested_at
 // manually via raw SQL, call UpsertExternalRef, assert the column is NULL.
 // This is the D-07 contract the Phase 3 force-refresh marker depends on.
