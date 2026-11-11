@@ -120,13 +120,22 @@ spec:
                     required:
                     - name
                     type: object
+                  commit:
+                    description: |-
+                      Commit pins the served content to this commit (40 hex characters).
+                      Ref keeps being watched: status.latestUpstreamRev and the
+                      UpdateAvailable condition report when it moves past the pin. Empty
+                      serves the head of Ref.
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
                   path:
                     description: |-
                       Path within the repo, honored at fetch time (F1; see GitHubSource.Path
                       for the directory-vs-file + marketplace semantics).
                     type: string
                   ref:
-                    description: Ref is a branch or tag name.
+                    description: Ref is the branch or tag to fetch, or to watch when
+                      Commit is set.
                     minLength: 1
                     type: string
                   repo:
@@ -265,6 +274,14 @@ spec:
                     required:
                     - name
                     type: object
+                  commit:
+                    description: |-
+                      Commit pins the served content to this commit (40 hex characters).
+                      Ref keeps being watched: status.latestUpstreamRev and the
+                      UpdateAvailable condition report when it moves past the pin. Empty
+                      serves the head of Ref.
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
                   path:
                     description: |-
                       Path within the repo, honored at fetch time (F1): a directory narrows the
@@ -276,9 +293,8 @@ spec:
                       .claude-plugin/marketplace.json conventionally).
                     type: string
                   ref:
-                    description: |-
-                      Ref is a branch or tag name. No immutable commit refs in v1alpha1
-                      (CRD-04, Hub §10).
+                    description: Ref is the branch or tag to fetch, or to watch when
+                      Commit is set.
                     minLength: 1
                     type: string
                   repo:
@@ -345,6 +361,14 @@ spec:
                     required:
                     - name
                     type: object
+                  commit:
+                    description: |-
+                      Commit pins the served content to this commit (40 hex characters).
+                      Ref keeps being watched: status.latestUpstreamRev and the
+                      UpdateAvailable condition report when it moves past the pin. Empty
+                      serves the head of Ref.
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
                   host:
                     description: |-
                       Host of the GitLab instance. Accepts a bare host ("git.example.com")
@@ -363,7 +387,8 @@ spec:
                     minLength: 1
                     type: string
                   ref:
-                    description: Ref is a branch or tag name.
+                    description: Ref is the branch or tag to fetch, or to watch when
+                      Commit is set.
                     minLength: 1
                     type: string
                 required:
@@ -613,6 +638,12 @@ spec:
                   LastSuccessfulRefresh is the wall-clock time of the most recent
                   successful upstream fetch + atomic publish (§10.3 step 5).
                 format: date-time
+                type: string
+              latestUpstreamRev:
+                description: |-
+                  LatestUpstreamRev is the commit the source's ref pointed at on the
+                  most recent refresh (git sources only). It differs from UpstreamRev
+                  when the source is pinned to an older commit.
                 type: string
               observedGeneration:
                 description: |-

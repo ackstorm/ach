@@ -106,12 +106,20 @@ type GitHubSource struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
-	// Ref is a branch or tag name. No immutable commit refs in v1alpha1
-	// (CRD-04, Hub §10).
+	// Ref is the branch or tag to fetch, or to watch when Commit is set.
 	//
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
+
+	// Commit pins the served content to this commit (40 hex characters).
+	// Ref keeps being watched: status.latestUpstreamRev and the
+	// UpdateAvailable condition report when it moves past the pin. Empty
+	// serves the head of Ref.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
+	Commit string `json:"commit,omitempty"`
 
 	// AuthSecretRef is optional. When set, the Secret named here MUST
 	// exist in the CR's namespace at reconcile time and the operator
@@ -146,11 +154,20 @@ type GitLabSource struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
-	// Ref is a branch or tag name.
+	// Ref is the branch or tag to fetch, or to watch when Commit is set.
 	//
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
+
+	// Commit pins the served content to this commit (40 hex characters).
+	// Ref keeps being watched: status.latestUpstreamRev and the
+	// UpdateAvailable condition report when it moves past the pin. Empty
+	// serves the head of Ref.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
+	Commit string `json:"commit,omitempty"`
 
 	// AuthSecretRef is optional. When set, the Secret named here MUST
 	// exist in the CR's namespace at reconcile time and the operator
@@ -182,11 +199,20 @@ type BitbucketSource struct {
 	// +optional
 	Path string `json:"path,omitempty"`
 
-	// Ref is a branch or tag name.
+	// Ref is the branch or tag to fetch, or to watch when Commit is set.
 	//
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Ref string `json:"ref"`
+
+	// Commit pins the served content to this commit (40 hex characters).
+	// Ref keeps being watched: status.latestUpstreamRev and the
+	// UpdateAvailable condition report when it moves past the pin. Empty
+	// serves the head of Ref.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
+	Commit string `json:"commit,omitempty"`
 
 	// AuthSecretRef is optional. When set, the Secret named here MUST
 	// exist in the CR's namespace at reconcile time and the operator
@@ -320,4 +346,11 @@ type ExternalRefStatus struct {
 	//
 	// +optional
 	UpstreamRev string `json:"upstreamRev,omitempty"`
+
+	// LatestUpstreamRev is the commit the source's ref pointed at on the
+	// most recent refresh (git sources only). It differs from UpstreamRev
+	// when the source is pinned to an older commit.
+	//
+	// +optional
+	LatestUpstreamRev string `json:"latestUpstreamRev,omitempty"`
 }

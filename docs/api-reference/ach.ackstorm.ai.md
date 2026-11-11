@@ -122,6 +122,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
 #### BackendIdentityPolicy
@@ -262,7 +263,8 @@ _Appears in:_
 | `workspace` _string_ | Workspace name on Bitbucket. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `repo` _string_ | Repo within the workspace. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the repo, honored at fetch time (F1; see GitHubSource.Path<br />for the directory-vs-file + marketplace semantics). |  |  |
-| `ref` _string_ | Ref is a branch or tag name. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `ref` _string_ | Ref is the branch or tag to fetch, or to watch when Commit is set. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `commit` _string_ | Commit pins the served content to this commit (40 hex characters).<br />Ref keeps being watched: status.latestUpstreamRev and the<br />UpdateAvailable condition report when it moves past the pin. Empty<br />serves the head of Ref. |  | Pattern: `^[0-9a-f]\{40\}$` <br /> |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
 
 
@@ -442,6 +444,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
 #### GCSSource
@@ -489,7 +492,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `repo` _string_ | Repo is the "<owner>/<name>" GitHub identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the repo, honored at fetch time (F1): a directory narrows the<br />fetched content to that subtree; a single file (Prompt, Artifact<br />scope=object) returns that file's raw bytes. Empty → whole repo.<br />PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this<br />as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path<br />only as the post-fetch skills-root walk hint; PluginMarketplace discovers<br />.claude-plugin/marketplace.json conventionally). |  |  |
-| `ref` _string_ | Ref is a branch or tag name. No immutable commit refs in v1alpha1<br />(CRD-04, Hub §10). |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `ref` _string_ | Ref is the branch or tag to fetch, or to watch when Commit is set. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `commit` _string_ | Commit pins the served content to this commit (40 hex characters).<br />Ref keeps being watched: status.latestUpstreamRev and the<br />UpdateAvailable condition report when it moves past the pin. Empty<br />serves the head of Ref. |  | Pattern: `^[0-9a-f]\{40\}$` <br /> |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
 
 
@@ -514,7 +518,8 @@ _Appears in:_
 | `host` _string_ | Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Prompt /<br />PluginMarketplace). Defaults to gitlab.com when empty. |  |  |
 | `project` _string_ | Project is the "<namespace>/<project>" GitLab identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the project repo, honored at fetch time (F1; see<br />GitHubSource.Path for the directory-vs-file + marketplace semantics). |  |  |
-| `ref` _string_ | Ref is a branch or tag name. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `ref` _string_ | Ref is the branch or tag to fetch, or to watch when Commit is set. |  | MinLength: 1 <br />Required: \{\} <br /> |
+| `commit` _string_ | Commit pins the served content to this commit (40 hex characters).<br />Ref keeps being watched: status.latestUpstreamRev and the<br />UpdateAvailable condition report when it moves past the pin. Empty<br />serves the head of Ref. |  | Pattern: `^[0-9a-f]\{40\}$` <br /> |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public projects. |  |  |
 
 
@@ -920,6 +925,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 | `plugins` _[MarketplacePluginRef](#marketplacepluginref) array_ | Plugins lists the entries in the upstream catalog that the most<br />recent reconcile successfully materialized into marketplace_plugins<br />(+ the per-marketplace cache). Ordered by Name. Entries that<br />failed Stage-2 are NOT included here — those surface in the<br />Synced condition's message field (`stage-2: <N> plugin(s)<br />failed: ...`). Empty before the first successful reconcile. |  |  |
 | `pluginsCount` _integer_ | PluginsCount is the size of Plugins, denormalized so the<br />kubectl print column can show it without a JSONPath length()<br />expression. Equal to len(Plugins). |  |  |
 
@@ -974,6 +980,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
 #### Prompt
@@ -1064,6 +1071,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
 #### RefreshBlock
@@ -1336,6 +1344,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 | `skills` _[SkillMarketplaceSkillRef](#skillmarketplaceskillref) array_ | Skills lists the entries in the upstream collection that the most<br />recent reconcile successfully materialized into skill_marketplace_skills<br />(+ the per-marketplace cache). Ordered by Name. Entries that failed<br />Stage-2 are NOT included here — those surface in the Synced condition's<br />message field. Empty before the first successful reconcile. |  |  |
 | `skillsCount` _integer_ | SkillsCount is the size of Skills, denormalized so the kubectl print<br />column can show it without a JSONPath length() expression. Equal to<br />len(Skills). |  |  |
 
@@ -1392,6 +1401,7 @@ _Appears in:_
 | `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
 | `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
 | `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
 #### SourceAuthSecretRef
