@@ -260,6 +260,7 @@ func (r *PluginMarketplaceReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		reason, msg := classifyFetchError(err, spec.Refresh, time.Time{})
 		return r.markSyncedFalse(ctx, &cr, reason, "stage-1: "+msg, requeue, err)
 	}
+	cr.Status.UpstreamRev, cr.Status.LatestUpstreamRev = fetchResult.UpstreamRev, fetchResult.LatestUpstreamRev
 	if fetchResult.NotModified {
 		// 304 on the catalog file → no Stage-2/3 work; refresh staleness
 		// window stays implicit. Surface the transport that served the
@@ -552,12 +553,14 @@ func (r *PluginMarketplaceReconciler) materializeMarketplacePlugin(
 // outcome (empty on Synced). Pure — unit-tested without a DB.
 func buildMarketplaceRow(cr *achv1alpha1.PluginMarketplace, syncedStatus, syncedReason string) achdb.MarketplaceRow {
 	return achdb.MarketplaceRow{
-		Namespace:       cr.Namespace,
-		Name:            cr.Name,
-		SyncedStatus:    syncedStatus,
-		SyncedReason:    syncedReason,
-		PluginsCount:    cr.Status.PluginsCount,
-		ResourceVersion: cr.ResourceVersion,
+		Namespace:         cr.Namespace,
+		Name:              cr.Name,
+		SyncedStatus:      syncedStatus,
+		SyncedReason:      syncedReason,
+		PluginsCount:      cr.Status.PluginsCount,
+		ResourceVersion:   cr.ResourceVersion,
+		UpstreamRev:       cr.Status.UpstreamRev,
+		LatestUpstreamRev: cr.Status.LatestUpstreamRev,
 	}
 }
 
@@ -596,6 +599,11 @@ func (r *PluginMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ac
 		fresh.Status.LastSuccessfulRefresh = &now
 		fresh.Status.Plugins = cr.Status.Plugins
 		fresh.Status.PluginsCount = cr.Status.PluginsCount
+		fresh.Status.UpstreamRev = cr.Status.UpstreamRev
+		fresh.Status.LatestUpstreamRev = cr.Status.LatestUpstreamRev
+		src := buildSourceSpec(cr.Spec.Type, cr.Spec.GitHub, cr.Spec.GitLab, cr.Spec.Bitbucket, cr.Spec.S3, cr.Spec.GCS, cr.Spec.HTTP)
+		applyUpdateAvailable(&fresh.Status.Conditions, sources.PinnedCommit(src), cr.Status.UpstreamRev,
+			cr.Status.LatestUpstreamRev, sources.WatchedRef(src), desiredGen)
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err

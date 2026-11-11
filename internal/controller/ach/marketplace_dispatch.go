@@ -103,10 +103,8 @@ func dispatchMarketplacePlugin(
 	if err != nil {
 		return nil, "", err
 	}
-	// Pre-resolve ref→sha when the entry didn't pin one. Applies to every
-	// git-backed Kind (git-subdir, url, github, local-path). local-path
-	// already had this branch — Phase 2 generalizes it to all Kinds the
-	// dispatcher returned a Spec for.
+	// Pre-resolve ref→sha when the spec carries none: an entry without a
+	// catalog `sha`, or a local-path entry before the catalog's commit is known.
 	if spec.SHA == "" {
 		sha, rerr := newResolveHeadSHAFn(ctx, spec.URL, spec.Ref, spec.Token, spec.AuthScheme)
 		if rerr != nil {
@@ -173,7 +171,7 @@ func buildGitSpecForEntry(
 		return sourcesgit.Spec{
 			URL:        url,
 			Ref:        ref,
-			SHA:        "", // resolved by caller via newResolveHeadSHAFn
+			SHA:        mp.Status.UpstreamRev, // the catalog's served commit: same snapshot as marketplace.json
 			Subtree:    entry.Source.Path,
 			Token:      tokenForHost(mp, host, token),
 			CacheRoot:  cacheRoot,

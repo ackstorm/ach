@@ -35,18 +35,24 @@ type SkillMarketplaceRow struct {
 	SkillsCount     int
 	ResourceVersion string
 	UpdatedAt       time.Time
+	// UpstreamRev / LatestUpstreamRev mirror status: the catalog's served
+	// commit and the head of the watched ref.
+	UpstreamRev       string
+	LatestUpstreamRev string
 }
 
 const upsertSkillMarketplaceSQL = `
 	INSERT INTO skill_marketplaces
 	    (namespace, name, synced_status, synced_reason, skills_count,
-	     resource_version, updated_at)
-	VALUES ($1, $2, $3, $4, $5, $6, now())
+	     resource_version, updated_at, upstream_rev, latest_upstream_rev)
+	VALUES ($1, $2, $3, $4, $5, $6, now(), $7, $8)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    synced_status      = EXCLUDED.synced_status,
 	    synced_reason      = EXCLUDED.synced_reason,
 	    skills_count       = EXCLUDED.skills_count,
 	    resource_version   = EXCLUDED.resource_version,
+	    upstream_rev       = EXCLUDED.upstream_rev,
+	    latest_upstream_rev = EXCLUDED.latest_upstream_rev,
 	    updated_at         = now()
 `
 
@@ -55,7 +61,7 @@ const upsertSkillMarketplaceSQL = `
 func UpsertSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, row SkillMarketplaceRow) error {
 	if _, err := pool.Exec(ctx, upsertSkillMarketplaceSQL,
 		row.Namespace, row.Name, row.SyncedStatus, row.SyncedReason,
-		row.SkillsCount, row.ResourceVersion,
+		row.SkillsCount, row.ResourceVersion, row.UpstreamRev, row.LatestUpstreamRev,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
@@ -70,7 +76,7 @@ func UpsertSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, row SkillMa
 func UpsertSkillMarketplaceTx(ctx context.Context, tx pgx.Tx, row SkillMarketplaceRow) error {
 	if _, err := tx.Exec(ctx, upsertSkillMarketplaceSQL,
 		row.Namespace, row.Name, row.SyncedStatus, row.SyncedReason,
-		row.SkillsCount, row.ResourceVersion,
+		row.SkillsCount, row.ResourceVersion, row.UpstreamRev, row.LatestUpstreamRev,
 	); err != nil {
 		if isTransientPgErr(err) {
 			return err
@@ -86,7 +92,8 @@ func UpsertSkillMarketplaceTx(ctx context.Context, tx pgx.Tx, row SkillMarketpla
 func ListSkillMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) ([]SkillMarketplaceRow, error) {
 	const sql = `
 		SELECT namespace, name, synced_status, synced_reason, skills_count,
-		       resource_version, updated_at
+		       resource_version, updated_at,
+		       COALESCE(upstream_rev, ''), COALESCE(latest_upstream_rev, '')
 		  FROM skill_marketplaces
 		 WHERE namespace = $1
 		 ORDER BY name ASC
@@ -104,7 +111,7 @@ func ListSkillMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) (
 		var r SkillMarketplaceRow
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.SyncedStatus, &r.SyncedReason, &r.SkillsCount,
-			&r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt, &r.UpstreamRev, &r.LatestUpstreamRev,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListSkillMarketplaces(%s) scan: %w", ns, err)
 		}
