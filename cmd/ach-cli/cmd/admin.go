@@ -305,6 +305,9 @@ SYNC column:
   fresh / STALE(<age> over) / never          content kinds (refresh staleness)
   projected                                  bips
 
+AVAILABLE column (content kinds): a newer commit on the watched ref of a
+source pinned to spec.<git>.commit; promote it in GitOps. '-' when none.
+
 Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
 not content presence. plugins and skills are truly content-gated (bare 'fresh').
 Guardrails add MODE and DEFAULT-ON columns.`,

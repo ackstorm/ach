@@ -131,3 +131,26 @@ func TestFormatAdminInventory_SkillMarketplacesStatusAndCount(t *testing.T) {
 		t.Errorf("skill-marketplace status/count missing:\n%s", out)
 	}
 }
+
+// TestFormatAdminInventory_AvailableColumn: AVAILABLE shows the head of the
+// watched ref only when a pinned source is behind it.
+func TestFormatAdminInventory_AvailableColumn(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	out := FormatAdminInventory(map[string][]AdminObjectView{
+		"plugins": {
+			{Kind: "plugin", Name: "behind", Sync: "fresh", UpstreamRev: a, LatestUpstreamRev: b},
+			{Kind: "plugin", Name: "current", Sync: "fresh", UpstreamRev: a, LatestUpstreamRev: a},
+		},
+		"marketplaces": {{Kind: "marketplace", Name: "mkt", Sync: "Synced", UpstreamRev: a, LatestUpstreamRev: b}},
+		"prompts":      {{Kind: "prompt", Name: "p", Sync: "fresh"}},
+	})
+	if !strings.Contains(out, "AVAILABLE") {
+		t.Fatalf("no AVAILABLE column:\n%s", out)
+	}
+	if strings.Count(out, b[:12]) != 2 || strings.Contains(out, b[:13]) {
+		t.Errorf("want the 12-char head on the behind plugin and the marketplace only:\n%s", out)
+	}
+	if strings.Contains(out, a[:12]) {
+		t.Errorf("the served revision is not an available one:\n%s", out)
+	}
+}

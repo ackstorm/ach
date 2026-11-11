@@ -46,6 +46,8 @@ type ArtifactRow struct {
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
+	UpstreamRev           string     // external_refs.upstream_rev: the served revision
+	LatestUpstreamRev     string     // external_refs.latest_upstream_rev: head of the git ref
 }
 
 // UpsertArtifact inserts-or-updates a row keyed by (namespace, name). The
@@ -122,7 +124,11 @@ func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Artifa
 	const sql = `
 		SELECT namespace, name, storage_location, scope,
 		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at
+		       resource_version, updated_at,
+		       COALESCE((SELECT e.upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'artifact' AND e.name = artifacts.name), ''),
+		       COALESCE((SELECT e.latest_upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'artifact' AND e.name = artifacts.name), '')
 		  FROM artifacts
 		 WHERE namespace = $1
 		 ORDER BY name ASC
@@ -141,7 +147,7 @@ func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Artifa
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation, &r.Scope,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt, &r.UpstreamRev, &r.LatestUpstreamRev,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListArtifacts(%s) scan: %w", ns, err)
 		}

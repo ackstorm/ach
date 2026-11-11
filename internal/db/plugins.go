@@ -52,6 +52,8 @@ type PluginRow struct {
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
+	UpstreamRev           string     // external_refs.upstream_rev: the served revision
+	LatestUpstreamRev     string     // external_refs.latest_upstream_rev: head of the git ref
 }
 
 // PluginResolution is the §12.3 CTE result shape — the single row returned
@@ -149,7 +151,11 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 	const sql = `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at
+		       resource_version, updated_at,
+		       COALESCE((SELECT e.upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'plugin' AND e.name = plugins.name), ''),
+		       COALESCE((SELECT e.latest_upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'plugin' AND e.name = plugins.name), '')
 		  FROM plugins
 		 WHERE namespace = $1
 		 ORDER BY name ASC
@@ -168,7 +174,7 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt, &r.UpstreamRev, &r.LatestUpstreamRev,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListPlugins(%s) scan: %w", ns, err)
 		}
