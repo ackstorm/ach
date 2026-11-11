@@ -9,30 +9,36 @@
 //	                 forwarder → LiteLLM → model round-trip.
 //	ach-mock mcp   — MCP server echo backend. Echoes the Authorization header
 //	                 (JWT) in the response and captures it for tests.
-//	ach-mock a2a   — Agent-to-Agent echo backend.
+//	ach-mock a2a   — A2A 1.0 echo agent: streams one working update, then
+//	                 completes with "echo: <text>".
 //	ach-mock broker — mcp-oauth stand-in for the OAuth broker chain e2e:
 //	                 /register + /authorize, verifies the login_hint against
 //	                 the issuer's JWKS, writes the grant projection. Runs its
 //	                 own server (no shared capture surface, no provider).
 //
-// The model/mcp/a2a modes share the same in-memory capture surface and
-// listen on MOCK_BIND_ADDRESS (default :9090). Tests reach into the mock via
+// The model/mcp/a2a modes listen on MOCK_BIND_ADDRESS (default :9090);
+// model and mcp share an in-memory capture surface tests read at
 // /__capture/last after driving traffic through the Forwarder.
 //
-// Stdlib only (no new go.mod entries). Single-replica; per-request state
+// Stdlib plus the A2A SDK the forwarder already uses. Single-replica; per-request state
 // guarded by mu. Designed for in-cluster Service exposure on a kind
 // cluster — NOT production code.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"log"
 	"net/http"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 )
 
 // capture is the singleton record of the last request the mock saw.
@@ -147,7 +153,7 @@ func main() {
 	case "mcp":
 		mountMCP(mux, cap)
 	case "a2a":
-		mountA2A(mux, cap)
+		mountA2A(mux)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode %q (want model | mcp | a2a | broker)\n", mode)
 		os.Exit(2)
@@ -224,23 +230,45 @@ func echoContent(raw []byte) string {
 	return "ok"
 }
 
-// mountA2A wires a SKELETON A2A (agent-to-agent) backend — captures the
-// request (/__capture/last) and replies 200 with a minimal JSON-RPC envelope.
-// Intentionally empty for now (full A2A surface — agent card, message/send,
-// tasks — is a TODO); this just gives a deployable, reachable skeleton so
-// demo-agent points at a real backend instead of a 404.
-func mountA2A(mux *http.ServeMux, cap *capture) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
-		cap.record(r, raw)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"jsonrpc": "2.0",
-			"result":  map[string]any{"mock_a2a": true},
-		})
+// mountA2A serves a minimal A2A 1.0 agent at the root, where LiteLLM posts
+// (the agent is registered at http://ach-mock-a2a.ach-system.svc/): its card,
+// and a reply that streams one working update ("thinking"), then completes
+// with "echo: <text>".
+func mountA2A(mux *http.ServeMux) {
+	card := &a2a.AgentCard{
+		Name: "demo-agent", Description: "Echo agent for ACH e2e.", Version: "1.0.0",
+		Capabilities:       a2a.AgentCapabilities{Streaming: true},
+		DefaultInputModes:  []string{"text/plain"},
+		DefaultOutputModes: []string{"text/plain"},
+		Skills:             []a2a.AgentSkill{{ID: "echo", Name: "Echo", Description: "repeats the message"}},
+		SupportedInterfaces: []*a2a.AgentInterface{
+			a2a.NewAgentInterface("http://ach-mock-a2a.ach-system.svc/", a2a.TransportProtocolJSONRPC),
+		},
 	}
-	mux.HandleFunc("/", handler)
+	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
+	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoAgent{})))
+}
+
+type echoAgent struct{}
+
+func (echoAgent) Execute(_ context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		if ec.StoredTask == nil && !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
+			return
+		}
+		if !yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateWorking,
+			a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("thinking"))), nil) {
+			return
+		}
+		yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted,
+			a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("echo: "+ec.Message.Parts[0].Text()))), nil)
+	}
+}
+
+func (echoAgent) Cancel(_ context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCanceled, nil), nil)
+	}
 }
 
 // mountMCP wires the MCP echo handler. Records the request and replies
