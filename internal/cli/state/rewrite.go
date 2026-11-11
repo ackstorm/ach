@@ -50,7 +50,7 @@ func RewriteFile(path string, mode os.FileMode, fn func(cur []byte) (out []byte,
 
 // readIfExists returns nil for an absent file and a non-nil slice otherwise.
 func readIfExists(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
