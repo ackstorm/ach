@@ -179,13 +179,6 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 		reqID := middleware.RequestIDFromCtx(ctx)
 		actor := middleware.ActorFromCtx(ctx)
 
-		keyCtx, ok := middleware.KeyContextFromCtx(ctx)
-		if !ok {
-			// Authn middleware must have run.
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "auth context missing", reqID)
-			return
-		}
-
 		// Strict JSON decode (D-16). Empty body is io.EOF — treat as zero-
 		// value HydrateRequest{}.
 		var req HydrateRequest
@@ -197,102 +190,12 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Resolve target env name based on caller type (Hub §15.1 / D-16).
-		var envName string
-		switch keyCtx.KeyType {
-		case keys.PrefixPk:
-			if req.Environment == "" {
-				if deps.Audit != nil {
-					audit.EmitAudit(ctx, deps.Audit, audit.Event{
-						Action:    audit.ActionHydrate,
-						Outcome:   audit.OutcomeMissingEnvironment,
-						Actor:     actor,
-						RequestID: reqID,
-						KeyID:     keyCtx.KeyID,
-					})
-				}
-				render.Error(w, http.StatusBadRequest, audit.OutcomeMissingEnvironment,
-					"environment is required for pk_ callers", reqID)
-				return
-			}
-			envName = req.Environment
-		case keys.PrefixEk:
-			if req.Environment != "" && req.Environment != keyCtx.Environment {
-				if deps.Audit != nil {
-					audit.EmitAudit(ctx, deps.Audit, audit.Event{
-						Action:    audit.ActionHydrate,
-						Outcome:   audit.OutcomeWrongEnvironment,
-						Actor:     actor,
-						RequestID: reqID,
-						KeyID:     keyCtx.KeyID,
-						Target:    &audit.Target{Kind: "environment", Name: req.Environment},
-					})
-				}
-				render.Error(w, http.StatusForbidden, audit.OutcomeWrongEnvironment,
-					"ek_ caller may only hydrate its bound Environment", reqID)
-				return
-			}
-			envName = keyCtx.Environment
-		default:
-			render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType,
-				"hydrate requires pk_ or ek_", reqID)
+		env, envName, ok := resolveEnvironment(w, r, deps, req)
+		if !ok {
 			return
 		}
-
-		// G20: the resolved target env is the governance dimension for every
-		// subsequent audit emit (authoritative even for pk_ callers, whose key
-		// is not env-bound). Push it onto ctx so the fallback attaches it.
 		ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: envName})
-
-		env, err := deps.Store.GetEnvironment(ctx, envName)
-		if err != nil {
-			render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
-				"failed to read environment", reqID)
-			return
-		}
-		if env == nil {
-			render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound,
-				"environment not found", reqID)
-			return
-		}
-
-		// Team-intersection check for pk_ (requested env) and ek_ (bound env,
-		// owner_email) — D-30. Admins skip: admin pk_ callers see every
-		// Environment; an ek_ never carries IsAdmin=true (Authn always sets
-		// it false for ek_ — admin endpoints reject ek_ upstream regardless).
-		if !keyCtx.IsAdmin {
-			teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
-			if err != nil {
-				if deps.Audit != nil {
-					audit.EmitAudit(ctx, deps.Audit, audit.Event{
-						Action:    audit.ActionHydrate,
-						Outcome:   audit.OutcomeLitellmUnreachable,
-						Actor:     actor,
-						RequestID: reqID,
-						KeyID:     keyCtx.KeyID,
-						Target:    &audit.Target{Kind: "environment", Name: envName},
-					})
-				}
-				render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable,
-					"upstream LiteLLM unreachable", reqID)
-				return
-			}
-			if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
-				if deps.Audit != nil {
-					audit.EmitAudit(ctx, deps.Audit, audit.Event{
-						Action:    audit.ActionHydrate,
-						Outcome:   audit.OutcomeUnauthorizedTeam,
-						Actor:     actor,
-						RequestID: reqID,
-						KeyID:     keyCtx.KeyID,
-						Target:    &audit.Target{Kind: "environment", Name: envName},
-					})
-				}
-				render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
-					"caller is not a member of any authorized team", reqID)
-				return
-			}
-		}
+		keyCtx, _ := middleware.KeyContextFromCtx(ctx)
 
 		// Build response. The endpoint shapes referenced verbatim by
 		// WARN-02 (Phase 3 frozen) are:
@@ -331,6 +234,120 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 
 		render.JSON(w, http.StatusOK, resp)
 	}
+}
+
+// resolveEnvironment applies the hydrate caller rules: a pk_ names the
+// Environment, an ek_ is bound to one, and a non-admin caller must share a
+// team with it. It writes the error response itself and returns ok=false.
+func resolveEnvironment(w http.ResponseWriter, r *http.Request, deps Deps, req HydrateRequest) (*db.EnvironmentRow, string, bool) {
+	ctx := r.Context()
+	reqID := middleware.RequestIDFromCtx(ctx)
+	actor := middleware.ActorFromCtx(ctx)
+
+	keyCtx, ok := middleware.KeyContextFromCtx(ctx)
+	if !ok {
+		// Authn middleware must have run.
+		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "auth context missing", reqID)
+		return nil, "", false
+	}
+
+	// Resolve target env name based on caller type (Hub §15.1 / D-16).
+	var envName string
+	switch keyCtx.KeyType {
+	case keys.PrefixPk:
+		if req.Environment == "" {
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    audit.ActionHydrate,
+					Outcome:   audit.OutcomeMissingEnvironment,
+					Actor:     actor,
+					RequestID: reqID,
+					KeyID:     keyCtx.KeyID,
+				})
+			}
+			render.Error(w, http.StatusBadRequest, audit.OutcomeMissingEnvironment,
+				"environment is required for pk_ callers", reqID)
+			return nil, "", false
+		}
+		envName = req.Environment
+	case keys.PrefixEk:
+		if req.Environment != "" && req.Environment != keyCtx.Environment {
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    audit.ActionHydrate,
+					Outcome:   audit.OutcomeWrongEnvironment,
+					Actor:     actor,
+					RequestID: reqID,
+					KeyID:     keyCtx.KeyID,
+					Target:    &audit.Target{Kind: "environment", Name: req.Environment},
+				})
+			}
+			render.Error(w, http.StatusForbidden, audit.OutcomeWrongEnvironment,
+				"ek_ caller may only hydrate its bound Environment", reqID)
+			return nil, "", false
+		}
+		envName = keyCtx.Environment
+	default:
+		render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType,
+			"hydrate requires pk_ or ek_", reqID)
+		return nil, "", false
+	}
+
+	// G20: the resolved target env is the governance dimension for every
+	// subsequent audit emit (authoritative even for pk_ callers, whose key
+	// is not env-bound). Push it onto ctx so the fallback attaches it.
+	ctx = audit.WithRequestMeta(ctx, audit.RequestMeta{Environment: envName})
+
+	env, err := deps.Store.GetEnvironment(ctx, envName)
+	if err != nil {
+		render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
+			"failed to read environment", reqID)
+		return nil, "", false
+	}
+	if env == nil {
+		render.Error(w, http.StatusNotFound, audit.OutcomeEnvironmentNotFound,
+			"environment not found", reqID)
+		return nil, "", false
+	}
+
+	// Team-intersection check for pk_ (requested env) and ek_ (bound env,
+	// owner_email) — D-30. Admins skip: admin pk_ callers see every
+	// Environment; an ek_ never carries IsAdmin=true (Authn always sets
+	// it false for ek_ — admin endpoints reject ek_ upstream regardless).
+	if !keyCtx.IsAdmin {
+		teams, err := achteams.LookupCallerTeams(ctx, deps.LiteLLM, keyCtx.OwnerEmail)
+		if err != nil {
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    audit.ActionHydrate,
+					Outcome:   audit.OutcomeLitellmUnreachable,
+					Actor:     actor,
+					RequestID: reqID,
+					KeyID:     keyCtx.KeyID,
+					Target:    &audit.Target{Kind: "environment", Name: envName},
+				})
+			}
+			render.Error(w, http.StatusServiceUnavailable, audit.OutcomeLitellmUnreachable,
+				"upstream LiteLLM unreachable", reqID)
+			return nil, "", false
+		}
+		if !achteams.HasIntersect(env.AuthorizedTeams, teams) {
+			if deps.Audit != nil {
+				audit.EmitAudit(ctx, deps.Audit, audit.Event{
+					Action:    audit.ActionHydrate,
+					Outcome:   audit.OutcomeUnauthorizedTeam,
+					Actor:     actor,
+					RequestID: reqID,
+					KeyID:     keyCtx.KeyID,
+					Target:    &audit.Target{Kind: "environment", Name: envName},
+				})
+			}
+			render.Error(w, http.StatusForbidden, audit.OutcomeUnauthorizedTeam,
+				"caller is not a member of any authorized team", reqID)
+			return nil, "", false
+		}
+	}
+	return env, envName, true
 }
 
 // toRuntimeBlockFromRow maps the projection row's flat runtime arrays

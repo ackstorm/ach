@@ -285,6 +285,7 @@ func New(deps Deps) http.Handler {
 			Metrics: deps.Metrics,
 		}
 		r.Post("/platform/hydrate", hydrate.HydrateHandler(hydrateDeps))
+		r.Post("/platform/hydrate/version", hydrate.VersionHandler(hydrateDeps))
 
 		envkeys.MountKeys(r, envkeysDeps)
 

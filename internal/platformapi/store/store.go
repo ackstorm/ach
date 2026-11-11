@@ -69,6 +69,66 @@ func (s *Store) GetEnvironment(ctx context.Context, name string) (*db.Environmen
 	return db.GetEnvironmentByName(ctx, s.pool, s.ns, name)
 }
 
+// Revs maps each content object's name to the revision it serves: the git
+// commit, object ETag or generation the operator recorded as upstream_rev.
+// An item referenced as name@marketplace resolves through its marketplace.
+type Revs struct {
+	Plugins, Skills, Prompts, Artifacts   map[string]string
+	PluginMarketplaces, SkillMarketplaces map[string]string
+}
+
+// ContentRevs reads the served revision of every content object in s.ns.
+func (s *Store) ContentRevs(ctx context.Context) (Revs, error) {
+	r := Revs{
+		Plugins: map[string]string{}, Skills: map[string]string{},
+		Prompts: map[string]string{}, Artifacts: map[string]string{},
+		PluginMarketplaces: map[string]string{}, SkillMarketplaces: map[string]string{},
+	}
+	plugins, err := db.ListPlugins(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, p := range plugins {
+		r.Plugins[p.Name] = p.UpstreamRev
+	}
+	skills, err := db.ListSkills(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, p := range skills {
+		r.Skills[p.Name] = p.UpstreamRev
+	}
+	prompts, err := db.ListPrompts(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, p := range prompts {
+		r.Prompts[p.Name] = p.UpstreamRev
+	}
+	artifacts, err := db.ListArtifacts(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, p := range artifacts {
+		r.Artifacts[p.Name] = p.UpstreamRev
+	}
+	mkts, err := db.ListMarketplaces(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, m := range mkts {
+		r.PluginMarketplaces[m.Name] = m.UpstreamRev
+	}
+	skillMkts, err := db.ListSkillMarketplaces(ctx, s.pool, s.ns)
+	if err != nil {
+		return r, err
+	}
+	for _, m := range skillMkts {
+		r.SkillMarketplaces[m.Name] = m.UpstreamRev
+	}
+	return r, nil
+}
+
 // AccessGroupSyncedFromRow returns true iff the given Environment row's
 // access_group_synced_condition JSONB column carries a Condition with
 // Type=AccessGroupSynced and Status=True. The Operator dual-writes the column
