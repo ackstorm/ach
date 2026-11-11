@@ -13,7 +13,7 @@ to close it; `ROADMAP.md` says which ones are scheduled.
 | UI write path is Environment-only | The console drafts Environments, no other kind | GitOps wins: the operator takes a draft over on CR apply. |
 | Content service HA needs RWX | `contentService.standalone=true` needs a `ReadWriteMany` `operator.cache` | Default is the sidecar on an RWO volume. |
 | LISTEN/NOTIFY is at-most-once | A lost notification leaves a reader's cache stale until the 5-minute refresh | Applies to the forwarder's BIP and Environment caches; key revocation is re-checked every 60 s independently. |
-| Postgres backup and restore undefined | `pk_`/`ek_` rows and the catalog cannot be re-derived from the CRDs | Roadmap "Next". |
+| Postgres backup and restore undefined | `pk_`/`ek_` rows and the catalog cannot be re-derived from the CRDs | Back up the ACH database like any Postgres; ACH ships no procedure. |
 | Guardrails cover `ek_` traffic only | A `pk_` (human CLI) reaches the same models through the access group, which carries no guardrails | Team-scoped guardrails also need a LiteLLM Enterprise licence. |
 | Budgets are enforced after the fact | The request that crosses a ceiling is served; the next is refused | LiteLLM prices a request after it completes. |
 | Leaver detection depends on the Dex connector | `saml`, `oauth`, `keystone`, `authproxy` never ask the IdP on refresh | Offboarding for those is `ach-cli admin keys revoke --owner <email>`. |
