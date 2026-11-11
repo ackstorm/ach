@@ -99,10 +99,25 @@ func New(deps Deps) http.Handler {
 	r.Handle("/.well-known/oauth-protected-resource", wk)
 	r.Handle("/.well-known/oauth-protected-resource/*", wk)
 
+	authn := []func(http.Handler) http.Handler{
+		pamw.Authn(deps.Resolver, nil, nil, deps.AuthnOptions), // no allowlist, no audit
+		proxy.EkOwnerGate(hdeps.PrecheckDeps),                  // D-30: ek_ owner must still hold access
+		proxy.KeyWatch(deps.KeyLive, deps.Logger),              // a running request ends with its key
+	}
+	credHeaders := []string{"Authorization"}
+	for _, h := range deps.AuthnOptions.Headers {
+		credHeaders = append(credHeaders, h.Name)
+	}
 	r.Group(func(r chi.Router) {
-		r.Use(pamw.Authn(deps.Resolver, nil, nil, deps.AuthnOptions)) // no allowlist, no audit
-		r.Use(proxy.EkOwnerGate(hdeps.PrecheckDeps))                  // D-30: ek_ owner must still hold access
-		r.Use(proxy.KeyWatch(deps.KeyLive, deps.Logger))              // a running request ends with its key
+		// Authn deletes the credential it reads (D-19); the agent's MCP face
+		// presents it again on its loopback call to /a2a/{name}, so it is kept
+		// before Authn runs.
+		r.Use(proxy.KeepCredential(credHeaders))
+		r.Use(authn...)
+		r.Handle("/a2a/{name}/mcp", proxy.HandlerA2AMCP(hdeps, deps.SelfURL))
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(authn...)
 		r.Handle("/v1/*", proxy.HandlerV1(hdeps))
 		r.Handle("/gemini/*", proxy.HandlerGemini(hdeps))
 		// The one D-18 exception: ach-agent prices its usage against
@@ -120,11 +135,6 @@ func New(deps Deps) http.Handler {
 		// router before precheck/proxy ever run. Same for /a2a.
 		r.Handle("/mcp/{name}", proxy.HandlerMCP(hdeps))
 		r.Handle("/mcp/{name}/*", proxy.HandlerMCP(hdeps))
-		credHeaders := []string{"Authorization"}
-		for _, h := range deps.AuthnOptions.Headers {
-			credHeaders = append(credHeaders, h.Name)
-		}
-		r.Handle("/a2a/{name}/mcp", proxy.HandlerA2AMCP(hdeps, deps.SelfURL, credHeaders))
 		r.Handle("/a2a/{name}", proxy.HandlerA2A(hdeps))
 		r.Handle("/a2a/{name}/*", proxy.HandlerA2A(hdeps))
 	})
