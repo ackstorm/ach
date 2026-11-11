@@ -100,8 +100,9 @@ Only what hydrate wrote is removed. In shared files (`.mcp.json`,
 only ACH's own keys or marked blocks go; the user's settings stay. `--only-runtime`
 removes just the MCP entries.
 
-An Environment's A2A agents are not written into any tool's config: no supported tool
-reads an A2A entry there. `environment describe` still lists them.
+Each A2A agent of the Environment is written as an MCP server named `a2a-<agent>` with
+one tool, `send_message`: the tool shows the agent's progress while it works and returns
+its answer with a `context_id` the model passes back to continue the conversation.
 
 ## Don't edit the tool's config while hydrate runs
 

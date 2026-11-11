@@ -18,6 +18,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   watching `ref`, and reports a newer one in `status.latestUpstreamRev`, the
   `UpdateAvailable` condition and the AVAILABLE column of `ach-cli admin list`.
   Promote it by committing the new SHA (#48).
+- An Environment's A2A agents now reach Claude Code, Codex, Gemini CLI, OpenCode
+  and pi: `ach-cli environment hydrate` writes each one as an MCP server
+  `a2a-<agent>` (forwarder `/a2a/<agent>/mcp`) with one tool, `send_message`,
+  which shows the agent's progress and returns its answer. It replaces the
+  `a2aAgents` / `[a2a_agents]` entries earlier versions wrote, which no tool
+  read; the next hydrate removes them (#51).
 
 ### Fixed
 - `ach-cli environment hydrate`, `environment uninstall` and `ach-cli local`
@@ -26,10 +32,6 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   file, and stop with an error, writing nothing, if it keeps changing.
 
 ### Changed
-- `ach-cli environment hydrate` no longer writes an Environment's A2A agents
-  into Claude Code, Codex, Gemini CLI or OpenCode config (`a2aAgents` /
-  `[a2a_agents]`): none of them reads it. The next hydrate removes the entries
-  an earlier one wrote. Exposing agents to these tools as MCP servers is #51.
 - Helm `platformApi.admins` is now a map: move your email list from
   `platformApi.admins` to `platformApi.admins.users`. A list-shaped value
   fails the render with that instruction.
