@@ -9,8 +9,11 @@ metadata:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: platform-api
 ---
+{{- if kindIs "slice" .Values.platformApi.admins }}
+{{- fail "platformApi.admins is a map: move the email list to platformApi.admins.users (platformApi.admins.sso takes Dex groups)" }}
+{{- end }}
 # Admin allowlist (one email per line, # for comments). Empty by default
-# — populate via .Values.platformApi.admins to enable admin endpoints
+# — populate via .Values.platformApi.admins.users to enable admin endpoints
 # (otherwise platform-api logs "parsed to zero admins" and returns 403
 # not_admin from every admin route, which is the safe default-deny).
 apiVersion: v1
@@ -23,7 +26,7 @@ metadata:
     app.kubernetes.io/component: platform-api
 data:
   admins.txt: |
-    {{- range .Values.platformApi.admins | default list }}
+    {{- range .Values.platformApi.admins.users | default list }}
     {{ . }}
     {{- end }}
 ---
@@ -55,7 +58,7 @@ spec:
         ach.ackstorm.ai/rebuild-id: {{ . | quote }}  # per-rebuild roll trigger (cluster.sh sets $(date +%s)); empty in prod
         {{- end }}
         # The admin list is read once at startup: a new one restarts the pod.
-        ach.ackstorm.ai/admins-checksum: {{ toYaml (.Values.platformApi.admins | default list) | sha256sum }}
+        ach.ackstorm.ai/admins-checksum: {{ toYaml (.Values.platformApi.admins.users | default list) | sha256sum }}
         {{- if and .Values.enterprise.enabled .Values.classifier.enabled .Values.classifier.taxonomy }}
         # The taxonomy file is read once at startup: a new one restarts the pod.
         ach.ackstorm.ai/taxonomy-checksum: {{ toYaml .Values.classifier.taxonomy | sha256sum }}
@@ -124,6 +127,8 @@ spec:
               value: {{ .Values.platformApi.teams.users | default dict | toJson | quote }}
             - name: ACH_TEAMS_SSO
               value: {{ .Values.platformApi.teams.sso | default dict | toJson | quote }}
+            - name: ACH_ADMINS_SSO
+              value: {{ .Values.platformApi.admins.sso | default list | toJson | quote }}
             - name: ACH_USER_MAX_KEYS
               value: {{ .Values.platformApi.userDefaults.maxKeys | default 0 | quote }}
             - name: ACH_KEY_EXCHANGE_TOKEN_TTL

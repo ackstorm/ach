@@ -28,7 +28,6 @@ type limitsRecorder struct {
 
 func newLimitsDeps(rec *limitsRecorder, auditBuf *bytes.Buffer) Deps {
 	return Deps{
-		Allowlist: map[string]struct{}{"admin@x.example": {}},
 		Audit:     slog.New(slog.NewTextHandler(auditBuf, nil)),
 		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace: "ach-test",
@@ -49,7 +48,7 @@ func patchUserLimits(deps Deps, emailPath, body, callerEmail string) *httptest.R
 					KeyID:      "pkid_caller00000000000000000",
 					KeyType:    keys.PrefixPk,
 					OwnerEmail: callerEmail,
-				}, false)
+				}, callerEmail == "admin@x.example")
 				next.ServeHTTP(w, req.WithContext(ctx))
 			})
 		})

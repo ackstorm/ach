@@ -226,6 +226,9 @@ func New(deps Deps) http.Handler {
 		r.Route("/platform/console/session", auth.MountConsole(od))
 		// …and the cookie it sets resolves, through Authn, to the same
 		// KeyContext a bearer produces (§5.3): the user's oauth pk_ row.
+		if len(od.SSOAdminGroups) > 0 {
+			authnOpts.SSOAdmin = od.SSOAdmin
+		}
 		authnOpts.Cookie = &pamw.CookieAuth{
 			Name: auth.ConsoleCookieName(deps.InsecureCookie), Issuer: deps.BaseURL,
 			Session: od.ConsoleSession,
@@ -322,7 +325,6 @@ func New(deps Deps) http.Handler {
 			Pool:      deps.Pool,
 			LiteLLM:   deps.LiteLLM,
 			Redis:     deps.Redis,
-			Allowlist: deps.Allowlist,
 			Audit:     deps.Audit,
 			Logger:    deps.Logger,
 			Namespace: deps.Namespace,
@@ -339,7 +341,7 @@ func New(deps Deps) http.Handler {
 		// scoped to Environment only. ACH_DISABLE_UI_WRITES turns the write
 		// verbs into 403 ui_writes_disabled (reads still served).
 		r.Route("/platform/objects", func(r chi.Router) {
-			r.Use(admin.AdminOnly(deps.Allowlist, deps.Audit, deps.Namespace))
+			r.Use(admin.AdminOnly(deps.Audit, deps.Namespace))
 			objects.Mount(objects.Deps{
 				Pool:            deps.Pool,
 				Namespace:       deps.Namespace,

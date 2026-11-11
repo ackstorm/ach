@@ -32,7 +32,8 @@ litellmConnection:
 
 platformApi:
   admins:
-    - admin@example.com
+    users: [admin@example.com]
+    sso: []                  # Dex groups whose members are admins
   userDefaults:
     maxBudget: 100           # USD per user per window; "" = uncapped
     budgetDuration: "30d"
@@ -117,7 +118,8 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.enabled` | `true` | REST API, OAuth server, console. |
 | `platformApi.replicas` | `1` | |
 | `platformApi.resources` | `{}` | |
-| `platformApi.admins` | `[]` | List of admin emails, rendered into the `ach-platform-api-admins` ConfigMap. Empty = every admin route 403. |
+| `platformApi.admins.users` | `[]` | Admin emails, rendered into the `ach-platform-api-admins` ConfigMap. |
+| `platformApi.admins.sso` | `[]` | Dex groups whose members are admins (`ACH_ADMINS_SSO`), re-read at every token refresh. Both lists empty = every admin route 403. |
 | `platformApi.headers` | `x-ach-key`, `x-api-key` (both `resolve`) | `ACH_CREDENTIAL_HEADERS`. `resolve` only; `passthrough` or `authorization` refuse to start. |
 | `platformApi.userDefaults.maxBudget` | `""` | Per-user spend ceiling seeded at login (`ACH_USER_MAX_BUDGET`). `""` = no cap, `0` = refuse everything. |
 | `platformApi.userDefaults.budgetDuration` | `"30d"` | Reset window (`ACH_USER_BUDGET_DURATION`), rendered only with a `maxBudget`. |

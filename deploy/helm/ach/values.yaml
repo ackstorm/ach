@@ -112,11 +112,18 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
-  # admins: emails allowed on the admin endpoints (ach-cli admin …, the
-  # console's admin views), mounted as /etc/ach/admins/admins.txt. Read once
-  # at start and matched case-sensitively; changing it restarts platform-api
-  # on the next helm upgrade. Empty = no admins (every admin call is 403 not_admin).
-  admins: []
+  # admins: who may use the admin endpoints (ach-cli admin …, the console's
+  # admin views). Someone in either list is an admin; both empty = no admins
+  # (every admin call is 403 not_admin).
+  #   users: emails, mounted as /etc/ach/admins/admins.txt. Read once at start
+  #     and matched case-sensitively; changing it restarts platform-api on the
+  #     next helm upgrade.
+  #   sso: Dex `groups` claim values (the upstream connector must emit them),
+  #     matched case-insensitively. Re-read at login and at every token
+  #     refresh, so a user removed from the group loses admin within an hour.
+  admins:
+    users: []   # [alice@example.com]
+    sso: []     # [platform-admins@example.com]
   # headers: the credential slots platform-api reads, in order (same shape as
   # forwarder.headers). resolve only — platform-api does not proxy, so a
   # passthrough entry is refused at start-up. Authorization: Bearer is

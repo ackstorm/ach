@@ -514,6 +514,49 @@ func TestAuthnEkNeverAdmin(t *testing.T) {
 	}
 }
 
+// TestAuthnSSOAdmin — a pk_ caller missing from the allowlist is an admin
+// when the SSO admin record says so; an ek_ never is, and a store error is
+// a 500, not a silent non-admin.
+func TestAuthnSSOAdmin(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		kt        keys.BearerPrefix
+		ssoAdmin  bool
+		ssoErr    error
+		wantCode  int
+		wantAdmin bool
+		wantAsked bool
+	}{
+		{"pk_ in an admin group", keys.PrefixPk, true, nil, http.StatusOK, true, true},
+		{"pk_ in no admin group", keys.PrefixPk, false, nil, http.StatusOK, false, true},
+		{"ek_ never asks", keys.PrefixEk, true, nil, http.StatusOK, false, false},
+		{"store error", keys.PrefixPk, false, errors.New("redis down"), http.StatusInternalServerError, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := fakeResolver(func(string) (*keystore.KeyInfo, error) {
+				return &keystore.KeyInfo{KeyID: "id", KeyType: tc.kt, OwnerEmail: "user@x.com"}, nil
+			})
+			asked := false
+			o := achOnly()
+			o.SSOAdmin = func(_ context.Context, email string) (bool, error) {
+				asked = email == "user@x.com"
+				return tc.ssoAdmin, tc.ssoErr
+			}
+			var observed KeyContext
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				observed, _ = KeyContextFromCtx(r.Context())
+			})
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/x", nil)
+			req.Header.Set("X-Ach-Key", string(tc.kt)+"aaaaaaaaaaaaaaaaaaaaaaaaaa")
+			RequestID(Authn(resolver, map[string]struct{}{"admin@x.com": {}}, nil, o)(inner)).ServeHTTP(rec, req)
+			if rec.Code != tc.wantCode || observed.IsAdmin != tc.wantAdmin || asked != tc.wantAsked {
+				t.Fatalf("code=%d admin=%v asked=%v", rec.Code, observed.IsAdmin, asked)
+			}
+		})
+	}
+}
+
 // TestActorFromCtx — composes "<namespace>/<email>" with proper
 // fallbacks. POD_NAMESPACE missing → "unknown"; OwnerEmail missing → "-".
 func TestActorFromCtx(t *testing.T) {

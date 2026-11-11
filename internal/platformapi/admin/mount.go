@@ -37,14 +37,13 @@ import (
 //	})
 //
 // Authn populates KeyContext (including IsAdmin per BLK-02) so
-// AdminOnly's allowlist + key-type checks here see the resolved
-// identity. AdminOnly is intentionally re-applied inside Mount rather
-// than relying on IsAdmin so the rejection paths surface uniform
-// outcomes (`invalid_key_type` for ek_, `not_admin` for missing-
-// allowlist pk_) and emit the right audit event.
+// AdminOnly's key-type + IsAdmin checks here see the resolved identity.
+// AdminOnly is applied inside Mount so the rejection paths surface uniform
+// outcomes (`invalid_key_type` for ek_, `not_admin` for a non-admin pk_)
+// and emit the right audit event.
 func Mount(deps Deps) func(r chi.Router) {
 	return func(r chi.Router) {
-		r.Use(AdminOnly(deps.Allowlist, deps.Audit, deps.Namespace))
+		r.Use(AdminOnly(deps.Audit, deps.Namespace))
 		r.Get("/keys", ListKeysHandler(deps))
 		r.Post("/keys/revoke", RevokeKeyHandler(deps))
 		r.Post("/users/{email}/revoke-keys", RevokeUserKeysHandler(deps))

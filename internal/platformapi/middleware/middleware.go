@@ -102,6 +102,9 @@ type AuthnOptions struct {
 	// LoginURL is named in the 403 ach_login_required message (a trusted-IdP
 	// token whose user has no live oauth pk_): the console at ACH_BASE_URL.
 	LoginURL string
+	// SSOAdmin, when set, reports whether a pk_ caller missing from the
+	// admin allowlist is an admin through an SSO group.
+	SSOAdmin func(ctx context.Context, email string) (bool, error)
 }
 
 // credential returns the first declared header present (value, header,
@@ -352,7 +355,8 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //     method must pass SameSite (403 csrf_rejected otherwise).
 //
 // allowlist is the admin-email map (D-22 / BLK-02). pk_ callers whose
-// OwnerEmail appears in the map receive KeyContext.IsAdmin=true; ek_
+// OwnerEmail appears in the map, or for whom opts.SSOAdmin answers true,
+// receive KeyContext.IsAdmin=true; ek_
 // callers ALWAYS receive false (admin endpoints reject ek_ upstream
 // regardless, but Authn enforces the contract uniformly).
 //
@@ -372,10 +376,18 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 
 			// finish is the shared tail: admin flag, KeyContext, audit meta.
 			finish := func(w http.ResponseWriter, r *http.Request, info *keystore.KeyInfo) {
-				// BLK-02: admin status is the allowlist lookup on pk_ only.
+				// BLK-02: admin status is decided here, on pk_ only: the
+				// allowlist, then the SSO admin record.
 				isAdmin := false
-				if info.KeyType == keys.PrefixPk && allowlist != nil {
+				if info.KeyType == keys.PrefixPk {
 					_, isAdmin = allowlist[info.OwnerEmail]
+					if !isAdmin && opts.SSOAdmin != nil {
+						var err error
+						if isAdmin, err = opts.SSOAdmin(r.Context(), info.OwnerEmail); err != nil {
+							render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError, "internal error", RequestIDFromCtx(r.Context()))
+							return
+						}
+					}
 				}
 				ctx := WithKeyContext(r.Context(), info, isAdmin)
 				// G20: the key-bound Environment is the governance dimension for

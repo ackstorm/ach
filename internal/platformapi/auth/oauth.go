@@ -37,7 +37,11 @@ type OAuthDeps struct {
 	// signed-in user in silently, so any other https host could collect a
 	// victim's authorization code.
 	RedirectHosts []string
-	Now           func() time.Time
+	// SSOAdminGroups are the lower-cased Dex groups whose members are admins
+	// (platformApi.admins.sso -> ACH_ADMINS_SSO), on top of the
+	// platformApi.admins e-mail list.
+	SSOAdminGroups []string
+	Now            func() time.Time
 
 	// HTTPClient is a seam for tests calling broker metadata/registration;
 	// nil → a 10s stdlib client.

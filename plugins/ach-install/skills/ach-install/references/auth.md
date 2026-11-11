@@ -96,17 +96,25 @@ users' authorization codes.
 ```yaml
 platformApi:
   admins:
-    - alice@example.com
-    - bob@example.com
+    users:                         # emails
+      - alice@example.com
+    sso:                           # Dex `groups` claim values
+      - platform-admins@example.com
 ```
 
-Rendered into the ConfigMap `ach-platform-api-admins`, read at startup. Empty
-means every admin route answers 403 `not_admin` (safe default). Admins can list
-every Environment and key, set any user's budget and key limit, and revoke
-other people's keys. The file is read once at startup; the pod template carries
-a checksum of the list, so `helm upgrade` with a changed list rolls
-platform-api (sessions live in Valkey and survive the restart). Matching is
-case-sensitive: write each email exactly as the IdP sends it.
+Someone in either list is an admin. Both empty means every admin route answers
+403 `not_admin` (safe default). Admins can list every Environment and key, set
+any user's budget and key limit, and revoke other people's keys.
+
+- `users` is rendered into the ConfigMap `ach-platform-api-admins` and read
+  once at startup; the pod template carries a checksum of the list, so
+  `helm upgrade` with a changed list rolls platform-api (sessions live in
+  Valkey and survive the restart). Matching is case-sensitive: write each email
+  exactly as the IdP sends it.
+- `sso` matches the Dex `groups` claim, case-insensitively, so the upstream
+  connector must emit groups (as for `teams.sso`). It is re-read at login and at
+  every token refresh: a user added to the group is an admin at their next
+  login, and one removed loses admin within an hour, with no restart.
 
 ## Login team enrolment
 

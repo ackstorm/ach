@@ -88,7 +88,7 @@ func ListHandler(deps Deps) http.HandlerFunc {
 		// unnecessary. Without it an admin is filtered like anyone else.
 		all := r.URL.Query().Get("all") == "true"
 		if all && !keyCtx.IsAdmin {
-			render.Error(w, http.StatusForbidden, audit.OutcomeNotAdmin, "not in admin allowlist", reqID)
+			render.Error(w, http.StatusForbidden, audit.OutcomeNotAdmin, "not an admin", reqID)
 			return
 		}
 		var callerTeams []string

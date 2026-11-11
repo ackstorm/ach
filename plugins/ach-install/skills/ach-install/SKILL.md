@@ -163,8 +163,11 @@ the schema back. Full procedure: `references/upgrade.md`.
   `ek-` key until an admin grants an allowance (`ach-cli admin users limits`)
   or the default is raised. Intentional, but surprising on day one.
 - **`platformApi.admins` starts empty**: every admin route answers 403 until
-  emails are listed. platform-api reads the list once at start and matches it
-  case-sensitively; changing it rolls platform-api on the next `helm upgrade`.
+  `admins.users` lists emails or `admins.sso` names Dex groups. platform-api
+  reads `users` once at start and matches it case-sensitively; changing it
+  rolls platform-api on the next `helm upgrade`. `sso` follows the IdP at every
+  token refresh. A list-shaped `admins:` (older charts) fails the render: move
+  it to `admins.users`.
 - **What fails the render** (`helm template` shows it): a leftover `profile:`
   value other than `full`; `litellmConnection.enabled` with an empty endpoint or
   Secret ref; empty `security.*.secretRef` names; with Enterprise on,

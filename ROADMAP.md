@@ -21,7 +21,6 @@ one before it ships; dates are not promised. Shipped work is in
 
 | Item | What it gives you |
 |------|-------------------|
-| Admins from an IdP group ([#47](https://github.com/ackstorm/ach/issues/47)) | Admin rights come from a Dex `groups` value instead of a list of e-mail addresses. |
 | Content pinning ([#48](https://github.com/ackstorm/ach/issues/48)) | An Environment uses a resolved content revision, recorded by digest. A new upstream revision waits until an admin promotes it. |
 | KeyGrant for CI ([#46](https://github.com/ackstorm/ach/issues/46)) | GitHub Actions and GitLab CI OIDC tokens exchange for an Environment-scoped, budgeted credential, as Kubernetes ServiceAccount tokens do today. No stored secret in CI. |
 

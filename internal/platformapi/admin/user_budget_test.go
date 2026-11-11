@@ -42,12 +42,10 @@ func (c *budgetLiteLLM) UpsertTagBudget(_ context.Context, name string, b litell
 }
 
 // newBudgetDeps wires the minimum admin.Deps the user-budget route needs:
-// LiteLLM (the only side effect), the allowlist AdminOnly consults, and an
-// audit sink the tests read back.
+// LiteLLM (the only side effect) and an audit sink the tests read back.
 func newBudgetDeps(flm litellm.Client, auditBuf *bytes.Buffer) Deps {
 	return Deps{
 		LiteLLM:   flm,
-		Allowlist: map[string]struct{}{"admin@x.example": {}},
 		Audit:     slog.New(slog.NewTextHandler(auditBuf, nil)),
 		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Namespace: "ach-test",
@@ -66,7 +64,7 @@ func patchUserBudget(deps Deps, emailPath, body, callerEmail string) *httptest.R
 					KeyID:      "pkid_caller00000000000000000",
 					KeyType:    keys.PrefixPk,
 					OwnerEmail: callerEmail,
-				}, false)
+				}, callerEmail == "admin@x.example")
 				next.ServeHTTP(w, req.WithContext(ctx))
 			})
 		})

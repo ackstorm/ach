@@ -8,6 +8,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Built with Go 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash in
   `net/http`).
 
+### Added
+- Admin from an IdP group: `platformApi.admins.sso` lists Dex `groups` whose
+  members are admins, alongside the `admins.users` emails. Membership is read
+  at login and at every token refresh, so someone removed from the group loses
+  admin within an hour, with no restart (#47).
+
 ### Fixed
 - `ach-cli environment hydrate`, `environment uninstall` and `ach-cli local`
   no longer overwrite an edit saved to a tool's config file, `CLAUDE.md`,
@@ -15,7 +21,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   file, and stop with an error, writing nothing, if it keeps changing.
 
 ### Changed
-- Changing `platformApi.admins` restarts platform-api on the next
+- Helm `platformApi.admins` is now a map: move your email list from
+  `platformApi.admins` to `platformApi.admins.users`. A list-shaped value
+  fails the render with that instruction.
+- Changing `platformApi.admins.users` restarts platform-api on the next
   `helm upgrade`; before, the new list applied only after a manual restart.
 - Enterprise licence (`ee/LICENSE`): enabling the Enterprise features in any
   environment, evaluation included, needs a signed agreement with ACKstorm.
