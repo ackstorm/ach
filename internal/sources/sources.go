@@ -49,6 +49,34 @@ type SourceSpec struct {
 	HTTP      *achv1alpha1.HTTPSource
 }
 
+// PinnedCommit returns the commit a git source is pinned to, or "" when it
+// is unpinned or not a git source.
+func PinnedCommit(spec SourceSpec) string {
+	switch {
+	case spec.GitHub != nil:
+		return spec.GitHub.Commit
+	case spec.GitLab != nil:
+		return spec.GitLab.Commit
+	case spec.Bitbucket != nil:
+		return spec.Bitbucket.Commit
+	}
+	return ""
+}
+
+// WatchedRef returns the branch or tag a git source fetches or watches,
+// or "" when it is not a git source.
+func WatchedRef(spec SourceSpec) string {
+	switch {
+	case spec.GitHub != nil:
+		return spec.GitHub.Ref
+	case spec.GitLab != nil:
+		return spec.GitLab.Ref
+	case spec.Bitbucket != nil:
+		return spec.Bitbucket.Ref
+	}
+	return ""
+}
+
 // FetchRequest is the per-reconcile-cycle input handed to [Fetcher.Fetch].
 type FetchRequest struct {
 	// Spec carries the source-type discriminator + the matching per-type
@@ -94,6 +122,11 @@ type FetchResult struct {
 	//            convention used by the conditional-GET branch of
 	//            internal/sources/http/Fetcher.Fetch.
 	UpstreamRev string
+
+	// LatestUpstreamRev is the commit spec.Ref points at (git sources
+	// only; empty otherwise). It equals UpstreamRev unless the source is
+	// pinned to an older commit.
+	LatestUpstreamRev string
 
 	// NotModified is true when the conditional fetch hit (HTTP 304 / S3
 	// 304-equivalent / SHA equality / generation equality). When true,

@@ -40,5 +40,5 @@ func (f *Fetcher) fetchViaGit(ctx context.Context, req sources.FetchRequest) (*s
 		cloneURL = f.constructCloneURL()
 	}
 
-	return gitprovider.FetchViaProvider(ctx, "bitbucket", cloneURL, f.spec.Ref, token, req.PriorRev, f.spec.Path)
+	return gitprovider.FetchViaProvider(ctx, "bitbucket", cloneURL, f.spec.Ref, f.spec.Commit, token, req.PriorRev, f.spec.Path)
 }

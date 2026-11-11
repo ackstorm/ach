@@ -6,6 +6,7 @@
 package gitprovider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -25,10 +26,11 @@ func schemeForProvider(provider string) gitsrc.AuthScheme {
 	return gitsrc.AuthBearer
 }
 
-// FetchViaProvider runs the shared git transport flow: ls-remote to
-// resolve the SHA, short-circuit on NotModified when priorRev matches,
-// then full clone+fetch. provider is the error-prefix literal; cloneURL is
-// the per-provider-built https clone URL.
+// FetchViaProvider runs the shared git transport flow: ls-remote resolves
+// ref (reported as LatestUpstreamRev); the served revision is commit when
+// set, else that head. NotModified when priorRev already is the served
+// revision; otherwise a clone checked out at it. provider is the
+// error-prefix literal; cloneURL is the per-provider-built https clone URL.
 //
 // subtree is spec.<git>.path: when non-empty the produced tarball is
 // narrowed on-disk to that sub-directory (git.tarSubtree strips the subtree
@@ -38,14 +40,15 @@ func schemeForProvider(provider string) gitsrc.AuthScheme {
 // (F1). A subtree that resolves to a non-directory (e.g. an Artifact path
 // pointing at a single file) surfaces as a tar.tarSubtree error wrapped by
 // the caller's classification.
-func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, priorRev, subtree string) (*sources.FetchResult, error) {
+func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, commit, token, priorRev, subtree string) (*sources.FetchResult, error) {
 	scheme := schemeForProvider(provider)
-	sha, err := gitsrc.LsRemote(ctx, cloneURL, ref, token, scheme)
+	latest, err := gitsrc.LsRemote(ctx, cloneURL, ref, token, scheme)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", provider, err)
 	}
+	sha := cmp.Or(commit, latest)
 	if priorRev != "" && priorRev == sha {
-		return &sources.FetchResult{NotModified: true, UpstreamRev: sha}, nil
+		return &sources.FetchResult{NotModified: true, UpstreamRev: sha, LatestUpstreamRev: latest}, nil
 	}
 	gitRes, err := gitsrc.New(gitsrc.Spec{
 		URL:        cloneURL,
@@ -59,7 +62,8 @@ func FetchViaProvider(ctx context.Context, provider, cloneURL, ref, token, prior
 		return nil, fmt.Errorf("%s: %w", provider, err)
 	}
 	return &sources.FetchResult{
-		Body:        gitRes.Body,
-		UpstreamRev: gitRes.UpstreamRev,
+		Body:              gitRes.Body,
+		UpstreamRev:       gitRes.UpstreamRev,
+		LatestUpstreamRev: latest,
 	}, nil
 }
