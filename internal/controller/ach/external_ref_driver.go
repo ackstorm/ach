@@ -227,13 +227,8 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	// ─── Success / NotModified. ───
 	applyReconcileConditions(&st.Conditions, ReasonSynced, sourceReachableMessage(view.SourceSpec), cr.GetGeneration())
 	st.UpstreamRev = result.UpstreamRev
-	st.LatestUpstreamRev = result.LatestUpstreamRev
-	applyUpdateAvailable(&st.Conditions, sources.PinnedCommit(view.SourceSpec), st.UpstreamRev,
-		st.LatestUpstreamRev, sources.WatchedRef(view.SourceSpec), cr.GetGeneration())
-	if result.NotModified && cfg.db != nil && result.LatestUpstreamRev != "" {
-		if err := achdb.SetExternalRefLatestRev(ctx, cfg.db, cfg.kind, cr.GetName(), result.LatestUpstreamRev); err != nil {
-			return ctrl.Result{}, err
-		}
+	if err := trackLatestRev(ctx, cfg.db, cfg.kind, cr.GetName(), st, view.SourceSpec, result, cr.GetGeneration()); err != nil {
+		return ctrl.Result{}, err
 	}
 	if result.NotModified {
 		if st.StorageLocation == "" {
@@ -274,6 +269,20 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// trackLatestRev records the head of the watched ref on status, keeps
+// UpdateAvailable in step with the pin, and on a NotModified refresh writes
+// the head to external_refs (the full upsert did not run).
+func trackLatestRev(ctx context.Context, db *pgxpool.Pool, kind, name string, st *achv1alpha1.ExternalRefStatus,
+	spec sources.SourceSpec, result MaterializeResult, gen int64) error {
+	st.LatestUpstreamRev = result.LatestUpstreamRev
+	applyUpdateAvailable(&st.Conditions, sources.PinnedCommit(spec), st.UpstreamRev,
+		st.LatestUpstreamRev, sources.WatchedRef(spec), gen)
+	if !result.NotModified || db == nil || result.LatestUpstreamRev == "" {
+		return nil
+	}
+	return achdb.SetExternalRefLatestRev(ctx, db, kind, name, result.LatestUpstreamRev)
 }
 
 // writeExternalRefConflictStatus flips Synced=False/ConflictWithUIRow for
