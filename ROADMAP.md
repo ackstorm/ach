@@ -9,14 +9,13 @@ Work is grouped as **Now**, **Next** and **Later**. An item moves up when the
 one before it ships; dates are not promised. Shipped work is in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-## Now — easy to try, easy to trust
+## Now — easy to trust
 
 | Item | What it gives you |
 |------|-------------------|
 | Human documentation | A concepts page with a glossary (`pk_`, `ek_`, Environment, KeyGrant, BackendIdentityPolicy, shell team) and an architecture page. Superseded documents removed. |
 | Enterprise licence | The final text for the code under `ee/`: any use of the Enterprise features needs a signed agreement with ACKstorm, evaluation included. |
 | Release discipline | Semantic versioning (a breaking change bumps the major version), a `Breaking` section in the changelog, the end-to-end suite green before every release, and a published supported LiteLLM range. |
-| Evaluation install | One command that brings up ACH, LiteLLM, Dex with a static user, Postgres and Valkey on a local kind cluster in about ten minutes. |
 | Hydrate: concurrent-edit safety | `ach-cli environment hydrate` re-checks a tool's config file before replacing it, so an editor save during hydrate is no longer lost. |
 | Admin list reload | Changes to the admin list apply without restarting platform-api. |
 
@@ -24,10 +23,9 @@ one before it ships; dates are not promised. Shipped work is in
 
 | Item | What it gives you |
 |------|-------------------|
-| KeyGrant for CI | GitHub Actions and GitLab CI OIDC tokens exchange for an Environment-scoped, budgeted credential, as Kubernetes ServiceAccount tokens do today. No stored secret in CI. |
-| Admins from an IdP group | Admin rights come from a Dex `groups` value instead of a list of e-mail addresses. |
-| Backup and restore | A tested procedure for the ACH database, and what is lost without it. |
-| Content pinning | An Environment uses a resolved content revision, recorded by digest. A new upstream revision waits until an admin promotes it. |
+| Admins from an IdP group ([#47](https://github.com/ackstorm/ach/issues/47)) | Admin rights come from a Dex `groups` value instead of a list of e-mail addresses. |
+| Content pinning ([#48](https://github.com/ackstorm/ach/issues/48)) | An Environment uses a resolved content revision, recorded by digest. A new upstream revision waits until an admin promotes it. |
+| KeyGrant for CI ([#46](https://github.com/ackstorm/ach/issues/46)) | GitHub Actions and GitLab CI OIDC tokens exchange for an Environment-scoped, budgeted credential, as Kubernetes ServiceAccount tokens do today. No stored secret in CI. |
 
 ## Later
 
