@@ -8,6 +8,7 @@ package a2amcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
-	"github.com/a2aproject/a2a-go/v2/a2aclient/agentcard"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -35,11 +35,7 @@ func Handler(target func(*http.Request) (name, agentURL string), cred func(conte
 		name, agentURL := target(r)
 		// ponytail: the card is fetched on every POST (stateless: one server
 		// per request); cache it per agent if card latency shows up.
-		opts := []agentcard.ResolveOption{agentcard.WithPath(a2asrv.WellKnownAgentCardPath)}
-		for k, v := range cred(r.Context()) {
-			opts = append(opts, agentcard.WithRequestHeader(k, v))
-		}
-		card, _ := agentcard.NewResolver(hc).Resolve(r.Context(), agentURL, opts...)
+		card := fetchCard(r.Context(), hc, agentURL, cred(r.Context()))
 
 		s := mcp.NewServer(&mcp.Implementation{Name: "a2a-" + name, Version: "1.0.0"}, nil)
 		mcp.AddTool(s, &mcp.Tool{Name: "send_message", Description: describe(name, card)},
@@ -103,9 +99,41 @@ func send(ctx context.Context, hc *http.Client, agentURL string, cred map[string
 	return nil, nil, errors.New("the agent ended the stream without a final reply")
 }
 
+// agentCard is the part of the agent card the tool description uses. It is
+// decoded on its own because LiteLLM serves securitySchemes in the A2A 0.3
+// shape, which a2a-go's AgentCard rejects as a whole.
+type agentCard struct {
+	Description string `json:"description"`
+	Skills      []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	} `json:"skills"`
+}
+
+// fetchCard returns the agent's card, or nil when it cannot be read.
+func fetchCard(ctx context.Context, hc *http.Client, agentURL string, cred map[string]string) *agentCard {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentURL+a2asrv.WellKnownAgentCardPath, nil)
+	if err != nil {
+		return nil
+	}
+	for k, v := range cred {
+		req.Header.Set(k, v)
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var card agentCard
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&card) != nil {
+		return nil
+	}
+	return &card
+}
+
 // describe builds the tool description from the agent card; without one
 // (fetch failed) it names the agent only.
-func describe(name string, card *a2a.AgentCard) string {
+func describe(name string, card *agentCard) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Send a message to the agent %s and wait for its reply.", name)
 	if card != nil {
