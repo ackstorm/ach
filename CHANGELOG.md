@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-11-11
+
 ### Security
 - Built with Go 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash in
   `net/http`).
