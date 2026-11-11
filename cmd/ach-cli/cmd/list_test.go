@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +52,7 @@ func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exi
 	var outBuf, errBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
 	cmd.SetErr(&errBuf)
-	cmd.SetArgs(args)
+	cmd.SetArgs(append([]string{"--offline"}, args...))
 	err := cmd.ExecuteContext(context.Background())
 	if err == nil {
 		return outBuf.String(), exit.OK, nil
@@ -261,5 +263,100 @@ func TestStatus_DefaultView(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+// versionServer serves POST /platform/hydrate/version with the given items per
+// environment and points the synthetic profile at it.
+func versionServer(t *testing.T, items map[string][]map[string]string, calls *int) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*calls++
+		var req struct {
+			Environment string `json:"environment"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewEncoder(w).Encode(map[string]any{"environment": req.Environment, "version": "v", "items": items[req.Environment]})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ACH_URL", srv.URL)
+	t.Setenv("ACH_KEY", testEK)
+	t.Setenv("ACH_INSECURE", "1")
+}
+
+func runStatus(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	prev := listWorkspaceCwd
+	listWorkspaceCwd = func() (string, error) { return dir, nil }
+	t.Cleanup(func() { listWorkspaceCwd = prev })
+	cmd := newEnvStatusCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(args)
+	err := cmd.ExecuteContext(context.Background())
+	return out.String(), err
+}
+
+const recordedState = `{"schemaVersion":"3","environment":"prod","adapter":{"id":"claude-code"},
+  "plugins":[{"target":"a.md","hash":"h","sourceHash":"h","source":"keep"}],
+  "envVersion":{"version":"old","items":{"plugin/keep":"1","plugin/moved":"1","skill/gone":"x"}}}`
+
+func TestStatus_ListsChangesSinceHydrate(t *testing.T) {
+	dir := writeListState(t, recordedState)
+	var calls int
+	versionServer(t, map[string][]map[string]string{"prod": {
+		{"kind": "plugin", "name": "keep", "rev": "1"},
+		{"kind": "plugin", "name": "moved", "rev": "2"},
+		{"kind": "mcp", "name": "new-mcp"},
+	}}, &calls)
+	out, err := runStatus(t, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Checking 1 environment against the server", "+ mcp", "new-mcp", "~ plugin", "moved", "- skill", "gone"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "keep") && strings.Contains(out, "~ plugin  keep") {
+		t.Errorf("an unchanged item is listed:\n%s", out)
+	}
+}
+
+func TestStatus_UpToDate(t *testing.T) {
+	dir := writeListState(t, `{"schemaVersion":"3","environment":"prod","adapter":{"id":"claude-code"},
+  "plugins":[{"target":"a.md","hash":"h","sourceHash":"h","source":"keep"}],
+  "envVersion":{"version":"v","items":{"plugin/keep":"1"}}}`)
+	var calls int
+	versionServer(t, map[string][]map[string]string{"prod": {{"kind": "plugin", "name": "keep", "rev": "1"}}}, &calls)
+	out, err := runStatus(t, dir)
+	if err != nil || !strings.Contains(out, "prod up to date") {
+		t.Fatalf("want 'prod up to date', err=%v:\n%s", err, out)
+	}
+}
+
+func TestStatus_NoRecordedVersion(t *testing.T) {
+	dir := writeListState(t, `{"schemaVersion":"3","environment":"prod","adapter":{"id":"claude-code"},
+  "plugins":[{"target":"a.md","hash":"h","sourceHash":"h","source":"keep"}]}`)
+	var calls int
+	versionServer(t, nil, &calls)
+	out, err := runStatus(t, dir)
+	if err != nil || !strings.Contains(out, "hydrate once to record its version") {
+		t.Fatalf("want the unrecorded hint, err=%v:\n%s", err, out)
+	}
+}
+
+func TestStatus_LocalModesNeverCallServer(t *testing.T) {
+	dir := writeListState(t, recordedState)
+	var calls int
+	versionServer(t, nil, &calls)
+	for _, args := range [][]string{{"--offline"}, {"-o", "json"}, {"--files"}} {
+		if _, err := runStatus(t, dir, args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	if calls != 0 {
+		t.Errorf("local modes called the server %d times", calls)
 	}
 }

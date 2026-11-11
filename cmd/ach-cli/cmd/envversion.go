@@ -55,11 +55,16 @@ func versionChanges(recorded, current *state.EnvVersion) []hydrate.ItemChange {
 			add(hydrate.OpRemove, k)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Kind != out[j].Kind {
-			return out[i].Kind < out[j].Kind
-		}
-		return out[i].Name < out[j].Name
-	})
+	sortChanges(out)
 	return out
+}
+
+// sortChanges orders changes by kind, then name.
+func sortChanges(cs []hydrate.ItemChange) {
+	sort.Slice(cs, func(i, j int) bool {
+		if cs[i].Kind != cs[j].Kind {
+			return cs[i].Kind < cs[j].Kind
+		}
+		return cs[i].Name < cs[j].Name
+	})
 }
