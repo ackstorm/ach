@@ -46,6 +46,7 @@ func TestPhase4Invariants(t *testing.T) {
 
 	t.Run("SC1_HeaderRewrite", testPhase4SC1HeaderRewrite)
 	t.Run("SC2_McpA2aPrecheck", testPhase4SC2McpA2aPrecheck)
+	t.Run("SC2_A2aMcpFace", testPhase4SC2A2AMCP)
 	t.Run("SC2_EkTagStamping", testPhase4SC2EkTagStamping)
 	t.Run("SC3_JwtMintAndBipAlphaFirst", testPhase4SC3JwtMintAndBipAlphaFirst)
 	t.Run("SC4_JwksAndSecretRbac", testPhase4SC4JwksAndSecretRbac)

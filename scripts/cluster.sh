@@ -426,7 +426,15 @@ reconcile_litellm() {
         "agent_name": "demo-agent",
         "agent_card_params": {
           "name": "demo-agent",
-          "url": "http://ach-mock-a2a.ach-system.svc/"
+          "description": "Echo agent for ACH e2e.",
+          "url": "http://ach-mock-a2a.ach-system.svc/",
+          "version": "1.0.0",
+          "protocolVersion": "1.0",
+          "capabilities": {"streaming": true},
+          "defaultInputModes": ["text/plain"],
+          "defaultOutputModes": ["text/plain"],
+          "skills": [{"id": "echo", "name": "Echo", "description": "repeats the message", "tags": ["echo"]}],
+          "supportedInterfaces": [{"url": "http://ach-mock-a2a.ach-system.svc/", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}]
         }
       }' 2>&1)"
   echo "[cluster.sh]   a2a agent 'demo-agent' → ${seed_out}"

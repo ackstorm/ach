@@ -258,6 +258,13 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		}
 		// Context projection + runtime config still land.
 		assertProjectedSkills(t, output, allPlatformExpects[0])
+		mcpJSON, err := os.ReadFile(filepath.Join(output, ".mcp.json"))
+		if err != nil {
+			t.Fatalf("include_runtime: read .mcp.json: %v", err)
+		}
+		if !bytes.Contains(mcpJSON, []byte(`"a2a-demo-agent"`)) || !bytes.Contains(mcpJSON, []byte("/a2a/demo-agent/mcp")) {
+			t.Errorf("include_runtime: .mcp.json lacks the a2a-demo-agent MCP entry:\n%s", mcpJSON)
+		}
 		assertRuntimeConfig(t, output, allPlatformExpects[0], pk)
 	})
 }
