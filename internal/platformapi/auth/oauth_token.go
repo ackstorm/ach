@@ -173,7 +173,8 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 
 // revalidateAtIdP replays the user's shared Dex refresh token (D-22) — the
 // one check both the /token refresh grant and the console session run.
-// nil: the IdP still honours the user and the rotated token is stored;
+// nil: the IdP still honours the user, the rotated token is stored and
+// the SSO admin record follows the refreshed groups (recordSSOAdmin);
 // groups is the refreshed `groups` claim (nil when Dex sent none).
 // errIdPRefused: sessions ended (oauth pk_ revoked; the Dex token deleted,
 // unless an upstream rejection could not be recorded in idp_refusals).
@@ -228,6 +229,9 @@ func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []st
 	if !stored {
 		d.Auth.Logger.Info("oauth: sessions ended during the Dex refresh; refusing", "sub", sub)
 		return nil, errIdPRefused
+	}
+	if err := d.recordSSOAdmin(ctx, sub, groups); err != nil {
+		return nil, err
 	}
 	return groups, nil
 }

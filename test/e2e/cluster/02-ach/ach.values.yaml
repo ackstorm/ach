@@ -76,7 +76,8 @@ litellmConnection:
 # (401 at Authn, before the allowlist check), so populating this is inert for it.
 platformApi:
   admins:
-    - kilgore@kilgore.trout
+    users:
+      - kilgore@kilgore.trout
   # e2e-full keeps the cluster and mints a non-revoked demo-ek on each run.
   # Keep this fixture ceiling well above the accumulated run count; product
   # default remains 0 (deny-by-default).

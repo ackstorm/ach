@@ -85,22 +85,22 @@ func LoadAllowlist(path string, logger *slog.Logger) (map[string]struct{}, error
 //   - keyCtx.KeyType != keys.PrefixPk → 401 invalid_key_type
 //     Captures the ek_-on-admin contract: ek_ represents a workload,
 //     not a person; admin endpoints are person-scoped tools.
-//   - keyCtx.OwnerEmail not in allowlist → 403 not_admin
-//     Empty allowlist (zero admins per D-23) rejects every caller here.
+//   - !keyCtx.IsAdmin → 403 not_admin
+//     Authn decides IsAdmin (the allowlist, then the SSO admin record);
+//     no admins configured rejects every caller here.
 //
 // On success the middleware passes the request through unchanged —
 // the inner handler reads middleware.KeyContextFromCtx for the
 // authenticated identity and emits its own per-action audit event.
 //
-// allowlist may be nil (treated as zero admins — every pk_ caller hits
-// 403). auditLog may be nil (rejections still rendered; audit emission
+// auditLog may be nil (rejections still rendered; audit emission
 // is best-effort visibility — never a correctness requirement).
 //
 // ns is the deployment namespace (downward API POD_NAMESPACE); used to
 // compose the actor field per Hub §18.3 when the request-bound
 // middleware.ActorFromCtx fallback ("unknown/<email>") would degrade
 // log grep-ability.
-func AdminOnly(allowlist map[string]struct{}, auditLog *slog.Logger, ns string) func(http.Handler) http.Handler {
+func AdminOnly(auditLog *slog.Logger, ns string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -131,7 +131,7 @@ func AdminOnly(allowlist map[string]struct{}, auditLog *slog.Logger, ns string) 
 				return
 			}
 
-			if _, isAdmin := allowlist[keyCtx.OwnerEmail]; !isAdmin {
+			if !keyCtx.IsAdmin {
 				if auditLog != nil {
 					audit.EmitAudit(ctx, auditLog, audit.Event{
 						Action:    audit.ActionAdminKeysRevoke,
@@ -140,7 +140,7 @@ func AdminOnly(allowlist map[string]struct{}, auditLog *slog.Logger, ns string) 
 						RequestID: reqID,
 					})
 				}
-				render.Error(w, http.StatusForbidden, audit.OutcomeNotAdmin, "not in admin allowlist", reqID)
+				render.Error(w, http.StatusForbidden, audit.OutcomeNotAdmin, "not an admin", reqID)
 				return
 			}
 

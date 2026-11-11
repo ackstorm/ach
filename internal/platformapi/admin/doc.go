@@ -36,13 +36,13 @@
 //
 //   - keyCtx.KeyType != keys.PrefixPk → 401 invalid_key_type
 //     (audit OutcomeInvalidKeyType, ek_ never admits to admin)
-//   - keyCtx.OwnerEmail not in allowlist → 403 not_admin
-//     (audit OutcomeNotAdmin)
+//   - !keyCtx.IsAdmin → 403 not_admin (audit OutcomeNotAdmin)
 //
-// The allowlist is loaded ONCE at process start via LoadAllowlist; per
-// Hub AC18 + AC24 + D-23 ConfigMap edits require Platform API restart.
-// A missing or empty allowlist results in zero admins — every caller
-// hits 403 not_admin uniformly (no implicit-root fallback).
+// Authn sets IsAdmin from the allowlist, loaded ONCE at process start via
+// LoadAllowlist (the chart restarts platform-api when it changes), or from
+// the SSO admin record login and every IdP revalidation keep. No admins
+// configured means every caller hits 403 not_admin (no implicit-root
+// fallback).
 //
 // # Audit emission discipline
 //

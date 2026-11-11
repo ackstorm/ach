@@ -277,6 +277,10 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		htmlError(w, status, msg)
 		return
 	}
+	if err := d.recordSSOAdmin(r.Context(), email, groups); err != nil {
+		htmlError(w, 500, "store unavailable")
+		return
+	}
 	u := oauthUser{Sub: email, UserID: userID, Name: name, SessionGen: gen}
 	if p.Console {
 		d.consoleFinish(w, r, p, pendingID, u)

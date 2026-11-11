@@ -470,11 +470,18 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	if err := json.Unmarshal([]byte(cmp.Or(os.Getenv("ACH_OAUTH_REDIRECT_HOSTS"), "[]")), &redirectHosts); err != nil {
 		return out, fmt.Errorf("ACH_OAUTH_REDIRECT_HOSTS: want a JSON list of hostnames: %w", err)
 	}
+	var ssoAdminGroups []string
+	if err := json.Unmarshal([]byte(cmp.Or(os.Getenv("ACH_ADMINS_SSO"), "[]")), &ssoAdminGroups); err != nil {
+		return out, fmt.Errorf("ACH_ADMINS_SSO: want a JSON list of Dex groups: %w", err)
+	}
+	for i, g := range ssoAdminGroups {
+		ssoAdminGroups[i] = strings.ToLower(g) // matching is case-insensitive
+	}
 	oauthDeps := &auth.OAuthDeps{
 		Store: &auth.OAuthStore{RDB: out.redis}, Signer: signer,
 		Issuer: cfg.BaseURL, Audience: "ach", Namespace: cfg.Namespace,
 		AccessTTL: cfg.OAuthAccessTTL, RefreshTTL: cfg.OAuthRefreshTTL,
-		RedirectHosts: redirectHosts,
+		RedirectHosts: redirectHosts, SSOAdminGroups: ssoAdminGroups,
 	}
 	// The OpenCode plugin (github.com/ackstorm/opencode-oidc-provider) only accepts a
 	// provider id matching its PROVIDER_ID and silently falls back to

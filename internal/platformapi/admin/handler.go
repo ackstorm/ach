@@ -42,13 +42,12 @@ type redisDeleter interface {
 // ach_refresh) rather than PATCH'ing a CR annotation, so platform-api
 // has no remaining K8s write surface.
 type Deps struct {
-	Pool      *pgxpool.Pool       // Postgres pool (threaded to the internal/db package helpers)
-	LiteLLM   litellm.Client      // LiteLLM REST client (revocation API)
-	Redis     redisDeleter        // *redis.Client in production; recording stub in tests.
-	Allowlist map[string]struct{} // loaded via LoadAllowlist at process start
-	Audit     *slog.Logger        // audit.NewLogger handle (audit=true)
-	Logger    *slog.Logger        // operational logger (NOT audit)
-	Namespace string              // POD_NAMESPACE — composed into actor strings
+	Pool      *pgxpool.Pool  // Postgres pool (threaded to the internal/db package helpers)
+	LiteLLM   litellm.Client // LiteLLM REST client (revocation API)
+	Redis     redisDeleter   // *redis.Client in production; recording stub in tests.
+	Audit     *slog.Logger   // audit.NewLogger handle (audit=true)
+	Logger    *slog.Logger   // operational logger (NOT audit)
+	Namespace string         // POD_NAMESPACE — composed into actor strings
 	// SetMaxKeys upserts one person's ek_ key ceiling. Production binds this
 	// to db.SetUserMaxKeys; the function seam keeps handler tests pool-free.
 	SetMaxKeys func(ctx context.Context, email string, maxKeys int) error

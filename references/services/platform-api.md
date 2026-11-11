@@ -8,6 +8,15 @@ REST + `pk_`/`ek_` lifecycle (an `ek_` is minted ONLY into its Environment's den
 
 ## Admin and UI objects
 
+Admin is decided once per request in `Authn`, for `pk_` callers only: the
+owner email is in `platformApi.admins.users` (`/etc/ach/admins/admins.txt`,
+read at start), or Valkey holds `ach:oauth:sso_admin:<email>`. That record is
+written at login and rewritten at every IdP revalidation (`/token` refresh,
+console revalidation, `POST /platform/refresh`, the idp sweep) from the Dex
+`groups` claim against `platformApi.admins.sso` (`ACH_ADMINS_SSO`); groups Dex
+could not deliver clear it until the next revalidation. `AdminOnly` and every
+handler read `KeyContext.IsAdmin`.
+
 admin object inventory (read) + UI Objects API (write, Environment only — `/platform/objects`) + `PATCH /platform/admin/users/{email}/budget` (admin-gated; sets that person's whole-footprint ceiling on their `user:<email>` tag — same body and rule as the ek_ route, 204, a never-logged-in user is created not refused; durable — a login never overwrites it) + admin runtime catalog read (`GET /platform/admin/runtime/{models,mcp-servers,a2a-agents,teams,catalog}`)
 
 ## OAuth 2.1 sign-in

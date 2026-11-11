@@ -56,6 +56,7 @@ func newAuditBuf() (*slog.Logger, *bytes.Buffer) {
 type adminCallOpts struct {
 	keyType    keys.BearerPrefix
 	ownerEmail string
+	isAdmin    bool
 	reqID      string
 }
 
@@ -68,7 +69,7 @@ func newAdminReq(opts adminCallOpts) *http.Request {
 		KeyType:    opts.keyType,
 		OwnerEmail: opts.ownerEmail,
 	}
-	ctx = middleware.WithKeyContext(ctx, info, false /* isAdmin is unused by AdminOnly */)
+	ctx = middleware.WithKeyContext(ctx, info, opts.isAdmin)
 	return r.WithContext(ctx)
 }
 
@@ -209,14 +210,13 @@ func readErrorEnvelope(t *testing.T, body []byte) (code string) {
 	return env.Error.Code
 }
 
-// M-1: pk_ caller in allowlist → middleware passes through.
+// M-1: admin pk_ caller → middleware passes through.
 func TestAdminOnlyHappyPath(t *testing.T) {
 	auditLog, _ := newAuditBuf()
-	allow := map[string]struct{}{"alice@example.com": {}}
 	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(allow, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 	rec := httptest.NewRecorder()
-	r := newAdminReq(adminCallOpts{keyType: keys.PrefixPk, ownerEmail: "alice@example.com", reqID: "req_m1"})
+	r := newAdminReq(adminCallOpts{keyType: keys.PrefixPk, ownerEmail: "alice@example.com", isAdmin: true, reqID: "req_m1"})
 	h.ServeHTTP(rec, r)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -230,11 +230,10 @@ func TestAdminOnlyHappyPath(t *testing.T) {
 // called.
 func TestAdminOnlyRejectsEkType(t *testing.T) {
 	auditLog, auditBuf := newAuditBuf()
-	allow := map[string]struct{}{"workload@example.com": {}} // even if in allowlist
 	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(allow, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 	rec := httptest.NewRecorder()
-	r := newAdminReq(adminCallOpts{keyType: keys.PrefixEk, ownerEmail: "workload@example.com", reqID: "req_m2"})
+	r := newAdminReq(adminCallOpts{keyType: keys.PrefixEk, ownerEmail: "workload@example.com", isAdmin: true, reqID: "req_m2"})
 	h.ServeHTTP(rec, r)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
@@ -250,13 +249,11 @@ func TestAdminOnlyRejectsEkType(t *testing.T) {
 	}
 }
 
-// M-3: pk_ caller NOT in allowlist → 403 not_admin + audit + inner not
-// called.
+// M-3: non-admin pk_ caller → 403 not_admin + audit + inner not called.
 func TestAdminOnlyRejectsNonAdmin(t *testing.T) {
 	auditLog, auditBuf := newAuditBuf()
-	allow := map[string]struct{}{"alice@example.com": {}}
 	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(allow, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 	rec := httptest.NewRecorder()
 	r := newAdminReq(adminCallOpts{keyType: keys.PrefixPk, ownerEmail: "bob@example.com", reqID: "req_m3"})
 	h.ServeHTTP(rec, r)
@@ -274,28 +271,11 @@ func TestAdminOnlyRejectsNonAdmin(t *testing.T) {
 	}
 }
 
-// M-4: empty allowlist (zero admins per D-23) rejects every pk_ caller.
-func TestAdminOnlyEmptyAllowlistRejectsAll(t *testing.T) {
-	auditLog, _ := newAuditBuf()
-	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(map[string]struct{}{}, auditLog, "ach-system")(inner)
-	rec := httptest.NewRecorder()
-	r := newAdminReq(adminCallOpts{keyType: keys.PrefixPk, ownerEmail: "anyone@example.com", reqID: "req_m4"})
-	h.ServeHTTP(rec, r)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 (zero admins), got %d", rec.Code)
-	}
-	if calls.Load() != 0 {
-		t.Fatalf("inner must not be called; got %d calls", calls.Load())
-	}
-}
-
 // M-5: audit event includes actor=<ns>/<email>.
 func TestAdminOnlyEmitsActor(t *testing.T) {
 	auditLog, auditBuf := newAuditBuf()
-	allow := map[string]struct{}{} // empty → 403, but audit still fires
 	inner, _ := innerInvocationCounter(t)
-	h := AdminOnly(allow, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 	rec := httptest.NewRecorder()
 	r := newAdminReq(adminCallOpts{keyType: keys.PrefixPk, ownerEmail: "alice@example.com", reqID: "req_m5"})
 	h.ServeHTTP(rec, r)
@@ -311,13 +291,12 @@ func TestAdminOnlyEmitsActor(t *testing.T) {
 // (verifies AdminOnly runs BEFORE inner per the API-12 ordering rule).
 func TestAdminOnlyRunsBeforeRoute(t *testing.T) {
 	auditLog, _ := newAuditBuf()
-	allow := map[string]struct{}{"workload@example.com": {}}
 	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(allow, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 
 	// Run with an ek_ caller — must be rejected; inner.Add must NOT run.
 	rec := httptest.NewRecorder()
-	r := newAdminReq(adminCallOpts{keyType: keys.PrefixEk, ownerEmail: "workload@example.com", reqID: "req_m6"})
+	r := newAdminReq(adminCallOpts{keyType: keys.PrefixEk, ownerEmail: "workload@example.com", isAdmin: true, reqID: "req_m6"})
 	h.ServeHTTP(rec, r)
 
 	if calls.Load() != 0 {
@@ -329,7 +308,7 @@ func TestAdminOnlyRunsBeforeRoute(t *testing.T) {
 func TestAdminOnlyMissingKeyContext(t *testing.T) {
 	auditLog, _ := newAuditBuf()
 	inner, calls := innerInvocationCounter(t)
-	h := AdminOnly(map[string]struct{}{}, auditLog, "ach-system")(inner)
+	h := AdminOnly(auditLog, "ach-system")(inner)
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/x", nil) // no ctx.KeyContext
 	r = r.WithContext(middleware.WithRequestID(context.Background(), "req_defensive"))
