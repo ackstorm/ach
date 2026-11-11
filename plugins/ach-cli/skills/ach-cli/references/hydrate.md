@@ -84,9 +84,14 @@ there; it writes no MCP config.
 ach-cli environment status                          # this folder: every hydrated Environment
 ach-cli environment status <environment> -g         # the global install
 ach-cli environment status --files                  # every file hydrate wrote, with its path
+ach-cli environment status --offline                # local state only, no server
 ```
 
-`environment status` reads local state only; it makes no network call.
+`environment status` shows what is installed, then asks the server whether
+each Environment changed since its last hydrate: `up to date`, or `+` added
+to the Environment, `-` removed, `~` new content. It downloads nothing. A
+folder hydrated by an older ach-cli says `version unknown` until its next
+hydrate. `--offline` skips the server; `--files` and `-o json` are local only.
 
 ## Remove it
 

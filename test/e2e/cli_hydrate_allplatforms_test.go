@@ -189,6 +189,17 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			assertStateJSON(t, output, pe.id)
 			assertPerEnvNamespacing(t, output)
 			assertRuntimeMirror(t, output, pe.id, pk)
+
+			// Right after a hydrate the folder is at the Environment's version.
+			if pe.id == "claude-code" {
+				sOut, sErr, err := phase7RunAchCli(t, xdg, "env", "status", "--dir", output)
+				if code, runErr := phase7StripExitErr(err); runErr != nil || code != 0 {
+					t.Fatalf("status: exit %d err %v\nstdout=%s\nstderr=%s", code, runErr, sOut, sErr)
+				}
+				if !bytes.Contains(sOut, []byte(phase7DemoEnvironment+" up to date")) {
+					t.Errorf("status right after hydrate must say up to date:\n%s", sOut)
+				}
+			}
 		})
 	}
 

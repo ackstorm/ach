@@ -30,7 +30,7 @@ Before changing anything, read the state yourself. These commands only read:
 ```bash
 command -v ach-cli && ach-cli --version
 ach-cli whoami          # profile, URL, user, auth (session or ek- key), budget, keys
-ach-cli environment status      # what is installed in this folder (-g <env> for global)
+ach-cli environment status      # what is installed here, and whether it is up to date (-g <env> for global)
 ```
 
 Then ask once whether the user is setting up THIS machine (where you run) or another
