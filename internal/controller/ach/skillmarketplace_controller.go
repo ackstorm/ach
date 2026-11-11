@@ -281,6 +281,7 @@ func (r *SkillMarketplaceReconciler) stage1Fetch(ctx context.Context, cr *achv1a
 		res, err = r.markSyncedFalse(ctx, cr, reason, "stage-1: "+msg, requeue, ferr)
 		return nil, "", res, true, err
 	}
+	cr.Status.UpstreamRev, cr.Status.LatestUpstreamRev = fetchResult.UpstreamRev, fetchResult.LatestUpstreamRev
 	if fetchResult.NotModified {
 		res, err = r.markSyncedTrue(ctx, cr, sourceReachableMessage(sourceSpec), requeue)
 		return nil, "", res, true, err
@@ -462,12 +463,14 @@ func defaultSkillsRoot(p string) string {
 // the CR's terminal status. Pure — unit-tested without a DB.
 func buildSkillMarketplaceRow(cr *achv1alpha1.SkillMarketplace, syncedStatus, syncedReason string) achdb.SkillMarketplaceRow {
 	return achdb.SkillMarketplaceRow{
-		Namespace:       cr.Namespace,
-		Name:            cr.Name,
-		SyncedStatus:    syncedStatus,
-		SyncedReason:    syncedReason,
-		SkillsCount:     cr.Status.SkillsCount,
-		ResourceVersion: cr.ResourceVersion,
+		Namespace:         cr.Namespace,
+		Name:              cr.Name,
+		SyncedStatus:      syncedStatus,
+		SyncedReason:      syncedReason,
+		SkillsCount:       cr.Status.SkillsCount,
+		ResourceVersion:   cr.ResourceVersion,
+		UpstreamRev:       cr.Status.UpstreamRev,
+		LatestUpstreamRev: cr.Status.LatestUpstreamRev,
 	}
 }
 
@@ -494,6 +497,11 @@ func (r *SkillMarketplaceReconciler) markSyncedTrue(ctx context.Context, cr *ach
 		fresh.Status.LastSuccessfulRefresh = &now
 		fresh.Status.Skills = cr.Status.Skills
 		fresh.Status.SkillsCount = cr.Status.SkillsCount
+		fresh.Status.UpstreamRev = cr.Status.UpstreamRev
+		fresh.Status.LatestUpstreamRev = cr.Status.LatestUpstreamRev
+		src := buildSourceSpec(cr.Spec.Type, cr.Spec.GitHub, cr.Spec.GitLab, cr.Spec.Bitbucket, cr.Spec.S3, cr.Spec.GCS, cr.Spec.HTTP)
+		applyUpdateAvailable(&fresh.Status.Conditions, sources.PinnedCommit(src), cr.Status.UpstreamRev,
+			cr.Status.LatestUpstreamRev, sources.WatchedRef(src), desiredGen)
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: requeue}, err

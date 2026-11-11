@@ -15,8 +15,12 @@ func TestBuildSkillMarketplaceRow_MapsStatusToRow(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: "ach", Name: "agentskills", ResourceVersion: "42"},
 	}
 	cr.Status.SkillsCount = 9
+	cr.Status.UpstreamRev, cr.Status.LatestUpstreamRev = "pinned", "head"
 
 	row := buildSkillMarketplaceRow(cr, "True", "")
+	if row.UpstreamRev != "pinned" || row.LatestUpstreamRev != "head" {
+		t.Errorf("revs = %q/%q, want pinned/head", row.UpstreamRev, row.LatestUpstreamRev)
+	}
 	if row.Namespace != "ach" || row.Name != "agentskills" || row.SkillsCount != 9 || row.SyncedStatus != "True" {
 		t.Errorf("row = %+v, want ach/agentskills/9/True", row)
 	}

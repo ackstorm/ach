@@ -21,8 +21,12 @@ func TestBuildMarketplaceRow_MapsStatusToRow(t *testing.T) {
 		},
 	}
 	cr.Status.PluginsCount = 7
+	cr.Status.UpstreamRev, cr.Status.LatestUpstreamRev = "pinned", "head"
 
 	rowTrue := buildMarketplaceRow(cr, "True", "")
+	if rowTrue.UpstreamRev != "pinned" || rowTrue.LatestUpstreamRev != "head" {
+		t.Errorf("revs = %q/%q, want pinned/head", rowTrue.UpstreamRev, rowTrue.LatestUpstreamRev)
+	}
 	if rowTrue.Namespace != "ach" || rowTrue.Name != "ackstorm" {
 		t.Errorf("identity = %s/%s, want ach/ackstorm", rowTrue.Namespace, rowTrue.Name)
 	}

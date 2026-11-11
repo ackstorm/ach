@@ -520,3 +520,25 @@ func TestBuildGitSpecForEntry_TokenNeedsSamePortAndHTTPS(t *testing.T) {
 		t.Errorf("http entry got a token")
 	}
 }
+
+// TestBuildGitSpecForEntry_LocalPathUsesCatalogRev: a local-path entry is the
+// same snapshot as the marketplace.json it came from, so a pinned catalog
+// pins its in-repo plugins too.
+func TestBuildGitSpecForEntry_LocalPathUsesCatalogRev(t *testing.T) {
+	const rev = "cccccccccccccccccccccccccccccccccccccccc"
+	mp := &achv1alpha1.PluginMarketplace{
+		Spec: achv1alpha1.PluginMarketplaceSpec{
+			Type:   "github",
+			GitHub: &achv1alpha1.GitHubSource{Repo: "org/mkt", Ref: "main"},
+		},
+	}
+	mp.Status.UpstreamRev = rev
+	entry := contentkit.ClaudeCodeMarketplacePlugin{
+		Name:   "p",
+		Source: contentkit.ClaudeCodeMarketplaceSource{Kind: kindLocalPath, Path: "plugins/p"},
+	}
+	spec, err := buildGitSpecForEntry(mp, entry, nil, "/cache")
+	if err != nil || spec.SHA != rev {
+		t.Fatalf("sha=%q err=%v; want the catalog's served commit", spec.SHA, err)
+	}
+}
