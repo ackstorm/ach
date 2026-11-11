@@ -1,7 +1,7 @@
 # Acknowledged govulncheck residuals
 
 **Date:** 2026-10-23
-**Toolchain at acknowledgement:** Go 1.26.10 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.60.0`
+**Toolchain at acknowledgement:** Go 1.26.11 (`Dockerfile.devtools` + `go.mod` `toolchain` directive), `golang.org/x/net@v0.60.0`
 **Scanner:** `govulncheck@v1.3.0` (pinned in `Dockerfile.devtools::GOVULNCHECK_VERSION`)
 **Invocation:** `./scripts/dev.sh govulncheck ./...`
 
@@ -31,6 +31,11 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-11-11: Bumped Go toolchain 1.26.10 → **1.26.11** (`go.mod` `toolchain` +
+  `Dockerfile.devtools` pinned to `golang:1.26.11-bookworm`). Clears
+  `GO-2026-6859` (net/http: HTTP/1 server crash from a MaxBytesReader header
+  race), which a govulncheck DB refresh surfaced on PR #45's security job (not
+  caused by it). Ack-list stays empty; gate expects 0.
 - 2026-10-23: Bumped Go toolchain 1.26.9 → **1.26.10** (`go.mod` `toolchain` +
   `Dockerfile.devtools` pinned to `golang:1.26.10-bookworm`). Clears
   `GO-2026-6809` (crypto/x509: distrust compromised intermediate certificates),

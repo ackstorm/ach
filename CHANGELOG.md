@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Security
+- Built with Go 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash in
+  `net/http`).
+
 ### Changed
 - Enterprise licence (`ee/LICENSE`): enabling the Enterprise features in any
   environment, evaluation included, needs a signed agreement with ACKstorm.
