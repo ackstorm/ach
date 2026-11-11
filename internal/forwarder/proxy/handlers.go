@@ -7,10 +7,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/forwarder/a2amcp"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/forwarder/metrics"
 	"github.com/ackstorm/ach/internal/forwarder/precheck"
@@ -161,6 +163,43 @@ func HandlerA2A(deps HandlerDeps) http.HandlerFunc {
 	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a", true)
 }
 
+// HandlerA2AMCP returns the /a2a/{name}/mcp handler: the agent's MCP face
+// (package a2amcp). An ACH caller is prechecked like /a2a/{name}; the tool
+// then calls this forwarder's own /a2a/{name} at selfURL with the caller's
+// credential headers, so the JWT, budget tags and LiteLLM key come from that
+// route. A caller with no ACH identity is not prechecked, as on /a2a/{name}.
+func HandlerA2AMCP(deps HandlerDeps, selfURL string, credHeaders []string) http.HandlerFunc {
+	bridge := a2amcp.Handler(func(r *http.Request) (string, string) {
+		name := chi.URLParam(r, "name")
+		return name, selfURL + "/a2a/" + url.PathEscape(name)
+	}, credHeaders)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if kc, ok := middleware.KeyContextFromCtx(r.Context()); ok {
+			if _, ok := precheckOrReject(w, r, deps, precheck.CheckA2A, kc, chi.URLParam(r, "name"), "/a2a"); !ok {
+				return
+			}
+		}
+		bridge.ServeHTTP(w, r)
+	}
+}
+
+// precheckOrReject runs check for an ACH caller and, on failure, writes the
+// precheck envelope (Hub §15.5) and reports false.
+func precheckOrReject(w http.ResponseWriter, r *http.Request, deps HandlerDeps, check precheckFunc,
+	kc middleware.KeyContext, name, routeLabel string) ([]string, bool) {
+	granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
+	if err == nil {
+		return granted, true
+	}
+	outcome, status, code := classifyPrecheckErr(err)
+	metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), outcome)
+	if errors.Is(err, precheck.ErrLiteLLMUnreachable) {
+		metrics.IncLiteLLMUnreachable()
+	}
+	render.Error(w, status, code, codeMessage(code), middleware.RequestIDFromCtx(r.Context()))
+	return nil, false
+}
+
 type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) ([]string, error)
 
 func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool) http.HandlerFunc {
@@ -187,14 +226,8 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 
 		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
 		//    JWT "groups" claim (filtered at the mint below).
-		granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
-		if err != nil {
-			outcome, status, code := classifyPrecheckErr(err)
-			metrics.IncRequests(routeLabel, keyTypeLabel, outcome)
-			if errors.Is(err, precheck.ErrLiteLLMUnreachable) {
-				metrics.IncLiteLLMUnreachable()
-			}
-			render.Error(w, status, code, codeMessage(code), reqID)
+		granted, ok := precheckOrReject(w, r, deps, check, kc, name, routeLabel)
+		if !ok {
 			return
 		}
 

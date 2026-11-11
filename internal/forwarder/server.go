@@ -32,6 +32,9 @@ type Deps struct {
 	Signer        jwt.Signer
 	Logger        *slog.Logger
 	BaseURL       string
+	// SelfURL is this forwarder's own traffic listener (http://127.0.0.1:8080):
+	// the /a2a/{name}/mcp tool calls /a2a/{name} there.
+	SelfURL string
 	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,
 	// G3); the proxy Director decrypts the sealed LiteLLM key material per
 	// request before forwarding. Required (validated at process start).
@@ -117,6 +120,11 @@ func New(deps Deps) http.Handler {
 		// router before precheck/proxy ever run. Same for /a2a.
 		r.Handle("/mcp/{name}", proxy.HandlerMCP(hdeps))
 		r.Handle("/mcp/{name}/*", proxy.HandlerMCP(hdeps))
+		credHeaders := []string{"Authorization"}
+		for _, h := range deps.AuthnOptions.Headers {
+			credHeaders = append(credHeaders, h.Name)
+		}
+		r.Handle("/a2a/{name}/mcp", proxy.HandlerA2AMCP(hdeps, deps.SelfURL, credHeaders))
 		r.Handle("/a2a/{name}", proxy.HandlerA2A(hdeps))
 		r.Handle("/a2a/{name}/*", proxy.HandlerA2A(hdeps))
 	})

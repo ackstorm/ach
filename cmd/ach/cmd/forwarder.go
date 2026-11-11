@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -422,6 +423,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		Signer:           out.signer,
 		Logger:           logger,
 		BaseURL:          cfg.BaseURL,
+		SelfURL:          selfURL(cfg.TrafficBindAddr),
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
 		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
 		BIPResolver:      bipCache,    // C1/C4: Postgres-backed BIP cache
@@ -541,4 +543,14 @@ func runForwarder(_ *cobra.Command, _ []string) error {
 	}
 	logger.Info("forwarder shutdown complete")
 	return nil
+}
+
+// selfURL is the URL this process reaches its own traffic listener at; a
+// wildcard bind is reached on loopback.
+func selfURL(addr string) string {
+	host, port, _ := net.SplitHostPort(addr)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
