@@ -156,6 +156,10 @@ type MaterializeResult struct {
 	// when NotModified is true.
 	UpstreamRev string
 
+	// LatestUpstreamRev is the head of the git source's ref (empty for
+	// non-git sources); it differs from UpstreamRev on a pinned source.
+	LatestUpstreamRev string
+
 	// NotModified is true when the conditional fetch hit (HTTP 304 / SHA
 	// equality / generation equality). When true, the caller MUST skip
 	// the rename(2) and keep the prior cached file unchanged. The
@@ -232,7 +236,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// ─── Step 4: NotModified shortcut. ───
 	if result.NotModified {
 		// Body is nil on 304 per FetchResult contract; nothing to close.
-		return MaterializeResult{NotModified: true, UpstreamRev: deps.PriorRev}
+		return MaterializeResult{NotModified: true, UpstreamRev: deps.PriorRev, LatestUpstreamRev: result.LatestUpstreamRev}
 	}
 
 	// ─── Step 5: stage at .tmp/stg-<random>. ───
@@ -344,6 +348,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 			Name:                  deps.Name,
 			StorageLocation:       deps.FinalPath,
 			UpstreamRev:           result.UpstreamRev,
+			LatestUpstreamRev:     result.LatestUpstreamRev,
 			LastSuccessfulRefresh: now,
 			NextRefreshAt:         next,
 			MaxStalenessSeconds:   int64(deps.Refresh.MaxStaleness.Duration.Seconds()),
@@ -357,7 +362,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		}
 	}
 
-	return MaterializeResult{UpstreamRev: result.UpstreamRev}
+	return MaterializeResult{UpstreamRev: result.UpstreamRev, LatestUpstreamRev: result.LatestUpstreamRev}
 }
 
 // classifyFetchError maps an error returned by [materializeExternalRef]

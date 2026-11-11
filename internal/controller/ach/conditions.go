@@ -224,6 +224,33 @@ const (
 	ConditionSynced          = "Synced"
 )
 
+// UpdateAvailable is set only on a CR pinned to spec.<git>.commit: True when
+// its ref has moved past the pin.
+const (
+	ConditionUpdateAvailable = "UpdateAvailable"
+	// ReasonNewerRevision: the watched ref points at a commit other than the
+	// pinned one; promote it by committing the new SHA to spec.
+	ReasonNewerRevision = "NewerRevision"
+	// ReasonUpToDate: the pinned commit is the head of the watched ref.
+	ReasonUpToDate = "UpToDate"
+)
+
+// applyUpdateAvailable keeps UpdateAvailable in step with the pin: removed
+// when the CR is not pinned, True when ref's head differs from the served
+// commit, False otherwise.
+func applyUpdateAvailable(conds *[]metav1.Condition, pinned, served, latest, ref string, observedGen int64) {
+	switch {
+	case pinned == "":
+		apimeta.RemoveStatusCondition(conds, ConditionUpdateAvailable)
+	case latest != served:
+		setExternalRefCondition(conds, ConditionUpdateAvailable, metav1.ConditionTrue, ReasonNewerRevision,
+			fmt.Sprintf("%s is at %s; serving pinned %s", ref, latest, served), observedGen)
+	default:
+		setExternalRefCondition(conds, ConditionUpdateAvailable, metav1.ConditionFalse, ReasonUpToDate,
+			fmt.Sprintf("pinned %s is the head of %s", served, ref), observedGen)
+	}
+}
+
 // reasonToConditionStates maps a Hub §6.6 reason to the
 // (SourceReachable, Synced) status pair. The matrix:
 //

@@ -3,8 +3,10 @@
 package ach
 
 import (
+	"strings"
 	"testing"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
@@ -192,5 +194,23 @@ func TestSetConflictWithUIRowCondition(t *testing.T) {
 	}
 	if c.ObservedGeneration != 7 {
 		t.Errorf("ObservedGeneration = %d, want 7", c.ObservedGeneration)
+	}
+}
+
+func TestApplyUpdateAvailable(t *testing.T) {
+	const a, b = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	var conds []metav1.Condition
+	applyUpdateAvailable(&conds, a, a, b, "main", 3)
+	c := apimeta.FindStatusCondition(conds, ConditionUpdateAvailable)
+	if c == nil || c.Status != metav1.ConditionTrue || c.Reason != ReasonNewerRevision || !strings.Contains(c.Message, b) {
+		t.Fatalf("pinned behind: %+v", c)
+	}
+	applyUpdateAvailable(&conds, a, a, a, "main", 3)
+	if c := apimeta.FindStatusCondition(conds, ConditionUpdateAvailable); c == nil || c.Status != metav1.ConditionFalse || c.Reason != ReasonUpToDate {
+		t.Fatalf("pinned at head: %+v", c)
+	}
+	applyUpdateAvailable(&conds, "", b, b, "main", 3)
+	if apimeta.FindStatusCondition(conds, ConditionUpdateAvailable) != nil {
+		t.Fatal("unpinned CR must carry no UpdateAvailable")
 	}
 }

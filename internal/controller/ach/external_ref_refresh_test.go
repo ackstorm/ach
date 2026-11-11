@@ -46,6 +46,7 @@ import (
 type fakeFetcher struct {
 	body        []byte
 	upstreamRev string
+	latestRev   string
 	notModified bool
 	err         error
 }
@@ -55,11 +56,12 @@ func (f *fakeFetcher) Fetch(_ context.Context, _ sources.FetchRequest) (*sources
 		return nil, f.err
 	}
 	if f.notModified {
-		return &sources.FetchResult{NotModified: true, UpstreamRev: f.upstreamRev}, nil
+		return &sources.FetchResult{NotModified: true, UpstreamRev: f.upstreamRev, LatestUpstreamRev: f.latestRev}, nil
 	}
 	return &sources.FetchResult{
-		Body:        io.NopCloser(bytes.NewReader(f.body)),
-		UpstreamRev: f.upstreamRev,
+		Body:              io.NopCloser(bytes.NewReader(f.body)),
+		UpstreamRev:       f.upstreamRev,
+		LatestUpstreamRev: f.latestRev,
 	}, nil
 }
 
@@ -296,7 +298,7 @@ func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 
 func TestMaterializeExternalRef_NotModified(t *testing.T) {
 	root := newCacheRoot(t)
-	fake := &fakeFetcher{notModified: true, upstreamRev: "sha-prior"}
+	fake := &fakeFetcher{notModified: true, upstreamRev: "sha-prior", latestRev: "sha-head"}
 	finalPath := filepath.Join(root, "plugin", "mat-nm.tar.gz")
 
 	deps := ExternalRefRefreshDeps{
@@ -320,6 +322,9 @@ func TestMaterializeExternalRef_NotModified(t *testing.T) {
 	}
 	if res.UpstreamRev != "sha-prior" {
 		t.Errorf("NotModified UpstreamRev = %q; want %q", res.UpstreamRev, "sha-prior")
+	}
+	if res.LatestUpstreamRev != "sha-head" {
+		t.Errorf("NotModified LatestUpstreamRev = %q; want the head of ref, sha-head", res.LatestUpstreamRev)
 	}
 	if _, err := os.Stat(finalPath); err == nil {
 		t.Errorf("NotModified branch wrote a file at %s", finalPath)
