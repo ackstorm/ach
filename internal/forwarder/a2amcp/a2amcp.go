@@ -31,7 +31,12 @@ type sendIn struct {
 // call.
 func Handler(target func(*http.Request) (name, agentURL string), cred func(context.Context) map[string]string) http.Handler {
 	hc := &http.Client{} // no Timeout: it would cut the SSE body mid-stream
-	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+	// The SDK calls getServer more than once per request, so the server is
+	// built once here and handed over through the request context.
+	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		return r.Context().Value(serverKey{}).(*mcp.Server)
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name, agentURL := target(r)
 		// ponytail: the card is fetched on every POST (stateless: one server
 		// per request); cache it per agent if card latency shows up.
@@ -42,9 +47,11 @@ func Handler(target func(*http.Request) (name, agentURL string), cred func(conte
 			func(ctx context.Context, req *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {
 				return send(ctx, hc, agentURL, cred(ctx), req, in)
 			})
-		return s
-	}, &mcp.StreamableHTTPOptions{Stateless: true})
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), serverKey{}, s)))
+	})
 }
+
+type serverKey struct{}
 
 func send(ctx context.Context, hc *http.Client, agentURL string, cred map[string]string,
 	req *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {

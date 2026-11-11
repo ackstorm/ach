@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,8 +142,10 @@ func TestSendMessageFailedTaskIsToolError(t *testing.T) {
 // LiteLLM serves the card with securitySchemes in the A2A 0.3 shape, which
 // a2a-go's AgentCard rejects; the description must still come through.
 func TestToolDescribesAgentFromLiteLLMCard(t *testing.T) {
+	var fetches atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/a2a/echo/.well-known/agent-card.json", func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
 		_, _ = w.Write([]byte(`{"name":"echo","description":"Echoes what it is sent.",` +
 			`"skills":[{"id":"echo","name":"Echo","description":"repeats the message"}],` +
 			`"security":[{"LiteLLMKey":[]}],` +
@@ -152,11 +155,15 @@ func TestToolDescribesAgentFromLiteLLMCard(t *testing.T) {
 	litellm := httptest.NewServer(mux)
 	t.Cleanup(litellm.Close)
 	cs := connect(t, litellm.URL+"/a2a/echo", func(string) {})
+	before := fetches.Load()
 	res, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d := res.Tools[0].Description; !strings.Contains(d, "Echoes what it is sent.") || !strings.Contains(d, "Echo: repeats the message") {
 		t.Errorf("description %q lacks the card's description and skill", d)
+	}
+	if n := fetches.Load() - before; n != 1 {
+		t.Errorf("tools/list fetched the card %d times, want 1", n)
 	}
 }
