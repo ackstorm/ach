@@ -62,5 +62,7 @@ ach-cli environment list --admin                   # every Environment, not only
 
 `admin list` shows sync status per object (`Synced`, `Degraded(<reason>)`, `STALE`),
 the first place to look when an Environment's plugin or skill does not show up after a
-change. Writing or changing those objects is done in the platform's GitOps repo, not
-with `ach-cli`.
+change. Its `AVAILABLE` column shows a newer commit on the watched branch of a source
+pinned to a commit (`-` when none): the upstream changed and the platform still serves
+the pinned one until it is promoted. Writing or changing those objects is done in the
+platform's GitOps repo, not with `ach-cli`.

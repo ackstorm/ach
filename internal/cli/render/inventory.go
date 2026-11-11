@@ -21,6 +21,10 @@ type AdminObjectView struct {
 	Namespace  string            `json:"namespace,omitempty"`
 	Name       string            `json:"name"`
 	Version    string            `json:"version,omitempty"`
+	// UpstreamRev / LatestUpstreamRev: the served revision and the head of
+	// the watched ref (content kinds with a git source).
+	UpstreamRev       string `json:"upstreamRev,omitempty"`
+	LatestUpstreamRev string `json:"latestUpstreamRev,omitempty"`
 	Sync       string            `json:"sync"`
 	SyncReason string            `json:"syncReason,omitempty"`
 	UpdatedAt  string            `json:"updatedAt,omitempty"` // RFC3339
@@ -36,16 +40,19 @@ const syncFalseGreen = "fresh*"
 
 // sectionHeader returns the tab-separated column header for a kind. plugins and
 // skills gain a SOURCE column (standalone vs marketplace); marketplaces /
-// skill-marketplaces show the object's STATUS + contained count; all other
-// kinds use the base NAME/NAMESPACE/VERSION/SYNC/AGE/ORIGIN layout.
+// skill-marketplaces show the object's STATUS + contained count; content kinds
+// carry AVAILABLE (see available); all other kinds use the base
+// NAME/NAMESPACE/VERSION/SYNC/AGE/ORIGIN layout.
 func sectionHeader(kind string) string {
 	switch kind {
 	case "plugins", "skills":
-		return "NAME\tSOURCE\tVERSION\tSYNC\tAGE\tORIGIN"
+		return "NAME\tSOURCE\tVERSION\tAVAILABLE\tSYNC\tAGE\tORIGIN"
 	case "marketplaces":
-		return "NAME\tNAMESPACE\tVERSION\tSTATUS\tPLUGINS\tAGE"
+		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tPLUGINS\tAGE"
 	case "skill-marketplaces":
-		return "NAME\tNAMESPACE\tVERSION\tSTATUS\tSKILLS\tAGE"
+		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tSKILLS\tAGE"
+	case "prompts", "artifacts":
+		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSYNC\tAGE\tORIGIN"
 	default:
 		return "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN"
 	}
@@ -56,17 +63,21 @@ func sectionHeader(kind string) string {
 func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 	switch kind {
 	case "plugins", "skills":
-		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
-			dash(r.Name), dash(r.Extra["source"]), dash(r.Version),
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Extra["source"]), dash(r.Version), dash(available(r)),
 			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
 	case "marketplaces":
-		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
-			dash(r.Name), dash(r.Namespace), dash(r.Version),
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), dash(r.Extra["pluginsCount"]), ageOf(r.UpdatedAt, now))
 	case "skill-marketplaces":
-		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
-			dash(r.Name), dash(r.Namespace), dash(r.Version),
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), dash(r.Extra["skillsCount"]), ageOf(r.UpdatedAt, now))
+	case "prompts", "artifacts":
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
+			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
+			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
 	default:
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version),
@@ -124,6 +135,15 @@ func FormatAdminInventory(grouped map[string][]AdminObjectView) string {
 		sb.WriteString("\n* prompts/artifacts: name-resolved only; content presence is not gated\n")
 	}
 	return sb.String()
+}
+
+// available is the AVAILABLE cell: the head of the watched ref when it is not
+// the served revision (a pinned source behind its ref), else empty.
+func available(r AdminObjectView) string {
+	if r.LatestUpstreamRev == "" || r.LatestUpstreamRev == r.UpstreamRev {
+		return ""
+	}
+	return r.LatestUpstreamRev[:min(12, len(r.LatestUpstreamRev))]
 }
 
 // dash renders an empty cell as "-" so columns stay visually aligned.

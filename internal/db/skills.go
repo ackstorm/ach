@@ -42,6 +42,8 @@ type SkillRow struct {
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
 	UpdatedAt             time.Time  // server-set on UPSERT
+	UpstreamRev           string     // external_refs.upstream_rev: the served revision
+	LatestUpstreamRev     string     // external_refs.latest_upstream_rev: head of the git ref
 }
 
 // SkillResolution is the single row returned by ResolveSkillByName when a
@@ -123,7 +125,11 @@ func ListSkills(ctx context.Context, pool *pgxpool.Pool, ns string) ([]SkillRow,
 	const sql = `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at
+		       resource_version, updated_at,
+		       COALESCE((SELECT e.upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'skill' AND e.name = skills.name), ''),
+		       COALESCE((SELECT e.latest_upstream_rev FROM external_refs e
+		                  WHERE e.kind = 'skill' AND e.name = skills.name), '')
 		  FROM skills
 		 WHERE namespace = $1
 		 ORDER BY name ASC
@@ -142,7 +148,7 @@ func ListSkills(ctx context.Context, pool *pgxpool.Pool, ns string) ([]SkillRow,
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.ResourceVersion, &r.UpdatedAt,
+			&r.ResourceVersion, &r.UpdatedAt, &r.UpstreamRev, &r.LatestUpstreamRev,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListSkills(%s) scan: %w", ns, err)
 		}

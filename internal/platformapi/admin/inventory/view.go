@@ -49,16 +49,21 @@ const (
 // decodes. Kind-specific fields land in Extra so the envelope stays stable
 // across all object kinds.
 type AdminObjectView struct {
-	Kind       string            `json:"kind"`
-	Namespace  string            `json:"namespace,omitempty"`
-	Name       string            `json:"name"`
-	Version    string            `json:"version,omitempty"`
-	Sync       string            `json:"sync"`
-	SyncReason string            `json:"syncReason,omitempty"`
-	UpdatedAt  string            `json:"updatedAt,omitempty"` // RFC3339
-	Origin     string            `json:"origin,omitempty"`
-	Locked     bool              `json:"locked"`
-	Extra      map[string]string `json:"extra,omitempty"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name"`
+	Version   string `json:"version,omitempty"`
+	// UpstreamRev is the served revision (commit SHA for git sources);
+	// LatestUpstreamRev is the head of the watched ref, which differs on a
+	// source pinned to an older spec.<git>.commit.
+	UpstreamRev       string            `json:"upstreamRev,omitempty"`
+	LatestUpstreamRev string            `json:"latestUpstreamRev,omitempty"`
+	Sync              string            `json:"sync"`
+	SyncReason        string            `json:"syncReason,omitempty"`
+	UpdatedAt         string            `json:"updatedAt,omitempty"` // RFC3339
+	Origin            string            `json:"origin,omitempty"`
+	Locked            bool              `json:"locked"`
+	Extra             map[string]string `json:"extra,omitempty"`
 }
 
 // contentSync derives the staleness state for a refresh-tracked row. last==nil
@@ -123,14 +128,16 @@ func rfc3339OrEmpty(t time.Time) string {
 func pluginRowToView(r db.PluginRow, now time.Time) AdminObjectView {
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "plugin",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
-		Extra:      map[string]string{"source": "plugin"},
+		Kind:              "plugin",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              sync,
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
+		Extra:             map[string]string{"source": "plugin"},
 	}
 }
 
@@ -141,14 +148,16 @@ func skillRowToView(r db.SkillRow, now time.Time) AdminObjectView {
 	// from a marketplace-discovered skill in the merged SKILLS section.
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "skill",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
-		Extra:      map[string]string{"source": "skill"},
+		Kind:              "skill",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              sync,
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
+		Extra:             map[string]string{"source": "skill"},
 	}
 }
 
@@ -159,13 +168,14 @@ func skillRowToView(r db.SkillRow, now time.Time) AdminObjectView {
 func skillMarketplaceSkillAsSkillView(r db.SkillMarketplaceSkill, now time.Time) AdminObjectView {
 	sync, reason := contentSync(optTime(r.LastSuccessfulRefresh), r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "skill",
-		Name:       r.Name + "@" + r.MarketplaceName,
-		Version:    r.UpstreamRev,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.LastSuccessfulRefresh),
-		Extra:      map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
+		Kind:        "skill",
+		Name:        r.Name + "@" + r.MarketplaceName,
+		Version:     r.UpstreamRev,
+		UpstreamRev: r.UpstreamRev,
+		Sync:        sync,
+		SyncReason:  reason,
+		UpdatedAt:   rfc3339OrEmpty(r.LastSuccessfulRefresh),
+		Extra:       map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
 	}
 }
 
@@ -174,27 +184,31 @@ func skillMarketplaceSkillAsSkillView(r db.SkillMarketplaceSkill, now time.Time)
 func skillMarketplaceRowToView(r db.SkillMarketplaceRow) AdminObjectView {
 	sync, reason := marketplaceSync(r.SyncedStatus, r.SyncedReason)
 	return AdminObjectView{
-		Kind:       "skill-marketplace",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
-		Extra:      map[string]string{"skillsCount": strconv.Itoa(r.SkillsCount)},
+		Kind:              "skill-marketplace",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              sync,
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
+		Extra:             map[string]string{"skillsCount": strconv.Itoa(r.SkillsCount)},
 	}
 }
 
 func promptRowToView(r db.PromptRow, now time.Time) AdminObjectView {
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	v := AdminObjectView{
-		Kind:       "prompt",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       markFalseGreen(sync), // prompts are name-only / not content-gated
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
+		Kind:              "prompt",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              markFalseGreen(sync), // prompts are name-only / not content-gated
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
 	}
 	if r.ContentType != nil && *r.ContentType != "" {
 		v.Extra = map[string]string{"contentType": *r.ContentType}
@@ -205,14 +219,16 @@ func promptRowToView(r db.PromptRow, now time.Time) AdminObjectView {
 func artifactRowToView(r db.ArtifactRow, now time.Time) AdminObjectView {
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "artifact",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       markFalseGreen(sync), // artifacts are pass-through / not content-gated
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
-		Extra:      map[string]string{"scope": r.Scope},
+		Kind:              "artifact",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              markFalseGreen(sync), // artifacts are pass-through / not content-gated
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
+		Extra:             map[string]string{"scope": r.Scope},
 	}
 }
 
@@ -223,13 +239,14 @@ func artifactRowToView(r db.ArtifactRow, now time.Time) AdminObjectView {
 func marketplacePluginAsPluginView(r db.MarketplacePlugin, now time.Time) AdminObjectView {
 	sync, reason := contentSync(optTime(r.LastSuccessfulRefresh), r.MaxStalenessSeconds, now)
 	return AdminObjectView{
-		Kind:       "plugin",
-		Name:       r.Name + "@" + r.MarketplaceName,
-		Version:    r.UpstreamRev,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.LastSuccessfulRefresh),
-		Extra:      map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
+		Kind:        "plugin",
+		Name:        r.Name + "@" + r.MarketplaceName,
+		Version:     r.UpstreamRev,
+		UpstreamRev: r.UpstreamRev,
+		Sync:        sync,
+		SyncReason:  reason,
+		UpdatedAt:   rfc3339OrEmpty(r.LastSuccessfulRefresh),
+		Extra:       map[string]string{"source": "marketplace", "marketplace": r.MarketplaceName},
 	}
 }
 
@@ -240,14 +257,16 @@ func marketplacePluginAsPluginView(r db.MarketplacePlugin, now time.Time) AdminO
 func marketplaceRowToView(r db.MarketplaceRow) AdminObjectView {
 	sync, reason := marketplaceSync(r.SyncedStatus, r.SyncedReason)
 	return AdminObjectView{
-		Kind:       "marketplace",
-		Namespace:  r.Namespace,
-		Name:       r.Name,
-		Version:    r.ResourceVersion,
-		Sync:       sync,
-		SyncReason: reason,
-		UpdatedAt:  rfc3339OrEmpty(r.UpdatedAt),
-		Extra:      map[string]string{"pluginsCount": strconv.Itoa(r.PluginsCount)},
+		Kind:              "marketplace",
+		Namespace:         r.Namespace,
+		Name:              r.Name,
+		Version:           r.ResourceVersion,
+		UpstreamRev:       r.UpstreamRev,
+		LatestUpstreamRev: r.LatestUpstreamRev,
+		Sync:              sync,
+		SyncReason:        reason,
+		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
+		Extra:             map[string]string{"pluginsCount": strconv.Itoa(r.PluginsCount)},
 	}
 }
 

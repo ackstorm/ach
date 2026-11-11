@@ -268,3 +268,31 @@ func TestPluginRowToView_SourcePlugin(t *testing.T) {
 		t.Errorf("Extra[source] = %q, want plugin", v.Extra["source"])
 	}
 }
+
+// TestViewsCarryRevisions: every content row exposes its served revision and
+// the head of the watched ref; marketplace entries carry only their own
+// served revision (their marketplace row reports the catalog's head).
+func TestViewsCarryRevisions(t *testing.T) {
+	now := time.Now()
+	const a, b = "aaaaaaaaaaaa", "bbbbbbbbbbbb"
+	for name, v := range map[string]AdminObjectView{
+		"plugin":            pluginRowToView(db.PluginRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"skill":             skillRowToView(db.SkillRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"prompt":            promptRowToView(db.PromptRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"artifact":          artifactRowToView(db.ArtifactRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"marketplace":       marketplaceRowToView(db.MarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),
+		"skill-marketplace": skillMarketplaceRowToView(db.SkillMarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),
+	} {
+		if v.UpstreamRev != a || v.LatestUpstreamRev != b {
+			t.Errorf("%s: revs = %q/%q, want %q/%q", name, v.UpstreamRev, v.LatestUpstreamRev, a, b)
+		}
+	}
+	for name, v := range map[string]AdminObjectView{
+		"plugin@marketplace": marketplacePluginAsPluginView(db.MarketplacePlugin{UpstreamRev: a}, now),
+		"skill@marketplace":  skillMarketplaceSkillAsSkillView(db.SkillMarketplaceSkill{UpstreamRev: a}, now),
+	} {
+		if v.UpstreamRev != a || v.LatestUpstreamRev != "" {
+			t.Errorf("%s: revs = %q/%q, want %q/empty", name, v.UpstreamRev, v.LatestUpstreamRev, a)
+		}
+	}
+}
