@@ -715,3 +715,32 @@ func TestHandlerA2A_StripsBodyTags(t *testing.T) {
 		t.Fatalf("bad body: code = %d forwarded = %v", w.Code, rec.Calls() != calls)
 	}
 }
+
+// HandlerA2AMCP — an agent the bound Environment does not grant is 403
+// unauthorized_resource, exactly as on /a2a/{name}; nothing is called.
+func TestHandlerA2AMCP_PrecheckFail(t *testing.T) {
+	upstream, rec := upstreamSpy()
+	defer upstream.Close()
+
+	env := makeEnvRow("demo", nil, []string{"agent-x"}, nil)
+	deps := mkDeps(t, upstream, &mockSigner{}, precheck.Deps{EnvProvider: newEnvProvider(env), TeamsResolver: &mockTeamsResolver{}}, newBIPResolver())
+
+	kc := middleware.KeyContext{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"}
+	r := requestWithKC(t, http.MethodPost, "/a2a/agent-MISSING/mcp", kc, `{}`)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("name", "agent-MISSING")
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	HandlerA2AMCP(deps, upstream.URL, []string{"x-ach-key"})(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d; want 403 (body=%s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"unauthorized_resource"`) {
+		t.Errorf("body = %s; want code unauthorized_resource", w.Body.String())
+	}
+	if rec.Calls() != 0 {
+		t.Errorf("upstream calls = %d; want 0", rec.Calls())
+	}
+}

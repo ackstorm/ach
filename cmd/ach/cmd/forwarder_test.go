@@ -61,3 +61,17 @@ func TestForwarderConfig_TrustedIdP(t *testing.T) {
 		t.Fatalf("claim: %+v %v", cfg, err)
 	}
 }
+
+func TestSelfURL(t *testing.T) {
+	for addr, want := range map[string]string{
+		":8080":          "http://127.0.0.1:8080",
+		"0.0.0.0:8080":   "http://127.0.0.1:8080",
+		"[::]:8080":      "http://127.0.0.1:8080",
+		"10.0.0.7:9000":  "http://10.0.0.7:9000",
+		"localhost:8081": "http://localhost:8081",
+	} {
+		if got := selfURL(addr); got != want {
+			t.Errorf("selfURL(%q) = %q; want %q", addr, got, want)
+		}
+	}
+}
