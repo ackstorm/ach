@@ -196,8 +196,8 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	if len(w.Keys) != 2 {
-		t.Errorf("FileWrite.Keys count = %d, want 2 (the mcpServers; no a2aAgents)", len(w.Keys))
+	if len(w.Keys) != 3 {
+		t.Errorf("FileWrite.Keys count = %d, want 3 (2 MCP servers + the A2A agent's MCP face)", len(w.Keys))
 	}
 
 	// JSON round-trip: decode the content and verify shape.
@@ -217,8 +217,11 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	if err := json.Unmarshal(w.Content, &got); err != nil {
 		t.Fatalf("json.Unmarshal Content: %v", err)
 	}
-	if len(got.MCPServers) != 2 {
-		t.Errorf("mcpServers map size = %d, want 2", len(got.MCPServers))
+	if len(got.MCPServers) != 3 {
+		t.Errorf("mcpServers map size = %d, want 3", len(got.MCPServers))
+	}
+	if u := got.MCPServers["a2a-demo-agent"].HTTPURL; u != "http://localhost:8080/a2a/demo-agent/mcp" {
+		t.Errorf("mcpServers.a2a-demo-agent.httpUrl = %q; want /a2a/demo-agent/mcp", u)
 	}
 	// gemini-cli streamable-HTTP MCP uses "httpUrl" (a plain "url" means
 	// SSE) and carries NO "type" field. Schema:

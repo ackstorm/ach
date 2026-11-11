@@ -248,21 +248,23 @@ func TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes(t *testing.T) {
 // adapter's contributed runtime key shape to the right kind, and ignores
 // non-runtime keys (so 0 runtime servers yields no "mcp"/"a2a" bucket and the
 // summary never prints "0 mcp"). MCP prefixes vary per adapter: mcpServers.
-// (claude/gemini/pi), mcp_servers. (codex), mcp. (opencode); A2A is
-// a2aAgents. (most) / a2a_agents. (codex).
+// (claude/gemini/pi), mcp_servers. (codex), mcp. (opencode); an MCP server
+// named a2a-<agent> is an A2A agent's MCP face.
 func TestRuntimeKindForKey(t *testing.T) {
 	cases := []struct {
 		key  string
 		want string
 	}{
-		{"mcpServers.my-mcp", "mcp"},   // claude/gemini/pi
-		{"mcp_servers.my-mcp", "mcp"},  // codex (TOML snake_case)
-		{"mcp.my-mcp", "mcp"},          // opencode
-		{"a2aAgents.my-agent", "a2a"},  // claude/gemini/opencode/most
-		{"a2a_agents.my-agent", "a2a"}, // codex
-		{"ach:begin", ""},              // composite marker — not a runtime component
-		{"settings.foo", ""},           // unrelated key
-		{"", ""},                       // empty
+		{"mcpServers.my-mcp", "mcp"},        // claude/gemini/pi
+		{"mcp_servers.my-mcp", "mcp"},       // codex (TOML snake_case)
+		{"mcp.my-mcp", "mcp"},               // opencode
+		{"mcpServers.a2a-my-agent", "a2a"},  // claude/gemini/pi
+		{"mcp_servers.a2a-my-agent", "a2a"}, // codex
+		{"mcp.a2a-my-agent", "a2a"},         // opencode
+		{"a2aAgents.my-agent", ""},          // no tool reads it; never written
+		{"ach:begin", ""},                   // composite marker — not a runtime component
+		{"settings.foo", ""},                // unrelated key
+		{"", ""},                            // empty
 	}
 	for _, tc := range cases {
 		if got := runtimeKindForKey(tc.key); got != tc.want {

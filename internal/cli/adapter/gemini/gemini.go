@@ -128,9 +128,10 @@ func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []stri
 		MCPServers: map[string]geminiMCPEntry{},
 	}
 
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
+	servers := adapter.RuntimeMCPServers(m)
+	contributedKeys := make([]string, 0, len(servers))
 
-	for _, server := range m.Runtime.MCPServers {
+	for _, server := range servers {
 		entry := geminiMCPEntry{
 			HTTPURL: server.Endpoint,
 			Headers: adapter.HeadersWithCredential(credential, m.Environment),

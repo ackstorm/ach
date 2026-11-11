@@ -185,10 +185,10 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// Keys contributed: the 2 MCP servers, each under "mcp_servers."; the
-	// A2A agent is not written.
-	if len(w.Keys) != 2 {
-		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
+	// Keys contributed: the 2 MCP servers and the A2A agent's MCP face, each
+	// under "mcp_servers.".
+	if len(w.Keys) != 3 {
+		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
 	}
 	for _, k := range w.Keys {
 		if !strings.HasPrefix(k, "mcp_servers.") {
@@ -201,8 +201,11 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	if _, err := toml.Decode(string(w.Content), &got); err != nil {
 		t.Fatalf("toml.Decode Content: %v\nbytes:\n%s", err, string(w.Content))
 	}
-	if len(got.MCPServers) != 2 {
-		t.Errorf("mcp_servers table count = %d, want 2", len(got.MCPServers))
+	if len(got.MCPServers) != 3 {
+		t.Errorf("mcp_servers table count = %d, want 3", len(got.MCPServers))
+	}
+	if u := got.MCPServers["a2a-demo-agent"].URL; u != "http://localhost:8080/a2a/demo-agent/mcp" {
+		t.Errorf("mcp_servers.a2a-demo-agent.url = %q; want /a2a/demo-agent/mcp", u)
 	}
 	if got.MCPServers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("mcp_servers.demo-mcp-jwt.url = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].URL)

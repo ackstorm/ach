@@ -156,9 +156,9 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// Keys contributed: the 2 MCP servers; the A2A agent is not written.
-	if len(w.Keys) != 2 {
-		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
+	// Keys contributed: the 2 MCP servers and the A2A agent's MCP face.
+	if len(w.Keys) != 3 {
+		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
 	}
 
 	// Decode the content and verify shape.
@@ -177,8 +177,11 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 	if err := json.Unmarshal(w.Content, &got); err != nil {
 		t.Fatalf("json.Unmarshal Content: %v", err)
 	}
-	if len(got.MCPServers) != 2 {
-		t.Errorf("mcpServers map size = %d, want 2", len(got.MCPServers))
+	if len(got.MCPServers) != 3 {
+		t.Errorf("mcpServers map size = %d, want 3", len(got.MCPServers))
+	}
+	if a := got.MCPServers["a2a-demo-agent"]; a.Type != "http" || a.URL != "http://localhost:8080/a2a/demo-agent/mcp" {
+		t.Errorf("mcpServers[a2a-demo-agent] = %+v; want http entry at /a2a/demo-agent/mcp", a)
 	}
 	if got.MCPServers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCPServers["demo-mcp-jwt"].URL)

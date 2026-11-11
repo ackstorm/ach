@@ -131,9 +131,10 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 		MCPServers: map[string]piMCPEntry{},
 	}
 
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
+	servers := adapter.RuntimeMCPServers(m)
+	contributedKeys := make([]string, 0, len(servers))
 
-	for _, server := range m.Runtime.MCPServers {
+	for _, server := range servers {
 		shape.MCPServers[server.ID] = piMCPEntry{
 			URL:     server.Endpoint,
 			Headers: adapter.HeadersWithCredential(credential, m.Environment),
