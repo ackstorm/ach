@@ -13,6 +13,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   members are admins, alongside the `admins.users` emails. Membership is read
   at login and at every token refresh, so someone removed from the group loses
   admin within an hour, with no restart (#47).
+- Pin a git-sourced Plugin, Skill, Prompt, Artifact or marketplace to a commit
+  with `spec.<github|gitlab|bitbucket>.commit`. ACH serves that commit, keeps
+  watching `ref`, and reports a newer one in `status.latestUpstreamRev`, the
+  `UpdateAvailable` condition and the AVAILABLE column of `ach-cli admin list`.
+  Promote it by committing the new SHA (#48).
 
 ### Fixed
 - `ach-cli environment hydrate`, `environment uninstall` and `ach-cli local`
