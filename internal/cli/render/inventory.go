@@ -17,20 +17,20 @@ import (
 // AdminObjectView is the uniform per-object row `ach admin list` decodes and
 // renders. JSON tags match the server emitter verbatim.
 type AdminObjectView struct {
-	Kind       string            `json:"kind"`
-	Namespace  string            `json:"namespace,omitempty"`
-	Name       string            `json:"name"`
-	Version    string            `json:"version,omitempty"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name"`
+	Version   string `json:"version,omitempty"`
 	// UpstreamRev / LatestUpstreamRev: the served revision and the head of
 	// the watched ref (content kinds with a git source).
-	UpstreamRev       string `json:"upstreamRev,omitempty"`
-	LatestUpstreamRev string `json:"latestUpstreamRev,omitempty"`
-	Sync       string            `json:"sync"`
-	SyncReason string            `json:"syncReason,omitempty"`
-	UpdatedAt  string            `json:"updatedAt,omitempty"` // RFC3339
-	Origin     string            `json:"origin,omitempty"`
-	Locked     bool              `json:"locked"`
-	Extra      map[string]string `json:"extra,omitempty"`
+	UpstreamRev       string            `json:"upstreamRev,omitempty"`
+	LatestUpstreamRev string            `json:"latestUpstreamRev,omitempty"`
+	Sync              string            `json:"sync"`
+	SyncReason        string            `json:"syncReason,omitempty"`
+	UpdatedAt         string            `json:"updatedAt,omitempty"` // RFC3339
+	Origin            string            `json:"origin,omitempty"`
+	Locked            bool              `json:"locked"`
+	Extra             map[string]string `json:"extra,omitempty"`
 }
 
 // syncFalseGreen is the marker the server attaches to a fresh prompt/artifact
