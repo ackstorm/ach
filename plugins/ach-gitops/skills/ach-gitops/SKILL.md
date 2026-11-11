@@ -48,7 +48,7 @@ user's agent tool by `ach-cli environment hydrate`.
 | Writing or debugging... | Read |
 |-------------------------|------|
 | An Environment: runtime grants, groups/tags, guardrails, context, teams, budget, conditions | `references/environment.md` |
-| The source block shared by every content kind: `type`, `github`/`gitlab`/`bitbucket`/`s3`/`gcs`/`http`, `ref`, `path`, `authSecretRef`, `refresh` | `references/content-sources.md` |
+| The source block shared by every content kind: `type`, `github`/`gitlab`/`bitbucket`/`s3`/`gcs`/`http`, `ref`, `commit` (pinning), `path`, `authSecretRef`, `refresh` | `references/content-sources.md` |
 | A PluginMarketplace or SkillMarketplace, `name@marketplace` refs, filters, what a valid plugin or skill directory needs | `references/marketplaces.md` |
 | A standalone Plugin, Skill, Prompt or Artifact | `references/objects.md` |
 | A BackendIdentityPolicy (JWT to an MCP/A2A backend, consent broker) or the LiteLLMConnection | `references/identity.md` |

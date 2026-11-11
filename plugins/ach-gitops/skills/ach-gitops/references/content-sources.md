@@ -14,6 +14,7 @@ spec:
     host: git.example.com      # bare host or https://host; default gitlab.com
     project: my-org/agent-plugins
     ref: main                  # branch or tag
+    commit: 3f2a…              # optional, 40 hex; serve this commit (see "Pinning")
     path: plugins/code-review  # optional; see "path" below
     authSecretRef:
       name: git-read-token     # Secret in the SAME namespace as this CR
@@ -27,9 +28,9 @@ spec:
 
 | `type` | Fields | Auth |
 |--------|--------|------|
-| `github` | `repo` (`owner/name`, required), `ref` (required), `path` | optional `authSecretRef`; token key defaults to `GITHUB_TOKEN` |
-| `gitlab` | `host` (default `gitlab.com`), `project` (`namespace/project`, required), `ref` (required), `path` | optional `authSecretRef`; token key defaults to `GITLAB_TOKEN` |
-| `bitbucket` | `workspace` (required), `repo` (required), `ref` (required), `path` | optional `authSecretRef`; token key defaults to `BITBUCKET_TOKEN` |
+| `github` | `repo` (`owner/name`, required), `ref` (required), `commit`, `path` | optional `authSecretRef`; token key defaults to `GITHUB_TOKEN` |
+| `gitlab` | `host` (default `gitlab.com`), `project` (`namespace/project`, required), `ref` (required), `commit`, `path` | optional `authSecretRef`; token key defaults to `GITLAB_TOKEN` |
+| `bitbucket` | `workspace` (required), `repo` (required), `ref` (required), `commit`, `path` | optional `authSecretRef`; token key defaults to `BITBUCKET_TOKEN` |
 | `s3` | `bucket`, `key` (object key or prefix), `region` (all required), `endpoint` (S3-compatible stores) | **required** `authSecretRef` with `accessKeyIdKey` and `secretAccessKeyKey` |
 | `gcs` | `bucket`, `object` (object or prefix), both required | **required** `authSecretRef`; `key` names the service-account JSON |
 | `http` | `url` (required, http or https) | optional `authSecretRef` with `headerName` + `headerValueKey` |
@@ -42,15 +43,37 @@ clone), so there is no REST rate limit to worry about.
 
 ## ref
 
-`ref` is a branch or tag name. A commit SHA does not work: the operator resolves `ref`
-with `git ls-remote`, which only advertises refs. Pick deliberately:
+`ref` is a branch or tag name, never a SHA (the operator resolves it with
+`git ls-remote`, which only advertises refs). Without `commit`, ACH serves the head of
+`ref`:
 
 - A **branch** (`main`) follows upstream: every refresh can bring new content to every
   user at their next hydrate. Fine for your own repos.
-- A **tag** (`v1.4.0`) is reproducible. Prefer it for third-party repos, and bump it in
-  Git when you want the update.
+- A **tag** (`v1.4.0`) is reproducible as long as nobody moves the tag.
 
 `status.upstreamRev` shows the commit (or ETag/generation) the last successful fetch got.
+
+## Pinning to a commit
+
+`commit` (40 hex characters, git types only) pins what users get; `ref` stays the
+branch or tag ACH watches:
+
+```yaml
+  github:
+    repo: anthropics/skills
+    ref: main                                         # watched
+    commit: 3f2a9c0e1b4d5f6a7b8c9d0e1f2a3b4c5d6e7f80  # served
+```
+
+- ACH serves exactly that commit until the CR changes, whatever is pushed to `ref`.
+- Every refresh still reads the head of `ref` into `status.latestUpstreamRev`. The
+  `UpdateAvailable` condition is `True` (reason `NewerRevision`) when it differs from
+  the served `status.upstreamRev`, `False` (`UpToDate`) when not; it is absent on an
+  unpinned CR. `ach-cli admin list <kind>` shows the newer commit in `AVAILABLE`.
+- **Promote** = review the upstream diff, then commit the new SHA to `commit` in the
+  GitOps repo. Removing `commit` goes back to following `ref`.
+- `s3`, `gcs` and `http` cannot be pinned: they cannot fetch an older object on
+  demand.
 
 ## path
 

@@ -100,3 +100,24 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and
   walk the whole repo. Symlinked / traversal / missing paths →
   `UpstreamInvalid`.
+
+## Content pinning (`spec.<git>.commit`)
+
+- Every git fetch (`gitprovider.FetchViaProvider`) resolves `ref` with
+  `ls-remote` and reports it as `LatestUpstreamRev`; the served revision is
+  `spec.<git>.commit` when set, else that head. `PriorRev` equal to the served
+  revision is `NotModified`, so a pinned CR clones once per commit and then
+  costs one `ls-remote` per refresh.
+- `status.latestUpstreamRev` + condition `UpdateAvailable` (`NewerRevision` /
+  `UpToDate`, present only on a pinned CR) are set by `applyUpdateAvailable` in
+  the shared driver and both marketplace `markSyncedTrue`s. On `NotModified` the
+  driver writes `external_refs.latest_upstream_rev` alone
+  (`SetExternalRefLatestRev`), since the full upsert does not run.
+- Marketplaces: the catalog's served commit lands in `status.upstreamRev`, and
+  `local-path` entries are fetched at that commit (`buildGitSpecForEntry` reads
+  `mp.Status.UpstreamRev`), so they are the same snapshot as `marketplace.json`.
+  External entries keep their own `sha`/`ref`; their heads are not tracked.
+- Revisions reach the admin inventory through `external_refs` (standalone kinds,
+  read by scalar subquery in `db.List{Plugins,Skills,Prompts,Artifacts}`) and the
+  `marketplaces` / `skill_marketplaces` `upstream_rev` + `latest_upstream_rev`
+  columns. Content-service, hydrate and Environments never see a revision.

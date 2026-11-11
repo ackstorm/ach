@@ -15,6 +15,7 @@ to close it; `ROADMAP.md` says which ones are scheduled.
 | Postgres backup and restore undefined | `pk_`/`ek_` rows and the catalog cannot be re-derived from the CRDs | Back up the ACH database like any Postgres; ACH ships no procedure. |
 | Guardrails cover `ek_` traffic only | A `pk_` (human CLI) reaches the same models through the access group, which carries no guardrails | Team-scoped guardrails also need a LiteLLM Enterprise licence. |
 | Budgets are enforced after the fact | The request that crosses a ceiling is served; the next is refused | LiteLLM prices a request after it completes. |
+| Only git sources can be pinned | `s3`, `gcs` and `http` content always serves the latest object; marketplace entries from other repos follow their own `ref` unless the catalogue lists a `sha` | Those sources cannot fetch an older revision on demand; `spec.<git>.commit` pins git sources and a marketplace's own entries. |
 | Leaver detection depends on the Dex connector | `saml`, `oauth`, `keystone`, `authproxy` never ask the IdP on refresh | Offboarding for those is `ach-cli admin keys revoke --owner <email>`. |
 
 ## Gotchas

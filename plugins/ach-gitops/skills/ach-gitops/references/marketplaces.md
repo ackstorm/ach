@@ -71,6 +71,15 @@ Each `plugins[]` entry's `source` is then fetched on its own:
 The marketplace's `authSecretRef` is reused for every entry's git fetch, so entries that
 live in other private repos need a token that can read them too.
 
+### Pinning
+
+A `commit` on a git-typed marketplace (`content-sources.md`, "Pinning to a commit")
+pins the catalogue and every string-`source` entry: those come from the commit the
+`marketplace.json` was served from. Entries in other repos (`github`, `url`,
+`git-subdir`) are pinned only when the catalogue gives them a `sha`; otherwise they
+follow their own `ref`. A `SkillMarketplace` with `commit` is pinned whole (every
+skill is sliced from that one commit).
+
 ### What a valid plugin directory needs
 
 The entry's source must resolve to the **plugin root**. It is accepted when it has
