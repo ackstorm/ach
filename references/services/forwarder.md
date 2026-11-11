@@ -1,6 +1,6 @@
 # forwarder contract
 
-`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/developer-guide/jwt-forwarder.md`](../../docs/developer-guide/jwt-forwarder.md).
+`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` (plus its MCP face `/a2a/<n>/mcp`) and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/developer-guide/jwt-forwarder.md`](../../docs/developer-guide/jwt-forwarder.md).
 
 ## Routes and discovery documents
 
@@ -45,6 +45,10 @@ A request with an ACH identity is re-checked against its key row after 60 s and 
 ## No catch-all; /v2/model/info
 
 There is **no catch-all**: a path outside `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>`, `/.well-known` is 404 — LiteLLM's own surface (`/ui`, `/key/*`, `/health`…) lives on LiteLLM's own host, never behind ACH. One owned exception: `GET /v2/model/info` (credential required, forwarded like `/v1`) because ach-agent's `litellm_usage` cost source prices there with its `ek_`. LiteLLM has no row for a `model_group_alias`, so `?model=<alias>` goes upstream unchanged (LiteLLM's 403 for a name the caller is not granted stands) and a 200 is answered with the alias's own row: the target deployment's allow-listed caps from a master-key `litellm.CapsCache`, refreshed hourly (`proxy/modelinfo.go`, the other response-body rewrite; `references/litellm-permission-model.md` §16); an alias whose target LiteLLM does not describe passes through.
+
+## The A2A agent's MCP face
+
+`/a2a/<name>/mcp` is the agent's MCP face (`internal/forwarder/a2amcp`, official MCP and A2A Go SDKs): a stateless streamable-HTTP MCP server with one tool, `send_message(message, context_id?)`, described from the agent card LiteLLM serves. An ACH caller is prechecked exactly like `/a2a/<name>` (same 403 codes). The tool then calls `SendStreamingMessage` on the forwarder's OWN `/a2a/<name>` over loopback (`Deps.SelfURL`, from `ACH_FORWARDER_BIND_ADDRESS`) with the caller's credential headers, so the BIP JWT, budget tags, tag stripping and the caller's LiteLLM key all come from that route; never the card's URL, which names LiteLLM's host. Each `working` status update with text becomes an MCP progress notification; the call returns the text plus `context_id` on completed or input-required, and a tool error on failed, canceled, rejected or auth-required. There is no task polling: LiteLLM v1.108.1 forwards `GetTask` as `tasks/get`, which A2A 1.0 agents reject (ackstorm/ach-agent#63).
 
 ## Backend identity JWTs and the owner gate
 

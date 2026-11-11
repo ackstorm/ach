@@ -59,7 +59,7 @@ removes exactly what it installed.
 
 | Term | What it is |
 |------|------------|
-| Forwarder | The ACH endpoint your tools call for models (`/v1`, `/gemini`), MCP servers (`/mcp/<name>`) and A2A agents (`/a2a/<name>`). It checks your credential and passes the request to LiteLLM. |
+| Forwarder | The ACH endpoint your tools call for models (`/v1`, `/gemini`), MCP servers (`/mcp/<name>`) and A2A agents (`/a2a/<name>`, or as an MCP server at `/a2a/<name>/mcp`). It checks your credential and passes the request to LiteLLM. |
 | BackendIdentityPolicy | Tells the forwarder to send an MCP server or A2A agent a short-lived token naming the caller. Without one, the backend receives no identity. |
 | Shell team | A LiteLLM team that allows nothing by itself. Each key lives in one, so it reaches only what its Environments grant. |
 | LiteLLMConnection | How ACH reaches LiteLLM and where its master key is. |

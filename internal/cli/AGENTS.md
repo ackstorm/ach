@@ -313,7 +313,8 @@ removal would need cross-env reference counting). The hydrate engine guards
 ## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
-MCP runtime config; A2A agents are not written, no tool reads them there),
+MCP runtime config: the Environment's MCP servers plus each A2A agent's MCP
+face `a2a-<agent>` at `<endpoint>/mcp`, via `adapter.RuntimeMCPServers`),
 `ProjectionRules()` (the plugin→tool routing). The
 `RenderRuntime` path (remote MCP via the ACH forwarder: `httpUrl`/`url` +
 `x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
