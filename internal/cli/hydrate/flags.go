@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/cli/conflict"
+	"github.com/ackstorm/ach/internal/cli/state"
 )
 
 // Opts carries every engine flag the §6.7 14-step orchestrator
@@ -61,6 +62,10 @@ type Opts struct {
 	// Only hydrates just this item: runtime off, no --sync, state MERGED
 	// into the prior state instead of replacing the Plugins/Skills buckets.
 	Only *Item
+
+	// EnvVersion is the Environment version fetched before this run; a full
+	// hydrate records it in state. Nil leaves the recorded version as is.
+	EnvVersion *state.EnvVersion
 
 	// --- behavior toggles ---
 

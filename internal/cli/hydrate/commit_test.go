@@ -2122,3 +2122,22 @@ func TestCommit_ItemChanges(t *testing.T) {
 		t.Fatalf("re-run: FirstRun=%v Changes=%+v Unchanged=%d", again.FirstRun, again.Changes, again.Unchanged)
 	}
 }
+
+func TestComposeNextState_RecordsEnvVersion(t *testing.T) {
+	v := &state.EnvVersion{Version: "sha256:new", Items: map[string]string{"plugin/a": "1"}}
+	old := &state.EnvVersion{Version: "sha256:old"}
+	existing := &state.File{SchemaVersion: "3", EnvVersion: old}
+	compose := func(o Opts) *state.EnvVersion {
+		c := &commit{opts: o, stateStore: &fakeStateStore{}}
+		return c.composeNextState(existing, nil, RenderResult{}, true, "claude-code", nil).EnvVersion
+	}
+	if got := compose(Opts{Environment: "demo", EnvVersion: v}); got != v {
+		t.Errorf("full hydrate must record the fetched version, got %+v", got)
+	}
+	if got := compose(Opts{Environment: "demo", EnvVersion: v, OnlyRuntime: true}); got != old {
+		t.Errorf("--only-runtime must keep the recorded version, got %+v", got)
+	}
+	if got := compose(Opts{Environment: "demo"}); got != old {
+		t.Errorf("no fetched version must keep the recorded one, got %+v", got)
+	}
+}

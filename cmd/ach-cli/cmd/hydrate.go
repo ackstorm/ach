@@ -62,6 +62,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
+	"github.com/ackstorm/ach/internal/cli/state"
 	"github.com/ackstorm/ach/internal/keys"
 )
 
@@ -522,6 +523,15 @@ func hydrateEnv(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effective
 		hc.ExtraHeaders = http.Header{"x-ach-environment": {effectiveEnv}}
 	}
 
+	// A full hydrate records the Environment version it was written at,
+	// fetched before writing so content that moves during the run reads as
+	// behind, never as up to date. A server without the endpoint leaves it
+	// unrecorded and the hydrate goes on.
+	var ver *state.EnvVersion
+	if !in.dryRun && !in.onlyRuntime && in.only == nil {
+		ver, _ = fetchEnvVersion(cmd.Context(), hc, effectiveEnv)
+	}
+
 	// --target accepts a comma-separated list (mirroring local `plugin install
 	// --target a,b`); hc + limits above are platform-independent and shared.
 	results := make([]hydrate.Result, 0, len(platformIDs))
@@ -540,6 +550,7 @@ func hydrateEnv(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effective
 			Force:             in.force,
 			Conflict:          in.conflict,
 			Only:              in.only,
+			EnvVersion:        ver,
 			Models:            in.models,
 			DryRun:            in.dryRun,
 			AllowSymlinks:     in.allowSymlinks,

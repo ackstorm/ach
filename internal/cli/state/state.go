@@ -27,6 +27,16 @@ type File struct {
 	Skills        []FileEntry    `json:"skills,omitempty"`
 	RuntimeFiles  []FileEntry    `json:"runtimeFiles,omitempty"`
 	Adapter       AdapterSection `json:"adapter,omitempty"`
+	// EnvVersion is the Environment version this target was last fully
+	// hydrated at; environment status compares it with the server's.
+	EnvVersion *EnvVersion `json:"envVersion,omitempty"`
+}
+
+// EnvVersion is an Environment's fingerprint and the revision of each item it
+// held, keyed "kind/name" (runtime items carry an empty revision).
+type EnvVersion struct {
+	Version string            `json:"version"`
+	Items   map[string]string `json:"items"`
 }
 
 // FileEntry is the per-file projection record under each resource

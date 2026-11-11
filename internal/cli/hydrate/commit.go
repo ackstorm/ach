@@ -1102,6 +1102,7 @@ func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, re
 		next.Skills = existing.Skills
 		next.RuntimeFiles = existing.RuntimeFiles
 		next.Adapter = existing.Adapter
+		next.EnvVersion = existing.EnvVersion
 	}
 	if m != nil && m.Environment != "" && next.Environment == "" {
 		next.Environment = m.Environment
@@ -1126,6 +1127,10 @@ func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, re
 		})
 		*b = append(*b, fresh...)
 		return next
+	}
+
+	if c.opts.EnvVersion != nil && !c.opts.OnlyRuntime {
+		next.EnvVersion = c.opts.EnvVersion
 	}
 
 	// Compose the adapter section from the fresh render. publishRuntimeFile
