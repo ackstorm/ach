@@ -17,14 +17,11 @@
 // Design notes:
 //
 //   - Runtime-config target: ".codex/config.toml" with [mcp_servers.<id>]
-//     and [a2a_agents.<id>] tables (CLI spec §7.4 codex). An mcp_servers
-//     table carries url + http_headers["x-ach-key"] (codex infers HTTP
-//     from url presence — there is NO transport key). MergeDeep
-//     classification; contributed top-level keys recorded under
-//     "mcp_servers.<id>" / "a2a_agents.<id>" so STATE-05 inverse-merge
-//     can target the right TOML subtable. (a2a_agents tables still carry
-//     the legacy url+headers+transport shape pending the separate a2a
-//     design decision.)
+//     tables (CLI spec §7.4 codex), each carrying url +
+//     http_headers["x-ach-key"] (codex infers HTTP from url presence —
+//     there is NO transport key). MergeDeep classification; contributed
+//     top-level keys recorded under "mcp_servers.<id>" so STATE-05
+//     inverse-merge can target the right TOML subtable.
 //
 //   - Plugin transformation: src follows the Claude Code plugin layout
 //     (.claude-plugin/plugin.json + agents/ + commands/ + prompts/ +
@@ -150,18 +147,6 @@ type mcpServerTable struct {
 	HTTPHeaders map[string]string `toml:"http_headers,omitempty"`
 }
 
-// a2aAgentTable mirrors the MCP server shape for A2A agents under
-// [a2a_agents.<id>]. CLI spec §7.4 codex does not pin a fixed A2A
-// shape; we mirror the MCP shape for symmetry, same posture as
-// claudecode mirrors mcpServerEntry to a2aAgentEntry. If the upstream
-// contract solidifies on something else, this adapter is the only impl
-// that needs to change — the Adapter interface stays stable.
-type a2aAgentTable struct {
-	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers,omitempty"`
-	Transport string            `toml:"transport"`
-}
-
 // configTOMLShape is the .codex/config.toml document Codex reads. The
 // top-level keys are emitted by BurntSushi/toml in source-declaration
 // order — but our values are maps, and TOML map encoding sorts keys
@@ -172,7 +157,6 @@ type configTOMLShape struct {
 	ModelProvider  string                        `toml:"model_provider,omitempty"`
 	ModelProviders map[string]modelProviderTable `toml:"model_providers,omitempty"`
 	MCPServers     map[string]mcpServerTable     `toml:"mcp_servers,omitempty"`
-	A2AAgents      map[string]a2aAgentTable      `toml:"a2a_agents,omitempty"`
 }
 
 // modelProviderTable is `[model_providers.<id>]` — the Hub as a custom model
@@ -197,20 +181,19 @@ const modelProviderID = "ach"
 // renderConfigTOML builds the .codex/config.toml bytes from a manifest
 // + credential. Returned bytes are deterministic.
 //
-// Each MCP server / A2A agent contributes a [mcp_servers.<id>] /
-// [a2a_agents.<id>] table with the credential under headers["x-ach-key"]
-// per the on-disk plaintext discipline CLI-04 (D-04) establishes.
+// Each MCP server contributes a [mcp_servers.<id>] table with the
+// credential under headers["x-ach-key"] per the on-disk plaintext
+// discipline CLI-04 (D-04) establishes. A2A agents are not written: Codex
+// reads no A2A table.
 func renderConfigTOML(m *manifest.Manifest, credential, helperBaseURL string) ([]byte, []string, error) {
 	shape := configTOMLShape{
 		MCPServers: map[string]mcpServerTable{},
-		A2AAgents:  map[string]a2aAgentTable{},
 	}
 
 	// Track contributed top-level keys for state.adapter.files[*].keys[]
-	// (STATE-02 + ADAPT-05). The "mcp_servers." / "a2a_agents." prefix
-	// discipline lets STATE-05 inverse-merge target the right TOML
-	// subtable.
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
+	// (STATE-02 + ADAPT-05). The "mcp_servers." prefix lets STATE-05
+	// inverse-merge target the right TOML subtable.
+	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
 
 	for _, server := range m.Runtime.MCPServers {
 		shape.MCPServers[server.ID] = mcpServerTable{
@@ -218,15 +201,6 @@ func renderConfigTOML(m *manifest.Manifest, credential, helperBaseURL string) ([
 			HTTPHeaders: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		contributedKeys = append(contributedKeys, "mcp_servers."+server.ID)
-	}
-
-	for _, agent := range m.Runtime.A2AAgents {
-		shape.A2AAgents[agent.ID] = a2aAgentTable{
-			URL:       agent.Endpoint,
-			Headers:   adapter.HeadersWithCredential(credential, m.Environment),
-			Transport: "http",
-		}
-		contributedKeys = append(contributedKeys, "a2a_agents."+agent.ID)
 	}
 
 	if helperBaseURL != "" {

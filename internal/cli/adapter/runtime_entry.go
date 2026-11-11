@@ -13,14 +13,3 @@ type MCPServerEntry struct {
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
-
-// A2AAgentEntry mirrors the MCP server shape for A2A agents in the
-// JSON-rendering adapters. Structurally identical to MCPServerEntry;
-// kept as a distinct named type so the two roles read clearly at the
-// call sites (and so a future divergence in the A2A contract does not
-// silently change the MCP shape).
-type A2AAgentEntry struct {
-	Type    string            `json:"type"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}

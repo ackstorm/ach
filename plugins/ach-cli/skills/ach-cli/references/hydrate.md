@@ -98,7 +98,10 @@ ach-cli environment uninstall <environment>              # this folder (-g for t
 Only what hydrate wrote is removed. In shared files (`.mcp.json`,
 `.claude/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`, `CLAUDE.md`)
 only ACH's own keys or marked blocks go; the user's settings stay. `--only-runtime`
-removes just the MCP and A2A entries.
+removes just the MCP entries.
+
+An Environment's A2A agents are not written into any tool's config: no supported tool
+reads an A2A entry there. `environment describe` still lists them.
 
 ## Don't edit the tool's config while hydrate runs
 

@@ -156,9 +156,9 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// Keys contributed: 2 MCP servers + 1 A2A agent = 3
-	if len(w.Keys) != 3 {
-		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
+	// Keys contributed: the 2 MCP servers; the A2A agent is not written.
+	if len(w.Keys) != 2 {
+		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
 	}
 
 	// Decode the content and verify shape.
@@ -186,11 +186,8 @@ func TestRenderRuntime_EmitsMcpJson(t *testing.T) {
 	if got.MCPServers["demo-mcp-jwt"].Type != "http" {
 		t.Errorf("MCP type = %q, want http", got.MCPServers["demo-mcp-jwt"].Type)
 	}
-	if len(got.A2AAgents) != 1 {
-		t.Errorf("a2aAgents map size = %d, want 1", len(got.A2AAgents))
-	}
-	if got.A2AAgents["demo-agent"].URL != "http://localhost:8080/a2a/demo-agent" {
-		t.Errorf("A2A url = %q, want endpoint from manifest", got.A2AAgents["demo-agent"].URL)
+	if len(got.A2AAgents) != 0 {
+		t.Errorf("a2aAgents written = %v; no tool reads it, so hydrate writes none", got.A2AAgents)
 	}
 }
 

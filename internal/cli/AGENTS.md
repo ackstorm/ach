@@ -262,8 +262,8 @@ projected (self-heals on `<b>`'s next hydrate).
   `--sync` widens it to every bucket (plugins/skills/prompts files).
 - **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
   at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
-  codex (empty `[a2a_agents]` table) report a phantom edit on every
-  re-hydrate/uninstall. A drift verdict is also dropped when disk already
+  a row report a phantom edit on every re-hydrate/uninstall whenever the doc
+  carried tables outside the row's keys. A drift verdict is also dropped when disk already
   equals what we write (heals rows recorded with an older hash scope).
 - **`environment hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
   off, extracts just that item, and `composeNextState` MERGES — carries every
@@ -313,7 +313,8 @@ removal would need cross-env reference counting). The hydrate engine guards
 ## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
-MCP/A2A runtime config), `ProjectionRules()` (the plugin→tool routing). The
+MCP runtime config; A2A agents are not written, no tool reads them there),
+`ProjectionRules()` (the plugin→tool routing). The
 `RenderRuntime` path (remote MCP via the ACH forwarder: `httpUrl`/`url` +
 `x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
 merge) — don't conflate them.

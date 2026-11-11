@@ -108,9 +108,8 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 
 // configJSONShape is the `.opencode/opencode.json` document OpenCode
 // reads. The `mcp` top-level key holds MCP server registrations per
-// spec §7.4 opencode row. We mirror the `a2aAgents` key under the
-// same root to surface A2A agents symmetrically — same choice
-// claudecode made in 07-W3-01.
+// spec §7.4 opencode row. A2A agents are not written: OpenCode reads no
+// A2A key.
 //
 // Deterministic output: encoding/json sorts map keys lexicographically,
 // so the same manifest + credential always yields byte-identical bytes.
@@ -130,16 +129,8 @@ type opencodeMCPEntry struct {
 
 // MCP carries the per-server JSON shape OpenCode consumes under the
 // `mcp` key (opencodeMCPEntry: type=remote, url, enabled, headers).
-//
-// A2AAgents mirrors the MCP server shape for A2A agents. Spec §7.4 does
-// not pin a fixed A2A shape for OpenCode (A2A support is recent +
-// evolving across all platforms), so we mirror the MCP shape under a
-// parallel `a2aAgents` top-level key — same shape choice as claudecode.
-// A2A projection across non-claude tools is a separate open design
-// question (see hydrate bug-sweep plan).
 type configJSONShape struct {
-	MCP       map[string]opencodeMCPEntry      `json:"mcp"`
-	A2AAgents map[string]adapter.A2AAgentEntry `json:"a2aAgents,omitempty"`
+	MCP map[string]opencodeMCPEntry `json:"mcp"`
 }
 
 // renderConfigJSON builds the `.opencode/opencode.json` bytes from a
@@ -151,14 +142,13 @@ type configJSONShape struct {
 // symmetry claudecode established).
 func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := configJSONShape{
-		MCP:       map[string]opencodeMCPEntry{},
-		A2AAgents: map[string]adapter.A2AAgentEntry{},
+		MCP: map[string]opencodeMCPEntry{},
 	}
 
 	// Track contributed top-level keys for state.adapter.files[*].keys[]
 	// (STATE-02 + ADAPT-05). Sorted lexicographically so the output
 	// stays stable across invocations.
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
+	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
 
 	for _, server := range m.Runtime.MCPServers {
 		entry := opencodeMCPEntry{
@@ -169,24 +159,6 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 		}
 		shape.MCP[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcp."+server.ID)
-	}
-
-	for _, agent := range m.Runtime.A2AAgents {
-		entry := adapter.A2AAgentEntry{
-			Type:    "http",
-			URL:     agent.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential, m.Environment),
-		}
-		shape.A2AAgents[agent.ID] = entry
-		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
-	}
-
-	// Drop the a2aAgents key entirely when empty so a manifest with no
-	// A2A agents round-trips to {"mcp": {...}} only. The omitempty tag
-	// handles this only when the map is nil — empty-map serializes to
-	// {} not absent. Convert empty → nil.
-	if len(shape.A2AAgents) == 0 {
-		shape.A2AAgents = nil
 	}
 
 	sort.Strings(contributedKeys)
