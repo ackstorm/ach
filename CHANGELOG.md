@@ -4,6 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli environment status` tells whether a hydrated folder is up to date:
+  per Environment, `up to date` or what changed since the last hydrate (`+`
+  added to the Environment, `-` removed, `~` new content). It asks the server
+  (`POST /platform/hydrate/version`) and downloads nothing; `--offline` keeps
+  the local-only view. A folder hydrated by an older ach-cli says
+  `version unknown` until its next hydrate. A state file written by this
+  version cannot be read by an older ach-cli.
+
 ## [1.1.13] - 2026-11-11
 
 ### Security

@@ -183,7 +183,7 @@ ach-cli environment search <text>            # find a plugin, skill, MCP serverâ
                 code={`cd ~/Projects/<environment> && ach-cli environment hydrate   # every Environment recorded here
 ach-cli environment hydrate <environment> --sync           # also remove what the Environment dropped
 ach-cli environment hydrate <environment> --dry-run        # preview the diff, write nothing
-ach-cli environment status                                 # what is installed here
+ach-cli environment status                                 # what is installed here, and whether it is up to date
 ach-cli environment uninstall <environment>                # remove what hydrate wrote`}
               />
               <Step

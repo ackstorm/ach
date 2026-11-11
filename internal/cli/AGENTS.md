@@ -52,7 +52,7 @@ ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U 
 ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
-ach-cli environment status [env] [-g] [--dir d] [--files] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
+ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
 ach-cli launch <claude|codex|gemini|opencode|pi> [--environment <env>] [hydrate flags] [-- tool args]   # runHydrate for that one target (no env = every env recorded under the folder's .ach/, like bare environment hydrate), then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
@@ -518,6 +518,13 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 
 ## Server contracts the CLI depends on
 
+- **Environment version.** A full hydrate fetches `POST /platform/hydrate/version`
+  (`{version, items[{kind,name,rev}]}`) before writing and records it as
+  `envVersion` in each target's state (`--only`/`--only-runtime` keep the old
+  one; a failed fetch records nothing and the hydrate goes on). `environment
+  status` fetches it again per Environment and diffs the item maps
+  (`versionChanges`): `+`/`-` membership, `~` a moved revision. `--offline`,
+  `--files` and `-o json` never call the server.
 - **Environment visibility.** `environment list` (`GET /platform/environments`)
   shows only the Environments the caller's teams are authorized for, admins
   included. `environment list --admin` sends `?all=true`, the admin-only full

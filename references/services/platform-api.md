@@ -102,3 +102,17 @@ revalidation as `/token`; refused = 401 `ach_login_required`, Dex down = 503
 connector re-reads the Directory API on refresh); 204. The `/token` refresh and
 console revalidation never enrol, by design: the per-team LiteLLM lookups stay
 off the hourly path.
+
+## Environment version
+
+`POST /platform/hydrate/version` takes the hydrate body (`{"environment": …}`)
+and the same caller rules (a `pk_` names the Environment, an `ek_` is bound to
+one, a non-admin needs a shared team). It answers
+`{environment, version, items[{kind, name, rev}]}`: every item a hydrate writes
+(`prompt|plugin|artifact|skill|model|mcp|a2a`, sorted by kind then name), `rev`
+the revision it serves (the content row's `upstream_rev`; a `name@marketplace`
+item takes its marketplace's; empty for model/mcp/a2a), and `version` the
+sha256 of the sorted items. A full `ach-cli environment hydrate` records it and
+`environment status` compares it. A marketplace item reads as updated whenever
+its marketplace moves, even if its own files did not change. The hydrate
+manifest itself is unchanged (the CLI decodes it strictly).
