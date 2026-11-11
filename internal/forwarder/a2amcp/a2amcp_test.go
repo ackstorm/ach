@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
@@ -115,9 +115,8 @@ func TestToolDescribesAgentFromCard(t *testing.T) {
 }
 
 func TestSendMessageStreamsProgressAndAnswers(t *testing.T) {
-	var mu sync.Mutex
-	var progress []string
-	cs := connect(t, newAgent(t), func(m string) { mu.Lock(); progress = append(progress, m); mu.Unlock() })
+	progress := make(chan string, 8)
+	cs := connect(t, newAgent(t), func(m string) { progress <- m })
 	p := &mcp.CallToolParams{Name: "send_message", Arguments: map[string]any{"message": "hi"}}
 	p.SetProgressToken("tok")
 	res, err := cs.CallTool(t.Context(), p)
@@ -128,10 +127,15 @@ func TestSendMessageStreamsProgressAndAnswers(t *testing.T) {
 	if res.IsError || !strings.Contains(text, "echo: hi key=ek_test") || !strings.Contains(text, "context_id: ") {
 		t.Fatalf("result isError=%v text=%q", res.IsError, text)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(progress) != 1 || progress[0] != "thinking" {
-		t.Errorf("progress = %q; want [thinking]", progress)
+	// The client delivers notifications on its own goroutine, so one may land
+	// after CallTool returns.
+	select {
+	case m := <-progress:
+		if m != "thinking" {
+			t.Errorf("progress = %q; want thinking", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("no progress notification")
 	}
 }
 
