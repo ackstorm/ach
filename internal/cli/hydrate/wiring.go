@@ -473,20 +473,17 @@ func hasDirectRuntime(m *manifest.Manifest) bool {
 }
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary
-// component kind, or "" when the key is not a runtime component. Prefixes
-// vary per adapter: MCP is "mcpServers." (claude/gemini/pi),
-// "mcp_servers." (codex, TOML) or "mcp." (opencode); A2A is "a2aAgents."
-// (most) or "a2a_agents." (codex). The three MCP prefixes are mutually
-// exclusive (4th byte differs), so no key is double-counted.
+// component kind, or "" when the key is not a runtime component. MCP keys are
+// "mcpServers." (claude/gemini/pi), "mcp_servers." (codex) or "mcp."
+// (opencode); a server named "a2a-<agent>" is an A2A agent's MCP face.
 func runtimeKindForKey(k string) string {
-	switch {
-	case strings.HasPrefix(k, "mcpServers."),
-		strings.HasPrefix(k, "mcp_servers."),
-		strings.HasPrefix(k, "mcp."):
-		return kindMCP
-	case strings.HasPrefix(k, "a2aAgents."),
-		strings.HasPrefix(k, "a2a_agents."):
-		return kindA2A
+	for _, p := range []string{"mcpServers.", "mcp_servers.", "mcp."} {
+		if name, ok := strings.CutPrefix(k, p); ok {
+			if strings.HasPrefix(name, "a2a-") {
+				return kindA2A
+			}
+			return kindMCP
+		}
 	}
 	return ""
 }

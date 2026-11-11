@@ -138,9 +138,10 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 	// Track the contributed keys for state.adapter.files[*].keys[]
 	// (STATE-02 + ADAPT-05). Sorted lexicographically so the output
 	// stays stable across invocations.
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
+	servers := adapter.RuntimeMCPServers(m)
+	contributedKeys := make([]string, 0, len(servers))
 
-	for _, server := range m.Runtime.MCPServers {
+	for _, server := range servers {
 		entry := adapter.MCPServerEntry{
 			Type:    "http",
 			URL:     server.Endpoint,

@@ -5,6 +5,7 @@ package adapter
 import (
 	"context"
 	"os"
+	"slices"
 
 	"github.com/ackstorm/ach/internal/cli/manifest"
 	"github.com/ackstorm/ach/internal/cli/state"
@@ -276,4 +277,15 @@ func HeadersWithCredential(cred, env string) map[string]string {
 		h["x-ach-environment"] = env
 	}
 	return h
+}
+
+// RuntimeMCPServers returns the MCP servers a tool config lists: the
+// Environment's MCP servers, then each A2A agent's MCP face, "a2a-<id>" at
+// <endpoint>/mcp (the forwarder's /a2a/<name>/mcp).
+func RuntimeMCPServers(m *manifest.Manifest) []manifest.ContentRef {
+	out := slices.Clone(m.Runtime.MCPServers)
+	for _, a := range m.Runtime.A2AAgents {
+		out = append(out, manifest.ContentRef{ID: "a2a-" + a.ID, Endpoint: a.Endpoint + "/mcp"})
+	}
+	return out
 }

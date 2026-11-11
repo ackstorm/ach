@@ -193,9 +193,10 @@ func renderConfigTOML(m *manifest.Manifest, credential, helperBaseURL string) ([
 	// Track contributed top-level keys for state.adapter.files[*].keys[]
 	// (STATE-02 + ADAPT-05). The "mcp_servers." prefix lets STATE-05
 	// inverse-merge target the right TOML subtable.
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
+	servers := adapter.RuntimeMCPServers(m)
+	contributedKeys := make([]string, 0, len(servers))
 
-	for _, server := range m.Runtime.MCPServers {
+	for _, server := range servers {
 		shape.MCPServers[server.ID] = mcpServerTable{
 			URL:         server.Endpoint,
 			HTTPHeaders: adapter.HeadersWithCredential(credential, m.Environment),

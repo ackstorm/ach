@@ -5,7 +5,10 @@ package adapter
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
 // TestDetectFromSignals covers the hit-count → Confidence ladder and that
@@ -57,5 +60,23 @@ func TestDetectFromSignals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRuntimeMCPServers_AddsA2AFaces(t *testing.T) {
+	m := &manifest.Manifest{Runtime: &manifest.RuntimeBlock{
+		MCPServers: []manifest.ContentRef{{ID: "docs", Endpoint: "https://h/mcp/docs"}},
+		A2AAgents:  []manifest.ContentRef{{ID: "k8s-doctor", Endpoint: "https://h/a2a/k8s-doctor"}},
+	}}
+	got := RuntimeMCPServers(m)
+	want := []manifest.ContentRef{
+		{ID: "docs", Endpoint: "https://h/mcp/docs"},
+		{ID: "a2a-k8s-doctor", Endpoint: "https://h/a2a/k8s-doctor/mcp"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("RuntimeMCPServers = %+v; want %+v", got, want)
+	}
+	if len(m.Runtime.MCPServers) != 1 {
+		t.Errorf("manifest mutated: %+v", m.Runtime.MCPServers)
 	}
 }

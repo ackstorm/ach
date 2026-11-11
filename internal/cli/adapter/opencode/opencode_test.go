@@ -207,9 +207,9 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// The 2 MCP servers; the A2A agent is not written.
-	if len(w.Keys) != 2 {
-		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
+	// The 2 MCP servers and the A2A agent's MCP face.
+	if len(w.Keys) != 3 {
+		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
 	}
 
 	// JSON round-trip: top-level `mcp` (NOT `mcpServers`) per spec §7.4
@@ -230,8 +230,11 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if err := json.Unmarshal(w.Content, &got); err != nil {
 		t.Fatalf("json.Unmarshal Content: %v", err)
 	}
-	if len(got.MCP) != 2 {
-		t.Errorf("mcp map size = %d, want 2", len(got.MCP))
+	if len(got.MCP) != 3 {
+		t.Errorf("mcp map size = %d, want 3", len(got.MCP))
+	}
+	if a := got.MCP["a2a-demo-agent"]; a.Type != "remote" || a.URL != "http://localhost:8080/a2a/demo-agent/mcp" {
+		t.Errorf("mcp[a2a-demo-agent] = %+v; want remote entry at /a2a/demo-agent/mcp", a)
 	}
 	if got.MCP["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
 		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCP["demo-mcp-jwt"].URL)
@@ -254,6 +257,7 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	wantPrefixes := map[string]bool{
 		"mcp.demo-mcp-jwt":   false,
 		"mcp.demo-mcp-nojwt": false,
+		"mcp.a2a-demo-agent": false,
 	}
 	for _, k := range w.Keys {
 		if _, ok := wantPrefixes[k]; ok {
