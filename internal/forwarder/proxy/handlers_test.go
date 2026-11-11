@@ -732,7 +732,7 @@ func TestHandlerA2AMCP_PrecheckFail(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	HandlerA2AMCP(deps, upstream.URL, []string{"x-ach-key"})(w, r)
+	HandlerA2AMCP(deps, upstream.URL)(w, r)
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d; want 403 (body=%s)", w.Code, w.Body.String())

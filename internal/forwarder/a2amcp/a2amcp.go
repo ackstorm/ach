@@ -27,16 +27,16 @@ type sendIn struct {
 
 // Handler returns the stateless streamable-HTTP MCP handler for one agent.
 // target maps the request to the agent's name and the A2A JSON-RPC URL the
-// tool calls; credHeaders are copied from the MCP request onto the card fetch
-// and every A2A call.
-func Handler(target func(*http.Request) (name, agentURL string), credHeaders []string) http.Handler {
+// tool calls; cred returns the headers sent with the card fetch and every A2A
+// call.
+func Handler(target func(*http.Request) (name, agentURL string), cred func(context.Context) map[string]string) http.Handler {
 	hc := &http.Client{} // no Timeout: it would cut the SSE body mid-stream
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		name, agentURL := target(r)
 		// ponytail: the card is fetched on every POST (stateless: one server
 		// per request); cache it per agent if card latency shows up.
 		opts := []agentcard.ResolveOption{agentcard.WithPath(a2asrv.WellKnownAgentCardPath)}
-		for k, v := range creds(r.Header, credHeaders) {
+		for k, v := range cred(r.Context()) {
 			opts = append(opts, agentcard.WithRequestHeader(k, v))
 		}
 		card, _ := agentcard.NewResolver(hc).Resolve(r.Context(), agentURL, opts...)
@@ -44,7 +44,7 @@ func Handler(target func(*http.Request) (name, agentURL string), credHeaders []s
 		s := mcp.NewServer(&mcp.Implementation{Name: "a2a-" + name, Version: "1.0.0"}, nil)
 		mcp.AddTool(s, &mcp.Tool{Name: "send_message", Description: describe(name, card)},
 			func(ctx context.Context, req *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {
-				return send(ctx, hc, agentURL, creds(req.Extra.Header, credHeaders), req, in)
+				return send(ctx, hc, agentURL, cred(ctx), req, in)
 			})
 		return s
 	}, &mcp.StreamableHTTPOptions{Stateless: true})
@@ -136,15 +136,4 @@ func joinText(parts a2a.ContentParts) string {
 		}
 	}
 	return strings.Join(out, "\n")
-}
-
-// creds returns the named headers present in h.
-func creds(h http.Header, names []string) map[string]string {
-	out := map[string]string{}
-	for _, n := range names {
-		if v := h.Get(n); v != "" {
-			out[n] = v
-		}
-	}
-	return out
 }

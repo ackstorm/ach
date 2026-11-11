@@ -66,19 +66,10 @@ func newAgent(t *testing.T) string {
 	return srv.URL + "/a2a/echo"
 }
 
-type headerRT http.Header
-
-func (h headerRT) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	for k, v := range h {
-		r.Header[k] = v
-	}
-	return http.DefaultTransport.RoundTrip(r)
-}
-
 func connect(t *testing.T, agentURL string, progress func(string)) *mcp.ClientSession {
 	t.Helper()
-	h := Handler(func(*http.Request) (string, string) { return "echo", agentURL }, []string{"x-ach-key", "Authorization"})
+	cred := func(context.Context) map[string]string { return map[string]string{"x-ach-key": "ek_test"} }
+	h := Handler(func(*http.Request) (string, string) { return "echo", agentURL }, cred)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	c := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
@@ -86,10 +77,7 @@ func connect(t *testing.T, agentURL string, progress func(string)) *mcp.ClientSe
 			progress(r.Params.Message)
 		},
 	})
-	cs, err := c.Connect(t.Context(), &mcp.StreamableClientTransport{
-		Endpoint:   srv.URL,
-		HTTPClient: &http.Client{Transport: headerRT{"X-Ach-Key": {"ek_test"}}},
-	}, nil)
+	cs, err := c.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: srv.URL}, nil)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

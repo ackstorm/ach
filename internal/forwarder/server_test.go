@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"iter"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/a2aproject/a2a-go/v2/a2a"
+	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TestRouteAcceptsBareAndSubpathNames pins the routing contract that a bare
@@ -224,4 +228,80 @@ type staticTeamsResolver struct{ teams []string }
 
 func (s staticTeamsResolver) Resolve(context.Context, string) ([]string, error) {
 	return s.teams, nil
+}
+
+// TestA2AMCPFaceReachesAgent drives the agent's MCP face through the real
+// router: the tool's loopback call must still carry the caller's credential
+// although Authn deletes the header it read (D-19).
+func TestA2AMCPFaceReachesAgent(t *testing.T) {
+	agent := http.NewServeMux()
+	agent.Handle("/a2a/agent-x", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoAgent{})))
+	litellm := httptest.NewServer(agent)
+	defer litellm.Close()
+	upstream, _ := url.Parse(litellm.URL)
+
+	fwd := httptest.NewUnstartedServer(nil)
+	fwd.Config.Handler = forwarder.New(forwarder.Deps{
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		LiteLLMUpstream: upstream,
+		SelfURL:         "http://" + fwd.Listener.Addr().String(),
+		Resolver:        ekOnlyResolver{},
+		BIPResolver:     noBIP{},
+		EnvProvider: staticEnvProvider{row: db.EnvironmentRow{
+			Name: "demo", AuthorizedTeams: []string{"team-a"}, RuntimeA2AAgents: []string{"agent-x"}}},
+		TeamsResolver:    staticTeamsResolver{teams: []string{"team-a"}},
+		KeyEncryptionKey: make([]byte, 32),
+		AuthnOptions: pamw.AuthnOptions{Headers: []pamw.CredentialHeader{
+			{Name: "x-ach-key", Mode: pamw.ModeResolve}}},
+	})
+	fwd.Start()
+	defer fwd.Close()
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	cs, err := c.Connect(t.Context(), &mcp.StreamableClientTransport{
+		Endpoint:   fwd.URL + "/a2a/agent-x/mcp",
+		HTTPClient: &http.Client{Transport: achKeyRT("ek_live")},
+	}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer cs.Close()
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_message", Arguments: map[string]any{"message": "hi"}})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if text := res.Content[0].(*mcp.TextContent).Text; res.IsError || !strings.Contains(text, "echo: hi") {
+		t.Fatalf("send_message: isError=%v text=%q; want the agent's echo", res.IsError, text)
+	}
+}
+
+type achKeyRT string
+
+func (k achKeyRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("x-ach-key", string(k))
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+type noBIP struct{}
+
+func (noBIP) Resolve(string, string) *db.BIPRow { return nil }
+
+// echoAgent completes every task with "echo: <text>".
+type echoAgent struct{}
+
+func (echoAgent) Execute(_ context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		if ec.StoredTask == nil && !yield(a2a.NewSubmittedTask(ec, ec.Message), nil) {
+			return
+		}
+		yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCompleted,
+			a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewTextPart("echo: "+ec.Message.Parts[0].Text()))), nil)
+	}
+}
+
+func (echoAgent) Cancel(_ context.Context, ec *a2asrv.ExecutorContext) iter.Seq2[a2a.Event, error] {
+	return func(yield func(a2a.Event, error) bool) {
+		yield(a2a.NewStatusUpdateEvent(ec, a2a.TaskStateCanceled, nil), nil)
+	}
 }
