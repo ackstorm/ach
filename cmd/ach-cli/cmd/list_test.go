@@ -276,7 +276,9 @@ func versionServer(t *testing.T, items map[string][]map[string]string, calls *in
 			Environment string `json:"environment"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		_ = json.NewEncoder(w).Encode(map[string]any{"environment": req.Environment, "version": "v", "items": items[req.Environment]})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"environment": req.Environment, "version": "v", "items": items[req.Environment],
+		})
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("ACH_URL", srv.URL)
@@ -314,7 +316,10 @@ func TestStatus_ListsChangesSinceHydrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Checking 1 environment against the server", "+ mcp", "new-mcp", "~ plugin", "moved", "- skill", "gone"} {
+	for _, want := range []string{
+		"Checking 1 environment against the server",
+		"+ mcp", "new-mcp", "~ plugin", "moved", "- skill", "gone",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}

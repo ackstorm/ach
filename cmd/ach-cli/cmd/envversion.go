@@ -23,7 +23,8 @@ func fetchEnvVersion(ctx context.Context, hc *httpclient.Client, env string) (*s
 			Rev  string `json:"rev"`
 		} `json:"items"`
 	}
-	if err := hc.Do(ctx, http.MethodPost, "/platform/hydrate/version", map[string]string{"environment": env}, &resp); err != nil {
+	body := map[string]string{"environment": env}
+	if err := hc.Do(ctx, http.MethodPost, "/platform/hydrate/version", body, &resp); err != nil {
 		return nil, err
 	}
 	v := &state.EnvVersion{Version: resp.Version, Items: make(map[string]string, len(resp.Items))}
