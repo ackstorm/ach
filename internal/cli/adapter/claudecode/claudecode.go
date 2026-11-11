@@ -118,14 +118,9 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 // format (Hub spec §11.6 carries the same shape inside plugin .mcp.json
 // files; the runtime location split is adapter-level only).
 //
-// A2AAgents mirrors the MCP server shape for A2A agents. CLI spec §7.4
-// claude-code does not pin a fixed A2A shape (Claude Code's A2A support
-// is recent + evolving), so we mirror the MCP shape under a parallel
-// "a2aAgents" key. The orchestrator's autodetection layer can refine
-// this later as the upstream contract solidifies.
+// A2A agents are not written: Claude Code reads no A2A surface.
 type mcpJSONShape struct {
 	MCPServers map[string]adapter.MCPServerEntry `json:"mcpServers"`
-	A2AAgents  map[string]adapter.A2AAgentEntry  `json:"a2aAgents,omitempty"`
 }
 
 // renderMcpJSON builds the JSON bytes the adapter writes to
@@ -138,13 +133,12 @@ type mcpJSONShape struct {
 func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := mcpJSONShape{
 		MCPServers: map[string]adapter.MCPServerEntry{},
-		A2AAgents:  map[string]adapter.A2AAgentEntry{},
 	}
 
 	// Track the contributed keys for state.adapter.files[*].keys[]
 	// (STATE-02 + ADAPT-05). Sorted lexicographically so the output
 	// stays stable across invocations.
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
+	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
 
 	for _, server := range m.Runtime.MCPServers {
 		entry := adapter.MCPServerEntry{
@@ -154,24 +148,6 @@ func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, e
 		}
 		shape.MCPServers[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
-	}
-
-	for _, agent := range m.Runtime.A2AAgents {
-		entry := adapter.A2AAgentEntry{
-			Type:    "http",
-			URL:     agent.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential, m.Environment),
-		}
-		shape.A2AAgents[agent.ID] = entry
-		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
-	}
-
-	// Drop the a2aAgents key entirely when empty so a manifest with no
-	// A2A agents round-trips to {"mcpServers": {...}} only. The
-	// omitempty tag handles this for us, but only when the map is nil
-	// — empty-map serializes to {} not absent. Convert empty → nil.
-	if len(shape.A2AAgents) == 0 {
-		shape.A2AAgents = nil
 	}
 
 	sort.Strings(contributedKeys)

@@ -26,6 +26,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   file, and stop with an error, writing nothing, if it keeps changing.
 
 ### Changed
+- `ach-cli environment hydrate` no longer writes an Environment's A2A agents
+  into Claude Code, Codex, Gemini CLI or OpenCode config (`a2aAgents` /
+  `[a2a_agents]`): none of them reads it. The next hydrate removes the entries
+  an earlier one wrote. Exposing agents to these tools as MCP servers is #51.
 - Helm `platformApi.admins` is now a map: move your email list from
   `platformApi.admins` to `platformApi.admins.users`. A list-shaped value
   fails the render with that instruction.

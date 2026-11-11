@@ -185,29 +185,15 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// Keys contributed: 2 MCP servers + 1 A2A agent = 3
-	if len(w.Keys) != 3 {
-		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
+	// Keys contributed: the 2 MCP servers, each under "mcp_servers."; the
+	// A2A agent is not written.
+	if len(w.Keys) != 2 {
+		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
 	}
-	// Keys prefix discipline: each MCP key under "mcp_servers."; each
-	// A2A key under "a2a_agents.".
-	mcpKeys := 0
-	a2aKeys := 0
 	for _, k := range w.Keys {
-		switch {
-		case strings.HasPrefix(k, "mcp_servers."):
-			mcpKeys++
-		case strings.HasPrefix(k, "a2a_agents."):
-			a2aKeys++
-		default:
-			t.Errorf("FileWrite.Keys[%q] missing mcp_servers./a2a_agents. prefix", k)
+		if !strings.HasPrefix(k, "mcp_servers.") {
+			t.Errorf("FileWrite.Keys[%q] missing mcp_servers. prefix", k)
 		}
-	}
-	if mcpKeys != 2 {
-		t.Errorf("MCP-prefixed Keys count = %d, want 2", mcpKeys)
-	}
-	if a2aKeys != 1 {
-		t.Errorf("A2A-prefixed Keys count = %d, want 1", a2aKeys)
 	}
 
 	// Decode the emitted TOML and verify shape.
@@ -234,14 +220,8 @@ func TestRenderRuntime_TomlShape(t *testing.T) {
 	if _, ok := got.MCPServers["demo-mcp-jwt"].HTTPHeaders["x-ach-key"]; !ok {
 		t.Errorf("mcp_servers.demo-mcp-jwt.http_headers must carry x-ach-key; got %v", got.MCPServers["demo-mcp-jwt"].HTTPHeaders)
 	}
-	if len(got.A2AAgents) != 1 {
-		t.Errorf("a2a_agents table count = %d, want 1", len(got.A2AAgents))
-	}
-	if got.A2AAgents["demo-agent"].URL != "http://localhost:8080/a2a/demo-agent" {
-		t.Errorf("a2a_agents.demo-agent.url = %q, want endpoint from manifest", got.A2AAgents["demo-agent"].URL)
-	}
-	if got.A2AAgents["demo-agent"].Transport != "http" {
-		t.Errorf("a2a_agents.demo-agent.transport = %q, want \"http\"", got.A2AAgents["demo-agent"].Transport)
+	if len(got.A2AAgents) != 0 {
+		t.Errorf("a2a_agents written = %v; no tool reads it, so hydrate writes none", got.A2AAgents)
 	}
 }
 

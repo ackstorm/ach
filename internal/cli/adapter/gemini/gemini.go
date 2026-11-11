@@ -113,14 +113,9 @@ type geminiMCPEntry struct {
 // the "mcpServers" key per CLI spec §7.4 gemini-cli paragraph
 // (geminiMCPEntry: httpUrl + headers, no type).
 //
-// A2AAgents mirrors the MCP server shape under "a2aAgents". Spec §7.4
-// gemini-cli does not pin a fixed A2A shape (parity with the claudecode
-// reference); we mirror the MCP shape so the JSON round-trip is
-// symmetric on both sides. A2A projection across non-claude tools is a
-// separate open design question (see hydrate bug-sweep plan).
+// A2A agents are not written: Gemini CLI reads no A2A key in settings.json.
 type settingsShape struct {
-	MCPServers map[string]geminiMCPEntry        `json:"mcpServers"`
-	A2AAgents  map[string]adapter.A2AAgentEntry `json:"a2aAgents,omitempty"`
+	MCPServers map[string]geminiMCPEntry `json:"mcpServers"`
 }
 
 // renderSettingsJSON builds the .gemini/settings.json bytes from a
@@ -131,10 +126,9 @@ type settingsShape struct {
 func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
 	shape := settingsShape{
 		MCPServers: map[string]geminiMCPEntry{},
-		A2AAgents:  map[string]adapter.A2AAgentEntry{},
 	}
 
-	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers)+len(m.Runtime.A2AAgents))
+	contributedKeys := make([]string, 0, len(m.Runtime.MCPServers))
 
 	for _, server := range m.Runtime.MCPServers {
 		entry := geminiMCPEntry{
@@ -143,23 +137,6 @@ func renderSettingsJSON(m *manifest.Manifest, credential string) ([]byte, []stri
 		}
 		shape.MCPServers[server.ID] = entry
 		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
-	}
-
-	for _, agent := range m.Runtime.A2AAgents {
-		entry := adapter.A2AAgentEntry{
-			Type:    "http",
-			URL:     agent.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential, m.Environment),
-		}
-		shape.A2AAgents[agent.ID] = entry
-		contributedKeys = append(contributedKeys, "a2aAgents."+agent.ID)
-	}
-
-	// omitempty handles the `nil` map case; explicitly nil out an empty
-	// map so the encoded output drops the "a2aAgents" key entirely when
-	// there are no agents (matches the claudecode reference shape).
-	if len(shape.A2AAgents) == 0 {
-		shape.A2AAgents = nil
 	}
 
 	sort.Strings(contributedKeys)

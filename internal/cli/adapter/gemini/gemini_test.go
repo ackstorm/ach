@@ -196,8 +196,8 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	if len(w.Keys) != 3 {
-		t.Errorf("FileWrite.Keys count = %d, want 3 (2 mcpServers + 1 a2aAgents)", len(w.Keys))
+	if len(w.Keys) != 2 {
+		t.Errorf("FileWrite.Keys count = %d, want 2 (the mcpServers; no a2aAgents)", len(w.Keys))
 	}
 
 	// JSON round-trip: decode the content and verify shape.
@@ -232,11 +232,8 @@ func TestRenderRuntime_SettingsJsonShape(t *testing.T) {
 	if got.MCPServers["demo-mcp-jwt"].Type != "" {
 		t.Errorf("MCP type must be absent for gemini; got %q", got.MCPServers["demo-mcp-jwt"].Type)
 	}
-	if len(got.A2AAgents) != 1 {
-		t.Errorf("a2aAgents map size = %d, want 1", len(got.A2AAgents))
-	}
-	if got.A2AAgents["demo-agent"].URL != "http://localhost:8080/a2a/demo-agent" {
-		t.Errorf("A2A url = %q, want endpoint from manifest", got.A2AAgents["demo-agent"].URL)
+	if len(got.A2AAgents) != 0 {
+		t.Errorf("a2aAgents written = %v; no tool reads it, so hydrate writes none", got.A2AAgents)
 	}
 }
 

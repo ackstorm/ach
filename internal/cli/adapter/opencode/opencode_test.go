@@ -207,9 +207,9 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if w.Merge != adapter.MergeDeep {
 		t.Errorf("FileWrite.Merge = %v, want MergeDeep", w.Merge)
 	}
-	// 2 MCP servers + 1 A2A agent = 3 contributed top-level keys.
-	if len(w.Keys) != 3 {
-		t.Errorf("FileWrite.Keys count = %d, want 3", len(w.Keys))
+	// The 2 MCP servers; the A2A agent is not written.
+	if len(w.Keys) != 2 {
+		t.Errorf("FileWrite.Keys count = %d, want 2", len(w.Keys))
 	}
 
 	// JSON round-trip: top-level `mcp` (NOT `mcpServers`) per spec §7.4
@@ -244,20 +244,16 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if !got.MCP["demo-mcp-jwt"].Enabled {
 		t.Errorf("MCP enabled = false, want true")
 	}
-	if len(got.A2AAgents) != 1 {
-		t.Errorf("a2aAgents map size = %d, want 1", len(got.A2AAgents))
-	}
-	if got.A2AAgents["demo-agent"].URL != "http://localhost:8080/a2a/demo-agent" {
-		t.Errorf("A2A url = %q, want endpoint from manifest", got.A2AAgents["demo-agent"].URL)
+	if len(got.A2AAgents) != 0 {
+		t.Errorf("a2aAgents written = %v; no tool reads it, so hydrate writes none", got.A2AAgents)
 	}
 
-	// Verify contributed Keys are prefixed `mcp.` and `a2aAgents.`
-	// (NOT `mcpServers.` like claudecode) — this is the inverse-merge
-	// path identifier and MUST match the on-disk JSON structure.
+	// Verify contributed Keys are prefixed `mcp.` (NOT `mcpServers.` like
+	// claudecode) — this is the inverse-merge path identifier and MUST
+	// match the on-disk JSON structure.
 	wantPrefixes := map[string]bool{
-		"mcp.demo-mcp-jwt":     false,
-		"mcp.demo-mcp-nojwt":   false,
-		"a2aAgents.demo-agent": false,
+		"mcp.demo-mcp-jwt":   false,
+		"mcp.demo-mcp-nojwt": false,
 	}
 	for _, k := range w.Keys {
 		if _, ok := wantPrefixes[k]; ok {
