@@ -28,6 +28,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
@@ -55,21 +56,27 @@ func resolveListWorkspaceCwd() (string, error) {
 // the buckets into []render.StateEntryView, and delegates rendering.
 func newEnvStatusCmd() *cobra.Command {
 	var (
-		out        outputFlag
-		flagGlobal bool
-		flagFiles  bool
-		flagDir    string
+		out         outputFlag
+		flagGlobal  bool
+		flagFiles   bool
+		flagDir     string
+		flagOffline bool
+		cred        credFlags
 	)
 	c := &cobra.Command{
 		Use:   "status [env]",
-		Short: "Show installed/projected resources from state.json",
-		Long: `Show the installed/projected resources recorded in state.json.
+		Short: "Show what is installed here and whether it is up to date",
+		Long: `Show the installed/projected resources recorded in state.json, and whether
+each Environment changed since it was hydrated.
 
-environment status is a local read of the workspace (or global) state — no network
-call. By default it prints, per Environment, its targets and scope, the
-installed items grouped by kind, and every projected file you edited since
-the last hydrate. Use --files (-f) to list every projected file with its
-on-disk TARGET path, or -o json for machine-readable output.
+By default it prints, per Environment, its targets and scope, the installed
+items grouped by kind, and every projected file you edited since the last
+hydrate. It then asks the server whether each Environment changed since that
+hydrate: "up to date", or + added to the Environment, - removed from it,
+~ new content. It downloads nothing. --offline skips the server.
+
+Use --files (-f) to list every projected file with its on-disk TARGET path,
+or -o json for machine-readable output; both are local only.
 
 Without [env] (project scope) it lists every hydrated environment; -g
 (global scope) requires [env].
@@ -170,14 +177,89 @@ empty JSON array under -o json) and exits 0.`,
 				_, _ = fmt.Fprint(cmd.OutOrStdout(), render.FormatStateList(entries, true))
 				return nil
 			}
-			return renderStatus(newUI(cmd.OutOrStdout(), false), files, cwd, flagGlobal)
+			if err := renderStatus(newUI(cmd.OutOrStdout(), false), files, cwd, flagGlobal); err != nil {
+				return err
+			}
+			if flagOffline {
+				return nil
+			}
+			return checkVersions(cmd, cred, files)
 		},
 	}
 	registerOutputFlag(c, &out, "table", "json")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Use $HOME/.ach/<env> scope instead of cwd/.ach")
 	c.Flags().BoolVarP(&flagFiles, "files", "f", false, "List every projected file instead of a per-resource summary")
 	c.Flags().StringVar(&flagDir, "dir", "", "Workspace root override (default: cwd)")
+	c.Flags().BoolVar(&flagOffline, "offline", false, "Show local state only; do not ask the server what changed")
+	registerCredFlags(c, &cred)
 	return c
+}
+
+// checkVersions asks the server for each Environment's version and prints
+// "up to date", or what changed since the version recorded at the last
+// hydrate of each target.
+func checkVersions(cmd *cobra.Command, cred credFlags, files []*state.File) error {
+	c, err := resolveCred(cmd.Context(), cred)
+	if err != nil {
+		return err
+	}
+	if err := config.ValidateSecureURL(c.BaseURL, config.InsecureFromEnv()); err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
+	}
+	hc := newAPIClient(c.BaseURL, c.Bearer, hydrateHTTPClient, cred.Verbose, cmd.ErrOrStderr())
+
+	byEnv := map[string][]*state.File{}
+	var envs []string
+	for _, f := range files {
+		if byEnv[f.Environment] == nil {
+			envs = append(envs, f.Environment)
+		}
+		byEnv[f.Environment] = append(byEnv[f.Environment], f)
+	}
+	sort.Strings(envs)
+
+	u := newUI(cmd.OutOrStdout(), cred.Verbose)
+	u.verb("Checking", "%s against the server", countNoun(len(envs), "environment", "environments"))
+	failed := 0
+	for _, env := range envs {
+		current, err := fetchEnvVersion(cmd.Context(), hc, env)
+		if err != nil {
+			failed++
+			u.verb(env, "%s %s", u.paint(red, "error"), err)
+			continue
+		}
+		var changes []hydrate.ItemChange
+		seen := map[hydrate.ItemChange]bool{}
+		unrecorded := false
+		for _, f := range byEnv[env] {
+			if f.EnvVersion == nil {
+				unrecorded = true
+				break
+			}
+			for _, ch := range versionChanges(f.EnvVersion, current) {
+				if !seen[ch] {
+					seen[ch] = true
+					changes = append(changes, ch)
+				}
+			}
+		}
+		sortChanges(changes)
+		switch {
+		case unrecorded:
+			u.verb(env, "version unknown: hydrate once to record its version")
+		case len(changes) == 0:
+			u.verb(env, "up to date")
+		default:
+			u.items(env, changes)
+		}
+	}
+	if failed > 0 {
+		return &exit.CodedError{
+			Code: exit.General,
+			Msg:  fmt.Sprintf("%d of %d environment(s) could not be checked (--offline skips the server)", failed, len(envs)),
+		}
+	}
+	return nil
 }
 
 // loadAllWorkspaceStates enumerates <cwd>/.ach/<env>/state-<platform>.json
