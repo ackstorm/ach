@@ -5,6 +5,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- Default skin from the chart: `platformApi.console.theme` (`dark`, `light`,
+  `pastel` or `red`) sets the skin of the console and the sign-in pages for a
+  browser whose user has not picked one. The console's toggle still wins for
+  that browser. Empty keeps following the browser's light/dark preference.
 - `ach-cli environment status` tells whether a hydrated folder is up to date:
   per Environment, `up to date` or what changed since the last hydrate (`+`
   added to the Environment, `-` removed, `~` new content). It asks the server

@@ -119,11 +119,11 @@ func clientRedirect(w http.ResponseWriter, r *http.Request, redirectURI string, 
 	http.Redirect(w, r, redirectURI+sep+params.Encode(), http.StatusFound)
 }
 
-func htmlError(w http.ResponseWriter, status int, msg string) {
+func (d OAuthDeps) htmlError(w http.ResponseWriter, status int, msg string) {
 	if msg == "" {
 		msg = "internal error"
 	}
-	renderPage(w, status, page{Label: "FAILED", Cmd: "sign-in", Args: "--sso", Out: "error:", Title: "Authorization failed",
+	d.renderPage(w, status, page{Label: "FAILED", Cmd: "sign-in", Args: "--sso", Out: "error:", Title: "Authorization failed",
 		Problem: msg, Error: true, Footer: "no credential was issued"})
 }
 
@@ -138,10 +138,14 @@ var pageTmpl = template.Must(template.New("page").Parse(pageHTML))
 // under the Form).
 type page struct {
 	Label, Cmd, Args, Out, Title, Sub, Code, Problem, Footer string
-	Form, Error                                              bool
+	// Theme is the skin a browser with no stored choice gets; "" follows
+	// its light/dark preference.
+	Theme       string
+	Form, Error bool
 }
 
-func renderPage(w http.ResponseWriter, status int, p page) {
+func (d OAuthDeps) renderPage(w http.ResponseWriter, status int, p page) {
+	p.Theme = d.Auth.Theme
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
@@ -153,11 +157,11 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 	var client oauthClient
 	ok, err := d.Store.Get(r.Context(), "client", q.Get("client_id"), &client)
 	if err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	if !ok {
-		htmlError(w, 400, "unknown client_id")
+		d.htmlError(w, 400, "unknown client_id")
 		return
 	}
 	redirectURI := q.Get("redirect_uri")
@@ -170,7 +174,7 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if !registered || !d.redirectAllowed(redirectURI) {
 		// Never bounce to an address the client did not register.
-		htmlError(w, 400, "redirect_uri is not registered for this client")
+		d.htmlError(w, 400, "redirect_uri is not registered for this client")
 		return
 	}
 	state := q.Get("state")
@@ -185,19 +189,19 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 	mcpKey := mcpKeyFromResource(q["resource"], d.Issuer)
 	pendingID, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
 	binding, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	p := oauthPending{ClientID: client.ClientID, RedirectURI: redirectURI, State: state,
 		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding), MCPKey: mcpKey}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	http.SetCookie(w, bindingCookie(pendingID, binding, d.Auth.InsecureCookie, int(oauthPendingTTL.Seconds())))
@@ -212,18 +216,18 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	// so a stolen Dex URL is spent by the first arrival either way.
 	ok, err := d.Store.Take(r.Context(), "pending", pendingID, &p)
 	if err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	if !ok {
-		htmlError(w, 400, "no authorization request is pending — start again from your client")
+		d.htmlError(w, 400, "no authorization request is pending — start again from your client")
 		return
 	}
 	c, cerr := r.Cookie(bindingCookieName(pendingID, d.Auth.InsecureCookie))
 	if cerr != nil || subtle.ConstantTimeCompare([]byte(bindingHash(c.Value)), []byte(p.Binding)) != 1 {
 		http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 		d.Auth.Logger.Warn("oauth: as-callback from a browser that did not start the authorization", "client_id", p.ClientID)
-		htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
+		d.htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
 		return
 	}
 	if e := q.Get("error"); e != "" {
@@ -232,7 +236,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if p.Console {
-			htmlError(w, 401, "the identity provider refused the login")
+			d.htmlError(w, 401, "the identity provider refused the login")
 			return
 		}
 		pv := url.Values{"error": {"access_denied"}}
@@ -245,7 +249,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	email, name, groups, dexRefresh, err := d.dexExchange(r.Context(), q.Get("code"), p.DexVerifier)
 	if err != nil || email == "" {
 		d.Auth.Logger.Warn("oauth: dex callback failed", "err", err)
-		htmlError(w, 400, "the identity provider did not complete the login")
+		d.htmlError(w, 400, "the identity provider did not complete the login")
 		return
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
@@ -255,30 +259,30 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	// BEFORE provisioning: the exchange already killed the previous token
 	// at Dex, so a LiteLLM failure here must not leave the dead one behind.
 	if err := d.Store.Put(r.Context(), dexRefreshKind, email, dexRefresh, d.RefreshTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	// The IdP accepted this login: lift an earlier refusal so the user's
 	// ek_ keys resolve again.
 	if err := d.idpRefusal(r.Context(), email, false); err != nil {
 		d.Auth.Logger.Error("oauth: lifting the IdP refusal failed", "err", err)
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	gen, err := d.Store.SessionGen(r.Context(), email, d.sessionGenTTL())
 	if err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	userID, err := d.provision(r.Context(), email, name, groups)
 	if err != nil {
 		_, status, msg := classifyProvisionError(err)
 		d.Auth.Logger.Warn("oauth: user provisioning failed", "err", err)
-		htmlError(w, status, msg)
+		d.htmlError(w, status, msg)
 		return
 	}
 	if err := d.recordSSOAdmin(r.Context(), email, groups); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	u := oauthUser{Sub: email, UserID: userID, Name: name, SessionGen: gen}

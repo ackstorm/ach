@@ -49,7 +49,7 @@ the **OpenCode install manifest** for that AS (`GET /.well-known/opencode`, anon
 
 ## Console SPA
 
-the console SPA at `/` (`internal/platformapi/console`, `go:embed all:dist`, chi `NotFound` fallback; "console not built" until `make ui-build`)
+the console SPA at `/` (`internal/platformapi/console`, `go:embed all:dist`, chi `NotFound` fallback; "console not built" until `make ui-build`). `platformApi.console.theme` -> `ACH_CONSOLE_THEME` (`dark`, `light`, `pastel`, `red`; any other value fails startup) is the default skin: platform-api writes it as `data-default-theme` on the `<html>` of `index.html` and of the OAuth AS pages (`auth/page.html`), whose pre-paint scripts use it when the browser stores no `alitellm-theme`; empty follows the browser's light/dark preference
 
 ## BIP-declared consent
 

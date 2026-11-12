@@ -954,3 +954,16 @@ func TestToken_RefreshCannotResurrectEndedSessions(t *testing.T) {
 		t.Fatalf("a new pk_ was minted after the revoke")
 	}
 }
+
+func TestRenderPage_DefaultTheme(t *testing.T) {
+	rec := httptest.NewRecorder()
+	OAuthDeps{Auth: Deps{Theme: "pastel"}}.htmlError(rec, 400, "x")
+	if !strings.Contains(rec.Body.String(), `class="pastel" data-default-theme="pastel"`) {
+		t.Fatalf("themed page: %.200q", rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	OAuthDeps{}.htmlError(rec, 400, "x")
+	if !strings.Contains(rec.Body.String(), `<html lang="en" class="dark">`) {
+		t.Fatalf("unthemed page: %.200q", rec.Body.String())
+	}
+}

@@ -24,6 +24,10 @@ import (
 // pk_ mint (pool, pepper, DEK). DISTINCT from the top-level platformapi
 // server's Deps.
 type Deps struct {
+	// Theme is the default skin of the AS's browser pages (page.html); ""
+	// follows the browser's light/dark preference.
+	Theme string
+
 	// IDTokenVerifier wraps oidc.Provider.Verifier(&oidc.Config{ClientID})
 	// so unit tests can substitute a fake. Production code (Plan 03-11)
 	// assigns deps.IDTokenVerifier = oidcProvider.Verifier(...).

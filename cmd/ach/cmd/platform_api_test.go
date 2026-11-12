@@ -113,6 +113,19 @@ func TestValidatePlatformAPIConfig_ConsoleChatURL(t *testing.T) {
 	}
 }
 
+func TestValidatePlatformAPIConfig_ConsoleTheme(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	t.Setenv("ACH_CONSOLE_THEME", "pastel")
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil || cfg.ConsoleTheme != "pastel" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	t.Setenv("ACH_CONSOLE_THEME", "blue")
+	if _, err := validatePlatformAPIConfig(); err == nil {
+		t.Error("ACH_CONSOLE_THEME=blue: want error")
+	}
+}
+
 func TestValidatePlatformAPIConfig_Observability(t *testing.T) {
 	setRequiredPlatformAPIEnv(t)
 	cfg, err := validatePlatformAPIConfig()

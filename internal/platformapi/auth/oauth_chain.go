@@ -171,18 +171,18 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	var c oauthChain
 	ok, err := d.Store.Take(r.Context(), "chain", q.Get("state"), &c)
 	if err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	if !ok {
-		htmlError(w, 400, "no authorization is in progress — start again from your client")
+		d.htmlError(w, 400, "no authorization is in progress — start again from your client")
 		return
 	}
 	ck, cerr := r.Cookie(bindingCookieName(c.PendingID, d.Auth.InsecureCookie))
 	if cerr != nil || subtle.ConstantTimeCompare([]byte(bindingHash(ck.Value)), []byte(c.Binding)) != 1 {
 		http.SetCookie(w, bindingCookie(c.PendingID, "", d.Auth.InsecureCookie, -1))
 		d.Auth.Logger.Warn("oauth: broker-callback from a browser that did not start the authorization", "client_id", c.ClientID)
-		htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
+		d.htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
 		return
 	}
 	if e := q.Get("error"); e != "" {
@@ -190,7 +190,7 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.probe(r.Context(), c.Sub, c.UserID, c.MCPKey) != probeOK {
 		http.SetCookie(w, bindingCookie(c.PendingID, "", d.Auth.InsecureCookie, -1))
-		htmlError(w, http.StatusBadGateway, "the consent broker did not grant access to this backend")
+		d.htmlError(w, http.StatusBadGateway, "the consent broker did not grant access to this backend")
 		return
 	}
 	d.finish(w, r, c.oauthPending, c.PendingID, c.oauthUser)
@@ -200,11 +200,11 @@ func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	code, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	if err := d.Store.Put(r.Context(), "code", code, oauthCode{oauthPending: p, oauthUser: u}, oauthCodeTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	pv := url.Values{"code": {code}}

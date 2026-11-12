@@ -57,6 +57,9 @@ type Deps struct {
 
 	// ConsoleChatURL is the console Chat button's target; empty hides it.
 	ConsoleChatURL string
+	// ConsoleTheme is the skin the console and the OAuth AS pages give a
+	// browser with no stored choice; empty follows its light/dark preference.
+	ConsoleTheme string
 
 	// ObservabilityExtra mounts the routes an edition adds under
 	// /platform/observability/*, behind the same Authn: every route there is Enterprise.
@@ -356,7 +359,7 @@ func New(deps Deps) http.Handler {
 	// The console at "/" (D-26). chi's NotFound is the fallback for every
 	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
 	// 404s so the fallback never shadows the API.
-	r.NotFound(console.SPA(console.Dist()).ServeHTTP)
+	r.NotFound(console.SPA(console.Dist(), deps.ConsoleTheme).ServeHTTP)
 
 	return r
 }
@@ -394,6 +397,7 @@ func readyHandler(pool *pgxpool.Pool, redisClient *redis.Client) http.HandlerFun
 // authDepsFrom is the Dex + LiteLLM provisioning deps the OAuth AS shares.
 func authDepsFrom(deps Deps) auth.Deps {
 	return auth.Deps{
+		Theme:            deps.ConsoleTheme,
 		IDTokenVerifier:  deps.IDTokenVerifier,
 		OAuth2Cfg:        deps.OAuth2Cfg,
 		LiteLLM:          deps.LiteLLM,

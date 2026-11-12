@@ -139,6 +139,10 @@ spec:
             - name: ACH_CONSOLE_CHAT_URL
               value: {{ . | quote }}
             {{- end }}
+            {{- with (.Values.platformApi.console).theme }}
+            - name: ACH_CONSOLE_THEME
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.platformApi.userDefaults }}
             {{- if ne (toString .maxBudget) "" }}
             - name: ACH_USER_MAX_BUDGET

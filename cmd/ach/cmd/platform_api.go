@@ -120,6 +120,10 @@ type platformAPIConfig struct {
 	// (ACH_CONSOLE_CHAT_URL, chart platformApi.console.chatUrl). Empty hides
 	// the button.
 	ConsoleChatURL string
+	// ConsoleTheme is the default skin of the console and the sign-in pages
+	// (ACH_CONSOLE_THEME, chart platformApi.console.theme). Empty follows
+	// the browser's light/dark preference.
+	ConsoleTheme string
 	// Observability is the read-only Langfuse ClickHouse endpoint behind
 	// /platform/observability/* (ACH_OBSERVABILITY_CLICKHOUSE_{URL,USER,PASSWORD}).
 	// nil = URL unset = the routes answer 503 not_ready.
@@ -254,6 +258,10 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	cfg.ConsoleChatURL = chatURL
+	cfg.ConsoleTheme = os.Getenv("ACH_CONSOLE_THEME")
+	if !slices.Contains([]string{"", "dark", "light", "pastel", "red"}, cfg.ConsoleTheme) {
+		return nil, fmt.Errorf("ACH_CONSOLE_THEME %q: must be dark, light, pastel or red", cfg.ConsoleTheme)
+	}
 	if cfg.Observability, cfg.ObservabilityProjects, err = observabilityConfig(); err != nil {
 		return nil, err
 	}
@@ -566,6 +574,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		Teams:              cfg.Teams,
 		DefaultMaxKeys:     cfg.DefaultMaxKeys,
 		ConsoleChatURL:     cfg.ConsoleChatURL,
+		ConsoleTheme:       cfg.ConsoleTheme,
 		ObservabilityExtra: extra,
 		Metrics:            platformAPICollectors,
 	}

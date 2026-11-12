@@ -7,6 +7,7 @@
 package console
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -24,14 +25,18 @@ func Dist() fs.FS {
 	return sub
 }
 
+// htmlOpen is ui/index.html's opening tag, as the Vite build keeps it.
+const htmlOpen = `<html lang="en" class="dark">`
+
 // apiPrefixes are never served by the SPA fallback: an unknown API path
 // stays a JSON 404 (API-01's carve-out plus everything under /platform).
 var apiPrefixes = []string{"/platform/", "/healthz", "/livez", "/readyz"}
 
 // SPA returns the "/" handler: a real file is served as is (hashed assets
 // immutable), anything else gets index.html (client-side routing) with
-// no-store.
-func SPA(fsys fs.FS) http.Handler {
+// no-store. theme, when set, becomes index.html's default skin: the one a
+// browser with no stored choice gets.
+func SPA(fsys fs.FS, theme string) http.Handler {
 	files := http.FileServer(http.FS(fsys))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -59,6 +64,9 @@ func SPA(fsys fs.FS) http.Handler {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("console not built: run make ui-build\n"))
 			return
+		}
+		if theme != "" {
+			index = bytes.Replace(index, []byte(htmlOpen), []byte(`<html lang="en" class="`+theme+`" data-default-theme="`+theme+`">`), 1)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")

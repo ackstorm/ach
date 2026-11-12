@@ -2,8 +2,9 @@
 {{- /* Every browser page of the OAuth AS: the device-code confirm form, its
     result, and the error page. A static twin of the console's Login card
     (ui/src/routes/Login.tsx): same theme tokens (ui/src/index.css), and the
-    same stored theme ('alitellm-theme', shared origin) picked before paint. */ -}}
-<html lang="en" class="dark">
+    same stored theme ('alitellm-theme', shared origin) picked before paint,
+    falling back to the deployment's default theme (data-default-theme). */ -}}
+<html lang="en" class="{{or .Theme "dark"}}"{{with .Theme}} data-default-theme="{{.}}"{{end}}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,11 +13,11 @@
 <script>
   (function () {
     try {
+      var el = document.documentElement;
       var t = localStorage.getItem('alitellm-theme');
       if (t !== 'dark' && t !== 'light' && t !== 'pastel' && t !== 'red') {
-        t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        t = el.dataset.defaultTheme || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       }
-      var el = document.documentElement;
       el.classList.remove('dark', 'light', 'pastel', 'red');
       el.classList.add(t);
     } catch (e) {}
