@@ -50,7 +50,7 @@ function initialsOf(label: string): string {
 
 const TITLES: Record<string, string> = {
   '/': 'Overview', ...eeTitles,
-  '/keys': 'Keys', '/environments': 'Environments', '/howto': 'How-to', '/howto/ach-cli': 'ach-cli',
+  '/keys': 'Keys', '/environments': 'Environments', '/howto': 'How-to', '/howto/ach-cli': 'ach-cli', '/apps': 'Apps',
   '/models': 'Models', '/mcp': 'MCPs', '/a2a': 'A2A',
 };
 const RUNTIME = ['/models', '/mcp', '/a2a'];
@@ -90,7 +90,7 @@ export function AppShell({ me, config }: AppShellProps) {
 
   const menuLabel = me.name || me.email;
   const title = TITLES[location.pathname] || 'Console';
-  const group = location.pathname === '/' ? null : location.pathname.startsWith('/howto') ? 'Help' : RUNTIME.includes(location.pathname) ? 'Runtime' : ACCESS.includes(location.pathname) ? 'Access' : 'Observability';
+  const group = ['/', '/apps'].includes(location.pathname) ? null : location.pathname.startsWith('/howto') ? 'Help' : RUNTIME.includes(location.pathname) ? 'Runtime' : ACCESS.includes(location.pathname) ? 'Access' : 'Observability';
   // The caller's own user:<email> tag, the ceiling the forwarder enforces.
   // Absent = unavailable, never a fabricated $0.
   const budget = me.budget ?? null;

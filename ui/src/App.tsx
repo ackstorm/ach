@@ -39,6 +39,7 @@ import { Mcp } from '@/routes/Mcp';
 import { A2a } from '@/routes/A2a';
 import { Environments } from '@/routes/Environments';
 import { HowTo } from '@/routes/HowTo';
+import { Apps } from '@/routes/Apps';
 import { HowToCli } from '@/routes/HowToCli';
 
 // Mid-session expiry redirects straight to the console login (no landing
@@ -80,6 +81,7 @@ function makeRouter(me: SessionMe, config: AppConfig) {
         { path: 'mcp', element: <Mcp /> },
         { path: 'a2a', element: <A2a /> },
         { path: 'environments', element: <Environments /> },
+        { path: 'apps', element: <Apps /> },
         { path: 'howto', element: <HowTo /> },
         { path: 'howto/ach-cli', element: <HowToCli /> },
         ],

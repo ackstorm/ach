@@ -176,6 +176,43 @@ func TestBootstrap(t *testing.T) {
 	}
 }
 
+func TestBootstrapFiltersApps(t *testing.T) {
+	d := testDeps(t)
+	d.Apps = []App{
+		{Name: "Chat", URL: "https://chat"},
+		{Name: "n8n", URL: "https://n8n", Teams: []string{"team-a"}},
+		{Name: "Grafana", URL: "https://grafana", Admin: true},
+	}
+	names := func(ctx context.Context) string {
+		var got struct{ Apps []App }
+		_ = json.Unmarshal(do(t, d, "/platform/console/bootstrap", ctx).Body.Bytes(), &got)
+		var n []string
+		for _, a := range got.Apps {
+			n = append(n, a.Name)
+		}
+		return strings.Join(n, ",")
+	}
+	for _, tc := range []struct {
+		ctx  context.Context
+		want string
+	}{
+		{pkCtx(t, "u@x.com", true), "Chat,n8n,Grafana"}, // admin in team-a
+		{pkCtx(t, "u@x.com", false), "Chat,n8n"},        // team-a member
+		{pkCtx(t, "v@x.com", false), "Chat"},            // neither
+	} {
+		if got := names(tc.ctx); got != tc.want {
+			t.Errorf("apps = %q, want %q", got, tc.want)
+		}
+	}
+	if body := do(t, d, "/platform/console/bootstrap", pkCtx(t, "u@x.com", true)).Body.String(); strings.Contains(body, `"teams"`) || strings.Contains(body, `"admin"`) {
+		t.Errorf("apps must not carry teams/admin to the browser: %s", body)
+	}
+	d.LiteLLM = &fakeLL{err: errors.New("down")}
+	if got := names(pkCtx(t, "u@x.com", false)); got != "Chat" {
+		t.Errorf("team read failure: apps = %q, want team tiles hidden", got)
+	}
+}
+
 func TestBootstrapReportsKeyAllowance(t *testing.T) {
 	d := testDeps(t)
 	d.Allowance = func(_ context.Context, _ string) (int, int, error) { return 2, 5, nil }

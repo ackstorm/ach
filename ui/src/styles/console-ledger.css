@@ -76,6 +76,7 @@ button,input{font:inherit}button{color:inherit}a{color:inherit;text-decoration:n
 .console-ledger button.bg-primary { color:var(--primary-foreground); }
 .console-ledger .nav-label { padding:10px 8px 6px; color:var(--faint); font:700 9px var(--mono); letter-spacing:.15em; text-transform:uppercase; border-top:1px solid var(--line); margin-top:7px; }
 .console-ledger .nav svg { width:17px; height:14px; }
+.console-ledger .nav-standalone { border-top:1px solid var(--line); margin-top:7px; padding-top:7px; }
 .console-ledger .nav button { display:flex; align-items:center; gap:10px; padding:8px; width:100%; color:var(--muted); text-align:left; }
 .console-ledger .nav a[aria-current=page] { color:var(--green); background:color-mix(in srgb,var(--green) 7%,transparent); }
 .console-ledger .nav a[aria-current=page]::before { content:''; position:absolute; left:-10px; top:7px; bottom:7px; width:2px; background:var(--green); }

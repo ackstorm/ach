@@ -44,6 +44,7 @@ const ME: SessionMe = {
   endpoint: 'https://api.acme.ai',
   chat_url: 'https://chat.acme.ai',
   provider_name: 'ai-platform',
+  apps: [],
 };
 
 const CONFIG = { links: {} } as unknown as AppConfig;
@@ -98,6 +99,15 @@ describe('AppShell — sidebar nav', () => {
     expect(screen.getByRole('link', { name: 'A2A' })).toHaveAttribute('href', '/a2a');
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: 'Traces' })).toHaveAttribute('href', '/analytics/traces');
+  });
+
+  it('Apps sits standalone between Observability and Help, only when there are tiles', () => {
+    renderShell({ ...ME, apps: [{ name: 'Coder', url: 'https://coder.acme.ai' }] });
+    expect(screen.getAllByRole('navigation').map((nav) => nav.getAttribute('aria-label'))).toEqual(['Overview', 'Access', 'Runtime', 'Observability', 'Apps', 'Help']);
+    expect(screen.getByRole('link', { name: 'Apps' })).toHaveAttribute('href', '/apps');
+    cleanup();
+    renderShell();
+    expect(screen.queryByRole('link', { name: 'Apps' })).toBeNull();
   });
 
   it('Analytics is collapsed by default; Evals is listed disabled', () => {
