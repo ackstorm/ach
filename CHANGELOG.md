@@ -24,6 +24,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `version unknown` until its next hydrate. A state file written by this
   version cannot be read by an older ach-cli.
 
+### Fixed
+- An A2A agent's MCP face (`/a2a/<name>/mcp`) fetches the agent's card
+  once per request instead of several times, so each tool call costs the agent
+  one card request.
+
 ## [1.1.13] - 2026-11-11
 
 ### Security
