@@ -42,9 +42,17 @@ export function readStoredTheme(): Theme | null {
   }
 }
 
-/** Stored choice wins; otherwise fall back to the OS preference. */
+/** The deployment's default (chart platformApi.console.theme), which
+ *  platform-api writes on <html data-default-theme>; null when unset. */
+export function readDefaultTheme(): Theme | null {
+  if (typeof document === 'undefined') return null;
+  const v = document.documentElement.dataset.defaultTheme as Theme | undefined;
+  return v && THEME_ORDER.includes(v) ? v : null;
+}
+
+/** Stored choice wins; then the deployment default; then the OS preference. */
 export function resolveInitialTheme(): Theme {
-  return readStoredTheme() ?? getSystemTheme();
+  return readStoredTheme() ?? readDefaultTheme() ?? getSystemTheme();
 }
 
 /** Mutate <html> so exactly one of `dark`/`light`/`pastel` is present. */

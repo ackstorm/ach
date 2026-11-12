@@ -7,6 +7,7 @@ import {
   applyThemeClass,
   nextTheme,
   readStoredTheme,
+  resolveInitialTheme,
   THEME_STORAGE_KEY,
 } from './theme';
 
@@ -21,6 +22,16 @@ describe('nextTheme', () => {
     expect(nextTheme('light')).toBe('pastel');
     expect(nextTheme('pastel')).toBe('red');
     expect(nextTheme('red')).toBe('dark');
+  });
+});
+
+describe('resolveInitialTheme', () => {
+  it('uses the deployment default only when nothing is stored', () => {
+    document.documentElement.dataset.defaultTheme = 'red';
+    expect(resolveInitialTheme()).toBe('red');
+    localStorage.setItem(THEME_STORAGE_KEY, 'light');
+    expect(resolveInitialTheme()).toBe('light');
+    delete document.documentElement.dataset.defaultTheme;
   });
 });
 

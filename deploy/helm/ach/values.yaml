@@ -195,6 +195,10 @@ platformApi:
     # chatUrl is the hosted chat UI the console's Chat button (and the How-to
     # chat card) opens, e.g. https://chat.example.com. Empty hides both.
     chatUrl: ""
+    # theme is the skin of the console and the sign-in pages for a browser
+    # whose user has not picked one with the console's toggle: dark, light,
+    # pastel or red. Empty follows the browser's light/dark preference.
+    theme: ""
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.
   initContainers: []

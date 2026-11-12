@@ -83,19 +83,19 @@ func MountConsole(d OAuthDeps) func(chi.Router) {
 func (d OAuthDeps) consoleLogin(w http.ResponseWriter, r *http.Request) {
 	pendingID, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	binding, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
 	p := oauthPending{Console: true, RedirectURI: safeNext(r.URL.Query().Get("next")),
 		DexVerifier: dexVerifier, Binding: bindingHash(binding)}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	http.SetCookie(w, bindingCookie(pendingID, binding, d.Auth.InsecureCookie, int(oauthPendingTTL.Seconds())))
@@ -109,22 +109,22 @@ func (d OAuthDeps) consoleLogin(w http.ResponseWriter, r *http.Request) {
 func (d OAuthDeps) consoleFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, u oauthUser) {
 	if err := d.ensureOAuthPK(r.Context(), u.Sub, u.UserID); err != nil {
 		if errors.Is(err, ErrMintLiteLLM) {
-			htmlError(w, 503, "LiteLLM is unreachable; try again shortly")
+			d.htmlError(w, 503, "LiteLLM is unreachable; try again shortly")
 			return
 		}
 		d.Auth.Logger.Error("console: ensure pk_ failed", "err", err)
-		htmlError(w, 500, "could not provision the personal credential")
+		d.htmlError(w, 500, "could not provision the personal credential")
 		return
 	}
 	sid, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	now := d.now()
 	s := consoleSession{oauthUser: u, RevalidateAt: now.Add(d.AccessTTL), ExpiresAt: now.Add(d.RefreshTTL)}
 	if err := d.Store.Put(r.Context(), consoleSessionKind, sid, s, d.RefreshTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))

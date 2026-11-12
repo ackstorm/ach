@@ -122,7 +122,7 @@ func (d OAuthDeps) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 // to Dex.
 func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		renderDevicePage(w, r.URL.Query().Get("user_code"), "")
+		d.renderDevicePage(w, r.URL.Query().Get("user_code"), "")
 		return
 	}
 	// RFC 8628 §5.4: a cross-site form POST (attacker's page auto-submits
@@ -130,11 +130,11 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 	// approve the attacker's device as the victim. Browsers send Origin on
 	// every form POST; a missing header is refused too.
 	if !sameOrigin(d.Issuer, r) {
-		htmlError(w, 403, "this page only accepts its own form")
+		d.htmlError(w, 403, "this page only accepts its own form")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		renderDevicePage(w, "", "form body required")
+		d.renderDevicePage(w, "", "form body required")
 		return
 	}
 	userCode := normalizeUserCode(r.PostForm.Get("user_code"))
@@ -143,28 +143,28 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 	if userCode != "" {
 		var err error
 		if ok, err = d.Store.Get(r.Context(), "device_user", userCode, &deviceCode); err != nil {
-			htmlError(w, 500, "store unavailable")
+			d.htmlError(w, 500, "store unavailable")
 			return
 		}
 	}
 	if !ok {
-		renderDevicePage(w, r.PostForm.Get("user_code"), "code not found or expired — check your terminal")
+		d.renderDevicePage(w, r.PostForm.Get("user_code"), "code not found or expired — check your terminal")
 		return
 	}
 	pendingID, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	binding, err := NewSessionID()
 	if err != nil {
-		htmlError(w, 500, "")
+		d.htmlError(w, 500, "")
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
 	p := oauthPending{DeviceCode: deviceCode, DexVerifier: dexVerifier, Binding: bindingHash(binding)}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	http.SetCookie(w, bindingCookie(pendingID, binding, d.Auth.InsecureCookie, int(oauthPendingTTL.Seconds())))
@@ -200,27 +200,27 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 	var rec oauthDevice
 	ok, err := d.Store.Get(r.Context(), "device", p.DeviceCode, &rec)
 	if err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	if !ok || rec.Status != deviceStatusPending {
-		htmlError(w, 400, "this device code has expired — start again from your terminal")
+		d.htmlError(w, 400, "this device code has expired — start again from your terminal")
 		return
 	}
 	rec.Status, rec.oauthUser = status, u
 	// Remaining TTL: the CLI stops polling at expires_in whatever happens here.
 	if err := d.Store.Put(r.Context(), "device", p.DeviceCode, rec, deviceTTL); err != nil {
-		htmlError(w, 500, "store unavailable")
+		d.htmlError(w, 500, "store unavailable")
 		return
 	}
 	_ = d.Store.Del(r.Context(), "device_user", rec.UserCode)
 	d.Auth.Logger.Info("oauth: device authorization "+status, "client_id", rec.ClientID)
 	if status == deviceStatusApproved {
-		renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "ach-cli login", Args: "--no-browser", Out: "✓ approved",
+		d.renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "ach-cli login", Args: "--no-browser", Out: "✓ approved",
 			Title: "Signed in to ACH", Sub: "Return to your terminal — you can close this tab.", Footer: "you can close this tab"})
 		return
 	}
-	renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "ach-cli login", Args: "--no-browser", Out: "✗ cancelled",
+	d.renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "ach-cli login", Args: "--no-browser", Out: "✗ cancelled",
 		Title: "Sign-in cancelled", Sub: "Nothing was granted. You can close this tab.", Error: true, Footer: "no credential was issued"})
 }
 
@@ -258,8 +258,8 @@ func (d OAuthDeps) deviceToken(w http.ResponseWriter, r *http.Request, clientID 
 	d.issue(w, r, rec.oauthUser, clientID)
 }
 
-func renderDevicePage(w http.ResponseWriter, code, problem string) {
-	renderPage(w, http.StatusOK, page{Label: "READY", Title: "Sign in to ACH",
+func (d OAuthDeps) renderDevicePage(w http.ResponseWriter, code, problem string) {
+	d.renderPage(w, http.StatusOK, page{Label: "READY", Title: "Sign in to ACH",
 		Sub: "Confirm this is the code shown in your terminal, then continue.", Form: true, Code: code,
 		Problem: problem, Footer: fmt.Sprintf("the code expires in %d minutes", int(deviceTTL.Minutes()))})
 }

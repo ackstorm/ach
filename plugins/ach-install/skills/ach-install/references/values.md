@@ -130,6 +130,7 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.teams.sso` | `{}` | Dex `groups` value → team aliases (`ACH_TEAMS_SSO`). |
 | `platformApi.keyExchange.tokenTTL` | `15m` | Lifetime of the JWT a ServiceAccount token exchange returns (`ACH_KEY_EXCHANGE_TOKEN_TTL`), between `1m` and `1h`. Needs the audit policy noted in `SKILL.md`. |
 | `platformApi.console.chatUrl` | `""` | Chat button target in the console (`ACH_CONSOLE_CHAT_URL`). |
+| `platformApi.console.theme` | `""` | Default skin of the console and the sign-in pages: `dark`, `light`, `pastel` or `red` (`ACH_CONSOLE_THEME`). A user's own toggle choice wins; empty follows the browser's light/dark preference. |
 | `platformApi.observability.*` | empty | Enterprise; see `references/enterprise.md`. |
 | `platformApi.initContainers` | `[]` | |
 
