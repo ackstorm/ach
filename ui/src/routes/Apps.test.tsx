@@ -17,10 +17,12 @@ describe('Apps', () => {
     render(<Apps />);
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['Workspace', 'Admin']);
     const workspace = screen.getByRole('region', { name: 'Workspace' });
-    expect(workspace).toHaveTextContent('ChatEvery modelCoder');
+    expect(workspace).toHaveTextContent('ChatEvery modelchat.acme.aiCodercoder.acme.ai');
+    expect(screen.getByRole('link', { name: /Chat/ }).getAttribute('style')).toContain('oklch(from var(--primary) l c 322)');
     const grafana = screen.getByRole('link', { name: /Grafana/ });
     expect(grafana).toHaveAttribute('href', 'https://grafana.acme.ai');
     expect(grafana).toHaveAttribute('target', '_blank');
-    expect(grafana.querySelector('svg')).not.toBeNull(); // unknown icon falls back
+    expect(grafana.querySelectorAll('svg')).toHaveLength(2); // unknown icon falls back, plus the arrow
+    expect(grafana.getAttribute('style')).toContain('--app: var(--primary)');
   });
 });

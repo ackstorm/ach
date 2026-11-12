@@ -77,6 +77,22 @@ button,input{font:inherit}button{color:inherit}a{color:inherit;text-decoration:n
 .console-ledger .nav-label { padding:10px 8px 6px; color:var(--faint); font:700 9px var(--mono); letter-spacing:.15em; text-transform:uppercase; border-top:1px solid var(--line); margin-top:7px; }
 .console-ledger .nav svg { width:17px; height:14px; }
 .console-ledger .nav-standalone { border-top:1px solid var(--line); margin-top:7px; padding-top:7px; }
+/* Apps page. --app is the tile's own color, set inline from the glyph's hue (lib/app-icons.ts). */
+.console-ledger .app-group { display:flex; align-items:center; gap:8px; }
+.console-ledger .app-group::after { content:''; flex:1; border-top:1px solid var(--line); }
+.console-ledger .app-count { font:11px var(--mono); color:var(--faint); }
+.console-ledger .app-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr)); gap:12px; }
+.console-ledger .app-tile { position:relative; display:flex; flex-direction:column; gap:12px; min-width:0; padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--panel); transition:border-color .15s,box-shadow .15s; }
+.console-ledger .app-tile:hover { border-color:color-mix(in oklab,var(--app) 55%,var(--line)); box-shadow:0 6px 20px -12px var(--app); }
+.console-ledger .app-tile:focus-visible { outline:2px solid var(--app); outline-offset:2px; }
+.console-ledger .app-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:10px; color:var(--app); background:color-mix(in oklab,var(--app) 16%,var(--panel)); }
+.console-ledger .app-icon svg { width:20px; height:20px; }
+.console-ledger .app-name { font-size:14.5px; font-weight:600; color:var(--text); }
+.console-ledger .app-sub { font-size:12.5px; line-height:1.4; color:var(--muted); overflow-wrap:anywhere; hyphens:auto; }
+.console-ledger .app-host { margin-top:auto; padding-top:8px; border-top:1px dashed var(--line); font:11px var(--mono); color:var(--faint); overflow-wrap:anywhere; }
+.console-ledger .app-go { position:absolute; top:16px; right:16px; width:16px; height:16px; color:var(--app); opacity:0; transition:opacity .15s; }
+.console-ledger .app-tile:is(:hover,:focus-visible) .app-go { opacity:1; }
+@media (prefers-reduced-motion:reduce) { .console-ledger .app-tile, .console-ledger .app-go { transition:none; } }
 .console-ledger .nav button { display:flex; align-items:center; gap:10px; padding:8px; width:100%; color:var(--muted); text-align:left; }
 .console-ledger .nav a[aria-current=page] { color:var(--green); background:color-mix(in srgb,var(--green) 7%,transparent); }
 .console-ledger .nav a[aria-current=page]::before { content:''; position:absolute; left:-10px; top:7px; bottom:7px; width:2px; background:var(--green); }
