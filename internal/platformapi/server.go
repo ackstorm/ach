@@ -60,6 +60,8 @@ type Deps struct {
 	// ConsoleTheme is the skin the console and the OAuth AS pages give a
 	// browser with no stored choice; empty follows its light/dark preference.
 	ConsoleTheme string
+	// ConsoleApps are the console Apps page tiles; empty hides the page.
+	ConsoleApps []console.App
 
 	// ObservabilityExtra mounts the routes an edition adds under
 	// /platform/observability/*, behind the same Authn: every route there is Enterprise.
@@ -317,7 +319,7 @@ func New(deps Deps) http.Handler {
 				return db.UserKeyAllowance(ctx, deps.Pool, email, deps.DefaultMaxKeys)
 			},
 			DisplayName: displayName,
-			ChatURL:     deps.ConsoleChatURL, ProviderName: deps.GenAIProvider,
+			ChatURL:     deps.ConsoleChatURL, Apps: deps.ConsoleApps, ProviderName: deps.GenAIProvider,
 			Audit: deps.Audit, Logger: deps.Logger,
 		})
 

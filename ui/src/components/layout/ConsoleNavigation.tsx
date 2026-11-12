@@ -1,14 +1,15 @@
 // ConsoleNavigation.tsx — the sidebar: Overview (standalone), then Access →
-// Runtime → Observability → Help. Analytics is collapsed by default (chevron);
+// Runtime → Observability → Apps (standalone, only with tiles) → Help. Analytics is collapsed by default (chevron);
 // visiting one of its pages opens it. In the icon-only sidebar (`collapsed`)
 // every link is named by aria-label/title and the Analytics children show
 // directly as icons (no toggle, no Coming-soon or Enterprise-only rows). Without
 // Enterprise the Analytics and Traces entries are marked "Enterprise only".
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
-import { House, ChartNoAxesCombined, Box, Network, Workflow, KeyRound, BookOpen, Terminal, Layers, ChevronDown, FlaskConical } from 'lucide-react';
+import { House, ChartNoAxesCombined, Box, Network, Workflow, KeyRound, BookOpen, Terminal, Layers, ChevronDown, FlaskConical, LayoutGrid } from 'lucide-react';
 import { eeNav } from '@ee/routes';
 import { useEnterprise } from '@/lib/edition';
+import { useSessionStore } from '@/stores/session';
 
 // eeNav is the Analytics children followed by Traces, which sits outside the group.
 const ANALYTICS = eeNav.slice(0, -1);
@@ -17,6 +18,7 @@ const TRACES_ITEM = eeNav.at(-1);
 export function ConsoleNavigation({ onNavigate, collapsed = false }: { onNavigate?: () => void; collapsed?: boolean }) {
   const location = useLocation();
   const enterprise = useEnterprise();
+  const hasApps = useSessionStore((s) => (s.me?.apps?.length ?? 0) > 0);
   const [open, setOpen] = useState(() => {
     try { return window.sessionStorage.getItem('console.analytics.open') === 'true'; } catch { return false; }
   });
@@ -41,6 +43,7 @@ export function ConsoleNavigation({ onNavigate, collapsed = false }: { onNavigat
       {!collapsed && <span className="nav-disabled nav-soon" aria-disabled="true"><FlaskConical aria-hidden="true" />Evals · Coming soon</span>}
       {TRACES_ITEM && (enterprise ? link(TRACES_ITEM.to, TRACES_ITEM.label, TRACES_ITEM.Icon) : !collapsed && disabled(TRACES_ITEM, 'nav-disabled'))}
     </nav>
+    {hasApps && <nav className="nav nav-standalone" aria-label="Apps">{link('/apps', 'Apps', LayoutGrid)}</nav>}
     <div className="nav-label">Help</div>
     <nav className="nav" aria-label="Help">{link('/howto', 'How-to', BookOpen)}{link('/howto/ach-cli', 'ach-cli', Terminal)}</nav>
   </>;

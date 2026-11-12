@@ -56,6 +56,7 @@ const ME: SessionMe = {
   max_keys: null,
   endpoint: 'https://litellm.example.com',
   chat_url: '',
+  apps: [],
   provider_name: 'ai-platform',
 };
 

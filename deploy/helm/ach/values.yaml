@@ -199,6 +199,16 @@ platformApi:
     # whose user has not picked one with the console's toggle: dark, light,
     # pastel or red. Empty follows the browser's light/dark preference.
     theme: ""
+    # apps are the tiles of the console's Apps page, grouped by `group` in the
+    # order groups first appear. Empty hides the page. Hiding a tile is not
+    # access control: each app keeps its own login.
+    #   name, url: required. subtitle: one line under the name.
+    #   icon: a glyph name from ui/src/lib/app-icons.ts; unknown shows a default.
+    #   teams: members of any one of these team aliases see the tile; none = everyone.
+    #   admin: true = platform admins only.
+    apps: []
+    # - { group: Workspace, name: Coder, subtitle: Cloud dev environments, url: https://coder.example.com, icon: code }
+    # - { group: Admin, name: Grafana, url: https://grafana.example.com, icon: gauge, admin: true }
   # initContainers: extra init containers for THIS Deployment only, appended
   # after any global `initContainers`. Raw container specs, verbatim.
   initContainers: []

@@ -143,6 +143,10 @@ spec:
             - name: ACH_CONSOLE_THEME
               value: {{ . | quote }}
             {{- end }}
+            {{- with (.Values.platformApi.console).apps }}
+            - name: ACH_CONSOLE_APPS
+              value: {{ . | toJson | quote }}
+            {{- end }}
             {{- with .Values.platformApi.userDefaults }}
             {{- if ne (toString .maxBudget) "" }}
             - name: ACH_USER_MAX_BUDGET

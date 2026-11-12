@@ -9,6 +9,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `pastel` or `red`) sets the skin of the console and the sign-in pages for a
   browser whose user has not picked one. The console's toggle still wins for
   that browser. Empty keeps following the browser's light/dark preference.
+- Console Apps page: `platformApi.console.apps` lists tiles linking to the
+  platform's other tools (name, url, optional group, subtitle and icon). A tile
+  with `teams` shows only to members of any one of those teams, one with `admin: true`
+  only to platform admins; the server filters the list, so the browser never
+  receives a tile the user cannot see. The sidebar shows Apps between
+  Observability and Help when at least one tile is visible. Hiding a tile is
+  not access control: each app keeps its own login.
 - `ach-cli environment status` tells whether a hydrated folder is up to date:
   per Environment, `up to date` or what changed since the last hydrate (`+`
   added to the Environment, `-` removed, `~` new content). It asks the server

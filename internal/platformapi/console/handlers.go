@@ -72,6 +72,8 @@ type Deps struct {
 	DisplayName func(r *http.Request) string
 	// ChatURL is the hosted chat UI the Chat button opens; "" hides it.
 	ChatURL string
+	// Apps are the Apps page tiles; bootstrap returns those the caller may see.
+	Apps []App
 	// ProviderName is the OpenCode provider id (ACH_GENAI_PROVIDER_NAME) the
 	// HowTo page tells users to sign in with.
 	ProviderName string
@@ -104,6 +106,7 @@ func (d Deps) bootstrap(w http.ResponseWriter, r *http.Request) {
 		"email":                       kc.OwnerEmail,
 		"name":                        "",
 		"chat_url":                    d.ChatURL,
+		"apps":                        d.visibleApps(ctx, kc),
 		"provider_name":               d.ProviderName,
 		"is_admin":                    kc.IsAdmin,
 		"enterprise":                  d.Enterprise,

@@ -126,6 +126,26 @@ func TestValidatePlatformAPIConfig_ConsoleTheme(t *testing.T) {
 	}
 }
 
+func TestValidatePlatformAPIConfig_ConsoleApps(t *testing.T) {
+	setRequiredPlatformAPIEnv(t)
+	t.Setenv("ACH_CONSOLE_APPS", `[{"group":"Admin","name":"Grafana","url":"https://grafana.example.com","icon":"gauge","admin":true},{"name":"n8n","url":"https://n8n.example.com","teams":["run"]}]`)
+	cfg, err := validatePlatformAPIConfig()
+	if err != nil || len(cfg.ConsoleApps) != 2 || !cfg.ConsoleApps[0].Admin || cfg.ConsoleApps[1].Teams[0] != "run" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	for _, bad := range []string{
+		`{"name":"x"}`, // not a list
+		`[{"name":"x","url":"https://x.example.com","subtile":"typo"}]`,
+		`[{"url":"https://x.example.com"}]`,
+		`[{"name":"x","url":"javascript:alert(1)"}]`,
+	} {
+		t.Setenv("ACH_CONSOLE_APPS", bad)
+		if _, err := validatePlatformAPIConfig(); err == nil {
+			t.Errorf("ACH_CONSOLE_APPS=%s: want error", bad)
+		}
+	}
+}
+
 func TestValidatePlatformAPIConfig_Observability(t *testing.T) {
 	setRequiredPlatformAPIEnv(t)
 	cfg, err := validatePlatformAPIConfig()

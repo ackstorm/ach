@@ -55,6 +55,7 @@ import (
 	"github.com/ackstorm/ach/internal/platformapi"
 	"github.com/ackstorm/ach/internal/platformapi/admin"
 	"github.com/ackstorm/ach/internal/platformapi/auth"
+	"github.com/ackstorm/ach/internal/platformapi/console"
 	pamw "github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/opencode"
 	"github.com/ackstorm/ach/internal/platformapi/store"
@@ -124,6 +125,9 @@ type platformAPIConfig struct {
 	// (ACH_CONSOLE_THEME, chart platformApi.console.theme). Empty follows
 	// the browser's light/dark preference.
 	ConsoleTheme string
+	// ConsoleApps are the console Apps page tiles (ACH_CONSOLE_APPS, chart
+	// platformApi.console.apps). Empty hides the page.
+	ConsoleApps []console.App
 	// Observability is the read-only Langfuse ClickHouse endpoint behind
 	// /platform/observability/* (ACH_OBSERVABILITY_CLICKHOUSE_{URL,USER,PASSWORD}).
 	// nil = URL unset = the routes answer 503 not_ready.
@@ -262,6 +266,9 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 	if !slices.Contains([]string{"", "dark", "light", "pastel", "red"}, cfg.ConsoleTheme) {
 		return nil, fmt.Errorf("ACH_CONSOLE_THEME %q: must be dark, light, pastel or red", cfg.ConsoleTheme)
 	}
+	if cfg.ConsoleApps, err = consoleApps(); err != nil {
+		return nil, err
+	}
 	if cfg.Observability, cfg.ObservabilityProjects, err = observabilityConfig(); err != nil {
 		return nil, err
 	}
@@ -318,11 +325,36 @@ func consoleChatURL() (string, error) {
 	if raw == "" {
 		return "", nil
 	}
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if !absHTTPURL(raw) {
 		return "", fmt.Errorf("ACH_CONSOLE_CHAT_URL %q: must be an absolute http(s) URL", raw)
 	}
 	return raw, nil
+}
+
+func absHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != ""
+}
+
+// consoleApps reads ACH_CONSOLE_APPS, a JSON list of tiles. Unknown fields
+// are refused so a misspelt key fails the start instead of silently dropping.
+func consoleApps() ([]console.App, error) {
+	raw := os.Getenv("ACH_CONSOLE_APPS")
+	if raw == "" {
+		return nil, nil
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var apps []console.App
+	if err := dec.Decode(&apps); err != nil {
+		return nil, fmt.Errorf("ACH_CONSOLE_APPS: want a JSON list of apps: %w", err)
+	}
+	for i, a := range apps {
+		if a.Name == "" || !absHTTPURL(a.URL) {
+			return nil, fmt.Errorf("ACH_CONSOLE_APPS[%d]: needs a name and an absolute http(s) url", i)
+		}
+	}
+	return apps, nil
 }
 
 type platformAPIProcessDeps struct {
@@ -575,6 +607,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		DefaultMaxKeys:     cfg.DefaultMaxKeys,
 		ConsoleChatURL:     cfg.ConsoleChatURL,
 		ConsoleTheme:       cfg.ConsoleTheme,
+		ConsoleApps:        cfg.ConsoleApps,
 		ObservabilityExtra: extra,
 		Metrics:            platformAPICollectors,
 	}

@@ -11,12 +11,23 @@
 // bootstrap. The first call the SPA makes; cookie-authenticated.
 // ---------------------------------------------------------------------------
 
+/** One Apps page tile (console.App, internal/platformapi/console/apps.go). */
+export interface ConsoleApp {
+  group?: string;
+  name: string;
+  subtitle?: string;
+  url: string;
+  icon?: string;
+}
+
 export interface SessionMe {
   email: string;
   /** IdP display name from the console session; the store falls back to email when empty. */
   name: string;
   /** Hosted chat UI (chart platformApi.console.chatUrl); "" hides the Chat button. */
   chat_url: string;
+  /** Apps page tiles this user may see (chart platformApi.console.apps); [] hides the page. */
+  apps: ConsoleApp[];
   /** OpenCode provider id users sign in with (chart genai.providerName). */
   provider_name: string;
   is_admin: boolean;
