@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-11-12
+
 ### Added
 - Default skin from the chart: `platformApi.console.theme` (`dark`, `light`,
   `pastel` or `red`) sets the skin of the console and the sign-in pages for a
