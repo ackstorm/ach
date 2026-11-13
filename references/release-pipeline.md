@@ -165,6 +165,7 @@ The public docs site at `docs/` is mkdocs-material based.
 
 ```bash
 make gen-crd-ref-docs                    # regenerate docs/api-reference/ from CRDs
+make gen-cli-ref-docs                    # regenerate docs/reference/cli.md from the ach-cli commands
 make docs-build                          # build site/ via docker (host)
 make docs-serve                          # local preview at :8000
 ```
@@ -172,6 +173,10 @@ make docs-serve                          # local preview at :8000
 `docs/.crd-ref-docs.yaml` is the config for the `crd-ref-docs` tool
 (installed via `make crd-ref-docs`); it targets the ACH API groups
 (`ach.ackstorm.ai/v1alpha1`).
+
+`docs/reference/cli.md` holds the `--help` text of every `ach-cli` command.
+`TestCLIReference` (`cmd/ach-cli/cmd/cliref_test.go`) renders it, so
+`make test-unit` fails when the page does not match the commands.
 
 The site publishes to `https://ackstorm.github.io/ach/`: one version, built
 from `main`.

@@ -20,6 +20,7 @@ nav:
           - how-to/backend-builders/write-an-mcp-backend.md
           - how-to/backend-builders/exchange-a-serviceaccount-token.md
   - Reference:
+      - reference/cli.md
       - CRD API: api-reference/ach.ackstorm.ai.md
   - Explanation:
       - explanation/concepts.md

@@ -59,8 +59,8 @@ work happens when you debug it.
 > being auto-wrapped by accident.
 
 > **⚠ The generator targets are NOT auto-wrapped.** `gen-code`,
-> `gen-manifests`, `gen-crd-ref-docs`, `helm-sync`, and `fix-spdx` call
-> `controller-gen`/`crd-ref-docs`/`scripts/*.sh` **directly** (no
+> `gen-manifests`, `gen-crd-ref-docs`, `gen-cli-ref-docs`, `helm-sync`, and
+> `fix-spdx` call `controller-gen`/`crd-ref-docs`/`go test`/`scripts/*.sh` **directly** (no
 > `container_target`), so those tools must already be on PATH. They run
 > correctly in two situations: (1) as **prerequisites** of a wrapped
 > target — `test-envtest`/`build-server`/etc. list `gen-manifests gen-code`
@@ -176,6 +176,7 @@ Helm (`cluster.sh`, `helm-sync`) is the only supported deploy path.
 | `gen-manifests` | A | controller-gen CRDs + RBAC + webhook manifests. |
 | `fix-spdx` | B | Prepend the SPDX header to any in-scope `*.go` missing it (host script). Also auto-run by `gen-code`. |
 | `gen-crd-ref-docs` | A | Render `docs/api-reference/` from CRD Go types. |
+| `gen-cli-ref-docs` | A | Render `docs/reference/cli.md` from the `ach-cli` command tree. |
 | `helm-sync` | A | Copy the chart's ONE mirrored surface: the generated CRDs (`config/crd/bases` → `deploy/helm/ach/crd-sources/`). The Grafana dashboards under `deploy/helm/ach/dashboards/` are NOT mirrored — they live there. |
 | `helm-sync-check` | A | Drift gate for both mirrored dirs (CI lint job). Fails when `helm-sync` produces a diff. |
 | `helm-render-check` | A | Render-smoke of non-default chart topologies (gateway off / ingress on / G16 standalone CS). Runs in CI lint job. |

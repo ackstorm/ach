@@ -38,6 +38,10 @@ gen-crd-ref-docs: $(CRD_REF_DOCS) ## Generate API reference documentation from G
 		--output-mode=group
 	@echo "API documentation generated at $(OUTPUT_DIR)/api-generated.md"
 
+.PHONY: gen-cli-ref-docs
+gen-cli-ref-docs: ## Generate docs/reference/cli.md from the ach-cli command tree.
+	go test github.com/ackstorm/ach/cmd/ach-cli/cmd -run '^TestCLIReference$$' -count=1 -update
+
 # When this Makefile runs inside the devtools container (`./scripts/dev.sh
 # make docs-build`), $(abspath ...) resolves to /workspace which doesn't
 # exist on the host. The nested `docker run` shells out to the host
