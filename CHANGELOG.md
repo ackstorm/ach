@@ -7,7 +7,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ### Changed
 - Documentation site: one version, served at `https://ackstorm.github.io/ach/`
   (the `/dev/` and `/latest/` prefixes are gone), with pages grouped as
-  Tutorials, How-to, Reference and Explanation.
+  Tutorials, How-to, Reference and Explanation. The Reference tab lists every
+  `ach-cli` command, the Helm values, the forwarder JWT claims and this
+  changelog.
 - Console Apps page: tiles fill the row at any width, each icon has its own
   color under every skin, and each tile shows the host it opens.
 

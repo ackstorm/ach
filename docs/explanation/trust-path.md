@@ -140,23 +140,9 @@ refresh once access returns, with no re-mint and no JWT-path change.
 
 ## 1.2 JWS contract — what the Forwarder mints
 
-| Field         | Value                                            | Reference  |
-|---------------|--------------------------------------------------|------------|
-| `alg`         | `EdDSA` (Ed25519)                                | FWD-07     |
-| `typ`         | `JWT`                                            | RFC 7519   |
-| `kid`         | Stable id of the signing slot (e.g. `ach-jwt-<ulid>` or `dev-<ts>`) | FWD-08 |
-| `iss`         | Forwarder `ACH_BASE_URL` (HTTPS-only in prod per FWD-10) | Hub §9.1 |
-| `sub`         | Bare `<owner-email>` (no namespace prefix)       | Hub §9.1   |
-| `email`       | Bare `<owner-email>` (mirrors `sub`); **omitted when empty** — additive, for consumers that key by email | — |
-| `groups`      | Caller's LiteLLM team aliases (ACH does no UUID→alias translation — see below), deduplicated + sorted, ACH's internal shell teams stripped; **omitted entirely when empty** — additive, see below | — |
-| `azp`         | `ek:<environment>` on a token minted for an agent key, for audit; **omitted** for `pk_`/OAuth callers. Additive, grants nothing | — |
-| `aud`         | `mcp:<bare-name>` on `/mcp/<bare-name>`<br>`a2a:<bare-name>` on `/a2a/<bare-name>` | Hub §9.1 |
-| `iat`         | Unix seconds at mint time                        | RFC 7519   |
-| `exp`         | `iat + 120`                                      | FWD-07     |
-| `nbf`         | **NOT emitted** (deliberate; see note below)     | Hub §9.1   |
-| `jti`         | **NOT emitted** (deliberate; Hub §9.1 + §20)     | Hub §9.1   |
-
-Authoritative implementation: [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go).
+The header fields and claims are listed in
+[Forwarder JWT](../reference/jwt.md#claims); the `groups` claim is resolved as
+[The `groups` claim](../reference/jwt.md#the-groups-claim) describes.
 
 `sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`
 claim mirrors it for backends that key their per-user token storage by email and
@@ -175,81 +161,12 @@ every forwarded request mints a fresh JWT. Clock skew between the
 Forwarder and the backend MUST stay well under 120 s for the trust path
 to be steady-state.
 
-### The `groups` claim
-
-The Forwarder emits `groups` — the caller's LiteLLM **team aliases** — on
-minted tokens whose resolved set is non-empty. Backends use it to authorize
-group-owned resources.
-
-| Key type | `groups` |
-|----------|----------|
-| `pk_` | the caller's LiteLLM teams ∩ `authorizedTeams` of active Environments whose `runtime.mcpServers` (or `runtime.a2aAgents`) contains `<name>` |
-| `ek_` | the same set for the key's `owner_email`: identical to the owner's `pk_` groups for that target, never the Environment's full `authorizedTeams`, which would grant teams the owner is not in |
-
-Both are sorted, deduplicated, and stripped of ACH's internal shell teams
-(`ach-env-*`, `ach-user-*`). The claim is **omitted entirely** when the set
-is empty — consumers must read an absent claim as "no groups", never as an
-error.
-
-Values are whatever LiteLLM's `team_alias` resolves to (falling back to
-`team_id` if the alias is empty) — ACH performs no UUID→alias translation
-of its own, so an `authorizedTeams` entry authored as a raw team UUID
-ships through unchanged. Renaming a LiteLLM team therefore changes the
-claim; a backend keying on the old alias stops matching.
-
-**Staleness.** There is no revocation channel: a backend trusts the claim
-for the token's life. Two distinct vectors, two distinct bounds, each
-applying to both key types. Removing a user from a LiteLLM team (the 60s
-team-membership cache, read on the owner for an `ek_`) takes effect at the
-backend after at most `exp` (120s) + 60s ≈ 180s. Dropping a team from
-`Environment.spec.authorizedTeams` bounds on `exp` (120s) + the `envstore`
-package's 5-minute NOTIFY-loss safety-net refresh
-(`internal/forwarder/envstore/store.go`) ≈ ~7 minutes worst case.
-
 ---
 
 ## 1.3 JWKS endpoint
 
-```
-GET <iss>/.well-known/jwks.json
-```
-
-Response shape (RFC 7517 §5):
-
-```json
-{
-  "keys": [
-    {
-      "kty": "OKP",
-      "crv": "Ed25519",
-      "use": "sig",
-      "alg": "EdDSA",
-      "kid": "ach-jwt-01J…",
-      "x":   "<base64url-no-pad of the 32-byte public key>"
-    },
-    {
-      "kty": "OKP",
-      "crv": "Ed25519",
-      "use": "sig",
-      "alg": "EdDSA",
-      "kid": "ach-jwt-01K…",   // OPTIONAL — only during a rotation window
-      "x":   "..."
-    }
-  ]
-}
-```
-
-Response headers:
-
-| Header           | Value                          |
-|------------------|--------------------------------|
-| `Content-Type`   | `application/jwk-set+json`     |
-| `Cache-Control`  | `public, max-age=3600`         |
-
-The cache TTL is the contract for backends; a 1-hour stale view is
-correct by design. During a rotation, both slots are published for
-≥24 hours of overlap before the old `kid` is removed
-([JWT key rotation](../how-to/admins/rotate-jwt-signing-keys.md)).
+The endpoint, its response headers and the key shape are listed in
+[Forwarder JWT](../reference/jwt.md#jwks-endpoint).
 
 ---
 

@@ -45,7 +45,7 @@ stale line there is a broken instruction for every user. Validate with
 | **Service/domain** failure mode | `references/troubleshooting.md` |
 | `ach-cli` command, flag or output change | `docs/reference/cli.md` (`make gen-cli-ref-docs`), `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
 | CRD field / condition / reconcile behavior an admin writes against | `plugins/ach-gitops/skills/ach-gitops/` (+ version bump) |
-| Helm value / install prerequisite / upgrade step | `plugins/ach-install/skills/ach-install/` (+ version bump) |
+| Helm value / install prerequisite / upgrade step | `docs/reference/helm-values.md` + `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/explanation/architecture.md` |
@@ -234,7 +234,7 @@ independent collections.)
 | Local testing, SSO login & Gateway     | `references/local-testing-gateway.md`    |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/how-to/backend-builders/write-an-mcp-backend.md` |
-| Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/explanation/trust-path.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
+| Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/reference/jwt.md` (claims, JWKS) + `docs/explanation/trust-path.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
 | Classifier: taxonomy, prompt, model, ClickHouse reads | `docs/how-to/admins/enable-enterprise.md` |
 | Changing the OpenCode auth plugin | Never here: change `github.com/ackstorm/opencode-oidc-provider`, tag it, then bump `genai.opencodePluginSpec` in `deploy/helm/ach/values.yaml` |
 
