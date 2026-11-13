@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.15] - 2026-11-13
+
 ### Added
 - `ach-cli launch claude` keeps your Claude login and sends claude's model
   traffic through ACH with your ACH sign-in, refreshed on its own: no
