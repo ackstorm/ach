@@ -4,7 +4,18 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli launch claude` keeps your Claude login and sends claude's model
+  traffic through ACH with your ACH sign-in, refreshed on its own: no
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` or `apiKeyHelper` to set.
+  `--profile` and `--key` pick the credential. Shell `ANTHROPIC_BASE_URL` and
+  `ANTHROPIC_CUSTOM_HEADERS` are ignored with a warning; a Claude settings file
+  that sets `ANTHROPIC_BASE_URL` stops the launch; `--models` is refused for
+  claude.
+
 ### Changed
+- `ach-cli launch` in a folder with no Environment starts the tool without
+  hydrating, instead of refusing.
 - Documentation site: one version, served at `https://ackstorm.github.io/ach/`
   (the `/dev/` and `/latest/` prefixes are gone), with pages grouped as
   Tutorials, How-to, Reference and Explanation. The Reference tab lists every

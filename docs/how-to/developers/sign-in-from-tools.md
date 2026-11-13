@@ -9,6 +9,28 @@ You need to be [signed in](sign-in.md) with `ach-cli login`, not with an
 environment key, and `ach-cli` must be on your `PATH`: the tools start it
 without your shell, so an alias is not enough.
 
+## Claude Code on your Claude subscription
+
+```bash
+ach-cli launch claude                       # add --environment <env> to hydrate first
+alias claude='ach-cli launch claude --'     # every claude goes through ACH
+```
+
+`launch claude` keeps your Claude login, so your subscription pays Anthropic,
+and still sends the model traffic through ACH. While claude runs, `ach-cli`
+serves your ACH URL on a local port, adds your ACH sign-in to every request
+(renewed before it expires) and passes the rest, your Claude login included,
+untouched. `--profile` picks the profile; `--key ek-…` sends that key
+instead, so spend also counts on the key and its Environment.
+
+You set nothing yourself. `ANTHROPIC_BASE_URL` and `ANTHROPIC_CUSTOM_HEADERS`
+in your shell are ignored with a warning. A Claude settings file whose `env`
+sets `ANTHROPIC_BASE_URL` would send claude past ACH, so `launch` stops and
+names the file. If your ACH session ends while claude runs, claude shows
+`API Error: 401 …`: run `ach-cli login` in another terminal and the next
+message works without restarting claude. `/remote-control` stays
+unavailable: Claude Code turns it off behind any gateway.
+
 ## Claude Code and Codex
 
 Add `--models` when you hydrate:
@@ -18,7 +40,8 @@ ach-cli environment hydrate <environment> --target claude-code --models
 ach-cli environment hydrate <environment> --target codex --models
 ```
 
-`environment clone` and `launch` take `--models` too.
+`environment clone` and `launch` take `--models` too, except `launch claude`,
+which routes claude through ACH on its own (see above).
 
 Pass `--models` every time you hydrate or `launch` in that folder. A run
 without it removes what `--models` wrote, which is also how you go back to

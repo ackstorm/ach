@@ -851,9 +851,16 @@ Flags:
 Hydrate an Environment for one tool (same engine and flags as
 `ach-cli environment hydrate`), then start the tool in --dir (default: the
 current directory). With no --environment and no ACH_ENVIRONMENT, every
-Environment already hydrated in that folder (.ach/) is updated for the tool.
-If hydrate fails, the tool is not started. ach-cli exits with the tool's exit
-code.
+Environment already hydrated in that folder (.ach/) is updated for the tool;
+a folder with none starts the tool without hydrating. If hydrate fails, the
+tool is not started. ach-cli exits with the tool's exit code.
+
+claude keeps its own Claude login and sends its model traffic through ACH:
+launch serves the profile's URL on a local port for as long as claude runs,
+adding your ACH sign-in (or --key) to every request. ANTHROPIC_BASE_URL and
+ANTHROPIC_CUSTOM_HEADERS in your shell are ignored; a Claude settings file
+that sets ANTHROPIC_BASE_URL stops the launch. --models is refused for
+claude.
 
 Tools: claude, codex, gemini, opencode, pi
 
@@ -862,6 +869,7 @@ after --.
 
 Example:
   ach-cli launch claude --environment frontend-dev
+  ach-cli launch claude --profile work -- -c
   ach-cli launch opencode
   ach-cli launch codex --environment aws-rw --dir ~/work/infra -- --model ackstorm.smart
 
