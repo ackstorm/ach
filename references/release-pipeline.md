@@ -173,9 +173,15 @@ make docs-serve                          # local preview at :8000
 (installed via `make crd-ref-docs`); it targets the ACH API groups
 (`ach.ackstorm.ai/v1alpha1`).
 
-The site publishes to `https://ackstorm.github.io/ach/` via the
-`mike` versioned-docs flow.
+The site publishes to `https://ackstorm.github.io/ach/`: one version, built
+from `main`.
 
-`.github/workflows/docs.yml` deploys the site to `gh-pages` on
-pushes to `main` and on `v*` tags. PRs build the site (no deploy) to
-catch broken links and missing pages.
+`.github/workflows/docs.yml` deploys to the `gh-pages` branch with
+`mkdocs gh-deploy --strict` on pushes to `main`. PRs build with `--strict`
+and do not deploy: a broken link, or a page missing from the nav, fails the
+build. Never add `-q` to a strict build: quiet mode drops the warnings strict
+mode counts, so it passes.
+
+GitHub Pages must be enabled on the repo with `gh-pages` / root as its source
+(`gh api repos/ackstorm/ach/pages`). With Pages disabled the workflow stays
+green and the site answers 404.
