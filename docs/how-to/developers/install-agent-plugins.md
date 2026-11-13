@@ -13,6 +13,9 @@ They live in a plugin marketplace named `ach`, at the root of the
 None of them contains the URL of your ACH: `ach-cli` reads it from your
 profile, or from `ACH_URL` before you first sign in.
 
+You need the agent tool installed. The Environment route also needs
+[`ach-cli`](install-ach-cli.md) and a [sign-in](sign-in.md).
+
 ## Through an Environment
 
 If your platform team serves the plugins through an Environment, hydrating it

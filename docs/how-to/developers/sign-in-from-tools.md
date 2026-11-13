@@ -20,8 +20,9 @@ ach-cli environment hydrate <environment> --target codex --models
 
 `environment clone` and `launch` take `--models` too.
 
-To go back to the tool's own login, hydrate again without `--models`: hydrate
-removes what it wrote.
+Pass `--models` every time you hydrate or `launch` in that folder. A run
+without it removes what `--models` wrote, which is also how you go back to
+the tool's own login.
 
 ### What `--models` writes
 
@@ -73,9 +74,8 @@ opencode auth login <provider>                # signs you in
 opencode service restart                      # OpenCode v2: plugins load when the service starts
 ```
 
-`<provider>` is the name your platform team chose for ACH; the first command
-shows it. On OpenCode v1 the second command is
-`opencode auth login -p <provider>`.
+`<provider>` is the name your platform team chose for ACH; they have it. On
+OpenCode v1 the second command is `opencode auth login -p <provider>`.
 
 After the restart, the models of `<provider>` come from ACH.
 
@@ -92,9 +92,7 @@ The spend after `Budget` grows with your requests.
 ## What you can reach
 
 The models you get are those of the Environments your teams may use, as
-listed by `ach-cli environment describe <environment>`. When your sign-in is
-disabled at your organisation's single sign-on, the tool stops working within
-the hour.
+listed by `ach-cli environment describe <environment>`.
 
 ## Related
 

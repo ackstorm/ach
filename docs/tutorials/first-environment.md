@@ -80,7 +80,7 @@ ach-cli environment clone quickstart --target claude-code
 `clone` creates `~/Projects/quickstart` and hydrates the Environment into it:
 it writes the Environment's plugins and skills under `.claude/`, its MCP
 servers into `.mcp.json`, and a record of what it wrote under `.ach/`. It
-prints one `+` line for each item it added.
+lists what it added, each line starting with `+`, and ends with `Finished`.
 
 ## 5. Start Claude Code on it
 

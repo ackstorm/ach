@@ -43,7 +43,6 @@ the others.
 
 To run `ach-cli` with a key, pass `--key ek-…`, set `ACH_KEY`, or
 [save it in a profile](sign-in.md#set-up-a-machine-that-never-has-a-browser).
-With a key, `ach-cli environment hydrate` needs no Environment name.
 
 ## List your keys
 
@@ -86,6 +85,16 @@ You may hold a limited number of keys that are not revoked. `ach-cli whoami`
 shows held and allowed after `Keys`. At the limit, `keys create` fails with
 `403 key_limit_reached`: revoke a key, or ask a platform admin to raise your
 limit.
+
+## Verify
+
+```bash
+ach-cli keys list
+curl -H "x-ach-key: $ACH_KEY" https://ach.example.com/v1/models
+```
+
+The key is listed as `active`, and the request returns the Environment's
+models.
 
 ## Related
 

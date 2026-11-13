@@ -12,6 +12,8 @@ per platform and a `checksums.txt`:
 `<version>` is the release tag without its leading `v`; `<os>` is `linux` or
 `darwin`.
 
+You need `curl` and `tar` on Linux and macOS, or PowerShell on Windows.
+
 ## Linux and macOS
 
 ```bash
