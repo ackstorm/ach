@@ -1445,8 +1445,8 @@ func (defaultStateStore) GuardEnvironment(existing *state.File, requested string
 
 // renderContext stuffs what the adapters need to know about the caller:
 // the credential to embed (an OAuth JWS is NOT rendered — the tool runs
-// its own ceremony on the 401 + RFC 9728 pointer; references/
-// oauth-client-conformance.md §4) and, for a PERSON hydrate (OAuth or pk_)
+// its own ceremony on the 401 + RFC 9728 pointer;
+// references/oauth-client-conformance.md §4) and, for a PERSON hydrate (OAuth or pk_)
 // run with --models, the Hub base URL for the model-endpoint helper wiring. An ek_ (agents / CI) has
 // no interactive login to lean on and keeps the key-in-file contract, so
 // it gets no helper wiring.

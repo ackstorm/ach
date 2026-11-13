@@ -60,7 +60,7 @@ verification if the claim is present but malformed; drop it and treat the
 caller as ungrouped instead. Key authorization decisions on the team-alias
 values themselves. For how `pk_`/`ek_` resolve into the set, see the
 [`groups` claim table](../../explanation/trust-path.md#the-groups-claim)
-in the developer guide — this runbook does not restate the resolution rules.
+in the JWT Forwarder page — this runbook does not restate the resolution rules.
 
 ## Reference implementation
 
