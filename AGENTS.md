@@ -43,7 +43,7 @@ stale line there is a broken instruction for every user. Validate with
 | Release pipeline (`release.yml`, goreleaser, bump) | `references/release-pipeline.md` |
 | Repo layout / synced-fixture set | `references/repo-layout.md` |
 | **Service/domain** failure mode | `references/troubleshooting.md` |
-| `ach-cli` command, flag or output change | `docs/reference/cli.md` (`make gen-cli-ref-docs`), `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
+| `ach-cli` command, flag or output change | `docs/reference/cli.md` (`make gen-cli-ref-docs`), the developer pages `docs/how-to/developers/` and `docs/tutorials/first-environment.md`, `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
 | CRD field / condition / reconcile behavior an admin writes against | `plugins/ach-gitops/skills/ach-gitops/` (+ version bump) |
 | Helm value / install prerequisite / upgrade step | `docs/reference/helm-values.md` + `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |

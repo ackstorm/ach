@@ -1,28 +1,48 @@
-# Agent plugins
+# Install the ACH agent plugins
 
-ACH ships guidance for AI coding agents as a plugin marketplace named `ach`, at the root
-of this repository. It works with Claude Code and Codex, and through `ach-cli environment
-hydrate` with every tool ACH supports.
+ACH publishes three plugins that teach an AI coding agent to work with it.
+They live in a plugin marketplace named `ach`, at the root of the
+[ACH repository](https://github.com/ackstorm/ach).
 
-| Plugin | For | What it covers |
-|--------|-----|----------------|
-| `ach-cli` | every user | sign in, find and hydrate Environments, MCP sign-in, `ek-` keys, `ach-cli local` |
-| `ach-gitops` | platform administrators | writing Environments, marketplaces, Plugins, Skills and the other ACH custom resources |
-| `ach-install` | operators | installing, configuring and upgrading the Helm chart |
+| Plugin | For | The agent learns to |
+|---|---|---|
+| `ach-cli` | Every user | Sign in, find and hydrate Environments, sign in to MCP servers, manage `ek-` keys, use `ach-cli local` |
+| `ach-gitops` | Platform admins | Write Environments, marketplaces, Plugins, Skills and the other ACH custom resources |
+| `ach-install` | Operators | Install, configure and upgrade the Helm chart |
 
-None of them names a platform URL: `ach-cli` reads it from the signed-in profile, or from
-`ACH_URL` before the first login.
+None of them contains the URL of your ACH: `ach-cli` reads it from your
+profile, or from `ACH_URL` before you first sign in.
 
-## Install directly
+## Through an Environment
+
+If your platform team serves the plugins through an Environment, hydrating it
+installs them, for every tool ACH supports:
+
+```bash
+ach-cli environment search ach-cli           # which Environment has it
+ach-cli environment hydrate <environment> --target <tool>
+```
+
+## Directly in Claude Code
 
 ```bash
 claude plugin marketplace add ackstorm/ach
 claude plugin install ach-cli@ach
 ```
 
-Codex reads the same marketplace from `.agents/plugins/marketplace.json`.
+## Directly in Codex
 
-## Serve them through ACH
+```bash
+codex plugin marketplace add ackstorm/ach
+codex plugin add ach-cli@ach
+```
+
+## Verify
+
+Start the tool and ask it to list your ACH Environments. It runs
+`ach-cli environment list`.
+
+## For platform admins: serve them through ACH
 
 Register the repository as a `PluginMarketplace` and list the plugins in an Environment;
 users then get them with `ach-cli environment hydrate`:

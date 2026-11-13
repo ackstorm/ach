@@ -1,136 +1,104 @@
-# Signing in from Claude Code, Codex and opencode
+# Use ACH models from Claude Code, Codex and OpenCode
 
-ACH is an OAuth 2.1 authorization server for humans. You sign in once through
-your organisation's SSO (Dex) and hold a short-lived access token (1 h)
-that works for **model calls** and **MCP servers** through ACH. Every
-refresh goes back to your SSO: an account disabled there stops working at
-the next refresh (within the hour), exactly like any other SSO-backed
-tool. Agents and CI use environment keys (`ek-…`, `ach-cli keys create`);
-this page is for a person at a keyboard.
+By default a tool keeps its own model login, and ACH only gives it MCP
+servers, plugins and skills. This page sends the tool's model requests
+through ACH as well, so they use your ACH sign-in and count against your ACH
+budget.
+
+You need to be [signed in](sign-in.md) with `ach-cli login`, not with an
+environment key, and `ach-cli` must be on your `PATH`: the tools start it
+without your shell, so an alias is not enough.
+
+## Claude Code and Codex
+
+Add `--models` when you hydrate:
 
 ```bash
-ach-cli login <url>           # browser → SSO → "Signed in to ACH"
-ach-cli token                 # prints ONE line: a fresh access token
-ach-cli environment hydrate <env>     # writes the tools' configs (no credential inside — see below)
+ach-cli environment hydrate <environment> --target claude-code --models
+ach-cli environment hydrate <environment> --target codex --models
 ```
 
-On a terminal `login` asks how to finish: **1)** the browser on this
-machine, or **2)** another device — it prints a URL and a code like
-`BCDF-GHJK`; open the URL in any browser, confirm the code matches, sign
-in, and the CLI picks it up (RFC 8628 device grant). Option 2 is the way in
-from an SSH host; `--no-browser` selects it without the menu. Both leave
-the same token pair on the profile.
+`environment clone` and `launch` take `--models` too.
 
-## MCP servers: the tool signs in itself
+To go back to the tool's own login, hydrate again without `--models`: hydrate
+removes what it wrote.
 
-Hydrate writes MCP entries with **no credential**. The tool's first request
-gets a `401` with an RFC 9728 pointer and the tool runs the OAuth ceremony
-against ACH on its own — one browser round-trip per tool, then it refreshes
-by itself. The entries hydrate writes are exactly these:
+### What `--models` writes
+
+The tool gets your ACH as its model endpoint and `ach-cli token` as the
+command that supplies the credential.
+
+Claude Code, `.claude/settings.json`:
 
 ```json
-// Claude Code — .mcp.json. `type` is REQUIRED with url.
-{"mcpServers": {"ach": {"type": "http", "url": "https://ach.example.com/mcp/<svc>"}}}
+{
+  "apiKeyHelper": "ach-cli token",
+  "env": { "ANTHROPIC_BASE_URL": "https://ach.example.com" }
+}
 ```
 
-```json
-// opencode — opencode.json. OAuth is opt-OUT: a remote entry without "oauth": false gets a provider.
-{"mcp": {"ach": {"type": "remote", "url": "https://ach.example.com/mcp/<svc>"}}}
-```
+Codex, `.codex/config.toml`:
 
 ```toml
-# Codex — config.toml
-[mcp_servers.ach]
-url = "https://ach.example.com/mcp/<svc>"
-```
+model_provider = "ach"
 
-Login is explicit in all three — none opens a browser mid-session:
-
-| Tool | Command | Then |
-|------|---------|------|
-| Claude Code | `claude mcp login <name>` (`--no-browser` for SSH) | `/mcp` shows the server connected |
-| Codex | `codex mcp login <name>` | tools list |
-| opencode | `opencode mcp auth <name>` | tools list |
-
-Do **not** add an `Authorization` header (or an empty `x-ach-key`) to these
-entries: Claude Code disables its OAuth fallback entirely when a credential
-header is configured, and opencode's configured headers silently override the
-token it obtained. `x-ach-environment` is informational and fine.
-
-Some MCP servers are **brokered**: ACH names no account of its own, so it
-delegates that one service's consent to the service's own broker. For a
-brokered service the browser makes one extra stop — at that service's broker,
-and the provider behind it — before returning to the tool; that stop is where
-the provider consent actually lives. You do not configure anything
-differently for this; the extra hop happens inside the same login command
-above.
-
-## Model endpoint: a credential helper
-
-No tool runs OAuth against a model base URL. Each takes a **command that
-prints a credential to stdout**; `ach-cli token` is that command. `ach-cli
-environment hydrate --models` writes the wiring for you when you are signed in as a
-person (OAuth or a `pk_` — never for an `ek_`; without `--models` hydrate
-leaves the tool's model login alone, and removes wiring an earlier `--models`
-run wrote). `ach-cli` must be on `PATH` — the tools spawn
-it through `/bin/sh`, which does not see shell aliases. This is what it writes, for the
-case you set it up by hand:
-
-```json
-// Claude Code — settings.json. Pair with ANTHROPIC_BASE_URL=https://ach.example.com
-{"apiKeyHelper": "ach-cli token"}
-```
-
-```toml
-# Codex — config.toml
 [model_providers.ach]
 name = "ACH"
 base_url = "https://ach.example.com/v1"
 wire_api = "responses"
+
 [model_providers.ach.auth]
 command = "ach-cli token"
 refresh_interval_ms = 300000
 ```
 
+### `ach-cli token`
+
+[`ach-cli token`](../../reference/cli.md#ach-cli-token) prints the access
+token of the active profile on one line and nothing else. It renews the token
+when it is close to expiry. `ach-cli token -o json` adds the token's type and
+expiry.
+
+Any other tool that takes a command for its credential can use it the same
+way, with `https://ach.example.com/v1` as an OpenAI-compatible base URL.
+
+## OpenCode
+
+OpenCode signs in to ACH with its own plugin and needs neither `--models` nor
+`ach-cli`:
+
 ```bash
-# opencode — the provider comes from ACH's opencode document (optional adapter, not yet served);
-# until then set the provider block by hand with apiKey: "{env:ACH_TOKEN}" and export ACH_TOKEN="$(ach-cli token)".
+opencode auth login https://ach.example.com   # installs the ACH sign-in plugin
+opencode auth login <provider>                # signs you in
+opencode service restart                      # OpenCode v2: plugins load when the service starts
 ```
 
-`ach-cli token` prints **only** the credential (Claude Code's helper fails on
-any extra output); every diagnostic goes to stderr. On an OAuth profile it
-refreshes automatically when the stored token is within 6 minutes of expiry,
-under a file lock so Claude Code and Codex firing it together spend one
-refresh, not two; on a key profile (`ach-cli profile add … --key ek-…`) it
-prints that key.
+`<provider>` is the name your platform team chose for ACH; the first command
+shows it. On OpenCode v1 the second command is
+`opencode auth login -p <provider>`.
 
-## What a token can reach
+After the restart, the models of `<provider>` come from ACH.
 
-Nothing changes in authorization: the token stands for you, exactly as a
-`pk_` does. What you can reach is what your Environments' `authorizedTeams`
-grant — `/mcp/<name>` is still gated by the forwarder's precheck, `/v1` by
-LiteLLM's team/access-group model. Revoking your OAuth key from the admin
-key list (`ach-cli admin keys`, purpose `oauth`) kills the session within a
-minute; the next `ach-cli token` after that mints a fresh one.
+## Verify
 
-## When it goes wrong
+Start the tool and send a prompt. Then:
 
-- **401 with `WWW-Authenticate` on every request** — the tool never ran
-  login: `claude mcp login` / `codex mcp login` / `opencode mcp auth`.
-- **`invalid_grant` on refresh** — your SSO no longer honours the session
-  (account disabled, SSO session expired), the refresh token expired or
-  Redis was flushed: `ach-cli login` again.
-- **OAuth works, `/mcp/<name>` is 403** — precheck, same as a `pk_`: the
-  Environment's `authorizedTeams` do not include one of yours.
-- **Connected, zero tools** — the backend has no provider grant for you; run
-  the tool's MCP login again (for example, `claude mcp login <name>`).
-- **The backend did not accept the consent** — the broker stored the grant
-  under another account or rejected the hint; its owner should check
-  `AUTH_BROKER_HINT_ISSUER` and the BIP's `consentAudience`.
-- **"this browser did not start the authorization request"** — the sign-in
-  must finish in the browser that opened it: ACH sets a cookie when the
-  tool sends you to `/platform/oauth/authorize` and checks it when the
-  identity provider sends you back. Copying the login URL into another
-  browser or profile, or blocking cookies for the Hub's origin, fails here
-  by design (it is what stops someone else's link from signing you into
-  their client). Start the login again from the tool.
+```bash
+ach-cli whoami
+```
+
+The spend after `Budget` grows with your requests.
+
+## What you can reach
+
+The models you get are those of the Environments your teams may use, as
+listed by `ach-cli environment describe <environment>`. When your sign-in is
+disabled at your organisation's single sign-on, the tool stops working within
+the hour.
+
+## Related
+
+- [Sign in to an MCP server](sign-in-to-an-mcp-server.md) for the MCP servers
+  of an Environment.
+- [Create and manage environment keys](manage-keys.md) for an agent or a CI
+  job, which cannot sign in with a browser.

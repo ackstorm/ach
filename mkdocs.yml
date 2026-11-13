@@ -11,8 +11,16 @@ nav:
       - tutorials/install-ach.md
   - How-to:
       - Developers:
+          - how-to/developers/install-ach-cli.md
+          - how-to/developers/sign-in.md
+          - how-to/developers/use-environments.md
+          - how-to/developers/launch-a-tool.md
+          - how-to/developers/sign-in-to-an-mcp-server.md
           - how-to/developers/sign-in-from-tools.md
+          - how-to/developers/manage-keys.md
+          - how-to/developers/install-from-git.md
           - how-to/developers/install-agent-plugins.md
+          - how-to/developers/troubleshoot.md
       - Admins:
           - how-to/admins/enable-enterprise.md
           - how-to/admins/rotate-jwt-signing-keys.md
