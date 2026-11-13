@@ -6,7 +6,7 @@ deeper docs. Reading the MANDATORY entry before touching the corresponding code
 is non-negotiable.
 
 > **Lean on purpose** (loaded every conversation). A fresh session starts with
-> `docs/user-guide/concepts.md` + `docs/developer-guide/architecture.md` (the
+> `docs/explanation/concepts.md` + `docs/explanation/architecture.md` (the
 > system in two pages), then this file. Per-service contracts live in
 > `references/services/`; workflow detail in `references/` (`repo-layout.md`,
 > `release-pipeline.md`, `makefile.md`, `troubleshooting.md`,
@@ -48,7 +48,7 @@ stale line there is a broken instruction for every user. Validate with
 | Helm value / install prerequisite / upgrade step | `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
-| Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/developer-guide/architecture.md` |
+| Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/explanation/architecture.md` |
 | Anything a user or operator can see (behavior, output, chart, install requirement) | `CHANGELOG.md` `[Unreleased]` entry in the same PR; tests, CI and agent-only docs need none. A correction to something an earlier entry told users is itself an entry |
 | Breaking change (removes/renames a command, flag, API field, Helm value or CRD field, changes a default) | `### Breaking` entry first in `[Unreleased]`, with the operator's step; the release bumps the major version (`references/release-pipeline.md` "Versioning") |
 
@@ -181,7 +181,7 @@ convenience**, not a co-equal mode.
 | content-service | `ach content-service` | Artifact streaming via `sendfile(2)`; `x-ach-key` takes `pk_`/`ek_` OR an OAuth JWT (hydrate from an OAuth profile) — verified against the same `ach-jwt-signing-keys` seed, mounted as files (`ACH_JWT_SECRET_DIR`, required, sidecar AND standalone; re-read every 30 s like platform-api's signer, so a key rotation needs no restart) |
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA); no LiteLLM path outside the ACH families is reachable through ACH — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. It needs no database. |
 | migrate         | `ach migrate`         | Postgres schema migrations |
-| classifier      | `ach classifier`      | **Enterprise** async job (chart `classifier.enabled`, needs `enterprise.enabled`): labels idle Langfuse sessions with one taxonomy category. Detail → `docs/developer-guide/conversation-classifier.md` |
+| classifier      | `ach classifier`      | **Enterprise** async job (chart `classifier.enabled`, needs `enterprise.enabled`): labels idle Langfuse sessions with one taxonomy category. Detail → `docs/how-to/admins/enable-enterprise.md` |
 
 Per-user key ceiling and login team enrolment → `references/services/platform-api.md`;
 key exchange and `KeyGrant` → `references/services/key-exchange.md`.
@@ -212,7 +212,7 @@ independent collections.)
 
 | Working on...                          | MUST read first                          |
 |----------------------------------------|------------------------------------------|
-| Fresh session / whole-system comprehension ("understand the project") | `docs/user-guide/concepts.md` + `docs/developer-guide/architecture.md`, then this file |
+| Fresh session / whole-system comprehension ("understand the project") | `docs/explanation/concepts.md` + `docs/explanation/architecture.md`, then this file |
 | Changing platform-api (keys, OAuth AS, console, OpenCode endpoints, admin, observability routes) | `references/services/platform-api.md` |
 | Changing the forwarder (any route, header, body check) | `references/services/forwarder.md` |
 | Changing the operator (reconcilers, LiteLLM writes, budgets, content fetch) | `references/services/operator.md` |
@@ -233,9 +233,9 @@ independent collections.)
 | What was grafted from alitellm + how   | `references/upstream-sync.md`            |
 | Local testing, SSO login & Gateway     | `references/local-testing-gateway.md`    |
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
-| Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/runbooks/writing-an-mcp-backend.md` |
-| Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/developer-guide/jwt-forwarder.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
-| Classifier: taxonomy, prompt, model, ClickHouse reads | `docs/developer-guide/conversation-classifier.md` |
+| Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/how-to/backend-builders/write-an-mcp-backend.md` |
+| Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/explanation/trust-path.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
+| Classifier: taxonomy, prompt, model, ClickHouse reads | `docs/how-to/admins/enable-enterprise.md` |
 | Changing the OpenCode auth plugin | Never here: change `github.com/ackstorm/opencode-oidc-provider`, tag it, then bump `genai.opencodePluginSpec` in `deploy/helm/ach/values.yaml` |
 
 ## CI gating

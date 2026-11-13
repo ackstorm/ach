@@ -2,6 +2,5 @@
 
 ACH is the control plane for managing AI agent configurations across environments.
 
-> **Status:** scaffolding bootstrap — implementation in progress.
-
-See [Quickstart](getting-started/quickstart.md) once available.
+See the [Quickstart](tutorials/first-environment.md). To run ACH yourself, start
+with [Installation](tutorials/install-ach.md).

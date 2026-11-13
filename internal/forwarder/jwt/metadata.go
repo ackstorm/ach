@@ -9,7 +9,7 @@ import "strings"
 // FORWARDER at {issuer}/.well-known/oauth-authorization-server (the gateway
 // routes /.well-known/ there); it lives in this package so both services
 // compose the endpoint URLs from one source. Every value is a client
-// requirement from docs/developer-guide/oauth-client-conformance.md §2.
+// requirement from references/oauth-client-conformance.md §2.
 func ASMetadata(issuer string) map[string]any {
 	issuer = strings.TrimRight(issuer, "/")
 	return map[string]any{

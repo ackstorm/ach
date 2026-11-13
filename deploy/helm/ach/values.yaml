@@ -380,7 +380,7 @@ genai:
   # The Environment the onboarding skill (<providerName>-ach, shipped by
   # /clients/opencode/config) tells users to hydrate globally:
   # `ach-cli environment hydrate <defaultEnvironment> -g`. Empty = no such step.
-  # List ach-cli@<marketplace> in it (docs/user-guide/agent-plugins.md): the
+  # List ach-cli@<marketplace> in it (docs/how-to/developers/install-agent-plugins.md): the
   # skill hands every later step over to that plugin. MCP servers reach
   # OpenCode only from a hydrated Environment; a leftover
   # mcpEnabledEnvironments value is ignored.
@@ -428,7 +428,7 @@ contentService:
   initContainers: []
 
 # classifier: labels idle Langfuse sessions with one taxonomy category and
-# writes a Langfuse score (docs/developer-guide/conversation-classifier.md).
+# writes a Langfuse score (docs/how-to/admins/enable-enterprise.md).
 # Off by default. secretName is a Secret holding ACH_CLASSIFIER_CLICKHOUSE_USER,
 # ACH_CLASSIFIER_CLICKHOUSE_PASSWORD (a ClickHouse user granted input/output
 # on events_full and SELECT on scores, never the observability one), ACH_CLASSIFIER_MODEL_KEY (a gateway key) and,
@@ -458,7 +458,7 @@ classifier:
   # appended as rule 4, 5... Any change the model would see is a new taxonomy
   # version (custom-<hash>): sessions inside lookback are labelled again.
   # platform-api reads the same file, so the console shows that version's labels.
-  # docs/developer-guide/conversation-classifier.md has a full example.
+  # docs/how-to/admins/enable-enterprise.md has a full example.
   #   taxonomy:
   #     rules:
   #       - "If the work is for a client account, classify by what was done, not by the client."

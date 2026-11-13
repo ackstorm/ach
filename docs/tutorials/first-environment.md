@@ -1,6 +1,6 @@
 # Quickstart
 
-From a running ACH ([Installation](installation.md)) to an agent tool that has your
+From a running ACH ([Installation](install-ach.md)) to an agent tool that has your
 first Environment. You need `kubectl` access to the ACH namespace, a LiteLLM team your
 user belongs to, and at least one model in LiteLLM.
 

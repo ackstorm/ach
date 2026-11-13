@@ -229,7 +229,7 @@ users have been told the old login is going away and their standalone keys will 
         `base` is `ACH_BASE_URL` = `https://ach.${GENAI_BASE_DOMAIN}`. **It never
         reads `Host` or `X-Forwarded-Host`.** Served at `api.<domain>` it would
         advertise `resource: https://ach.<domain>`, and RFC 9728 §3.2
-        (`docs/developer-guide/jwt-forwarder.md` §1.4) requires the client to
+        (`docs/explanation/trust-path.md` §1.4) requires the client to
         **reject** metadata whose `resource` is not the resource it addressed.
         Re-homing publishes a document every conforming client must throw away.
       - Post-cutover the OAuth-protected resources are ACH's route families, and
@@ -318,7 +318,7 @@ psql "$ACH_DB" -c "select count(*) from environment_keys where status<>'revoked'
       mark the ported pieces (fixtures, tests, brand marks) with the archive
       date. `NOTICE`: the attribution row **stays** — Apache-2.0 provenance does
       not expire.
-- [ ] **ACH docs** — `docs/developer-guide/architecture.md` (console at
+- [ ] **ACH docs** — `docs/explanation/architecture.md` (console at
       `https://ach.${GENAI_BASE_DOMAIN}/`, LiteLLM on `api.`, no plugin, no
       alitellm-auth); one sentence in `CLAUDE.md` / `AGENTS.md` Quick-context.
 - [ ] **ACH commit** — `docs: console cutover complete — alitellm-auth retired`

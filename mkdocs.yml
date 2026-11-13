@@ -6,26 +6,27 @@ repo_name: ackstorm/ach
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quickstart: getting-started/quickstart.md
-  - User Guide:
-      - Overview: user-guide/index.md
-      - Concepts: user-guide/concepts.md
-      - Editions: user-guide/editions.md
-      - Signing in from Claude Code, Codex and opencode: user-guide/signing-in-from-tools.md
-      - Agent plugins: user-guide/agent-plugins.md
-      - Agent credentials by token exchange: user-guide/key-exchange.md
-  - Developer Guide:
-      - Architecture: developer-guide/architecture.md
-      - Conversation classifier: developer-guide/conversation-classifier.md
-      - Development: developer-guide/development.md
-      - JWT Forwarder: developer-guide/jwt-forwarder.md
-  - Runbooks:
-      - JWT Key Rotation: runbooks/jwt-key-rotation.md
-      - Writing an MCP backend: runbooks/writing-an-mcp-backend.md
-  - API Reference:
-      - ach.ackstorm.ai: api-reference/ach.ackstorm.ai.md
+  - Tutorials:
+      - tutorials/first-environment.md
+      - tutorials/install-ach.md
+  - How-to:
+      - Developers:
+          - how-to/developers/sign-in-from-tools.md
+          - how-to/developers/install-agent-plugins.md
+      - Admins:
+          - how-to/admins/enable-enterprise.md
+          - how-to/admins/rotate-jwt-signing-keys.md
+      - Backend builders:
+          - how-to/backend-builders/write-an-mcp-backend.md
+          - how-to/backend-builders/exchange-a-serviceaccount-token.md
+  - Reference:
+      - CRD API: api-reference/ach.ackstorm.ai.md
+  - Explanation:
+      - explanation/concepts.md
+      - explanation/architecture.md
+      - explanation/keys-and-budgets.md
+      - explanation/trust-path.md
+      - explanation/editions.md
 
 theme:
   name: material
@@ -70,10 +71,14 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/ackstorm/ach 
-  
-# Mike versioning
-  version:
-    provider: mike
-    default: latest
-    alias: true
+      link: https://github.com/ackstorm/ach
+
+exclude_docs: |
+  superpowers/
+  plans/
+  Makefile
+  requirements.txt
+
+validation:
+  nav:
+    omitted_files: warn

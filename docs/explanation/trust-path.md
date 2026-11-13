@@ -9,9 +9,9 @@ JWKS endpoint. This is the §9 / FWD-07..10 trust path.
 
 This page documents the contract and the operational gotchas. For
 backend-side verification code, see
-[Writing an MCP backend](../runbooks/writing-an-mcp-backend.md). For
+[Writing an MCP backend](../how-to/backend-builders/write-an-mcp-backend.md). For
 the rotation procedure, see
-[JWT key rotation](../runbooks/jwt-key-rotation.md).
+[JWT key rotation](../how-to/admins/rotate-jwt-signing-keys.md).
 
 `/v1` and `/gemini` are pass-through route families with **no** JWT
 involvement: the caller's bare `x-litellm-api-key`, no precheck; LiteLLM is
@@ -249,7 +249,7 @@ Response headers:
 The cache TTL is the contract for backends; a 1-hour stale view is
 correct by design. During a rotation, both slots are published for
 ≥24 hours of overlap before the old `kid` is removed
-([JWT key rotation](../runbooks/jwt-key-rotation.md)).
+([JWT key rotation](../how-to/admins/rotate-jwt-signing-keys.md)).
 
 ---
 
@@ -362,7 +362,7 @@ The pointer names the **service root**, never the dialled path: streamable
 HTTP appends `/messages` and session segments, and RFC 9728 §3.2 has the
 client compare the document's `resource` against the server it configured.
 This is what starts the OAuth ceremony for Claude Code, Codex and opencode
-(`docs/developer-guide/oauth-client-conformance.md`).
+(`references/oauth-client-conformance.md`).
 
 ### Credential slots — declared, not discovered
 
@@ -821,7 +821,7 @@ backend if it does receive a half-stripped header.
 ## 4. Backend-side verification
 
 Recommended posture (full detail and a runnable Go reference at
-[Writing an MCP backend](../runbooks/writing-an-mcp-backend.md)):
+[Writing an MCP backend](../how-to/backend-builders/write-an-mcp-backend.md)):
 
 1. **Pin the algorithm.** Reject anything other than `alg=EdDSA` on the
    JWS header. Never accept `alg=none`. Never derive the verifier from
@@ -936,10 +936,10 @@ Backend logs to look for:
 
 ## 7. Related references
 
-- [JWT key rotation](../runbooks/jwt-key-rotation.md) — operational
+- [JWT key rotation](../how-to/admins/rotate-jwt-signing-keys.md) — operational
   procedure for rotating the `ach-jwt-signing-keys` Secret with
   zero-downtime ≥24h overlap.
-- [Writing an MCP backend](../runbooks/writing-an-mcp-backend.md) —
+- [Writing an MCP backend](../how-to/backend-builders/write-an-mcp-backend.md) —
   backend-side verification posture, common pitfalls, and a runnable
   Go reference.
 - [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go) —

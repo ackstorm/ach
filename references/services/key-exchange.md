@@ -1,6 +1,6 @@
 # Key exchange and KeyGrant
 
-A pod trades its ServiceAccount token for an Environment-scoped ACH JWT. Read before changing `POST /platform/keys/exchange`, the exchange resolver or the `KeyGrant` reconciler. User-facing guide: `docs/user-guide/key-exchange.md`.
+A pod trades its ServiceAccount token for an Environment-scoped ACH JWT. Read before changing `POST /platform/keys/exchange`, the exchange resolver or the `KeyGrant` reconciler. User-facing guide: `docs/how-to/backend-builders/exchange-a-serviceaccount-token.md`.
 
 Key exchange (`POST /platform/keys/exchange`, outside the `pk_`/`ek_` Authn
 subtree): `Authorization: Bearer <pod-bound ServiceAccount token>` whose
