@@ -21,7 +21,10 @@ nav:
           - how-to/backend-builders/exchange-a-serviceaccount-token.md
   - Reference:
       - reference/cli.md
+      - reference/helm-values.md
       - CRD API: api-reference/ach.ackstorm.ai.md
+      - reference/jwt.md
+      - reference/changelog.md
   - Explanation:
       - explanation/concepts.md
       - explanation/architecture.md
@@ -62,7 +65,8 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - tables

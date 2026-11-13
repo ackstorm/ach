@@ -20,7 +20,7 @@ operator implements the verifying side.
 | `iss` | Forwarder `ACH_BASE_URL` (HTTPS-only) | FWD-10 |
 | `sub` | `<owner-email>` | Hub §9.1 |
 | `email` | Mirrors `sub`; additive, omitted when empty | Hub §9.1 |
-| `groups` | LiteLLM team aliases; additive, omitted entirely when the resolved set is empty — see [The `groups` claim](../../explanation/trust-path.md#the-groups-claim) | Hub §9.1 |
+| `groups` | LiteLLM team aliases; additive, omitted entirely when the resolved set is empty — see [The `groups` claim](../../reference/jwt.md#the-groups-claim) | Hub §9.1 |
 | `aud` | `mcp:<bare-name>` on `/mcp/<bare-name>` | Hub §9.1 |
 | `exp - iat` | 120 seconds | FWD-07 |
 | `nbf` | Not emitted | Hub §9.1 |
@@ -59,8 +59,8 @@ claim as an empty set, never as a verification failure. Don't fail
 verification if the claim is present but malformed; drop it and treat the
 caller as ungrouped instead. Key authorization decisions on the team-alias
 values themselves. For how `pk_`/`ek_` resolve into the set, see the
-[`groups` claim table](../../explanation/trust-path.md#the-groups-claim)
-in the JWT Forwarder page — this runbook does not restate the resolution rules.
+[`groups` claim table](../../reference/jwt.md#the-groups-claim)
+in the Forwarder JWT reference — this runbook does not restate the resolution rules.
 
 ## Reference implementation
 
