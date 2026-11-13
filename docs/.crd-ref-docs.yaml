@@ -116,7 +116,7 @@ format:
 
     !!! info "Auto-generated Documentation"
         This documentation is automatically generated from the Custom Resource Definitions (CRDs).
-        For usage examples and guides, see the [User Guide](../user-guide/index.md).
+        For usage examples and guides, see the [User Guide](../explanation/keys-and-budgets.md).
 
     !!! tip "Quick Navigation"
         - [ACH Resources](#api-group-achackstormai) - Agent Capability Hub custom resources

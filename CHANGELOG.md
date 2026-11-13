@@ -8,8 +8,6 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Documentation site: one version, served at `https://ackstorm.github.io/ach/`
   (the `/dev/` and `/latest/` prefixes are gone), with pages grouped as
   Tutorials, How-to, Reference and Explanation.
-
-### Changed
 - Console Apps page: tiles fill the row at any width, each icon has its own
   color under every skin, and each tile shows the host it opens.
 
