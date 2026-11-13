@@ -207,7 +207,7 @@ func claudeSettingsBaseURL(dir string) string {
 		filepath.Join(dir, ".claude", "settings.json"),
 		filepath.Join(dir, ".claude", "settings.local.json"),
 	} {
-		b, err := os.ReadFile(p)
+		b, err := os.ReadFile(p) // #nosec G304 — Claude Code's settings files, user config dir or launch dir
 		if err != nil {
 			continue
 		}
