@@ -4,7 +4,7 @@ ACH installs on Kubernetes with one Helm chart, `oci://ghcr.io/ackstorm/charts/a
 running one image, `ghcr.io/ackstorm/ach`. The full guide (every value, sign-in,
 topology, Enterprise, upgrades, troubleshooting) is the `ach-install` agent skill in
 this repository: [`plugins/ach-install/skills/ach-install/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-install/skills/ach-install).
-Install it into your agent (see [Agent plugins](../how-to/developers/install-agent-plugins.md)) and
+Install it into your agent (see [Install the ACH agent plugins](../how-to/developers/install-agent-plugins.md)) and
 ask it, or read it directly.
 
 ## What you need first
@@ -40,7 +40,7 @@ The chart installs none of these:
 
 4. Verify: every Deployment is Ready, `kubectl -n ach get litellmconnection default`
    is Ready, and `ach-cli login https://<ACH host>` followed by `ach-cli whoami` shows
-   your user. Then create a first Environment: see the [Quickstart](first-environment.md).
+   your user. Then [grant a first Environment](#grant-a-first-environment).
 
 The chart manages the CRDs (`installCRDs: true`), so `helm upgrade` upgrades them too
 and `helm uninstall` leaves them and your resources in place.
@@ -52,3 +52,59 @@ through a cluster-wide `system:auth-delegator` binding the chart creates. Set
 API server audit level `Metadata` for `tokenreviews`, and bind the
 `<release>-keygrant-editor` ClusterRole (`ach-keygrant-editor` for release `ach`) to platform admins only. See
 [Agent credentials by token exchange](../how-to/backend-builders/exchange-a-serviceaccount-token.md).
+
+## Grant a first Environment
+
+An Environment names what a team may use. Save this as `quickstart.yaml`, replacing the
+model and team with ones your LiteLLM has (`ach-cli admin list models` and
+`ach-cli admin list teams` show them, for an admin):
+
+```yaml
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: PluginMarketplace
+metadata:
+  name: ach
+spec:
+  type: github
+  github:
+    repo: ackstorm/ach
+    ref: main
+  refresh:
+    interval: 1h
+    maxStaleness: 24h
+---
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: quickstart
+spec:
+  runtime:
+    models:
+      - <a LiteLLM model name>
+  context:
+    plugins:
+      - ach-cli@ach
+  authorizedTeams:
+    - <a LiteLLM team alias>
+  description: |
+    First Environment: one model and the ach-cli agent plugin.
+```
+
+```bash
+kubectl -n ach apply -f quickstart.yaml
+kubectl -n ach get pluginmarketplace ach        # Synced=True
+kubectl -n ach get environment quickstart       # Available=True
+```
+
+`Available` needs both halves: `ExecutionResourcesResolved` (the plugin was found) and
+`AccessGroupSynced` (LiteLLM accepted the grant). `kubectl -n ach describe environment
+quickstart` shows the reason when one is False.
+
+Users of that team can now follow [Your first Environment](first-environment.md).
+To remove it again:
+
+```bash
+kubectl -n ach delete -f quickstart.yaml
+```
+
+Deleting an Environment also revokes every `ek-` key created for it.
