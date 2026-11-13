@@ -1,6 +1,6 @@
 # forwarder contract
 
-`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` (plus its MCP face `/a2a/<n>/mcp`) and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/explanation/trust-path.md`](../../docs/explanation/trust-path.md).
+`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` (plus its MCP face `/a2a/<n>/mcp`) and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/explanation/trust-path.md`](../../docs/explanation/trust-path.md) and, for the JWT claims and JWKS, [`../../docs/reference/jwt.md`](../../docs/reference/jwt.md).
 
 ## Routes and discovery documents
 

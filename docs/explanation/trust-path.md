@@ -141,7 +141,7 @@ refresh once access returns, with no re-mint and no JWT-path change.
 ## 1.2 JWS contract — what the Forwarder mints
 
 The header fields and claims are listed in
-[Forwarder JWT](../reference/jwt.md#claims); the `groups` claim is resolved as
+[Forwarder JWT](../reference/jwt.md); the `groups` claim is resolved as
 [The `groups` claim](../reference/jwt.md#the-groups-claim) describes.
 
 `sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`

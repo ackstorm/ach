@@ -7,9 +7,10 @@ key with its default and is authoritative for the version you install:
 helm show values oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z>
 ```
 
-The sections follow the order of the chart's `values.yaml`. Every component
-also takes `replicas`, `resources`, `args` and `initContainers`; they are
-listed only where the default matters.
+The sections follow the order of the chart's `values.yaml`. `operator`,
+`platformApi`, `forwarder`, `gateway` and `contentService` also take
+`replicas`, `resources`, `args` and `initContainers`; they are listed only
+where the default matters.
 
 ## `installCRDs`
 
@@ -70,8 +71,8 @@ The REST API, the OAuth server and the console.
 | `platformApi.console.theme` | `""` | Default console skin: `dark`, `light`, `pastel` or `red`; empty follows the browser. |
 | `platformApi.console.apps` | `[]` | Tiles of the console's Apps page: `name` and `url` required; `group`, `subtitle`, `icon`, `teams`, `admin` optional. Empty hides the page. |
 | `platformApi.observability.clickhouseUrl` | `""` | Enterprise. ClickHouse the observability routes read; empty leaves them answering 503. |
-| `platformApi.observability.secretName` | `""` | Enterprise. Secret with `ACH_OBSERVABILITY_CLICKHOUSE_USER` and `ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD` of a read-only user. |
-| `platformApi.observability.projectIds` | `[]` | Enterprise. Langfuse projects the routes may read. |
+| `platformApi.observability.secretName` | `""` | Enterprise. Secret with `ACH_OBSERVABILITY_CLICKHOUSE_USER` and `ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD` of a read-only user. Required with `clickhouseUrl`. |
+| `platformApi.observability.projectIds` | `[]` | Enterprise. Langfuse projects the routes may read. Required with `clickhouseUrl`. |
 | `platformApi.observability.thanosUrl` | `""` | Enterprise. Prometheus query API for the gateway metrics. |
 
 ## `forwarder`
@@ -158,10 +159,10 @@ Enterprise. A job that labels idle sessions with one category.
 | Key | Default | Purpose |
 |---|---|---|
 | `classifier.enabled` | `false` | Deploy the classifier. |
-| `classifier.secretName` | `""` | Secret with the ClickHouse user, the model key and the Langfuse key pair. |
-| `classifier.clickhouseUrl` | `""` | ClickHouse the classifier reads sessions from. |
+| `classifier.secretName` | `""` | Secret with the ClickHouse user, the model key and the Langfuse key pair. Required when enabled. |
+| `classifier.clickhouseUrl` | `""` | ClickHouse the classifier reads sessions from. Required when enabled. |
 | `classifier.projectId` | `default` | Langfuse project to classify. |
-| `classifier.modelUrl` | `""` | OpenAI-compatible base URL of the model. |
+| `classifier.modelUrl` | `""` | OpenAI-compatible base URL of the model. Required when enabled. |
 | `classifier.model` | `ackstorm.smart` | Model that classifies. |
 | `classifier.langfuseUrl` | `""` | Langfuse the labels are written to; empty classifies and logs without writing. |
 | `classifier.onlyUser` | `""` | Classify only this user's sessions. |
@@ -194,8 +195,9 @@ Enterprise. A job that labels idle sessions with one category.
 
 ## `metrics`
 
-Every service serves `/metrics` without authentication on its traffic port;
-keep it inside the cluster. Pods carry `prometheus.io/scrape` annotations.
+The operator, platform-api, the forwarder and content-service serve
+`/metrics` without authentication; keep it inside the cluster. They carry
+`prometheus.io/scrape` annotations. The gateway serves no metrics.
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -226,14 +228,14 @@ How the gateway, the forwarder and platform-api stop on a rollout.
 
 | Key | Default | Purpose |
 |---|---|---|
-| `extraEnv` | `[]` | Environment variables added to every component and the migration Job. |
+| `extraEnv` | `[]` | Environment variables added to the operator, platform-api, the forwarder, the gateway, content-service and the migration Job. The classifier gets none. |
 
 Settings with no value of their own are set here:
 
 | Variable | Required | Read by | Value |
 |---|---|---|---|
 | `ACH_BASE_URL` | yes | operator, platform-api, forwarder, content-service | Public origin of the install. |
-| `ACH_DB_URL` | yes | every component, migration Job | Postgres connection URL. |
+| `ACH_DB_URL` | yes | operator, platform-api, forwarder, content-service, migration Job | Postgres connection URL. |
 | `ACH_REDIS_ADDR` | yes | platform-api, forwarder, content-service | `host:port` of Redis or Valkey. |
 | `ACH_REDIS_PASSWORD`, `ACH_REDIS_TLS`, `ACH_REDIS_DB` | no | same | Redis password, TLS switch and database. |
 | `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | yes | platform-api | The Dex client ACH signs users in with. |
@@ -249,4 +251,4 @@ Settings with no value of their own are set here:
 
 | Key | Default | Purpose |
 |---|---|---|
-| `initContainers` | `[]` | Init containers added to every ACH Deployment, before the component's own. The migration Job gets none. |
+| `initContainers` | `[]` | Init containers added to the operator, platform-api, forwarder, gateway and standalone content-service Deployments, before the component's own. The migration Job and the classifier get none. |
