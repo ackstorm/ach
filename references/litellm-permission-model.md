@@ -316,7 +316,7 @@ field.
 ## 13. The JWT `groups` claim exports team ALIASES, never shell teams.
 
 The Forwarder's `/mcp` + `/a2a` identity JWT
-(`docs/explanation/trust-path.md`) carries whatever LiteLLM's
+(`docs/reference/jwt.md`) carries whatever LiteLLM's
 `team_alias` resolves to (falling back to `team_id` when the alias is
 empty) in its optional `groups` claim; ACH performs no UUID→alias
 translation of its own, so an `authorizedTeams` entry authored as a raw

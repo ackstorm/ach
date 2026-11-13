@@ -10,7 +10,7 @@ Every forwarded request gets a new token; there is no refresh.
 |---|---|
 | `alg` | `EdDSA` (Ed25519) |
 | `typ` | `JWT` |
-| `kid` | Id of the signing key, for example `ach-jwt-<ulid>` |
+| `kid` | Id of the signing key; resolve it against the JWKS |
 
 ## Claims
 
@@ -38,12 +38,13 @@ A verifier checks `iss`, `aud` and `exp`. It must not require `nbf` or `jti`.
 
 | Property | Value |
 |---|---|
-| Element | LiteLLM `team_alias`, or `team_id` when the alias is empty |
+| Element | LiteLLM `team_alias`, or `team_id` when the alias is empty. An `authorizedTeams` entry written as a team id appears as that id |
 | Order | Sorted, deduplicated |
 | Renaming a LiteLLM team | Changes the value in the claim |
 | Excluded | ACH's internal teams `ach-env-*` and `ach-user-*` |
 | Empty set | The claim is omitted |
-| A user removed from a LiteLLM team keeps the group for at most | 180 s (`exp` 120 s + 60 s membership cache) |
+| Revocation | None: a backend trusts the claim until `exp` |
+| A user removed from a LiteLLM team keeps the group, on `pk_` and `ek_`, for at most | 180 s (`exp` 120 s + 60 s membership cache) |
 | A team removed from `Environment.spec.authorizedTeams` stays in the claim for at most | about 7 min (`exp` 120 s + 5 min refresh) |
 
 ## JWKS endpoint

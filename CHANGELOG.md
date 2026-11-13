@@ -13,6 +13,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Console Apps page: tiles fill the row at any width, each icon has its own
   color under every skin, and each tile shows the host it opens.
 
+### Fixed
+- `ach-cli admin --help` names the Helm values that make someone an admin
+  (`platformApi.admins.users`, `platformApi.admins.sso`) instead of a variable
+  that does not exist.
+
 ## [1.1.14] - 2026-11-12
 
 ### Added

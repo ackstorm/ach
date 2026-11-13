@@ -40,10 +40,10 @@ Use "ach-cli [command] --help" for more information about a command.
 
 ```text
 Operator-facing admin surface. Every subcommand requires a signed-in
-session (`ach-cli login`) whose owner email is in the Platform API
-allowlist (`ACH_ADMIN_ALLOWLIST` or the equivalent Helm value);
-environment keys (ek-) are refused. Non-allowlisted callers receive
-`403 not_admin` and the CLI exits 3.
+session (`ach-cli login`) of a platform admin: an email in the Helm value
+`platformApi.admins.users`, or a member of a group in
+`platformApi.admins.sso`. Environment keys (ek-) are refused. Other
+callers receive `403 not_admin` and the CLI exits 3.
 
 Usage:
   ach-cli admin [flags]
