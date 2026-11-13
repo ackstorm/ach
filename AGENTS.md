@@ -43,7 +43,7 @@ stale line there is a broken instruction for every user. Validate with
 | Release pipeline (`release.yml`, goreleaser, bump) | `references/release-pipeline.md` |
 | Repo layout / synced-fixture set | `references/repo-layout.md` |
 | **Service/domain** failure mode | `references/troubleshooting.md` |
-| `ach-cli` command, flag or output change | `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
+| `ach-cli` command, flag or output change | `docs/reference/cli.md` (`make gen-cli-ref-docs`), `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
 | CRD field / condition / reconcile behavior an admin writes against | `plugins/ach-gitops/skills/ach-gitops/` (+ version bump) |
 | Helm value / install prerequisite / upgrade step | `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
@@ -274,8 +274,8 @@ host needs only docker.** Toolchain targets (`test-*`, `qa-*`,
 (`build-image*`) and `kubectl`-only targets (`wait-*`, `logs-*`) run
 on the host. Never prefix a wrapped `make` target with `./scripts/dev.sh`.
 **Exception — the generator targets are NOT wrapped**: `gen-code`,
-`gen-manifests`, `gen-crd-ref-docs`, `helm-sync`, `helm-sync-check` call
-controller-gen directly, so standalone they need `./scripts/dev.sh make
+`gen-manifests`, `gen-crd-ref-docs`, `gen-cli-ref-docs`, `helm-sync`,
+`helm-sync-check` call their Go tools directly, so standalone they need `./scripts/dev.sh make
 helm-sync` (a bare `make helm-sync` on the host fails with `go: executable
 file not found`). See `references/makefile.md` for the 3-context model.
 `test/e2e/mcp-echo` is a nested module: root `./...` sweeps (vet, lint,
