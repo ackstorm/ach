@@ -1,7 +1,7 @@
 {{- if and .Values.enterprise.enabled .Values.classifier.enabled }}
 {{- with .Values.classifier }}
 ---
-# Conversation classifier (docs/developer-guide/conversation-classifier.md).
+# Conversation classifier (docs/how-to/admins/enable-enterprise.md).
 # A single replica: each process keeps its own cursor over idle sessions, and a
 # repeated write is an overwrite (deterministic score id), never a duplicate.
 # No Service: it serves nothing. No k8s API calls, so no RBAC.

@@ -58,9 +58,9 @@ flowchart LR
 ## Quick links
 
 - [Documentation](https://ackstorm.github.io/ach/)
-- [Installation](https://ackstorm.github.io/ach/getting-started/installation/)
-- [Architecture](https://ackstorm.github.io/ach/developer-guide/architecture/)
-- [Release process](https://ackstorm.github.io/ach/developer-guide/release-process/)
+- [Installation](https://ackstorm.github.io/ach/tutorials/install-ach/)
+- [Architecture](https://ackstorm.github.io/ach/explanation/architecture/)
+- [Release process](references/release-pipeline.md)
 - [CONTRIBUTING](CONTRIBUTING.md)
 - [SECURITY](SECURITY.md)
 - [MAINTAINERS](MAINTAINERS.md)

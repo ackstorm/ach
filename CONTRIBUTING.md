@@ -24,7 +24,7 @@ See our [CONTRIBUTING.md](docs/contributing.md) for more details.
 
 ## Development
 
-See [development.md](docs/developer-guide/development.md).
+See [references/makefile.md](references/makefile.md).
 
 ## Proposal Process
 Before we introduce significant changes to the project we want to gather feedback

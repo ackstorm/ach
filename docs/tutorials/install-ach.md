@@ -4,7 +4,7 @@ ACH installs on Kubernetes with one Helm chart, `oci://ghcr.io/ackstorm/charts/a
 running one image, `ghcr.io/ackstorm/ach`. The full guide (every value, sign-in,
 topology, Enterprise, upgrades, troubleshooting) is the `ach-install` agent skill in
 this repository: [`plugins/ach-install/skills/ach-install/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-install/skills/ach-install).
-Install it into your agent (see [Agent plugins](../user-guide/agent-plugins.md)) and
+Install it into your agent (see [Agent plugins](../how-to/developers/install-agent-plugins.md)) and
 ask it, or read it directly.
 
 ## What you need first
@@ -40,7 +40,7 @@ The chart installs none of these:
 
 4. Verify: every Deployment is Ready, `kubectl -n ach get litellmconnection default`
    is Ready, and `ach-cli login https://<ACH host>` followed by `ach-cli whoami` shows
-   your user. Then create a first Environment: see the [Quickstart](quickstart.md).
+   your user. Then create a first Environment: see the [Quickstart](first-environment.md).
 
 The chart manages the CRDs (`installCRDs: true`), so `helm upgrade` upgrades them too
 and `helm uninstall` leaves them and your resources in place.
@@ -51,4 +51,4 @@ The platform API reviews ServiceAccount tokens for `POST /platform/keys/exchange
 through a cluster-wide `system:auth-delegator` binding the chart creates. Set
 API server audit level `Metadata` for `tokenreviews`, and bind the
 `<release>-keygrant-editor` ClusterRole (`ach-keygrant-editor` for release `ach`) to platform admins only. See
-[Agent credentials by token exchange](../user-guide/key-exchange.md).
+[Agent credentials by token exchange](../how-to/backend-builders/exchange-a-serviceaccount-token.md).
