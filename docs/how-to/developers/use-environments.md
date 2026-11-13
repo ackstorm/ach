@@ -71,17 +71,12 @@ ach-cli environment hydrate <environment> --sync      # also remove what the Env
 ach-cli environment hydrate <environment> --dry-run   # show the changes, write nothing
 ```
 
-Hydrate prints one line per item:
+Hydrate lists what it changed, one line per item: `+` added, `~` changed,
+`-` removed. After eight lines it prints a count; `--verbose` shows them all.
 
-| Mark | Meaning |
-|---|---|
-| `+` | Added |
-| `~` | Changed |
-| `-` | Removed |
-| `!` | Kept, because you edited it |
-
-Hydrate does not overwrite a file you edited: it stops with exit code 2 and
-names the file. Keep your edit, or pass `--force` to replace it.
+Hydrate does not overwrite a file you edited: it stops, names the file and
+exits 2. Keep your edit, or pass `--force` to take the Environment's version.
+`environment status` marks such files with `! edited`.
 
 Do not edit the tool's configuration while hydrate runs: hydrate reads the
 file, merges its entries and writes it back, so a save in between is lost.

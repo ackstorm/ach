@@ -21,6 +21,12 @@ ach-cli login https://ach.example.com
 
 Without the URL argument, `login` takes it from `ACH_URL`, or asks.
 
+To sign in again later, name the profile:
+
+```bash
+ach-cli login https://ach.example.com --profile default
+```
+
 ## Sign in from a machine without a browser
 
 Over SSH or in a container, skip the menu:
@@ -103,8 +109,8 @@ export ACH_URL=https://ach.example.com
 export ACH_KEY=ek-…
 ```
 
-With both variables set, `login`, `logout` and `profile` exit 1: there is no
-profile to change.
+With both variables set, `login`, `logout`, `profile` and `token` exit 1:
+there is no profile.
 
 ## Related
 

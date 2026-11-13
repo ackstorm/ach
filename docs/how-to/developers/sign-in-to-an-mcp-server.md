@@ -1,9 +1,14 @@
 # Sign in to an MCP server
 
 Hydrating an Environment writes its MCP servers into your tool's
-configuration. Each entry points at `https://ach.example.com/mcp/<server>`
-and holds no credential: the tool signs in to ACH itself, once per server,
-with your single sign-on.
+configuration. Each entry points at `https://ach.example.com/mcp/<server>`.
+An A2A agent of the Environment appears as an MCP server named
+`a2a-<agent>`.
+
+When you hydrate with your sign-in, the entries hold no credential: the tool
+signs in to ACH itself, once per server, with your single sign-on. A hydrate
+with an environment key writes that key into the entries, and there is
+nothing to sign in to.
 
 You need an Environment [hydrated](use-environments.md) into the tool.
 
@@ -68,7 +73,7 @@ an Environment.
 | `401` on every request | The tool never signed in to that server | Run the tool's sign-in command |
 | `401` after signing in | The stored sign-in is no longer valid | Sign out of that server in the tool, then sign in again |
 | `403` | Your teams have no access to that server | Signing in again does not help. A platform admin grants it through an Environment |
-| Connected, but no tools | The service behind the server has no consent from you | Run the tool's sign-in command again and approve the consent screen |
+| Connected, but no tools | The service behind the server has no consent from you | Run the tool's sign-in command again and approve the consent screen. If it stays empty, ask a platform admin |
 | "this browser did not start the authorization request" | The sign-in finished in another browser than the one that started it, or cookies are blocked for your ACH | Start the sign-in again from the tool |
 | A server disappeared | The Environment changed | Hydrate again |
 
