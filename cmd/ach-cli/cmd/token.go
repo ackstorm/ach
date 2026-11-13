@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -47,19 +48,11 @@ func newTokenCmd() *cobra.Command {
 			if err := synthetic.GuardCommand(synthetic.Params{Gate: synthetic.GateSession}); err != nil {
 				return err
 			}
-			path, err := config.Path()
+			path, release, err := acquireTokenLock(cmd.Context())
 			if err != nil {
-				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+				return err
 			}
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
-			}
-			lease, err := lock.NewLocker(filepath.Join(filepath.Dir(path), "token.lock")).
-				Acquire(cmd.Context(), lock.AcquireWithTimeout, tokenLockTimeout)
-			if err != nil {
-				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("token: %v", err), Wrapped: err}
-			}
-			defer func() { _ = lease.Release() }()
+			defer release()
 
 			// Load INSIDE the lock: a helper that waited sees the pair the
 			// first one just rotated and returns it without refreshing again.
@@ -102,26 +95,55 @@ type tokenView struct {
 	ExpiresAt *string `json:"expires_at"`
 }
 
-// newTokenView describes tok. A JWT's expiry is its exp claim, read without
-// verifying the signature: the token is the caller's own and the value only
-// says when to ask again. A key carries no expiry the profile records.
+// newTokenView describes tok. A key carries no expiry the profile records.
 func newTokenView(tok string) tokenView {
 	v := tokenView{Token: tok, Type: "ek"}
 	if !strings.HasPrefix(tok, "ek-") {
 		v.Type = "jwt"
 	}
-	if keys.LooksLikeJWS(tok) {
-		if b, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1]); err == nil {
-			var c struct {
-				Exp int64 `json:"exp"`
-			}
-			if json.Unmarshal(b, &c) == nil && c.Exp > 0 {
-				s := time.Unix(c.Exp, 0).UTC().Format(time.RFC3339)
-				v.ExpiresAt = &s
-			}
-		}
+	if exp, ok := jwtExp(tok); ok {
+		s := exp.UTC().Format(time.RFC3339)
+		v.ExpiresAt = &s
 	}
 	return v
+}
+
+// jwtExp reads a JWT's exp claim without verifying the signature: the token
+// is the caller's own and the value only says when to ask again.
+func jwtExp(tok string) (time.Time, bool) {
+	if !keys.LooksLikeJWS(tok) {
+		return time.Time{}, false
+	}
+	b, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1])
+	if err != nil {
+		return time.Time{}, false
+	}
+	var c struct {
+		Exp int64 `json:"exp"`
+	}
+	if json.Unmarshal(b, &c) != nil || c.Exp <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(c.Exp, 0), true
+}
+
+// acquireTokenLock takes the lock every token refresh runs under and returns
+// the config path. The AS rotates refresh tokens, so two processes refreshing
+// at once would spend one and strand the other.
+func acquireTokenLock(ctx context.Context) (string, func(), error) {
+	path, err := config.Path()
+	if err != nil {
+		return "", nil, &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", nil, &exit.CodedError{Code: exit.ConfigFile, Msg: err.Error(), Wrapped: err}
+	}
+	lease, err := lock.NewLocker(filepath.Join(filepath.Dir(path), "token.lock")).
+		Acquire(ctx, lock.AcquireWithTimeout, tokenLockTimeout)
+	if err != nil {
+		return "", nil, &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("token: %v", err), Wrapped: err}
+	}
+	return path, func() { _ = lease.Release() }, nil
 }
 
 func init() { rootCmd.AddCommand(newTokenCmd()) }

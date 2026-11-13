@@ -354,15 +354,15 @@ func (c *Client) exchange(ctx context.Context, tokenEndpoint string, form url.Va
 	}, nil
 }
 
-// refreshSkew: refresh when this close to expiry, so a token handed to a
+// RefreshSkew: refresh when this close to expiry, so a token handed to a
 // tool (apiKeyHelper caches 5 min) is not already dead when it is used.
-const refreshSkew = 6 * time.Minute
+const RefreshSkew = 6 * time.Minute
 
 // CurrentAccessToken returns a usable access token, refreshing first when
-// the stored one is within refreshSkew of expiry. updated is non-nil only
+// the stored one is within RefreshSkew of expiry. updated is non-nil only
 // when a refresh happened — the caller persists it.
 func (c *Client) CurrentAccessToken(ctx context.Context, creds *config.OAuthCreds) (string, *config.OAuthCreds, error) {
-	if time.Until(creds.ExpiresAt) > refreshSkew {
+	if time.Until(creds.ExpiresAt) > RefreshSkew {
 		return creds.AccessToken, nil, nil
 	}
 	fresh, err := c.Refresh(ctx, creds.ClientID, creds.RefreshToken)
