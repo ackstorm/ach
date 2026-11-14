@@ -8,7 +8,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Documentation site: pages are grouped by reader, in the tabs Overview, ACH
   Platform (install and operate), Using ACH (developers), Integrate and
   Reference. Page addresses changed; for example the install guide is at
-  `https://ackstorm.github.io/ach/platform/install-ach/`.
+  `https://ackstorm.github.io/ach/platform/install-ach/`. The ACH Platform tab
+  has an install tutorial and one page each for the prerequisites, the Helm
+  install, sign-in, LiteLLM, topology, upgrades, Enterprise, JWT key rotation
+  and troubleshooting.
 
 ## [1.1.16] - 2026-11-14
 
