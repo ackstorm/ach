@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.16] - 2026-11-14
+
 ### Fixed
 - `ach-cli launch` hydrates only when asked: `--environment` (or
   `ACH_ENVIRONMENT`) hydrates that Environment, and the new
