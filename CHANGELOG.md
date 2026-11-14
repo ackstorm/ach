@@ -47,6 +47,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - `ach-cli admin --help` names the Helm values that make someone an admin
   (`platformApi.admins.users`, `platformApi.admins.sso`) instead of a variable
   that does not exist.
+- `genai.opencodeExtraProviders` names `claude-agent` as its example: OpenCode
+  2.2.3 and later ship the Claude Agent provider built in, and the
+  `@openchamber/opencode-claude` plugin (provider id `claude-code`) is archived.
+  A deployment that lists `claude-code` for that plugin lists `claude-agent`
+  instead once its users are on the built-in provider.
 
 ## [1.1.14] - 2026-11-12
 
