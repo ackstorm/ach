@@ -74,7 +74,7 @@ It shows the Environment, the tool as its target, and `up to date`.
 
 ## Related
 
-- [`ach-cli launch`](../../reference/cli.md#ach-cli-launch) in the command
+- [`ach-cli launch`](../reference/cli.md#ach-cli-launch) in the command
   reference: `launch` takes the flags of `environment hydrate` except
   `--target`, `--only`, `--dry-run` and `--allow-symlinks`.
 - [Find, install and update Environments](use-environments.md).

@@ -50,4 +50,4 @@ kubectl get keygrants -n <ns>
 kubectl get keygrant <name> -n <ns> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
 ```
 
-Full contract: `docs/how-to/backend-builders/exchange-a-serviceaccount-token.md` in the ACH repo.
+Full contract: `docs/integrate/exchange-a-serviceaccount-token.md` in the ACH repo.
