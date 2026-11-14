@@ -12,8 +12,28 @@ type Route struct {
 	Upstream string
 }
 
-// ServiceRoutes returns the production route table for the given
-// namespace. Upstreams are in-cluster Service DNS names. The forwarder
+// Upstreams are the base URLs (no path) of the services the gateway fronts.
+type Upstreams struct {
+	PlatformAPI    string
+	Forwarder      string
+	ContentService string
+}
+
+// ServiceUpstreams returns the in-cluster Service DNS upstreams for the
+// given namespace.
+func ServiceUpstreams(namespace string) Upstreams {
+	svc := func(name string, port int) string {
+		return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, port)
+	}
+	return Upstreams{
+		PlatformAPI:    svc("ach-platform-api", 80),
+		Forwarder:      svc("ach-forwarder", 80),
+		ContentService: svc("ach-content-service", 8082),
+	}
+}
+
+// ServiceRoutes returns the production route table over the given
+// upstreams. The forwarder
 // owns four route families (/v1, /gemini, /mcp, /a2a) plus /.well-known
 // (JWKS + the RFC 9728 protected-resource document, both anonymous; except
 // /.well-known/opencode, platform-api's OpenCode install manifest) and
@@ -23,21 +43,18 @@ type Route struct {
 // Deliberately absent: /metrics (unauthenticated per service — never
 // front it) and /dex (browser reaches Dex via ACH_DEX_ISSUER_URL in
 // prod; the e2e nginx shim proxies it in dev).
-func ServiceRoutes(namespace string) []Route {
-	svc := func(name string, port int) string {
-		return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, port)
-	}
-	forwarder := svc("ach-forwarder", 80)
+func ServiceRoutes(u Upstreams) []Route {
+	forwarder := u.Forwarder
 	return []Route{
-		{Prefix: "/platform/", Upstream: svc("ach-platform-api", 80)},
-		{Prefix: "/content/", Upstream: svc("ach-content-service", 8082)},
+		{Prefix: "/platform/", Upstream: u.PlatformAPI},
+		{Prefix: "/content/", Upstream: u.ContentService},
 		{Prefix: "/v1/", Upstream: forwarder},
 		{Prefix: "/gemini/", Upstream: forwarder},
 		{Prefix: "/mcp/", Upstream: forwarder},
 		{Prefix: "/a2a/", Upstream: forwarder},
 		// OpenCode's well-known manifest is platform-api's (it knows the
 		// provider name); every other /.well-known document is the forwarder's.
-		{Prefix: "/.well-known/opencode", Upstream: svc("ach-platform-api", 80)},
+		{Prefix: "/.well-known/opencode", Upstream: u.PlatformAPI},
 		{Prefix: "/.well-known/", Upstream: forwarder},
 		// The one owned route outside the families: ach-agent prices its
 		// usage at GET /v2/model/info with its ek_ (exact path, no subtree —
@@ -48,6 +65,6 @@ func ServiceRoutes(namespace string) []Route {
 		// Nothing LiteLLM serves is reachable here — /ui, /key/*, /health…
 		// live on LiteLLM's own host (D-18). net/http's mux keeps the longer
 		// prefixes above (and /healthz, /metrics) ahead of it.
-		{Prefix: "/", Upstream: svc("ach-platform-api", 80)},
+		{Prefix: "/", Upstream: u.PlatformAPI},
 	}
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func TestServiceRoutes(t *testing.T) {
-	routes := ServiceRoutes("ach-system")
+	routes := ServiceRoutes(ServiceUpstreams("ach-system"))
 
 	want := map[string]string{
 		"/platform/":            "http://ach-platform-api.ach-system.svc.cluster.local:80",
@@ -43,7 +43,7 @@ func TestServiceRoutes(t *testing.T) {
 }
 
 func TestServiceRoutesHonorsNamespace(t *testing.T) {
-	routes := ServiceRoutes("prod-ns")
+	routes := ServiceRoutes(ServiceUpstreams("prod-ns"))
 	for _, r := range routes {
 		if r.Prefix == "/platform/" {
 			if r.Upstream != "http://ach-platform-api.prod-ns.svc.cluster.local:80" {
@@ -55,11 +55,21 @@ func TestServiceRoutesHonorsNamespace(t *testing.T) {
 	t.Fatal("/platform/ route missing")
 }
 
+func TestServiceRoutesUseGivenUpstreams(t *testing.T) {
+	u := Upstreams{PlatformAPI: "http://127.0.0.1:8083", Forwarder: "http://127.0.0.1:8084", ContentService: "http://127.0.0.1:8082"}
+	want := map[string]string{"/platform/": u.PlatformAPI, "/v1/": u.Forwarder, "/content/": u.ContentService, "/": u.PlatformAPI}
+	for _, r := range ServiceRoutes(u) {
+		if w, ok := want[r.Prefix]; ok && r.Upstream != w {
+			t.Errorf("prefix %q: got upstream %q, want %q", r.Prefix, r.Upstream, w)
+		}
+	}
+}
+
 // TestRootRouteIsLastMatch pins that the "/" route (the console, D-26)
 // never shadows a service prefix or the gateway's own /healthz: net/http's
 // ServeMux picks the longest registered pattern.
 func TestRootRouteIsLastMatch(t *testing.T) {
-	h, err := Handler(ServiceRoutes("ns"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h, err := Handler(ServiceRoutes(ServiceUpstreams("ns")), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +91,7 @@ func TestRootRouteIsLastMatch(t *testing.T) {
 // (D-26), never the forwarder — LiteLLM's surface is not reachable through
 // ACH (D-18).
 func TestRootGoesToPlatformAPI(t *testing.T) {
-	routes := ServiceRoutes("ns")
+	routes := ServiceRoutes(ServiceUpstreams("ns"))
 	last := routes[len(routes)-1]
 	if last.Prefix != "/" || !strings.Contains(last.Upstream, "ach-platform-api") {
 		t.Fatalf("last route = %+v, want / -> ach-platform-api (D-26)", last)
@@ -99,7 +109,7 @@ func TestRootGoesToPlatformAPI(t *testing.T) {
 // /metrics next to the API), so without the pin the console route would
 // export it.
 func TestMetricsNeverProxied(t *testing.T) {
-	h, err := Handler(ServiceRoutes("ns"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h, err := Handler(ServiceRoutes(ServiceUpstreams("ns")), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,6 +26,9 @@ Run a long-running service:
 Run a one-shot job:
   ach migrate
 
+Run migrate and every service in one container, outside Kubernetes:
+  ach all
+
 For the user-facing CLI (login/whoami/logout/config/environment/env-keys/
 hydrate/admin), use the sibling 'ach-cli' binary.`,
 	Version: Version,

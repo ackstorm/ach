@@ -15,7 +15,9 @@
 //
 // It is a dumb router: no auth, no /metrics, no /dex (see internal/gateway
 // doc.go). Upstream Service DNS is built from POD_NAMESPACE (default
-// ach-system). Binds ACH_GATEWAY_BIND_ADDRESS (default :8080).
+// ach-system); ACH_GATEWAY_PLATFORM_API_URL, ACH_GATEWAY_FORWARDER_URL and
+// ACH_GATEWAY_CONTENT_SERVICE_URL replace an upstream outside a cluster.
+// Binds ACH_GATEWAY_BIND_ADDRESS (default :8080).
 
 package cmd
 
@@ -42,6 +44,8 @@ var gatewayCmd = &cobra.Command{
 /mcp, /a2a, /v2/model/info, /.well-known and the console at "/" to their
 in-cluster Services, and serves a local /healthz. Static routing is
 hardcoded; upstream namespace comes from POD_NAMESPACE (default ach-system).
+Outside a cluster, ACH_GATEWAY_PLATFORM_API_URL, ACH_GATEWAY_FORWARDER_URL and
+ACH_GATEWAY_CONTENT_SERVICE_URL give each upstream's base URL.
 Binds ACH_GATEWAY_BIND_ADDRESS (default :8080). It performs no
 authentication and never exposes /metrics or /dex.`,
 	RunE: runGateway,
@@ -63,7 +67,11 @@ func runGateway(_ *cobra.Command, _ []string) error {
 
 	rootCtx := ctrl.SetupSignalHandler()
 
-	routes := gateway.ServiceRoutes(namespace)
+	upstreams := gateway.ServiceUpstreams(namespace)
+	upstreams.PlatformAPI = config.EnvOr("ACH_GATEWAY_PLATFORM_API_URL", upstreams.PlatformAPI)
+	upstreams.Forwarder = config.EnvOr("ACH_GATEWAY_FORWARDER_URL", upstreams.Forwarder)
+	upstreams.ContentService = config.EnvOr("ACH_GATEWAY_CONTENT_SERVICE_URL", upstreams.ContentService)
+	routes := gateway.ServiceRoutes(upstreams)
 	handler, err := gateway.Handler(routes, logger)
 	if err != nil {
 		return fmt.Errorf("build gateway handler: %w", err)

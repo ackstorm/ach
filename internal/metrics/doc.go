@@ -13,7 +13,7 @@
 //     re-register panics.
 //   - Handler — D-10: returns the chi-mountable http.Handler from
 //     promhttp.HandlerFor. Every Hub service mounts /metrics on the
-//     same chi mux as its traffic listener (forwarder :8080, platform
+//     same chi mux as its traffic listener (forwarder :8084, platform
 //     API :8083, content-service :8082); the operator keeps the
 //     controller-runtime metricsserver on :8443 and ADDS the ACH-
 //     namespaced collectors there via metrics.Registry().MustRegister.

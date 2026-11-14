@@ -32,7 +32,7 @@ type Deps struct {
 	Signer        jwt.Signer
 	Logger        *slog.Logger
 	BaseURL       string
-	// SelfURL is this forwarder's own traffic listener (http://127.0.0.1:8080):
+	// SelfURL is this forwarder's own traffic listener (http://127.0.0.1:8084):
 	// the /a2a/{name}/mcp tool calls /a2a/{name} there.
 	SelfURL string
 	// KeyEncryptionKey is the 32-byte AES-256 DEK (ACH_KEY_ENCRYPTION_KEY,

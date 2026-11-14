@@ -4,6 +4,24 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Breaking
+- The `ach` binary's default listen ports changed so every service can run in
+  one container: `ach platform-api` listens on `:8083` (was `:8080`) and
+  `ach forwarder` on `:8084`, health `:8085` (were `:8080` and `:8081`). The
+  Helm chart sets its own ports and is unaffected. If you run the binary
+  outside the chart, set `ACH_PLATFORM_API_BIND_ADDRESS`,
+  `ACH_FORWARDER_BIND_ADDRESS` and `FORWARDER_HEALTH_BIND_ADDRESS` to keep the
+  old ports.
+
+### Added
+- `ach all` runs the schema migration and then every service (operator,
+  content-service, platform-api, forwarder, gateway) from one container, for
+  installs outside Kubernetes. If one service stops, the others are stopped
+  and the command exits with an error.
+- `ach gateway` takes `ACH_GATEWAY_PLATFORM_API_URL`,
+  `ACH_GATEWAY_FORWARDER_URL` and `ACH_GATEWAY_CONTENT_SERVICE_URL` to reach
+  the services by an address other than their Kubernetes Service.
+
 ### Changed
 - Documentation site: pages are grouped by reader, in the tabs Overview, ACH
   Platform (install and operate), Using ACH (developers), Integrate and
