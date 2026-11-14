@@ -56,7 +56,7 @@ ach-cli admin list environments
 
 | Symptom | Cause | Do |
 |---|---|---|
-| Dex refuses the redirect address | The Dex client lacks ACH's address | Add `https://ach.example.com/platform/oauth/as-callback` exactly |
+| Dex shows `Unregistered redirect_uri` | The Dex client lacks ACH's address | Add `https://ach.example.com/platform/oauth/as-callback` exactly |
 | `no refresh_token in the Dex response` | The Dex connector issues no refresh token | Use a connector that does |
 | `default team unreachable` on the first sign-in after an install | The operator has not created the team `default` yet, or a team in `platformApi.teams.default` does not exist in LiteLLM | Try again after a minute; create your own default teams in LiteLLM |
 | `this browser did not start the authorization request` | The sign-in link was opened in another browser, cookies are blocked, or a proxy removes `Cookie` or `Set-Cookie` on `/platform/oauth/` | Start again from the tool, in the same browser; correct the proxy |
