@@ -1,0 +1,4320 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/reference/changelog/">
+      
+      
+        <link rel="prev" href="../jwt/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Changelog - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Overview
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../platform/install-ach/" class="md-tabs__link">
+          
+  
+  
+  ACH Platform
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../using/first-environment/" class="md-tabs__link">
+          
+  
+  
+  Using ACH
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integrate/write-an-mcp-backend/" class="md-tabs__link">
+          
+  
+  
+  Integrate
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../cli/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Overview
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What ACH is
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/editions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Editions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACH Platform
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ACH Platform
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/install-ach/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and operate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Install and operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/prerequisites/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prepare the prerequisites
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/install-the-chart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install ACH with Helm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/configure-sso/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configure sign-in
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/connect-litellm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connect ACH to LiteLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/choose-a-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choose a topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/enable-enterprise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enable Enterprise features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/rotate-jwt-signing-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rotate the JWT signing keys
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform/troubleshoot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot an ACH install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using ACH
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Using ACH
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/first-environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sign in to ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/use-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Find, install and update Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/launch-a-tool/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start a tool on an Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in-to-an-mcp-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sign in to an MCP server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use ACH models from Claude Code, Codex and OpenCode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/manage-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and manage environment keys
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/keys-and-budgets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys and budgets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-agent-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install the ACH agent plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-from-git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install a plugin or skill from a git repository
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach-cli
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ach-cli
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-ach-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install or update ach-cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/troubleshoot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot ach-cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/write-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend that validates ACH JWTs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/exchange-a-serviceaccount-token/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent credentials by ServiceAccount token exchange
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/trust-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder — /mcp and /a2a Trust Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach-cli command reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jwt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forwarder JWT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1117-2026-11-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.17] - 2026-11-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.17] - 2026-11-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1116-2026-11-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.16] - 2026-11-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.16] - 2026-11-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1115-2026-11-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.15] - 2026-11-13
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.15] - 2026-11-13">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1114-2026-11-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.14] - 2026-11-12
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.14] - 2026-11-12">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1113-2026-11-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.13] - 2026-11-11
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.13] - 2026-11-11">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1112-2026-11-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.12] - 2026-11-10
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.12] - 2026-11-10">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1111-2026-11-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.11] - 2026-11-10
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.11] - 2026-11-10">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1110-2026-11-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.10] - 2026-11-09
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.10] - 2026-11-09">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#119-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.9] - 2026-11-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.9] - 2026-11-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#118-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.8] - 2026-11-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.8] - 2026-11-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#117-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.7] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.7] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#116-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.6] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.6] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#115-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.5] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.5] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#114-2026-11-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.4] - 2026-11-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.4] - 2026-11-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#113-2026-11-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.3] - 2026-11-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.3] - 2026-11-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#112-2026-11-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.2] - 2026-11-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.2] - 2026-11-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#111-2026-11-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.1] - 2026-11-03
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.1] - 2026-11-03">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#110-2026-10-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.0] - 2026-10-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.0] - 2026-10-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#101-2026-10-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.0.1] - 2026-10-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.0.1] - 2026-10-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#100-2026-10-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.0.0] - 2026-10-29
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.0.0] - 2026-10-29">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased]
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1117-2026-11-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.17] - 2026-11-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.17] - 2026-11-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1116-2026-11-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.16] - 2026-11-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.16] - 2026-11-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1115-2026-11-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.15] - 2026-11-13
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.15] - 2026-11-13">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1114-2026-11-12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.14] - 2026-11-12
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.14] - 2026-11-12">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1113-2026-11-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.13] - 2026-11-11
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.13] - 2026-11-11">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1112-2026-11-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.12] - 2026-11-10
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.12] - 2026-11-10">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1111-2026-11-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.11] - 2026-11-10
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.11] - 2026-11-10">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1110-2026-11-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.10] - 2026-11-09
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.10] - 2026-11-09">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#119-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.9] - 2026-11-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.9] - 2026-11-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#118-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.8] - 2026-11-07
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.8] - 2026-11-07">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#117-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.7] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.7] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#116-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.6] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.6] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#115-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.5] - 2026-11-06
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.5] - 2026-11-06">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#114-2026-11-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.4] - 2026-11-05
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.4] - 2026-11-05">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#113-2026-11-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.3] - 2026-11-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.3] - 2026-11-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#112-2026-11-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.2] - 2026-11-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.2] - 2026-11-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_12" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#111-2026-11-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.1] - 2026-11-03
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.1] - 2026-11-03">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#110-2026-10-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.1.0] - 2026-10-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.1.0] - 2026-10-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#101-2026-10-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.0.1] - 2026-10-30
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.0.1] - 2026-10-30">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#100-2026-10-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.0.0] - 2026-10-29
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.0.0] - 2026-10-29">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<p>All notable changes documented per <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>.</p>
+<h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h2 id="1117-2026-11-14">[1.1.17] - 2026-11-14<a class="headerlink" href="#1117-2026-11-14" title="Permanent link">&para;</a></h2>
+<h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>ach</code> binary's default listen ports changed so every service can run in
+  one container: <code>ach platform-api</code> listens on <code>:8083</code> (was <code>:8080</code>) and
+  <code>ach forwarder</code> on <code>:8084</code>, health <code>:8085</code> (were <code>:8080</code> and <code>:8081</code>). The
+  Helm chart sets its own ports and is unaffected. If you run the binary
+  outside the chart, set <code>ACH_PLATFORM_API_BIND_ADDRESS</code>,
+  <code>ACH_FORWARDER_BIND_ADDRESS</code> and <code>FORWARDER_HEALTH_BIND_ADDRESS</code> to keep the
+  old ports.</li>
+</ul>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach all</code> runs the schema migration and then every service (operator,
+  content-service, platform-api, forwarder, gateway) from one container, for
+  installs outside Kubernetes. If one service stops, the others are stopped
+  and the command exits with an error.</li>
+<li><code>ach gateway</code> takes <code>ACH_GATEWAY_PLATFORM_API_URL</code>,
+  <code>ACH_GATEWAY_FORWARDER_URL</code> and <code>ACH_GATEWAY_CONTENT_SERVICE_URL</code> to reach
+  the services by an address other than their Kubernetes Service.</li>
+</ul>
+<h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Documentation site: pages are grouped by reader, in the tabs Overview, ACH
+  Platform (install and operate), Using ACH (developers), Integrate and
+  Reference. Page addresses changed; for example the install guide is at
+  <code>https://ackstorm.github.io/ach/platform/install-ach/</code>. The ACH Platform tab
+  has an install tutorial and one page each for the prerequisites, the Helm
+  install, sign-in, LiteLLM, topology, upgrades, Enterprise, JWT key rotation
+  and troubleshooting.</li>
+<li><code>genai.opencodeExtraProviders</code> names <code>claude-agent</code> as its example: OpenCode
+  2.2.3 and later ship the Claude Agent provider built in, and the
+  <code>@openchamber/opencode-claude</code> plugin (provider id <code>claude-code</code>) is archived.
+  A deployment that lists <code>claude-code</code> for that plugin lists <code>claude-agent</code>
+  instead once its users are on the built-in provider.</li>
+</ul>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>ach-install</code> plugin (1.1.14) corrects six facts it gave agents: LiteLLM's
+  <code>/ui</code>, <code>/key/*</code> and <code>/health</code> through ACH show the console, not a 404;
+  losing Valkey's data signs every user out; deleting <code>ach-jwt-signing-keys</code>
+  invalidates access tokens and does not sign users out; a user refused at the
+  identity provider loses their <code>ek_</code> keys with a Dex build and connector that
+  report it; Dex's message for a missing redirect address is
+  <code>Unregistered redirect_uri</code>; and the LiteLLM master-key Secret must be in
+  the release namespace.</li>
+</ul>
+<h2 id="1116-2026-11-14">[1.1.16] - 2026-11-14<a class="headerlink" href="#1116-2026-11-14" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli launch</code> hydrates only when asked: <code>--environment</code> (or
+  <code>ACH_ENVIRONMENT</code>) hydrates that Environment, and the new
+  <code>--update-environments</code> (<code>--update-envs</code>) updates the Environments already
+  in the folder. Without either, the tool starts as the folder is, instead of every launch
+  updating the folder's Environments and rewriting the tool's configuration.</li>
+</ul>
+<h2 id="1115-2026-11-13">[1.1.15] - 2026-11-13<a class="headerlink" href="#1115-2026-11-13" title="Permanent link">&para;</a></h2>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli launch claude</code> keeps your Claude login and sends claude's model
+  traffic through ACH with your ACH sign-in, refreshed on its own: no
+  <code>ANTHROPIC_BASE_URL</code>, <code>ANTHROPIC_CUSTOM_HEADERS</code> or <code>apiKeyHelper</code> to set.
+  <code>--profile</code> and <code>--key</code> pick the credential. Shell <code>ANTHROPIC_BASE_URL</code> and
+  <code>ANTHROPIC_CUSTOM_HEADERS</code> are ignored with a warning; a Claude settings file
+  that sets <code>ANTHROPIC_BASE_URL</code> stops the launch; <code>--models</code> is refused for
+  claude.</li>
+</ul>
+<h3 id="changed_1">Changed<a class="headerlink" href="#changed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli launch</code> in a folder with no Environment starts the tool without
+  hydrating, instead of refusing.</li>
+<li>Documentation site: one version, served at <code>https://ackstorm.github.io/ach/</code>
+  (the <code>/dev/</code> and <code>/latest/</code> prefixes are gone), with pages grouped as
+  Tutorials, How-to, Reference and Explanation. The Reference tab lists every
+  <code>ach-cli</code> command, the Helm values, the forwarder JWT claims and this
+  changelog. The How-to tab has a developer section: installing <code>ach-cli</code>,
+  signing in, Environments, <code>launch</code>, MCP sign-in, model traffic, keys,
+  <code>ach-cli local</code> and troubleshooting.</li>
+<li>Console Apps page: tiles fill the row at any width, each icon has its own
+  color under every skin, and each tile shows the host it opens.</li>
+</ul>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli admin --help</code> names the Helm values that make someone an admin
+  (<code>platformApi.admins.users</code>, <code>platformApi.admins.sso</code>) instead of a variable
+  that does not exist.</li>
+</ul>
+<h2 id="1114-2026-11-12">[1.1.14] - 2026-11-12<a class="headerlink" href="#1114-2026-11-12" title="Permanent link">&para;</a></h2>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Default skin from the chart: <code>platformApi.console.theme</code> (<code>dark</code>, <code>light</code>,
+  <code>pastel</code> or <code>red</code>) sets the skin of the console and the sign-in pages for a
+  browser whose user has not picked one. The console's toggle still wins for
+  that browser. Empty keeps following the browser's light/dark preference.</li>
+<li>Console Apps page: <code>platformApi.console.apps</code> lists tiles linking to the
+  platform's other tools (name, url, optional group, subtitle and icon). A tile
+  with <code>teams</code> shows only to members of any one of those teams, one with <code>admin: true</code>
+  only to platform admins; the server filters the list, so the browser never
+  receives a tile the user cannot see. The sidebar shows Apps between
+  Observability and Help when at least one tile is visible. Hiding a tile is
+  not access control: each app keeps its own login.</li>
+<li><code>ach-cli environment status</code> tells whether a hydrated folder is up to date:
+  per Environment, <code>up to date</code> or what changed since the last hydrate (<code>+</code>
+  added to the Environment, <code>-</code> removed, <code>~</code> new content). It asks the server
+  (<code>POST /platform/hydrate/version</code>) and downloads nothing; <code>--offline</code> keeps
+  the local-only view. A folder hydrated by an older ach-cli says
+  <code>version unknown</code> until its next hydrate. A state file written by this
+  version cannot be read by an older ach-cli.</li>
+</ul>
+<h3 id="fixed_3">Fixed<a class="headerlink" href="#fixed_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>An A2A agent's MCP face (<code>/a2a/&lt;name&gt;/mcp</code>) fetches the agent's card
+  once per request instead of several times, so each tool call costs the agent
+  one card request.</li>
+</ul>
+<h2 id="1113-2026-11-11">[1.1.13] - 2026-11-11<a class="headerlink" href="#1113-2026-11-11" title="Permanent link">&para;</a></h2>
+<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Built with Go 1.26.11, which fixes GO-2026-6859 (an HTTP/1 server crash in
+  <code>net/http</code>).</li>
+</ul>
+<h3 id="added_3">Added<a class="headerlink" href="#added_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Admin from an IdP group: <code>platformApi.admins.sso</code> lists Dex <code>groups</code> whose
+  members are admins, alongside the <code>admins.users</code> emails. Membership is read
+  at login and at every token refresh, so someone removed from the group loses
+  admin within an hour, with no restart (#47).</li>
+<li>Pin a git-sourced Plugin, Skill, Prompt, Artifact or marketplace to a commit
+  with <code>spec.&lt;github|gitlab|bitbucket&gt;.commit</code>. ACH serves that commit, keeps
+  watching <code>ref</code>, and reports a newer one in <code>status.latestUpstreamRev</code>, the
+  <code>UpdateAvailable</code> condition and the AVAILABLE column of <code>ach-cli admin list</code>.
+  Promote it by committing the new SHA (#48).</li>
+<li>An Environment's A2A agents now reach Claude Code, Codex, Gemini CLI, OpenCode
+  and pi: <code>ach-cli environment hydrate</code> writes each one as an MCP server
+  <code>a2a-&lt;agent&gt;</code> (forwarder <code>/a2a/&lt;agent&gt;/mcp</code>) with one tool, <code>send_message</code>,
+  which shows the agent's progress and returns its answer. It replaces the
+  <code>a2aAgents</code> / <code>[a2a_agents]</code> entries earlier versions wrote, which no tool
+  read; the next hydrate removes them (#51).</li>
+</ul>
+<h3 id="fixed_4">Fixed<a class="headerlink" href="#fixed_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli environment hydrate</code>, <code>environment uninstall</code> and <code>ach-cli local</code>
+  no longer overwrite an edit saved to a tool's config file, <code>CLAUDE.md</code>,
+  <code>GEMINI.md</code> or <code>.gitignore</code> while they run: they merge again on the saved
+  file, and stop with an error, writing nothing, if it keeps changing.</li>
+</ul>
+<h3 id="changed_2">Changed<a class="headerlink" href="#changed_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Helm <code>platformApi.admins</code> is now a map: move your email list from
+  <code>platformApi.admins</code> to <code>platformApi.admins.users</code>. A list-shaped value
+  fails the render with that instruction.</li>
+<li>Changing <code>platformApi.admins.users</code> restarts platform-api on the next
+  <code>helm upgrade</code>; before, the new list applied only after a manual restart.</li>
+<li>Enterprise licence (<code>ee/LICENSE</code>): enabling the Enterprise features in any
+  environment, evaluation included, needs a signed agreement with ACKstorm.
+  Development and test use without one is no longer granted. Running the
+  image with <code>enterprise.enabled: false</code> needs no agreement.</li>
+<li>Leaver detection (added in 1.1.10) needs the Dex connector fixes
+  dexidp/dex#5142 (<code>google</code>) and dexidp/dex#5144 (<code>gitlab</code>, <code>microsoft</code>,
+  <code>github</code>, <code>gitea</code>, <code>bitbucketcloud</code>), merged 2026-11-10. No Dex release
+  includes them yet (v2.46.1 does not). The 1.1.10 entry cited the tracking
+  issue dexidp/dex#5143 instead.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Supported LiteLLM range stated in the install guide: 1.108.0 or later,
+  tested with 1.108.1.</li>
+<li>ACH follows Semantic Versioning: a breaking change bumps the major version
+  and is listed under <code>### Breaking</code>.</li>
+</ul>
+<h2 id="1112-2026-11-10">[1.1.12] - 2026-11-10<a class="headerlink" href="#1112-2026-11-10" title="Permanent link">&para;</a></h2>
+<h3 id="added_4">Added<a class="headerlink" href="#added_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli</code> suggests the command you meant at every level, not only the top:
+  <code>ach-cli keys revkoe</code> → <code>revoke</code>. Common synonyms also point to the right
+  command: <code>update</code> → <code>upgrade</code>, <code>ach-cli hydrate</code> → <code>environment</code>,
+  <code>environment pull|sync</code> → <code>hydrate</code>, <code>environment show</code> → <code>describe</code>,
+  <code>keys delete|new</code> → <code>revoke</code>|<code>create</code>, <code>local plugin|skill upgrade|add</code> →
+  <code>update</code>|<code>install</code>, <code>rm</code> → <code>remove</code>/<code>uninstall</code>/<code>revoke</code>.</li>
+</ul>
+<h2 id="1111-2026-11-10">[1.1.11] - 2026-11-10<a class="headerlink" href="#1111-2026-11-10" title="Permanent link">&para;</a></h2>
+<h3 id="added_5">Added<a class="headerlink" href="#added_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Console: an ach-cli guide under Help (<code>#/howto/ach-cli</code>): install and
+  update, sign in and profiles, Environments, environment keys and local
+  packages.</li>
+<li><code>ach-cli upgrade</code> replaces the running <code>ach-cli</code> with the latest GitHub
+  release (or <code>--version X.Y.Z</code>), checked against the release's
+  <code>checksums.txt</code>.</li>
+</ul>
+<h3 id="changed_3">Changed<a class="headerlink" href="#changed_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli</code> warns only when it is older than the server, as <code>warning: ach-cli
+  X is older than the server (Y)</code> plus <code>hint: upgrade with \</code>ach-cli
+  upgrade``; a newer CLI is no longer warned.</li>
+<li><code>ach-cli keys create</code> prints the key once and stores it nowhere: put it in the
+  secret store of whatever uses it. <code>--no-save</code> is gone, <code>--key</code> / <code>ACH_KEY</code>
+  take only an <code>ek-…</code> key (no saved name), and <code>profile list|show</code> no longer
+  show saved keys (<code>saved_keys</code> left <code>-o json</code>). A <code>keys:</code> block in an existing
+  <code>~/.config/ach/config.yaml</code> still loads, is never read, and is dropped on the
+  next write; those keys keep working on the server until revoked, and
+  <code>keys revoke &lt;name&gt;</code> still finds them.</li>
+<li><code>ach-cli environment</code> is the command's name and <code>--environment</code> the flag's
+  everywhere (<code>keys list</code> and <code>admin keys list</code> took <code>--env</code>); <code>env</code> and
+  <code>--env</code> keep working as aliases on every command.</li>
+</ul>
+<h2 id="1110-2026-11-09">[1.1.10] - 2026-11-09<a class="headerlink" href="#1110-2026-11-09" title="Permanent link">&para;</a></h2>
+<h3 id="added_6">Added<a class="headerlink" href="#added_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>When the identity provider behind Dex refuses a user (suspended, disabled or
+  deleted there), every <code>ek_</code> that user owns, KeyGrant exchange keys included,
+  stops working until they sign in again. ACH acts only on Dex's upstream
+  rejection (400 <code>invalid_grant</code>, "The upstream identity provider rejected the
+  refresh token."), so it needs a Dex build with dexidp/dex#5132 and a connector
+  that reports the refusal (dexidp/dex#5143); <code>saml</code>, <code>oauth</code>, <code>keystone</code> and
+  <code>authproxy</code> never do, and <code>ach-cli admin keys revoke --owner</code> stays the
+  offboarding step there.</li>
+<li>platform-api re-validates, once a day, the owners of <code>ek_</code> keys used in the
+  last 7 days, so a user who never signs in again is still caught.</li>
+<li><code>POST /platform/keys/exchange</code> answers 403 <code>idp_refused</code> for a refused
+  identity and mints nothing. The admin key inventory shows the reason
+  <code>idp_refused</code> (<code>ach-cli admin keys list -o json</code>), as does the owner's own list.</li>
+<li><code>ach-cli token</code>, <code>whoami</code>, <code>keys create</code>, <code>env describe</code>, <code>profile list</code> and
+  <code>profile show</code> take <code>-o json</code>.</li>
+</ul>
+<h3 id="fixed_5">Fixed<a class="headerlink" href="#fixed_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The chart's Grafana dashboards load with auto-refresh off, so an open
+  dashboard does not re-query its datasources on a timer; refresh by hand or
+  pick an interval.</li>
+<li>Enterprise observability counts a generation's whole input under both
+  Langfuse usage conventions (<code>input</code> with or without cache reads and writes):
+  the Overview's uncached input ratio is no longer negative, its cache-read
+  share stays at or below 100%, and sessions, traces, workloads, classification
+  and the cost cache comparison stop undercounting input.</li>
+<li>platform-api presents a user's Dex refresh token once per refresh. A refused
+  refresh was sent to Dex twice, which Dex can read as token reuse and which then
+  ended every session of that user.</li>
+</ul>
+<h2 id="119-2026-11-07">[1.1.9] - 2026-11-07<a class="headerlink" href="#119-2026-11-07" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_6">Fixed<a class="headerlink" href="#fixed_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A rollout no longer cuts open requests after 10 s: gateway, forwarder and
+  platform-api leave their Service before stopping (<code>shutdown.drainSeconds</code>,
+  default 10) and let open requests finish for up to <code>shutdown.timeoutSeconds</code>
+  (default 120, <code>ACH_SHUTDOWN_TIMEOUT</code>).</li>
+<li>platform-api has a readiness probe on <code>/readyz</code>, so it gets no traffic before
+  Postgres and Valkey answer.</li>
+</ul>
+<h2 id="118-2026-11-07">[1.1.8] - 2026-11-07<a class="headerlink" href="#118-2026-11-07" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_7">Fixed<a class="headerlink" href="#fixed_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach migrate</code> never prints the database URL or password: a DSN that does not
+  parse fails with a fixed message and driver errors are scrubbed. Percent-encode
+  special characters in the password (see the <code>ach-install</code> prerequisites).</li>
+<li><code>ach-cli</code> no longer sends <code>x-ach-key</code> to a different origin on a redirect.</li>
+<li>The http source no longer forwards its Secret-valued header across a
+  cross-host redirect.</li>
+<li><code>ach-cli local plugin install</code> and <code>uninstall</code> never widen the mode of an
+  existing file: a <code>0600</code> runtime config stays <code>0600</code>.</li>
+<li>The forwarder drops a client <code>tags</code> header: only ACH sets request tags, on every
+  route.</li>
+<li>The forwarder refuses a multipart body whose Content-Type repeats <code>boundary</code>
+  or carries a starred <code>boundary*</code> with 400 <code>invalid_request</code>.</li>
+<li>An archive that fills its extraction cap exactly no longer lifts the cap for
+  the entries after it; prompt archives share the skill cap.</li>
+<li>The console login <code>next=</code> refuses control characters, so a browser cannot
+  normalise it to another origin.</li>
+<li>Release images are signed by digest, not by tag.</li>
+<li><code>ach-cli local plugin|skill</code> install, update and uninstall refuse a project
+  destination that leaves the folder through a symlink, as <code>env hydrate</code> does;
+  <code>--global</code> is unchanged.</li>
+<li>A BackendIdentityPolicy <code>consentAudience</code> of <code>ach</code>, <code>ach-ek</code>, or starting with
+  <code>mcp:</code> or <code>a2a:</code> is refused at admission, and the consent login skips the
+  broker hop for such a value already stored.</li>
+<li>A private-repo token reaches <code>git</code> through its environment, not its command
+  line (needs git 2.31 or later for <code>ach-cli local</code>).</li>
+</ul>
+<h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The operator no longer looks up or deletes an Environment's access group under
+  the names <code>ach-&lt;env&gt;</code> or <code>&lt;env&gt;</code>; only <code>ach-env-&lt;env&gt;</code> is used.</li>
+<li>OpenWork and its Den API: the <code>openwork.*</code> chart values and the <code>/openwork</code>,
+  <code>/api/den</code> routes are gone, and the console bootstrap no longer carries
+  <code>openwork_enabled</code>.</li>
+</ul>
+<h3 id="upgrade-notes">Upgrade notes<a class="headerlink" href="#upgrade-notes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>An install on v0.6.19 or earlier that jumps straight to this release leaves
+  each Environment's old access group (named <code>ach-&lt;env&gt;</code> or <code>&lt;env&gt;</code>) in LiteLLM,
+  orphaned and still bound to its teams; delete it by hand. Installs that ran
+  any later release are unaffected.</li>
+</ul>
+<h2 id="117-2026-11-06">[1.1.7] - 2026-11-06<a class="headerlink" href="#117-2026-11-06" title="Permanent link">&para;</a></h2>
+<h3 id="changed_4">Changed<a class="headerlink" href="#changed_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Docs, the console and the e2e suite follow LiteLLM v1.108's budget refusal:
+  HTTP 422 with <code>type: budget_exceeded</code>, not 429. ACH keeps that default
+  because clients stop at once and show why, instead of retrying a request
+  that cannot succeed. The e2e LiteLLM pin moves to v1.108.1.</li>
+<li><code>scripts/dev.sh</code> shares one Go build and module cache per machine, Go's own
+  defaults, so a new worktree starts warm. Existing <code>.gocache/build</code> and
+  <code>.gocache/gopath/pkg</code> directories can be deleted with <code>make clean-cache</code>.</li>
+<li><code>make cluster-up</code> and <code>make e2e-run</code> refuse to start with under 5 GB free on
+  the workspace disk.</li>
+<li>ACH requires LiteLLM 1.108 or later.</li>
+<li>The forwarder refuses request bodies on <code>/v1</code>, <code>/gemini</code> and <code>/a2a</code> that set
+  a LiteLLM per-request control (<code>api_key</code>, <code>deployment_id</code>, guardrail fields,
+  <code>mcp</code> tools) with 400
+  <code>client_param_not_allowed</code>. Form bodies refuse the same top-level names.</li>
+<li><code>/gemini</code> serves only the model routes (<code>GET /v1beta/models[/{model}]</code> and
+  <code>POST /v1beta/models/{model}:{generateContent|streamGenerateContent|countTokens|embedContent|batchEmbedContents}</code>);
+  other paths answer 404 <code>route_not_allowed</code>. A body or batch entry model that differs from
+  the path model, or a POST body whose Content-Type is neither
+  <code>application/json</code> nor absent, is 400 <code>model_mismatch</code>.</li>
+<li>Requests that outlive their key end within about a minute of the key being
+  suspended, revoked or expired, including streams and <code>/v1/realtime</code>.</li>
+<li><code>POST /platform/oauth/register</code> answers 413 over 4 KiB and 429 <code>rate_limited</code>
+  past a per-address and a global limit, per replica.</li>
+<li><code>ach-cli env hydrate</code> and <code>env uninstall</code> refuse a path in the workspace that
+  resolves outside it (<code>--global</code> is exempt). In <code>--global</code> mode a recorded
+  absolute target must sit under the tool's config root.</li>
+<li>While an Environment has unresolved references, the operator applies
+  removals only: access can shrink, nothing is added.</li>
+<li><code>POST /platform/admin/users/{email}/revoke-keys</code> normalises the email, walks
+  every page of keys and answers 500 if a page fails; rerun it to finish. It
+  ends the user's OAuth sessions once, with or without an active <code>pk_</code>, and
+  answers 500 if that fails, after sweeping the keys; rerun it to end them.</li>
+<li>Ending a user's OAuth sessions also invalidates refresh tokens issued before
+  a later login.</li>
+</ul>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Writing a content CR or a <code>LiteLLMConnection</code> is equivalent to reading every
+  Secret in the ACH namespace; give such writers admin-tier trust.</li>
+<li>A user disabled at the IdP keeps working <code>ek-</code> keys; offboard with
+  <code>ach-cli admin keys revoke --owner &lt;email&gt;</code>.</li>
+</ul>
+<h3 id="fixed_8">Fixed<a class="headerlink" href="#fixed_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A killed <code>make</code> no longer leaves its <code>ach-devtools</code> container running.</li>
+</ul>
+<h2 id="116-2026-11-06">[1.1.6] - 2026-11-06<a class="headerlink" href="#116-2026-11-06" title="Permanent link">&para;</a></h2>
+<h3 id="changed_5">Changed<a class="headerlink" href="#changed_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Agent keys get the backend identity JWT: on an <code>/mcp</code> or <code>/a2a</code> target with a
+  <code>forwardIdentityJWT</code> policy, an <code>ek_</code> arrives as its owner, with the same
+  <code>sub</code>, <code>email</code> and <code>groups</code> as the owner's <code>pk_</code>, plus an <code>azp</code> claim
+  (<code>ek:&lt;environment&gt;</code>) for audit. MCP backends no longer need the LiteLLM key,
+  which LiteLLM v1.106+ stops forwarding.</li>
+</ul>
+<h2 id="115-2026-11-06">[1.1.5] - 2026-11-06<a class="headerlink" href="#115-2026-11-06" title="Permanent link">&para;</a></h2>
+<h3 id="changed_6">Changed<a class="headerlink" href="#changed_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Releases go through a PR: <code>make release-cut</code> opens it with the rotated
+  CHANGELOG and manifest bumps, and the merged commit is what gets tagged.
+  GitHub release notes are that version's CHANGELOG section.</li>
+<li>The OpenCode bootstrap skill (<code>&lt;provider&gt;-ach</code>) loads on any mention of an
+  Environment and installs a named one, instead of leaving agents to search
+  the disk for it.</li>
+<li>The OpenCode bootstrap skill and the <code>ach-cli</code> plugin (1.1.4) give agents a
+  background recipe for MCP sign-in, so they hand over the link instead of
+  hanging the session on the browser wait.</li>
+</ul>
+<h3 id="fixed_9">Fixed<a class="headerlink" href="#fixed_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>GET /v2/model/info?model=&lt;alias&gt;</code> returns a row for a LiteLLM model-group
+  alias, with the target model's vision, PDF, token-limit, tool and cost fields.
+  Agents on an alias such as <code>ackstorm.smart</code> no longer lose images from tool
+  results or run unpriced. A name the caller is not granted stays a 403.</li>
+</ul>
+<h3 id="removed_1">Removed<a class="headerlink" href="#removed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>pre-push</code> git hook, with <code>make pre-push</code>, <code>make hooks</code> and <code>make verify</code>.
+  CI is the gate. Delete <code>.git/hooks/pre-push</code> from existing clones.</li>
+</ul>
+<h2 id="114-2026-11-05">[1.1.4] - 2026-11-05<a class="headerlink" href="#114-2026-11-05" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_10">Fixed<a class="headerlink" href="#fixed_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Deleting a <code>Plugin</code>, <code>Prompt</code>, <code>Skill</code>, <code>Artifact</code>, <code>BackendIdentityPolicy</code>
+  or <code>LiteLLMConnection</code> now removes its Postgres row too. <code>Plugin</code>, <code>Prompt</code>
+  and <code>Artifact</code> rows left soft-deleted still answered by name; their cached
+  content was already gone.</li>
+</ul>
+<h3 id="removed_2">Removed<a class="headerlink" href="#removed_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The <code>deletion_timestamp</code> column on every table and the <code>deletionTimestamp</code>
+  field of the Environment API view. Migration <code>000028</code> purges the remaining
+  soft-deleted rows, then drops the column. Pods from an earlier version
+  fail reads on those tables from the migration until the rollout replaces
+  them. <code>helm rollback</code> below this release leaves them failing until
+  <code>000028_drop_deletion_timestamp.down.sql</code> is applied by hand.</li>
+</ul>
+<h2 id="113-2026-11-04">[1.1.3] - 2026-11-04<a class="headerlink" href="#113-2026-11-04" title="Permanent link">&para;</a></h2>
+<h3 id="changed_7">Changed<a class="headerlink" href="#changed_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Breaking for older <code>ach-cli</code>:</strong> <code>POST /platform/hydrate</code> now returns
+  <code>runtime.models[].limits</code> (<code>{context, output}</code>) when LiteLLM knows them,
+  aliases resolved. <code>ach-cli</code> decodes this response strictly, so v1.1.2 and
+  older fail with <code>unknown field "limits"</code> until updated. Release this
+  <code>ach-cli</code> first, then upgrade the server. ach-agent ignores the field and
+  keeps working.</li>
+<li>Console pages use the full width, and Reliability is hidden from the sidebar.
+  The page stays served at <code>/analytics/reliability</code>.</li>
+</ul>
+<h3 id="added_7">Added<a class="headerlink" href="#added_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli</code> warns on stderr, once per run, when its version differs from the
+  server's. platform-api reports its version in <code>X-ACH-Server-Version</code> on
+  authenticated responses.</li>
+<li><code>ach-cli launch</code> without <code>--environment</code> updates every Environment recorded
+  under the folder's <code>.ach/</code>, then starts the tool.</li>
+</ul>
+<h3 id="fixed_11">Fixed<a class="headerlink" href="#fixed_11" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Deleting an <code>Environment</code> now removes its Postgres row. It used to stay
+  soft-deleted forever: gone from <code>env list</code>, but still answering hydrate,
+  <code>env describe</code>, the console and content downloads by name, reported as
+  <code>Available</code>. Migration <code>000027</code> purges the rows already left behind.</li>
+</ul>
+<h2 id="112-2026-11-04">[1.1.2] - 2026-11-04<a class="headerlink" href="#112-2026-11-04" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_12">Fixed<a class="headerlink" href="#fixed_12" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Console catalogs: MCP cards show the gateway URL, Models lists agents
+  published as models, and an empty A2A or MCP list reads as no grant rather
+  than a disabled gateway.</li>
+</ul>
+<h2 id="111-2026-11-03">[1.1.1] - 2026-11-03<a class="headerlink" href="#111-2026-11-03" title="Permanent link">&para;</a></h2>
+<h3 id="added_8">Added<a class="headerlink" href="#added_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ach-cli launch &lt;claude|codex|gemini|opencode|pi&gt; --environment &lt;env&gt;</code>
+  hydrates that one target, then starts the tool in <code>--dir</code> and exits with its
+  code. A missing tool or a failed hydrate starts nothing.</li>
+<li><code>ach-cli refresh</code> (<code>POST /platform/refresh</code>): after being added to an SSO
+  group, join the teams it maps to (<code>platformApi.teams.sso</code>/<code>users</code>) without
+  logging in again. It re-reads the groups at the identity provider; the
+  Environments follow at their next reconcile.</li>
+</ul>
+<h3 id="fixed_13">Fixed<a class="headerlink" href="#fixed_13" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>KeyGrant</code> ServiceAccount names are validated as DNS-1123 subdomains.</li>
+<li>The console's Spend KPI becomes Budget when a cycle exists, plotting that
+  cycle's days. The console range opens on the last 7 days.</li>
+</ul>
+<h2 id="110-2026-10-30">[1.1.0] - 2026-10-30<a class="headerlink" href="#110-2026-10-30" title="Permanent link">&para;</a></h2>
+<h3 id="added_9">Added<a class="headerlink" href="#added_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>KeyGrant</code> (<code>ach.ackstorm.ai/v1alpha1</code>): a platform admin names one identity,
+  its Environments and the ServiceAccounts (<code>&lt;namespace&gt;/&lt;name&gt;</code>) that may act
+  as it, with an optional per-key budget. The operator projects it, reports
+  <code>Ready</code> (<code>IdentityUnknown</code>, <code>EnvironmentMissing</code>), revokes exchange keys no
+  grant allows any more and keeps each covered key's <code>key:&lt;id&gt;</code> budget at the
+  lowest covering <code>spec.budget</code>.</li>
+<li><code>POST /platform/keys/exchange</code>: a pod-bound ServiceAccount token plus a
+  matching grant buys a short-lived ACH JWT (<code>aud: ach-ek</code>) standing for one
+  stable <code>ek_</code> per identity, Environment and ServiceAccount; the <code>ek_</code> never
+  leaves ACH. The token's signature is verified against the cluster JWKS before
+  any rate limiting or TokenReview. The JWT lifetime is
+  <code>platformApi.keyExchange.tokenTTL</code> (default <code>15m</code>, <code>1m</code> to <code>1h</code>). The
+  forwarder, content service and platform API accept the JWT wherever an <code>ek_</code>
+  goes. Every exchange emits a <code>platform.ek.exchange</code> audit event.</li>
+<li>Helm: platform-api <code>system:auth-delegator</code> binding (TokenReview); ClusterRole
+  <code>&lt;release&gt;-keygrant-editor</code> (create, update, patch, delete on <code>keygrants</code>),
+  bound to nobody.</li>
+<li>Plugin marketplace <code>ach</code> at the repo root (Claude Code and Codex) with three
+  plugins: <code>ach-cli</code> (using the platform from the CLI), <code>ach-gitops</code> (writing
+  ACH custom resources) and <code>ach-install</code> (deploying the Helm chart). Install
+  with <code>claude plugin marketplace add ackstorm/ach</code>, or serve them to users
+  through a <code>PluginMarketplace</code> and an Environment.</li>
+</ul>
+<h3 id="changed_8">Changed<a class="headerlink" href="#changed_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li>platform-api now holds a cluster-wide <code>system:auth-delegator</code>
+  ClusterRoleBinding (it held no Kubernetes privilege before) and relies on the
+  default <code>system:service-account-issuer-discovery</code> binding to read the cluster
+  JWKS.</li>
+<li>The API-server audit level for <code>tokenreviews</code> must be <code>Metadata</code>; <code>Request</code>
+  or <code>RequestResponse</code> would log the submitted ServiceAccount tokens.</li>
+<li>Operator RBAC for <code>keygrants</code>: get, list, watch, update, plus
+  <code>keygrants/finalizers</code> and <code>keygrants/status</code>; never create, delete or patch.</li>
+<li>Exchange keys do not count against <code>max_keys</code>.</li>
+<li>Owner budget changes on exchange keys are refused (409
+  <code>budget_managed_by_grant</code>); the grant's <code>spec.budget</code> is the only source.</li>
+<li>Migration <code>000026</code> adds <code>environment_keys.issued_via</code> and <code>requester</code> and the
+  <code>key_grants</code> table; its down step refuses while live exchange keys exist.</li>
+<li>The <code>ach-gitops</code> and <code>ach-install</code> plugins (1.1.0) gain KeyGrant and
+  key-exchange guidance.</li>
+<li>The OpenCode onboarding skill (<code>&lt;provider&gt;-ach</code>) is a bootstrap only: install
+  <code>ach-cli</code>, sign in, list Environments, hydrate the default Environment. The
+  rest moved to the <code>ach-cli</code> plugin, which the default Environment should carry.</li>
+<li>Chart <code>NOTES.txt</code> describes this chart (10 CRDs managed by Helm, the operator
+  creating <code>LiteLLMConnection/default</code>); <code>platformApi.admins</code> is declared in
+  <code>values.yaml</code>; the unused <code>watchNamespace</code> value is gone.</li>
+</ul>
+<h3 id="fixed_14">Fixed<a class="headerlink" href="#fixed_14" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>BackendIdentityPolicy</code> docs: when several policies target the same backend,
+  the alphabetically FIRST one wins (the docs said last).</li>
+</ul>
+<h2 id="101-2026-10-30">[1.0.1] - 2026-10-30<a class="headerlink" href="#101-2026-10-30" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_15">Fixed<a class="headerlink" href="#fixed_15" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Console Enterprise Overview: the input statistics (median, maximum, reasoning
+  share, period) sit in the fourth column of the input/output panel again instead
+  of wrapping to a row of their own.</li>
+</ul>
+<h2 id="100-2026-10-29">[1.0.0] - 2026-10-29<a class="headerlink" href="#100-2026-10-29" title="Permanent link">&para;</a></h2>
+<h3 id="added_10">Added<a class="headerlink" href="#added_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>ACH 1.0.0: the operator, platform API (OAuth 2.1 AS, <code>pk_</code>/<code>ek_</code> keys, console),
+  forwarder, content service, optional gateway, and the <code>ach-cli</code> user CLI.</li>
+<li>One container image, <code>ghcr.io/ackstorm/ach</code>. The Enterprise features
+  (conversation classification, observability analytics, traces) are enabled with
+  the Helm value <code>enterprise.enabled</code> and need an ACKstorm Enterprise licence
+  agreement for production use; the rest is Apache-2.0.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

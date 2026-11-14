@@ -1,0 +1,2922 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Kubernetes control plane for managing AI agent configurations declaratively">
+      
+      
+      
+        <link rel="canonical" href="https://ackstorm.github.io/ach/platform/troubleshoot/">
+      
+      
+        <link rel="prev" href="../rotate-jwt-signing-keys/">
+      
+      
+        <link rel="next" href="../../using/first-environment/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Troubleshoot an ACH install - ACH — Agent Capability Hub</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#troubleshoot-an-ach-install" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-header__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ACH — Agent Capability Hub
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Troubleshoot an ACH install
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Overview
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../install-ach/" class="md-tabs__link">
+          
+  
+  
+  ACH Platform
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../using/first-environment/" class="md-tabs__link">
+          
+  
+  
+  Using ACH
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integrate/write-an-mcp-backend/" class="md-tabs__link">
+          
+  
+  
+  Integrate
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/cli/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ACH — Agent Capability Hub" class="md-nav__button md-logo" aria-label="ACH — Agent Capability Hub" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ACH — Agent Capability Hub
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ackstorm/ach" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ackstorm/ach
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Overview
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What ACH is
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/editions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Editions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACH Platform
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ACH Platform
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_1" id="__nav_2_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install-ach/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and operate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Install and operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prerequisites/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prepare the prerequisites
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install-the-chart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install ACH with Helm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configure-sso/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configure sign-in
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connect-litellm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connect ACH to LiteLLM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../choose-a-topology/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choose a topology
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../enable-enterprise/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enable Enterprise features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rotate-jwt-signing-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rotate the JWT signing keys
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot an ACH install
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot an ACH install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#render-and-install-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Render and install failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pods-that-do-not-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pods that do not start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sign-in-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sign-in failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symptoms-after-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symptoms after install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#admission-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admission errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sourcereachablefalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceReachable=False
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marketplaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#users-without-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users without access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using ACH
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Using ACH
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/first-environment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sign in to ACH
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/use-environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Find, install and update Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/launch-a-tool/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start a tool on an Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in-to-an-mcp-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sign in to an MCP server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/sign-in-from-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use ACH models from Claude Code, Codex and OpenCode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/manage-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create and manage environment keys
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/keys-and-budgets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys and budgets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-agent-plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install the ACH agent plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-from-git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install a plugin or skill from a git repository
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach-cli
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ach-cli
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/install-ach-cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install or update ach-cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../using/troubleshoot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshoot ach-cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrate
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/write-an-mcp-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing an MCP backend that validates ACH JWTs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/exchange-a-serviceaccount-token/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent credentials by ServiceAccount token exchange
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrate/trust-path/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JWT Forwarder — /mcp and /a2a Trust Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ach-cli command reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Helm values
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/ach.ackstorm.ai/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRD API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/jwt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forwarder JWT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#render-and-install-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Render and install failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pods-that-do-not-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pods that do not start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sign-in-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sign-in failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification failures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#symptoms-after-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symptoms after install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resources">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#admission-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admission errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sourcereachablefalse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceReachable=False
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#marketplaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marketplaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#users-without-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users without access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="troubleshoot-an-ach-install">Troubleshoot an ACH install<a class="headerlink" href="#troubleshoot-an-ach-install" title="Permanent link">&para;</a></h1>
+<p>Start from the symptom. A component that does not start names the missing or
+wrong setting in its first log lines:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>get<span class="w"> </span>pods,jobs
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>logs<span class="w"> </span>deploy/ach-platform-api<span class="w"> </span>--tail<span class="o">=</span><span class="m">50</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>logs<span class="w"> </span>deploy/ach-forwarder<span class="w"> </span>--tail<span class="o">=</span><span class="m">50</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>logs<span class="w"> </span>deploy/ach-operator<span class="w"> </span>-c<span class="w"> </span>manager<span class="w"> </span>--tail<span class="o">=</span><span class="m">50</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>logs<span class="w"> </span>deploy/ach-operator<span class="w"> </span>-c<span class="w"> </span>content-service<span class="w"> </span>--tail<span class="o">=</span><span class="m">50</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>describe<span class="w"> </span>pod<span class="w"> </span>&lt;pod&gt;<span class="w">          </span><span class="c1"># a missing Secret, an image that does not pull</span>
+</code></pre></div>
+<p>For a resource such as an Environment, read its conditions:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>ach<span class="w"> </span>describe<span class="w"> </span>environment<span class="w"> </span>&lt;name&gt;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ach-cli<span class="w"> </span>admin<span class="w"> </span>list<span class="w"> </span>environments
+</code></pre></div>
+<h2 id="render-and-install-failures">Render and install failures<a class="headerlink" href="#render-and-install-failures" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>profile="…" is no longer supported</code></td>
+<td>A <code>profile</code> key in the values</td>
+<td>Delete it</td>
+</tr>
+<tr>
+<td><code>platformApi.admins is a map</code></td>
+<td><code>platformApi.admins</code> is a list</td>
+<td>Move the emails to <code>platformApi.admins.users</code></td>
+</tr>
+<tr>
+<td><code>litellmConnection.endpoint is required</code>, <code>litellmConnection.masterKeySecretRef.name is required</code></td>
+<td>An empty <code>litellmConnection</code> value</td>
+<td>Fill <a href="../connect-litellm/#point-ach-at-litellm"><code>litellmConnection</code></a></td>
+</tr>
+<tr>
+<td><code>security.keyEncryptionKey.secretRef.name is required</code>, and the same for <code>credentialHashPepper</code></td>
+<td>An emptied Secret reference</td>
+<td>Restore the names; the defaults work</td>
+</tr>
+<tr>
+<td><code>platformApi.observability.projectIds is required with clickhouseUrl</code>, <code>…secretName is required with clickhouseUrl</code></td>
+<td>Observability half configured</td>
+<td>Set all three, or clear <code>clickhouseUrl</code></td>
+</tr>
+<tr>
+<td><code>classifier.secretName is required with classifier.enabled</code>, and the same for <code>clickhouseUrl</code> and <code>modelUrl</code></td>
+<td>Classifier half configured</td>
+<td>Set them, or disable the classifier</td>
+</tr>
+<tr>
+<td><code>no matches for kind "ServiceMonitor"</code> or <code>"PrometheusRule"</code></td>
+<td>The Prometheus Operator is not installed</td>
+<td>Install it, or leave <code>metrics.serviceMonitor</code> and <code>metrics.prometheusRule</code> disabled</td>
+</tr>
+<tr>
+<td><code>no matches for kind "LiteLLMConnection"</code></td>
+<td>One of your manifests creates that resource in the same release</td>
+<td>Remove it; the operator creates <code>LiteLLMConnection/default</code></td>
+</tr>
+<tr>
+<td>Helm times out during <code>pre-install</code> or <code>pre-upgrade</code></td>
+<td>The Job <code>ach-migrate-&lt;revision&gt;</code> fails</td>
+<td>Read <code>kubectl -n ach logs job/ach-migrate-&lt;revision&gt;</code>. Usual causes: <code>ACH_DB_URL</code> is not in the top-level <code>extraEnv</code>, wrong credentials, or Postgres cannot be reached</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pods-that-do-not-start">Pods that do not start<a class="headerlink" href="#pods-that-do-not-start" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>In the log or the Pod events</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACH_BASE_URL required</code>, <code>ACH_BASE_URL must be http(s)://</code></td>
+<td>Not set, set in one component's <code>extraEnv</code> only, or without a scheme</td>
+<td>Set the full origin in the top-level <code>extraEnv</code></td>
+</tr>
+<tr>
+<td><code>config: ACH_DB_URL is empty or unset</code>, or the same for <code>ACH_REDIS_ADDR</code>, <code>ACH_DEX_ISSUER_URL</code>, <code>ACH_DEX_CLIENT_ID</code>, <code>ACH_DEX_CLIENT_SECRET</code></td>
+<td>The variable is missing</td>
+<td>Add it to the top-level <code>extraEnv</code></td>
+</tr>
+<tr>
+<td>An error while parsing the database URL</td>
+<td>A short URL</td>
+<td>Use the full form: <code>postgres://user:password@host:5432/db?sslmode=…</code></td>
+</tr>
+<tr>
+<td><code>oidc.NewProvider: …</code></td>
+<td>platform-api cannot read Dex</td>
+<td>The issuer must be reachable from the Pod and equal Dex's <code>issuer</code> exactly</td>
+</tr>
+<tr>
+<td><code>ACH_KEY_ENCRYPTION_KEY decoded to N bytes: must be 32 bytes</code></td>
+<td>The key Secret has the wrong content</td>
+<td>Store <code>openssl rand -base64 32</code> in it</td>
+</tr>
+<tr>
+<td><code>…the placeholder value</code></td>
+<td>A template Secret was never filled</td>
+<td>Put real random values in both Secrets</td>
+</tr>
+<tr>
+<td><code>CreateContainerConfigError</code>, <code>secret "…" not found</code></td>
+<td>A Secret named in the values or in <code>extraEnv</code> does not exist in the namespace</td>
+<td>Create it, or correct the name and key</td>
+</tr>
+<tr>
+<td>Forwarder: <code>jwt secret LoadOnce (refuse-to-start)</code></td>
+<td>The operator has not created <code>ach-jwt-signing-keys</code> yet</td>
+<td>Normal for a minute on a first install. If it lasts, the operator is failing: read its log</td>
+</tr>
+<tr>
+<td><code>ACH_TEAMS_DEFAULT: at least one default team required</code></td>
+<td><code>platformApi.teams.default</code> is empty</td>
+<td>List at least one team</td>
+</tr>
+<tr>
+<td><code>credential headers: authorization is not configurable</code>, <code>…mode must be resolve or passthrough</code>, <code>…listed twice</code></td>
+<td>A wrong entry in <code>forwarder.headers</code> or <code>platformApi.headers</code></td>
+<td>Correct the list</td>
+</tr>
+<tr>
+<td><code>platform-api only resolves (passthrough is a forwarder mode)</code></td>
+<td><code>passthrough</code> in <code>platformApi.headers</code></td>
+<td>Remove it there</td>
+</tr>
+<tr>
+<td><code>ACH_TRUSTED_IDP_AUDIENCES: a non-empty JSON list is required</code></td>
+<td><code>forwarder.trustedIdP.issuer</code> without <code>audiences</code></td>
+<td>Add the audiences, or clear the issuer</td>
+</tr>
+<tr>
+<td><code>…is Enterprise configuration: set Helm enterprise.enabled=true</code></td>
+<td>An Enterprise variable in <code>extraEnv</code> with Enterprise off</td>
+<td>Remove it, or <a href="../enable-enterprise/">enable Enterprise</a></td>
+</tr>
+<tr>
+<td>The Pod runs, printed the command help and stopped</td>
+<td>Custom <code>args</code> without the mode</td>
+<td>Keep the mode (<code>operator</code>, <code>platform-api</code>, …) as the first argument</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sign-in-failures">Sign-in failures<a class="headerlink" href="#sign-in-failures" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dex shows <code>Unregistered redirect_uri</code></td>
+<td>The Dex client lacks ACH's address</td>
+<td>Add <code>https://ach.example.com/platform/oauth/as-callback</code> exactly</td>
+</tr>
+<tr>
+<td><code>no refresh_token in the Dex response</code></td>
+<td>The Dex connector issues no refresh token</td>
+<td>Use a connector that does</td>
+</tr>
+<tr>
+<td><code>default team unreachable</code> on the first sign-in after an install</td>
+<td>The operator has not created the team <code>default</code> yet, or a team in <code>platformApi.teams.default</code> does not exist in LiteLLM</td>
+<td>Try again after a minute; create your own default teams in LiteLLM</td>
+</tr>
+<tr>
+<td><code>this browser did not start the authorization request</code></td>
+<td>The sign-in link was opened in another browser, cookies are blocked, or a proxy removes <code>Cookie</code> or <code>Set-Cookie</code> on <code>/platform/oauth/</code></td>
+<td>Start again from the tool, in the same browser; correct the proxy</td>
+</tr>
+<tr>
+<td><code>invalid_redirect_uri</code> when a web application registers</td>
+<td>Its host is not allowed</td>
+<td>Add it to <a href="../configure-sso/#oauth-redirect-hosts"><code>platformApi.oauth.redirectHosts</code></a></td>
+</tr>
+<tr>
+<td>A user signs in and sees no Environment</td>
+<td>See <a href="#users-without-access">Users without access</a></td>
+<td></td>
+</tr>
+<tr>
+<td>A group mapping never applies</td>
+<td>The sign-in carries no <code>groups</code>, or the team does not exist in LiteLLM</td>
+<td>Configure groups on the Dex connector; create the team</td>
+</tr>
+<tr>
+<td>Everyone is signed out after an upgrade</td>
+<td>One of the <a href="../upgrade/#values-that-must-not-change">values that must not change</a> changed</td>
+<td>Restore the old value</td>
+</tr>
+<tr>
+<td><code>ach-cli login</code> refuses an <code>http://</code> address</td>
+<td>ACH is served without TLS</td>
+<td>Use <code>https</code>. For a local test only, set <code>ACH_INSECURE=1</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="verification-failures">Verification failures<a class="headerlink" href="#verification-failures" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Check that fails</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kubectl -n ach get litellmconnection default</code> is not <code>True</code></td>
+<td>The operator cannot reach LiteLLM, or the master key is wrong. Read the operator log</td>
+</tr>
+<tr>
+<td><code>/.well-known/oauth-authorization-server</code> or <code>/.well-known/jwks.json</code> answers 404 or 5xx</td>
+<td>The request does not reach the forwarder: check the Ingress, and that the forwarder is ready</td>
+</tr>
+<tr>
+<td><code>/.well-known/opencode</code> answers 404</td>
+<td>Without the gateway, the rule that sends this path to platform-api is missing</td>
+</tr>
+<tr>
+<td><code>/</code> answers <code>console not built</code></td>
+<td>An image built without the console. Use the released image</td>
+</tr>
+<tr>
+<td><code>ach-cli whoami</code> works and <code>ach-cli environment list</code> is empty</td>
+<td>See <a href="#users-without-access">Users without access</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="symptoms-after-install">Symptoms after install<a class="headerlink" href="#symptoms-after-install" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model requests answer 401 for every user, and the forwarder logs <code>key material decrypt failed</code></td>
+<td>The encryption key changed, or platform-api and the forwarder read different ones</td>
+<td>Restore the key. If it is lost, users sign in again and environment keys are created again</td>
+</tr>
+<tr>
+<td><code>/ui</code>, <code>/key/list</code> or <code>/health</code> on the ACH address show the ACH console</td>
+<td>ACH does not serve LiteLLM's own pages</td>
+<td>Use LiteLLM's own host</td>
+</tr>
+<tr>
+<td>Creating an environment key answers 403 <code>key_limit_reached</code></td>
+<td><code>platformApi.userDefaults.maxKeys</code> is 0, or the user reached their limit</td>
+<td><code>ach-cli admin users limits &lt;email&gt; --max-keys N</code>, or raise the default</td>
+</tr>
+<tr>
+<td>Requests answer 422 <code>Budget has been exceeded! Tag=user:…</code></td>
+<td>The user's ceiling</td>
+<td><code>ach-cli admin users budget &lt;email&gt; --max-budget N</code>. The chart default applies to new users only</td>
+</tr>
+<tr>
+<td>Requests answer 422 <code>Budget has been exceeded! Tag=environment:…</code></td>
+<td>The Environment's budget is spent</td>
+<td>Raise the budget of the Environment, or wait for it to reset</td>
+</tr>
+<tr>
+<td>A new grant takes minutes to work</td>
+<td>LiteLLM caches grants for up to about 10 minutes</td>
+<td>Wait</td>
+</tr>
+<tr>
+<td>Dashboards do not appear in Grafana</td>
+<td>The Grafana sidecar does not watch their namespace</td>
+<td>Set <code>metrics.dashboards.namespace</code>, or widen the sidecar's search</td>
+</tr>
+</tbody>
+</table>
+<h2 id="resources">Resources<a class="headerlink" href="#resources" title="Permanent link">&para;</a></h2>
+<p>After you correct a resource, check that the operator has read it:
+<code>status.observedGeneration</code> equals <code>metadata.generation</code>. With Flux or Argo
+CD, first confirm that the change was applied.</p>
+<h3 id="admission-errors">Admission errors<a class="headerlink" href="#admission-errors" title="Permanent link">&para;</a></h3>
+<p>The API server refuses the resource and prints one of these:</p>
+<table>
+<thead>
+<tr>
+<th>Message contains</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>must include the subobject matching spec.type</code></td>
+<td>Add the block named by <code>type</code>: <code>type: gitlab</code> needs <code>gitlab:</code></td>
+</tr>
+<tr>
+<td><code>refresh.maxStaleness is REQUIRED</code></td>
+<td>Add <code>spec.refresh.maxStaleness</code></td>
+</tr>
+<tr>
+<td><code>refresh.interval must be &lt;= refresh.maxStaleness</code></td>
+<td>Lower <code>interval</code> or raise <code>maxStaleness</code></td>
+</tr>
+<tr>
+<td><code>type=http requires scope=object</code></td>
+<td>An <code>http</code> Artifact cannot be a directory</td>
+</tr>
+<tr>
+<td><code>authorizedTeams must contain at least one team</code></td>
+<td>Add a team</td>
+</tr>
+<tr>
+<td><code>forwardIdentityJWT is REQUIRED</code></td>
+<td>Set it to <code>true</code> or <code>false</code></td>
+</tr>
+<tr>
+<td><code>LiteLLMConnection name must be 'default'</code></td>
+<td>Do not create this resource; the operator does</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sourcereachablefalse"><code>SourceReachable=False</code><a class="headerlink" href="#sourcereachablefalse" title="Permanent link">&para;</a></h3>
+<p>A Plugin, Skill, Prompt or Artifact could not be fetched. The reason says why:</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Unauthorized</code></td>
+<td>A private repository without credentials, a wrong token, a missing Secret, or a repository or <code>ref</code> that does not exist. Git cannot tell these apart</td>
+<td>Check that the repository and <code>ref</code> exist; add <code>authSecretRef</code>; check that the Secret is in the resource's namespace</td>
+</tr>
+<tr>
+<td><code>NotFound</code></td>
+<td>The file, key or <code>ref</code> is missing at the source</td>
+<td>Correct <code>ref</code>, <code>path</code> or the address</td>
+</tr>
+<tr>
+<td><code>UpstreamInvalid</code></td>
+<td>Fetched, but unusable: a plugin without <code>.claude-plugin/plugin.json</code>, a skill without a valid <code>SKILL.md</code>, a wrong <code>path</code>, or an unsafe archive</td>
+<td>Point <code>path</code> at the real root, or correct the source</td>
+</tr>
+<tr>
+<td><code>PluginTooLarge</code></td>
+<td>Larger than the limit, 50 MiB by default</td>
+<td>Make the source smaller, or raise <code>ACH_PLUGIN_MAX_SIZE_MIB</code> or <code>ACH_SKILL_MAX_SIZE_MIB</code></td>
+</tr>
+<tr>
+<td><code>Unreachable</code></td>
+<td>A network error or a failing source</td>
+<td>Usually passes; the operator retries. If it lasts, check outbound access and the host name</td>
+</tr>
+<tr>
+<td><code>StaleCacheExpired</code></td>
+<td>Fetching failed for longer than <code>maxStaleness</code>, and ACH stopped serving the content</td>
+<td>Correct the fetch error</td>
+</tr>
+</tbody>
+</table>
+<p><code>ach-cli admin refresh &lt;kind&gt; &lt;name&gt;</code> fetches again at once.</p>
+<h3 id="marketplaces">Marketplaces<a class="headerlink" href="#marketplaces" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Synced=False</code>, reason <code>InvalidConfig</code></td>
+<td>A <code>filters</code> pattern is not a valid regular expression</td>
+<td>Correct it</td>
+</tr>
+<tr>
+<td><code>Synced=False</code>, <code>filters.include matched zero plugins</code></td>
+<td>The patterns match nothing</td>
+<td>Compare them with the plugin names in <code>marketplace.json</code>; a pattern matches from the start of the name</td>
+</tr>
+<tr>
+<td><code>Synced=False</code>, reason <code>UpstreamInvalid</code></td>
+<td>The repository has no <code>.claude-plugin/marketplace.json</code>, or it is not valid JSON</td>
+<td>Correct the repository</td>
+</tr>
+<tr>
+<td><code>Synced=True</code>, message <code>stage-2: N plugin(s) failed</code></td>
+<td>Some entries failed; the others are served</td>
+<td>Correct those entries in <code>marketplace.json</code></td>
+</tr>
+<tr>
+<td>A SkillMarketplace is <code>Synced=True</code> with 0 skills</td>
+<td>A wrong <code>path</code> (<code>skills</code> when unset), or a <code>SKILL.md</code> whose <code>name</code> differs from its folder</td>
+<td>Set <code>path</code> to the folder that holds the skill folders; <code>"."</code> for the repository root</td>
+</tr>
+</tbody>
+</table>
+<h3 id="environment-conditions">Environment conditions<a class="headerlink" href="#environment-conditions" title="Permanent link">&para;</a></h3>
+<p>An Environment is <code>Available</code> when <code>ExecutionResourcesResolved</code> and
+<code>AccessGroupSynced</code> are both true.</p>
+<table>
+<thead>
+<tr>
+<th>Condition and reason</th>
+<th>Cause</th>
+<th>Do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ExecutionResourcesResolved=False</code>, <code>ResourceUnresolved</code></td>
+<td>A model, MCP server or agent is not in LiteLLM, or a plugin or skill was never fetched. <code>status.unresolvedRuntime</code> and <code>status.unresolvedContextPlugins</code> name them</td>
+<td>Compare with <code>ach-cli admin list models</code> (or <code>mcp</code>, <code>a2a</code>). Write a marketplace item as <code>name@marketplace</code></td>
+</tr>
+<tr>
+<td>The same, for a model that answers requests</td>
+<td>The name is a LiteLLM model alias</td>
+<td>List the model the alias points to</td>
+</tr>
+<tr>
+<td>The same, with <code>snapshot stale (LiteLLM unreachable)</code></td>
+<td>The operator cannot read LiteLLM</td>
+<td>Check <code>kubectl -n ach get litellmconnection default</code></td>
+</tr>
+<tr>
+<td><code>AccessGroupSynced=False</code>, <code>UnresolvedReferences</code></td>
+<td>An MCP server, agent, team or guardrail is not in LiteLLM; the message lists them</td>
+<td>Correct the name, or create it in LiteLLM</td>
+</tr>
+<tr>
+<td><code>AccessGroupSynced=False</code>, <code>ShellTeamFailed</code></td>
+<td>LiteLLM refused the Environment's team. With guardrails, LiteLLM has no Enterprise licence</td>
+<td>Remove <code>guardrails</code>, or license LiteLLM; otherwise read the message</td>
+</tr>
+<tr>
+<td><code>AccessGroupSynced=False</code>, <code>AccessGroupCreateFailed</code> or <code>MirrorUnconverged</code></td>
+<td>LiteLLM failed during the write</td>
+<td>Usually passes. If it lasts, LiteLLM itself is failing</td>
+</tr>
+<tr>
+<td><code>BudgetSynced=False</code>, <code>TagWriteFailed</code></td>
+<td>Writing the Environment's budget to LiteLLM failed</td>
+<td>Read the message</td>
+</tr>
+<tr>
+<td><code>Available=False</code>, <code>SubConditionsNotReady</code></td>
+<td>One of the two conditions above is false</td>
+<td>Correct that one</td>
+</tr>
+</tbody>
+</table>
+<p>While <code>AccessGroupSynced</code> is false, new environment keys are refused. Existing
+keys, installs and requests keep the last grants that worked.</p>
+<h3 id="users-without-access">Users without access<a class="headerlink" href="#users-without-access" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ach-cli environment list</code> does not show an Environment</td>
+<td>The user is in none of its <code>authorizedTeams</code>, or a team name there does not match LiteLLM</td>
+</tr>
+<tr>
+<td>Access is lost after a team was renamed in LiteLLM</td>
+<td><code>authorizedTeams</code> holds team aliases: change both together. Never rename <code>default</code></td>
+</tr>
+<tr>
+<td>A new user reaches nothing for a few minutes</td>
+<td>Their access is attached when the Environment is next processed</td>
+</tr>
+<tr>
+<td>An environment key answers 403 <code>unauthorized_team</code></td>
+<td>The key's owner left every authorized team. The key no longer works</td>
+</tr>
+<tr>
+<td>A plugin or skill is missing after an install</td>
+<td>It is listed without <code>@marketplace</code>, or the user has not updated since the change</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../using/troubleshoot/">Troubleshoot ach-cli</a> for the developer's side.</li>
+<li><a href="../../reference/helm-values/">Helm values</a></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/ackstorm/ach" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>
