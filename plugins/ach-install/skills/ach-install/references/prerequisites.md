@@ -53,8 +53,10 @@ config cache.
 - `ACH_REDIS_ADDR` = `host:port` (required by platform-api and forwarder).
 - Optional: `ACH_REDIS_PASSWORD` (from a Secret), `ACH_REDIS_TLS=true`,
   `ACH_REDIS_DB` (logical DB, default 0).
-- A standalone instance is enough. Losing it signs users out of in-flight
-  logins and empties caches; it is not the source of truth.
+- A standalone instance is enough. It is not the source of truth, but it
+  holds every refresh token, console session and registered OAuth client:
+  losing its data signs every user out (they sign in again) and empties the
+  caches.
 
 ## LiteLLM
 
@@ -69,8 +71,7 @@ Before install:
 
 - LiteLLM running with its own Postgres, reachable in-cluster (default value
   `http://litellm.litellm.svc.cluster.local:4000`).
-- Its master key in a Secret in the ACH release namespace (or set
-  `litellmConnection.masterKeySecretRef.namespace`).
+- Its master key in a Secret in the ACH release namespace.
 - LiteLLM published on its own host if anyone needs its UI or admin API: ACH
   never proxies `/ui`, `/key/*`, `/health`.
 

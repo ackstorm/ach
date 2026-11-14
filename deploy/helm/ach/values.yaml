@@ -366,10 +366,11 @@ genai:
   # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
   opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.9"
   # Provider ids /.well-known/opencode allows next to providerName in
-  # enabled_providers (e.g. [claude-code] for @openchamber/opencode-claude).
-  # On OpenCode v2 a user's own config cannot widen that list, so a provider
-  # users add through their own plugins must be listed here. An id nobody has
-  # installed has no effect. Same format as providerName. Empty = providerName only.
+  # enabled_providers (e.g. [claude-agent] for OpenCode's built-in Claude Agent
+  # provider). On OpenCode v2 a user's own config cannot widen that list, so any
+  # other provider users want, built in or from their own plugins, must be listed
+  # here. An id nobody has has no effect. Same format as providerName.
+  # Empty = providerName only.
   opencodeExtraProviders: []
   # Optional default models (bare names, no provider prefix) for GenAI clients;
   # /clients/opencode/config uses them today: emitted as config.model /

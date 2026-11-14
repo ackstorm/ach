@@ -83,6 +83,8 @@ the release notes ask for it; migrations are cumulative and run in order.
   expiry, the schema cannot be migrated below the release that introduced key
   states; the down migration refuses. Resume suspended keys and clear expiries
   first if such a rollback is ever required.
+- A second hard stop: while any `ek-` key issued by token exchange is live,
+  the `000026` down migration refuses. Revoke those keys first.
 - Rolling back below 1.1.4 needs the `000028` down migration first: older pods
   read the `deletion_timestamp` column and fail on every table that lost it.
   `ach migrate` only moves forward, so apply
@@ -103,7 +105,7 @@ the release notes ask for it; migrations are cumulative and run in order.
 | `security.credentialHashPepper` Secret content | Every stored `pk-`/`ek-` credential hash stops matching: all keys invalid. |
 | `ACH_BASE_URL` | OAuth issuer and every issued token, the Dex redirect URI, hydrated download URLs, MCP entries users' tools saved, and which LiteLLM keys the orphan reaper considers this release's. |
 | `genai.providerName` | Signs every OpenCode user out. |
-| `ach-jwt-signing-keys` | Deleting it signs everyone out; rotate it with the overlap procedure in `references/auth.md`. |
+| `ach-jwt-signing-keys` | Deleting it invalidates every access token in use (tools renew them; refresh tokens live in Valkey) and a forwarder that restarts refuses to start until the operator re-mints on its next start. Rotate it with the overlap procedure in `references/auth.md`. |
 | `ACH_DB_URL` target | ACH's whole state; move the data, not just the URL. |
 
 Renaming the Secrets is fine as long as their content moves with them.

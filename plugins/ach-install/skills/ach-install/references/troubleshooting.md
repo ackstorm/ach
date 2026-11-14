@@ -62,14 +62,14 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Dex shows `Invalid redirect URI` | Dex client lacks `https://<ACH_BASE_URL>/platform/oauth/as-callback` | Add it exactly. |
+| Dex shows `Unregistered redirect_uri` | Dex client lacks `https://<ACH_BASE_URL>/platform/oauth/as-callback` | Add it exactly. |
 | Login fails at the callback mentioning `offline_access` / no refresh token | Dex connector does not issue refresh tokens | Use a connector that does; allow `offline_access`. |
 | `500 default_team_missing` on the very first login | Operator has not created team `default` yet, or a `teams.default` alias other than `default` does not exist in LiteLLM | Retry after the operator converges; create any custom default team in LiteLLM. |
 | `400 this browser did not start the authorization request` | The login URL was opened in another browser/profile, cookies blocked, or a proxy strips `Set-Cookie`/`Cookie` on `/platform/oauth/*` | Retry from the tool in the same browser; fix the proxy. |
 | `invalid_redirect_uri` registering a web client (e.g. claude.ai) | https redirect host not allowed | Add the host to `platformApi.oauth.redirectHosts`. |
 | User signs in but sees no Environments | Not in any team the Environments authorize, or the Environment has not reconciled since they joined | Check `platformApi.teams`, the LiteLLM team, and `kubectl get env`. |
 | SSO-group mapping never applies | ID token has no `groups` claim, or the team does not exist in LiteLLM (log `login: team does not exist`) | Configure the Dex connector's groups; create the team. |
-| Everyone signed out after an upgrade | DEK, pepper, JWT keys, `ACH_BASE_URL` or `genai.providerName` changed | Restore the old value (`references/upgrade.md`). |
+| Everyone signed out after an upgrade | DEK, pepper, `ACH_BASE_URL` or `genai.providerName` changed, or Valkey lost its data | Restore the old value (`references/upgrade.md`). |
 | `ach-cli login` refuses `http://` | Plain-http base | Use https, or `--insecure` / `ACH_INSECURE=1` for a local test. |
 
 ## Verification failures
@@ -89,7 +89,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | LiteLLM 401 for every user; forwarder logs `key material decrypt failed` | platform-api and forwarder use different DEKs, or the DEK changed | Same Secret for both; affected users log in again, `ek-` keys are re-created. |
-| `/ui`, `/key/list`, `/health` are 404 through ACH | By design | Use LiteLLM's own host. |
+| `/ui`, `/key/list`, `/health` through ACH show the ACH console (200), never LiteLLM | By design: the gateway sends every unknown path to the console; without the gateway they are 404 | Use LiteLLM's own host. |
 | An `ek-` key cannot be created: 403 `key_limit_reached` | `userDefaults.maxKeys` is 0 or reached | `ach-cli admin users limits <email> --max-keys N` or raise the default. |
 | Requests refused with 422 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
 | Newly granted access takes minutes to work | LiteLLM caches access-group grants per replica (up to ~10 min) | Wait; nothing to fix in ACH. |

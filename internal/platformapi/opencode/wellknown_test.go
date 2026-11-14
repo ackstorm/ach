@@ -36,7 +36,7 @@ func TestWellKnownHandler_Manifest(t *testing.T) {
 
 func TestWellKnownHandler_ExtraProviders(t *testing.T) {
 	rec := httptest.NewRecorder()
-	WellKnownHandler("https://ach.test", "acme", "git+https://x/p.git#v1", []string{"claude-code", "acme"})(rec, httptest.NewRequest(http.MethodGet, "/.well-known/opencode", nil))
+	WellKnownHandler("https://ach.test", "acme", "git+https://x/p.git#v1", []string{"claude-agent", "acme"})(rec, httptest.NewRequest(http.MethodGet, "/.well-known/opencode", nil))
 	var got struct {
 		Config struct {
 			EnabledProviders []string `json:"enabled_providers"`
@@ -45,7 +45,7 @@ func TestWellKnownHandler_ExtraProviders(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"acme", "claude-code"}; !reflect.DeepEqual(got.Config.EnabledProviders, want) {
+	if want := []string{"acme", "claude-agent"}; !reflect.DeepEqual(got.Config.EnabledProviders, want) {
 		t.Fatalf("enabled_providers = %v, want %v", got.Config.EnabledProviders, want)
 	}
 }

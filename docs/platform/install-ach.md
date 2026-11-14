@@ -1,63 +1,176 @@
-# Installation
+# Install ACH
 
-ACH installs on Kubernetes with one Helm chart, `oci://ghcr.io/ackstorm/charts/ach`,
-running one image, `ghcr.io/ackstorm/ach`. The full guide (every value, sign-in,
-topology, Enterprise, upgrades, troubleshooting) is the `ach-install` agent skill in
-this repository: [`plugins/ach-install/skills/ach-install/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-install/skills/ach-install).
-Install it into your agent (see [Install the ACH agent plugins](../using/install-agent-plugins.md)) and
-ask it, or read it directly.
+In this tutorial you install ACH on a Kubernetes cluster with its Helm chart,
+sign in, and give your users a first Environment. It takes about thirty
+minutes.
 
-## What you need first
+ACH runs next to services the chart does not install. You need them in place,
+with these names; [Prepare the prerequisites](prerequisites.md) describes each
+one.
 
-The chart installs none of these:
+| You need | The tutorial uses |
+|---|---|
+| A Kubernetes cluster, with `kubectl` and `helm` pointing at it | Namespace `ach`, where Postgres and Valkey run |
+| A Postgres database and its user | Database `ach`, user `ach`, host `ach-postgresql` |
+| Valkey or Redis | `ach-valkey-primary:6379`, without a password |
+| LiteLLM with at least one model, and its master key | `http://litellm.litellm.svc.cluster.local:4000` |
+| Dex, with a client for ACH and its secret | `https://auth.example.com`, client `ach` with the redirect address `https://ach.example.com/platform/oauth/as-callback` |
+| An ingress controller and a certificate issuer | Class `nginx`, cert-manager issuer `letsencrypt` |
+| A DNS name for ACH that points at the ingress | `ach.example.com` |
+| [`ach-cli`](../using/install-ach-cli.md) on your machine | |
 
-- **Postgres**: a database and user for ACH. It is the source of truth for ACH state.
-- **Valkey or Redis**: caches and OAuth session state.
-- **LiteLLM** with its own database and a master key: ACH sits in front of it.
-- **Dex** with a connector to your identity provider: the only way users sign in. Register
-  a client for ACH with redirect URI `https://<ACH host>/platform/oauth/as-callback`.
-- An ingress controller and TLS for the ACH host.
+Replace the names with your own as you go.
 
-## Steps
+## 1. Create the Secrets
 
-1. Create the Secrets in the release namespace: the at-rest DEK and the credential
-   pepper (`security.*` values; generated once, kept stable), the LiteLLM master key
-   (`litellmConnection.masterKeySecretRef`), the Dex client secret and the database and
-   Valkey passwords. The operator mints the JWT signing keys itself.
-2. Write a values file. Start from the minimal production values in the skill's
-   `references/values.md`; `deploy/helm/ach/values.yaml` documents every key.
-3. Render, then install:
+```bash
+kubectl -n ach create secret generic ach-key-encryption-key \
+  --from-literal=dek="$(openssl rand -base64 32)"
+kubectl -n ach create secret generic ach-credential-hash-pepper \
+  --from-literal=pepper="$(openssl rand -base64 32)"
+kubectl -n ach create secret generic litellm-master-key \
+  --from-literal=master_key='<LiteLLM master key>'
+kubectl -n ach create secret generic ach-dex-client-secret \
+  --from-literal=ACH_DEX_CLIENT_SECRET='<the secret of the Dex client>'
+kubectl -n ach create secret generic ach-postgresql \
+  --from-literal=password='<the password of the database user>'
+```
 
-   ```bash
-   helm template ach oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z> \
-     -n ach -f values.yaml >/dev/null
-   helm upgrade --install ach oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z> \
-     -n ach --create-namespace -f values.yaml --wait --timeout 10m
-   ```
+The first two are generated here and must never change afterwards. Back them
+up.
 
-   On a first install the forwarder and content-service restart a few times until the
-   operator has minted `ach-jwt-signing-keys`.
+## 2. Write the values
 
-4. Verify: every Deployment is Ready, `kubectl -n ach get litellmconnection default`
-   is Ready, and `ach-cli login https://<ACH host>` followed by `ach-cli whoami` shows
-   your user. Then [grant a first Environment](#grant-a-first-environment).
+Save this as `values.yaml`, with your own email under `admins`:
 
-The chart manages the CRDs (`installCRDs: true`), so `helm upgrade` upgrades them too
-and `helm uninstall` leaves them and your resources in place.
+```yaml
+litellmConnection:
+  endpoint: http://litellm.litellm.svc.cluster.local:4000
+  masterKeySecretRef:
+    name: litellm-master-key
+    key: master_key
 
-## Agent credentials by token exchange
+platformApi:
+  admins:
+    users: [you@example.com]
+  userDefaults:
+    maxKeys: 5
 
-The platform API reviews ServiceAccount tokens for `POST /platform/keys/exchange`
-through a cluster-wide `system:auth-delegator` binding the chart creates. Set
-API server audit level `Metadata` for `tokenreviews`, and bind the
-`<release>-keygrant-editor` ClusterRole (`ach-keygrant-editor` for release `ach`) to platform admins only. See
-[Agent credentials by token exchange](../integrate/exchange-a-serviceaccount-token.md).
+genai:
+  providerName: my-org
 
-## Grant a first Environment
+ingress:
+  enabled: true
+  className: nginx
+  host: ach.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    - hosts: [ach.example.com]
+      secretName: ach-tls
 
-An Environment names what a team may use. Save this as `quickstart.yaml`, replacing the
-model and team with ones your LiteLLM has (`ach-cli admin list models` and
-`ach-cli admin list teams` show them, for an admin):
+extraEnv:
+  - name: ACH_BASE_URL
+    value: https://ach.example.com
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef: {name: ach-postgresql, key: password}
+  - name: ACH_DB_URL
+    value: postgresql://ach:$(DB_PASSWORD)@ach-postgresql:5432/ach?sslmode=disable
+  - name: ACH_REDIS_ADDR
+    value: ach-valkey-primary:6379
+  - name: ACH_DEX_ISSUER_URL
+    value: https://auth.example.com
+  - name: ACH_DEX_CLIENT_ID
+    value: ach
+  - name: ACH_DEX_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
+```
+
+`providerName` is the name OpenCode users will sign in with. Choose it now:
+changing it later signs them out.
+
+## 3. Install
+
+Find the latest version of the chart:
+
+```bash
+helm show chart oci://ghcr.io/ackstorm/charts/ach | grep '^version:'
+```
+
+Render the chart with your values, then install it, with that version in
+place of `<X.Y.Z>`:
+
+```bash
+helm template ach oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z> \
+  -n ach -f values.yaml > /dev/null
+helm upgrade --install ach oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z> \
+  -n ach -f values.yaml --wait --timeout 10m
+```
+
+The first command prints nothing when the values are complete. The second
+ends with `STATUS: deployed` and a summary of the install.
+
+## 4. Check the install
+
+```bash
+kubectl -n ach get deployments
+```
+
+```text
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+ach-forwarder      1/1     1            1           82s
+ach-gateway        1/1     1            1           82s
+ach-operator       1/1     1            1           82s
+ach-platform-api   1/1     1            1           82s
+```
+
+```bash
+kubectl -n ach get litellmconnection default
+```
+
+```text
+NAME      READY   REASON   AGE
+default   True    Synced   77s
+```
+
+`READY` is `True` once the operator has reached LiteLLM with the master key.
+
+```bash
+curl -fsS https://ach.example.com/.well-known/oauth-authorization-server | jq -r .issuer
+```
+
+```text
+https://ach.example.com
+```
+
+## 5. Sign in
+
+```bash
+ach-cli login https://ach.example.com
+```
+
+Press Enter to accept the profile name `default`, then choose `1` to open the
+browser on this machine. Sign in with your organisation account. The terminal
+continues when the browser says you are signed in. Then check who you are:
+
+```bash
+ach-cli whoami
+```
+
+`User` shows the email you listed under `admins`, and `Auth` shows `session`.
+
+## 6. Grant a first Environment
+
+An Environment names what a team may use: models, tools, plugins and skills.
+List the models your LiteLLM serves:
+
+```bash
+ach-cli admin list models
+```
+
+Save this as `quickstart.yaml`, with one of those models:
 
 ```yaml
 apiVersion: ach.ackstorm.ai/v1alpha1
@@ -80,31 +193,47 @@ metadata:
 spec:
   runtime:
     models:
-      - <a LiteLLM model name>
+      - <a model from the list>
   context:
     plugins:
       - ach-cli@ach
   authorizedTeams:
-    - <a LiteLLM team alias>
+    - default
   description: |
     First Environment: one model and the ach-cli agent plugin.
 ```
 
+The `PluginMarketplace` makes the plugins of the ACH repository available.
+The Environment gives one model and one of those plugins to the team
+`default`, which every user joins when they sign in.
+
 ```bash
 kubectl -n ach apply -f quickstart.yaml
-kubectl -n ach get pluginmarketplace ach        # Synced=True
-kubectl -n ach get environment quickstart       # Available=True
+kubectl -n ach wait environment/quickstart --for=condition=Available --timeout=5m
+ach-cli environment list
 ```
 
-`Available` needs both halves: `ExecutionResourcesResolved` (the plugin was found) and
-`AccessGroupSynced` (LiteLLM accepted the grant). `kubectl -n ach describe environment
-quickstart` shows the reason when one is False.
+`quickstart` is in the list.
 
-Users of that team can now follow [Your first Environment](../using/first-environment.md).
-To remove it again:
+## 7. Hand over to a developer
+
+Send your users the address `https://ach.example.com`. They follow
+[Your first Environment](../using/first-environment.md) from their own
+machine, and `quickstart` is the Environment they find there.
+
+When you no longer need it, remove it:
 
 ```bash
 kubectl -n ach delete -f quickstart.yaml
 ```
 
-Deleting an Environment also revokes every `ek-` key created for it.
+Deleting an Environment also revokes every environment key created for it.
+
+## Where next
+
+- [Configure sign-in](configure-sso.md): more admins, teams from your identity
+  provider's groups, budgets.
+- [Connect ACH to LiteLLM](connect-litellm.md): what to register in LiteLLM.
+- [Choose a topology](choose-a-topology.md): replicas, metrics, dashboards.
+- [Upgrade ACH](upgrade.md)
+- [Troubleshoot an ACH install](troubleshoot.md) when a step above fails.

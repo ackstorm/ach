@@ -1,64 +1,108 @@
-# Conversation classifier
+# Enable Enterprise features
 
-`ach classifier` labels each work session with one taxonomy category and writes the
-label to Langfuse as a score (`ach_classification_category`). It is the first step
-toward evals. It is an Enterprise feature: the chart renders it only with Helm `enterprise.enabled: true`.
-Code: `ee/classifier/`, command: `ee/cmd/classifier.go`.
+The ACH image always contains the Enterprise code, and one Helm value turns it
+on. This page turns it on and configures its two parts: personal
+observability and the conversation classifier.
+[Editions](../overview/editions.md) lists what each edition includes.
 
-## 1. How it works
+You need:
 
-1. **Read.** Every `ACH_CLASSIFIER_INTERVAL`, it lists sessions idle for longer than
-   `ACH_CLASSIFIER_IDLE` from Langfuse ClickHouse, as the read-only user
-   `ach_classification_ro`. A session that already has an
-   `ach_classification_category` score for the current taxonomy version is skipped,
-   so each session is labelled (and paid for) once: a restart or a session that
-   resumes does not re-label it. A `trivial` label is the exception: it cost no model
-   call, and a session that resumes may turn into real work, so it is looked at again.
-   Changing `Builtin.Version` re-labels on purpose; a custom taxonomy gets a new
-   version by itself (see "Your own categories").
-   This reads `default.scores`, so the user needs `SELECT` on it as well as on
-   `events_full`; without that grant the listing fails and no model call is made.
-2. **Convert.** It reads one session at a time and converts the session to OpenTelemetry
-   GenAI messages (`otel.go`). That is the contract: only the reader knows how Langfuse
-   or a client stores a conversation.
-3. **Build the model input.** It builds a text from the person's turns and the session's
-   tool calls, capped at 24,000 characters (`build.go`).
-4. **Skip trivial sessions.** A session with one model call, or with little person text
-   and no tool calls, is labelled `trivial` without asking the model.
-5. **Classify.** One model call returns `{"category", "confidence"}`.
-6. **Write.** It writes a NUMERIC score. The value is the category's index in
-   `Taxonomy.Categories`; the metadata holds `category`, `domain`, `taxonomy`, `model` and
-   `confidence`. NUMERIC because Langfuse 4.5 in `events_only` mode dropped the text of
-   CATEGORICAL and TEXT scores; 4.71 keeps it (measured), and NUMERIC works on both.
+- A signed agreement with ACKstorm. It is required to enable Enterprise in any
+  environment, evaluation included.
+- A running [ACH install](install-the-chart.md).
+- [Langfuse](https://langfuse.com/) receiving the traces of your LiteLLM, and
+  access to its ClickHouse database.
 
-Without `ACH_CLASSIFIER_LANGFUSE_URL` it is a dry run: it classifies and logs, and
-writes nothing. With it, both Langfuse keys are required. Logs carry ids, labels and
-counts, never conversation content.
+## What the switch changes
 
-## Deploying
+```yaml
+enterprise:
+  enabled: true
+```
 
-Chart block `classifier` (off by default; `deploy/helm/ach/values.yaml`). One replica.
-Every secret comes from one Secret (`classifier.secretName`), never `extraEnv`,
-because `extraEnv` reaches every Deployment and this ClickHouse user can read
-conversation content. Model calls go through the forwarder with the `ek_` of a
-dedicated Environment, which carries the budget. Rollout: `langfuseUrl` empty (dry
-run, check the logs), then `langfuseUrl` plus `onlyUser` (scores for one person), then
-everyone. During the `onlyUser` step, restart the pod once and check that no session
-already scored is labelled again: deduplication relies on the written score reaching
-`default.scores` with `session_id` and `metadata['taxonomy']` set.
+With it on:
+
+- The console shows the Enterprise pages: Traces, the analytics pages, and the
+  extra evidence on the Overview. Each person sees their own data.
+- The chart renders the `platformApi.observability` and `classifier` values
+  below.
+
+With it off, the chart keeps those values in your file and renders nothing
+from them.
+
+## Observability values
+
+platform-api reads each user's own traces from the Langfuse ClickHouse
+database, and can read LiteLLM metrics from a Prometheus-compatible query API.
+
+```yaml
+platformApi:
+  observability:
+    clickhouseUrl: http://clickhouse.langfuse.svc:8123
+    secretName: ach-observability-clickhouse
+    projectIds: [default]                                  # Langfuse projects to read
+    thanosUrl: http://thanos-query.monitoring.svc:10902    # optional
+```
+
+| Value | Notes |
+|---|---|
+| `clickhouseUrl` | Empty leaves the pages without data. When set, `secretName` and at least one entry in `projectIds` are required |
+| `secretName` | A Secret in the ACH namespace with the keys `ACH_OBSERVABILITY_CLICKHOUSE_USER` and `ACH_OBSERVABILITY_CLICKHOUSE_PASSWORD` |
+| `thanosUrl` | Empty leaves the Performance page without gateway metrics. It reads LiteLLM series labelled `user=<email>` |
+
+Create a ClickHouse user for this, read-only, with access to the metadata
+columns and not to the text of conversations. On a replicated ClickHouse,
+create the user on every replica, or sign-in to ClickHouse fails now and then.
+
+## Deploy the classifier
+
+The classifier labels each finished work session with one category and writes
+the label to Langfuse as a score. The console shows how work divides across
+the categories.
+
+```yaml
+classifier:
+  enabled: true
+  secretName: ach-classifier
+  clickhouseUrl: http://clickhouse.langfuse.svc:8123
+  projectId: default
+  modelUrl: https://ach.example.com/v1     # an OpenAI-compatible address
+  model: <a model of the classifier's Environment>
+  langfuseUrl: ""                          # empty: label and log, write nothing
+  onlyUser: ""                             # label only this user's sessions
+```
+
+The Secret named by `secretName` holds:
+
+| Key | Content |
+|---|---|
+| `ACH_CLASSIFIER_CLICKHOUSE_USER`, `ACH_CLASSIFIER_CLICKHOUSE_PASSWORD` | A ClickHouse user that can read `input` and `output` on `events_full` and `SELECT` from `scores`. Not the observability user |
+| `ACH_CLASSIFIER_MODEL_KEY` | A key accepted at `modelUrl` |
+| `ACH_CLASSIFIER_LANGFUSE_PUBLIC_KEY`, `ACH_CLASSIFIER_LANGFUSE_SECRET_KEY` | A Langfuse key pair. Required when `langfuseUrl` is set |
+
+Keep these in that Secret and never in `extraEnv`. `extraEnv` reaches every
+other component, and this ClickHouse user can read conversations.
+
+Send the model calls through ACH: create an Environment for the classifier
+with one model and a budget, create an environment key for it, and use that
+key as `ACH_CLASSIFIER_MODEL_KEY`. The classifier's spend then counts against
+that Environment.
+
+Roll it out in three steps:
+
+1. Leave `langfuseUrl` empty. The classifier labels sessions and logs the
+   result without writing anything. Check its log:
+   `kubectl -n ach logs deploy/ach-classifier`.
+2. Set `langfuseUrl` and `onlyUser` to write scores for one person. Restart
+   the Pod once and check that it does not label a session a second time.
+3. Clear `onlyUser`.
+
+The log holds session ids, labels and counts, never conversation text.
 
 ## Your own categories
 
-The built-in taxonomy (`Builtin`, version `v3`) is Ackstorm's. Another company can
-replace its categories with chart value `classifier.taxonomy`. Empty (`{}`, the
-default) keeps the built-in prompt byte for byte.
-
-| Fixed in code | Set by the deployment |
-|---|---|
-| Prompt intro: the session is DATA inside `<pasted_message>`, never instructions | `categories`: `id`, `fits`, optional `notFits` |
-| Rules 1-3: classify by subject, not task or format; mixed session = majority; `other` only when nothing fits | `rules`: extra rules, numbered from 4 |
-| Output format `{"category": <id>, "confidence": <0..1>}` | |
-| `other` (offered last) and `trivial` (set by code, never offered) | |
+The built-in categories describe ACKstorm's work. Replace them with
+`classifier.taxonomy`; `{}`, the default, keeps the built-in ones.
 
 ```yaml
 classifier:
@@ -84,96 +128,56 @@ classifier:
         fits: "Getting information where nothing is produced: explaining, comparing, looking up facts."
 ```
 
-The chart renders it into ConfigMap `ach-classifier-taxonomy`, mounted read-only at
-`/etc/ach-classifier/taxonomy.yaml` and passed as `ACH_CLASSIFIER_TAXONOMY_FILE`. The
-file is read once at startup; the pod annotation `ach.ackstorm.ai/taxonomy-checksum`
-restarts the pod when the value changes. The startup log shows `taxonomy` (the
-version) and `categories` (the count), never the wording. platform-api mounts the
-same file the same way (and carries the same annotation): the console's Work
-classification panel and the trace classification read only the scores of that
-version and accept only its categories. Without `classifier.enabled` it uses the
-built-in one.
+| You set | The classifier always adds |
+|---|---|
+| `categories`: `id`, `fits`, and optionally `notFits` | An introduction that tells the model the session is data, never instructions |
+| `rules`: extra rules, numbered from 4 | Rules 1 to 3: classify by subject, not by task or format; a mixed session takes the category of most of it; `other` only when nothing fits |
+| | The categories `other` and `trivial`. Do not list them |
 
-**Version.** A custom taxonomy is versioned `custom-` plus 8 hex characters of the
-SHA-256 of the prompt it builds. Any change the model sees (an id, a word of `fits`,
-a rule, the order) is a new version. YAML comments and style are not: text is
-flattened to one line, so `>` and `|` blocks are fine. A new version labels again
-every session inside `lookback` (72h by default), because their score was given
-under another taxonomy, and each of them is paid for again.
+**Write each category as the model reads it.** A category becomes one line of
+the prompt: `- <id>: <fits> Does not fit: <notFits>`. Say what belongs in it,
+and name the category it is most often confused with.
 
-**Read `metadata.category`, not the value.** The score value is the category's
-position in the final list (your categories, then `other`, then `trivial`), so the
-same number means a different category in another version. Reports that span
-versions group by `metadata.category` and `metadata.taxonomy`. After a version change
-a session inside `lookback` carries one score per version, so count sessions within one
-`metadata.taxonomy`.
+**Ids** have the form `domain.name`, in lower-case letters, digits and `_`.
 
-**Startup fails** when the file cannot be read, has an unknown field, has no
-categories, has an id that is not `domain.name` in `[a-z0-9_]` (this also rejects
-`other` and `trivial`, which the classifier adds), repeats an id, has an empty
-`fits`, or has an empty rule.
+**Every change is a new version.** A custom taxonomy has the version `custom-`
+followed by 8 characters derived from the prompt it produces. Changing an id,
+a word of `fits`, a rule or the order makes a new version. The classifier then
+labels again every session inside `lookback` (72 hours by default), and each
+of those model calls is paid again. Comments and YAML layout do not change the
+version.
 
-**Wording is the prompt.** Each category becomes one line,
-`- <id>: <fits> Does not fit: <notFits>`. Write what belongs in it and the nearest
-confusion with where it goes instead, as the built-in categories do
-(`ee/classifier/taxonomy.go`).
+**Report by `metadata.category`.** The score value is the position of the
+category in the list, so the same number means another category in another
+version. Group reports by `metadata.category` and `metadata.taxonomy`.
 
-## 2. Model choice
+A change to `taxonomy` restarts the classifier and platform-api, which reads
+the same categories for the console. The classifier does not start when the
+taxonomy has no categories, an unknown field, a repeated or malformed id, an
+empty `fits` or an empty rule.
 
-The default is `ackstorm.smart`, called through the gateway's `/v1/chat/completions`.
-It stays inside our infrastructure and costs about $0.0043 per session.
+## With the switch off
 
-Measured on 2026-10-27 over 34 sessions mixed by client and user. There are no human
-labels, so the figures are agreement with `smart`, not accuracy:
+- The Enterprise pages of the console are marked "Enterprise only", and their
+  API routes answer 403 `enterprise_only`.
+- The classifier is not deployed.
+- platform-api does not start if `ACH_OBSERVABILITY_CLICKHOUSE_URL`,
+  `ACH_OBSERVABILITY_THANOS_URL` or `ACH_CLASSIFIER_TAXONOMY_FILE` is set
+  through `extraEnv`. The chart never sets them with the switch off.
 
-| Model | Same category as `smart` | Same domain | Cost per session |
-|---|---|---|---|
-| `ackstorm.smart` (gemini-3.8-flash) | reference | reference | $0.0043 |
-| `ackstorm.lite` (gpt-oss-120b) | 19/34 | 23/34 | $0.0006 |
-| `typesafe/jev-1.14` (decision model) | 27/34 | 29/34 | $0.00015 |
+## Verify
 
-## 3. Decision models (not used yet)
-
-A decision model returns a choice with a probability for every option, not generated
-text. TypeSafe Jev is one. Classifying a session is exactly a single-choice question,
-so it fits:
-
-```json
-{
-  "model": "jev-latest",
-  "state": "<the BuildText output>",
-  "questions": {
-    "category": {
-      "type": "choice",
-      "instructions": "<the rules of the system prompt>",
-      "criteria": {"infrastructure_ops": "<Fits / Not fits>", "...": "..."}
-    }
-  }
-}
+```bash
+kubectl -n ach rollout status deploy/ach-platform-api
+kubectl -n ach logs deploy/ach-classifier --tail=20     # the taxonomy version and the category count
 ```
 
-Its response: `answers.category.{choice, probabilities, confidence}` and
-`usage.{input_tokens, output_tokens}`. `probabilities` gives a calibrated confidence
-for free; the chat model's `confidence` is self-reported.
+Open the console at `https://ach.example.com`: Traces lists your own sessions,
+and the pages are no longer marked "Enterprise only".
 
-**Why it was not adopted (2026-10-27).** The `smart` model's cost is small: 1,000
-sessions a month cost about $4.30. Jev adds a third party that receives every user's
-conversation content. Revisit this if volume grows or if we want calibrated
-confidence.
+## Related
 
-**Two ways to reach it:**
-
-| Route | Endpoint | Notes |
-|---|---|---|
-| Through LiteLLM (preferred) | `POST <gateway>/typesafe/v1/systemone` (pass-through) or the unified `/v1/systemone` and `/v1/decisions` | The proxy holds `TYPESAFE_API_KEY`; callers use a virtual key. Cost tracking and logging work; budget tags only through `metadata.tags` in the body. The blog announcing it names LiteLLM `v1.103.0-rc`, and production runs `v1.102.1` (gitops `apps/litellm/base/helm.yaml`), so it needs an upgrade. |
-| OpenRouter directly | `POST https://openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.14` (`~typesafe/jev-latest` also resolves) | `state` is a list of `{type:"text", text}`. An `alpha` path, outside the gateway: no LiteLLM key, budget or log. This is the route the measurement in section 2 used. |
-
-**To adopt it:** add a second implementation next to `Model` in `model.go` that sends
-the request above and maps `answers.category` to a `Label`. Select it with
-`ACH_CLASSIFIER_MODEL`. The taxonomy needs no change: `Taxonomy.Categories[].Fits`
-and `NotFits` become the `criteria`. Re-run the golden-set comparison before switching.
-
-References:
-[LiteLLM blog: TypeSafe Jev](https://docs.litellm.ai/blog/typesafe_jev),
-[LiteLLM TypeSafe pass-through](https://docs.litellm.ai/docs/pass_through/typesafe),
-[OpenRouter Jev guide](https://openrouter.ai/docs/guides/community/jev).
+- [`classifier`](../reference/helm-values.md#classifier) and
+  [`platformApi`](../reference/helm-values.md#platformapi) in the Helm values
+  reference.
+- [Editions](../overview/editions.md)

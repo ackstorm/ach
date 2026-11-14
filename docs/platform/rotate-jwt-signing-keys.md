@@ -1,177 +1,121 @@
-# JWT Signing Key Rotation (Ed25519)
+# Rotate the JWT signing keys
 
-> **Context first:** for the end-to-end trust path (forwarder mint →
-> LiteLLM `extra_headers` propagation → backend verify), see
-> [JWT Forwarder](../integrate/trust-path.md). This runbook
-> covers only the key-rotation procedure.
+ACH signs two kinds of token with one Ed25519 key: the access tokens of
+signed-in users, and the identity tokens the forwarder adds for MCP and A2A
+backends. This page replaces that key without breaking the backends that
+check those tokens.
 
-The ACH Forwarder signs ACH JWTs (used on `/mcp/{name}` and `/a2a/{name}`
-when a matching `BackendIdentityPolicy` opts in via `forwardIdentityJWT:
-true`) with an Ed25519 keypair stored in a single Kubernetes Secret
-`ach-jwt-signing-keys` in the deployment namespace. The Secret holds two
-slots: `current` (always populated) and `next` (optional — populated only
-during a rotation window).
+You need `kubectl` access to the ACH namespace, `openssl` and `jq`.
 
-The Forwarder watches the Secret via informer and atomically swaps the
-in-memory signer when the Secret updates. The `/.well-known/jwks.json`
-endpoint publishes both slots whenever both are populated, allowing
-backends to fetch the new public key during the overlap window before
-the Forwarder cuts over.
+## When to rotate
 
-Backends cache JWKS for at most `Cache-Control: public, max-age=3600`
-(1 hour). The rotation overlap **MUST exceed** the longest backend
-JWKS cache TTL by a comfortable margin: this runbook prescribes
-**≥24 hours** of overlap, which gives ≥24× safety over the 1-hour cache.
+- On the schedule your security policy sets. ACH does not rotate the key by
+  itself.
+- At once, when the key may have leaked: use
+  [Emergency revocation](#emergency-revocation).
 
-## Secret data-key layout
+A planned rotation takes a day. Backends keep the published keys for up to one
+hour, so the new key is published for 24 hours before ACH signs with it.
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ach-jwt-signing-keys
-  namespace: <deployment-namespace>
-type: Opaque
-data:
-  current.kid:  <base64 of "ach-jwt-<26-char-ulid>">
-  current.seed: <base64 of 32 raw bytes>
-  next.kid:     <base64 of "ach-jwt-<26-char-ulid>">     # OPTIONAL — only during rotation
-  next.seed:    <base64 of 32 raw bytes>                  # OPTIONAL — only during rotation
-```
+## Secret layout
 
-## Rotation procedure
+The key is in the Secret `ach-jwt-signing-keys` in the ACH namespace. The
+operator creates it on its first start, and it is kept when the release is
+uninstalled.
 
-### 1. Generate a new keypair
+| Data key | Content |
+|---|---|
+| `current.kid` | Name of the key ACH signs with |
+| `current.seed` | Its 32-byte seed |
+| `next.kid`, `next.seed` | The key that comes next. Present only during a rotation |
 
-Use any tool that produces a 32-byte Ed25519 seed and an opaque `kid`.
-The Go reference snippet:
+`https://ach.example.com/.well-known/jwks.json` publishes the public key of
+`current`, and of `next` while it is set.
 
-```go
-package main
+## Steps
 
-import (
-    "crypto/ed25519"
-    "crypto/rand"
-    "encoding/base64"
-    "fmt"
-
-    "github.com/oklog/ulid/v2"
-)
-
-func main() {
-    seed := make([]byte, 32)
-    if _, err := rand.Read(seed); err != nil {
-        panic(err)
-    }
-    kid := "ach-jwt-" + ulid.Make().String()
-    // For kubectl patch, base64-encode both:
-    fmt.Println("next.kid (b64):  ", base64.StdEncoding.EncodeToString([]byte(kid)))
-    fmt.Println("next.seed (b64): ", base64.StdEncoding.EncodeToString(seed))
-    // Sanity:
-    pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
-    fmt.Println("public (32B b64url-no-pad): ", base64.RawURLEncoding.EncodeToString(pub))
-}
-```
-
-Run with `go run ./cmd/keygen-stub.go` (or as an ad-hoc playground —
-the operator team's choice).
-
-### 2. Patch the Secret to populate `next`
+### 1. Generate the next key
 
 ```bash
-NEXT_KID_B64="..."   # from step 1
-NEXT_SEED_B64="..."  # from step 1
-# Use op:add rather than op:replace (RFC 6902 §4.1 vs §4.3). The
-# fresh-install Secret only holds current.kid + current.seed; replace
-# fails with "missing path" against the absent next.* entries. add
-# succeeds whether the target path exists or not (replacing if present).
-kubectl -n <deployment-namespace> patch secret ach-jwt-signing-keys --type=json \
+NEXT_KID_B64=$(printf 'ach-jwt-%s' "$(date +%s)" | base64)
+NEXT_SEED_B64=$(openssl rand -base64 32)
+```
+
+Keep both values until step 5, and treat the seed as a secret.
+
+### 2. Add it as `next`
+
+```bash
+kubectl -n ach patch secret ach-jwt-signing-keys --type=json \
   -p="[{\"op\":\"add\",\"path\":\"/data/next.kid\",\"value\":\"$NEXT_KID_B64\"},
        {\"op\":\"add\",\"path\":\"/data/next.seed\",\"value\":\"$NEXT_SEED_B64\"}]"
 ```
 
-### 3. Verify the Forwarder reloaded
-
-The Forwarder logs `jwt signing keys reloaded` on every informer event.
-Verify JWKS now publishes both slots:
+### 3. Check that both keys are published
 
 ```bash
-curl -s "$ACH_BASE_URL/.well-known/jwks.json" | jq '.keys | length'
-# expect: 2
-curl -s "$ACH_BASE_URL/.well-known/jwks.json" | jq -r '.keys[].kid'
-# expect: 2 distinct kids
+curl -s https://ach.example.com/.well-known/jwks.json | jq -r '.keys[].kid'
 ```
 
-### 4. Wait ≥24 hours
+It prints two names. The forwarder logs `jwt signing keys reloaded` when it
+reads the change.
 
-Backends fetch JWKS at most once per hour. Twenty-four hours of overlap
-guarantees every backend has cached BOTH public keys before step 5
-flips signing material. **Do not skip this wait** — backends still
-verifying with the old `current.kid` will reject any JWT signed with
-the new `next.kid`.
+### 4. Wait 24 hours
 
-### 5. Promote `next` → `current`
+Every backend must fetch the new public key before ACH signs with it. A
+backend that has not rejects the tokens signed after step 5.
+
+### 5. Make `next` the current key
 
 ```bash
-NEXT_KID_B64="..."    # same as step 1
-NEXT_SEED_B64="..."   # same as step 1
-# current.* always exists at this point (Secret was created with both
-# slots populated in step 2), so op:replace is safe. The next.* clears
-# use op:add too, for symmetry with step 2 and to remain robust if a
-# future runbook variant skips step 2.
-kubectl -n <deployment-namespace> patch secret ach-jwt-signing-keys --type=json \
+kubectl -n ach patch secret ach-jwt-signing-keys --type=json \
   -p="[{\"op\":\"replace\",\"path\":\"/data/current.kid\",\"value\":\"$NEXT_KID_B64\"},
        {\"op\":\"replace\",\"path\":\"/data/current.seed\",\"value\":\"$NEXT_SEED_B64\"},
        {\"op\":\"add\",\"path\":\"/data/next.kid\",\"value\":\"\"},
        {\"op\":\"add\",\"path\":\"/data/next.seed\",\"value\":\"\"}]"
 ```
 
-Setting `next.kid` to the empty base64 string `""` clears the slot
-(the Forwarder's SecretLoader treats empty `next.kid` as "no next slot").
+An empty `next.kid` clears the slot.
 
-platform-api and content-service read the Secret from their mounted volume
-instead, re-read every 30 s, so they pick the promotion up within about
-90 s (kubelet sync plus that interval). An OAuth token platform-api signs
-with the old kid in that window fails at the Forwarder until the client
-refreshes it.
+The forwarder reads the change at once, and platform-api and content-service
+within about 90 seconds. From then on ACH refuses the access tokens signed
+with the old key. A user's tool gets a new one at its next renewal, within the
+hour; signing in again renews it at once.
 
-### 6. Verify the cut-over
+### 6. Check the result
 
 ```bash
-curl -s "$ACH_BASE_URL/.well-known/jwks.json" | jq '.keys | length'
-# expect: 1
-curl -s "$ACH_BASE_URL/.well-known/jwks.json" | jq -r '.keys[0].kid'
-# expect: the NEW kid (was previously next; now current)
+curl -s https://ach.example.com/.well-known/jwks.json | jq -r '.keys[].kid'
 ```
 
-JWTs signed after this point use the new `current.kid`. Backends that
-cached the old key for up to 1 hour (the JWKS `max-age=3600`) continue
-verifying with the OLD public key during their cache window; they pick
-up the new public key on next JWKS refresh and accept JWTs signed with
-the new key immediately.
+It prints one name, the new one.
 
-## Emergency revocation (compromised key)
+## Emergency revocation
 
-If `current.seed` is compromised, the publish-overlap-revoke procedure
-above takes ≥24 hours and is **inappropriate for compromise response**.
-Instead:
+When the current seed may have leaked, do not wait:
 
-1. Generate a fresh keypair (step 1).
-2. Replace `current` directly in the Secret (no `next` slot involved).
-3. Accept up to 1 hour of backend JWKS cache-stale window during which
-   backends still verify with the compromised key. There is no way to
-   accelerate JWKS cache eviction in v1alpha1 (per Hub §9.2 `Cache-Control`).
-4. File an incident report and consider rotating the LiteLLM shared key
-   in the same maintenance window if the same compromise scope applies.
+1. Generate a key as in step 1.
+2. Replace `current.kid` and `current.seed` directly, with the two `replace`
+   operations of step 5.
+3. Expect up to one hour in which backends still accept tokens signed with
+   the leaked key, and reject tokens signed with the new one, until they
+   fetch the published keys again. ACH cannot shorten that hour.
 
-Automated rotation (cron + double-flip) is on the v1beta1 backlog
-(Hub §20). In v1alpha1, all rotation is manual `kubectl patch`.
+Do not delete the Secret to replace the key. The operator creates a new one
+only when it next starts, and a component that restarts before that does not
+start.
 
-## References
+## Verify
 
-- Hub §9.1 — JWT shape (EdDSA, kid, claims).
-- Hub §9.2 — JWKS publication contract (Cache-Control, JWK fields).
-- Hub §20 — v1beta1 backlog (automated rotation, dual-key window).
-- TODO.md §6 — BackendIdentityPolicy duplicate-target design decision.
-- `internal/forwarder/jwt/secret.go` — SecretLoader.LoadOnce + Reload semantics.
-- `internal/forwarder/jwt/signer.go` — Sign always uses `current`; JWKS publishes both slots.
+```bash
+curl -s https://ach.example.com/.well-known/jwks.json | jq '.keys | length'   # 1
+ach-cli whoami
+```
+
+`whoami` answers, and an MCP server that checks the identity token lists its
+tools.
+
+## Related
+
+- [Forwarder JWT](../reference/jwt.md): the claims and the published keys.
+- [Trust path](../integrate/trust-path.md): how a backend checks the token.

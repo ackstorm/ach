@@ -45,7 +45,7 @@ stale line there is a broken instruction for every user. Validate with
 | **Service/domain** failure mode | `references/troubleshooting.md` |
 | `ach-cli` command, flag or output change | `docs/reference/cli.md` (`make gen-cli-ref-docs`), the developer pages `docs/using/`, `plugins/ach-cli/skills/ach-cli/` (+ version bump), the console guide `ui/src/routes/HowToCli.tsx`, and, for install/login/`environment list`/hydrate, `internal/platformapi/opencode/skill/SKILL.md`; verify each command against `ach-cli <cmd> --help`; re-check both before EVERY `make release-cut` (`references/release-pipeline.md`) |
 | CRD field / condition / reconcile behavior an admin writes against | `plugins/ach-gitops/skills/ach-gitops/` (+ version bump) |
-| Helm value / install prerequisite / upgrade step | `docs/reference/helm-values.md` + `plugins/ach-install/skills/ach-install/` (+ version bump) |
+| Helm value / install prerequisite / upgrade step | `docs/reference/helm-values.md`, the admin pages `docs/platform/` + `plugins/ach-install/skills/ach-install/` (+ version bump) |
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/overview/architecture.md` |
@@ -182,7 +182,7 @@ convenience**, not a co-equal mode.
 | gateway         | `ach gateway`         | **Optional** edge reverse proxy — single-origin front for the HTTP surfaces (no auth, no /metrics, no /dex) plus `/` → platform-api (the console SPA); no LiteLLM path outside the ACH families is reachable through ACH — LiteLLM's `/ui`, `/key/*`, `/health` need LiteLLM's own host; disable via `gateway.enabled=false`, use per-service Ingress instead. It needs no database. |
 | migrate         | `ach migrate`         | Postgres schema migrations |
 | all             | `ach all`             | Single container outside Kubernetes (not in the chart): runs `migrate`, then operator, content-service, platform-api, forwarder and gateway as child processes sharing one environment; a child that exits stops the set. Default bind ports do not collide (gateway `:8080`, operator probes `:8081`, content-service `:8082`, platform-api `:8083`, forwarder `:8084` + health `:8085`); the chart pins its own. The gateway needs `ACH_GATEWAY_{PLATFORM_API,FORWARDER,CONTENT_SERVICE}_URL`; operator and forwarder still need a Kubernetes API server (`KUBECONFIG`) |
-| classifier      | `ach classifier`      | **Enterprise** async job (chart `classifier.enabled`, needs `enterprise.enabled`): labels idle Langfuse sessions with one taxonomy category. Detail → `docs/platform/enable-enterprise.md` |
+| classifier      | `ach classifier`      | **Enterprise** async job (chart `classifier.enabled`, needs `enterprise.enabled`): labels idle Langfuse sessions with one taxonomy category. Deploying → `docs/platform/enable-enterprise.md`; internals → `references/conversation-classifier.md` |
 
 Per-user key ceiling and login team enrolment → `references/services/platform-api.md`;
 key exchange and `KeyGrant` → `references/services/key-exchange.md`.
@@ -236,7 +236,7 @@ independent collections.)
 | OLM packaging                          | NOT supported — explicit scope decision (no OperatorHub) |
 | Writing/forking the JWT-validating MCP fixture | `test/e2e/mcp-echo/README.md` + `docs/integrate/write-an-mcp-backend.md` |
 | Changing forwarder JWT mint, JWKS, or `/mcp` / `/a2a` routing | `docs/reference/jwt.md` (claims, JWKS) + `docs/integrate/trust-path.md` (trust-path contract incl. LiteLLM `extra_headers` opt-in + §1.4 `X-Forwarded-Host` / RFC 9728 discovery) |
-| Classifier: taxonomy, prompt, model, ClickHouse reads | `docs/platform/enable-enterprise.md` |
+| Classifier: taxonomy, prompt, model, ClickHouse reads | `references/conversation-classifier.md` |
 | Changing the OpenCode auth plugin | Never here: change `github.com/ackstorm/opencode-oidc-provider`, tag it, then bump `genai.opencodePluginSpec` in `deploy/helm/ach/values.yaml` |
 
 ## CI gating

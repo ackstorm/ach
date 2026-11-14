@@ -26,7 +26,25 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Documentation site: pages are grouped by reader, in the tabs Overview, ACH
   Platform (install and operate), Using ACH (developers), Integrate and
   Reference. Page addresses changed; for example the install guide is at
-  `https://ackstorm.github.io/ach/platform/install-ach/`.
+  `https://ackstorm.github.io/ach/platform/install-ach/`. The ACH Platform tab
+  has an install tutorial and one page each for the prerequisites, the Helm
+  install, sign-in, LiteLLM, topology, upgrades, Enterprise, JWT key rotation
+  and troubleshooting.
+- `genai.opencodeExtraProviders` names `claude-agent` as its example: OpenCode
+  2.2.3 and later ship the Claude Agent provider built in, and the
+  `@openchamber/opencode-claude` plugin (provider id `claude-code`) is archived.
+  A deployment that lists `claude-code` for that plugin lists `claude-agent`
+  instead once its users are on the built-in provider.
+
+### Fixed
+- The `ach-install` plugin (1.1.14) corrects six facts it gave agents: LiteLLM's
+  `/ui`, `/key/*` and `/health` through ACH show the console, not a 404;
+  losing Valkey's data signs every user out; deleting `ach-jwt-signing-keys`
+  invalidates access tokens and does not sign users out; a user refused at the
+  identity provider loses their `ek_` keys with a Dex build and connector that
+  report it; Dex's message for a missing redirect address is
+  `Unregistered redirect_uri`; and the LiteLLM master-key Secret must be in
+  the release namespace.
 
 ## [1.1.16] - 2026-11-14
 
