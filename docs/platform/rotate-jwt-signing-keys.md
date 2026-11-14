@@ -2,7 +2,7 @@
 
 > **Context first:** for the end-to-end trust path (forwarder mint →
 > LiteLLM `extra_headers` propagation → backend verify), see
-> [JWT Forwarder](../../explanation/trust-path.md). This runbook
+> [JWT Forwarder](../integrate/trust-path.md). This runbook
 > covers only the key-rotation procedure.
 
 The ACH Forwarder signs ACH JWTs (used on `/mcp/{name}` and `/a2a/{name}`

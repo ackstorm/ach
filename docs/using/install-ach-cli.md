@@ -53,7 +53,7 @@ ach-cli upgrade                    # the latest release
 ach-cli upgrade --version 1.1.8    # a given release
 ```
 
-[`upgrade`](../../reference/cli.md#ach-cli-upgrade) downloads the release for
+[`upgrade`](../reference/cli.md#ach-cli-upgrade) downloads the release for
 your platform, checks it against `checksums.txt` and replaces the running
 binary. Your profiles in `~/.config/ach/config.yaml` are not touched.
 

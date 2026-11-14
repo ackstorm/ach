@@ -2,7 +2,7 @@
 
 [ach-memory](https://github.com/ackstorm/ach-memory) is an MCP backend. This
 example wires it into ACH's `/mcp` JWT trust path
-(`docs/explanation/trust-path.md`) so it receives the caller's identity
+(`docs/integrate/trust-path.md`) so it receives the caller's identity
 and LiteLLM team aliases (the `groups` claim) on every call, instead of an
 unauthenticated request.
 

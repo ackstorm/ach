@@ -19,7 +19,7 @@ Available Commands:
   environment Inspect environments visible to the active credential
   help        Help about any command
   keys        Manage your environment keys (ek-…)
-  launch      Hydrate an Environment, then start the agent tool in it
+  launch      Start the agent tool, hydrating an Environment first when asked
   local       Local, ungoverned developer package path (repo/plugin/skill)
   login       Sign in to a Hub (browser on this machine, or a code from any browser)
   logout      Sign out of the active profile
@@ -848,12 +848,19 @@ Flags:
 ## ach-cli launch
 
 ```text
-Hydrate an Environment for one tool (same engine and flags as
-`ach-cli environment hydrate`), then start the tool in --dir (default: the
-current directory). With no --environment and no ACH_ENVIRONMENT, every
-Environment already hydrated in that folder (.ach/) is updated for the tool.
-If hydrate fails, the tool is not started. ach-cli exits with the tool's exit
-code.
+Start the tool in --dir (default: the current directory). With --environment
+(or ACH_ENVIRONMENT), that Environment is hydrated for the tool first (same
+engine and flags as `ach-cli environment hydrate`);
+--update-environments (--update-envs) updates every Environment already
+hydrated in that folder (.ach/) for the tool. With neither, the tool starts
+as the folder is. If hydrate fails, the tool is not started. ach-cli exits with the tool's exit code.
+
+claude keeps its own Claude login and sends its model traffic through ACH:
+launch serves the profile's URL on a local port for as long as claude runs,
+adding your ACH sign-in (or --key) to every request. ANTHROPIC_BASE_URL and
+ANTHROPIC_CUSTOM_HEADERS in your shell are ignored; a Claude settings file
+that sets ANTHROPIC_BASE_URL stops the launch. --models is refused for
+claude.
 
 Tools: claude, codex, gemini, opencode, pi
 
@@ -862,7 +869,8 @@ after --.
 
 Example:
   ach-cli launch claude --environment frontend-dev
-  ach-cli launch opencode
+  ach-cli launch claude --profile work -- -c
+  ach-cli launch opencode --update-environments
   ach-cli launch codex --environment aws-rw --dir ~/work/infra -- --model ackstorm.smart
 
 Usage:
@@ -871,7 +879,7 @@ Usage:
 Flags:
       --conflict string         Cross-plugin collision policy: namespace|skip|overwrite|refuse (default "namespace")
       --dir string              Workspace root override (default: cwd)
-      --environment string      Environment to hydrate (ACH_ENVIRONMENT is the same; default: those in .ach/)
+      --environment string      Environment to hydrate before starting the tool (ACH_ENVIRONMENT is the same)
       --force                   Bypass drift refusal, environment guard, and schema mismatch
   -g, --global                  Use $HOME/.ach/<env> scope instead of cwd/.ach
   -h, --help                    help for launch
@@ -883,6 +891,7 @@ Flags:
       --only-runtime            Reconcile ONLY runtime entries (skip context)
       --profile string          Use this profile instead of the active one
       --sync                    Delete state entries no longer in the environment (deepest-first)
+      --update-environments     Update the Environments already hydrated in the folder (.ach/) before starting the tool (or --update-envs)
       --verbose                 Dump request headers to stderr (credentials redacted)
       --wait                    Block indefinitely on workspace lock contention
 ```

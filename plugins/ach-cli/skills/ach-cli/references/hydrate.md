@@ -55,17 +55,31 @@ then either keep their edit (do nothing) or, only on their say-so, `--force`.
 
 ```bash
 ach-cli launch claude --environment <environment>                  # or codex, gemini, opencode, pi
-ach-cli launch opencode                                            # the Environments already in this folder
+ach-cli launch opencode                                            # as the folder is, no hydrate
+ach-cli launch opencode --update-environments                      # update the folder's Environments first
 ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>
+ach-cli launch claude --profile <profile> -- -c                    # another profile; claude's own flags after --
 ```
 
-`launch` runs the same hydrate for that one tool (same flags as `environment hydrate`, minus
-`--target`, `--only` and `--dry-run`), then starts the tool in `--dir` (default: the
-current folder) and exits with the tool's exit code. With no `--environment` and no
-`ACH_ENVIRONMENT`, every Environment already hydrated in that folder (`.ach/`) is updated
-for the tool; a global hydrate does not count. Nothing starts when the tool is not on the
-`PATH`, there is no Environment to hydrate, or the hydrate fails. Arguments after the tool
-name go to it; its own flags go after `--`.
+`launch` starts the tool in `--dir` (default: the current folder) and exits with the
+tool's exit code. It hydrates first only when asked, with the same hydrate for that one
+tool (same flags as `environment hydrate`, minus `--target`, `--only` and `--dry-run`):
+`--environment` (or `ACH_ENVIRONMENT`) hydrates that Environment, `--update-environments`
+(`--update-envs`) updates every Environment already hydrated in that folder (`.ach/`; a
+global hydrate does not count). With neither, the tool starts as the folder is. Nothing
+starts when the tool is not on the `PATH` or the hydrate fails. Arguments after the tool name go to it; its own flags go after `--`.
+
+`launch claude` keeps the user's own Claude login (their subscription) and sends the model
+traffic through ACH: for as long as claude runs, ach-cli serves the profile's URL on a local
+port and adds the user's ACH sign-in to every request (`--key ek-…` sends that key instead,
+so spend counts on the key and its Environment). Nothing else is needed: no
+`ANTHROPIC_BASE_URL`, no `ANTHROPIC_CUSTOM_HEADERS`, no `apiKeyHelper`. Those two variables
+in the shell are ignored with a warning; a Claude settings file (`~/.claude/settings.json`,
+`.claude/settings.json`, `.claude/settings.local.json`) whose `env` sets
+`ANTHROPIC_BASE_URL` stops the launch, and the user removes that line. `--models` is refused
+for claude. If the ACH session ends while claude runs, claude shows `API Error: 401 …`: the user runs
+`ach-cli login` in another terminal and the next message works without restarting.
+Claude's `/remote-control` stays unavailable: Claude Code turns it off behind any gateway.
 It takes over the terminal: tell the user to run it themselves, never run it yourself.
 
 ## One plugin or skill only

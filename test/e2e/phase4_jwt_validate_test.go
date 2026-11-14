@@ -169,7 +169,7 @@ func testJWTValidateViaForwarder(t *testing.T, mcpEchoLocal string) {
 	// proxies tools/* directly without exposing Mcp-Session-Id to the
 	// caller. We POST tools/call straight; LiteLLM hands the request to
 	// mcp-echo (with Authorization preserved via extra_headers, §3 of
-	// docs/explanation/trust-path.md).
+	// docs/integrate/trust-path.md).
 	gatewayMCP := fmt.Sprintf("http://localhost:%s/mcp/%s/", gatewayLocal, mcpEchoBareName)
 	echoed := "hola-from-forwarder-test"
 	callBody := fmt.Sprintf(

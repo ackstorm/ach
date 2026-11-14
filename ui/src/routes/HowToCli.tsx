@@ -189,7 +189,8 @@ ach-cli environment uninstall <environment>                # remove what hydrate
               <Step
                 note="Hydrate and start the tool in one step (claude, codex, gemini, opencode or pi)."
                 code={`ach-cli launch claude --environment <environment>
-ach-cli launch opencode    # the Environments already in this folder`}
+ach-cli launch opencode --update-environments   # update this folder's Environments first
+ach-cli launch claude      # any folder: your Claude login, model traffic through ACH`}
               />
               <p className="font-sans text-sm leading-relaxed text-text-secondary">
                 Hydrated MCP servers sign in from inside each tool; see{' '}

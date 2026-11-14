@@ -795,7 +795,7 @@ the old row; the client reconnects with its refreshed token.
 
 ### ❌ `/gemini` answers 404 `route_not_allowed`, or 400 `model_mismatch`, `client_param_not_allowed`
 
-`/gemini` serves only the model routes listed in `docs/explanation/trust-path.md`;
+`/gemini` serves only the model routes listed in `docs/integrate/trust-path.md`;
 files, caches, batches, `predict` and the OpenAI-compatible sub-surface are 404.
 A body or batch entry `model` (or `target_model_names`) that differs from the path model is
 `model_mismatch`, as is a POST body whose Content-Type is neither

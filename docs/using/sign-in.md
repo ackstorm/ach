@@ -114,8 +114,8 @@ there is no profile.
 
 ## Related
 
-- [`ach-cli login`](../../reference/cli.md#ach-cli-login),
-  [`profile`](../../reference/cli.md#ach-cli-profile),
-  [`whoami`](../../reference/cli.md#ach-cli-whoami) in the command reference.
+- [`ach-cli login`](../reference/cli.md#ach-cli-login),
+  [`profile`](../reference/cli.md#ach-cli-profile),
+  [`whoami`](../reference/cli.md#ach-cli-whoami) in the command reference.
 - [Troubleshoot ach-cli](troubleshoot.md) when a command says you are not
   signed in.

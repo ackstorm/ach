@@ -5,6 +5,34 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Changed
+- Documentation site: pages are grouped by reader, in the tabs Overview, ACH
+  Platform (install and operate), Using ACH (developers), Integrate and
+  Reference. Page addresses changed; for example the install guide is at
+  `https://ackstorm.github.io/ach/platform/install-ach/`.
+
+## [1.1.16] - 2026-11-14
+
+### Fixed
+- `ach-cli launch` hydrates only when asked: `--environment` (or
+  `ACH_ENVIRONMENT`) hydrates that Environment, and the new
+  `--update-environments` (`--update-envs`) updates the Environments already
+  in the folder. Without either, the tool starts as the folder is, instead of every launch
+  updating the folder's Environments and rewriting the tool's configuration.
+
+## [1.1.15] - 2026-11-13
+
+### Added
+- `ach-cli launch claude` keeps your Claude login and sends claude's model
+  traffic through ACH with your ACH sign-in, refreshed on its own: no
+  `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS` or `apiKeyHelper` to set.
+  `--profile` and `--key` pick the credential. Shell `ANTHROPIC_BASE_URL` and
+  `ANTHROPIC_CUSTOM_HEADERS` are ignored with a warning; a Claude settings file
+  that sets `ANTHROPIC_BASE_URL` stops the launch; `--models` is refused for
+  claude.
+
+### Changed
+- `ach-cli launch` in a folder with no Environment starts the tool without
+  hydrating, instead of refusing.
 - Documentation site: one version, served at `https://ackstorm.github.io/ach/`
   (the `/dev/` and `/latest/` prefixes are gone), with pages grouped as
   Tutorials, How-to, Reference and Explanation. The Reference tab lists every

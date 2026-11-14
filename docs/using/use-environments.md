@@ -124,9 +124,9 @@ minutes.
 
 ## Related
 
-- [Start a tool on an Environment](launch-a-tool.md) hydrates and starts the
-  tool in one command.
+- [Start a tool on an Environment](launch-a-tool.md) starts the tool, hydrating
+  it first when asked, in one command.
 - [Sign in to an MCP server](sign-in-to-an-mcp-server.md) for the servers an
   Environment brought.
-- [`ach-cli environment`](../../reference/cli.md#ach-cli-environment) in the
+- [`ach-cli environment`](../reference/cli.md#ach-cli-environment) in the
   command reference.

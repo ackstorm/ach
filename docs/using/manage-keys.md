@@ -98,7 +98,7 @@ models.
 
 ## Related
 
-- [`ach-cli keys`](../../reference/cli.md#ach-cli-keys) in the command
+- [`ach-cli keys`](../reference/cli.md#ach-cli-keys) in the command
   reference.
-- [Keys and budgets](../../explanation/keys-and-budgets.md) explains how the
+- [Keys and budgets](keys-and-budgets.md) explains how the
   budgets of a user, an Environment and a key combine.

@@ -45,4 +45,4 @@ Dex connects your identity provider.
 4. For an MCP server or A2A agent with a BackendIdentityPolicy, the forwarder
    adds a short-lived token naming the caller.
 
-The full contracts are in the [JWT Forwarder guide](trust-path.md).
+The full contracts are in the [JWT Forwarder guide](../integrate/trust-path.md).

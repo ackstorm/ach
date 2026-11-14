@@ -5,40 +5,43 @@ repo_url: https://github.com/ackstorm/ach
 repo_name: ackstorm/ach
 
 nav:
-  - Home: index.md
-  - Tutorials:
-      - tutorials/first-environment.md
-      - tutorials/install-ach.md
-  - How-to:
-      - Developers:
-          - how-to/developers/install-ach-cli.md
-          - how-to/developers/sign-in.md
-          - how-to/developers/use-environments.md
-          - how-to/developers/launch-a-tool.md
-          - how-to/developers/sign-in-to-an-mcp-server.md
-          - how-to/developers/sign-in-from-tools.md
-          - how-to/developers/manage-keys.md
-          - how-to/developers/install-from-git.md
-          - how-to/developers/install-agent-plugins.md
-          - how-to/developers/troubleshoot.md
-      - Admins:
-          - how-to/admins/enable-enterprise.md
-          - how-to/admins/rotate-jwt-signing-keys.md
-      - Backend builders:
-          - how-to/backend-builders/write-an-mcp-backend.md
-          - how-to/backend-builders/exchange-a-serviceaccount-token.md
+  - Overview:
+      - What ACH is: index.md
+      - overview/concepts.md
+      - overview/architecture.md
+      - overview/editions.md
+  - ACH Platform:
+      - Get started:
+          - platform/install-ach.md
+      - Install and operate:
+          - platform/enable-enterprise.md
+          - platform/rotate-jwt-signing-keys.md
+  - Using ACH:
+      - Get started:
+          - using/first-environment.md
+      - Guides:
+          - using/sign-in.md
+          - using/use-environments.md
+          - using/launch-a-tool.md
+          - using/sign-in-to-an-mcp-server.md
+          - using/sign-in-from-tools.md
+          - using/manage-keys.md
+          - Keys and budgets: using/keys-and-budgets.md
+          - using/install-agent-plugins.md
+          - using/install-from-git.md
+      - ach-cli:
+          - using/install-ach-cli.md
+          - using/troubleshoot.md
+  - Integrate:
+      - integrate/write-an-mcp-backend.md
+      - integrate/exchange-a-serviceaccount-token.md
+      - integrate/trust-path.md
   - Reference:
       - reference/cli.md
       - reference/helm-values.md
       - CRD API: api-reference/ach.ackstorm.ai.md
       - reference/jwt.md
       - reference/changelog.md
-  - Explanation:
-      - explanation/concepts.md
-      - explanation/architecture.md
-      - explanation/keys-and-budgets.md
-      - explanation/trust-path.md
-      - explanation/editions.md
 
 theme:
   name: material

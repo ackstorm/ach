@@ -13,8 +13,8 @@ You need:
 - Linux or macOS, with [Claude Code](https://claude.com/claude-code) installed.
 
 On Windows, or with another tool, follow the same steps with
-[Install or update ach-cli](../how-to/developers/install-ach-cli.md) and
-[Find, install and update Environments](../how-to/developers/use-environments.md).
+[Install or update ach-cli](install-ach-cli.md) and
+[Find, install and update Environments](use-environments.md).
 
 ## 1. Install ach-cli
 
@@ -89,8 +89,9 @@ cd ~/Projects/quickstart
 ach-cli launch claude
 ```
 
-`launch` brings the folder up to date with the Environment and then starts
-Claude Code in it. Inside Claude Code, type `/` to see the commands the
+`launch` starts Claude Code in the folder `clone` just filled; add
+`--update-environments` on a later day to bring the folder up to date with
+the Environment first. Inside Claude Code, type `/` to see the commands the
 Environment's plugins added, and `/mcp` to see its MCP servers. Leave Claude
 Code to return to the shell.
 
@@ -122,11 +123,11 @@ stays; delete it if you no longer want it.
 
 ## Where next
 
-- [Sign in to an MCP server](../how-to/developers/sign-in-to-an-mcp-server.md)
+- [Sign in to an MCP server](sign-in-to-an-mcp-server.md)
   the Environment brought.
-- [Find, install and update Environments](../how-to/developers/use-environments.md):
+- [Find, install and update Environments](use-environments.md):
   a global install, several tools, one plugin only.
-- [Create and manage environment keys](../how-to/developers/manage-keys.md)
+- [Create and manage environment keys](manage-keys.md)
   for an agent or a CI job.
-- [Concepts](../explanation/concepts.md) explains Environments, teams and
+- [Concepts](../overview/concepts.md) explains Environments, teams and
   keys.
