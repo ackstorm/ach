@@ -61,15 +61,15 @@ func TestLaunch_HydratesThenRunsTool(t *testing.T) {
 	}
 }
 
-// With no environment named, launch updates what the folder already holds
-// for the launched tool, then starts it there.
-func TestLaunch_NoEnvironmentUsesHydratedFolder(t *testing.T) {
+// --update-environments (here as --update-envs) updates what the folder
+// already holds for the launched tool, then starts it there.
+func TestLaunch_UpdateEnvironmentsUsesHydratedFolder(t *testing.T) {
 	cwd := setupClone(t, false)
 	out := fakeTool(t)
 	t.Setenv("ACH_ENVIRONMENT", "")
 	seedState(t, cwd, "aws-rw", "codex")
 
-	_, _, code, _ := executeCommand(t, newLaunchCmd(), "claude")
+	_, _, code, _ := executeCommand(t, newLaunchCmd(), "claude", "--update-envs")
 	if code != exit.Code(3) {
 		t.Fatalf("exit code = %d, want the tool's 3", code)
 	}
@@ -118,11 +118,13 @@ func TestLaunch_Refusals(t *testing.T) {
 	}
 }
 
-// A folder with no Environment starts the tool as it is, without hydrating.
+// With nothing asking for a hydrate, the tool starts as the folder is, even
+// when the folder holds a hydrated Environment.
 func TestLaunch_NoEnvironmentStartsTool(t *testing.T) {
 	cwd := setupClone(t, false)
 	out := fakeNamedTool(t, "pi")
 	t.Setenv("ACH_ENVIRONMENT", "")
+	seedState(t, cwd, "aws-rw", "codex")
 
 	_, stderr, code, _ := executeCommand(t, newLaunchCmd(), "pi")
 	if code != exit.Code(3) {
@@ -131,10 +133,10 @@ func TestLaunch_NoEnvironmentStartsTool(t *testing.T) {
 	if _, err := os.Stat(out); err != nil {
 		t.Fatalf("tool did not run: %v", err)
 	}
-	if envs, _ := hydratedEnvs(cwd); len(envs) != 0 {
-		t.Fatalf("hydrated %+v", envs)
+	if envs, _ := hydratedEnvs(cwd); len(envs) != 1 || strings.Join(envs[0].targets, ",") != "codex" {
+		t.Fatalf("hydrated %+v; want aws-rw for codex only, untouched", envs)
 	}
-	if !strings.Contains(stderr, "starting without hydrating") || strings.Contains(stderr, "models via") {
+	if strings.Contains(stderr, "Hydrating") || strings.Contains(stderr, "models via") {
 		t.Fatalf("stderr:\n%s", stderr)
 	}
 }

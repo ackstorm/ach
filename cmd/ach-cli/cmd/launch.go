@@ -36,19 +36,20 @@ const claudeCodeID = "claude-code"
 // then the tool started in the hydrated folder with the terminal handed over.
 func newLaunchCmd() *cobra.Command {
 	var (
-		f       hydrateFlags
-		flagEnv string
+		f          hydrateFlags
+		flagEnv    string
+		flagUpdate bool
 	)
 	cmd := &cobra.Command{
 		Use:   "launch <tool> [-- tool args...]",
 		Args:  cobra.MinimumNArgs(1),
-		Short: "Hydrate an Environment, then start the agent tool in it",
-		Long: `Hydrate an Environment for one tool (same engine and flags as
-` + "`ach-cli environment hydrate`" + `), then start the tool in --dir (default: the
-current directory). With no --environment and no ACH_ENVIRONMENT, every
-Environment already hydrated in that folder (.ach/) is updated for the tool;
-a folder with none starts the tool without hydrating. If hydrate fails, the
-tool is not started. ach-cli exits with the tool's exit code.
+		Short: "Start the agent tool, hydrating an Environment first when asked",
+		Long: `Start the tool in --dir (default: the current directory). With --environment
+(or ACH_ENVIRONMENT), that Environment is hydrated for the tool first (same
+engine and flags as ` + "`ach-cli environment hydrate`" + `);
+--update-environments (--update-envs) updates every Environment already
+hydrated in that folder (.ach/) for the tool. With neither, the tool starts
+as the folder is. If hydrate fails, the tool is not started. ach-cli exits with the tool's exit code.
 
 claude keeps its own Claude login and sends its model traffic through ACH:
 launch serves the profile's URL on a local port for as long as claude runs,
@@ -65,7 +66,7 @@ after --.
 Example:
   ach-cli launch claude --environment frontend-dev
   ach-cli launch claude --profile work -- -c
-  ach-cli launch opencode
+  ach-cli launch opencode --update-environments
   ach-cli launch codex --environment aws-rw --dir ~/work/infra -- --model ackstorm.smart`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := hydrate.ResolvePlatform(args[0])
@@ -109,12 +110,10 @@ Example:
 				}
 			}
 
-			if launchNeedsHydrate(in) {
+			if flagUpdate || in.environment != "" || os.Getenv("ACH_ENVIRONMENT") != "" {
 				if err := runHydrate(cmd, in); err != nil {
 					return err
 				}
-			} else {
-				u.verb("Note", "no Environment in this folder; starting without hydrating")
 			}
 
 			line := strings.Join(append([]string{bin}, args[1:]...), " ")
@@ -146,7 +145,11 @@ Example:
 		},
 	}
 	cmd.Flags().StringVar(&flagEnv, "environment", "",
-		"Environment to hydrate (ACH_ENVIRONMENT is the same; default: those in .ach/)")
+		"Environment to hydrate before starting the tool (ACH_ENVIRONMENT is the same)")
+	cmd.Flags().BoolVar(&flagUpdate, "update-environments", false,
+		"Update the Environments already hydrated in the folder (.ach/) before starting the tool (or --update-envs)")
+	cmd.Flags().BoolVar(&flagUpdate, "update-envs", false, "Same as --update-environments")
+	_ = cmd.Flags().MarkHidden("update-envs")
 	f.register(cmd)
 	return cmd
 }
@@ -174,20 +177,6 @@ func runTool(cmd *cobra.Command, path string, args []string, dir string, env []s
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 	return nil
-}
-
-// launchNeedsHydrate is false only when nothing names an Environment and
-// the folder holds none: the tool then starts as it is.
-func launchNeedsHydrate(in hydrateInputs) bool {
-	if in.environment != "" || os.Getenv("ACH_ENVIRONMENT") != "" {
-		return true
-	}
-	root := in.output
-	if root == "" {
-		root = "."
-	}
-	envs, err := hydratedEnvs(root)
-	return err != nil || len(envs) > 0
 }
 
 // claudeSettingsBaseURL names the first Claude Code settings file whose env

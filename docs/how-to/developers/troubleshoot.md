@@ -70,8 +70,8 @@ The folder has no tool configuration yet, or has several. Pass
 
 ## `nothing hydrated in this folder yet`
 
-`environment hydrate` or `launch` ran without an Environment name in a folder
-that holds none. Name one, or create the folder with
+`environment hydrate` or `launch --update-environments` ran without an
+Environment name in a folder that holds none. Name one, or create the folder with
 `ach-cli environment clone <environment>`.
 
 ## Two plugins write the same file

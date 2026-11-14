@@ -89,8 +89,9 @@ cd ~/Projects/quickstart
 ach-cli launch claude
 ```
 
-`launch` brings the folder up to date with the Environment and then starts
-Claude Code in it. Inside Claude Code, type `/` to see the commands the
+`launch` starts Claude Code in the folder `clone` just filled; add
+`--update-environments` on a later day to bring the folder up to date with
+the Environment first. Inside Claude Code, type `/` to see the commands the
 Environment's plugins added, and `/mcp` to see its MCP servers. Leave Claude
 Code to return to the shell.
 
