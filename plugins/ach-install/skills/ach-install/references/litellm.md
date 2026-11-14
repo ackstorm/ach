@@ -38,7 +38,6 @@ litellmConnection:
   masterKeySecretRef:
     name: litellm-master-key
     key: master_key
-    namespace: ""      # only when the Secret lives outside the release namespace
 ```
 
 - platform-api and content-service get `ACH_LITELLM_BASE_URL` and
@@ -48,8 +47,12 @@ litellmConnection:
   release namespace on boot. Helm cannot create that CR itself in the same
   release that installs its CRD, so do not add one to your manifests.
 - The forwarder reads the connection from Postgres. Its Role in the release
-  namespace reads every Secret there, not one; when `namespace` is set, a second
-  Role in that namespace is limited to the master-key Secret.
+  namespace reads every Secret there, not one.
+- Keep the master-key Secret in the release namespace and leave
+  `masterKeySecretRef.namespace` empty. That value only moves the forwarder's
+  RBAC: platform-api and content-service read the Secret with a same-namespace
+  `secretKeyRef` and the `LiteLLMConnection` CR requires it in its own
+  namespace, so a Secret elsewhere leaves them in `CreateContainerConfigError`.
 
 Check: `kubectl -n ach get llmconn default` shows `READY=True`. The operator
 also creates the LiteLLM team with alias `default` once the connection is

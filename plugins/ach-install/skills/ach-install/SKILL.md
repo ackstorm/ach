@@ -199,5 +199,6 @@ the schema back. Full procedure: `references/upgrade.md`.
   `LiteLLMConnection` is equivalent to reading every Secret in the ACH namespace: the
   operator resolves `authSecretRef` with its own identity. Give anyone who can write those
   kinds admin-tier trust, and grant that RBAC only to platform admins.
-- Offboarding: disabling a user at the IdP does not end their `ek-` keys. Run
-  `ach-cli admin keys revoke --owner <email>` (safe to rerun).
+- Offboarding: run `ach-cli admin keys revoke --owner <email>` (safe to rerun).
+  A user refused at the IdP loses their `ek-` keys without it only with a Dex
+  build and connector that report the refusal (`references/auth.md`).

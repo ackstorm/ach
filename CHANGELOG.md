@@ -13,6 +13,16 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   install, sign-in, LiteLLM, topology, upgrades, Enterprise, JWT key rotation
   and troubleshooting.
 
+### Fixed
+- The `ach-install` plugin (1.1.14) corrects six facts it gave agents: LiteLLM's
+  `/ui`, `/key/*` and `/health` through ACH show the console, not a 404;
+  losing Valkey's data signs every user out; deleting `ach-jwt-signing-keys`
+  invalidates access tokens and does not sign users out; a user refused at the
+  identity provider loses their `ek_` keys with a Dex build and connector that
+  report it; Dex's message for a missing redirect address is
+  `Unregistered redirect_uri`; and the LiteLLM master-key Secret must be in
+  the release namespace.
+
 ## [1.1.16] - 2026-11-14
 
 ### Fixed

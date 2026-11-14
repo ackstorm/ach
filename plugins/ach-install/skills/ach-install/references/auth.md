@@ -23,12 +23,19 @@ to the real IdP, and back to `https://<ACH_BASE_URL>/platform/oauth/as-callback`
 On each interactive login ACH provisions the user in LiteLLM, adds them to the
 configured teams, and seeds their budget. Access tokens are 1-hour Ed25519
 JWTs; every refresh goes back to Dex with the user's Dex refresh token. A Dex
-400 (reuse, unknown or expired token) ends the user's sessions; a connector
-refusal, such as a user disabled at Google, is Dex 500 and ACH answers 503
-without ending anything. ACH ends a session it sees refused but cannot detect a
-leaver who stops refreshing, and a disabled user's `ek-` keys stay alive: on
-offboarding run `ach-cli admin keys revoke --owner <email>`. No API key is
-minted at login.
+400 (reuse, unknown or expired token) ends the user's sessions. When Dex
+reports that the upstream IdP rejected the user (suspended, disabled or deleted
+there), every `ek-` key the user owns also stops resolving until they sign in
+again, and a daily check replays the Dex token of every owner whose `ek-` key
+was used in the last 7 days, so a leaver who never signs in again is caught
+within a day. That needs a Dex build with dexidp/dex#5132 and the connector's
+own fix (dexidp/dex#5142 for `google`; dexidp/dex#5144 for `gitlab`,
+`microsoft`, `github`, `gitea`, `bitbucketcloud`; neither is in Dex v2.46.1).
+Connectors that never contact the upstream on refresh (`saml`, `oauth`,
+`keystone`, `authproxy`) cannot report it. A connector failure Dex does not
+classify as a rejection, or an unreachable Dex, is a 503 and ends nothing.
+`ach-cli admin keys revoke --owner <email>` stays the explicit offboarding
+step. No API key is minted at login.
 
 Agents and CI do not log in: they use environment keys (`ek-`) that a person
 creates with `ach-cli keys create`.
@@ -229,13 +236,15 @@ rm -rf "$d"
    answers `2`.
 3. Wait at least 24 hours.
 4. Replace `current.*` with the new values and set `next.kid` / `next.seed`
-   to empty strings.
+   to empty strings. From here ACH refuses the user access tokens signed with
+   the old key (verification accepts only `current` and `next`); tools renew
+   them within the access TTL.
 5. Check the JWKS shows one key, the new kid.
 
 **Compromised key**: replace `current.*` directly and accept up to an hour of
-backends still trusting the old key. Deleting the Secret also works (the
-operator re-mints on its next start) but signs every user out and breaks every
-backend until it refetches the JWKS.
+backends still trusting the old key. Deleting the Secret is not a rotation: the
+operator re-mints only on its next start, running Pods keep the keys they
+loaded, and a forwarder that restarts before then refuses to start.
 
 ## Token lifetimes
 

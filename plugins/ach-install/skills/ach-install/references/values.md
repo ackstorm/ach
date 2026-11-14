@@ -83,7 +83,7 @@ extraEnv:
 | `image.tag` | the chart's version | Pin it. |
 | `image.pullPolicy` | `IfNotPresent` | `Always` is fine in production. |
 | `image.rebuildId` | `""` | Dev only: a changing value forces a roll when the same tag is rebuilt. Leave empty. |
-| `extraEnv` | `[]` | `{name, value|valueFrom}` items added to every component and the migrate Job. Where `ACH_BASE_URL`, `ACH_DB_URL`, Redis and Dex settings live. |
+| `extraEnv` | `[]` | `{name, value|valueFrom}` items added to every component except the classifier, and to the migrate Job. Where `ACH_BASE_URL`, `ACH_DB_URL`, Redis and Dex settings live. |
 | `shutdown.drainSeconds` | `10` | gateway, forwarder and platform-api wait this long (preStop) before stopping, so they leave their Service first. |
 | `shutdown.timeoutSeconds` | `120` | How long open requests (model streams, MCP sessions) may finish after a stop; longer ones are cut. Pod grace period = drain + timeout + 5. |
 | `initContainers` | `[]` | Raw init containers added to every ACH Deployment (not the migrate Job). Use a bounded wait, never an endless loop. |
@@ -179,7 +179,7 @@ litellmConnection:
   masterKeySecretRef:
     name: litellm-master-key
     key: master_key
-    namespace: ""            # set only when the Secret lives in another namespace
+    namespace: ""            # leave empty: only the forwarder RBAC honours it (references/litellm.md)
 
 security:
   keyEncryptionKey:          # ACH_KEY_ENCRYPTION_KEY: base64 of exactly 32 bytes
