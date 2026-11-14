@@ -14,8 +14,15 @@ nav:
       - Get started:
           - platform/install-ach.md
       - Install and operate:
+          - platform/prerequisites.md
+          - platform/install-the-chart.md
+          - platform/configure-sso.md
+          - platform/connect-litellm.md
+          - platform/choose-a-topology.md
+          - platform/upgrade.md
           - platform/enable-enterprise.md
           - platform/rotate-jwt-signing-keys.md
+          - platform/troubleshoot.md
   - Using ACH:
       - Get started:
           - using/first-environment.md
