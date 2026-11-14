@@ -44,8 +44,9 @@ the set.`,
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
-		// Each child drains for ACH_SHUTDOWN_TIMEOUT itself; the margin keeps
-		// the kill behind that drain.
+		// Forwarder, platform-api and gateway drain for ACH_SHUTDOWN_TIMEOUT;
+		// the margin keeps the kill behind that drain, as the chart's pod
+		// grace period does.
 		return runAll(ctx, self, allModes, shutdownTimeout+5*time.Second)
 	},
 }
@@ -56,8 +57,8 @@ func init() {
 
 // runAll runs `self migrate` to completion, then `self <mode>` for every
 // mode until ctx is cancelled or one of them exits. Children still running
-// get SIGTERM, then SIGKILL after grace. It returns nil only when ctx was
-// cancelled while every child was still running.
+// get SIGTERM, then SIGKILL after grace. It returns nil when ctx is
+// cancelled after every child started and before any child exit is seen.
 func runAll(ctx context.Context, self string, modes []string, grace time.Duration) error {
 	migrate := exec.CommandContext(ctx, self, "migrate")
 	migrate.Stdout, migrate.Stderr = os.Stdout, os.Stderr
