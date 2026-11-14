@@ -1,7 +1,7 @@
 # Start a tool on an Environment
 
-`ach-cli launch` hydrates an Environment for one tool and then starts that
-tool, so the tool always opens on the current version of the Environment.
+`ach-cli launch` starts one tool, hydrating an Environment for it first when
+you ask, so the tool opens on the current version of the Environment.
 
 You need to be [signed in](sign-in.md), and the tool must be installed and on
 your `PATH`.
@@ -29,11 +29,14 @@ is the same as `--environment`.
 
 ```bash
 cd ~/Projects/<environment>
-ach-cli launch opencode
+ach-cli launch opencode                          # as the folder is
+ach-cli launch opencode --update-environments    # update its Environments first
 ```
 
-Without `--environment`, `launch` updates every Environment already hydrated
-in that folder. An Environment installed globally with `-g` does not count.
+Without `--environment`, `launch` starts the tool without hydrating.
+`--update-environments` (or `--update-envs`) first updates every Environment
+already hydrated in that folder. An Environment installed globally with `-g`
+does not count.
 
 ## Start it in another folder
 

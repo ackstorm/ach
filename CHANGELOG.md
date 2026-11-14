@@ -4,6 +4,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- `ach-cli launch` hydrates only when asked: `--environment` (or
+  `ACH_ENVIRONMENT`) hydrates that Environment, and the new
+  `--update-environments` (`--update-envs`) updates the Environments already
+  in the folder. Without either, the tool starts as the folder is, instead of every launch
+  updating the folder's Environments and rewriting the tool's configuration.
+
 ## [1.1.15] - 2026-11-13
 
 ### Added

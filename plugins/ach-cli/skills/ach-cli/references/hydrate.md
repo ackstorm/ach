@@ -55,18 +55,19 @@ then either keep their edit (do nothing) or, only on their say-so, `--force`.
 
 ```bash
 ach-cli launch claude --environment <environment>                  # or codex, gemini, opencode, pi
-ach-cli launch opencode                                            # the Environments already in this folder
+ach-cli launch opencode                                            # as the folder is, no hydrate
+ach-cli launch opencode --update-environments                      # update the folder's Environments first
 ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>
 ach-cli launch claude --profile <profile> -- -c                    # another profile; claude's own flags after --
 ```
 
-`launch` runs the same hydrate for that one tool (same flags as `environment hydrate`, minus
-`--target`, `--only` and `--dry-run`), then starts the tool in `--dir` (default: the
-current folder) and exits with the tool's exit code. With no `--environment` and no
-`ACH_ENVIRONMENT`, every Environment already hydrated in that folder (`.ach/`) is updated
-for the tool; a global hydrate does not count. A folder with no Environment starts the
-tool without hydrating. Nothing starts when the tool is not on the `PATH` or the hydrate
-fails. Arguments after the tool name go to it; its own flags go after `--`.
+`launch` starts the tool in `--dir` (default: the current folder) and exits with the
+tool's exit code. It hydrates first only when asked, with the same hydrate for that one
+tool (same flags as `environment hydrate`, minus `--target`, `--only` and `--dry-run`):
+`--environment` (or `ACH_ENVIRONMENT`) hydrates that Environment, `--update-environments`
+(`--update-envs`) updates every Environment already hydrated in that folder (`.ach/`; a
+global hydrate does not count). With neither, the tool starts as the folder is. Nothing
+starts when the tool is not on the `PATH` or the hydrate fails. Arguments after the tool name go to it; its own flags go after `--`.
 
 `launch claude` keeps the user's own Claude login (their subscription) and sends the model
 traffic through ACH: for as long as claude runs, ach-cli serves the profile's URL on a local
