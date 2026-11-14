@@ -47,7 +47,7 @@ every upgrade, from the chart's crd-sources/ directory.
 
 Then sign in from a workstation: `ach-cli login <ACH URL>` and `ach-cli whoami`.
 Install, configuration and upgrade guide:
-  https://github.com/ackstorm/ach/blob/main/docs/tutorials/install-ach.md
+  https://github.com/ackstorm/ach/blob/main/docs/platform/install-ach.md
 {{- if .Values.ingress.enabled }}
 
 === Public Ingress (ach-public) ===

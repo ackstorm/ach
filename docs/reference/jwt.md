@@ -69,7 +69,7 @@ GET <iss>/.well-known/jwks.json
 
 `keys` holds one key, or two during a rotation: both stay published for at
 least 24 hours before the old one is removed
-([JWT key rotation](../how-to/admins/rotate-jwt-signing-keys.md)).
+([JWT key rotation](../platform/rotate-jwt-signing-keys.md)).
 
 Implementation:
 [`internal/forwarder/jwt/signer.go`](https://github.com/ackstorm/ach/blob/main/internal/forwarder/jwt/signer.go).

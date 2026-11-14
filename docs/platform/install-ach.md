@@ -4,7 +4,7 @@ ACH installs on Kubernetes with one Helm chart, `oci://ghcr.io/ackstorm/charts/a
 running one image, `ghcr.io/ackstorm/ach`. The full guide (every value, sign-in,
 topology, Enterprise, upgrades, troubleshooting) is the `ach-install` agent skill in
 this repository: [`plugins/ach-install/skills/ach-install/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-install/skills/ach-install).
-Install it into your agent (see [Install the ACH agent plugins](../how-to/developers/install-agent-plugins.md)) and
+Install it into your agent (see [Install the ACH agent plugins](../using/install-agent-plugins.md)) and
 ask it, or read it directly.
 
 ## What you need first
@@ -51,7 +51,7 @@ The platform API reviews ServiceAccount tokens for `POST /platform/keys/exchange
 through a cluster-wide `system:auth-delegator` binding the chart creates. Set
 API server audit level `Metadata` for `tokenreviews`, and bind the
 `<release>-keygrant-editor` ClusterRole (`ach-keygrant-editor` for release `ach`) to platform admins only. See
-[Agent credentials by token exchange](../how-to/backend-builders/exchange-a-serviceaccount-token.md).
+[Agent credentials by token exchange](../integrate/exchange-a-serviceaccount-token.md).
 
 ## Grant a first Environment
 
@@ -100,7 +100,7 @@ kubectl -n ach get environment quickstart       # Available=True
 `AccessGroupSynced` (LiteLLM accepted the grant). `kubectl -n ach describe environment
 quickstart` shows the reason when one is False.
 
-Users of that team can now follow [Your first Environment](first-environment.md).
+Users of that team can now follow [Your first Environment](../using/first-environment.md).
 To remove it again:
 
 ```bash

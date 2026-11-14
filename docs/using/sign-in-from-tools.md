@@ -78,7 +78,7 @@ refresh_interval_ms = 300000
 
 ### `ach-cli token`
 
-[`ach-cli token`](../../reference/cli.md#ach-cli-token) prints the access
+[`ach-cli token`](../reference/cli.md#ach-cli-token) prints the access
 token of the active profile on one line and nothing else. It renews the token
 when it is close to expiry. `ach-cli token -o json` adds the token's type and
 expiry.

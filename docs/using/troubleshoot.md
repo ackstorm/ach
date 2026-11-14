@@ -106,4 +106,4 @@ until the budget is raised or its period resets.
 
 - [Sign in to an MCP server](sign-in-to-an-mcp-server.md#errors) for MCP
   errors.
-- [Command reference](../../reference/cli.md).
+- [Command reference](../reference/cli.md).

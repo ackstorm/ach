@@ -63,5 +63,5 @@ ach-cli local repo remove <repo>
 
 ## Related
 
-- [`ach-cli local`](../../reference/cli.md#ach-cli-local) in the command
+- [`ach-cli local`](../reference/cli.md#ach-cli-local) in the command
   reference.

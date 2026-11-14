@@ -1,6 +1,6 @@
 # forwarder contract
 
-`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` (plus its MCP face `/a2a/<n>/mcp`) and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/explanation/trust-path.md`](../../docs/explanation/trust-path.md) and, for the JWT claims and JWKS, [`../../docs/reference/jwt.md`](../../docs/reference/jwt.md).
+`ach forwarder`: the data path for `/v1`, `/gemini`, `/mcp/<n>`, `/a2a/<n>` (plus its MCP face `/a2a/<n>/mcp`) and `/.well-known`. Read before changing `internal/forwarder/`, together with [`../../docs/integrate/trust-path.md`](../../docs/integrate/trust-path.md) and, for the JWT claims and JWKS, [`../../docs/reference/jwt.md`](../../docs/reference/jwt.md).
 
 ## Routes and discovery documents
 
@@ -24,7 +24,7 @@ With no declared slot present, `Authorization: Bearer` is resolved only when it 
 
 ## Trusted external IdP
 
-**Trusted external IdP** (`forwarder.trustedIdP` → `ACH_TRUSTED_IDP_{ISSUER,AUDIENCES,CLAIM}`, off when the issuer is empty, issuer without audiences refuses to start): a JWS whose unverified `iss` equals that ONE issuer (Dex, for LibreChat) is verified (RS256 discovery JWKS, exp, aud list, claim non-empty, `email_verified` not false) and resolves to the user's EXISTING oauth `pk_` — never minted; each use slides that row like a plain pk_ (7 d, 90 d cap); no live row → 403 `ach_login_required` (names the console), issuer down → 503 `idp_unreachable`; detail in `docs/explanation/trust-path.md`.
+**Trusted external IdP** (`forwarder.trustedIdP` → `ACH_TRUSTED_IDP_{ISSUER,AUDIENCES,CLAIM}`, off when the issuer is empty, issuer without audiences refuses to start): a JWS whose unverified `iss` equals that ONE issuer (Dex, for LibreChat) is verified (RS256 discovery JWKS, exp, aud list, claim non-empty, `email_verified` not false) and resolves to the user's EXISTING oauth `pk_` — never minted; each use slides that row like a plain pk_ (7 d, 90 d cap); no live row → 403 `ach_login_required` (names the console), issuer down → 503 `idp_unreachable`; detail in `docs/integrate/trust-path.md`.
 
 ## Model list filter
 

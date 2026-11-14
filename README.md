@@ -58,8 +58,8 @@ flowchart LR
 ## Quick links
 
 - [Documentation](https://ackstorm.github.io/ach/)
-- [Installation](https://ackstorm.github.io/ach/tutorials/install-ach/)
-- [Architecture](https://ackstorm.github.io/ach/explanation/architecture/)
+- [Installation](https://ackstorm.github.io/ach/platform/install-ach/)
+- [Architecture](https://ackstorm.github.io/ach/overview/architecture/)
 - [Release process](references/release-pipeline.md)
 - [CONTRIBUTING](CONTRIBUTING.md)
 - [SECURITY](SECURITY.md)

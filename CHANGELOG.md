@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- Documentation site: pages are grouped by reader, in the tabs Overview, ACH
+  Platform (install and operate), Using ACH (developers), Integrate and
+  Reference. Page addresses changed; for example the install guide is at
+  `https://ackstorm.github.io/ach/platform/install-ach/`.
+
 ## [1.1.16] - 2026-11-14
 
 ### Fixed

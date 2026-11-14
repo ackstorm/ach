@@ -181,6 +181,12 @@ make docs-serve                          # local preview at :8000
 The site publishes to `https://ackstorm.github.io/ach/`: one version, built
 from `main`.
 
+Pages live in one folder per tab, grouped by reader: `docs/overview/`,
+`docs/platform/` (admins who install and run ACH), `docs/using/` (developers),
+`docs/integrate/` (backend and agent builders) and `docs/reference/` (lookup
+pages; the CRD page stays in `docs/api-reference/`). Each page is one kind:
+tutorial, how-to, reference or explanation.
+
 `.github/workflows/docs.yml` deploys to the `gh-pages` branch with
 `mkdocs gh-deploy --strict` on pushes to `main`. PRs build with `--strict`
 and do not deploy: a broken link, or a page missing from the nav, fails the
