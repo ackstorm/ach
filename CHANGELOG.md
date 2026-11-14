@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-11-14
+
 ### Breaking
 - The `ach` binary's default listen ports changed so every service can run in
   one container: `ach platform-api` listens on `:8083` (was `:8080`) and
