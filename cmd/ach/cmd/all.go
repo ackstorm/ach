@@ -73,6 +73,7 @@ func runAll(ctx context.Context, self string, modes []string, grace time.Duratio
 	started := 0
 	var first error
 	for _, mode := range modes {
+		// #nosec G204 -- self is this binary, mode comes from the fixed allModes list
 		child := exec.CommandContext(ctx, self, mode)
 		child.Stdout, child.Stderr = os.Stdout, os.Stderr
 		child.Cancel = func() error { return child.Process.Signal(syscall.SIGTERM) }
