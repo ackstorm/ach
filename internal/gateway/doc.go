@@ -7,7 +7,8 @@
 // header hygiene are handled by the stdlib.
 //
 // The route table is hardcoded (ServiceRoutes) — prefix -> in-cluster
-// Service URL, namespace injected at boot. The gateway is a DUMB router:
+// Service URL, namespace injected at boot (each upstream replaceable by
+// env for a run outside a cluster). The gateway is a DUMB router:
 // no auth (the forwarder mints per-target JWT; platform-api owns Dex SSO),
 // no /metrics (unauthenticated on each service's traffic port — pinned to
 // 404 ahead of the "/" route so the prod Ingress cannot leak it), and no

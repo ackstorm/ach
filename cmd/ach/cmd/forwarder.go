@@ -8,7 +8,7 @@
 // loads the ach-jwt-signing-keys Secret (refuse-to-start on missing /
 // malformed current slot per FWD-09), wires the Ed25519Signer + Secret
 // hot-reload event handler, and starts the dual-port Runnable (traffic
-// :8080, health :8081) under the manager. SIGINT/SIGTERM drains via
+// :8084, health :8085 by default) under the manager. SIGINT/SIGTERM drains via
 // ctrl.SetupSignalHandler.
 //
 // Refuses to start when:
@@ -187,8 +187,8 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, err
 	}
 
-	cfg.TrafficBindAddr = config.EnvOr("ACH_FORWARDER_BIND_ADDRESS", ":8080")
-	cfg.HealthBindAddr = config.EnvOr("FORWARDER_HEALTH_BIND_ADDRESS", ":8081")
+	cfg.TrafficBindAddr = config.EnvOr("ACH_FORWARDER_BIND_ADDRESS", ":8084")
+	cfg.HealthBindAddr = config.EnvOr("FORWARDER_HEALTH_BIND_ADDRESS", ":8085")
 	cfg.JWTSecretName = config.EnvOr("ACH_JWT_SECRET_NAME", jwt.SecretName)
 	cfg.ShutdownTimeout, err = config.MustEnvDurationAtLeast("ACH_SHUTDOWN_TIMEOUT", 10*time.Second, time.Second)
 	if err != nil {

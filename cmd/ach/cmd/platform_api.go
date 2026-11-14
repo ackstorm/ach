@@ -205,7 +205,7 @@ func validatePlatformAPIConfig() (*platformAPIConfig, error) {
 		return nil, err
 	}
 	cfg.AllowlistPath = config.EnvOr("ACH_ADMIN_ALLOWLIST_PATH", "/etc/ach/admins/admins.txt")
-	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8080")
+	cfg.BindAddr = config.EnvOr("ACH_PLATFORM_API_BIND_ADDRESS", ":8083")
 	cfg.ShutdownTimeout, err = config.MustEnvDurationAtLeast("ACH_SHUTDOWN_TIMEOUT", 10*time.Second, time.Second)
 	if err != nil {
 		return nil, err
