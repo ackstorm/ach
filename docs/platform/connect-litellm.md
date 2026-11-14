@@ -11,8 +11,8 @@ master key in a Secret; see the [prerequisites](prerequisites.md#litellm).
 
 | ACH component | Writes |
 |---|---|
-| Operator | For each Environment, an access group and a team `ach-env-<name>`. For each user, the link between their team `ach-user-<email>` and the Environments they may use. Budgets, as tag budgets |
-| platform-api | Users, their team memberships at sign-in, and one LiteLLM key for each user and each environment key |
+| Operator | For each Environment, an access group and a team `ach-env-<name>`. For each user, the link between their team `ach-user-<email>` and the Environments they may use. The budget of each Environment |
+| platform-api | Users, their team memberships and their budget at sign-in, and one LiteLLM key for each user and each environment key |
 | Forwarder | Nothing. It replaces the caller's ACH credential with that caller's own LiteLLM key and tags each request with the user, the Environment and the key, so LiteLLM applies the budgets |
 
 ACH never serves LiteLLM's own UI or admin API (`/ui`, `/key/*`, `/health`,
@@ -29,10 +29,10 @@ litellmConnection:
   masterKeySecretRef:
     name: litellm-master-key
     key: master_key
-    namespace: ""      # set only if the Secret is in another namespace
 ```
 
-The chart gives the endpoint and the key to every component. The operator
+The Secret must be in the ACH namespace. The chart gives the endpoint and the
+key to every component. The operator
 creates the resource `LiteLLMConnection/default` from these values when it
 starts: do not add one to your own manifests.
 
@@ -90,9 +90,9 @@ forwarder:
 
 - An ACH key is recognised in any listed header, also a `passthrough` one, and
   never reaches LiteLLM.
-- `authorization` cannot be listed. `Authorization: Bearer` is always read: an
-  ACH session token or an ACH key is replaced, and anything else passes to
-  LiteLLM unchanged.
+- `authorization` cannot be listed. `Authorization: Bearer` is read when no
+  listed header is present: an ACH session token or an ACH key is replaced,
+  and anything else passes to LiteLLM unchanged.
 - A request with no listed header and no `Authorization` credential answers
   401.
 

@@ -41,8 +41,9 @@ LiteLLM needs its own, separate database.
 
 ## Valkey or Redis
 
-Valkey holds sign-in state and caches. One standalone instance is enough: if
-it is lost, sign-ins in progress fail and the caches refill.
+Valkey holds the sessions of signed-in users and caches. One standalone
+instance is enough. If its data is lost, every user signs in again and the
+caches refill.
 
 | Variable | Required | Value |
 |---|---|---|
@@ -109,7 +110,6 @@ three are the chart defaults.
 | Your choice, for example `ach-valkey` | `password` | The Valkey password, if it has one |
 
 ```bash
-kubectl create namespace ach
 kubectl -n ach create secret generic ach-key-encryption-key \
   --from-literal=dek="$(openssl rand -base64 32)"
 kubectl -n ach create secret generic ach-credential-hash-pepper \

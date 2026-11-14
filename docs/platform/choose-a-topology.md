@@ -132,7 +132,8 @@ gateway: {replicas: 2}
 
 Each component serves `/metrics` without authentication on its Pod port: 8080
 for the operator, platform-api and the forwarder, 8082 for content-service.
-Keep it inside the cluster. The Pods carry `prometheus.io/scrape` annotations.
+Keep it inside the cluster. The operator, platform-api and forwarder Pods and
+the content-service Service carry `prometheus.io/scrape` annotations.
 
 With the Prometheus Operator:
 

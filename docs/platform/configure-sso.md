@@ -106,7 +106,7 @@ Teams live in LiteLLM and are named by their alias. ACH creates the team
 `default` itself and no other: create the rest in LiteLLM.
 
 - **`default`** needs at least one team. If a team in it does not exist, the
-  sign-in fails with `default_team_missing`.
+  sign-in fails with `default team unreachable`.
 - **`users` and `sso`** add teams and never block a sign-in: a team that does
   not exist yet is skipped and tried again at the next sign-in.
 - A user who is already signed in picks up new `users` and `sso` teams with
@@ -155,8 +155,11 @@ ACH checks a session against Dex each time its access token is renewed. A
 shorter `ACH_OAUTH_ACCESS_TTL` ends the session of a user removed from your
 identity provider sooner, and asks Dex more often.
 
-A session that ends does not end the user's environment keys. When someone
-leaves, also run:
+When your identity provider refuses a user, because the account is suspended
+or deleted there, their environment keys stop working until they sign in
+again. This needs a Dex version and a connector that report the refusal; the
+`saml`, `oauth`, `keystone` and `authproxy` connectors never do. With those,
+when someone leaves, also run:
 
 ```bash
 ach-cli admin keys revoke --owner alice@example.com
