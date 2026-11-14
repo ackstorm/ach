@@ -81,7 +81,7 @@ The Secret named by `secretName` holds:
 | `ACH_CLASSIFIER_LANGFUSE_PUBLIC_KEY`, `ACH_CLASSIFIER_LANGFUSE_SECRET_KEY` | A Langfuse key pair. Required when `langfuseUrl` is set |
 
 Keep these in that Secret and never in `extraEnv`. `extraEnv` reaches every
-component, and this ClickHouse user can read conversations.
+other component, and this ClickHouse user can read conversations.
 
 Send the model calls through ACH: create an Environment for the classifier
 with one model and a budget, create an environment key for it, and use that

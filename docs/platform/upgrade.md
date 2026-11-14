@@ -69,12 +69,13 @@ The database only moves forward. `helm rollback` restores the previous
 components and leaves the tables as the newer version made them. Most versions
 run on newer tables; read the changelog before you roll back.
 
-Two cases where a rollback needs more:
+Three cases where a rollback needs more:
 
 | Rolling back | Needs first |
 |---|---|
 | Below 1.1.4 | Apply `000028_drop_deletion_timestamp.down.sql` from the ACH repository with `psql`. The rows that version removed do not come back |
 | Below the version that added key suspension and expiry | Resume every suspended environment key and clear every expiry. The tables refuse to go back while such a key exists |
+| Below the version that added token exchange | Revoke every environment key that was issued by token exchange |
 
 To run the database update yourself, set `migrate.enabled: false` and run the
 ACH image with `args: [migrate]` and `ACH_DB_URL` set.
@@ -87,7 +88,7 @@ ACH image with `args: [migrate]` and `ACH_DB_URL` set.
 | Content of the Secret behind `security.credentialHashPepper` | Every ACH key stops being valid |
 | `ACH_BASE_URL` | Sign-in for every user, the Dex redirect address, the download links of installed Environments and the MCP entries users' tools saved |
 | `genai.providerName` | Signs every OpenCode user out |
-| The Secret `ach-jwt-signing-keys` | Deleting it signs everyone out. Replace its keys with [Rotate the JWT signing keys](rotate-jwt-signing-keys.md) |
+| The Secret `ach-jwt-signing-keys` | Deleting it invalidates every access token in use, and components do not start until the operator has created a new one. Replace its keys with [Rotate the JWT signing keys](rotate-jwt-signing-keys.md) |
 | The database behind `ACH_DB_URL` | All ACH state. Move the data, not only the address |
 
 You can rename the Secrets as long as their content moves with them.

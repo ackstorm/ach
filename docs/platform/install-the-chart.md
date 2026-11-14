@@ -80,7 +80,7 @@ What to know about these values:
 
 - **The database, Valkey and Dex settings have no value of their own.** They
   go in the top-level [`extraEnv`](../reference/helm-values.md#extraenv), which
-  every component and the migration Job receive. A component's own `extraEnv`
+  the migration Job and every component except the classifier receive. A component's own `extraEnv`
   does not reach the migration Job.
 - **`$(DB_PASSWORD)`** is replaced by Kubernetes with the variable defined
   above it, so the password stays in its Secret.
@@ -114,8 +114,8 @@ helm upgrade --install ach oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z> \
   -n ach --create-namespace -f values.yaml --wait --timeout 10m
 ```
 
-On a first install the forwarder restarts a few times until the operator has
-created the Secret `ach-jwt-signing-keys`.
+On a first install the forwarder may restart once or twice, until the operator
+has created the Secret `ach-jwt-signing-keys`.
 
 ## Verify
 

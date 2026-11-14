@@ -2,7 +2,8 @@
 
 ACH signs two kinds of token with one Ed25519 key: the access tokens of
 signed-in users, and the identity tokens the forwarder adds for MCP and A2A
-backends. This page replaces that key without rejecting valid tokens.
+backends. This page replaces that key without breaking the backends that
+check those tokens.
 
 You need `kubectl` access to the ACH namespace, `openssl` and `jq`.
 
@@ -76,10 +77,10 @@ kubectl -n ach patch secret ach-jwt-signing-keys --type=json \
 
 An empty `next.kid` clears the slot.
 
-The forwarder reads the change at once. platform-api and content-service read
-it within about 90 seconds. An access token that platform-api signs with the
-old key during that time is refused by the forwarder until the user's tool
-renews it.
+The forwarder reads the change at once, and platform-api and content-service
+within about 90 seconds. From then on ACH refuses the access tokens signed
+with the old key. A user's tool gets a new one at its next renewal, within the
+hour; signing in again renews it at once.
 
 ### 6. Check the result
 
@@ -100,8 +101,9 @@ When the current seed may have leaked, do not wait:
    the leaked key, and reject tokens signed with the new one, until they
    fetch the published keys again. ACH cannot shorten that hour.
 
-Deleting the Secret also replaces the key, at the operator's next start, but
-it signs every user out and leaves ACH without a key until then.
+Do not delete the Secret to replace the key. The operator creates a new one
+only when it next starts, and a component that restarts before that does not
+start.
 
 ## Verify
 

@@ -42,7 +42,7 @@ ach-cli admin list environments
 | An error while parsing the database URL | A short URL | Use the full form: `postgres://user:password@host:5432/db?sslmode=…` |
 | `oidc.NewProvider: …` | platform-api cannot read Dex | The issuer must be reachable from the Pod and equal Dex's `issuer` exactly |
 | `ACH_KEY_ENCRYPTION_KEY decoded to N bytes: must be 32 bytes` | The key Secret has the wrong content | Store `openssl rand -base64 32` in it |
-| `still holds the placeholder value` | A template Secret was never filled | Put real random values in both Secrets |
+| `…the placeholder value` | A template Secret was never filled | Put real random values in both Secrets |
 | `CreateContainerConfigError`, `secret "…" not found` | A Secret named in the values or in `extraEnv` does not exist in the namespace | Create it, or correct the name and key |
 | Forwarder: `jwt secret LoadOnce (refuse-to-start)` | The operator has not created `ach-jwt-signing-keys` yet | Normal for a minute on a first install. If it lasts, the operator is failing: read its log |
 | `ACH_TEAMS_DEFAULT: at least one default team required` | `platformApi.teams.default` is empty | List at least one team |
@@ -56,7 +56,7 @@ ach-cli admin list environments
 
 | Symptom | Cause | Do |
 |---|---|---|
-| Dex shows `Invalid redirect URI` | The Dex client lacks ACH's address | Add `https://ach.example.com/platform/oauth/as-callback` exactly |
+| Dex refuses the redirect address | The Dex client lacks ACH's address | Add `https://ach.example.com/platform/oauth/as-callback` exactly |
 | `no refresh_token in the Dex response` | The Dex connector issues no refresh token | Use a connector that does |
 | `default team unreachable` on the first sign-in after an install | The operator has not created the team `default` yet, or a team in `platformApi.teams.default` does not exist in LiteLLM | Try again after a minute; create your own default teams in LiteLLM |
 | `this browser did not start the authorization request` | The sign-in link was opened in another browser, cookies are blocked, or a proxy removes `Cookie` or `Set-Cookie` on `/platform/oauth/` | Start again from the tool, in the same browser; correct the proxy |
@@ -81,7 +81,7 @@ ach-cli admin list environments
 | Symptom | Cause | Do |
 |---|---|---|
 | Model requests answer 401 for every user, and the forwarder logs `key material decrypt failed` | The encryption key changed, or platform-api and the forwarder read different ones | Restore the key. If it is lost, users sign in again and environment keys are created again |
-| `/ui`, `/key/list` or `/health` answer 404 through ACH | ACH does not serve LiteLLM's own pages | Use LiteLLM's own host |
+| `/ui`, `/key/list` or `/health` on the ACH address show the ACH console | ACH does not serve LiteLLM's own pages | Use LiteLLM's own host |
 | Creating an environment key answers 403 `key_limit_reached` | `platformApi.userDefaults.maxKeys` is 0, or the user reached their limit | `ach-cli admin users limits <email> --max-keys N`, or raise the default |
 | Requests answer 422 `Budget has been exceeded! Tag=user:…` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`. The chart default applies to new users only |
 | Requests answer 422 `Budget has been exceeded! Tag=environment:…` | The Environment's budget is spent | Raise the budget of the Environment, or wait for it to reset |

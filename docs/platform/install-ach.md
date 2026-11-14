@@ -10,7 +10,7 @@ one.
 
 | You need | The tutorial uses |
 |---|---|
-| A Kubernetes cluster, with `kubectl` and `helm` pointing at it | Namespace `ach` |
+| A Kubernetes cluster, with `kubectl` and `helm` pointing at it | Namespace `ach`, where Postgres and Valkey run |
 | A Postgres database and its user | Database `ach`, user `ach`, host `ach-postgresql` |
 | Valkey or Redis | `ach-valkey-primary:6379`, without a password |
 | LiteLLM with at least one model, and its master key | `http://litellm.litellm.svc.cluster.local:4000` |
@@ -24,7 +24,6 @@ Replace the names with your own as you go.
 ## 1. Create the Secrets
 
 ```bash
-kubectl create namespace ach
 kubectl -n ach create secret generic ach-key-encryption-key \
   --from-literal=dek="$(openssl rand -base64 32)"
 kubectl -n ach create secret generic ach-credential-hash-pepper \
@@ -120,11 +119,11 @@ kubectl -n ach get deployments
 ```
 
 ```text
-NAME               READY   UP-TO-DATE   AVAILABLE
-ach-forwarder      1/1     1            1
-ach-gateway        1/1     1            1
-ach-operator       1/1     1            1
-ach-platform-api   1/1     1            1
+NAME               READY   UP-TO-DATE   AVAILABLE   AGE
+ach-forwarder      1/1     1            1           82s
+ach-gateway        1/1     1            1           82s
+ach-operator       1/1     1            1           82s
+ach-platform-api   1/1     1            1           82s
 ```
 
 ```bash
@@ -132,8 +131,8 @@ kubectl -n ach get litellmconnection default
 ```
 
 ```text
-NAME      READY   REASON
-default   True    Ready
+NAME      READY   REASON   AGE
+default   True    Synced   77s
 ```
 
 `READY` is `True` once the operator has reached LiteLLM with the master key.
@@ -152,14 +151,15 @@ https://ach.example.com
 ach-cli login https://ach.example.com
 ```
 
-Your browser opens the sign-in page of your identity provider. When it says
-you can close the page, check who you are:
+Press Enter to accept the profile name `default`, then choose `1` to open the
+browser on this machine. Sign in with your organisation account. The terminal
+continues when the browser says you are signed in. Then check who you are:
 
 ```bash
 ach-cli whoami
 ```
 
-`User` shows the email you listed under `admins`.
+`User` shows the email you listed under `admins`, and `Auth` shows `session`.
 
 ## 6. Grant a first Environment
 
