@@ -481,3 +481,41 @@ func TestKeyGrantReconciler_DeleteFinalizerIgnoresUnrelatedKeyFailure(t *testing
 		t.Fatalf("finalizer not removed: %v", err)
 	}
 }
+
+func TestKeyGrantReconciler_WritesBudgetOnlyForKeysOfReconciledGrant(t *testing.T) {
+	ctx := context.Background()
+	const who = "scope@ackstorm.com"
+	budget := &achv1alpha1.BudgetBlock{MaxBudget: 50, BudgetDuration: "30d"}
+	mine := liveKeyGrant("kg-mine", who, "scope-env", "agents/mine")
+	mine.Spec.Budget = budget
+	other := liveKeyGrant("kg-other", who, "scope-env", "agents/other")
+	other.Spec.Budget = budget
+	store, llm := newKeyGrantStoreFake(), newKeyGrantLLMFake()
+	llm.knowUser(who)
+	tokMine, tokOther, tokNone := "lt-mine", "lt-other", "lt-none"
+	for id, k := range map[string]struct {
+		sa  string
+		tok *string
+	}{"ekid_mine": {"agents/mine", &tokMine}, "ekid_other": {"agents/other", &tokOther}, "ekid_none": {"agents/none", &tokNone}} {
+		store.addKey(achdb.EkKeyInfo{KeyID: id, OwnerEmail: who, Environment: "scope-env",
+			Requester: k.sa, LiteLLMToken: k.tok, Status: "active"})
+	}
+	r := &KeyGrantReconciler{Client: fakeKeyGrantClient(t, mine, other), Scheme: k8sClient.Scheme(), LiteLLM: llm,
+		Namespace: WatchNamespace, Log: logr.Discard(), Store: store}
+
+	if _, err := r.Reconcile(ctx, ctrlRequest(mine)); err != nil {
+		t.Fatal(err)
+	}
+	if b, ok := llm.budget(litellm.KeyBudgetTag("ekid_mine")); !ok || b.MaxBudget != 50 {
+		t.Fatalf("the reconciled grant's key got no budget: %+v ok=%v", b, ok)
+	}
+	if _, ok := llm.budget(litellm.KeyBudgetTag("ekid_other")); ok {
+		t.Fatal("a key the reconciled grant does not cover had its budget written")
+	}
+	if store.status("ekid_none") != "revoked" || !llm.wasRevoked(tokNone) {
+		t.Fatal("a key no grant allows was not revoked")
+	}
+	if store.status("ekid_other") != "active" {
+		t.Fatal("a key another grant allows was revoked")
+	}
+}

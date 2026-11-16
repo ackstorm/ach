@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- Operator: a `KeyGrant` reconcile writes exchange key budgets only for the
+  keys that grant covers. The LiteLLM `/tag/info` reads per 5-minute resync
+  drop from grants × keys to one per key per covering grant. A ceiling that
+  rises because another grant was edited off the key lands within 5 minutes.
+
 ## [1.1.17] - 2026-11-14
 
 ### Breaking
