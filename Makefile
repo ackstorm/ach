@@ -401,14 +401,17 @@ release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR, wait for ev
 	gh pr create --base main --title "chore(release): v$(VERSION)" --body "Release v$(VERSION). Merging fires release.yml."
 	git switch main
 	@pr=$$(gh pr view release/v$(VERSION) --json number -q .number); \
+	sha=$$(git rev-parse release/v$(VERSION)); \
 	for i in $$(seq 1 30); do \
-		n=$$(gh pr view $$pr --json statusCheckRollup -q '.statusCheckRollup | length'); \
-		[ "$$n" -gt 0 ] && break; sleep 10; \
+		ci=$$(gh run list --commit $$sha --workflow ci.yml --json databaseId -q '.[0].databaseId'); \
+		[ -n "$$ci" ] && break; sleep 10; \
 	done; \
-	[ "$$n" -gt 0 ] || { echo "ERROR: no checks started on PR #$$pr within 5 min" >&2; exit 1; }; \
-	echo "Waiting for every check on PR #$$pr (E2E included, up to 60 min)..."; \
-	timeout 3600 gh pr checks $$pr --watch --fail-fast --interval 30 || \
-		{ echo "ERROR: a check failed or timed out on PR #$$pr; nothing was merged" >&2; exit 1; }; \
+	[ -n "$$ci" ] || { echo "ERROR: no ci run started for $$sha within 5 min" >&2; exit 1; }; \
+	echo "Waiting for every workflow run on $$sha (E2E included, up to 60 min)..."; \
+	for run in $$(gh run list --commit $$sha --json databaseId -q '.[].databaseId'); do \
+		timeout 3600 gh run watch $$run --exit-status --interval 30 >/dev/null || \
+			{ echo "ERROR: run $$run failed or timed out on PR #$$pr; nothing was merged" >&2; exit 1; }; \
+	done; \
 	gh pr merge $$pr --rebase --delete-branch; \
 	echo "Merged; release.yml publishes v$(VERSION)."
 
