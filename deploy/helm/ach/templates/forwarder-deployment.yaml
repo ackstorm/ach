@@ -90,6 +90,10 @@ spec:
               value: {{ . | toJson | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.forwarder.testTagsHeader }}
+            - name: ACH_TEST_TAGS_HEADER
+              value: "true"
+            {{- end }}
             {{- with .Values.forwarder.trustedIdP }}
             {{- if .issuer }}
             - name: ACH_TRUSTED_IDP_ISSUER

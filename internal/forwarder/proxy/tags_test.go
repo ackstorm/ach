@@ -59,7 +59,8 @@ func TestTagsForContextOwnerlessEk(t *testing.T) {
 }
 
 // TestDirectorStampsTagHeader — every family gets x-litellm-tags from the
-// KeyContext; the X-Achtest-Tags mirror keeps the SC2 backend assertion.
+// KeyContext; with TestTagsHeader the X-Achtest-Tags mirror keeps the SC2
+// backend assertion.
 // The Director is the single stamping point, which is what puts the tags on
 // /mcp, /a2a and /v2/model/info — families the old body injection never saw.
 func TestDirectorStampsTagHeader(t *testing.T) {
@@ -71,7 +72,7 @@ func TestDirectorStampsTagHeader(t *testing.T) {
 	for _, path := range []string{"/v1/chat/completions", "/gemini/v1beta/models/m:generateContent",
 		"/mcp/demo-mcp-nojwt", "/a2a/demo-agent", "/v2/model/info"} {
 		t.Run(path, func(t *testing.T) {
-			rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+			rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil, TestTagsHeader: true})
 			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
 			req.Header.Set("Content-Type", "application/json")
 			req = req.WithContext(ctxWith(kc))
@@ -85,6 +86,27 @@ func TestDirectorStampsTagHeader(t *testing.T) {
 				t.Fatalf("X-Achtest-Tags mirror = %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// TestDirectorTestTagsHeaderOffByDefault — LiteLLM hands x-* request headers to
+// the model provider when it forwards client headers, so the X-Achtest-Tags
+// mirror, which names the caller, is sent only where Deps.TestTagsHeader asks.
+func TestDirectorTestTagsHeaderOffByDefault(t *testing.T) {
+	rp := New(Deps{LiteLLMUpstream: mustParseURL(t, "http://litellm.svc:4000"), Logger: nil})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	req.Header.Set("X-Achtest-Tags", "user:victim@corp")
+	req = req.WithContext(ctxWith(middleware.KeyContext{
+		KeyType: keys.PrefixPk, OwnerEmail: "pepe@example.com", KeyID: "pk_9",
+	}))
+
+	rp.Director(req)
+
+	if got := req.Header.Get("x-litellm-tags"); got != "user:pepe@example.com" {
+		t.Fatalf("x-litellm-tags = %q, want user:pepe@example.com", got)
+	}
+	if _, ok := req.Header["X-Achtest-Tags"]; ok {
+		t.Fatalf("X-Achtest-Tags must be absent, got %q", req.Header.Get("X-Achtest-Tags"))
 	}
 }
 

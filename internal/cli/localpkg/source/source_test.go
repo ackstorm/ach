@@ -33,3 +33,19 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestGitLabHost(t *testing.T) {
+	for url, want := range map[string]bool{
+		"https://gitlab.com/g/p.git":        true,
+		"https://gitlab.example.com:8443/p": true,
+		"https://git.example.com/g/p":       true,
+		"https://github.com/o/r":            false,
+		"https://codeberg.org/o/r":          false,
+		"file:///tmp/gitlab/repo":           false,
+		"https://example.com/gitlab/mirror": false,
+	} {
+		if got := GitLabHost(url); got != want {
+			t.Errorf("GitLabHost(%q) = %v, want %v", url, got, want)
+		}
+	}
+}

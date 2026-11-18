@@ -148,6 +148,7 @@ Detail on admins, teams, budgets and redirect hosts: `references/auth.md`.
 | `forwarder.extraEnv` | `[]` | Forwarder-only env. |
 | `forwarder.headers` | `x-ach-key`, `x-api-key` (`resolve`) | Credential slots (`ACH_CREDENTIAL_HEADERS`). |
 | `forwarder.gemini.stripModelPrefixes` | `[]` | `ACH_GEMINI_STRIP_MODEL_PREFIXES`. |
+| `forwarder.testTagsHeader` | `false` | `ACH_TEST_TAGS_HEADER`. Test clusters only: mirrors the budget tags (user e-mail included) into `X-Achtest-Tags`, which LiteLLM can forward to the model provider. |
 | `forwarder.trustedIdP.issuer` / `.audiences` / `.claim` | `""` / `[]` / `email` | `ACH_TRUSTED_IDP_*`. |
 
 Detail: `references/litellm.md` (headers, Gemini) and `references/auth.md`

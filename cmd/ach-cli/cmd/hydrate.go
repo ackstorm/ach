@@ -164,7 +164,8 @@ Example:
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
   3 not authorized   4 wrong environment for this key   5 state mismatch
-  6 network error   7 file-name collision   8 config read/write error`,
+  6 network error   7 a file ACH did not install is in the way
+  8 config read/write error`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env := ""
 			if len(args) > 0 {
@@ -238,7 +239,7 @@ func (f *hydrateFlags) register(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.sync, "sync", false,
 		"Delete state entries no longer in the environment (deepest-first)")
 	cmd.Flags().BoolVar(&f.force, "force", false,
-		"Bypass drift refusal, environment guard, and schema mismatch")
+		"Bypass drift refusal, existing-file refusal, environment guard, and schema mismatch")
 	cmd.Flags().BoolVar(&f.wait, "wait", false,
 		"Block indefinitely on workspace lock contention")
 	cmd.Flags().DurationVar(&f.lockTimeout, "lock-timeout", 0,

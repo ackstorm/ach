@@ -78,6 +78,11 @@ Hydrate does not overwrite a file you edited: it stops, names the file and
 exits 2. Keep your edit, or pass `--force` to take the Environment's version.
 `environment status` marks such files with `! edited`.
 
+Hydrate does not replace a file of your own either. When a plugin or skill
+would write a file that already exists with other content and that hydrate did
+not install, it stops, names the file and exits 7. Move your file away, or
+pass `--force` to replace it.
+
 Do not edit the tool's configuration while hydrate runs: hydrate reads the
 file, merges its entries and writes it back, so a save in between is lost.
 

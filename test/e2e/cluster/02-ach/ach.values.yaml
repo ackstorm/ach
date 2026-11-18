@@ -92,6 +92,9 @@ forwarder:
   headers:
     - {name: x-ach-key, mode: resolve}
     - {name: x-api-key, mode: resolve}
+  # The tag-stamping tests read the budget tags at ach-mock-model from this
+  # mirror header.
+  testTagsHeader: true
   # The in-cluster Dex issuer (scripts/cluster.sh rewrites dex-config.yaml's
   # issuer to this) — the token's iss must match byte for byte.
   trustedIdP:

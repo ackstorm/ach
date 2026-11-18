@@ -110,6 +110,9 @@ func parseGit(ref, authOverride string) (SourceURI, error) {
 	}, nil
 }
 
+// GitLabHost reports whether rawURL's host matches a known GitLab host pattern.
+func GitLabHost(rawURL string) bool { return inferGitAuth(rawURL) == AuthBasicOAuth2 }
+
 // inferGitAuth returns AuthBasicOAuth2 for known GitLab host patterns,
 // AuthBearer otherwise.
 func inferGitAuth(rawURL string) string {

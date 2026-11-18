@@ -87,6 +87,7 @@ The data path for model, MCP and A2A requests.
 | `forwarder.extraEnv` | `[]` | Environment variables for the forwarder only. |
 | `forwarder.headers` | `x-ach-key`, `x-api-key`, both `resolve` | Request headers read for a credential, in order. `resolve` takes an ACH credential; `passthrough` forwards the backend's own key unchanged. |
 | `forwarder.gemini.stripModelPrefixes` | `[]` | Prefixes removed from the model name on the `/gemini` route; first match wins. |
+| `forwarder.testTagsHeader` | `false` | Test clusters only: also sends each request's budget tags (user e-mail, Environment, key id) as the `X-Achtest-Tags` header, which LiteLLM passes on to the model provider when it forwards client headers. |
 | `forwarder.trustedIdP.issuer` | `""` | External OIDC issuer whose access tokens are accepted as `Authorization: Bearer`; empty turns it off. |
 | `forwarder.trustedIdP.audiences` | `[]` | Accepted `aud` values. Required with an issuer. |
 | `forwarder.trustedIdP.claim` | `email` | Token claim that names the ACH user. |

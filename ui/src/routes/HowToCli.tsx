@@ -179,7 +179,7 @@ ach-cli environment search <text>            # find a plugin, skill, MCP serverâ
 # ~/Projects/<environment>/<project>/ â€¦`}
               />
               <Step
-                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it."
+                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it. A file of your own that a plugin or skill would replace stops it with exit code 7; --force replaces it."
                 code={`cd ~/Projects/<environment> && ach-cli environment hydrate   # every Environment recorded here
 ach-cli environment hydrate <environment> --sync           # also remove what the Environment dropped
 ach-cli environment hydrate <environment> --dry-run        # preview the diff, write nothing
@@ -231,7 +231,7 @@ ach-cli keys revoke <name>                       # for good`}
             sub="Install a plugin or skill straight from a git repository, with no Environment and no sign-in. The quick path for trying something; for anything a team relies on, ask for it in an Environment."
           >
             <Step
-              note="A source is github:owner/repo[#ref] or git:https://host/path[.git][#ref]. --dry-run on install and uninstall writes nothing."
+              note="A source is github:owner/repo[#ref] or git:https://host/path[.git][#ref]. --dry-run on install and uninstall writes nothing. Install and update do not replace a file of your own (exit code 7) unless you pass --force; update leaves a file you edited as it is."
               code={`ach-cli local repo add github:owner/repo --name <repo>
 ach-cli local plugin install <plugin>@<repo> --target claude-code   # -g for the tool's global config
 ach-cli local skill install <skill>@<repo> --target codex,opencode

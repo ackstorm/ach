@@ -79,6 +79,13 @@ the release notes ask for it; migrations are cumulative and run in order.
   image but leaves the schema at the newer version, because no hook runs a
   down migration. Read the release notes before rolling back: most releases
   tolerate it, some do not.
+- Pinning an older chart version (the Flux and Argo CD way back) is a
+  `helm upgrade`: the migration Job runs first, from the older image, and
+  fails with `no migration found for version N` when the release being left
+  added a migration. The upgrade stops and the cluster stays on the newer
+  release. Set `migrate.enabled: false` together with the older version, and
+  back to `true` with the next upgrade. `helm rollback` runs no hook and needs
+  no such step.
 - One known hard stop: once any `ek-` key has been suspended or given an
   expiry, the schema cannot be migrated below the release that introduced key
   states; the down migration refuses. Resume suspended keys and clear expiries

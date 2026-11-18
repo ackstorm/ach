@@ -28,7 +28,9 @@ ach-cli local repo list
 Local paths are not supported.
 
 For a private repository pass `--token`, or set `GITHUB_TOKEN` (for
-`github:`) or `GITLAB_TOKEN` (for `git:`). Some GitLab setups need
+`github:`) or `GITLAB_TOKEN` (for `git:` on a GitLab host: one whose name
+contains `gitlab` or starts with `git.`). A `git:` source on any other host
+takes its token from `--token` only. Some GitLab setups need
 `--auth basic-oauth2`.
 
 ## Install
@@ -41,6 +43,11 @@ ach-cli local skill install <skill>@<repo> --target codex,opencode
 `--target` is one or more of `claude-code`, `codex`, `gemini-cli`, `opencode`
 and `pi`. The install goes into the current folder; `-g` puts it in the
 tool's global configuration. `--dry-run` prints the plan and writes nothing.
+
+An install does not replace a file of your own: when a destination already
+exists with other content and no installed plugin or skill put it there, the
+command names the file, does not install that plugin or skill and exits 7.
+Move your file away, or pass `--force` to replace it.
 
 ## Verify
 
@@ -60,6 +67,11 @@ ach-cli local repo remove <repo>
 ```
 
 `ach-cli local skill` has the same commands.
+
+`update` leaves a file you edited as it is and reports it as skipped; the
+rest of the plugin or skill is updated. Like `install`, it stops with exit 7
+on a file of your own that the new version would replace, before it touches
+that plugin or skill, unless you pass `--force`.
 
 ## Related
 
