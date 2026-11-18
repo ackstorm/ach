@@ -5,9 +5,14 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ackstorm/ach/internal/db"
 )
 
 type deviceAuthzBody struct {
@@ -19,9 +24,10 @@ type deviceAuthzBody struct {
 	Interval        int    `json:"interval"`
 }
 
-func startDevice(t *testing.T, f *asFixture, cid string) deviceAuthzBody {
+func startDevice(t *testing.T, f *asFixture, cid string, resource ...string) deviceAuthzBody {
 	t.Helper()
-	w := f.do(t, "POST", "/platform/oauth/device_authorization", "client_id="+cid, formHdr)
+	form := url.Values{"client_id": {cid}, "resource": resource}
+	w := f.do(t, "POST", "/platform/oauth/device_authorization", form.Encode(), formHdr)
 	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("device_authorization: %d %s", w.Code, w.Body)
 	}
@@ -189,5 +195,109 @@ func TestNormalizeUserCode(t *testing.T) {
 		if got := normalizeUserCode(in); got != want {
 			t.Errorf("%q: got %q want %q", in, got, want)
 		}
+	}
+}
+
+func TestDeviceMCPBrokerConsent(t *testing.T) {
+	for _, outcome := range []string{"approved", "refused", "unverified", "expired"} {
+		t.Run(outcome, func(t *testing.T) {
+			f, broker := chainFixture(t, probeAuthRequired)
+			if outcome == "unverified" {
+				f.deps.Probe = func(context.Context, string, string, string) probeOutcome { return probeAuthRequired }
+			}
+			installFakePKs(f)
+			cid := registerClient(t, f)
+			device := startDevice(t, f, cid, f.deps.Issuer+"/mcp/demo")
+			state, cookie := confirmCode(t, f, device.UserCode)
+			w := f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+			loc := w.Header().Get("Location")
+			if w.Code != http.StatusFound || !strings.HasPrefix(loc, broker.srv.URL+"/broker/authorize?") {
+				t.Fatalf("Dex callback did not start broker consent: status %d", w.Code)
+			}
+			tokenForm := deviceTokenForm(cid, device.DeviceCode)
+			w = f.do(t, "POST", "/platform/oauth/token", tokenForm, formHdr)
+			if w.Code != 400 || !strings.Contains(w.Body.String(), "authorization_pending") {
+				t.Fatalf("poll before consent: %d", w.Code)
+			}
+			w = f.do(t, "POST", "/platform/oauth/device", "user_code="+device.UserCode, sameOriginForm)
+			if w.Header().Get("Location") != "" || !strings.Contains(w.Body.String(), "not found") {
+				t.Fatal("another browser could confirm the same user code")
+			}
+
+			params := url.Values{"state": {mustQuery(t, loc, "state")}}
+			ctx := context.Background()
+			key := oauthKey("device", device.DeviceCode)
+			switch outcome {
+			case "refused":
+				params.Set("error", "access_denied")
+			case "expired":
+				if err := f.store.Del(ctx, "device", device.DeviceCode); err != nil {
+					t.Fatal(err)
+				}
+			case "approved":
+				if err := f.store.RDB.Expire(ctx, key, time.Minute).Err(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			w = f.do(t, "GET", "/platform/oauth/broker-callback?"+params.Encode(), nil, cookie)
+			if w.Header().Get("Location") != "" {
+				t.Fatal("device grant redirected to a client callback")
+			}
+			if outcome == "approved" {
+				if w.Code != 200 || !strings.Contains(w.Body.String(), "Return to your terminal") {
+					t.Fatalf("completion: %d", w.Code)
+				}
+				if ttl := f.store.RDB.TTL(ctx, key).Val(); ttl <= 0 || ttl > time.Minute {
+					t.Fatalf("device expiration changed: %v", ttl)
+				}
+			}
+			w = f.do(t, "POST", "/platform/oauth/token", tokenForm, formHdr)
+			if outcome == "approved" {
+				if w.Code != 200 || !strings.Contains(w.Body.String(), "access_token") {
+					t.Fatalf("poll after consent: %d", w.Code)
+				}
+				return
+			}
+			want := "access_denied"
+			if outcome == "expired" {
+				want = "expired_token"
+			}
+			if w.Code != 400 || !strings.Contains(w.Body.String(), want) {
+				t.Fatalf("poll after %s: %d %s", outcome, w.Code, w.Body)
+			}
+		})
+	}
+}
+
+func TestDeviceMCPConsentSetup(t *testing.T) {
+	for _, outcome := range []string{"existing consent", "no broker policy", "unavailable broker", "unavailable policy", "unverified access"} {
+		t.Run(outcome, func(t *testing.T) {
+			f, broker := chainFixture(t, probeAuthRequired)
+			switch outcome {
+			case "existing consent":
+				f.deps.Probe = func(context.Context, string, string, string) probeOutcome { return probeOK }
+			case "no broker policy":
+				f.deps.ConsentBIP = func(context.Context, string) (*db.BIPRow, error) { return nil, nil }
+			case "unavailable broker":
+				broker.srv.Close()
+			case "unavailable policy":
+				f.deps.ConsentBIP = func(context.Context, string) (*db.BIPRow, error) { return nil, errors.New("unavailable") }
+			case "unverified access":
+				f.deps.Probe = func(context.Context, string, string, string) probeOutcome { return probeOther }
+			}
+			installFakePKs(f)
+			cid := registerClient(t, f)
+			device := startDevice(t, f, cid, f.deps.Issuer+"/mcp/demo")
+			state, cookie := confirmCode(t, f, device.UserCode)
+			f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+			w := f.do(t, "POST", "/platform/oauth/token", deviceTokenForm(cid, device.DeviceCode), formHdr)
+			if outcome == "existing consent" || outcome == "no broker policy" {
+				if w.Code != 200 {
+					t.Fatalf("poll: %d %s", w.Code, w.Body)
+				}
+			} else if w.Code != 400 || !strings.Contains(w.Body.String(), "access_denied") {
+				t.Fatalf("poll for %s: %d", outcome, w.Code)
+			}
+		})
 	}
 }

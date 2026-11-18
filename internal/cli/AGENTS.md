@@ -39,7 +39,7 @@ Boundary regression test: `go list -deps ./cmd/ach-cli` must show no
 
 ## Command surface
 
-Four noun groups. `--target` is the platform selector everywhere: a
+Command groups. `--target` is the platform selector everywhere: a
 StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
 `environment hydrate` and `local`, ids + aliases from `adapter.Lookup`.
 
@@ -47,6 +47,10 @@ StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
 # session + profiles
 ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
 ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
+
+# shell access to granted remote tools and agents
+ach-cli mcp list [--tools] | search <words...> | describe <server> [tool] | call <server> <tool> [json-object] | login <server> [--device | --no-browser] (alias: auth)
+ach-cli a2a list | search <words...> | call <agent> <message> [--context-id <id>]
 
 # governed remote object (CR-defined, server-mediated)
 ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]

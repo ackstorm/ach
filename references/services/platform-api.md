@@ -55,6 +55,15 @@ the console SPA at `/` (`internal/platformapi/console`, `go:embed all:dist`, chi
 
 **BIP-declared consent** (an MCP `BackendIdentityPolicy` may name one `consentBroker` + `consentAudience` — never `ach`, `ach-ek` or an `mcp:`/`a2a:` prefix, refused by the CRD rule and again in `chainStart`, since the hint is signed with the token key; ACH probes the backend through the forwarder, performs one broker metadata/DCR/PKCE hop only when the outcome is `auth_required`, then re-probes before issuing the code; no broker code is redeemed)
 
+Device clients can send the MCP server URL as the `resource` form field on
+`POST /platform/oauth/device_authorization`, alongside their registered
+`client_id`. The user confirms the code and signs in on the verification page.
+For servers with a consent broker, ACH checks access as that user and opens
+provider consent if needed. While the browser is at the provider, polling
+`POST /platform/oauth/token` returns `authorization_pending`. A successful
+check releases the ordinary ACH token. Refused consent yields `access_denied`.
+The gateway enforces the caller's existing grants on every MCP request.
+
 ## UI write path
 
 **GitOps-wins UI write path**: the platform-api UI

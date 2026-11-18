@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 )
 
@@ -39,6 +40,7 @@ type oauthDevice struct {
 	ClientID string `json:"client_id"`
 	UserCode string `json:"user_code"`
 	Status   string `json:"status"`
+	MCPKey   string `json:"mcp_key,omitempty"`
 	oauthUser
 }
 
@@ -92,7 +94,8 @@ func (d OAuthDeps) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, 500, "server_error", "")
 		return
 	}
-	rec := oauthDevice{ClientID: client.ClientID, UserCode: userCode, Status: deviceStatusPending}
+	rec := oauthDevice{ClientID: client.ClientID, UserCode: userCode, Status: deviceStatusPending,
+		MCPKey: mcpKeyFromResource(r.PostForm["resource"], d.Issuer)}
 	if err := d.Store.Put(r.Context(), "device", deviceCode, rec, deviceTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
@@ -139,10 +142,16 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 	}
 	userCode := normalizeUserCode(r.PostForm.Get("user_code"))
 	var deviceCode string
+	var rec oauthDevice
 	ok := false
 	if userCode != "" {
 		var err error
-		if ok, err = d.Store.Get(r.Context(), "device_user", userCode, &deviceCode); err != nil {
+		// Claim the verification code for a single browser, including the broker hop.
+		ok, err = d.Store.Take(r.Context(), "device_user", userCode, &deviceCode)
+		if err == nil && ok {
+			ok, err = d.Store.Get(r.Context(), "device", deviceCode, &rec)
+		}
+		if err != nil {
 			d.htmlError(w, 500, "store unavailable")
 			return
 		}
@@ -162,7 +171,7 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
-	p := oauthPending{DeviceCode: deviceCode, DexVerifier: dexVerifier, Binding: bindingHash(binding)}
+	p := oauthPending{DeviceCode: deviceCode, ClientID: rec.ClientID, MCPKey: rec.MCPKey, DexVerifier: dexVerifier, Binding: bindingHash(binding)}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
 		d.htmlError(w, 500, "store unavailable")
 		return
@@ -192,9 +201,7 @@ func sameOrigin(issuer string, r *http.Request) bool {
 	return su.Scheme == iu.Scheme && su.Host == iu.Host
 }
 
-// deviceFinish is the as-callback tail for a device pending: the device
-// record flips to approved (or denied), the user_code index dies, and the
-// browser is told to go back to the terminal — no client redirect exists.
+// deviceFinish records the decision for the polling client and completes the browser flow.
 func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, status string, u oauthUser) {
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	var rec oauthDevice
@@ -208,19 +215,22 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 		return
 	}
 	rec.Status, rec.oauthUser = status, u
-	// Remaining TTL: the CLI stops polling at expires_in whatever happens here.
-	if err := d.Store.Put(r.Context(), "device", p.DeviceCode, rec, deviceTTL); err != nil {
+	ok, err = d.Store.PutIfExists(r.Context(), "device", p.DeviceCode, rec, redis.KeepTTL)
+	if err != nil {
 		d.htmlError(w, 500, "store unavailable")
 		return
 	}
-	_ = d.Store.Del(r.Context(), "device_user", rec.UserCode)
+	if !ok {
+		d.htmlError(w, 400, "this device code has expired — start again from your terminal")
+		return
+	}
 	d.Auth.Logger.Info("oauth: device authorization "+status, "client_id", rec.ClientID)
 	if status == deviceStatusApproved {
-		d.renderPage(w, http.StatusOK, page{Label: "SIGNED IN", Cmd: "ach-cli login", Args: "--no-browser", Out: "✓ approved",
+		d.renderPage(w, http.StatusOK, page{Label: "SIGNED IN",
 			Title: "Signed in to ACH", Sub: "Return to your terminal — you can close this tab.", Footer: "you can close this tab"})
 		return
 	}
-	d.renderPage(w, http.StatusOK, page{Label: "CANCELLED", Cmd: "ach-cli login", Args: "--no-browser", Out: "✗ cancelled",
+	d.renderPage(w, http.StatusOK, page{Label: "CANCELLED",
 		Title: "Sign-in cancelled", Sub: "Nothing was granted. You can close this tab.", Error: true, Footer: "no credential was issued"})
 }
 

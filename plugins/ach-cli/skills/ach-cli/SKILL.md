@@ -1,6 +1,6 @@
 ---
 name: ach-cli
-description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, launch a tool on, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Claude Code, Codex, OpenCode, Gemini CLI or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
+description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, launch a tool on, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, look up a contact or use an organization tool when its MCP server is missing locally, find and call MCP tools or A2A agents from the shell, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Claude Code, Codex, OpenCode, Gemini CLI or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
 ---
 
 # ACH from the command line
@@ -23,7 +23,17 @@ the active profile (`~/.config/ach/config.yaml`). `ach-cli whoami` prints it. If
 profile exists yet, take the URL from the `ACH_URL` environment variable (`ach-cli
 login` reads it on its own), or ask the user for it. Never guess a URL.
 
-## Start by looking
+## Tools and agents from any repository
+
+When a user asks for a lookup and the server is missing from the session, run
+`ach-cli mcp search <words...>`. For a contact lookup, try `ach-cli mcp search zoho contacts`.
+Copy the returned names into `mcp describe <server> <tool>`, then use `mcp call` with
+arguments that fit the schema. For a request to another agent, use `ach-cli a2a search`
+and `ach-cli a2a call`. These commands use the active ACH credential from any directory.
+They work without installing a local server, hydrating an Environment, or editing the repo.
+See [MCP tools and A2A agents](references/mcp.md).
+
+## Before setting up a machine
 
 Before changing anything, read the state yourself. These commands only read:
 
@@ -48,7 +58,7 @@ announcing a next step: run it in the same reply, or end with a question.
 | Sign in, switch profiles, sign out, a machine/CI profile, `ach-cli token` | [login](references/login.md) |
 | See, search or describe Environments | [environments](references/environments.md) |
 | Install an Environment globally or into a folder, start a tool on it (`launch`), keep it updated, remove it | [hydrate](references/hydrate.md) |
-| Sign in to or fix an MCP server | [mcp](references/mcp.md) |
+| Find or call an MCP tool or A2A agent, or sign in to an MCP server | [mcp](references/mcp.md) |
 | A key for an agent, CI job or script (`ek-`) | [keys](references/keys.md) |
 | Install a plugin or skill straight from a git repo, without an Environment | [local](references/local.md) |
 | An error, an exit code, admin commands | [troubleshooting](references/troubleshooting.md) |
