@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.19] - 2026-11-18
+
 ### Added
 - `ach-cli local plugin install` and `update` (and the `skill` forms) take
   `--force`, to replace a file that already exists and that `ach-cli` did not
