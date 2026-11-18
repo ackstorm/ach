@@ -1362,7 +1362,7 @@ Usage:
   ach-cli mcp [command]
 
 Available Commands:
-  call        Call one MCP tool with an optional JSON object
+  call        Call one MCP tool with an optional JSON object (use - for stdin)
   describe    Show a server's tools or a tool's complete input schema
   list        List accessible MCP servers
   login       Approve provider access for an MCP server in your browser
@@ -1377,10 +1377,10 @@ Use "ach-cli mcp [command] --help" for more information about a command.
 ### ach-cli mcp call
 
 ```text
-Call one MCP tool with an optional JSON object
+Call one MCP tool with an optional JSON object (use - for stdin)
 
 Usage:
-  ach-cli mcp call <server> <tool> [json-object] [flags]
+  ach-cli mcp call <server> <tool> [json-object|-] | <server.tool> [json-object|-] [flags]
 
 Flags:
   -h, --help             help for call
@@ -1396,7 +1396,7 @@ Flags:
 Show a server's tools or a tool's complete input schema
 
 Usage:
-  ach-cli mcp describe <server> [tool] [flags]
+  ach-cli mcp describe <server> [tool] | <server.tool> [flags]
 
 Flags:
   -h, --help             help for describe
@@ -1419,6 +1419,7 @@ Flags:
       --key string       Authenticate with an environment key (ek-…)
   -o, --output string    Output format: table|json (default "table")
       --profile string   Use this profile instead of the active one
+      --refresh          Refresh the five-minute tool inventory cache when listing tools
       --tools            Include tools grouped by server
       --verbose          Dump request headers to stderr (credentials redacted)
 ```
@@ -1431,7 +1432,7 @@ ACH profile. A local browser returns to the CLI automatically. Over SSH,
 use --device to confirm a code in any browser. With --no-browser, open
 the authorization URL on your own machine and paste the final loopback
 URL into this terminal, even if the browser says it could not connect.
-The CLI checks access using your active credential.
+Use the exact server name shown by ach-cli mcp list for your active credential.
 
 Usage:
   ach-cli mcp login <server> [flags]
@@ -1440,7 +1441,7 @@ Aliases:
   login, auth
 
 Examples:
-  ach-cli mcp login zoho
+  ach-cli mcp login mcp-zoho-crm-ro
 
 Flags:
       --device           Show a code to approve provider access from any browser
@@ -1464,6 +1465,7 @@ Flags:
       --key string       Authenticate with an environment key (ek-…)
   -o, --output string    Output format: table|json (default "table")
       --profile string   Use this profile instead of the active one
+      --refresh          Refresh the five-minute tool inventory cache when searching tools
       --verbose          Dump request headers to stderr (credentials redacted)
 ```
 

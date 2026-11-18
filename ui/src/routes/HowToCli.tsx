@@ -172,8 +172,8 @@ ach-cli environment search <text>            # find a plugin, skill, MCP serverâ
               <Step
                 note="Look up a contact or ask another agent from any folder. Use the names returned by search and the arguments in the tool schema."
                 code={`ach-cli mcp search zoho contacts
-ach-cli mcp describe <server> <tool>
-ach-cli mcp call <server> <tool> '<json-object>' -o json
+ach-cli mcp describe <server.tool>
+ach-cli mcp call <server.tool> - -o json < args.json
 ach-cli mcp login <server>   # when the provider asks for consent
 ach-cli mcp auth <server> --device   # approve from another device
 ach-cli a2a search <words...>

@@ -6,19 +6,27 @@ Start with the action the user needs. For example, to look up a Zoho contact:
 
 ```bash
 ach-cli mcp search zoho contacts
-ach-cli mcp describe <server> <tool> -o json
-ach-cli mcp call <server> <tool> '<json-object>' -o json
+ach-cli mcp describe <server.tool> -o json
+ach-cli mcp call <server.tool> - -o json < args.json
 ```
 
-Copy the server and tool names from search. Use the tool's input schema to construct
-the JSON object. Omit the object for a tool with no arguments. JSON output includes
+Copy the dotted tool name from search. Use the input schema to construct the JSON
+object in `args.json`. You can also pass a quoted JSON object inline. Both commands accept
+separate `<server> <tool>` arguments. Discovery prints this form when a dotted
+name would be ambiguous. Omit the object for a tool with no arguments. JSON output includes
 the MCP content and any structured content. Check the exit status before using it.
 
 Use `ach-cli mcp list` to see the servers, `ach-cli mcp describe <server>` for one
-server's tools, or `ach-cli mcp list --tools` for the full inventory. A partial
-inventory names the servers that failed and exits nonzero. If a server requires
-provider consent, ask the person to run `ach-cli mcp login <server>` with their
-personal login and approve the provider in the browser. Over SSH, the user can run
+server's tools, or `ach-cli mcp list --tools` for the full inventory. Search ranks
+servers by their best match. Within each server, tools matching more words come
+first. Search and `list --tools` check current server grants and reuse tool metadata for five minutes.
+Use `--refresh` after a tool change. Servers needing sign-in appear in a single
+stderr message and in the JSON `errors` array. Discovery succeeds if the other
+servers respond. It exits nonzero if every queried server needs sign-in or a
+query fails for another reason.
+
+If a server requires provider consent, ask the person to run
+`ach-cli mcp login <server>` with their personal login and approve the provider in the browser. Over SSH, the user can run
 `ach-cli mcp auth <server> --device`, open the verification URL in any browser,
 and confirm the short code shown in the terminal. For callback paste, use
 `ach-cli mcp auth <server> --no-browser`. Paste the final loopback URL directly
