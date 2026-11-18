@@ -11,7 +11,7 @@
 | 4 | wrong Environment for this key | An `ek-` works for its own Environment only |
 | 5 | state mismatch | The `.ach/` state does not match the files; `environment status`, then hydrate again |
 | 6 | network error | Check the URL in `ach-cli whoami` and the connection; retry |
-| 7 | file-name collision | Two items write the same file; see `--conflict` |
+| 7 | a file `ach-cli` did not install is in the way | A plugin or skill would replace a file that exists with other content. Show the user the file; move it away, or `--force` on their say-so. Also from `local plugin|skill install` and `update` |
 | 8 | config read/write error | `~/.config/ach/config.yaml` or the tool's config is unreadable or not writable |
 
 ## Common situations

@@ -80,6 +80,10 @@ type Deps struct {
 	// the JSON request body once to strip client budget tags, review #5).
 	// Use LiteLLM's own model_group_alias for that surface.
 	GeminiStripModelPrefixes []string
+
+	// TestTagsHeader also sends the stamped budget tags as X-Achtest-Tags
+	// (chart forwarder.testTagsHeader -> ACH_TEST_TAGS_HEADER). See headerTags.
+	TestTagsHeader bool
 }
 
 // New constructs the shared *httputil.ReverseProxy. One instance per
@@ -194,7 +198,7 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// Budget tags: one stamping point for every family, so /mcp,
 			// /a2a and /v2/model/info are attributed like /v1 (FWD-06's
 			// body injection only ever reached /v1 + /gemini).
-			stampTags(req)
+			stampTags(req, deps.TestTagsHeader)
 
 			// JWT write LAST — overwrites whatever Authorization the client
 			// sent: on /mcp + /a2a the per-target ACH JWT is the credential.

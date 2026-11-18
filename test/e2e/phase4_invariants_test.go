@@ -182,12 +182,13 @@ func waitForwarderPrecheckAuthorized(t *testing.T, url, ek string) int {
 }
 
 // testPhase4SC2EkTagStamping — the forwarder stamps LiteLLM budget tags on
-// every authenticated request from the Director, and mirrors them into the
-// X-Achtest-Tags header (internal/forwarder/proxy/tags.go). LiteLLM consumes
-// x-litellm-tags itself, so we assert at the backend (ach-mock-model "loro")
-// on the mirror — which the TEST cluster forwards to the demo-model group via
-// forward_client_headers_to_llm_api (test/e2e/cluster/01-base/
-// litellm.values.yaml; not enabled in prod).
+// every authenticated request from the Director, and with
+// forwarder.testTagsHeader (test/e2e/cluster/02-ach/ach.values.yaml) mirrors
+// them into the X-Achtest-Tags header (internal/forwarder/proxy/tags.go).
+// LiteLLM consumes x-litellm-tags itself, so we assert at the backend
+// (ach-mock-model "loro") on the mirror — which the TEST cluster forwards to
+// the demo-model group via forward_client_headers_to_llm_api (test/e2e/
+// cluster/01-base/litellm.values.yaml).
 //
 //   - ek_ bound to demo → user:<owner>,environment:demo,key:<ek id>
 //   - pk_               → user:<owner> only (no Environment, no per-key cap)

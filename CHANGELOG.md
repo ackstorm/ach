@@ -4,6 +4,42 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli local plugin install` and `update` (and the `skill` forms) take
+  `--force`, to replace a file that already exists and that `ach-cli` did not
+  install.
+- Helm value `forwarder.testTagsHeader`, off by default, for test clusters:
+  the forwarder also sends each request's budget tags as the
+  `X-Achtest-Tags` header.
+
+### Changed
+- Upgrade guide: going back to an older chart version through Flux or Argo CD
+  needs `migrate.enabled: false` when the release you are leaving added a
+  migration. The migration Job otherwise fails with `no migration found for
+  version N` and stops the upgrade. `helm rollback` is unaffected.
+- The chart's default `genai.opencodePluginSpec` is `opencode-oidc-provider`
+  v0.4.11: a token refresh waits up to 40 s for the authorization server,
+  instead of failing at 15 s while the identity provider is slow.
+
+### Fixed
+- The forwarder sends the `X-Achtest-Tags` header upstream only with
+  `forwarder.testTagsHeader` set. Before, every request carried it, with the
+  caller's e-mail, Environment and key id, and LiteLLM passed it on to the
+  model provider when `forward_client_headers_to_llm_api` was on.
+- `ach-cli local repo add git:<url>` falls back to `GITLAB_TOKEN` only for a
+  GitLab host (its name contains `gitlab` or starts with `git.`). Before, the
+  token was sent to, and saved for, any `git:` host. For a GitLab under
+  another host name, pass `--token`.
+- `ach-cli environment hydrate` and `ach-cli local plugin install` (and
+  `skill install`, and both `update` forms) do not replace a file that already
+  exists with other content and that they did not install, such as an agent or
+  command of your own with the same name: they name the file, leave it as it
+  is and exit 7. Move the file away, or pass `--force`. The first hydrate of an
+  Environment into a folder where another Environment installed the same
+  plugin at an older version stops the same way: hydrate that one first.
+- `ach-cli local plugin update` (and `skill update`) leaves a file you edited
+  as it is. Before, it reported the file as skipped and then overwrote it.
+
 ## [1.1.18] - 2026-11-18
 
 ### Fixed

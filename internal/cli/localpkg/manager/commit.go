@@ -214,6 +214,22 @@ func CheckCommit(root string, global bool, writes []PlannedWrite) error {
 	return nil
 }
 
+// CheckUnowned reports the first whole-file write whose destination already
+// exists with other content and is not in owned, the paths recorded for
+// installed packages: that file is the user's own, or another tool's. Deep
+// and composite writes share their file and are never reported.
+func CheckUnowned(root string, writes []PlannedWrite, owned map[string]bool) error {
+	for _, w := range writes {
+		if w.Merge == adapter.MergeDeep || w.Merge == adapter.MergeComposite || owned[w.Path] {
+			continue
+		}
+		if body, err := os.ReadFile(adapter.ResolveDest(root, w.Path)); err == nil && !bytes.Equal(body, w.Content) {
+			return fmt.Errorf("%s already exists and ach-cli did not install it", w.Path)
+		}
+	}
+	return nil
+}
+
 // checkUninstall is CheckCommit for the recorded paths of an uninstall.
 func checkUninstall(root string, global bool, files []store.FileRec) error {
 	for _, f := range files {

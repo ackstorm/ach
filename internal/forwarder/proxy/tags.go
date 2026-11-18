@@ -30,8 +30,9 @@ const tagsHeader = "X-Litellm-Tags"
 // own stripAndRewrite drops every "x-ach-*" header from the upstream
 // request. "x-achtest-" sits outside that prefix yet stays "x-*", which is
 // what LiteLLM's forward_client_headers_to_llm_api forwards to the backend.
-// In production LiteLLM does not enable that setting, so the header is
-// dropped before any real backend; only the test cluster forwards it.
+// With that setting on, the model provider receives the header and the
+// caller's email in it, so it is sent only where Deps.TestTagsHeader asks:
+// the test cluster.
 const headerTags = "X-Achtest-Tags"
 
 // tagsForContext returns the LiteLLM budget tags for the caller's ACH
@@ -60,8 +61,8 @@ func tagsForContext(ctx context.Context) []string {
 	return tags
 }
 
-// stampTags writes the tag header (and its test mirror) onto the upstream
-// request. Fail-open by construction: with no tags it stamps none.
+// stampTags writes the tag header (and, with mirror, its test mirror) onto
+// the upstream request. Fail-open by construction: with no tags it stamps none.
 //
 // It DELETES both headers first, unconditionally. They are ACH's own
 // control plane — the budget ceilings the whole feature enforces are keyed
@@ -73,7 +74,7 @@ func tagsForContext(ctx context.Context) []string {
 // chooses its own attribution. LiteLLM's pass-through also merges a plain
 // "tags" header into the request tags and charges each of them, so that one
 // goes too.
-func stampTags(req *http.Request) {
+func stampTags(req *http.Request, mirror bool) {
 	req.Header.Del(tagsHeader)
 	req.Header.Del(headerTags)
 	req.Header.Del("Tags")
@@ -83,5 +84,7 @@ func stampTags(req *http.Request) {
 	}
 	joined := strings.Join(tags, ",")
 	req.Header.Set(tagsHeader, joined)
-	req.Header.Set(headerTags, joined)
+	if mirror {
+		req.Header.Set(headerTags, joined)
+	}
 }

@@ -1354,11 +1354,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		outcome = NoOp
 	}
 
-	// A user edit to OUR key (drift) is preserved with exit 2 unless --force.
-	// prior == nil (fresh hydrate) never refuses — there is nothing of ours
-	// to preserve yet.
-	if prior != nil && ShouldExit2(outcome) && !d.force {
-		return FileWrite{}, WrapDriftError(outcome, finalAbs)
+	if err := d.refusal(fw, prior, outcome, onDiskHash, freshHash, finalAbs); err != nil {
+		return FileWrite{}, err
 	}
 
 	// Skip the rewrite only on a true no-op (prior exists; disk + upstream
@@ -1433,6 +1430,33 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		Keys:       append([]string(nil), fw.Keys...),
 		Preserved:  skip,
 	}, nil
+}
+
+// refusal reports why a publish must leave the file on disk alone, unless
+// --force. With a state row: a user edit to OUR content (drift), exit 2.
+// With none: a whole-file target that already exists with other content is
+// not this Environment's file (the user's own, another tool's, a sibling
+// Environment's older copy), exit 7. Deep and composite writes share the
+// file by key or marker and are never refused for lack of a row.
+func (d *adapterDispatcherImpl) refusal(
+	fw adapter.FileWrite, prior *state.FileEntry, outcome DriftOutcome, onDiskHash, freshHash, finalAbs string,
+) error {
+	if d.force {
+		return nil
+	}
+	if prior != nil {
+		return WrapDriftError(outcome, finalAbs)
+	}
+	wholeFile := fw.Merge != adapter.MergeDeep && fw.Merge != adapter.MergeComposite
+	if !wholeFile || onDiskHash == "" || onDiskHash == freshHash {
+		return nil
+	}
+	return &exit.CodedError{
+		Code: exit.CollisionRefuse,
+		Msg: fmt.Sprintf("%s already exists with other content and this Environment did not install it\n"+
+			"hint: move it away, or re-run with --force to replace it "+
+			"(if another Environment in this folder installed it, hydrate that one first)", relToWd(finalAbs)),
+	}
 }
 
 // buildCompositeBlock builds the per-plugin marked block for a MergeComposite

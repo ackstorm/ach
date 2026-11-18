@@ -212,6 +212,34 @@ func ownersAt(installed *store.InstalledFile, ref, target string) map[string]str
 	return owners
 }
 
+// refuseUnowned stops an install or update (exit 7) that would replace a file
+// no installed package at target records: the user's own, or another tool's.
+// --force replaces it.
+func refuseUnowned(
+	force bool, verb, root, ref, target string, writes []manager.PlannedWrite, installed *store.InstalledFile,
+) error {
+	if force {
+		return nil
+	}
+	owned := map[string]bool{}
+	for _, e := range installed.Installed {
+		if e.Target != target {
+			continue
+		}
+		for _, f := range e.Files {
+			owned[f.RelPath] = true
+		}
+	}
+	if err := manager.CheckUnowned(root, writes, owned); err != nil {
+		return &exit.CodedError{
+			Code: exit.CollisionRefuse,
+			Msg: fmt.Sprintf("%s: %s → %s: %v\nhint: move it away, or re-run with --force to replace it",
+				verb, ref, target, err),
+		}
+	}
+	return nil
+}
+
 // reportConflictActions prints one line per namespace/skip resolution applied by
 // manager.ResolveConflicts (overwrite is reported post-commit by collisionWarn;
 // refuse aborts before reaching here).
@@ -365,6 +393,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		flagConflict string
 		flagVerbose  bool
 		flagDryRun   bool
+		flagForce    bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -488,14 +517,18 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					plans = append(plans, targetPlan{targetID: targetID, resolved: resolved, actions: actions})
 				}
 
-				// Containment is decided for every target before the first
-				// write, so a refusal on a later target leaves nothing behind.
+				// Containment and unowned files are decided for every target
+				// before the first write, so a refusal on a later target
+				// leaves nothing behind.
 				for _, pl := range plans {
 					if err := manager.CheckCommit(root, flagGlobal, pl.resolved); err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
 							Msg:  fmt.Sprintf("install: %s → %s: %v", ref, pl.targetID, err),
 						}
+					}
+					if err := refuseUnowned(flagForce, "install", root, ref, pl.targetID, pl.resolved, installed); err != nil {
+						return err
 					}
 				}
 				for _, pl := range plans {
@@ -569,6 +602,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
 	c.Flags().BoolVar(&flagDryRun, "dry-run", false, "Resolve + project and print the plan, but write nothing")
+	c.Flags().BoolVar(&flagForce, "force", false, "Replace files that already exist and ach-cli did not install")
 	_ = c.MarkFlagRequired("target")
 	return c
 }
@@ -623,8 +657,11 @@ func planUpdate(
 }
 
 // checkUpdatePlans refuses an update whose old files or new writes leave the
-// project through a link, before anything is removed.
-func checkUpdatePlans(root string, global bool, ref string, plans []updatePlan) error {
+// project through a link, or whose new writes would replace a file no
+// installed package records (unless force), before anything is removed.
+func checkUpdatePlans(
+	root string, global, force bool, ref string, plans []updatePlan, installed *store.InstalledFile,
+) error {
 	for _, pl := range plans {
 		err := func() error {
 			if _, err := manager.UninstallPlan(root, global, pl.entry.Files); err != nil {
@@ -637,6 +674,9 @@ func checkUpdatePlans(root string, global bool, ref string, plans []updatePlan) 
 				Code: exit.General,
 				Msg:  fmt.Sprintf("update: %s → %s: %v", ref, pl.entry.Target, err),
 			}
+		}
+		if err := refuseUnowned(force, "update", root, ref, pl.entry.Target, pl.resolved, installed); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -772,6 +812,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 		flagDest     string
 		flagConflict string
 		flagVerbose  bool
+		flagForce    bool
 	)
 	kindStr := string(kind)
 	c := &cobra.Command{
@@ -902,10 +943,10 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					plans = append(plans, pl)
 				}
 
-				// Containment is decided for the old files and the new writes
-				// of every target before anything is removed, so a refusal
-				// keeps the old install and its record.
-				if err := checkUpdatePlans(root, flagGlobal, ref, plans); err != nil {
+				// Containment (old files and new writes) and unowned files
+				// are decided for every target before anything is removed,
+				// so a refusal keeps the old install and its record.
+				if err := checkUpdatePlans(root, flagGlobal, flagForce, ref, plans, installed); err != nil {
 					return err
 				}
 
@@ -923,6 +964,14 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					for _, s := range skipped {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 					}
+					// A file the user edited stays as it is: its write is
+					// dropped and its old record kept, so it stays tracked.
+					resolved = slices.DeleteFunc(slices.Clone(resolved), func(w manager.PlannedWrite) bool {
+						return slices.Contains(skipped, w.Path)
+					})
+					kept := slices.DeleteFunc(slices.Clone(e.Files), func(f store.FileRec) bool {
+						return !slices.Contains(skipped, f.RelPath)
+					})
 
 					recs, err := manager.Commit(root, flagGlobal, name, resolved)
 					if err != nil {
@@ -956,7 +1005,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						Kind:        kindStr,
 						Target:      e.Target,
 						ResolvedSHA: rr.ResolvedSHA,
-						Files:       recs,
+						Files:       append(recs, kept...),
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
 					upsertInstalled(installed, newEntry)
@@ -981,6 +1030,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",
 		"Clash policy when another install owns a target path: namespace|skip|overwrite|refuse")
 	c.Flags().BoolVar(&flagVerbose, "verbose", false, "Narrate per-repo clone + per-target projection progress")
+	c.Flags().BoolVar(&flagForce, "force", false, "Replace files that already exist and ach-cli did not install")
 	return c
 }
 

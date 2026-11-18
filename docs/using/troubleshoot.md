@@ -22,6 +22,7 @@ request line and its headers, with credentials redacted.
 | 4 | The record under `.ach/` names another Environment than the one you asked for | Hydrate the Environment the folder holds, or pass `--force` |
 | 5 | The record under `.ach/`, or the server's answer, has a format this `ach-cli` does not know | Run `ach-cli upgrade`. `--force` rewrites the local record |
 | 6 | The server answered that it is unavailable; for `whoami`, `refresh` and `upgrade`, also a server that cannot be reached | Retry |
+| 7 | Hydrate, or a `local` install or update, would replace a file that `ach-cli` did not install | See [A file of your own is in the way](#a-file-of-your-own-is-in-the-way) |
 | 8 | `~/.config/ach/config.yaml`, or a record under `.ach/`, cannot be read or written | Check the file and its permissions |
 
 `launch` exits with the tool's own code once the tool has started.
@@ -87,6 +88,20 @@ Environment name, it reports the failure per Environment and exits 1. Keep
 your edit and leave it, or pass `--force` to replace the file with the
 Environment's version. `ach-cli environment status` lists the files you
 edited.
+
+## A file of your own is in the way
+
+A plugin or skill would write a file that already exists, with other content,
+and that `ach-cli` did not install: an agent, command or skill of your own
+with the same name, or one another tool put there. Hydrate,
+`ach-cli local plugin install` and `ach-cli local plugin update` (and the
+`skill` forms) name the file, leave it as it is and exit 7. Move or rename
+your file, or pass `--force` to replace it with the installed version, then
+run the command again.
+
+The first hydrate of an Environment also stops this way when another
+Environment in the same folder (or with `-g`) installed the same plugin at an
+older version: hydrate that Environment first, then this one.
 
 ## Budget exceeded
 

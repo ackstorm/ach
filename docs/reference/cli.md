@@ -545,7 +545,8 @@ Example:
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
   3 not authorized   4 wrong environment for this key   5 state mismatch
-  6 network error   7 file-name collision   8 config read/write error
+  6 network error   7 a file ACH did not install is in the way
+  8 config read/write error
 
 Usage:
   ach-cli environment hydrate [env] [flags]
@@ -555,7 +556,7 @@ Flags:
       --conflict string         Cross-plugin collision policy: namespace|skip|overwrite|refuse (default "namespace")
       --dir string              Workspace root override (default: cwd)
       --dry-run                 Run read+diff steps but skip state write and content extract
-      --force                   Bypass drift refusal, environment guard, and schema mismatch
+      --force                   Bypass drift refusal, existing-file refusal, environment guard, and schema mismatch
   -g, --global                  Use $HOME/.ach/<env> scope instead of cwd/.ach
   -h, --help                    help for hydrate
       --insecure                Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)
@@ -880,7 +881,7 @@ Flags:
       --conflict string         Cross-plugin collision policy: namespace|skip|overwrite|refuse (default "namespace")
       --dir string              Workspace root override (default: cwd)
       --environment string      Environment to hydrate before starting the tool (ACH_ENVIRONMENT is the same)
-      --force                   Bypass drift refusal, environment guard, and schema mismatch
+      --force                   Bypass drift refusal, existing-file refusal, environment guard, and schema mismatch
   -g, --global                  Use $HOME/.ach/<env> scope instead of cwd/.ach
   -h, --help                    help for launch
       --insecure                Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)
@@ -956,6 +957,7 @@ Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
       --dry-run           Resolve + project and print the plan, but write nothing
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
       --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
@@ -1019,6 +1021,7 @@ Usage:
 Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Update in the tool's global config root
   -h, --help              help for update
       --verbose           Narrate per-repo clone + per-target projection progress
@@ -1061,7 +1064,8 @@ Local paths (/, ./, ~) are not yet supported.
 When no #ref fragment is given the default branch is "main".
 
 Tokens are read from --token; when absent the command falls back to
-GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
+GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources on a GitLab
+host). A git: source on any other host takes its token from --token only.
 
 Usage:
   ach-cli local repo add <source> [flags]
@@ -1147,6 +1151,7 @@ Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
       --dry-run           Resolve + project and print the plan, but write nothing
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
       --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
@@ -1210,6 +1215,7 @@ Usage:
 Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Update in the tool's global config root
   -h, --help              help for update
       --verbose           Narrate per-repo clone + per-target projection progress

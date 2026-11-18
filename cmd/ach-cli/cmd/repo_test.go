@@ -205,6 +205,26 @@ func TestRepo(t *testing.T) {
 	})
 }
 
+// TestRepoAdd_GitlabTokenNotSentToOtherHosts: GITLAB_TOKEN is the fallback for
+// GitLab hosts only. A git: source on any other host gets no token from the
+// environment, so none is sent to it or stored for it.
+func TestRepoAdd_GitlabTokenNotSentToOtherHosts(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GITLAB_TOKEN", "glpat-not-for-this-host")
+
+	var buf bytes.Buffer
+	cmd := newRepoCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"add", "git:file://" + initFixtureRepo(t), "--name", "other"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("repo add: %v (output: %s)", err, buf.String())
+	}
+	if tok, err := store.LoadToken("other"); err != nil || tok != "" {
+		t.Fatalf("a token was stored for a non-GitLab host (err=%v)", err)
+	}
+}
+
 // TestRepoAdd_PathSubdirPlugin_V1Scope pins the documented v1 scope of --path:
 // it is the skills-marketplace root hint ONLY and does NOT fetch-narrow a direct
 // plugin/skill that lives in a subdirectory (the --path dual-semantics ambiguity

@@ -279,6 +279,12 @@ forwarder:
   gemini:
     stripModelPrefixes: []
     # stripModelPrefixes: ["gemini.", "gemini/", "vertex_ai."]
+  # testTagsHeader: test clusters only. Also sends the budget tags of every
+  # request (user e-mail, Environment, key id) as the X-Achtest-Tags header.
+  # LiteLLM passes that header on to the model provider when it forwards
+  # client headers (forward_client_headers_to_llm_api), so keep it off
+  # anywhere real providers are called.
+  testTagsHeader: false
   # trustedIdP: accept an access token from ONE external OIDC issuer (e.g. the
   # Dex that LibreChat signs in with) as `Authorization: Bearer`. Recognised
   # only when the token's `iss` equals `issuer` byte for byte (trailing slash
@@ -364,7 +370,7 @@ genai:
   # The plugin `opencode auth login https://<ach host>` installs (engines v1
   # and v2) via /.well-known/opencode: an npm or git spec. Git at the repo
   # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
-  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.10"
+  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.11"
   # Provider ids /.well-known/opencode allows next to providerName in
   # enabled_providers (e.g. [claude-agent] for OpenCode's built-in Claude Agent
   # provider). On OpenCode v2 a user's own config cannot widen that list, so any
