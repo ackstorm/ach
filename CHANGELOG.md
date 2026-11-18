@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.20] - 2026-11-18
+
 ### Added
 - Discover, inspect and call MCP tools from the shell with `ach-cli mcp`, including
   browser consent for providers that require it. Find and message A2A agents with
