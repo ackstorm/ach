@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- `ach-cli environment hydrate` no longer warns `preserving <file> — local
+  edits detected; pass --force to remove` when the MCP server it meant to
+  remove from a tool's config is already gone from that file.
+
 ## [1.1.20] - 2026-11-18
 
 ### Added
