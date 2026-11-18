@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.18] - 2026-11-18
+
 ### Fixed
 - After the operator's cache volume is lost or replaced, standalone Plugin,
   Skill, Prompt and Artifact content is fetched again on the next reconcile.
