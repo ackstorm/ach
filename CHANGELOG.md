@@ -4,6 +4,18 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- After the operator's cache volume is lost or replaced, standalone Plugin,
+  Skill, Prompt and Artifact content is fetched again on the next reconcile.
+  Before, a resource whose upstream had not changed stayed `Synced` while its
+  content answered 404 until its spec was edited.
+
+### Changed
+- The chart's default `genai.opencodePluginSpec` is
+  `opencode-oidc-provider` v0.4.10: `opencode auth login` registers again
+  when the saved client registration is older than 60 days, instead of
+  failing once the authorization server has expired it.
+
 ## [1.1.17] - 2026-11-14
 
 ### Breaking

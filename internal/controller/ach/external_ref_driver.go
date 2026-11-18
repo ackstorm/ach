@@ -135,10 +135,8 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	// §10.3 within-interval gate (reads status.LastSuccessfulRefresh — the
 	// reliable source across the NotModified/304 path; see the original
 	// per-kind comment block for the full rationale).
-	var gateLastRefresh time.Time
-	if st.LastSuccessfulRefresh != nil {
-		gateLastRefresh = st.LastSuccessfulRefresh.Time
-	}
+	finalPath := computeFinalPath(cfg.cacheRoot, cfg.kind, cr.GetName(), view.Scope)
+	gateLastRefresh := lastRefreshForGate(st.LastSuccessfulRefresh, finalPath)
 	// The force-refresh path was entirely unobservable: the only log line in this
 	// driver was the skip below, so a refresh that ran slow, failed, or never ran at
 	// all left identical traces — nothing. Announce entry and outcome at INFO so the
@@ -158,8 +156,6 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 			"lastRefresh", gateLastRefresh, "requeueAfter", remaining)
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
-
-	finalPath := computeFinalPath(cfg.cacheRoot, cfg.kind, cr.GetName(), view.Scope)
 
 	deps := ExternalRefRefreshDeps{
 		Client:        cfg.client,
@@ -269,6 +265,17 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// lastRefreshForGate is the refresh time the interval gate counts from. It is
+// zero, which never skips the fetch, before the first successful refresh and
+// while the cache file is missing (lost or replaced cache volume):
+// content-service has nothing to serve until the file is fetched again.
+func lastRefreshForGate(last *metav1.Time, finalPath string) time.Time {
+	if last == nil || cacheFileMissing(finalPath) {
+		return time.Time{}
+	}
+	return last.Time
 }
 
 // trackLatestRev records the head of the watched ref on status, keeps
