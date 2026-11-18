@@ -224,10 +224,16 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	if deps.AuthSecretRef != nil {
 		secretArg = &secretObj
 	}
+	// NotModified keeps serving the published file, so the prior revision is
+	// offered only while that file exists.
+	priorRev := deps.PriorRev
+	if cacheFileMissing(deps.FinalPath) {
+		priorRev = ""
+	}
 	result, err := fetcher.Fetch(ctx, sources.FetchRequest{
 		Spec:     deps.SourceSpec,
 		Secret:   secretArg,
-		PriorRev: deps.PriorRev,
+		PriorRev: priorRev,
 	})
 	if err != nil {
 		return MaterializeResult{Err: err}
@@ -438,6 +444,13 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 		return filepath.Join(cacheRoot, "skill", name+".tar.gz")
 	}
 	return ""
+}
+
+// cacheFileMissing reports whether nothing is published at path, as after
+// the cache volume was lost or replaced.
+func cacheFileMissing(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // buildSourceSpec constructs a [sources.SourceSpec] discriminator from
