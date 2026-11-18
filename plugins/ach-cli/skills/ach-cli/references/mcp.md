@@ -1,4 +1,42 @@
-# MCP servers from ACH
+# MCP tools and A2A agents from ACH
+
+## Call from the shell
+
+Start with the action the user needs. For example, to look up a Zoho contact:
+
+```bash
+ach-cli mcp search zoho contacts
+ach-cli mcp describe <server> <tool> -o json
+ach-cli mcp call <server> <tool> '<json-object>' -o json
+```
+
+Copy the server and tool names from search. Use the tool's input schema to construct
+the JSON object. Omit the object for a tool with no arguments. JSON output includes
+the MCP content and any structured content. Check the exit status before using it.
+
+Use `ach-cli mcp list` to see the servers, `ach-cli mcp describe <server>` for one
+server's tools, or `ach-cli mcp list --tools` for the full inventory. A partial
+inventory names the servers that failed and exits nonzero. If a server requires
+provider consent, ask the person to run `ach-cli mcp login <server>` with their
+personal login and approve the provider in the browser. Over SSH, use
+`ach-cli mcp auth <server> --no-browser`. Open the printed authorization URL, then
+paste the final loopback URL into the waiting terminal. Keep that URL out of chat
+and shell history. Then retry discovery with
+the original credential. A grant is required for both discovery and calls.
+
+For an A2A agent, search by name, description or skill, then send a message:
+
+```bash
+ach-cli a2a list
+ach-cli a2a search <words...>
+ach-cli a2a call <agent> 'Review the deployment'
+ach-cli a2a call <agent> 'Explain the first finding' --context-id <id>
+```
+
+Use the context ID from the reply for a follow-up. Run these commands from the
+user's current directory. Local MCP configuration is optional.
+
+## Use a server inside a configured tool
 
 Hydrating an Environment writes its MCP servers into the tool's config, enabled. Each
 points at `<platform URL>/mcp/<server>` and signs in with the user's ACH single sign-on
@@ -51,10 +89,5 @@ wrote, and do not hand-edit those entries: the next hydrate owns them.
 - **403**: the account lacks access to that server. Signing in again will not help; a
   platform administrator grants it through an Environment.
 - **A server missing after the Environment changed**: hydrate again.
-- **Remote machine (SSH, Coder) and the browser shows "127.0.0.1 refused to connect"**:
-  the tool waits for the sign-in on the remote machine's localhost. Ask the user to paste
-  the whole failed address from the browser bar, then deliver it on this machine with
-  `curl -s -o /dev/null "<that address>"` — but only when it starts with
-  `http://127.0.0.1:` or `http://localhost:`; refuse anything else. The page always says
-  it succeeded, so check the tool's own list afterwards. Port forwarding the callback port
-  (`ssh -L <port>:localhost:<port>`) works too.
+- **Remote sign-in**: use the client's callback prompt when available, or forward
+  the displayed loopback port to the remote host over SSH.

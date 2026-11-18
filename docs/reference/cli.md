@@ -14,6 +14,7 @@ Usage:
   ach-cli [command]
 
 Available Commands:
+  a2a         Discover agents and send them messages
   admin       Admin operations (inventory, keys, user budgets and limits, refresh)
   completion  Generate the autocompletion script for the specified shell
   environment Inspect environments visible to the active credential
@@ -23,6 +24,7 @@ Available Commands:
   local       Local, ungoverned developer package path (repo/plugin/skill)
   login       Sign in to a Hub (browser on this machine, or a code from any browser)
   logout      Sign out of the active profile
+  mcp         Discover and call MCP tools through ACH
   profile     Manage your profiles (~/.config/ach/config.yaml)
   refresh     Re-read your identity provider groups and update your access
   token       Print the active profile's token, or its key (credential helper)
@@ -34,6 +36,75 @@ Flags:
   -v, --version   version for ach-cli
 
 Use "ach-cli [command] --help" for more information about a command.
+```
+
+## ach-cli a2a
+
+```text
+Discover agents and send them messages
+
+Usage:
+  ach-cli a2a [flags]
+  ach-cli a2a [command]
+
+Available Commands:
+  call        Send a message to an agent
+  list        List agents visible to the active credential
+  search      Find agents by name, description or skill
+
+Flags:
+  -h, --help   help for a2a
+
+Use "ach-cli a2a [command] --help" for more information about a command.
+```
+
+### ach-cli a2a call
+
+```text
+Send a message to an agent
+
+Usage:
+  ach-cli a2a call <agent> <message> [flags]
+
+Flags:
+      --context-id string   Continue the conversation with this context ID
+  -h, --help                help for call
+      --key string          Authenticate with an environment key (ek-…)
+  -o, --output string       Output format: table|json (default "table")
+      --profile string      Use this profile instead of the active one
+      --verbose             Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli a2a list
+
+```text
+List agents visible to the active credential
+
+Usage:
+  ach-cli a2a list [flags]
+
+Flags:
+  -h, --help             help for list
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli a2a search
+
+```text
+Find agents by name, description or skill
+
+Usage:
+  ach-cli a2a search <words...> [flags]
+
+Flags:
+  -h, --help             help for search
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
 ```
 
 ## ach-cli admin
@@ -1279,6 +1350,119 @@ Usage:
 Flags:
   -h, --help             help for logout
       --profile string   Sign out of this profile instead of the active one
+```
+
+## ach-cli mcp
+
+```text
+Discover and call MCP tools through ACH
+
+Usage:
+  ach-cli mcp [flags]
+  ach-cli mcp [command]
+
+Available Commands:
+  call        Call one MCP tool with an optional JSON object
+  describe    Show a server's tools or a tool's complete input schema
+  list        List accessible MCP servers
+  login       Approve provider access for an MCP server in your browser
+  search      Find servers and tools by name and description
+
+Flags:
+  -h, --help   help for mcp
+
+Use "ach-cli mcp [command] --help" for more information about a command.
+```
+
+### ach-cli mcp call
+
+```text
+Call one MCP tool with an optional JSON object
+
+Usage:
+  ach-cli mcp call <server> <tool> [json-object] [flags]
+
+Flags:
+  -h, --help             help for call
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp describe
+
+```text
+Show a server's tools or a tool's complete input schema
+
+Usage:
+  ach-cli mcp describe <server> [tool] [flags]
+
+Flags:
+  -h, --help             help for describe
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp list
+
+```text
+List accessible MCP servers
+
+Usage:
+  ach-cli mcp list [flags]
+
+Flags:
+  -h, --help             help for list
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --tools            Include tools grouped by server
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp login
+
+```text
+Open the authorization URL and sign in with the account for your active
+ACH profile. A local browser returns to the CLI automatically. Over SSH,
+use --no-browser to open the printed URL on your own machine and paste
+the final loopback URL into this terminal, even if the browser says it
+could not connect. The CLI checks access using your active credential.
+
+Usage:
+  ach-cli mcp login <server> [flags]
+
+Aliases:
+  login, auth
+
+Examples:
+  ach-cli mcp login zoho
+
+Flags:
+  -h, --help             help for login
+      --key string       Authenticate with an environment key (ek-…)
+      --no-browser       Print the authorization URL and accept the final browser URL in this terminal
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp search
+
+```text
+Find servers and tools by name and description
+
+Usage:
+  ach-cli mcp search <words...> [flags]
+
+Flags:
+  -h, --help             help for search
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
 ```
 
 ## ach-cli profile

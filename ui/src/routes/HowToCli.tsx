@@ -170,6 +170,15 @@ ach-cli environment describe <environment>   # what one contains
 ach-cli environment search <text>            # find a plugin, skill, MCP server… across all of them`}
               />
               <Step
+                note="Look up a contact or ask another agent from any folder. Use the names returned by search and the arguments in the tool schema."
+                code={`ach-cli mcp search zoho contacts
+ach-cli mcp describe <server> <tool>
+ach-cli mcp call <server> <tool> '<json-object>' -o json
+ach-cli mcp login <server>   # when the provider asks for consent
+ach-cli a2a search <words...>
+ach-cli a2a call <agent> '<message>'`}
+              />
+              <Step
                 note="Global install, for the organization's baseline: every project gets it."
                 code={`ach-cli environment hydrate <environment> -g --target claude-code`}
               />

@@ -1,5 +1,15 @@
 # Sign in to an MCP server
 
+## Use the shell from any directory
+
+Your active ACH credential can discover and call a remote tool without local MCP configuration. To look up a contact, start with `ach-cli mcp search zoho contacts`. Copy the names into `ach-cli mcp describe <server> <tool>`, then pass the fields the input schema requires to `ach-cli mcp call <server> <tool> '<json-object>'`. Add `-o json` to keep the complete MCP result for a script.
+
+If the server asks for provider consent, run `ach-cli mcp login <server>` with your personal login, approve access in the browser, and retry. Over SSH, run `ach-cli mcp auth <server> --no-browser`, open the printed authorization URL on your machine, and paste the final loopback URL into the waiting terminal.
+
+For an A2A agent, use `ach-cli a2a search <words...>` and `ach-cli a2a call <agent> '<message>'`.
+
+## Configure a server in your coding tool
+
 Hydrating an Environment writes its MCP servers into your tool's
 configuration. Each entry points at `https://ach.example.com/mcp/<server>`.
 An A2A agent of the Environment appears as an MCP server named
@@ -36,17 +46,12 @@ List again. The server shows as connected, and its tools appear in the tool.
 
 ## Sign in over SSH
 
-The tool waits for the browser on the remote machine's `localhost`, so the
-last redirect fails in your local browser with "127.0.0.1 refused to
-connect". Either:
-
-- forward the callback port before you sign in:
-  `ssh -L <port>:localhost:<port> <host>`; or
-- copy the whole failed address from the browser bar and open it on the
-  remote machine: `curl -s -o /dev/null "<address>"`. Only do this for an
-  address that starts with `http://127.0.0.1:` or `http://localhost:`.
-
-Then list the servers in the tool to check.
+The browser redirects to `localhost` on the machine where you opened the
+authorization link. If the remote tool offers a callback prompt, as OpenCode
+does, paste the full final URL into that prompt. Keep it out of chat and shell
+history. For a tool that requires a loopback connection, forward its callback
+port with `ssh -L <port>:localhost:<port> <host>` before finishing sign-in.
+Then list the servers in the tool to check the connection.
 
 ## The tool does not show a server
 

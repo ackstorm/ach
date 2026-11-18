@@ -1,6 +1,6 @@
 ---
 name: {{skill}}
-description: Entry point to the organization's AI platform (ACH) at {{base}}. Environments are ACH objects, not local files or folders, so never search the disk for one. Use whenever the user mentions an Environment or wants to hydrate, install, list or find one, even by name alone ("hydrate the X environment here"); wants to get started or onboard; wants to install or sign in to ach-cli; sees no ACH models in OpenCode; or asks how to get the organization's MCP servers, skills and plugins into OpenCode.
+description: Entry point to the organization's AI platform (ACH) at {{base}}. Environments are ACH objects, not local files or folders, so never search the disk for one. Use whenever the user mentions an Environment or wants to hydrate, install, list or find one, even by name alone ("hydrate the X environment here"); wants to get started or onboard; wants to install or sign in to ach-cli; sees no ACH models in OpenCode; asks to look up a contact or call an ACH tool or agent from an unconfigured repo; or asks how to get the organization's MCP servers, skills and plugins into OpenCode.
 ---
 
 # {{provider}} platform (ACH): first setup
@@ -17,6 +17,12 @@ starts); the models appear a few seconds later.
 This skill gets `ach-cli` working, the user's Environments visible and a named
 Environment installed. Everything after that (folder layouts, MCP sign-in, keys) is the
 `ach-cli` skill, which an Environment brings when it is installed: load it then.
+
+For a lookup from the shell, a signed-in `ach-cli` is enough. Run
+`ach-cli mcp search <words...>`, inspect the returned pair with
+`ach-cli mcp describe <server> <tool>`, and use `ach-cli mcp call` with the schema's
+arguments. For another agent, use `ach-cli a2a search` and `ach-cli a2a call`.
+These paths work without hydrating an Environment or configuring a local MCP server.
 
 Never ask for, print, paste or commit a key or token.
 
@@ -112,7 +118,12 @@ keys), load the `ach-cli` skill.
 {{/default_env}}
 ### Sign in to MCP servers
 
-`opencode mcp list` shows which servers need it. One at a time:
+`opencode mcp list` shows which servers need sign-in. Over SSH, have the user run
+`opencode mcp auth <server>` in their remote terminal, open the authorization link
+in their browser, and paste the final loopback URL into the waiting sign-in prompt.
+Keep the callback URL out of chat.
+
+With a browser on the same machine, start sign-in for one server at a time:
 
 ```bash
 LOG="${TMPDIR:-/tmp}/mcp-auth-<server>.log"
@@ -120,7 +131,5 @@ nohup opencode mcp auth <server> </dev/null >"$LOG" 2>&1 &
 for i in $(seq 1 20); do grep -q http "$LOG" && break; sleep 1; done; cat "$LOG"
 ```
 
-Give the user the link, then wait for them to say they approved (do not poll), and check
-with `opencode mcp list`. If the browser shows "127.0.0.1 refused to connect", ask them to
-paste the whole failed address, then run `curl -s -o /dev/null "<that address>"` here,
-only when it starts with `http://127.0.0.1:` or `http://localhost:`.
+Give the user the authorization link. When they confirm approval, check with
+`opencode mcp list`.

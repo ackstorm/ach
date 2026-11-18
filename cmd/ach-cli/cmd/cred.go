@@ -39,6 +39,7 @@ func registerCredFlags(cmd *cobra.Command, f *credFlags) {
 // cred is a resolved credential.
 type cred struct {
 	BaseURL, Bearer, ProfileName string
+	OAuthClientID                string
 }
 
 // resolveCred picks the Hub URL + bearer for a network command:
@@ -84,6 +85,9 @@ func resolveCred(ctx context.Context, f credFlags) (cred, error) {
 	case key == "":
 		if c.Bearer, err = profileBearer(ctx, file, path, prof); err != nil {
 			return cred{}, err
+		}
+		if prof.OAuth != nil {
+			c.OAuthClientID = prof.OAuth.ClientID
 		}
 		if c.Bearer == "" {
 			return cred{}, &exit.CodedError{Code: exit.General,
