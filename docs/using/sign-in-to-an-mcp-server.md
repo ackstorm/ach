@@ -2,7 +2,14 @@
 
 ## Use the shell from any directory
 
-Your active ACH credential can discover and call a remote tool without local MCP configuration. To look up a contact, start with `ach-cli mcp search zoho contacts`. Copy the names into `ach-cli mcp describe <server> <tool>`, then pass the fields the input schema requires to `ach-cli mcp call <server> <tool> '<json-object>'`. Add `-o json` to keep the complete MCP result for a script.
+Your active ACH credential can discover and call a remote tool without local MCP configuration. To look up a contact, start with `ach-cli mcp search zoho contacts`. Copy the dotted tool name into `ach-cli mcp describe <server.tool>` to inspect its input schema. You can pass a JSON object inline or read it from a file. For example, if search returns `mcp-zoho-crm-ro.crm_search_contacts`, run:
+
+```bash
+ach-cli mcp describe mcp-zoho-crm-ro.crm_search_contacts -o json
+ach-cli mcp call mcp-zoho-crm-ro.crm_search_contacts - -o json < args.json
+```
+
+Search groups results by server, with the strongest matching group first. Within each group, tools matching more words come first. A tool can match words from its own name and description and from the server's. Search and `mcp list --tools` check your server grants on every run and reuse tool metadata for five minutes. Add `--refresh` to read the inventory again. If some servers need sign-in, the command lists them on stderr and succeeds when the other servers respond. In JSON, check `errors` for the skipped names. If every queried server needs sign-in or any query fails for another reason, the command exits nonzero.
 
 If the server asks for provider consent, run `ach-cli mcp login <server>` with your personal login, approve access in the browser, and retry.
 

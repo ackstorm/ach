@@ -21,6 +21,7 @@ func TestMCPFromEmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	credTestEnv(t)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	var queries, calls atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/hydrate/version", func(w http.ResponseWriter, r *http.Request) {

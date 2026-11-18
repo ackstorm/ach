@@ -34,8 +34,8 @@ ACH profile. A local browser returns to the CLI automatically. Over SSH,
 use --device to confirm a code in any browser. With --no-browser, open
 the authorization URL on your own machine and paste the final loopback
 URL into this terminal, even if the browser says it could not connect.
-The CLI checks access using your active credential.`,
-		Example: "  ach-cli mcp login zoho",
+Use the exact server name shown by ach-cli mcp list for your active credential.`,
+		Example: "  ach-cli mcp login mcp-zoho-crm-ro",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
@@ -64,7 +64,7 @@ The CLI checks access using your active credential.`,
 			if err != nil {
 				return err
 			}
-			tools, err := readMCPTools(ctx, c, flags.Verbose, name)
+			tools, err := cachedMCPTools(ctx, c, flags.Verbose, name, true)
 			if err != nil {
 				return fmt.Errorf("check access to %s with the active ACH credential: %w", name, err)
 			}

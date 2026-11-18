@@ -4,6 +4,23 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Breaking
+- `ach-cli mcp search` ranks partial word matches. Scripts that require every
+  term to match should filter the JSON results. Search and `list --tools` exit
+  successfully when some servers need provider sign-in and the rest respond.
+  Check the JSON `errors` field when your script requires a complete inventory.
+
+### Added
+- MCP discovery caches tool metadata for five minutes. Use `--refresh` with
+  `search` or `list --tools` to fetch it again. Both commands check server grants
+  on every run.
+- Copy a dotted tool name from MCP discovery into `describe` or `call`. Pass
+  `-` to `call` to read a JSON object from a pipe or redirected file.
+
+### Fixed
+- MCP calls and descriptions give the same diagnostic for a server outside
+  the active credential's catalog. The provider login example uses a catalog name.
+
 ## [1.1.20] - 2026-11-18
 
 ### Added
