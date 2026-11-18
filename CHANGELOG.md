@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.21] - 2026-11-18
+
 ### Breaking
 - `ach-cli mcp search` ranks partial word matches. Scripts that require every
   term to match should filter the JSON results. Search and `list --tools` exit
