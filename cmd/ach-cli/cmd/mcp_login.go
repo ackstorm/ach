@@ -23,7 +23,7 @@ import (
 
 func newMCPLoginCmd() *cobra.Command {
 	var flags credFlags
-	var noBrowser bool
+	var noBrowser, device bool
 	cmd := &cobra.Command{
 		Use:     "login <server>",
 		Aliases: []string{"auth"},
@@ -31,9 +31,10 @@ func newMCPLoginCmd() *cobra.Command {
 		Short:   "Approve provider access for an MCP server in your browser",
 		Long: `Open the authorization URL and sign in with the account for your active
 ACH profile. A local browser returns to the CLI automatically. Over SSH,
-use --no-browser to open the printed URL on your own machine and paste
-the final loopback URL into this terminal, even if the browser says it
-could not connect. The CLI checks access using your active credential.`,
+use --device to confirm a code in any browser. With --no-browser, open
+the authorization URL on your own machine and paste the final loopback
+URL into this terminal, even if the browser says it could not connect.
+The CLI checks access using your active credential.`,
 		Example: "  ach-cli mcp login zoho",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -54,8 +55,13 @@ could not connect. The CLI checks access using your active credential.`,
 			}
 			resource := strings.TrimRight(c.BaseURL, "/") + "/mcp/" + url.PathEscape(name)
 			client := oauthlogin.Client{BaseURL: c.BaseURL}
-			prompt := mcpLoginPrompt(noBrowser, cmd.InOrStdin(), cmd.ErrOrStderr())
-			if _, err := client.LoginForResource(ctx, c.OAuthClientID, resource, prompt); err != nil {
+			if device {
+				_, err = client.DeviceLogin(ctx, c.OAuthClientID, resource, deviceLoginPrompt(cmd.ErrOrStderr()))
+			} else {
+				prompt := mcpLoginPrompt(noBrowser, cmd.InOrStdin(), cmd.ErrOrStderr())
+				_, err = client.LoginForResource(ctx, c.OAuthClientID, resource, prompt)
+			}
+			if err != nil {
 				return err
 			}
 			tools, err := readMCPTools(ctx, c, flags.Verbose, name)
@@ -69,6 +75,8 @@ could not connect. The CLI checks access using your active credential.`,
 	registerCredFlags(cmd, &flags)
 	cmd.Flags().BoolVar(&noBrowser, "no-browser", false,
 		"Print the authorization URL and accept the final browser URL in this terminal")
+	cmd.Flags().BoolVar(&device, "device", false, "Show a code to approve provider access from any browser")
+	cmd.MarkFlagsMutuallyExclusive("device", "no-browser")
 	return cmd
 }
 

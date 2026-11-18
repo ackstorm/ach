@@ -279,7 +279,7 @@ const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 // until a token, a terminal error, or expires_in. The registered redirect
 // is a loopback placeholder — the device grant never uses it, but DCR
 // needs one and the same client id then serves both flows.
-func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(userCode, verificationURI string, prefilled bool)) (*config.OAuthCreds, error) {
+func (c *Client) DeviceLogin(ctx context.Context, clientID, resource string, show func(userCode, verificationURI string, prefilled bool)) (*config.OAuthCreds, error) {
 	m, err := c.discover(ctx)
 	if err != nil {
 		return nil, err
@@ -292,8 +292,11 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 			return nil, err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint,
-		strings.NewReader(url.Values{"client_id": {clientID}}.Encode()))
+	form := url.Values{"client_id": {clientID}}
+	if resource != "" {
+		form.Set("resource", resource)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +332,8 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 	}
 	interval := time.Duration(da.Interval) * time.Second
 	deadline := time.Now().Add(time.Duration(da.ExpiresIn) * time.Second)
-	form := url.Values{"grant_type": {deviceGrantType}, "device_code": {da.DeviceCode}, "client_id": {clientID}}
+	form.Set("grant_type", deviceGrantType)
+	form.Set("device_code", da.DeviceCode)
 	for {
 		select {
 		case <-ctx.Done():

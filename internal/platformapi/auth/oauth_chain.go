@@ -162,7 +162,11 @@ func (d OAuthDeps) chainStart(w http.ResponseWriter, r *http.Request, c oauthCha
 			}
 		}
 	}
-	d.Auth.Logger.Warn("oauth: consent broker unavailable; issuing without chain", "broker", c.Broker, "err", err)
+	d.Auth.Logger.Warn("oauth: consent broker unavailable", "broker", c.Broker, "err", err)
+	if c.DeviceCode != "" {
+		d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{})
+		return
+	}
 	d.finish(w, r, c.oauthPending, c.PendingID, c.oauthUser)
 }
 
@@ -185,10 +189,15 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 		d.htmlError(w, 400, "this browser did not start the authorization request — start again from your client")
 		return
 	}
-	if e := q.Get("error"); e != "" {
-		d.Auth.Logger.Info("oauth: broker declined", "mcp_key", c.MCPKey, "error", e)
+	brokerError := q.Get("error")
+	if brokerError != "" {
+		d.Auth.Logger.Info("oauth: broker declined", "mcp_key", c.MCPKey, "error", brokerError)
 	}
-	if d.probe(r.Context(), c.Sub, c.UserID, c.MCPKey) != probeOK {
+	if (c.DeviceCode != "" && brokerError != "") || d.probe(r.Context(), c.Sub, c.UserID, c.MCPKey) != probeOK {
+		if c.DeviceCode != "" {
+			d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{})
+			return
+		}
 		http.SetCookie(w, bindingCookie(c.PendingID, "", d.Auth.InsecureCookie, -1))
 		d.htmlError(w, http.StatusBadGateway, "the consent broker did not grant access to this backend")
 		return
@@ -197,6 +206,10 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, u oauthUser) {
+	if p.DeviceCode != "" {
+		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
+		return
+	}
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	code, err := NewSessionID()
 	if err != nil {

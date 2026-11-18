@@ -18,11 +18,12 @@ Use `ach-cli mcp list` to see the servers, `ach-cli mcp describe <server>` for o
 server's tools, or `ach-cli mcp list --tools` for the full inventory. A partial
 inventory names the servers that failed and exits nonzero. If a server requires
 provider consent, ask the person to run `ach-cli mcp login <server>` with their
-personal login and approve the provider in the browser. Over SSH, use
-`ach-cli mcp auth <server> --no-browser`. Open the printed authorization URL, then
-paste the final loopback URL into the waiting terminal. Keep that URL out of chat
-and shell history. Then retry discovery with
-the original credential. A grant is required for both discovery and calls.
+personal login and approve the provider in the browser. Over SSH, the user can run
+`ach-cli mcp auth <server> --device`, open the verification URL in any browser,
+and confirm the short code shown in the terminal. For callback paste, use
+`ach-cli mcp auth <server> --no-browser`. Paste the final loopback URL directly
+into the waiting terminal. Keep it out of chat and shell history. Retry discovery
+with the original credential. A grant is required for both discovery and calls.
 
 For an A2A agent, search by name, description or skill, then send a message:
 

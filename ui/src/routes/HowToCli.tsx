@@ -175,6 +175,7 @@ ach-cli environment search <text>            # find a plugin, skill, MCP serverâ
 ach-cli mcp describe <server> <tool>
 ach-cli mcp call <server> <tool> '<json-object>' -o json
 ach-cli mcp login <server>   # when the provider asks for consent
+ach-cli mcp auth <server> --device   # approve from another device
 ach-cli a2a search <words...>
 ach-cli a2a call <agent> '<message>'`}
               />

@@ -4,7 +4,16 @@
 
 Your active ACH credential can discover and call a remote tool without local MCP configuration. To look up a contact, start with `ach-cli mcp search zoho contacts`. Copy the names into `ach-cli mcp describe <server> <tool>`, then pass the fields the input schema requires to `ach-cli mcp call <server> <tool> '<json-object>'`. Add `-o json` to keep the complete MCP result for a script.
 
-If the server asks for provider consent, run `ach-cli mcp login <server>` with your personal login, approve access in the browser, and retry. Over SSH, run `ach-cli mcp auth <server> --no-browser`, open the printed authorization URL on your machine, and paste the final loopback URL into the waiting terminal.
+If the server asks for provider consent, run `ach-cli mcp login <server>` with your personal login, approve access in the browser, and retry.
+
+Over SSH, run `ach-cli mcp auth <server> --device`. Open the verification URL in any browser, confirm the short code, and approve provider access. The terminal waits for approval. To use callback paste, run `ach-cli mcp auth <server> --no-browser` and paste the final loopback URL into the waiting terminal.
+
+If you maintain a device-code client, use the `device_authorization_endpoint`
+from ACH's OAuth metadata. Send the MCP server URL (for example,
+`https://ach.example.com/mcp/zoho`) in the `resource` form field alongside
+`client_id`. Poll the token endpoint at the advertised interval while the
+user signs in and approves the provider. The client receives
+`authorization_pending` while consent is in progress.
 
 For an A2A agent, use `ach-cli a2a search <words...>` and `ach-cli a2a call <agent> '<message>'`.
 

@@ -174,15 +174,7 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 		_, _ = fmt.Fprintln(stdout, "Opening your browser to sign in…")
 		creds, err = client.Login(ctx, clientID)
 	case actPrint:
-		creds, err = client.DeviceLogin(ctx, clientID, func(code, uri string, prefilled bool) {
-			ask := "enter this code"
-			if prefilled {
-				ask = "confirm the page shows this code"
-			}
-			_, _ = fmt.Fprintf(stdout,
-				"\nOpen this URL in a browser and %s:\n\n    %s\n\n    %s\n\nWaiting for you to sign in…\n",
-				ask, uri, code)
-		})
+		creds, err = client.DeviceLogin(ctx, clientID, "", deviceLoginPrompt(stdout))
 	}
 	if err != nil {
 		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("login: %v", err), Wrapped: err}
@@ -198,6 +190,17 @@ func runLogin(cmd *cobra.Command, profile, baseURL string, noBrowser, noWarnings
 	}
 	_, _ = fmt.Fprintf(stdout, "Logged in (profile %q); run `ach-cli environment list` to see your Environments\n", name)
 	return nil
+}
+
+func deviceLoginPrompt(out io.Writer) func(string, string, bool) {
+	return func(code, uri string, prefilled bool) {
+		ask := "enter this code"
+		if prefilled {
+			ask = "confirm the page shows this code"
+		}
+		_, _ = fmt.Fprintf(out, "\nOpen this URL in a browser and %s:\n\n    %s\n\n    %s\n\nWaiting for you to sign in…\n",
+			ask, uri, code)
+	}
 }
 
 // resolveProfileName returns the flag value when set; otherwise prompts

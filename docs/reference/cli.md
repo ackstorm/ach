@@ -1428,9 +1428,10 @@ Flags:
 ```text
 Open the authorization URL and sign in with the account for your active
 ACH profile. A local browser returns to the CLI automatically. Over SSH,
-use --no-browser to open the printed URL on your own machine and paste
-the final loopback URL into this terminal, even if the browser says it
-could not connect. The CLI checks access using your active credential.
+use --device to confirm a code in any browser. With --no-browser, open
+the authorization URL on your own machine and paste the final loopback
+URL into this terminal, even if the browser says it could not connect.
+The CLI checks access using your active credential.
 
 Usage:
   ach-cli mcp login <server> [flags]
@@ -1442,6 +1443,7 @@ Examples:
   ach-cli mcp login zoho
 
 Flags:
+      --device           Show a code to approve provider access from any browser
   -h, --help             help for login
       --key string       Authenticate with an environment key (ek-…)
       --no-browser       Print the authorization URL and accept the final browser URL in this terminal

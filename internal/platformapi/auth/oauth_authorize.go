@@ -290,16 +290,21 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		d.consoleFinish(w, r, p, pendingID, u)
 		return
 	}
-	if p.DeviceCode != "" {
-		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
-		return
-	}
 	if p.MCPKey != "" {
-		bip, berr := d.consentBIP(r.Context(), p.MCPKey)
-		if berr != nil {
-			d.Auth.Logger.Warn("oauth: consent policy lookup failed; issuing without chain", "err", berr)
-		} else if bip != nil && d.probe(r.Context(), email, userID, p.MCPKey) == probeAuthRequired {
+		bip, err := d.consentBIP(r.Context(), p.MCPKey)
+		outcome := probeOK
+		if err != nil {
+			d.Auth.Logger.Warn("oauth: consent policy lookup failed", "err", err)
+			outcome = probeOther
+		} else if bip != nil {
+			outcome = d.probe(r.Context(), email, userID, p.MCPKey)
+		}
+		if outcome == probeAuthRequired {
 			d.chainStart(w, r, oauthChain{oauthPending: p, PendingID: pendingID, oauthUser: u, Broker: bip.ConsentBroker, Audience: bip.ConsentAudience})
+			return
+		}
+		if p.DeviceCode != "" && outcome != probeOK {
+			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{})
 			return
 		}
 	}

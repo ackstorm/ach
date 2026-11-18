@@ -90,6 +90,10 @@ func fakeAS(t *testing.T, resourcePath ...string) (*httptest.Server, *int32) {
 	})
 	mux.HandleFunc("/device_authorization", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if len(resourcePath) > 0 && r.PostForm.Get("resource") != srv.URL+resourcePath[0] {
+			http.Error(w, `{"error":"invalid_target"}`, http.StatusBadRequest)
+			return
+		}
 		if r.PostForm.Get("client_id") != "oc_test" {
 			http.Error(w, `{"error":"invalid_client"}`, 400)
 			return
@@ -127,6 +131,10 @@ func fakeAS(t *testing.T, resourcePath ...string) (*httptest.Server, *int32) {
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "a.b.c", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "r1"})
 		case "urn:ietf:params:oauth:grant-type:device_code":
+			if len(resourcePath) > 0 && r.PostForm.Get("resource") != srv.URL+resourcePath[0] {
+				http.Error(w, `{"error":"invalid_target"}`, http.StatusBadRequest)
+				return
+			}
 			if r.PostForm.Get("device_code") != "dev1" || r.PostForm.Get("client_id") != "oc_test" {
 				http.Error(w, `{"error":"expired_token"}`, 400)
 				return
@@ -225,10 +233,10 @@ func TestLogin_StateMismatchIsRejected(t *testing.T) {
 }
 
 func TestDeviceLogin_ShowsCodeThenPollsUntilApproved(t *testing.T) {
-	as, regs := fakeAS(t)
+	as, regs := fakeAS(t, "/mcp/zoho")
 	c := &Client{BaseURL: as.URL}
 	shown := ""
-	creds, err := c.DeviceLogin(context.Background(), "", func(code, uri string, _ bool) { shown = code + " @ " + uri })
+	creds, err := c.DeviceLogin(context.Background(), "", as.URL+"/mcp/zoho", func(code, uri string, _ bool) { shown = code + " @ " + uri })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +252,7 @@ func TestDeviceLogin_TerminalErrorStopsPolling(t *testing.T) {
 	as, _ := fakeAS(t)
 	c := &Client{BaseURL: as.URL}
 	// A cached client id the AS does not know → device_authorization 400.
-	if _, err := c.DeviceLogin(context.Background(), "oc_unknown", func(string, string, bool) {}); err == nil || !strings.Contains(err.Error(), "invalid_client") {
+	if _, err := c.DeviceLogin(context.Background(), "oc_unknown", "", func(string, string, bool) {}); err == nil || !strings.Contains(err.Error(), "invalid_client") {
 		t.Fatalf("err=%v", err)
 	}
 }

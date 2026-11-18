@@ -23,13 +23,16 @@ import (
 
 func TestMCPLoginUsesOriginalCredential(t *testing.T) {
 	for _, tc := range []struct {
-		name, server        string
+		name                string
+		args                []string
 		grantAfterLogin     bool
 		wantBrowser, wantOK bool
 	}{
-		{"granted", "zoho", true, true, true},
-		{"wrong browser account", "zoho", false, true, false},
-		{"outside grant", "unknown", false, false, false},
+		{"granted", []string{"zoho"}, true, true, true},
+		{"device code", []string{"zoho", "--device"}, true, false, true},
+		{"wrong browser account", []string{"zoho"}, false, true, false},
+		{"outside grant", []string{"unknown"}, false, false, false},
+		{"conflicting modes", []string{"zoho", "--device", "--no-browser"}, false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loginTestEnv(t)
@@ -70,9 +73,14 @@ func TestMCPLoginUsesOriginalCredential(t *testing.T) {
 				}
 				return follow(raw)
 			}
-			_, _, _, err := executeCommand(t, newMCPLoginCmd(), tc.server)
-			if (err == nil) != tc.wantOK || opened != tc.wantBrowser || checked.Load() != tc.wantBrowser {
+			_, stderr, _, err := executeCommand(t, newMCPLoginCmd(), tc.args...)
+			if (err == nil) != tc.wantOK || opened != tc.wantBrowser || checked.Load() != (tc.wantBrowser || tc.wantOK) {
 				t.Fatalf("login err=%v, browser=%v, checked=%v", err, opened, checked.Load())
+			}
+			showsDeviceCode := strings.Contains(stderr, "BCDF-GHJK") &&
+				strings.Contains(stderr, issuer.URL+"/platform/oauth/device")
+			if tc.name == "device code" && !showsDeviceCode {
+				t.Error("device code and verification URL must be shown")
 			}
 			if loadConfig(t).Profiles["p"].OAuth.AccessToken != "h.p.s" {
 				t.Fatal("provider login replaced the active credential")

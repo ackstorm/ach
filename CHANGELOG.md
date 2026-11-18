@@ -4,12 +4,16 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
-## [1.1.19] - 2026-11-18
-
 ### Added
 - Discover, inspect and call MCP tools from the shell with `ach-cli mcp`, including
   browser consent for providers that require it. Find and message A2A agents with
   `ach-cli a2a`. Both use the active credential from any directory.
+- OAuth device clients can request provider consent for a specific MCP server
+  by sending its URL as `resource` when starting device authorization.
+
+## [1.1.19] - 2026-11-18
+
+### Added
 - `ach-cli local plugin install` and `update` (and the `skill` forms) take
   `--force`, to replace a file that already exists and that `ach-cli` did not
   install.

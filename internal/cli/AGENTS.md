@@ -49,7 +49,7 @@ ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
 ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
 
 # shell access to granted remote tools and agents
-ach-cli mcp list [--tools] | search <words...> | describe <server> [tool] | call <server> <tool> [json-object] | login <server> [--no-browser] (alias: auth)
+ach-cli mcp list [--tools] | search <words...> | describe <server> [tool] | call <server> <tool> [json-object] | login <server> [--device | --no-browser] (alias: auth)
 ach-cli a2a list | search <words...> | call <agent> <message> [--context-id <id>]
 
 # governed remote object (CR-defined, server-mediated)
