@@ -5,6 +5,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Fixed
+- MCP servers signed in through ACH no longer ask to re-authenticate when a
+  client refreshes several of them at once (Claude Code reconnecting every
+  server on start). The refreshes answered 503 or 500 because they replayed the
+  user's sign-in at the identity provider in parallel and raced to replace the
+  user's key; they now share one replay and the key one of them minted.
 - Console Traces, Sessions view: a session's status is the outcome of its last
   model call. A session whose calls all completed shows Success instead of
   Unknown, and one that recovered from a failed call (for example an upstream

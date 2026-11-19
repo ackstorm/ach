@@ -10,6 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// OAuthPKOneActiveConstraint is the partial unique index (migration 000020)
+// allowing one active purpose='oauth' row per owner.
+const OAuthPKOneActiveConstraint = "personal_keys_one_active_oauth_per_owner"
+
 // ActiveOAuthPK returns the user's single active purpose='oauth' row, with
 // the resolve-path columns populated (litellm_key_material_enc included) so
 // the caller can build a KeyInfo without a plaintext. nil, nil when there is
