@@ -473,27 +473,43 @@ func mustDetail(t *testing.T, r *Reader, s core.Scope, trace string, w core.Wind
 
 // A client that propagates a traceparent puts every request of a run under one
 // trace_id, so a turn is one request (its server span), never one trace; a
-// retried request stays one turn.
+// retried request stays one turn. A session's status is its last call's outcome;
+// a failed call it recovered from only counts in errors.
 func TestSessionTurnsAreRequestsOnRealClickHouse(t *testing.T) {
 	url := startClickHouse(t)
 	exec(t, url, eventsFullDDL)
 	exec(t, url, "ALTER TABLE default.events_full ADD COLUMN session_id String, ADD COLUMN tool_call_names Array(String)")
-	cols := "(project_id, trace_id, span_id, parent_span_id, user_id, session_id, start_time, type, name, usage_details, tool_call_names, event_ts, is_deleted)"
-	gen := func(trace, span, request, minute, tool string) string {
-		return fmt.Sprintf("('p1','%s','%s','%s','a@x','s1','2026-10-02 10:%s:00','GENERATION','chat x',map('input',10,'output',2),['%s'],now64(6),0)", trace, span, request, minute, tool)
+	cols := "(project_id, trace_id, span_id, parent_span_id, user_id, session_id, start_time, end_time, level, type, name, usage_details, tool_call_names, event_ts, is_deleted)"
+	gen := func(session, trace, span, request, minute, level, tool string) string {
+		end := fmt.Sprintf("'2026-10-02 10:%s:30'", minute)
+		if level == "OPEN" {
+			end, level = "NULL", "DEFAULT"
+		}
+		return fmt.Sprintf("('p1','%s','%s','%s','a@x','%s','2026-10-02 10:%s:00',%s,'%s','GENERATION','chat x',map('input',10,'output',2),['%s'],now64(6),0)", trace, span, request, session, minute, end, level, tool)
 	}
 	exec(t, url, "INSERT INTO default.events_full "+cols+" VALUES "+strings.Join([]string{
-		gen("shared", "g1", "r1", "00", "Read"), gen("shared", "g2", "r2", "01", "Bash"),
-		gen("shared", "g3", "r2", "02", "Grep"), // the retry of r2
-		gen("own", "g4", "r3", "03", "Edit"),
+		gen("s1", "shared", "g1", "r1", "00", "DEFAULT", "Read"), gen("s1", "shared", "g2", "r2", "01", "ERROR", "Bash"),
+		gen("s1", "shared", "g3", "r2", "02", "DEFAULT", "Grep"), // the retry of r2
+		gen("s1", "own", "g4", "r3", "03", "DEFAULT", "Edit"),
+		gen("s2", "t2", "g5", "r4", "04", "DEFAULT", ""), gen("s2", "t2", "g6", "r5", "05", "ERROR", ""),
+		gen("s3", "t3", "g7", "r6", "06", "ERROR", ""), gen("s3", "t3", "g8", "r7", "07", "OPEN", ""),
 	}, ","))
 
 	s, _ := core.NewUserScope("a@x")
 	w := core.Window{Start: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), Timezone: "UTC"}
 	r := NewReader(core.NewReader(core.NewClickHouse(core.Config{URL: url, User: "t", Password: "t"}, nil), []string{"p1"}))
-	page, err := r.Sessions(context.Background(), s, SessionQuery{Window: w, Limit: 10})
-	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].Turns != 3 || page.Sessions[0].Generations != 4 {
-		t.Fatalf("err=%v sessions=%+v, want one session of 3 turns over 4 generations", err, page.Sessions)
+	page, err := r.Sessions(context.Background(), s, SessionQuery{Window: w, Limit: 10, Sort: "started_at", Asc: true})
+	var sessions []string
+	for _, row := range page.Sessions {
+		sessions = append(sessions, fmt.Sprintf("%s turns=%d gens=%d %s errors=%d", row.SessionID, row.Turns, row.Generations, row.Status, row.Errors))
+	}
+	if want := []string{"s1 turns=3 gens=4 success errors=1", "s2 turns=2 gens=2 error errors=1", "s3 turns=2 gens=2 unknown errors=1"}; err != nil || fmt.Sprint(sessions) != fmt.Sprint(want) {
+		t.Fatalf("err=%v sessions = %q\n want %q", err, sessions, want)
+	}
+	for id, want := range map[string]string{"s1": "success errors=1", "s2": "error errors=1", "s3": "unknown errors=1"} {
+		if d, err := r.Session(context.Background(), s, id, "", w); err != nil || fmt.Sprintf("%s errors=%d", d.Status, d.Errors) != want {
+			t.Errorf("detail %s: err=%v status=%s errors=%d, want %s", id, err, d.Status, d.Errors, want)
+		}
 	}
 	d, err := r.Session(context.Background(), s, "s1", "", w)
 	if err != nil || d.Turns != 3 || d.Generations != 4 || *d.InputTokens != 40 {
@@ -501,9 +517,9 @@ func TestSessionTurnsAreRequestsOnRealClickHouse(t *testing.T) {
 	}
 	var got []string
 	for _, turn := range d.TurnsList {
-		got = append(got, fmt.Sprintf("%s/%s in=%d tools=%v", turn.TraceID, *turn.CallID, *turn.InputTokens, turn.Tools))
+		got = append(got, fmt.Sprintf("%s/%s in=%d tools=%v %s", turn.TraceID, *turn.CallID, *turn.InputTokens, turn.Tools, turn.Status))
 	}
-	if want := []string{"shared/r1 in=10 tools=[Read]", "shared/r2 in=20 tools=[Bash Grep]", "own/r3 in=10 tools=[Edit]"}; fmt.Sprint(got) != fmt.Sprint(want) {
+	if want := []string{"shared/r1 in=10 tools=[Read] success", "shared/r2 in=20 tools=[Bash Grep] error", "own/r3 in=10 tools=[Edit] success"}; fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("turns = %q\n want %q", got, want)
 	}
 }

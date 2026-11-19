@@ -14,6 +14,7 @@
     "output_tokens",
     "cost",
     "status",
+    "errors",
     "classification",
     "turns_list",
     "turns_truncated",
@@ -75,9 +76,15 @@
     "status": {
       "enum": [
         "error",
+        "success",
         "unknown"
       ],
-      "description": "error: any generation logged ERROR; otherwise unknown (the gateway does not observe task success)."
+      "description": "Outcome of the session's last model call: error when it failed, success when it completed, unknown while it is still open. Earlier failed calls, retried or not, count in errors."
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Model calls in the session that failed, retried ones included."
     },
     "classification": {
       "type": "object",
@@ -198,9 +205,10 @@
           "status": {
             "enum": [
               "error",
+              "success",
               "unknown"
             ],
-            "description": "error: any generation logged ERROR; otherwise unknown (the gateway does not observe task success)."
+            "description": "error: a generation of this request failed; success: every generation completed; otherwise unknown."
           },
           "tools": {
             "type": "array",

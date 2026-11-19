@@ -36,7 +36,8 @@
           "output_tokens",
           "cost",
           "models",
-          "status"
+          "status",
+          "errors"
         ],
         "properties": {
           "session_id": {
@@ -101,9 +102,15 @@
           "status": {
             "enum": [
               "error",
+              "success",
               "unknown"
             ],
-            "description": "error: any generation logged ERROR; otherwise unknown (the gateway does not observe task success)."
+            "description": "Outcome of the session's last model call: error when it failed, success when it completed, unknown while it is still open. Earlier failed calls, retried or not, count in errors."
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Model calls in the session that failed, retried ones included."
           }
         }
       }

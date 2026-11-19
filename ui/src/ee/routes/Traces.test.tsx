@@ -8,7 +8,7 @@ const controls = vi.hoisted(() => ({ traceArgs: [] as unknown[], sessionSorts: [
 vi.mock('@/stores/console-range', () => ({ useConsoleDateRange: () => ({ start: controls.period === '30d' ? '2026-09-01' : '2026-09-24', end: '2026-09-30' }), useConsoleRange: (sel: (s: unknown) => unknown) => sel({ preset: controls.period, custom: null, setPreset: () => {}, setCustom: () => {} }) }));
 const trace = { trace_id: 'trace-a', project_id: 'project-a', started_at: '2026-09-20 12:00:00.000000', ended_at: '2026-09-20 12:00:02.000000', span_count: 2, status: 'unknown' as const, kind: 'llm' as const, request_id: 'xvS9arLREKeXvdIP6LKnmQ', model: 'gemini.gemini-flash-latest', duration_ms: 2339, input_tokens: 1041, output_tokens: 388, cost: 0.00223575, key_alias: 'lk-80cffcc549141094', session_id: '128db405-aaaa-bbbb' as string | null };
 const CALLS = '/analytics/traces?view=calls';
-const session = { session_id: '128db405-aaaa-bbbb', project_id: 'project-a', started_at: '2026-09-20 12:00:00.000000', last_activity_at: '2026-09-20 14:00:00.000000', duration_ms: 7_184_241, turns: 253, generations: 253, input_tokens: 50_000, output_tokens: 1_000, cost: 1.23, models: ['claude-opus-5-5', 'gpt-x'], status: 'unknown' as const };
+const session = { session_id: '128db405-aaaa-bbbb', project_id: 'project-a', started_at: '2026-09-20 12:00:00.000000', last_activity_at: '2026-09-20 14:00:00.000000', duration_ms: 7_184_241, turns: 253, generations: 253, input_tokens: 50_000, output_tokens: 1_000, cost: 1.23, models: ['claude-opus-5-5', 'gpt-x'], status: 'success' as const, errors: 2 };
 const turnRow = (trace_id: string, started_at: string, duration_ms: number) => ({ trace_id, call_id: `req-${trace_id}`, started_at, model: 'claude-opus-5-5', input_tokens: 12_000, output_tokens: 450, cost: 0, duration_ms, status: 'unknown' as const });
 vi.mock('@ee/hooks/use-sessions', () => ({
   DEFAULT_SESSION_SORT: { key: 'started_at', dir: 'desc' },
@@ -216,6 +216,8 @@ describe('Sessions', () => {
     expect(screen.getByText('253')).toBeInTheDocument();
     expect(screen.getByText('1 h 59 min')).toBeInTheDocument();
     expect(screen.getByText('claude-opus-5-5, gpt-x')).toBeInTheDocument();
+    expect(container.querySelector('.session-table td.c-status .pill')).toHaveTextContent('Success');
+    expect(container.querySelector('.session-table td.c-status .status-errors')).toHaveTextContent('2 errors');
     expect(controls.sessionSorts.at(-1)).toEqual({ key: 'started_at', dir: 'desc' });
     fireEvent.click(within(container.querySelector('th[data-col=turns]') as HTMLElement).getByRole('button'));
     expect(controls.sessionSorts.at(-1)).toEqual({ key: 'turns', dir: 'desc' });
