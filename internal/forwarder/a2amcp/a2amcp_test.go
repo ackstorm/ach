@@ -4,6 +4,8 @@ package a2amcp
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"iter"
 	"net/http"
 	"net/http/httptest"
@@ -51,8 +53,21 @@ func (echoAgent) Cancel(_ context.Context, ec *a2asrv.ExecutorContext) iter.Seq2
 
 func newAgent(t *testing.T) string {
 	t.Helper()
+	agentURL, _ := newCountedAgent(t)
+	return agentURL
+}
+
+// newCountedAgent also counts the JSON-RPC calls the agent receives.
+func newCountedAgent(t *testing.T) (string, *atomic.Int32) {
+	t.Helper()
+	var calls atomic.Int32
 	mux := http.NewServeMux()
-	srv := httptest.NewServer(mux)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			calls.Add(1)
+		}
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 	card := &a2a.AgentCard{
 		Name: "echo", Description: "Echoes what it is sent.", Version: "1.0.0",
@@ -64,7 +79,7 @@ func newAgent(t *testing.T) string {
 	}
 	mux.Handle("/a2a/echo"+a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/a2a/echo", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(echoAgent{})))
-	return srv.URL + "/a2a/echo"
+	return srv.URL + "/a2a/echo", &calls
 }
 
 func connect(t *testing.T, agentURL string, progress func(string)) *mcp.ClientSession {
@@ -165,5 +180,126 @@ func TestToolDescribesAgentFromLiteLLMCard(t *testing.T) {
 	}
 	if n := fetches.Load() - before; n != 1 {
 		t.Errorf("tools/list fetched the card %d times, want 1", n)
+	}
+}
+
+func TestSendMessageWithoutRestartNeverPolls(t *testing.T) {
+	agentURL, calls := newCountedAgent(t)
+	cs := connect(t, agentURL, func(string) {})
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_message", Arguments: map[string]any{"message": "hi"}})
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v result=%+v", err, res)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("the agent received %d JSON-RPC calls, want only the stream", n)
+	}
+}
+
+// restartingAgent answers in the wire shape LiteLLM serves. Its stream ends on
+// a working update, cleanly or by dropping the connection. GetTask then
+// answers 503 twice and returns the task in state final; with no final state
+// it answers 503 every time. The counters are the GetTask and stream calls.
+func restartingAgent(t *testing.T, drop bool, final string) (agentURL string, gets, sends *atomic.Int32) {
+	t.Helper()
+	gets, sends = new(atomic.Int32), new(atomic.Int32)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     json.RawMessage
+			Method string
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		switch req.Method {
+		case "SendStreamingMessage":
+			sends.Add(1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = fmt.Fprintf(w, `data: {"jsonrpc":"2.0","id":%s,"result":{"statusUpdate":{"taskId":"task-1","contextId":"ctx-1",`+
+				`"status":{"state":"TASK_STATE_WORKING","message":{"role":"ROLE_AGENT","parts":[{"text":"The agent is restarting."}]}}}}}`+"\n\n", req.ID)
+			w.(http.Flusher).Flush()
+			if drop {
+				panic(http.ErrAbortHandler)
+			}
+		case "GetTask":
+			if gets.Add(1) <= 2 || final == "" {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"id":"task-1","contextId":"ctx-1",`+
+				`"status":{"state":%q,"message":{"role":"ROLE_AGENT","parts":[{"text":"pong"}]}},`+
+				`"history":[{"role":"ROLE_AGENT","parts":[{"text":"Starting the agent"}]}]}}`, req.ID, final)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, gets, sends
+}
+
+func fastPoll(t *testing.T, wait time.Duration) {
+	t.Helper()
+	oldMin, oldMax, oldWait := pollMin, pollMax, maxWait
+	pollMin, pollMax, maxWait = 5*time.Millisecond, 10*time.Millisecond, wait
+	t.Cleanup(func() { pollMin, pollMax, maxWait = oldMin, oldMax, oldWait })
+}
+
+func TestSendMessageFetchesTheTaskWhenTheStreamEndsEarly(t *testing.T) {
+	fastPoll(t, time.Minute)
+	for _, tc := range []struct {
+		name    string
+		drop    bool
+		final   string
+		isError bool
+	}{
+		{"stream closed, task completed", false, "TASK_STATE_COMPLETED", false},
+		{"connection dropped, task completed", true, "TASK_STATE_COMPLETED", false},
+		{"stream closed, task failed", false, "TASK_STATE_FAILED", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agentURL, gets, sends := restartingAgent(t, tc.drop, tc.final)
+			progress := make(chan string, 16)
+			cs := connect(t, agentURL, func(m string) { progress <- m })
+			p := &mcp.CallToolParams{Name: "send_message", Arguments: map[string]any{"message": "hi"}}
+			p.SetProgressToken("tok")
+			res, err := cs.CallTool(t.Context(), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := res.Content[0].(*mcp.TextContent).Text
+			if res.IsError != tc.isError || text != "pong\n\ncontext_id: ctx-1" {
+				t.Fatalf("result isError=%v text=%q", res.IsError, text)
+			}
+			if n := gets.Load(); n != 3 {
+				t.Errorf("GetTask calls = %d, want 3 (two 503s, then the task)", n)
+			}
+			if n := sends.Load(); n != 1 {
+				t.Errorf("the message was sent %d times, want 1", n)
+			}
+			// The stream's text, then one notification per failed poll.
+			for _, want := range []string{"The agent is restarting.", "Waiting for the agent to finish.", "Waiting for the agent to finish."} {
+				select {
+				case m := <-progress:
+					if m != want {
+						t.Errorf("progress = %q; want %q", m, want)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatalf("no progress notification %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestSendMessageNamesTheTaskWhenTheWaitRunsOut(t *testing.T) {
+	fastPoll(t, 100*time.Millisecond)
+	agentURL, gets, _ := restartingAgent(t, false, "")
+	cs := connect(t, agentURL, func(string) {})
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_message", Arguments: map[string]any{"message": "hi"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, "task-1") {
+		t.Fatalf("result isError=%v text=%q; want a tool error naming task-1", res.IsError, text)
+	}
+	if gets.Load() < 3 {
+		t.Errorf("GetTask calls = %d, want the poll to keep retrying", gets.Load())
 	}
 }

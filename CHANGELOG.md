@@ -4,6 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- A message sent to an agent through `/a2a/<name>/mcp` (`ach-cli a2a call`, or
+  the `a2a-<name>` MCP server in a coding tool) returns the agent's answer when
+  the agent restarts mid-run, instead of "the agent ended the stream without a
+  final reply". ACH waits for the task up to 30 minutes; past that, the error
+  names the task id.
+- `ach-cli mcp call` and `ach-cli a2a call` ask the server for progress, so a
+  long call is not closed as idle while the server reports it.
+
 ## [1.1.22] - 2026-11-19
 
 ### Changed

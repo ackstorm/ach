@@ -3,7 +3,8 @@
 // Package a2amcp serves the MCP face of an A2A agent: one tool,
 // send_message, relayed to the agent with A2A SendStreamingMessage. Working
 // updates become MCP progress notifications; the call returns when the task
-// completes, fails or asks for input.
+// completes, fails or asks for input. A stream that ends before that (the
+// agent restarted) is followed by GetTask polls on the same task.
 package a2amcp
 
 import (
@@ -13,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
@@ -53,6 +55,16 @@ func Handler(target func(*http.Request) (name, agentURL string), cred func(conte
 
 type serverKey struct{}
 
+// GetTask polling after a stream that ended early: the delay doubles from
+// pollMin to pollMax, and the whole wait is capped at maxWait.
+var (
+	pollMin = 2 * time.Second
+	pollMax = 10 * time.Second
+	maxWait = 30 * time.Minute
+)
+
+const pollTimeout = 30 * time.Second
+
 func send(ctx context.Context, hc *http.Client, agentURL string, cred map[string]string,
 	req *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {
 	cl, err := a2aclient.NewFromEndpoints(ctx,
@@ -71,9 +83,19 @@ func send(ctx context.Context, hc *http.Client, agentURL string, cred map[string
 	msg.ContextID = in.ContextID
 	token := req.Params.GetProgressToken()
 	var n float64
+	progress := func(text string) {
+		if token != nil {
+			n++
+			_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: n, Message: text})
+		}
+	}
+	var taskID a2a.TaskID
 	for ev, err := range cl.SendStreamingMessage(ctx, &a2a.SendMessageRequest{Message: msg}) {
 		if err != nil {
-			return nil, nil, err
+			if taskID == "" {
+				return nil, nil, err
+			}
+			break // the task exists: its record has the outcome
 		}
 		var status a2a.TaskStatus
 		var contextID string
@@ -81,29 +103,76 @@ func send(ctx context.Context, hc *http.Client, agentURL string, cred map[string
 		case *a2a.Message:
 			return result(e.ContextID, e.Parts, false), nil, nil
 		case *a2a.Task:
-			status, contextID = e.Status, e.ContextID
+			taskID, status, contextID = e.ID, e.Status, e.ContextID
 		case *a2a.TaskStatusUpdateEvent:
-			status, contextID = e.Status, e.ContextID
+			taskID, status, contextID = e.TaskID, e.Status, e.ContextID
 		default:
 			continue
 		}
-		var parts a2a.ContentParts
-		if status.Message != nil {
-			parts = status.Message.Parts
+		if res := settled(status, contextID); res != nil {
+			return res, nil, nil
 		}
-		switch status.State {
-		case a2a.TaskStateWorking:
-			if text := joinText(parts); token != nil && text != "" {
-				n++
-				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: n, Message: text})
-			}
-		case a2a.TaskStateCompleted, a2a.TaskStateInputRequired:
-			return result(contextID, parts, false), nil, nil
-		case a2a.TaskStateFailed, a2a.TaskStateCanceled, a2a.TaskStateRejected, a2a.TaskStateAuthRequired:
-			return result(contextID, parts, true), nil, nil
+		if text := statusText(status); status.State == a2a.TaskStateWorking && text != "" {
+			progress(text)
 		}
 	}
-	return nil, nil, errors.New("the agent ended the stream without a final reply")
+	if taskID == "" {
+		return nil, nil, errors.New("the agent ended the stream without a final reply")
+	}
+	return await(ctx, cl, taskID, progress)
+}
+
+// await polls the task until it settles. The agent's endpoint is down for
+// some seconds while it restarts, so a failed poll is retried; each poll
+// sends progress, which keeps the caller's stream from idling out.
+func await(ctx context.Context, cl *a2aclient.Client, id a2a.TaskID, progress func(string)) (*mcp.CallToolResult, any, error) {
+	ctx, cancel := context.WithTimeout(ctx, maxWait)
+	defer cancel()
+	for delay := pollMin; ; delay = min(2*delay, pollMax) {
+		select {
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf("the agent did not finish task %s in time; its result stays available through GetTask on that task", id)
+		case <-time.After(delay):
+		}
+		text := "Waiting for the agent to finish."
+		// ponytail: every GetTask error is retried until maxWait; stop early on
+		// the permanent ones if a dead agent is seen to hold callers that long.
+		pctx, pcancel := context.WithTimeout(ctx, pollTimeout)
+		task, err := cl.GetTask(pctx, &a2a.GetTaskRequest{ID: id})
+		pcancel()
+		if err == nil {
+			if res := settled(task.Status, task.ContextID); res != nil {
+				return res, nil, nil
+			}
+			if t := statusText(task.Status); t != "" {
+				text = t
+			}
+		}
+		progress(text)
+	}
+}
+
+// settled returns the tool result for a status that ends the call, or nil
+// while the task is still running.
+func settled(status a2a.TaskStatus, contextID string) *mcp.CallToolResult {
+	var parts a2a.ContentParts
+	if status.Message != nil {
+		parts = status.Message.Parts
+	}
+	switch status.State {
+	case a2a.TaskStateCompleted, a2a.TaskStateInputRequired:
+		return result(contextID, parts, false)
+	case a2a.TaskStateFailed, a2a.TaskStateCanceled, a2a.TaskStateRejected, a2a.TaskStateAuthRequired:
+		return result(contextID, parts, true)
+	}
+	return nil
+}
+
+func statusText(status a2a.TaskStatus) string {
+	if status.Message == nil {
+		return ""
+	}
+	return joinText(status.Message.Parts)
 }
 
 // agentCard is the part of the agent card the tool description uses. It is
