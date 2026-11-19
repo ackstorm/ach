@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.24] - 2026-11-19
+
 ### Fixed
 - MCP servers signed in through ACH no longer ask to re-authenticate when a
   client refreshes several of them at once (Claude Code reconnecting every
