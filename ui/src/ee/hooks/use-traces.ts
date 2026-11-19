@@ -31,13 +31,13 @@ export function useTraces(cursor = 0, status: TraceStatusFilter = 'all', search 
   });
 }
 
-export function useTrace(traceId: string | null, project: string | null = null): UseQueryResult<TraceDetailResponse> {
+export function useTrace(traceId: string | null, project: string | null = null, call: string | null = null): UseQueryResult<TraceDetailResponse> {
   const { range, tooLong } = useEvidenceWindow();
   return useQuery({
-    queryKey: ['observability', 'trace', traceId, project, range.start, range.end],
+    queryKey: ['observability', 'trace', traceId, project, call, range.start, range.end],
     enabled: Boolean(traceId) && !tooLong,
     queryFn: async ({ signal }): Promise<TraceDetailResponse> => {
-      const params = new URLSearchParams({ ...range, ...(project ? { project } : {}) });
+      const params = new URLSearchParams({ ...range, ...(project ? { project } : {}), ...(call ? { call } : {}) });
       const { status, data } = await getJson<TraceDetailResponse>(`/platform/observability/traces/${encodeURIComponent(traceId!)}?${params}`, { signal });
       if (status === 200 && data) return data;
       throw new Error('trace-load-failed');

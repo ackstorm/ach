@@ -16,7 +16,7 @@ func TestZeroScopeIsRejectedBeforeAnyNetworkCall(t *testing.T) {
 	if _, err := r.List(context.Background(), core.Scope{}, validQuery()); !errors.Is(err, core.ErrNoScope) {
 		t.Fatalf("List err=%v", err)
 	}
-	if _, err := r.Detail(context.Background(), core.Scope{}, "t1", "", testWindow()); !errors.Is(err, core.ErrNoScope) {
+	if _, err := r.Detail(context.Background(), core.Scope{}, "t1", "", "", testWindow()); !errors.Is(err, core.ErrNoScope) {
 		t.Fatalf("Detail err=%v", err)
 	}
 	if len(*calls) != 0 {

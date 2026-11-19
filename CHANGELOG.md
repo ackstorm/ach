@@ -5,6 +5,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Fixed
+- Console Traces counts one turn per request in a session and lists one row
+  per request under Calls. A run from a client that sends its own trace context,
+  such as OpenCode, showed as a single turn and a single call with no type or
+  outcome. Opening a call shows that request alone.
+- `ach-cli environment hydrate` no longer warns `preserving <file> — local
+  edits detected; pass --force to remove` when the MCP server it meant to
+  remove from a tool's config is already gone from that file.
 - A message sent to an agent through `/a2a/<name>/mcp` (`ach-cli a2a call`, or
   the `a2a-<name>` MCP server in a coding tool) returns the agent's answer when
   the agent restarts mid-run, instead of "the agent ended the stream without a
