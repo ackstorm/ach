@@ -49,7 +49,7 @@ var paths = []string{pathTraces, pathTrace, pathSessions, pathSession, pathConte
 // Reader is the Enterprise evidence surface the handlers need (*eeevidence.Reader).
 type Reader interface {
 	List(ctx context.Context, s evidence.Scope, q eeevidence.TraceQuery) (eeevidence.TracePage, error)
-	Detail(ctx context.Context, s evidence.Scope, traceID, project string, w evidence.Window) (eeevidence.TraceDetail, error)
+	Detail(ctx context.Context, s evidence.Scope, traceID, project, call string, w evidence.Window) (eeevidence.TraceDetail, error)
 	Sessions(ctx context.Context, s evidence.Scope, q eeevidence.SessionQuery) (eeevidence.SessionPage, error)
 	Session(ctx context.Context, s evidence.Scope, sessionID, project string, w evidence.Window) (eeevidence.SessionDetail, error)
 	Context(ctx context.Context, s evidence.Scope, w evidence.Window) (eeevidence.ContextReport, error)
@@ -247,7 +247,7 @@ func (d deps) detail(w http.ResponseWriter, r *http.Request) {
 		render.Error(w, http.StatusBadRequest, "invalid_argument", err.Error(), reqID)
 		return
 	}
-	out, err := d.Reader.Detail(r.Context(), s, chi.URLParam(r, "trace_id"), r.URL.Query().Get("project"), win)
+	out, err := d.Reader.Detail(r.Context(), s, chi.URLParam(r, "trace_id"), r.URL.Query().Get("project"), r.URL.Query().Get("call"), win)
 	if err != nil {
 		obsapi.WriteErr(w, err, reqID)
 		return

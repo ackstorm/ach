@@ -69,7 +69,7 @@ describe('TraceWaterfall timeline', () => {
 });
 
 it('draws a session as model turns with the tools run between them', () => {
-  const turn = (id: string, start: string, end: string, tools: string[]) => ({ trace_id: id, started_at: start, ended_at: end, model: 'ackstorm.smart', input_tokens: 1, output_tokens: 1, cost: 0, duration_ms: 1, status: 'unknown' as const, tools });
+  const turn = (id: string, start: string, end: string, tools: string[]) => ({ trace_id: 'shared', call_id: id, started_at: start, ended_at: end, model: 'ackstorm.smart', input_tokens: 1, output_tokens: 1, cost: 0, duration_ms: 1, status: 'unknown' as const, tools });
   const spans = sessionSpans([turn('t1', '2026-09-20T12:00:00Z', '2026-09-20T12:00:02Z', ['Read', 'Read', 'Bash', 'Edit', 'Grep']), turn('t2', '2026-09-20T12:00:05Z', '2026-09-20T12:00:06Z', ['Bash'])]);
   // The last turn's tools have no next turn to bound them, so no tool bar.
   expect(spans.map((s) => [s.type, s.name, s.start_time, s.end_time])).toEqual([
@@ -77,4 +77,6 @@ it('draws a session as model turns with the tools run between them', () => {
     ['TOOL', 'Tools · Read, Bash, Edit +1', '2026-09-20T12:00:02Z', '2026-09-20T12:00:05Z'],
     ['GENERATION', 'Model · ackstorm.smart', '2026-09-20T12:00:05Z', '2026-09-20T12:00:06Z'],
   ]);
+  // Turns of one shared trace keep distinct rows.
+  expect(new Set(spans.map((s) => s.span_id)).size).toBe(spans.length);
 });

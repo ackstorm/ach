@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- Console Traces counts one turn per request in a session and lists one row
+  per request under Calls. A run from a client that sends its own trace context,
+  such as OpenCode, showed as a single turn and a single call with no type or
+  outcome. Opening a call shows that request alone.
+
 ## [1.1.21] - 2026-11-18
 
 ### Breaking
