@@ -120,6 +120,13 @@
         "trace_id": {
           "type": "string"
         },
+        "call_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The server span of the request this row is; null when the row is the rest of its trace (an MCP session). Pass it as call= to the detail."
+        },
         "project_id": {
           "type": "string"
         },

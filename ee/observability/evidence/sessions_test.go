@@ -20,7 +20,7 @@ func sessionRowJSON(project, session string, total int) string {
 }
 
 func turnRowJSON(project, session, trace, start string) string {
-	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"trace_id":%q,"started_at":%q,"ended_at":%q,"duration_ms":3000,"generations":1,"model":"claude-x","tools":["Read","Bash"],"input_tokens":10,"output_tokens":2,"cost":0.1,"measured":1,"status":"unknown"}`, project, session, trace, start, start)
+	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"trace_id":%q,"call_id":"r-1","started_at":%q,"ended_at":%q,"duration_ms":3000,"generations":1,"model":"claude-x","tools":["Read","Bash"],"input_tokens":10,"output_tokens":2,"cost":0.1,"measured":1,"status":"unknown"}`, project, session, trace, start, start)
 }
 
 func readSessions(t *testing.T, q SessionQuery, bodies ...string) (SessionPage, *[]call) {

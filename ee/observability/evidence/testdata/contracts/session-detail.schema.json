@@ -130,6 +130,7 @@
         "type": "object",
         "required": [
           "trace_id",
+          "call_id",
           "started_at",
           "ended_at",
           "model",
@@ -143,6 +144,13 @@
         "properties": {
           "trace_id": {
             "type": "string"
+          },
+          "call_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The request's server span, the call_id of this turn's row in the traces list; null for a generation with no server span."
           },
           "started_at": {
             "type": [
