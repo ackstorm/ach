@@ -14,11 +14,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 
@@ -430,7 +432,7 @@ func installFakePKs(f *asFixture) *fakeOAuthPKs {
 			return "", db.PkInsertRow{}, p.mintErr
 		}
 		if p.rows[email] != nil {
-			return "", db.PkInsertRow{}, errors.New("unique index: one active oauth row per owner")
+			return "", db.PkInsertRow{}, fmt.Errorf("insert: %w", &pgconn.PgError{Code: "23505", ConstraintName: db.OAuthPKOneActiveConstraint})
 		}
 		p.minted++
 		tok, mat := "lt-"+email, "sealed"
@@ -640,6 +642,90 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	// A late racer, after the winner answered, still learns the token rotated.
 	if w := f.do(t, "POST", "/platform/oauth/token", refresh, formHdr); w.Code != 400 || !strings.Contains(w.Body.String(), errRotating) {
 		t.Fatalf("late racer: %d %s", w.Code, w.Body)
+	}
+}
+
+// Refreshes of DIFFERENT tokens of one user (Claude Code reconnecting every
+// MCP server at once) share the user's single Dex token: they must replay it
+// one at a time. Dex (Postgres storage) answers overlapping replays of one
+// token with a 500 serialization failure, which ACH reads as unreachable (503).
+func TestToken_ConcurrentRefreshesOfOneUserReplayDexOneAtATime(t *testing.T) {
+	f := newAS(t)
+	installFakePKs(f)
+	cid := registerClient(t, f)
+	const n = 8
+	refreshes := make([]string, n)
+	for i := range refreshes {
+		seedCode(t, f, cid)
+		var tb tokenBody
+		_ = json.Unmarshal(f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr).Body.Bytes(), &tb)
+		refreshes[i] = url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tb.RefreshToken}, "client_id": {cid}}.Encode()
+	}
+
+	var mu sync.Mutex
+	current, inFlight, maxInFlight := "dex-rt-0", 0, 0
+	f.deps.DexRefresh = func(_ context.Context, rt string) (string, []string, error) {
+		mu.Lock()
+		inFlight++
+		maxInFlight = max(maxInFlight, inFlight)
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		defer mu.Unlock()
+		inFlight--
+		if rt != current {
+			return "", nil, &oauth2.RetrieveError{Response: &http.Response{StatusCode: 500}, ErrorCode: "invalid_request"}
+		}
+		current = rt + "+"
+		return current, nil, nil
+	}
+	f.mount()
+
+	codes := make([]int, n)
+	var wg sync.WaitGroup
+	for i, body := range refreshes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = f.do(t, "POST", "/platform/oauth/token", body, formHdr).Code
+		}()
+	}
+	wg.Wait()
+	for i, c := range codes {
+		if c != 200 {
+			t.Errorf("refresh %d: %d", i, c)
+		}
+	}
+	if maxInFlight != 1 {
+		t.Fatalf("Dex replays overlapped: %d at once", maxInFlight)
+	}
+}
+
+// A grant that loses the race to replace the user's oauth pk_ (its insert
+// hits the one-active-row index because a concurrent grant just minted) uses
+// the winner's row instead of failing with 500.
+func TestToken_PKMintRaceUsesTheConcurrentGrantsRow(t *testing.T) {
+	f := newAS(t)
+	pks := installFakePKs(f)
+	tok, uid := "lt-old", "u@x.com"
+	pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_old", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(30 * time.Minute), LiteLLMUserID: &uid, LiteLLMToken: &tok, Status: "active"}
+	revoke := f.deps.OAuthPKRevoke
+	f.deps.OAuthPKRevoke = func(ctx context.Context, id string) error {
+		if err := revoke(ctx, id); err != nil {
+			return err
+		}
+		winner := "lt-winner"
+		pks.rows["u@x.com"] = &db.PkKeyInfo{KeyID: "pkid_winner", OwnerEmail: "u@x.com", ExpiresAt: time.Now().Add(7 * 24 * time.Hour), LiteLLMUserID: &uid, LiteLLMToken: &winner, Status: "active"}
+		return nil
+	}
+	f.mount()
+	cid := registerClient(t, f)
+	seedCode(t, f, cid)
+	if w := f.do(t, "POST", "/platform/oauth/token", tokenForm(cid, nil), formHdr); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if pks.minted != 0 || pks.rows["u@x.com"].KeyID != "pkid_winner" {
+		t.Fatalf("want the winner's row kept: minted=%d row=%s", pks.minted, pks.rows["u@x.com"].KeyID)
 	}
 }
 

@@ -13,6 +13,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 )
@@ -171,7 +174,21 @@ const dexRefreshTimeout = 30 * time.Second
 // ErrIdPUnreachable: Dex did not answer; the presented credential stays valid.
 var ErrIdPUnreachable = errors.New("identity provider unreachable")
 
-// revalidateAtIdP replays the user's shared Dex refresh token (D-22) — the
+// dexReplays makes the concurrent revalidations of one user share a single
+// Dex call. Each of the user's tools holds its own ACH refresh token but all
+// of them replay the same Dex token, and Dex answers overlapping replays of
+// one token with a 500 serialization failure (a 503 here), so a client that
+// refreshes every MCP server at once was sent back to login.
+// ponytail: per replica; a second platform-api replica needs a Valkey lock.
+var dexReplays singleflight.Group
+
+func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) ([]string, error) {
+	v, err, _ := dexReplays.Do(sub, func() (any, error) { return d.replayDexToken(ctx, sub) })
+	groups, _ := v.([]string)
+	return groups, err
+}
+
+// replayDexToken replays the user's shared Dex refresh token (D-22) — the
 // one check both the /token refresh grant and the console session run.
 // nil: the IdP still honours the user, the rotated token is stored and
 // the SSO admin record follows the refreshed groups (recordSSOAdmin);
@@ -184,7 +201,7 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 // even when our caller hangs up mid-call, and a rotated token we never
 // stored is "claimed twice" at the next replay — which ends every session
 // of the user (incident 2026-10-08: a 15 s Dex answer, client gone).
-func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) (groups []string, err error) {
+func (d OAuthDeps) replayDexToken(ctx context.Context, sub string) (groups []string, err error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dexRefreshTimeout)
 	defer cancel()
 	var dexRefresh string
@@ -319,6 +336,13 @@ func (d OAuthDeps) ensureOAuthPK(ctx context.Context, sub, userID string) error 
 		}
 	}
 	_, _, err = d.mint(ctx, sub, userID, "oauth")
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == db.OAuthPKOneActiveConstraint {
+		// A concurrent grant of the same user minted first: its row serves.
+		if cur, lerr := d.lookupOAuthPK(ctx, sub); lerr == nil && cur != nil {
+			return nil
+		}
+	}
 	return err
 }
 
