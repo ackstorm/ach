@@ -130,7 +130,11 @@ func listRuntimeTools(ctx context.Context, cs *toolSession, server string) ([]*m
 func callRuntimeTool(
 	ctx context.Context, cs *toolSession, name string, args json.RawMessage,
 ) (*runtimeToolResult, error) {
-	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	params := &mcp.CallToolParams{Name: name, Arguments: args}
+	// With a token the server reports progress, and that traffic keeps the
+	// gateway from closing a long call as idle.
+	params.SetProgressToken("ach-cli")
+	result, err := cs.CallTool(ctx, params)
 	if err != nil {
 		return nil, cs.wire.redactError(err)
 	}
