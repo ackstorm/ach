@@ -4,6 +4,14 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.22] - 2026-11-19
+
+### Changed
+- Operator: a `KeyGrant` reconcile writes exchange key budgets only for the
+  keys that grant covers. The LiteLLM `/tag/info` reads per 5-minute resync
+  drop from grants × keys to one per key per covering grant. A ceiling that
+  rises because another grant was edited off the key lands within 5 minutes.
+
 ### Fixed
 - Console Traces counts one turn per request in a session and lists one row
   per request under Calls. A run from a client that sends its own trace context,

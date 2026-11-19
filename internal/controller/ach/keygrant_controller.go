@@ -62,9 +62,10 @@ func (s poolKeyGrantStore) RevokeEnvironmentKey(ctx context.Context, keyID strin
 // key cleanup: after every projection change it plans from the KeyGrant CRs
 // themselves (the table fills one CR at a time and may start empty), revokes the exchange keys no
 // grant allows any more (LiteLLM first) and writes the lowest covering
-// spec.budget onto every other one's key:<id> tag. The platform API never
-// revokes on grant removal: its resolvers stop accepting the JWT within the
-// cache window, and this sweep — single leader, LiteLLM master key — revokes.
+// spec.budget onto the key:<id> tag of each key the reconciled grant covers.
+// The platform API never revokes on grant removal: its resolvers stop
+// accepting the JWT within the cache window, and this sweep — single leader,
+// LiteLLM master key — revokes.
 // A key minted by an exchange that raced a grant's removal is caught by the
 // next sweep (the 5-minute resync re-runs every grant).
 type KeyGrantReconciler struct {
@@ -99,8 +100,7 @@ func (r *KeyGrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 			// Only the keys this grant covered gate the finalizer; a failure
 			// on an unrelated key is the next sweep's to retry.
-			gone := keyGrantRow(&kg)
-			if err := r.sweep(ctx, &gone); err != nil {
+			if err := r.sweep(ctx, keyGrantRow(&kg), true); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -118,7 +118,7 @@ func (r *KeyGrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Store.UpsertKeyGrant(ctx, keyGrantRow(&kg)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("upsert key_grants row: %w", err)
 		}
-		sweepErr = r.sweep(ctx, nil)
+		sweepErr = r.sweep(ctx, keyGrantRow(&kg), false)
 	}
 
 	cond, err := r.readyCondition(ctx, &kg)
@@ -186,19 +186,20 @@ func (r *KeyGrantReconciler) readyCondition(ctx context.Context, kg *achv1alpha1
 
 // sweep revokes every exchange key no grant allows any more, LiteLLM first
 // (a 404 means the key is already gone), and writes the lowest covering
-// spec.budget onto every other one. It plans from the KeyGrant CRs, not the
-// key_grants table: the table is filled one CR at a time, so on a cold start
-// it holds only the grants reconciled so far and would revoke keys a not yet
-// projected grant still allows. A CR being deleted covers nothing. One failing
-// key never blocks the others; the errors are joined.
+// spec.budget onto each key that grant covers. Every budgeted key is covered
+// by some grant, so the 5-minute resync of all grants writes each one, at one
+// LiteLLM read per key per covering grant rather than per grant in the
+// namespace. It plans from the KeyGrant CRs, not the key_grants table: the
+// table is filled one CR at a time, so on a cold start it holds only the
+// grants reconciled so far and would revoke keys a not yet projected grant
+// still allows. A CR being deleted covers nothing. One failing key never
+// blocks the others; the errors are joined.
 //
-// With gone nil it first deletes every key_grants row whose KeyGrant no longer
-// exists (a CR removed without its finalizer running), so a stale row never
-// keeps authorizing exchanges. With gone set (a grant being deleted) it
-// plans only the keys that grant covered.
-// ponytail: one UpsertTagBudget per covered key per KeyGrant reconcile; skip
-// unchanged ceilings if LiteLLM load ever shows it.
-func (r *KeyGrantReconciler) sweep(ctx context.Context, gone *achdb.KeyGrantRow) error {
+// With gone false it first deletes every key_grants row whose KeyGrant no
+// longer exists (a CR removed without its finalizer running), so a stale row
+// never keeps authorizing exchanges. With gone true (grant is being deleted)
+// it plans only the keys grant covered.
+func (r *KeyGrantReconciler) sweep(ctx context.Context, grant achdb.KeyGrantRow, gone bool) error {
 	var list achv1alpha1.KeyGrantList
 	if err := r.List(ctx, &list, client.InNamespace(r.Namespace)); err != nil {
 		return fmt.Errorf("list KeyGrants: %w", err)
@@ -212,7 +213,7 @@ func (r *KeyGrantReconciler) sweep(ctx context.Context, gone *achdb.KeyGrantRow)
 		}
 	}
 	var errs []error
-	if gone == nil {
+	if !gone {
 		rows, err := r.Store.ListKeyGrants(ctx, r.Namespace)
 		if err != nil {
 			return fmt.Errorf("list key_grants rows: %w", err)
@@ -232,10 +233,11 @@ func (r *KeyGrantReconciler) sweep(ctx context.Context, gone *achdb.KeyGrantRow)
 	if err != nil {
 		return errors.Join(append(errs, fmt.Errorf("list exchange keys: %w", err))...)
 	}
-	if gone != nil {
-		keys = slices.DeleteFunc(keys, func(k achdb.EkKeyInfo) bool {
-			return len(keygrant.Covering([]achdb.KeyGrantRow{*gone}, k.OwnerEmail, k.Environment, k.Requester)) == 0
-		})
+	covered := func(k achdb.EkKeyInfo) bool {
+		return len(keygrant.Covering([]achdb.KeyGrantRow{grant}, k.OwnerEmail, k.Environment, k.Requester)) > 0
+	}
+	if gone {
+		keys = slices.DeleteFunc(keys, func(k achdb.EkKeyInfo) bool { return !covered(k) })
 	}
 	revoke, budgets := keygrant.Plan(grants, keys)
 	for _, k := range revoke {
@@ -246,9 +248,13 @@ func (r *KeyGrantReconciler) sweep(ctx context.Context, gone *achdb.KeyGrantRow)
 		r.Log.Info("revoked exchange key no grant allows", "key_id", k.KeyID,
 			"environment", k.Environment, "requester", k.Requester)
 	}
-	for keyID, b := range budgets {
-		if err := r.LiteLLM.UpsertTagBudget(ctx, litellm.KeyBudgetTag(keyID), b); err != nil {
-			errs = append(errs, fmt.Errorf("budget for exchange key %s: %w", keyID, err))
+	for _, k := range keys {
+		b, ok := budgets[k.KeyID]
+		if !ok || !covered(k) {
+			continue
+		}
+		if err := r.LiteLLM.UpsertTagBudget(ctx, litellm.KeyBudgetTag(k.KeyID), b); err != nil {
+			errs = append(errs, fmt.Errorf("budget for exchange key %s: %w", k.KeyID, err))
 		}
 	}
 	return errors.Join(errs...)
