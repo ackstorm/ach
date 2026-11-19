@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Personal sessions response",
-  "description": "The caller's sessions (generations grouped by project and session_id) in the window. One turn = one trace = one gateway request.",
+  "description": "The caller's sessions (generations grouped by project and session_id) in the window. One turn = one gateway request (the generations under one server span).",
   "type": "object",
   "required": [
     "window",

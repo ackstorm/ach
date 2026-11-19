@@ -152,7 +152,7 @@ func TestTraceSQLOnRealClickHouse(t *testing.T) {
 	}
 
 	for id, want := range map[string]error{"mine": nil, "straddle": nil, "open": nil, "shared": core.ErrNotFound, "theirs": core.ErrNotFound} {
-		d, err := r.Detail(ctx, s, id, "", w)
+		d, err := r.Detail(ctx, s, id, "", "", w)
 		if !errors.Is(err, want) {
 			t.Errorf("detail %q err = %v, want %v", id, err, want)
 			continue
@@ -444,7 +444,7 @@ func TestClassificationSQLOnRealClickHouse(t *testing.T) {
 	}
 
 	for trace, want := range map[string]string{"t-s1": "classified", "t-s3": "not_classified", "t-none": "no_session"} {
-		d, err := r.Detail(context.Background(), s, trace, "", w)
+		d, err := r.Detail(context.Background(), s, trace, "", "", w)
 		if c := d.Classification; err != nil || c.State != want {
 			t.Errorf("detail %s: err=%v classification=%+v, want %s", trace, err, c, want)
 		}
@@ -464,9 +464,119 @@ func TestClassificationSQLOnRealClickHouse(t *testing.T) {
 
 func mustDetail(t *testing.T, r *Reader, s core.Scope, trace string, w core.Window) TraceDetail {
 	t.Helper()
-	d, err := r.Detail(context.Background(), s, trace, "", w)
+	d, err := r.Detail(context.Background(), s, trace, "", "", w)
 	if err != nil {
 		t.Fatalf("detail %s: %v", trace, err)
 	}
 	return d
+}
+
+// A client that propagates a traceparent puts every request of a run under one
+// trace_id, so a turn is one request (its server span), never one trace; a
+// retried request stays one turn.
+func TestSessionTurnsAreRequestsOnRealClickHouse(t *testing.T) {
+	url := startClickHouse(t)
+	exec(t, url, eventsFullDDL)
+	exec(t, url, "ALTER TABLE default.events_full ADD COLUMN session_id String, ADD COLUMN tool_call_names Array(String)")
+	cols := "(project_id, trace_id, span_id, parent_span_id, user_id, session_id, start_time, type, name, usage_details, tool_call_names, event_ts, is_deleted)"
+	gen := func(trace, span, request, minute, tool string) string {
+		return fmt.Sprintf("('p1','%s','%s','%s','a@x','s1','2026-10-02 10:%s:00','GENERATION','chat x',map('input',10,'output',2),['%s'],now64(6),0)", trace, span, request, minute, tool)
+	}
+	exec(t, url, "INSERT INTO default.events_full "+cols+" VALUES "+strings.Join([]string{
+		gen("shared", "g1", "r1", "00", "Read"), gen("shared", "g2", "r2", "01", "Bash"),
+		gen("shared", "g3", "r2", "02", "Grep"), // the retry of r2
+		gen("own", "g4", "r3", "03", "Edit"),
+	}, ","))
+
+	s, _ := core.NewUserScope("a@x")
+	w := core.Window{Start: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), Timezone: "UTC"}
+	r := NewReader(core.NewReader(core.NewClickHouse(core.Config{URL: url, User: "t", Password: "t"}, nil), []string{"p1"}))
+	page, err := r.Sessions(context.Background(), s, SessionQuery{Window: w, Limit: 10})
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].Turns != 3 || page.Sessions[0].Generations != 4 {
+		t.Fatalf("err=%v sessions=%+v, want one session of 3 turns over 4 generations", err, page.Sessions)
+	}
+	d, err := r.Session(context.Background(), s, "s1", "", w)
+	if err != nil || d.Turns != 3 || d.Generations != 4 || *d.InputTokens != 40 {
+		t.Fatalf("err=%v detail=%+v, want 3 turns over 4 generations", err, d)
+	}
+	var got []string
+	for _, turn := range d.TurnsList {
+		got = append(got, fmt.Sprintf("%s/%s in=%d tools=%v", turn.TraceID, *turn.CallID, *turn.InputTokens, turn.Tools))
+	}
+	if want := []string{"shared/r1 in=10 tools=[Read]", "shared/r2 in=20 tools=[Bash Grep]", "own/r3 in=10 tools=[Edit]"}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("turns = %q\n want %q", got, want)
+	}
+}
+
+// A client that propagates a traceparent shares one trace_id across requests,
+// sessions and days: each request is its own call, an MCP trace stays one.
+func TestCallsSplitASharedTraceOnRealClickHouse(t *testing.T) {
+	url := startClickHouse(t)
+	exec(t, url, eventsFullDDL)
+	exec(t, url, "ALTER TABLE default.events_full ADD COLUMN session_id String")
+	cols := "(project_id, trace_id, span_id, parent_span_id, user_id, session_id, start_time, end_time, type, name, provided_model_name, usage_details, event_ts, is_deleted)"
+	sp := func(trace, span, parent, user, session, typ, name string) string {
+		return fmt.Sprintf("('p1','%s','%s','%s','%s','%s','2026-10-02 10:00:00','2026-10-02 10:00:03','%s','%s','claude-x',map('input',3,'output',4),now64(6),0)", trace, span, parent, user, session, typ, name)
+	}
+	exec(t, url, "INSERT INTO default.events_full "+cols+" VALUES "+strings.Join([]string{
+		// one run, two requests in two sessions; every server span has a remote parent
+		sp("run", "r1", "ext1", "", "", "SPAN", "POST /v1/chat/completions"),
+		sp("run", "a1", "r1", "", "", "SPAN", "auth /v1/chat/completions"),
+		sp("run", "c1", "r1", "a@x", "s1", "GENERATION", "chat x"),
+		sp("run", "r2", "ext2", "", "", "SPAN", "POST /v1/chat/completions"),
+		sp("run", "c2", "r2", "a@x", "s2", "GENERATION", "chat x"),
+		// a request of that run that never reached the model: nobody's
+		sp("run", "r3", "ext3", "", "", "SPAN", "POST /v1/chat/completions"),
+		// an MCP session: one server span, a tool call, a ping whose parent is still open
+		sp("mcp", "m", "", "", "", "SPAN", "POST /mcp"),
+		sp("mcp", "tool", "m", "a@x", "", "TOOL", "srv.tool"),
+		sp("mcp", "ping", "open", "", "", "SPAN", "MCP send ping"),
+		// a trace_id shared with someone else: dropped whole
+		sp("leak", "ra", "exta", "", "", "SPAN", "POST /v1/chat/completions"),
+		sp("leak", "ca", "ra", "a@x", "s1", "GENERATION", "chat x"),
+		sp("leak", "rb", "extb", "", "", "SPAN", "POST /v1/chat/completions"),
+		sp("leak", "cb", "rb", "b@x", "s9", "GENERATION", "chat x"),
+	}, ","))
+
+	// Production reads with column grants, which do not cover subcolumn rewrites.
+	exec(t, url, "CREATE USER ro IDENTIFIED BY 'ro'")
+	exec(t, url, "GRANT SELECT(project_id, trace_id, span_id, parent_span_id, start_time, end_time, name, type, user_id, level, provided_model_name, usage_details, cost_details, metadata_names, metadata_values, event_ts, is_deleted, session_id) ON default.events_full TO ro")
+	r := NewReader(core.NewReader(core.NewClickHouse(core.Config{URL: url, User: "ro", Password: "ro"}, nil), []string{"p1"}))
+	s, _ := core.NewUserScope("a@x")
+	w := core.Window{Start: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), End: time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), Timezone: "UTC"}
+	ctx := context.Background()
+
+	pg, err := r.List(ctx, s, TraceQuery{Window: w, Limit: 50, Status: "all", Sort: "started_at", Asc: true})
+	if err != nil || pg.Provenance.State != "available" {
+		t.Fatalf("list err=%v provenance=%+v", err, pg.Provenance)
+	}
+	str := func(p *string) string {
+		if p == nil {
+			return "-"
+		}
+		return *p
+	}
+	var got []string
+	for _, c := range pg.Traces {
+		got = append(got, fmt.Sprintf("%s/%s spans=%d kind=%s status=%s session=%s in=%v", c.TraceID, str(c.CallID), c.SpanCount, str(c.Kind), c.Status, str(c.SessionID), c.InputTokens != nil && *c.InputTokens == 3))
+	}
+	want := []string{
+		"mcp/- spans=3 kind=mcp status=success session=- in=false",
+		"run/r1 spans=3 kind=llm status=success session=s1 in=true",
+		"run/r2 spans=2 kind=llm status=success session=s2 in=true",
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) || *pg.TotalCount != 3 {
+		t.Errorf("calls = %q (total %d)\n want %q", got, *pg.TotalCount, want)
+	}
+
+	d, err := r.Detail(ctx, s, "run", "", "r1", w)
+	if err != nil || len(d.Spans) != 3 || d.Status != "success" || *d.InputTokens != 3 || *d.Classification.SessionID != "s1" {
+		t.Errorf("call r1 err=%v detail=%+v, want its own 3 spans", err, d)
+	}
+	if d, err := r.Detail(ctx, s, "run", "", "", w); err != nil || len(d.Spans) != 6 {
+		t.Errorf("whole trace err=%v spans=%d, want 6", err, len(d.Spans))
+	}
+	if _, err := r.Detail(ctx, s, "leak", "", "ra", w); !errors.Is(err, core.ErrNotFound) {
+		t.Errorf("a call of a trace holding another user's span: err = %v, want not found", err)
+	}
 }

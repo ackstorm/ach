@@ -10,6 +10,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   drop from grants × keys to one per key per covering grant. A ceiling that
   rises because another grant was edited off the key lands within 5 minutes.
 
+### Fixed
+- Console Traces counts one turn per request in a session and lists one row
+  per request under Calls. A run from a client that sends its own trace context,
+  such as OpenCode, showed as a single turn and a single call with no type or
+  outcome. Opening a call shows that request alone.
+- `ach-cli environment hydrate` no longer warns `preserving <file> — local
+  edits detected; pass --force to remove` when the MCP server it meant to
+  remove from a tool's config is already gone from that file.
+
 ## [1.1.21] - 2026-11-18
 
 ### Breaking

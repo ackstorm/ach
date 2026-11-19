@@ -1085,3 +1085,41 @@ func TestSync_SharedDeepTargetPrunesOnlyUncoveredKeys(t *testing.T) {
 		}
 	}
 }
+
+// A deep row whose dropped key is already gone from disk has nothing left to
+// prune: Sync must not report it as a local edit, and the file stays as it is.
+func TestSync_DeepKeyAlreadyAbsent_NoWarning(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	target := filepath.Join(achDir, ".mcp.json")
+	recorded := `{"mcpServers":{"a":{"url":"http://a"},"z":{"url":"http://z"}}}`
+	m, err := merge.ParseDoc([]byte(recorded), false)
+	if err != nil {
+		t.Fatalf("ParseDoc: %v", err)
+	}
+	hash, err := merge.SubtreeHash(m)
+	if err != nil {
+		t.Fatalf("SubtreeHash: %v", err)
+	}
+	onDisk := []byte(`{"mcpServers":{"a":{"url":"http://a"}}}`)
+	if err := os.WriteFile(target, onDisk, 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	prev := &state.File{SchemaVersion: "3", Environment: "demo"}
+	prev.Adapter.Files = []state.FileEntry{{Target: ".mcp.json", Hash: hash, Merge: "deep",
+		Keys: []string{"mcpServers.a", "mcpServers.z"}}}
+	next := &state.File{SchemaVersion: "3", Environment: "demo"}
+	next.Adapter.Files = []state.FileEntry{{Target: ".mcp.json", Merge: "deep", Keys: []string{"mcpServers.a"}}}
+
+	var stderr bytes.Buffer
+	stats, err := hydrate.Sync(prev, next, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if stats.Preserved != 0 || stderr.Len() != 0 {
+		t.Errorf("absent key reported as preserved: stats=%+v stderr=%q", stats, stderr.String())
+	}
+	if body, _ := os.ReadFile(target); !bytes.Equal(body, onDisk) {
+		t.Errorf("file rewritten: %s", body)
+	}
+}

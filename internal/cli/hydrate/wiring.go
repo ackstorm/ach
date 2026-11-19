@@ -1797,6 +1797,18 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 		return true, nil
 	}
 
+	// The drift gate hashes the row's whole key set, so keys to prune that
+	// are already gone from disk would read as a local edit.
+	if e.Merge == mergeStrDeep && pruneKeys != nil {
+		doc, ok, err := merge.ReadParseDoc(abs, strings.ToLower(filepath.Ext(abs)) == extTOML)
+		if err != nil {
+			return false, fmt.Errorf("sync read %s: %w", abs, err)
+		}
+		if _, found := merge.ExtractByKeys(doc, pruneKeys); ok && !found {
+			return false, nil
+		}
+	}
+
 	// Drift-wins gate: compare on-disk xxh3 to prev.Hash. Mismatch +
 	// !Force → preserve.
 	if !opts.Force && e.Hash != "" {

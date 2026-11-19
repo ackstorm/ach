@@ -480,6 +480,8 @@ export interface EvidenceProvenance {
 
 export interface TraceSummary {
   trace_id: string;
+  /** The request's server span; null when the row is the rest of its trace (an MCP session). */
+  call_id?: string | null;
   project_id: string;
   started_at: string | null;
   ended_at: string | null;
@@ -498,7 +500,7 @@ export interface TraceSummary {
 }
 
 // GET /platform/observability/sessions[/{session_id}] — the caller's sessions
-// (its generations grouped by session_id); a turn is one trace.
+// (its generations grouped by session_id); a turn is one gateway request.
 export interface SessionSummary {
   session_id: string;
   project_id: string;
@@ -527,6 +529,8 @@ export interface SessionPage {
 
 export interface SessionTurn {
   trace_id: string;
+  /** The request's server span: the turn's row in the calls list. */
+  call_id?: string | null;
   started_at: string;
   ended_at?: string | null;
   model: string | null;

@@ -81,10 +81,10 @@ func TestListOrdersByWhitelistedColumnWithStableTies(t *testing.T) {
 		asc  bool
 		want string
 	}{
-		{"", false, "ORDER BY started_at DESC, project_id, trace_id "},
-		{"started_at", true, "ORDER BY started_at ASC, project_id, trace_id "},
-		{"tokens", false, "ORDER BY input_tokens + output_tokens DESC, project_id, trace_id "},
-		{"key", true, "ORDER BY key_alias ASC, project_id, trace_id "},
+		{"", false, "ORDER BY started_at DESC, project_id, trace_id, call_id "},
+		{"started_at", true, "ORDER BY started_at ASC, project_id, trace_id, call_id "},
+		{"tokens", false, "ORDER BY input_tokens + output_tokens DESC, project_id, trace_id, call_id "},
+		{"key", true, "ORDER BY key_alias ASC, project_id, trace_id, call_id "},
 	} {
 		ch, calls := scriptedCH(t, page(listRowJSON("p1", "t1", 1, "")))
 		q := validQuery()
@@ -253,7 +253,7 @@ func spanJSON(project, user, trace, span, parent, typ, name, level, end string, 
 func detail(t *testing.T, projects []string, project string, rows ...string) (TraceDetail, error, *[]call) {
 	t.Helper()
 	ch, calls := scriptedCH(t, page(rows...))
-	d, err := NewReader(core.NewReader(ch, projects)).Detail(context.Background(), scope(t, "a@x"), "t1", project, testWindow())
+	d, err := NewReader(core.NewReader(ch, projects)).Detail(context.Background(), scope(t, "a@x"), "t1", project, "", testWindow())
 	return d, err, calls
 }
 
@@ -361,7 +361,7 @@ func TestDetailUnknownTraceIsNotFoundAndSourceErrorIsUnavailable(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	ch, _ := scriptedCH(t, `{"data":null}`)
-	_, err = NewReader(core.NewReader(ch, []string{"p1"})).Detail(context.Background(), scope(t, "a@x"), "t1", "", testWindow())
+	_, err = NewReader(core.NewReader(ch, []string{"p1"})).Detail(context.Background(), scope(t, "a@x"), "t1", "", "", testWindow())
 	if !errors.Is(err, core.ErrSourceUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
@@ -375,7 +375,7 @@ func TestSQLExcludesTracesHoldingAnotherUsersSpan(t *testing.T) {
 	if _, err := NewReader(core.NewReader(ch, []string{"p1"})).List(context.Background(), scope(t, "a@x"), validQuery()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains((*calls)[0].Body, "countIf(user_id NOT IN ({subject0:String}, '')) = 0") {
+	if !strings.Contains((*calls)[0].Body, "trace_foreign_spans = 0") {
 		t.Error("list must drop traces that hold another user's span")
 	}
 	_, _, dc := detail(t, []string{"p1"}, "", spanJSON("p1", "", "t1", "root", "", "SPAN", "r", "DEFAULT", done, 0, 0, 0))
@@ -431,7 +431,7 @@ func sessionSpan(session string) string {
 func classifiedDetail(t *testing.T, bodies ...string) (TraceDetail, *[]call) {
 	t.Helper()
 	ch, calls := scriptedCH(t, bodies...)
-	d, err := NewReader(core.NewReader(ch, []string{"p1"})).Detail(context.Background(), scope(t, "a@x"), "t1", "", testWindow())
+	d, err := NewReader(core.NewReader(ch, []string{"p1"})).Detail(context.Background(), scope(t, "a@x"), "t1", "", "", testWindow())
 	if err != nil || len(d.Spans) != 1 {
 		t.Fatalf("err=%v detail=%+v; a classification read must never fail the detail", err, d)
 	}
