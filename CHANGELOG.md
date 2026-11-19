@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.23] - 2026-11-19
+
 ### Fixed
 - A message sent to an agent through `/a2a/<name>/mcp` (`ach-cli a2a call`, or
   the `a2a-<name>` MCP server in a coding tool) returns the agent's answer when
