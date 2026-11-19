@@ -30,6 +30,7 @@ type scopeCall struct {
 	q       eeevidence.TraceQuery
 	trace   string
 	project string
+	call    string
 	w       evidence.Window
 }
 
@@ -56,8 +57,8 @@ func (f *fakeReader) List(_ context.Context, s evidence.Scope, q eeevidence.Trac
 	return eeevidence.TracePage{Traces: []eeevidence.TraceSummary{}}, f.listErr
 }
 
-func (f *fakeReader) Detail(_ context.Context, s evidence.Scope, trace, project string, w evidence.Window) (eeevidence.TraceDetail, error) {
-	f.calls = append(f.calls, scopeCall{email: s.Email(), trace: trace, project: project, w: w})
+func (f *fakeReader) Detail(_ context.Context, s evidence.Scope, trace, project, call string, w evidence.Window) (eeevidence.TraceDetail, error) {
+	f.calls = append(f.calls, scopeCall{email: s.Email(), trace: trace, project: project, call: call, w: w})
 	return eeevidence.TraceDetail{TraceID: trace, Spans: []eeevidence.Span{}}, f.detailErr
 }
 
@@ -217,8 +218,8 @@ func TestInclusiveEndBecomesExclusiveBoundary(t *testing.T) {
 
 func TestDetailPassesProjectSelector(t *testing.T) {
 	f := &fakeReader{}
-	get(t, Deps{Reader: f}, listPath+"/t9?project=p2&start=2026-10-01&end=2026-10-02", ctxFor(keys.PrefixPk, "a@x"))
-	if c := f.calls[0]; c.trace != "t9" || c.project != "p2" || !c.w.End.Equal(time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)) {
+	get(t, Deps{Reader: f}, listPath+"/t9?project=p2&call=r1&start=2026-10-01&end=2026-10-02", ctxFor(keys.PrefixPk, "a@x"))
+	if c := f.calls[0]; c.trace != "t9" || c.project != "p2" || c.call != "r1" || !c.w.End.Equal(time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("call = %+v", c)
 	}
 }

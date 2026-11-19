@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { Traces } from './Traces';
 
-const controls = vi.hoisted(() => ({ sessionSorts: [] as unknown[], sessionless: 10851 as number | null, truncated: false, sorts: [] as unknown[], emptyList: false, paginated: false, errorSpan: false, detailCapped: false, period: '30d', listFailed: false, nullUsage: false, classification: undefined as unknown }));
+const controls = vi.hoisted(() => ({ traceArgs: [] as unknown[], sessionSorts: [] as unknown[], sessionless: 10851 as number | null, truncated: false, sorts: [] as unknown[], emptyList: false, paginated: false, errorSpan: false, detailCapped: false, period: '30d', listFailed: false, nullUsage: false, classification: undefined as unknown }));
 vi.mock('@/stores/console-range', () => ({ useConsoleDateRange: () => ({ start: controls.period === '30d' ? '2026-09-01' : '2026-09-24', end: '2026-09-30' }), useConsoleRange: (sel: (s: unknown) => unknown) => sel({ preset: controls.period, custom: null, setPreset: () => {}, setCustom: () => {} }) }));
 const trace = { trace_id: 'trace-a', project_id: 'project-a', started_at: '2026-09-20 12:00:00.000000', ended_at: '2026-09-20 12:00:02.000000', span_count: 2, status: 'unknown' as const, kind: 'llm' as const, request_id: 'xvS9arLREKeXvdIP6LKnmQ', model: 'gemini.gemini-flash-latest', duration_ms: 2339, input_tokens: 1041, output_tokens: 388, cost: 0.00223575, key_alias: 'lk-80cffcc549141094', session_id: '128db405-aaaa-bbbb' as string | null };
 const CALLS = '/analytics/traces?view=calls';
 const session = { session_id: '128db405-aaaa-bbbb', project_id: 'project-a', started_at: '2026-09-20 12:00:00.000000', last_activity_at: '2026-09-20 14:00:00.000000', duration_ms: 7_184_241, turns: 253, generations: 253, input_tokens: 50_000, output_tokens: 1_000, cost: 1.23, models: ['claude-opus-5-5', 'gpt-x'], status: 'unknown' as const };
-const turnRow = (trace_id: string, started_at: string, duration_ms: number) => ({ trace_id, started_at, model: 'claude-opus-5-5', input_tokens: 12_000, output_tokens: 450, cost: 0, duration_ms, status: 'unknown' as const });
+const turnRow = (trace_id: string, started_at: string, duration_ms: number) => ({ trace_id, call_id: `req-${trace_id}`, started_at, model: 'claude-opus-5-5', input_tokens: 12_000, output_tokens: 450, cost: 0, duration_ms, status: 'unknown' as const });
 vi.mock('@ee/hooks/use-sessions', () => ({
   DEFAULT_SESSION_SORT: { key: 'started_at', dir: 'desc' },
   useSessions: (_cursor = 0, sort?: unknown) => (controls.sessionSorts.push(sort), { isPending: false, isError: false, refetch: vi.fn(), data: { window: { start: '', end: '', timezone: 'UTC' }, sessions: [session], total_count: 383, next_cursor: null, sessionless_traces: controls.sessionless, provenance: { state: 'available', reason: null, sampled: false } } }),
@@ -19,7 +19,7 @@ vi.mock('@ee/hooks/use-traces', () => ({
   TRACE_PAGE_SIZE: 25,
   DEFAULT_TRACE_SORT: { key: 'started_at', dir: 'desc' },
   useTraces: (cursor = 0, status = 'all', search = '', sort?: unknown) => (controls.sorts.push(sort), { isPending: false, isError: controls.listFailed, refetch: vi.fn(), data: { window: { start: '', end: '', timezone: 'UTC' }, traces: controls.emptyList || (controls.period === '7d' && cursor > 0) || (search && search !== 'older') || (status === 'error' && cursor > 0) ? [] : [search === 'older' ? {...trace, trace_id: 'older-trace', status: 'error'} : controls.nullUsage ? {...trace, kind: null, request_id: null, model: null, input_tokens: null, output_tokens: null, cost: null, key_alias: null, session_id: null} : trace], total_count: 2000, next_cursor: controls.paginated && cursor === 0 ? 25 : null, provenance: { state: 'available', reason: null, sampled: false } } }),
-  useTrace: () => ({ isPending: false, isError: false, data: { trace_id: 'trace-a', request_id: 'xvS9arLREKeXvdIP6LKnmQ', status: controls.errorSpan ? 'error' : 'success', cost: controls.nullUsage ? null : 0.00223575, project_id: 'project-a', classification: controls.classification, spans: [{ span_id: 'root', parent_span_id: null, type: 'SPAN', name: 'chat', start_time: '2026-09-20T12:00:00Z', end_time: '2026-09-20T12:00:02Z', status: controls.errorSpan ? 'error' : 'unknown', model: null }], provenance: { state: controls.detailCapped ? 'partial' : 'available', reason: controls.detailCapped ? 'row_cap' : null, sampled: controls.detailCapped } } }),
+  useTrace: (...args: unknown[]) => (controls.traceArgs = args, { isPending: false, isError: false, data: { trace_id: 'trace-a', request_id: 'xvS9arLREKeXvdIP6LKnmQ', status: controls.errorSpan ? 'error' : 'success', cost: controls.nullUsage ? null : 0.00223575, project_id: 'project-a', classification: controls.classification, spans: [{ span_id: 'root', parent_span_id: null, type: 'SPAN', name: 'chat', start_time: '2026-09-20T12:00:00Z', end_time: '2026-09-20T12:00:02Z', status: controls.errorSpan ? 'error' : 'unknown', model: null }], provenance: { state: controls.detailCapped ? 'partial' : 'available', reason: controls.detailCapped ? 'row_cap' : null, sampled: controls.detailCapped } } }),
 }));
 
 beforeEach(() => Object.assign(controls, { sessionSorts: [], sessionless: 10851, truncated: false, sorts: [], emptyList: false, paginated: false, errorSpan: false, detailCapped: false, period: '30d', listFailed: false, nullUsage: false, classification: undefined }));
@@ -261,6 +261,7 @@ describe('Sessions', () => {
     render(<MemoryRouter initialEntries={['/analytics/traces?session=128db405-aaaa-bbbb&project=project-a']}><Traces /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'Open trace turn-2' }));
     expect(screen.getByRole('dialog', { name: 'turn-2' })).toBeInTheDocument();
+    expect(controls.traceArgs).toEqual(['turn-2', 'project-a', 'req-turn-2']); // only that call of a shared trace
     expect(screen.getByRole('heading', { name: 'Execution waterfall' })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getByRole('dialog', { name: '128db405-aaaa-bbbb' })).toBeInTheDocument();

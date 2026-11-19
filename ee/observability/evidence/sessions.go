@@ -11,9 +11,12 @@ import (
 	core "github.com/ackstorm/ach/internal/observability/evidence"
 )
 
-// A trace is one gateway request; the unit of work is the client's session,
-// carried on the GENERATION rows. Sessions group the caller's own generations
-// by (project, session_id); a generation without a session stays a call only.
+// The unit of work is the client's session, carried on the GENERATION rows.
+// Sessions group the caller's own generations by (project, session_id); a
+// generation without a session stays a call only. A turn is one gateway
+// request: the generations under one server span (a retry or a fallback adds
+// a generation, not a turn). A client that propagates a traceparent shares one
+// trace_id across requests, so the trace is not the unit.
 
 // SessionSorts maps each sortable session column to its SQL expression over
 // the grouped rows. Only these literals ever reach the ORDER BY.
@@ -57,9 +60,11 @@ type SessionPage struct {
 	Provenance        core.Provenance  `json:"provenance"`
 }
 
-// SessionTurn is one trace (one gateway request) of a session.
+// SessionTurn is one gateway request of a session; CallID is its server span
+// and its row in the calls list.
 type SessionTurn struct {
 	TraceID      string   `json:"trace_id"`
+	CallID       *string  `json:"call_id"`
 	StartedAt    *string  `json:"started_at"`
 	EndedAt      *string  `json:"ended_at"`
 	Model        *string  `json:"model"`
@@ -113,7 +118,7 @@ SELECT project_id, ifNull(session_id, '') AS session_id,
        formatDateTime(min(source.start_time), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
        formatDateTime(max(ifNull(source.end_time, source.start_time)), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS last_activity_at,
        dateDiff('millisecond', min(source.start_time), max(ifNull(source.end_time, source.start_time))) AS duration_ms,
-       uniqExact(trace_id) AS turns, count() AS generations,
+       uniqExact(trace_id, parent_span_id) AS turns, count() AS generations,
        topKIf(3)(provided_model_name, provided_model_name != '') AS models,` + genUsage + genSource + `
   AND ifNull(session_id, '') != ''
 GROUP BY project_id, session_id
@@ -133,7 +138,7 @@ SELECT countIf(sid = '') AS sessionless FROM (
 FORMAT JSON`
 
 const sessionTurnsSQL = `
-SELECT project_id, ifNull(session_id, '') AS session_id, trace_id,
+SELECT project_id, ifNull(session_id, '') AS session_id, trace_id, parent_span_id AS call_id,
        formatDateTime(min(source.start_time), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
        formatDateTime(max(ifNull(source.end_time, source.start_time)), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS ended_at,
        dateDiff('millisecond', min(source.start_time), max(ifNull(source.end_time, source.start_time))) AS duration_ms,
@@ -141,8 +146,8 @@ SELECT project_id, ifNull(session_id, '') AS session_id, trace_id,
        anyIf(provided_model_name, provided_model_name != '') AS model,
        arraySlice(groupArrayArray(tool_call_names), 1, 20) AS tools,` + genUsage + genSource + `
   AND ifNull(session_id, '') = {session:String}
-GROUP BY project_id, session_id, trace_id
-ORDER BY started_at ASC, trace_id
+GROUP BY project_id, session_id, trace_id, parent_span_id
+ORDER BY started_at ASC, trace_id, call_id
 LIMIT {limit:UInt32}
 FORMAT JSON`
 
@@ -167,6 +172,7 @@ type turnRow struct {
 	ProjectID    string   `json:"project_id"`
 	SessionID    string   `json:"session_id"`
 	TraceID      string   `json:"trace_id"`
+	CallID       string   `json:"call_id"`
 	StartedAt    *string  `json:"started_at"`
 	EndedAt      *string  `json:"ended_at"`
 	DurationMS   float64  `json:"duration_ms"`
@@ -263,7 +269,7 @@ func (r *Reader) Sessions(ctx context.Context, s core.Scope, q SessionQuery) (Se
 	return page, nil
 }
 
-// Session returns one of the caller's sessions, one row per turn (trace).
+// Session returns one of the caller's sessions, one row per turn (gateway request).
 // project narrows to one allow-listed project, validated before any query.
 func (r *Reader) Session(ctx context.Context, s core.Scope, sessionID, project string, w core.Window) (SessionDetail, error) {
 	if !s.Valid() {
@@ -311,7 +317,7 @@ func (r *Reader) Session(ctx context.Context, s core.Scope, sessionID, project s
 	for i, row := range rows {
 		tin, tout, tcost := usage(row.Measured, row.InputTokens, row.OutputTokens, row.Cost)
 		d.TurnsList[i] = SessionTurn{
-			TraceID: row.TraceID, StartedAt: row.StartedAt, EndedAt: row.EndedAt, Model: nilIfEmpty(row.Model),
+			TraceID: row.TraceID, CallID: nilIfEmpty(row.CallID), StartedAt: row.StartedAt, EndedAt: row.EndedAt, Model: nilIfEmpty(row.Model),
 			InputTokens: tin, OutputTokens: tout, Cost: tcost, DurationMS: int(row.DurationMS), Status: row.Status,
 			Tools: append([]string{}, row.Tools...),
 		}

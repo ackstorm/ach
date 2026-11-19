@@ -23,7 +23,7 @@ const (
 	classified    = "classified"
 )
 
-// TraceQuery selects one page of the caller's traces. End is exclusive.
+// TraceQuery selects one page of the caller's calls. End is exclusive.
 type TraceQuery struct {
 	Window core.Window
 	Limit  int
@@ -42,9 +42,11 @@ var TraceSorts = map[string]string{
 	"tokens": "input_tokens + output_tokens", "cost": "cost", "key": "key_alias",
 }
 
-// TraceSummary is one grouped (project, trace) row.
+// TraceSummary is one call: a gateway request with a model call (CallID is its
+// server span), or everything else of a trace (CallID nil), as an MCP session.
 type TraceSummary struct {
 	TraceID      string   `json:"trace_id"`
+	CallID       *string  `json:"call_id"`
 	ProjectID    string   `json:"project_id"`
 	StartedAt    *string  `json:"started_at"`
 	EndedAt      *string  `json:"ended_at"`
@@ -133,23 +135,41 @@ func (r *Reader) WithTaxonomy(t classifier.Taxonomy) *Reader {
 // Gateway spans (auth, POST, guardrails) carry no user_id: only chat/tool spans do.
 // A trace is the subject's when a user-bearing span in the window is theirs and no
 // span in the window belongs to anyone else; a trace holding another user's span is
-// dropped whole (list HAVING, detail NOT IN), never filtered down to the rest.
+// dropped whole (list trace_foreign_spans, detail NOT IN), never filtered down to the rest.
+//
+// A client that propagates a traceparent shares one trace_id across requests,
+// so a row is a call, not a trace: the server span that parents one of the
+// caller's chat generations plus its children. The spans of a trace outside
+// every such request form one more row (empty call_id), kept when one is the caller's.
 const traceGroupSQL = `
+SELECT * FROM (
+SELECT *, sum(foreign_spans) OVER (PARTITION BY project_id, trace_id) AS trace_foreign_spans FROM (
+WITH requests AS (
+  SELECT project_id, trace_id, parent_span_id FROM default.events_full AS chat FINAL
+  WHERE is_deleted = 0 AND (__SCOPE__)
+    AND chat.start_time >= parseDateTime64BestEffort({start:String}, 6, 'UTC')
+    AND chat.start_time < parseDateTime64BestEffort({end:String}, 6, 'UTC')
+    AND type = 'GENERATION' AND startsWith(name, 'chat ')
+)
 SELECT project_id, trace_id,
+       multiIf((project_id, trace_id, span_id) IN requests, span_id,
+               (project_id, trace_id, parent_span_id) IN requests, parent_span_id, '') AS call_id,
        formatDateTime(min(source.start_time), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
        formatDateTime(max(source.end_time), '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS ended_at,
        count() AS span_count,
        multiIf(countIf(level = 'ERROR') > 0, 'error',
-               countIf(parent_span_id = '' AND isNotNull(end_time)) > 0, 'success', 'unknown') AS status,
+               countIf((parent_span_id = '' OR span_id = call_id) AND isNotNull(end_time)) > 0, 'success', 'unknown') AS status,
        dateDiff('millisecond', min(source.start_time), max(source.end_time)) AS duration_ms,
-       anyIf(name, parent_span_id = '') AS root_name,
+       anyIf(name, parent_span_id = '' OR span_id = call_id) AS root_name,
        anyIf(metadata_values[indexOf(metadata_names, 'attributes.gen_ai.response.id')], type = 'GENERATION' AND startsWith(name, 'chat ')) AS request_id,
        anyIf(provided_model_name, type = 'GENERATION' AND startsWith(name, 'chat ')) AS model,
        sumIf(` + fullInputSQL + `, type = 'GENERATION' AND startsWith(name, 'chat ')) AS input_tokens,
        sumIf(usage_details['output'], type = 'GENERATION' AND startsWith(name, 'chat ')) AS output_tokens,
        sumIf(cost_details['total'], type = 'GENERATION' AND startsWith(name, 'chat ')) AS cost,
        anyIf(metadata_values[indexOf(metadata_names, 'attributes.litellm.metadata.user_api_key_alias')], type = 'GENERATION' AND startsWith(name, 'chat ')) AS key_alias,
-       max(ifNull(session_id, '')) AS session_id
+       max(ifNull(session_id, '')) AS session_id,
+       countIf(user_id = {subject0:String}) AS own_spans,
+       countIf(user_id NOT IN ({subject0:String}, '')) AS foreign_spans
 FROM default.events_full AS source FINAL
 WHERE is_deleted = 0 AND (__UNOWNED_SCOPE__)
   AND (project_id, trace_id) IN (
@@ -163,8 +183,9 @@ WHERE is_deleted = 0 AND (__UNOWNED_SCOPE__)
   AND source.start_time < parseDateTime64BestEffort({end:String}, 6, 'UTC')
   AND type IN ('SPAN', 'GENERATION', 'TOOL') AND trace_id != ''
   AND ({search:String} = '' OR positionCaseInsensitive(trace_id, {search:String}) > 0)
-GROUP BY project_id, trace_id
-HAVING countIf(user_id NOT IN ({subject0:String}, '')) = 0
+GROUP BY project_id, trace_id, call_id
+))
+WHERE trace_foreign_spans = 0 AND own_spans > 0
   AND ({status:String} = 'all' OR status = {status:String})
 `
 
@@ -179,6 +200,7 @@ WHERE is_deleted = 0 AND (__UNOWNED_SCOPE__)
   AND source.start_time >= parseDateTime64BestEffort({start:String}, 6, 'UTC')
   AND source.start_time < parseDateTime64BestEffort({end:String}, 6, 'UTC')
   AND type IN ('SPAN', 'GENERATION', 'TOOL') AND trace_id = {trace:String}
+  AND ({call:String} = '' OR span_id = {call:String} OR parent_span_id = {call:String})
   AND (project_id, trace_id) IN (
     SELECT project_id, trace_id FROM default.events_full AS own FINAL
     WHERE is_deleted = 0 AND (__SCOPE__)
@@ -247,6 +269,7 @@ func direction(asc bool) string {
 type listRow struct {
 	ProjectID    string  `json:"project_id"`
 	TraceID      string  `json:"trace_id"`
+	CallID       string  `json:"call_id"`
 	StartedAt    *string `json:"started_at"`
 	EndedAt      *string `json:"ended_at"`
 	SpanCount    float64 `json:"span_count"`
@@ -272,7 +295,7 @@ func nilIfEmpty(s string) *string {
 
 func summary(r listRow) TraceSummary {
 	t := TraceSummary{
-		TraceID: r.TraceID, ProjectID: r.ProjectID, StartedAt: r.StartedAt, EndedAt: r.EndedAt,
+		TraceID: r.TraceID, CallID: nilIfEmpty(r.CallID), ProjectID: r.ProjectID, StartedAt: r.StartedAt, EndedAt: r.EndedAt,
 		SpanCount: int(r.SpanCount), Status: r.Status, DurationMS: int(r.DurationMS),
 		RequestID: nilIfEmpty(r.RequestID), Model: nilIfEmpty(r.Model), KeyAlias: nilIfEmpty(r.KeyAlias), SessionID: nilIfEmpty(r.SessionID),
 	}
@@ -292,9 +315,9 @@ func summary(r listRow) TraceSummary {
 	return t
 }
 
-// List pages the caller's complete trace groups over the whole window.
+// List pages the caller's calls over the whole window.
 // The cursor is an offset in the requested sort order (default started_at),
-// ties broken by project_id, trace_id so pages stay stable.
+// ties broken by project_id, trace_id, call_id so pages stay stable.
 func (r *Reader) List(ctx context.Context, s core.Scope, q TraceQuery) (TracePage, error) {
 	if !s.Valid() {
 		return TracePage{}, core.ErrNoScope
@@ -325,10 +348,10 @@ func (r *Reader) List(ctx context.Context, s core.Scope, q TraceQuery) (TracePag
 	}
 	core.WindowParams(q.Window, params)
 	group := core.Scoped(traceGroupSQL, r.Projects(), s, params)
-	sql := "SELECT project_id, trace_id, started_at, ended_at, span_count, status, " +
+	sql := "SELECT project_id, trace_id, call_id, started_at, ended_at, span_count, status, " +
 		"duration_ms, root_name, request_id, model, input_tokens, output_tokens, cost, key_alias, session_id, " +
 		"count() OVER () AS total_count FROM (" + group + ") " +
-		"ORDER BY " + order + direction(q.Asc) + ", project_id, trace_id " +
+		"ORDER BY " + order + direction(q.Asc) + ", project_id, trace_id, call_id " +
 		"LIMIT {limit:UInt32} OFFSET {offset:UInt64} FORMAT JSON"
 
 	var data []listRow
@@ -408,14 +431,15 @@ func checkRows(rows []spanRow, projects []string, s core.Scope, traceID string) 
 	return nil
 }
 
-// Detail returns the caller's hierarchy for one trace. project narrows to one
+// Detail returns the caller's hierarchy for one trace, or for one call of it
+// (call is the list row's call_id; "" is the whole trace). project narrows to one
 // allow-listed project; it is validated before any query. Any row outside the
 // scope fails the whole read (ErrScopeMismatch) rather than returning a partial trace.
-func (r *Reader) Detail(ctx context.Context, s core.Scope, traceID, project string, w core.Window) (TraceDetail, error) {
+func (r *Reader) Detail(ctx context.Context, s core.Scope, traceID, project, call string, w core.Window) (TraceDetail, error) {
 	if !s.Valid() {
 		return TraceDetail{}, core.ErrNoScope
 	}
-	if traceID == "" || len(traceID) > 200 || !w.Valid() {
+	if traceID == "" || len(traceID) > 200 || len(call) > 200 || !w.Valid() {
 		return TraceDetail{}, core.ErrInvalidArgument
 	}
 	projects := r.Projects()
@@ -428,7 +452,7 @@ func (r *Reader) Detail(ctx context.Context, s core.Scope, traceID, project stri
 	if len(projects) == 0 {
 		return TraceDetail{}, core.ErrProjectNotAllowed
 	}
-	params := map[string]string{"trace": traceID, "limit": fmt.Sprint(detailRowCap + 1)}
+	params := map[string]string{"trace": traceID, "call": call, "limit": fmt.Sprint(detailRowCap + 1)}
 	core.WindowParams(w, params)
 	sql := core.Scoped(traceSpanSQL, projects, s, params)
 
@@ -466,7 +490,7 @@ func (r *Reader) Detail(ctx context.Context, s core.Scope, traceID, project stri
 			sp.Status, failed = statusError, true
 		}
 		d.Spans[i] = sp
-		if row.ParentSpanID == "" && row.EndTime != nil {
+		if (row.ParentSpanID == "" || row.SpanID == call) && row.EndTime != nil {
 			rootDone = true
 		}
 		if row.Type == "GENERATION" && strings.HasPrefix(row.Name, "chat ") {

@@ -70,10 +70,11 @@ export function TraceWaterfall({ spans }: { spans: TraceSpan[] }) {
 // (plus any wait for the user, which the gateway cannot tell apart).
 export function sessionSpans(turns: SessionTurn[]): TraceSpan[] {
   return turns.flatMap((t, i) => {
-    const model: TraceSpan = { span_id: t.trace_id, parent_span_id: null, type: 'GENERATION', name: `Model · ${t.model ?? 'unknown'}`, start_time: t.started_at, end_time: t.ended_at ?? null, status: t.status === 'error' ? 'error' : 'unknown', model: t.model };
+    const id = `${t.trace_id}:${t.call_id ?? ''}`;
+    const model: TraceSpan = { span_id: id, parent_span_id: null, type: 'GENERATION', name: `Model · ${t.model ?? 'unknown'}`, start_time: t.started_at, end_time: t.ended_at ?? null, status: t.status === 'error' ? 'error' : 'unknown', model: t.model };
     const next = turns[i + 1];
     if (!t.tools?.length || !next || !t.ended_at) return [model];
     const names = [...new Set(t.tools)];
-    return [model, { span_id: `${t.trace_id}:tools`, parent_span_id: null, type: 'TOOL', name: `Tools · ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}`, start_time: t.ended_at, end_time: next.started_at, status: 'unknown', model: null }];
+    return [model, { span_id: `${id}:tools`, parent_span_id: null, type: 'TOOL', name: `Tools · ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}`, start_time: t.ended_at, end_time: next.started_at, status: 'unknown', model: null }];
   });
 }
