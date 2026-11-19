@@ -83,7 +83,8 @@ Local paths (/, ./, ~) are not yet supported.
 When no #ref fragment is given the default branch is "main".
 
 Tokens are read from --token; when absent the command falls back to
-GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
+GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources on a GitLab
+host). A git: source on any other host takes its token from --token only.
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,13 +94,14 @@ GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
 			if err != nil {
 				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("repo add: %v", err)}
 			}
-			// Resolve token: flag > env fallback.
+			// Resolve token: flag > env fallback. git: names any host, and
+			// GITLAB_TOKEN goes to GitLab hosts only.
 			token := flagToken
 			if token == "" {
-				switch su.Kind {
-				case source.KindGitHub:
+				switch {
+				case su.Kind == source.KindGitHub:
 					token = os.Getenv("GITHUB_TOKEN")
-				case source.KindGit:
+				case su.Kind == source.KindGit && source.GitLabHost(su.CloneURL):
 					token = os.Getenv("GITLAB_TOKEN")
 				}
 			}

@@ -170,6 +170,16 @@ ach-cli environment describe <environment>   # what one contains
 ach-cli environment search <text>            # find a plugin, skill, MCP server… across all of them`}
               />
               <Step
+                note="Look up a contact or ask another agent from any folder. Use the names returned by search and the arguments in the tool schema."
+                code={`ach-cli mcp search zoho contacts
+ach-cli mcp describe <server.tool>
+ach-cli mcp call <server.tool> - -o json < args.json
+ach-cli mcp login <server>   # when the provider asks for consent
+ach-cli mcp auth <server> --device   # approve from another device
+ach-cli a2a search <words...>
+ach-cli a2a call <agent> '<message>'`}
+              />
+              <Step
                 note="Global install, for the organization's baseline: every project gets it."
                 code={`ach-cli environment hydrate <environment> -g --target claude-code`}
               />
@@ -179,7 +189,7 @@ ach-cli environment search <text>            # find a plugin, skill, MCP server�
 # ~/Projects/<environment>/<project>/ …`}
               />
               <Step
-                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it."
+                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it. A file of your own that a plugin or skill would replace stops it with exit code 7; --force replaces it."
                 code={`cd ~/Projects/<environment> && ach-cli environment hydrate   # every Environment recorded here
 ach-cli environment hydrate <environment> --sync           # also remove what the Environment dropped
 ach-cli environment hydrate <environment> --dry-run        # preview the diff, write nothing
@@ -231,7 +241,7 @@ ach-cli keys revoke <name>                       # for good`}
             sub="Install a plugin or skill straight from a git repository, with no Environment and no sign-in. The quick path for trying something; for anything a team relies on, ask for it in an Environment."
           >
             <Step
-              note="A source is github:owner/repo[#ref] or git:https://host/path[.git][#ref]. --dry-run on install and uninstall writes nothing."
+              note="A source is github:owner/repo[#ref] or git:https://host/path[.git][#ref]. --dry-run on install and uninstall writes nothing. Install and update do not replace a file of your own (exit code 7) unless you pass --force; update leaves a file you edited as it is."
               code={`ach-cli local repo add github:owner/repo --name <repo>
 ach-cli local plugin install <plugin>@<repo> --target claude-code   # -g for the tool's global config
 ach-cli local skill install <skill>@<repo> --target codex,opencode

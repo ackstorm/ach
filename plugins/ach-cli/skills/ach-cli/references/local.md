@@ -22,8 +22,13 @@ ach-cli local plugin uninstall <plugin>@<repo>
   default ref is `main`. Local paths are not supported.
 - `git` >= 2.31 must be on `PATH`; a private-repo token is handed to it through the
   environment.
-- Private repos: `--token`, else `GITHUB_TOKEN` (github:) or `GITLAB_TOKEN` (git:).
-  Some GitLab setups need `--auth basic-oauth2`.
+- Private repos: `--token`, else `GITHUB_TOKEN` (github:) or `GITLAB_TOKEN` (git: on a
+  host whose name contains `gitlab` or starts with `git.`; any other git: host needs
+  `--token`). Some GitLab setups need `--auth basic-oauth2`.
 - `--path <dir>` on `repo add` points at the folder that holds a skills repo's
   `<skill>/SKILL.md` directories.
 - `--dry-run` on install and uninstall prints the plan and writes nothing.
+- `install` and `update` do not replace a file that exists with other content and that
+  no installed package put there: they name it, leave that package as it was and exit
+  7. Move the file away, or `--force` on the user's say-so.
+- `update` leaves a file the user edited as it is and reports it as skipped.

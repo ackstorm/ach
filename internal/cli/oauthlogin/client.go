@@ -136,6 +136,15 @@ func randomURLSafe(n int) (string, error) {
 // Login runs the full ceremony. clientID may be empty (first login on this
 // profile) — the returned creds carry the id to cache.
 func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds, error) {
+	return c.LoginForResource(ctx, clientID, "", nil)
+}
+
+// LoginForResource runs loopback login with the RFC 8707 resource that selects
+// a backend's provider consent policy on ACH. prompt opens the authorization
+// URL or returns a callback URL pasted by the user.
+func (c *Client) LoginForResource(ctx context.Context, clientID, resource string,
+	prompt func(context.Context, string) (string, error),
+) (*config.OAuthCreds, error) {
 	m, err := c.discover(ctx)
 	if err != nil {
 		return nil, err
@@ -166,6 +175,9 @@ func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(sum[:])}, "code_challenge_method": {"S256"},
 		"scope": {"offline_access"},
 	}
+	if resource != "" {
+		q.Set("resource", resource)
+	}
 	authorizeURL := m.AuthorizationEndpoint + "?" + q.Encode()
 
 	type result struct {
@@ -178,55 +190,85 @@ func (c *Client) Login(ctx context.Context, clientID string) (*config.OAuthCreds
 			http.NotFound(w, r)
 			return
 		}
-		rq := r.URL.Query()
-		var res result
-		switch {
-		case rq.Get("error") != "":
-			_, _ = fmt.Fprintf(w, "<h1>Login failed</h1><p>%s</p>", rq.Get("error"))
-			res.err = fmt.Errorf("authorization server returned %s", rq.Get("error"))
-		case rq.Get("state") != state:
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			res.err = errors.New("state mismatch on the loopback redirect")
-		default:
+		code, err := callbackCode("http://"+r.Host+r.URL.RequestURI(), redirectURI, state)
+		if err != nil {
+			http.Error(w, "Sign-in failed. Return to your terminal.", http.StatusBadRequest)
+		} else {
 			_, _ = fmt.Fprint(w, "<h1>Signed in to ACH</h1><p>You can close this tab.</p>")
-			res.code = rq.Get("code")
 		}
 		select {
-		case done <- res:
+		case done <- result{code: code, err: err}:
 		default: // a second hit after the first result: ignore
 		}
 	})}
 	go func() { _ = srv.Serve(ln) }()
 	defer func() { _ = srv.Close() }()
 
-	if err := Opener(authorizeURL); err != nil {
-		return nil, fmt.Errorf("open browser: %w (open this URL yourself: %s)", err, authorizeURL)
-	}
 	timeout := c.LoginTimeout
 	if timeout == 0 {
 		timeout = 5 * time.Minute
 	}
-	var code string
-	select {
-	case r := <-done:
-		if r.err != nil {
-			return nil, r.err
-		}
-		code = r.code
-	case <-time.After(timeout):
-		return nil, errors.New("timed out waiting for the browser")
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	wait, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var pasted, code string
+	if prompt != nil {
+		pasted, err = prompt(wait, authorizeURL)
+	} else if err = Opener(authorizeURL); err != nil {
+		err = fmt.Errorf("open browser: %w", err)
 	}
-	creds, err := c.exchange(ctx, m.TokenEndpoint, url.Values{
+	if err != nil {
+		return nil, err
+	}
+	if wait.Err() != nil {
+		return nil, fmt.Errorf("waiting for the browser callback: %w", wait.Err())
+	}
+	if pasted != "" {
+		code, err = callbackCode(pasted, redirectURI, state)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		select {
+		case r := <-done:
+			if r.err != nil {
+				return nil, r.err
+			}
+			code = r.code
+		case <-wait.Done():
+			return nil, fmt.Errorf("waiting for the browser callback: %w", wait.Err())
+		}
+	}
+	form := url.Values{
 		"grant_type": {"authorization_code"}, "code": {code}, "client_id": {clientID},
 		"redirect_uri": {redirectURI}, "code_verifier": {verifier},
-	})
+	}
+	if resource != "" {
+		form.Set("resource", resource)
+	}
+	creds, err := c.exchange(ctx, m.TokenEndpoint, form)
 	if err != nil {
 		return nil, err
 	}
 	creds.ClientID = clientID
 	return creds, nil
+}
+
+func callbackCode(raw, redirectURI, state string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Fragment != "" || u.Scheme+"://"+u.Host+u.EscapedPath() != redirectURI {
+		return "", errors.New("callback URL does not match this sign-in's loopback address")
+	}
+	q, err := url.ParseQuery(u.RawQuery)
+	if err != nil || len(q["state"]) != 1 || q.Get("state") != state {
+		return "", errors.New("state mismatch on the loopback redirect")
+	}
+	if q.Has("error") {
+		return "", errors.New("authorization was declined or failed")
+	}
+	if len(q["code"]) != 1 || q.Get("code") == "" {
+		return "", errors.New("callback is missing a single authorization code")
+	}
+	return q.Get("code"), nil
 }
 
 // deviceGrantType is the RFC 8628 grant_type on /token.
@@ -237,7 +279,7 @@ const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 // until a token, a terminal error, or expires_in. The registered redirect
 // is a loopback placeholder — the device grant never uses it, but DCR
 // needs one and the same client id then serves both flows.
-func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(userCode, verificationURI string, prefilled bool)) (*config.OAuthCreds, error) {
+func (c *Client) DeviceLogin(ctx context.Context, clientID, resource string, show func(userCode, verificationURI string, prefilled bool)) (*config.OAuthCreds, error) {
 	m, err := c.discover(ctx)
 	if err != nil {
 		return nil, err
@@ -250,8 +292,11 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 			return nil, err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint,
-		strings.NewReader(url.Values{"client_id": {clientID}}.Encode()))
+	form := url.Values{"client_id": {clientID}}
+	if resource != "" {
+		form.Set("resource", resource)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +332,8 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID string, show func(use
 	}
 	interval := time.Duration(da.Interval) * time.Second
 	deadline := time.Now().Add(time.Duration(da.ExpiresIn) * time.Second)
-	form := url.Values{"grant_type": {deviceGrantType}, "device_code": {da.DeviceCode}, "client_id": {clientID}}
+	form.Set("grant_type", deviceGrantType)
+	form.Set("device_code", da.DeviceCode)
 	for {
 		select {
 		case <-ctx.Done():

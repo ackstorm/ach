@@ -47,6 +47,9 @@ type Deps struct {
 	// GeminiStripModelPrefixes: vendor prefixes removed from the model name
 	// on /gemini only (ACH_GEMINI_STRIP_MODEL_PREFIXES). See proxy.Deps.
 	GeminiStripModelPrefixes []string
+	// TestTagsHeader mirrors the budget tags into X-Achtest-Tags
+	// (ACH_TEST_TAGS_HEADER). See proxy.Deps.
+	TestTagsHeader bool
 }
 
 // New returns the traffic handler — middleware chain + anonymous JWKS +
@@ -77,6 +80,7 @@ func New(deps Deps) http.Handler {
 			Caps:             deps.Caps,
 
 			GeminiStripModelPrefixes: deps.GeminiStripModelPrefixes,
+			TestTagsHeader:           deps.TestTagsHeader,
 		},
 		Signer:      deps.Signer,
 		BIPResolver: deps.BIPResolver,

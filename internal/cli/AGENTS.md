@@ -39,7 +39,7 @@ Boundary regression test: `go list -deps ./cmd/ach-cli` must show no
 
 ## Command surface
 
-Four noun groups. `--target` is the platform selector everywhere: a
+Command groups. `--target` is the platform selector everywhere: a
 StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
 `environment hydrate` and `local`, ids + aliases from `adapter.Lookup`.
 
@@ -47,6 +47,13 @@ StringSlice (comma OR repeat), ONE parser (`parseTargets`, pkgcmd.go) shared by
 # session + profiles
 ach-cli login [url] [--profile p] [--no-browser] | logout | whoami | token
 ach-cli profile list | show [name] [--reveal] | use <name> | add <name> --url U --key ek-… | rename | remove
+
+# shell access to granted remote tools and agents
+ach-cli mcp list [--tools] [--refresh] | search <words...> [--refresh]
+ach-cli mcp describe <server> [tool] | describe <server.tool>
+ach-cli mcp call <server> <tool> [json-object|-] | call <server.tool> [json-object|-]
+ach-cli mcp login <server> [--device | --no-browser] (alias: auth)
+ach-cli a2a list | search <words...> | call <agent> <message> [--context-id <id>]
 
 # governed remote object (CR-defined, server-mediated)
 ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | fetch <env> <kind> <name> [--file f]
@@ -63,8 +70,8 @@ ach-cli admin users budget <email> --max-budget X | limits <email> --max-keys N 
 
 # local-first serverless package manager (no k8s, no CRD)
 ach-cli local repo   add <source> --name <n> [--token] [--auth bearer|basic-oauth2] [--path] | list | remove | update
-ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [--dir d] [--conflict …] [--dry-run] [--verbose] | uninstall [--dry-run] | update | outdated
-ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] | uninstall [--dry-run] | update | outdated
+ach-cli local plugin list [--repo] | install <name@repo>… --target … [-g] [--dir d] [--conflict …] [--dry-run] [--force] [--verbose] | uninstall [--dry-run] | update [--force] | outdated
+ach-cli local skill  list [--repo] | install <name@repo>… --target … [--dry-run] [--force] | uninstall [--dry-run] | update [--force] | outdated
 ```
 
 Every network command takes `--profile`, `--key <ek-…>`, `--verbose`
@@ -212,6 +219,27 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
   count. `namespace` renames via `internal/cli/namespace.Leaf`. With plugin
   namespacing two DIFFERENT plugins no longer clash; only the same plugin name
   from two repos/marketplaces can.
+
+### Files `ach-cli` does not own (both install paths)
+
+A whole-file (`MergeReplace`) destination that already exists with other
+content and has no record is the user's own file, or another tool's: it is
+refused with `exit.CollisionRefuse` (7) unless `--force`. Identical content is
+adopted. Deep and composite writes share their file by key or marker and
+never refuse.
+
+- `environment hydrate`: `publishFile` (`hydrate/wiring.go`), record = the
+  prior state row of that Environment and target. `--dry-run` refuses too.
+  A sibling Environment's row does not count, so the FIRST hydrate of an
+  Environment into a folder (or `-g`) where a sibling installed the same
+  plugin at an older revision stops here: hydrate the sibling first, or
+  `--force`. Once both have a row, the "disk already equals what we write"
+  rule keeps them in step.
+- `local plugin|skill install|update`: `refuseUnowned` (`pkgcmd.go`) →
+  `manager.CheckUnowned`, record = any `installed.json` entry at that target.
+  Checked for every target before the first write or removal.
+- `local … update` never writes a path `manager.Uninstall` skipped as
+  user-modified: the write is dropped and the old `FileRec` kept.
 
 ### Multi-Environment workspaces — cross-env skill de-collision
 
@@ -497,7 +525,8 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 
 - `source/source.go` — `Parse(ref)` over `github:owner/repo[#ref]`,
   `git:https://…[#ref]` (local paths are rejected — not yet supported). Derives clone URL + default `AuthScheme`
-  (GitLab host → `AuthBasicOAuth2`, else `AuthBearer`).
+  (GitLab host → `AuthBasicOAuth2`, else `AuthBearer`). `GitLabHost` is also what lets `repo add` fall back to
+  `GITLAB_TOKEN`: a `git:` source on any other host takes a token from `--token` only.
 - `store/store.go` — local state under `~/.config/ach/local/`:
   `repos.json` (`hasToken:true` only — **token NEVER stored here**),
   `credentials.json` (mode `0600`, `{repo: token}`), `installed.json`

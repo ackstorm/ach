@@ -10,6 +10,86 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   drop from grants × keys to one per key per covering grant. A ceiling that
   rises because another grant was edited off the key lands within 5 minutes.
 
+## [1.1.21] - 2026-11-18
+
+### Breaking
+- `ach-cli mcp search` ranks partial word matches. Scripts that require every
+  term to match should filter the JSON results. Search and `list --tools` exit
+  successfully when some servers need provider sign-in and the rest respond.
+  Check the JSON `errors` field when your script requires a complete inventory.
+
+### Added
+- MCP discovery caches tool metadata for five minutes. Use `--refresh` with
+  `search` or `list --tools` to fetch it again. Both commands check server grants
+  on every run.
+- Copy a dotted tool name from MCP discovery into `describe` or `call`. Pass
+  `-` to `call` to read a JSON object from a pipe or redirected file.
+
+### Fixed
+- MCP calls and descriptions give the same diagnostic for a server outside
+  the active credential's catalog. The provider login example uses a catalog name.
+
+## [1.1.20] - 2026-11-18
+
+### Added
+- Discover, inspect and call MCP tools from the shell with `ach-cli mcp`, including
+  browser consent for providers that require it. Find and message A2A agents with
+  `ach-cli a2a`. Both use the active credential from any directory.
+- OAuth device clients can request provider consent for a specific MCP server
+  by sending its URL as `resource` when starting device authorization.
+
+## [1.1.19] - 2026-11-18
+
+### Added
+- `ach-cli local plugin install` and `update` (and the `skill` forms) take
+  `--force`, to replace a file that already exists and that `ach-cli` did not
+  install.
+- Helm value `forwarder.testTagsHeader`, off by default, for test clusters:
+  the forwarder also sends each request's budget tags as the
+  `X-Achtest-Tags` header.
+
+### Changed
+- Upgrade guide: going back to an older chart version through Flux or Argo CD
+  needs `migrate.enabled: false` when the release you are leaving added a
+  migration. The migration Job otherwise fails with `no migration found for
+  version N` and stops the upgrade. `helm rollback` is unaffected.
+- The chart's default `genai.opencodePluginSpec` is `opencode-oidc-provider`
+  v0.4.11: a token refresh waits up to 40 s for the authorization server,
+  instead of failing at 15 s while the identity provider is slow.
+
+### Fixed
+- The forwarder sends the `X-Achtest-Tags` header upstream only with
+  `forwarder.testTagsHeader` set. Before, every request carried it, with the
+  caller's e-mail, Environment and key id, and LiteLLM passed it on to the
+  model provider when `forward_client_headers_to_llm_api` was on.
+- `ach-cli local repo add git:<url>` falls back to `GITLAB_TOKEN` only for a
+  GitLab host (its name contains `gitlab` or starts with `git.`). Before, the
+  token was sent to, and saved for, any `git:` host. For a GitLab under
+  another host name, pass `--token`.
+- `ach-cli environment hydrate` and `ach-cli local plugin install` (and
+  `skill install`, and both `update` forms) do not replace a file that already
+  exists with other content and that they did not install, such as an agent or
+  command of your own with the same name: they name the file, leave it as it
+  is and exit 7. Move the file away, or pass `--force`. The first hydrate of an
+  Environment into a folder where another Environment installed the same
+  plugin at an older version stops the same way: hydrate that one first.
+- `ach-cli local plugin update` (and `skill update`) leaves a file you edited
+  as it is. Before, it reported the file as skipped and then overwrote it.
+
+## [1.1.18] - 2026-11-18
+
+### Fixed
+- After the operator's cache volume is lost or replaced, standalone Plugin,
+  Skill, Prompt and Artifact content is fetched again on the next reconcile.
+  Before, a resource whose upstream had not changed stayed `Synced` while its
+  content answered 404 until its spec was edited.
+
+### Changed
+- The chart's default `genai.opencodePluginSpec` is
+  `opencode-oidc-provider` v0.4.10: `opencode auth login` registers again
+  when the saved client registration is older than 60 days, instead of
+  failing once the authorization server has expired it.
+
 ## [1.1.17] - 2026-11-14
 
 ### Breaking

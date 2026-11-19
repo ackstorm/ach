@@ -1,5 +1,31 @@
 # Sign in to an MCP server
 
+## Use the shell from any directory
+
+Your active ACH credential can discover and call a remote tool without local MCP configuration. To look up a contact, start with `ach-cli mcp search zoho contacts`. Copy the dotted tool name into `ach-cli mcp describe <server.tool>` to inspect its input schema. You can pass a JSON object inline or read it from a file. For example, if search returns `mcp-zoho-crm-ro.crm_search_contacts`, run:
+
+```bash
+ach-cli mcp describe mcp-zoho-crm-ro.crm_search_contacts -o json
+ach-cli mcp call mcp-zoho-crm-ro.crm_search_contacts - -o json < args.json
+```
+
+Search groups results by server, with the strongest matching group first. Within each group, tools matching more words come first. A tool can match words from its own name and description and from the server's. Search and `mcp list --tools` check your server grants on every run and reuse tool metadata for five minutes. Add `--refresh` to read the inventory again. If some servers need sign-in, the command lists them on stderr and succeeds when the other servers respond. In JSON, check `errors` for the skipped names. If every queried server needs sign-in or any query fails for another reason, the command exits nonzero.
+
+If the server asks for provider consent, run `ach-cli mcp login <server>` with your personal login, approve access in the browser, and retry.
+
+Over SSH, run `ach-cli mcp auth <server> --device`. Open the verification URL in any browser, confirm the short code, and approve provider access. The terminal waits for approval. To use callback paste, run `ach-cli mcp auth <server> --no-browser` and paste the final loopback URL into the waiting terminal.
+
+If you maintain a device-code client, use the `device_authorization_endpoint`
+from ACH's OAuth metadata. Send the MCP server URL (for example,
+`https://ach.example.com/mcp/zoho`) in the `resource` form field alongside
+`client_id`. Poll the token endpoint at the advertised interval while the
+user signs in and approves the provider. The client receives
+`authorization_pending` while consent is in progress.
+
+For an A2A agent, use `ach-cli a2a search <words...>` and `ach-cli a2a call <agent> '<message>'`.
+
+## Configure a server in your coding tool
+
 Hydrating an Environment writes its MCP servers into your tool's
 configuration. Each entry points at `https://ach.example.com/mcp/<server>`.
 An A2A agent of the Environment appears as an MCP server named
@@ -36,17 +62,12 @@ List again. The server shows as connected, and its tools appear in the tool.
 
 ## Sign in over SSH
 
-The tool waits for the browser on the remote machine's `localhost`, so the
-last redirect fails in your local browser with "127.0.0.1 refused to
-connect". Either:
-
-- forward the callback port before you sign in:
-  `ssh -L <port>:localhost:<port> <host>`; or
-- copy the whole failed address from the browser bar and open it on the
-  remote machine: `curl -s -o /dev/null "<address>"`. Only do this for an
-  address that starts with `http://127.0.0.1:` or `http://localhost:`.
-
-Then list the servers in the tool to check.
+The browser redirects to `localhost` on the machine where you opened the
+authorization link. If the remote tool offers a callback prompt, as OpenCode
+does, paste the full final URL into that prompt. Keep it out of chat and shell
+history. For a tool that requires a loopback connection, forward its callback
+port with `ssh -L <port>:localhost:<port> <host>` before finishing sign-in.
+Then list the servers in the tool to check the connection.
 
 ## The tool does not show a server
 

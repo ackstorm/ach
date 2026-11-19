@@ -108,6 +108,9 @@ type forwarderConfig struct {
 	// GeminiStripModelPrefixes: ACH_GEMINI_STRIP_MODEL_PREFIXES — vendor
 	// prefixes stripped from the model name on /gemini only.
 	GeminiStripModelPrefixes []string
+	// TestTagsHeader: ACH_TEST_TAGS_HEADER — also send the budget tags as
+	// X-Achtest-Tags. Test clusters only.
+	TestTagsHeader bool
 	// TrustedIdP: ACH_TRUSTED_IDP_{ISSUER,AUDIENCES,CLAIM} — one external
 	// issuer whose access token resolves to the user's oauth pk_. nil = off.
 	TrustedIdP       *keystore.IdPConfig
@@ -142,6 +145,7 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		os.Getenv("ACH_GEMINI_STRIP_MODEL_PREFIXES")); err != nil {
 		return nil, fmt.Errorf("ACH_GEMINI_STRIP_MODEL_PREFIXES: %w", err)
 	}
+	cfg.TestTagsHeader = config.EnvBool("ACH_TEST_TAGS_HEADER", false)
 	if iss := strings.TrimSpace(os.Getenv("ACH_TRUSTED_IDP_ISSUER")); iss != "" {
 		var auds []string
 		raw := cmp.Or(os.Getenv("ACH_TRUSTED_IDP_AUDIENCES"), "[]")
@@ -436,6 +440,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			LoginURL:  strings.TrimRight(cfg.BaseURL, "/") + "/",
 		},
 		GeminiStripModelPrefixes: cfg.GeminiStripModelPrefixes,
+		TestTagsHeader:           cfg.TestTagsHeader,
 	}
 	return out, nil
 }

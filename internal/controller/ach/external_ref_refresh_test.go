@@ -335,6 +335,65 @@ func TestMaterializeExternalRef_NotModified(t *testing.T) {
 	}
 }
 
+// conditionalFetcher answers NotModified only for a PriorRev equal to its
+// revision, as the real fetchers do, and counts its calls.
+type conditionalFetcher struct {
+	rev     string
+	body    []byte
+	fetches int
+}
+
+func (f *conditionalFetcher) Fetch(_ context.Context, req sources.FetchRequest) (*sources.FetchResult, error) {
+	f.fetches++
+	if req.PriorRev == f.rev {
+		return &sources.FetchResult{NotModified: true, UpstreamRev: f.rev}, nil
+	}
+	return &sources.FetchResult{Body: io.NopCloser(bytes.NewReader(f.body)), UpstreamRev: f.rev}, nil
+}
+
+// A cache file that is gone (lost or replaced cache volume) is fetched again
+// although upstream still serves the recorded revision; once it is back, the
+// same revision is NotModified.
+func TestMaterializeExternalRef_MissingCacheFile_FetchesBody(t *testing.T) {
+	root := newCacheRoot(t)
+	fetcher := &conditionalFetcher{rev: "sha-prior", body: minimalPluginTarGz(t)}
+	finalPath := filepath.Join(root, "plugin", "mat-lost.tar.gz")
+
+	deps := ExternalRefRefreshDeps{
+		Client:    k8sClient,
+		Namespace: WatchNamespace,
+		CacheRoot: root,
+		Kind:      "plugin",
+		Name:      "mat-lost",
+		FinalPath: finalPath,
+		PriorRev:  "sha-prior",
+		Fetchers:  func(sources.SourceSpec) (sources.Fetcher, error) { return fetcher, nil },
+		Refresh:   achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+		Log:       logr.Discard(),
+	}
+	res := materializeExternalRef(context.Background(), deps)
+	if res.Err != nil {
+		t.Fatalf("materializeExternalRef err: %v", res.Err)
+	}
+	if res.NotModified {
+		t.Errorf("NotModified=true with no cache file at %s", finalPath)
+	}
+	if res.UpstreamRev != "sha-prior" {
+		t.Errorf("UpstreamRev = %q; want %q", res.UpstreamRev, "sha-prior")
+	}
+	if _, err := os.Stat(finalPath); err != nil {
+		t.Fatalf("cache file not restored: %v", err)
+	}
+
+	res = materializeExternalRef(context.Background(), deps)
+	if res.Err != nil {
+		t.Fatalf("second materializeExternalRef err: %v", res.Err)
+	}
+	if !res.NotModified {
+		t.Errorf("NotModified=false with the cache file present")
+	}
+}
+
 func TestMaterializeExternalRef_PluginTooLarge(t *testing.T) {
 	root := newCacheRoot(t)
 	fake := &fakeFetcher{body: bytes.Repeat([]byte("x"), 100), upstreamRev: "sha-big"}
@@ -691,6 +750,72 @@ func TestPluginReconciler_ForceRefreshAnnotation_Cleared(t *testing.T) {
 		var got achv1alpha1.Plugin
 		_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cr), &got)
 		t.Fatalf("force-refresh annotation never removed; annotations=%v", got.Annotations)
+	}
+}
+
+// TestPluginReconciler_MissingCacheFile_RefetchesWithinInterval: a Synced
+// Plugin whose cache file is gone is fetched again by the next reconcile,
+// well inside its refresh interval. The CR lives outside WatchNamespace so
+// the suite-registered reconciler never writes its status.
+func TestPluginReconciler_MissingCacheFile_RefetchesWithinInterval(t *testing.T) {
+	ctx := context.Background()
+	root := newCacheRoot(t)
+
+	cr := &achv1alpha1.Plugin{
+		ObjectMeta: metav1.ObjectMeta{Name: "ss-lostcache-plugin", Namespace: "default"},
+		Spec: achv1alpha1.PluginSpec{
+			Type:   "github",
+			GitHub: &achv1alpha1.GitHubSource{Repo: "ackstorm/example", Ref: "main"},
+			Refresh: achv1alpha1.RefreshBlock{
+				Interval:     &metav1.Duration{Duration: time.Hour},
+				MaxStaleness: metav1.Duration{Duration: 24 * time.Hour},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, cr); err != nil {
+		t.Fatalf("create Plugin: %v", err)
+	}
+
+	fetcher := &conditionalFetcher{rev: "rev-lost", body: minimalPluginTarGz(t)}
+	r := &PluginReconciler{
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: root,
+			Fetchers:  func(sources.SourceSpec) (sources.Fetcher, error) { return fetcher, nil },
+		},
+	}
+	reconcile := func() {
+		t.Helper()
+		if _, err := r.Reconcile(ctx, ctrlReq(cr)); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = k8sClient.Delete(context.Background(), cr)
+		_, _ = r.Reconcile(context.Background(), ctrlReq(cr)) // drains the finalizer
+	})
+
+	reconcile() // adds the finalizer
+	reconcile() // first sync
+	cachePath := filepath.Join(root, "plugin", cr.Name+".tar.gz")
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("first sync wrote no cache file: %v", err)
+	}
+
+	// With the file in place the interval gate holds: no further fetch.
+	reconcile()
+	if fetcher.fetches != 1 {
+		t.Fatalf("fetches = %d inside the interval with the cache file present; want 1", fetcher.fetches)
+	}
+
+	if err := os.Remove(cachePath); err != nil {
+		t.Fatalf("remove cache file: %v", err)
+	}
+	reconcile()
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("cache file not restored inside the refresh interval: %v", err)
 	}
 }
 

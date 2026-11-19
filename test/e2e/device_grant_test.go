@@ -67,7 +67,7 @@ func approveDeviceCode(t *testing.T, base, userCode string) {
 		req.Header.Set("Cookie", encodeCookieMap(cookies))
 		r, err := client.Do(req)
 		if err != nil {
-			t.Fatalf("hop %d %s: %v", hop, u, err)
+			t.Fatalf("request failed at hop %d on %s", hop, u.Path)
 		}
 		for _, c := range r.Cookies() {
 			cookies[c.Name] = c.Value
@@ -79,7 +79,7 @@ func approveDeviceCode(t *testing.T, base, userCode string) {
 			continue
 		}
 		if r.StatusCode != 200 || !strings.Contains(string(b), "Return to your terminal") {
-			t.Fatalf("hop %d %s: %d %s", hop, u, r.StatusCode, truncate(b, 400))
+			t.Fatalf("unexpected approval page at hop %d on %s (HTTP %d)", hop, u.Path, r.StatusCode)
 		}
 		return
 	}
@@ -89,7 +89,7 @@ func approveDeviceCode(t *testing.T, base, userCode string) {
 // deviceGrant drives the RFC 8628 grant against one release's AS without
 // the CLI: device_authorization → (poll: authorization_pending) → approve
 // in the "browser" → poll: token. Returns the access token.
-func deviceGrant(t *testing.T, base string) string {
+func deviceGrant(t *testing.T, base, resource string) string {
 	t.Helper()
 	client := &http.Client{Timeout: 30 * time.Second}
 	regBody := `{"client_name":"e2e-device","redirect_uris":["http://127.0.0.1/callback"]}`
@@ -103,8 +103,11 @@ func deviceGrant(t *testing.T, base string) string {
 	_ = json.NewDecoder(regResp.Body).Decode(&reg)
 	_ = regResp.Body.Close()
 
-	daResp, err := client.Post(base+"/platform/oauth/device_authorization", "application/x-www-form-urlencoded",
-		strings.NewReader(url.Values{"client_id": {reg.ClientID}}.Encode()))
+	form := url.Values{"client_id": {reg.ClientID}}
+	if resource != "" {
+		form.Set("resource", resource)
+	}
+	daResp, err := client.PostForm(base+"/platform/oauth/device_authorization", form)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +116,7 @@ func deviceGrant(t *testing.T, base string) string {
 	_ = daResp.Body.Close()
 	if daResp.StatusCode != 200 || da.DeviceCode == "" || da.VerificationURI != base+"/platform/oauth/device" ||
 		da.Complete != da.VerificationURI+"?user_code="+da.UserCode || da.Interval < 1 {
-		t.Fatalf("device_authorization: %d %+v", daResp.StatusCode, da)
+		t.Fatalf("unexpected device authorization response (HTTP %d)", daResp.StatusCode)
 	}
 
 	tokenForm := url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"},
@@ -130,16 +133,16 @@ func deviceGrant(t *testing.T, base string) string {
 		return r.StatusCode, body
 	}
 	if code, body := poll(); code != 400 || body["error"] != "authorization_pending" {
-		t.Fatalf("poll before approval: %d %v", code, body)
+		t.Fatalf("poll before approval: HTTP %d, OAuth error %v", code, body["error"])
 	}
 	approveDeviceCode(t, base, da.UserCode)
 	code, body := poll()
 	access, _ := body["access_token"].(string)
 	if code != 200 || access == "" || body["refresh_token"] == "" {
-		t.Fatalf("poll after approval: %d %v", code, body)
+		t.Fatalf("poll after approval: HTTP %d, OAuth error %v", code, body["error"])
 	}
 	if code, body := poll(); code != 400 || body["error"] != "expired_token" {
-		t.Fatalf("device_code must be single-redemption: %d %v", code, body)
+		t.Fatalf("device_code must be single-redemption: HTTP %d, OAuth error %v", code, body["error"])
 	}
 	return access
 }
@@ -166,7 +169,7 @@ func TestDeviceGrant(t *testing.T) {
 	phase6SuiteGuard(t)
 	base := phase6PlatformAPIURL(t)
 
-	access := deviceGrant(t, base)
+	access := deviceGrant(t, base, "")
 	req, _ := http.NewRequest(http.MethodGet, base+"/platform/environments?limit=1", nil)
 	req.Header.Set("x-ach-key", access)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -178,6 +181,18 @@ func TestDeviceGrant(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("authenticated call with the device-grant token: %d %s", resp.StatusCode, truncate(body, 300))
 	}
+
+	t.Run("mcp_provider_consent", func(t *testing.T) {
+		const server = "demo-mcp-consent"
+		deleteBrokerGrant(t)
+		if got := serverOutcome(t, base, access, server); got != "auth_required" {
+			t.Fatalf("before device consent: server outcome %q", got)
+		}
+		deviceAccess := deviceGrant(t, base, base+"/mcp/"+server)
+		if got := serverOutcome(t, base, deviceAccess, server); got != "ok" {
+			t.Fatalf("after device consent: server outcome %q", got)
+		}
+	})
 
 	t.Run("wrong_code", func(t *testing.T) {
 		resp, err := http.DefaultClient.Do(confirmForm(t, base, "ZZZZ-ZZZZ"))

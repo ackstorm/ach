@@ -15,6 +15,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
 )
 
@@ -618,5 +620,174 @@ func TestPluginCmd_Install_Global_ConfigDirConflictNamespace(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "a-skills", "commands", "a", "x.md")); !os.IsNotExist(err) {
 		t.Fatalf("namespace rewrote the root segment outside config root: err=%v", err)
+	}
+}
+
+// runPluginCmd runs `ach-cli local plugin <args>` and returns its combined
+// output and error.
+func runPluginCmd(args ...string) (string, error) {
+	var buf bytes.Buffer
+	cmd := newPluginCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+// wantCollisionRefuse fails unless err carries exit code 7.
+func wantCollisionRefuse(t *testing.T, out string, err error) {
+	t.Helper()
+	var ce *exit.CodedError
+	if !errors.As(err, &ce) || ce.Code != exit.CollisionRefuse {
+		t.Fatalf("error = %v; want exit code %d (output: %s)", err, exit.CollisionRefuse, out)
+	}
+}
+
+// installedFiles returns the recorded files of ref at claude-code.
+func installedFiles(t *testing.T, ref string) []store.FileRec {
+	t.Helper()
+	installed, err := store.LoadInstalled()
+	if err != nil {
+		t.Fatalf("LoadInstalled: %v", err)
+	}
+	for _, e := range installed.Installed {
+		if e.Ref == ref && e.Target == "claude-code" {
+			return e.Files
+		}
+	}
+	return nil
+}
+
+// TestPluginCmd_Install_RefusesUnownedFile: a file that exists at an install
+// destination, with other content and recorded for no installed package, is the
+// user's own. install refuses it with exit 7 and records nothing; --force
+// replaces it.
+func TestPluginCmd_Install_RefusesUnownedFile(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	pluginURL := makeDirectPluginRepo(t)
+	seedRepo(t, store.RepoEntry{
+		Name: "fix", Source: "git:" + pluginURL, Kind: "git",
+		CloneURL: pluginURL, GitRef: "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+		AddedAt:  "2026-01-01T00:00:00Z",
+	})
+	destDir := t.TempDir()
+	target := filepath.Join(destDir, ".claude", "commands", "fix", "x.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runPluginCmd("install", "fix@fix", "--target", "claude", "--dir", destDir)
+	wantCollisionRefuse(t, out, err)
+	if b, _ := os.ReadFile(target); string(b) != "mine" {
+		t.Errorf("x.md = %q; want the user's file untouched", b)
+	}
+	if files := installedFiles(t, "fix@fix"); files != nil {
+		t.Errorf("a refused install was recorded: %+v", files)
+	}
+
+	if out, err := runPluginCmd("install", "fix@fix", "--target", "claude", "--dir", destDir, "--force"); err != nil {
+		t.Fatalf("install --force: %v (output: %s)", err, out)
+	}
+	if b, _ := os.ReadFile(target); string(b) == "mine" {
+		t.Errorf("x.md still holds the user's content after --force")
+	}
+}
+
+// installV1ThenCommitV2 installs dr@dr at v1 (commands/c.md) into a fresh
+// project and commits v2 upstream (c.md changed, new.md added). It returns the
+// project's paths for c.md and new.md.
+func installV1ThenCommitV2(t *testing.T) (destDir, cmdFile, newFile string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	work := makeWorkingPluginRepo(t, "v1")
+	var buf bytes.Buffer
+	cmd := newRepoCmd()
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"add", "git:file://" + work, "--name", "dr"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("repo add: %v (output: %s)", err, buf.String())
+	}
+	destDir = t.TempDir()
+	if out, err := runPluginCmd("install", "dr@dr", "--target", "claude", "--dir", destDir); err != nil {
+		t.Fatalf("install v1: %v (output: %s)", err, out)
+	}
+	for name, body := range map[string]string{"c.md": "v2", "new.md": "new command\n"} {
+		if err := os.WriteFile(filepath.Join(work, "commands", name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runPkgGit(t, work, "add", "-A")
+	runPkgGit(t, work, "commit", "-m", "v2")
+	dir := filepath.Join(destDir, ".claude", "commands", "dr")
+	return destDir, filepath.Join(dir, "c.md"), filepath.Join(dir, "new.md")
+}
+
+// TestPluginCmd_Update_KeepsUserModifiedFile: update leaves a file the user
+// edited as it is, reports it as skipped and keeps tracking it.
+func TestPluginCmd_Update_KeepsUserModifiedFile(t *testing.T) {
+	destDir, cmdFile, newFile := installV1ThenCommitV2(t)
+	if err := os.WriteFile(cmdFile, []byte("my edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runPluginCmd("update", "dr@dr", "--dir", destDir)
+	if err != nil {
+		t.Fatalf("update: %v (output: %s)", err, out)
+	}
+	if !strings.Contains(out, "skipped user-modified file") {
+		t.Errorf("expected the user-modified file to be reported as skipped, got: %s", out)
+	}
+	if b, _ := os.ReadFile(cmdFile); string(b) != "my edit" {
+		t.Errorf("c.md = %q; update overwrote the file it reported as skipped", b)
+	}
+	if _, err := os.Stat(newFile); err != nil {
+		t.Errorf("expected new.md after update: %v", err)
+	}
+	var tracked bool
+	for _, f := range installedFiles(t, "dr@dr") {
+		tracked = tracked || strings.HasSuffix(f.RelPath, "c.md")
+	}
+	if !tracked {
+		t.Errorf("the skipped file is no longer tracked: %+v", installedFiles(t, "dr@dr"))
+	}
+}
+
+// TestPluginCmd_Update_RefusesUnownedFile: a file the next version adds that
+// already exists as the user's own stops the update with exit 7 before the old
+// install is touched; --force replaces it.
+func TestPluginCmd_Update_RefusesUnownedFile(t *testing.T) {
+	destDir, cmdFile, newFile := installV1ThenCommitV2(t)
+	if err := os.WriteFile(newFile, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runPluginCmd("update", "dr@dr", "--dir", destDir)
+	wantCollisionRefuse(t, out, err)
+	if b, _ := os.ReadFile(newFile); string(b) != "mine" {
+		t.Errorf("new.md = %q; want the user's file untouched", b)
+	}
+	if b, _ := os.ReadFile(cmdFile); string(b) != "v1" {
+		t.Errorf("c.md = %q after a refused update; want the old install kept", b)
+	}
+
+	if out, err := runPluginCmd("update", "dr@dr", "--dir", destDir, "--force"); err != nil {
+		t.Fatalf("update --force: %v (output: %s)", err, out)
+	}
+	if b, _ := os.ReadFile(newFile); string(b) != "new command\n" {
+		t.Errorf("new.md = %q; want the next version's file after --force", b)
 	}
 }

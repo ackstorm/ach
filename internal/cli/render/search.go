@@ -36,23 +36,25 @@ type SearchHit struct {
 	Environment string `json:"environment"`
 }
 
+// MatchTerms reports whether every word in query appears in at least one field.
+func MatchTerms(query string, fields ...string) bool {
+	terms := strings.Fields(strings.ToLower(query))
+	text := strings.ToLower(strings.Join(fields, " "))
+	for _, term := range terms {
+		if !strings.Contains(text, term) {
+			return false
+		}
+	}
+	return len(terms) > 0
+}
+
 // Search matches query against every Environment's name + description and
 // every item name, case-insensitively. A query of several words matches
 // only where every word appears.
 func Search(envs []CatalogView, query string) []SearchHit {
-	terms := strings.Fields(strings.ToLower(query))
-	matches := func(s string) bool {
-		s = strings.ToLower(s)
-		for _, t := range terms {
-			if !strings.Contains(s, t) {
-				return false
-			}
-		}
-		return len(terms) > 0
-	}
 	var hits []SearchHit
 	for _, e := range envs {
-		if matches(e.Name + " " + e.Description) {
+		if MatchTerms(query, e.Name, e.Description) {
 			hits = append(hits, SearchHit{Kind: "environment", Name: e.Name, Environment: e.Name})
 		}
 		for _, group := range []struct {
@@ -68,7 +70,7 @@ func Search(envs []CatalogView, query string) []SearchHit {
 			{"a2a", e.Runtime.A2AAgents},
 		} {
 			for _, n := range group.names {
-				if matches(n) {
+				if MatchTerms(query, n) {
 					hits = append(hits, SearchHit{Kind: group.kind, Name: n, Environment: e.Name})
 				}
 			}

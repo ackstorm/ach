@@ -69,6 +69,14 @@ The database only moves forward. `helm rollback` restores the previous
 components and leaves the tables as the newer version made them. Most versions
 run on newer tables; read the changelog before you roll back.
 
+Going back by pinning an older chart version, the way Flux and Argo CD do it,
+is a `helm upgrade`, so the migration Job runs first, from the older image.
+When the release you are leaving added a migration, that Job fails with
+`no migration found for version N` and the upgrade stops before any component
+changes: the cluster stays on the newer release. Set `migrate.enabled: false`
+together with the older version, and set it back to `true` with the next
+upgrade. `helm rollback` runs no migration Job and needs no such step.
+
 Three cases where a rollback needs more:
 
 | Rolling back | Needs first |

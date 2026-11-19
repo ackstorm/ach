@@ -107,7 +107,9 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   `ls-remote` and reports it as `LatestUpstreamRev`; the served revision is
   `spec.<git>.commit` when set, else that head. `PriorRev` equal to the served
   revision is `NotModified`, so a pinned CR clones once per commit and then
-  costs one `ls-remote` per refresh.
+  costs one `ls-remote` per refresh. A CR whose cache file is missing (lost
+  or replaced cache volume) is fetched on its next reconcile with no
+  `PriorRev`, whatever its refresh interval.
 - `status.latestUpstreamRev` + condition `UpdateAvailable` (`NewerRevision` /
   `UpToDate`, present only on a pinned CR) are set by `applyUpdateAvailable` in
   the shared driver and both marketplace `markSyncedTrue`s. On `NotModified` the

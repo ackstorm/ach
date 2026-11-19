@@ -103,43 +103,29 @@ content-service did not.
 > kind/e2e cluster ships only RWO, so standalone is validated by
 > `helm template` + a real RWX cluster, not the local e2e suite.
 
-### ❌ `/content/{prompt,artifact}/…` 404s right after deploying the uniform-`.tar.gz` build
+### ❌ `/content/{kind}/…` 404s with the cache file missing (new cache volume, or a bare pre-`.tar.gz` file)
 ```bash
 curl .../content/prompt/foo   # HTTP 404 content_not_found
-ls $ACH_CACHE_ROOT/prompt/    # foo  (bare, no .tar.gz)
+ls $ACH_CACHE_ROOT/prompt/    # empty, or foo (bare, no .tar.gz)
 ```
-✅ Force a FULL re-fetch of each Prompt/Artifact (`scope=object`) so the
-operator rewrites the cache file as `<name>.tar.gz`. As of the
-uniform-context-format change, Prompt and Artifact `scope=object` are
-published as a 1-entry gzip tar (`prompt/<name>.tar.gz`,
-`artifact/<name>.tar.gz`) — the same shape as skill/plugin/directory-
-artifact — and `ResolvePath` / `contentTypeFor` serve them as
-`application/gzip`. The harness and `ach-cli` already untar every kind
-with `mode="r:gz"`, so they extract into a directory
-`<kind>/<name>/<source-basename>`. (skills + directory-artifacts already
-ship `.tar.gz`, so they need NO migration.)
-
-⚠ **A force-refresh annotation / Admin-API refresh / plain resync does
-NOT migrate it.** Those re-run the fetch but still send the stored
-upstream SHA as `PriorRev`, so the fetcher returns `NotModified`
-(`external_ref_refresh.go` Step 4) and the helper returns BEFORE staging
-— the bare file is never rewritten. `PriorRev` is cleared (forcing a real
-body) ONLY on a **`metadata.generation` bump**
-(`external_ref_driver.go` — the F1 spec-change clause) or a
-delete/recreate. So the migration needs a real spec change:
+✅ Nothing to patch: a Plugin, Skill, Prompt or Artifact whose
+`<name>.tar.gz` is missing is fetched in full on its next reconcile
+(operator start or resync), whatever its refresh interval and stored
+revision — `lastRefreshForGate` (`external_ref_driver.go`) opens the
+interval gate and `materializeExternalRef` sends no `PriorRev`, so the
+fetcher cannot answer `NotModified`. Verify on the PVC:
 ```bash
-# generation bump → clears PriorRev → full re-fetch → writes <name>.tar.gz
-kubectl -n ach patch prompt   <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'
-kubectl -n ach patch artifact <name> --type=merge -p '{"spec":{"refresh":{"interval":"2h"}}}'  # scope=object only
-# (or kubectl delete + re-apply the CR). Then verify on the PVC:
 kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
   ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
 ```
-WHY IT FAILS: after the rollout, `ResolvePath` looks for `<name>.tar.gz`
-while the old **bare** file still sits there → 404 `content_not_found`.
-It does NOT self-heal on resync — the conditional-fetch `NotModified`
-shortcut skips the rewrite until a generation bump forces a full
-re-fetch. **Orphan bare files**: a live CR's old bare `prompt/<name>` /
+WHY IT FAILS: `ResolvePath` looks for `<kind>/<name>.tar.gz` (every kind
+is published as a gzip tar; Prompt and Artifact `scope=object` as a
+1-entry one) and the cache holds nothing for it, or only an old **bare**
+file → 404 `content_not_found` until that reconcile. With the file
+present, a force-refresh annotation, an Admin-API refresh or a resync
+still sends the stored revision and gets `NotModified`; only a
+`metadata.generation` bump forces a full body.
+**Orphan bare files**: a live CR's old bare `prompt/<name>` /
 `artifact/<name>` is NOT auto-removed (the name changed) — the
 finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
 housekeeping after all CRs re-fetch (optional; NOT scripted into the

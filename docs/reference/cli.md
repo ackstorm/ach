@@ -14,6 +14,7 @@ Usage:
   ach-cli [command]
 
 Available Commands:
+  a2a         Discover agents and send them messages
   admin       Admin operations (inventory, keys, user budgets and limits, refresh)
   completion  Generate the autocompletion script for the specified shell
   environment Inspect environments visible to the active credential
@@ -23,6 +24,7 @@ Available Commands:
   local       Local, ungoverned developer package path (repo/plugin/skill)
   login       Sign in to a Hub (browser on this machine, or a code from any browser)
   logout      Sign out of the active profile
+  mcp         Discover and call MCP tools through ACH
   profile     Manage your profiles (~/.config/ach/config.yaml)
   refresh     Re-read your identity provider groups and update your access
   token       Print the active profile's token, or its key (credential helper)
@@ -34,6 +36,75 @@ Flags:
   -v, --version   version for ach-cli
 
 Use "ach-cli [command] --help" for more information about a command.
+```
+
+## ach-cli a2a
+
+```text
+Discover agents and send them messages
+
+Usage:
+  ach-cli a2a [flags]
+  ach-cli a2a [command]
+
+Available Commands:
+  call        Send a message to an agent
+  list        List agents visible to the active credential
+  search      Find agents by name, description or skill
+
+Flags:
+  -h, --help   help for a2a
+
+Use "ach-cli a2a [command] --help" for more information about a command.
+```
+
+### ach-cli a2a call
+
+```text
+Send a message to an agent
+
+Usage:
+  ach-cli a2a call <agent> <message> [flags]
+
+Flags:
+      --context-id string   Continue the conversation with this context ID
+  -h, --help                help for call
+      --key string          Authenticate with an environment key (ek-…)
+  -o, --output string       Output format: table|json (default "table")
+      --profile string      Use this profile instead of the active one
+      --verbose             Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli a2a list
+
+```text
+List agents visible to the active credential
+
+Usage:
+  ach-cli a2a list [flags]
+
+Flags:
+  -h, --help             help for list
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli a2a search
+
+```text
+Find agents by name, description or skill
+
+Usage:
+  ach-cli a2a search <words...> [flags]
+
+Flags:
+  -h, --help             help for search
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
 ```
 
 ## ach-cli admin
@@ -545,7 +616,8 @@ Example:
 Exit codes:
   0 success   1 usage/credential error   2 local edits would be lost
   3 not authorized   4 wrong environment for this key   5 state mismatch
-  6 network error   7 file-name collision   8 config read/write error
+  6 network error   7 a file ACH did not install is in the way
+  8 config read/write error
 
 Usage:
   ach-cli environment hydrate [env] [flags]
@@ -555,7 +627,7 @@ Flags:
       --conflict string         Cross-plugin collision policy: namespace|skip|overwrite|refuse (default "namespace")
       --dir string              Workspace root override (default: cwd)
       --dry-run                 Run read+diff steps but skip state write and content extract
-      --force                   Bypass drift refusal, environment guard, and schema mismatch
+      --force                   Bypass drift refusal, existing-file refusal, environment guard, and schema mismatch
   -g, --global                  Use $HOME/.ach/<env> scope instead of cwd/.ach
   -h, --help                    help for hydrate
       --insecure                Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)
@@ -880,7 +952,7 @@ Flags:
       --conflict string         Cross-plugin collision policy: namespace|skip|overwrite|refuse (default "namespace")
       --dir string              Workspace root override (default: cwd)
       --environment string      Environment to hydrate before starting the tool (ACH_ENVIRONMENT is the same)
-      --force                   Bypass drift refusal, environment guard, and schema mismatch
+      --force                   Bypass drift refusal, existing-file refusal, environment guard, and schema mismatch
   -g, --global                  Use $HOME/.ach/<env> scope instead of cwd/.ach
   -h, --help                    help for launch
       --insecure                Allow a plaintext http:// Hub URL (credentials sent unencrypted; localhost still requires this)
@@ -956,6 +1028,7 @@ Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
       --dry-run           Resolve + project and print the plan, but write nothing
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
       --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
@@ -1019,6 +1092,7 @@ Usage:
 Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Update in the tool's global config root
   -h, --help              help for update
       --verbose           Narrate per-repo clone + per-target projection progress
@@ -1061,7 +1135,8 @@ Local paths (/, ./, ~) are not yet supported.
 When no #ref fragment is given the default branch is "main".
 
 Tokens are read from --token; when absent the command falls back to
-GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources).
+GITHUB_TOKEN (github: sources) or GITLAB_TOKEN (git: sources on a GitLab
+host). A git: source on any other host takes its token from --token only.
 
 Usage:
   ach-cli local repo add <source> [flags]
@@ -1147,6 +1222,7 @@ Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
       --dry-run           Resolve + project and print the plan, but write nothing
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
       --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
@@ -1210,6 +1286,7 @@ Usage:
 Flags:
       --conflict string   Clash policy when another install owns a target path: namespace|skip|overwrite|refuse (default "namespace")
       --dir string        Project root directory (default: cwd)
+      --force             Replace files that already exist and ach-cli did not install
   -g, --global            Update in the tool's global config root
   -h, --help              help for update
       --verbose           Narrate per-repo clone + per-target projection progress
@@ -1273,6 +1350,123 @@ Usage:
 Flags:
   -h, --help             help for logout
       --profile string   Sign out of this profile instead of the active one
+```
+
+## ach-cli mcp
+
+```text
+Discover and call MCP tools through ACH
+
+Usage:
+  ach-cli mcp [flags]
+  ach-cli mcp [command]
+
+Available Commands:
+  call        Call one MCP tool with an optional JSON object (use - for stdin)
+  describe    Show a server's tools or a tool's complete input schema
+  list        List accessible MCP servers
+  login       Approve provider access for an MCP server in your browser
+  search      Find servers and tools by name and description
+
+Flags:
+  -h, --help   help for mcp
+
+Use "ach-cli mcp [command] --help" for more information about a command.
+```
+
+### ach-cli mcp call
+
+```text
+Call one MCP tool with an optional JSON object (use - for stdin)
+
+Usage:
+  ach-cli mcp call <server> <tool> [json-object|-] | <server.tool> [json-object|-] [flags]
+
+Flags:
+  -h, --help             help for call
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp describe
+
+```text
+Show a server's tools or a tool's complete input schema
+
+Usage:
+  ach-cli mcp describe <server> [tool] | <server.tool> [flags]
+
+Flags:
+  -h, --help             help for describe
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp list
+
+```text
+List accessible MCP servers
+
+Usage:
+  ach-cli mcp list [flags]
+
+Flags:
+  -h, --help             help for list
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --refresh          Refresh the five-minute tool inventory cache when listing tools
+      --tools            Include tools grouped by server
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp login
+
+```text
+Open the authorization URL and sign in with the account for your active
+ACH profile. A local browser returns to the CLI automatically. Over SSH,
+use --device to confirm a code in any browser. With --no-browser, open
+the authorization URL on your own machine and paste the final loopback
+URL into this terminal, even if the browser says it could not connect.
+Use the exact server name shown by ach-cli mcp list for your active credential.
+
+Usage:
+  ach-cli mcp login <server> [flags]
+
+Aliases:
+  login, auth
+
+Examples:
+  ach-cli mcp login mcp-zoho-crm-ro
+
+Flags:
+      --device           Show a code to approve provider access from any browser
+  -h, --help             help for login
+      --key string       Authenticate with an environment key (ek-…)
+      --no-browser       Print the authorization URL and accept the final browser URL in this terminal
+      --profile string   Use this profile instead of the active one
+      --verbose          Dump request headers to stderr (credentials redacted)
+```
+
+### ach-cli mcp search
+
+```text
+Find servers and tools by name and description
+
+Usage:
+  ach-cli mcp search <words...> [flags]
+
+Flags:
+  -h, --help             help for search
+      --key string       Authenticate with an environment key (ek-…)
+  -o, --output string    Output format: table|json (default "table")
+      --profile string   Use this profile instead of the active one
+      --refresh          Refresh the five-minute tool inventory cache when searching tools
+      --verbose          Dump request headers to stderr (credentials redacted)
 ```
 
 ## ach-cli profile

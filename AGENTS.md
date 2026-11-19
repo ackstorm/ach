@@ -189,7 +189,8 @@ key exchange and `KeyGrant` → `references/services/key-exchange.md`.
 
 User CLI = separate `ach-cli` binary (NOT in the service image), sharing `internal/cli/*`:
 login/profiles, `environment` (list, search, describe, clone, hydrate, status, uninstall,
-fetch), `launch`, `keys`, `admin`, `upgrade`, and the serverless local package manager
+fetch), `mcp` (list, search, describe, call, login), `a2a` (list, search, call),
+`launch`, `keys`, `admin`, `upgrade`, and the serverless local package manager
 `local repo|plugin|skill`. Command surface, conventions and the server contracts it
 depends on → `internal/cli/AGENTS.md`.
 
