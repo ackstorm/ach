@@ -16,11 +16,11 @@ import (
 )
 
 func sessionRowJSON(project, session string, total int) string {
-	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"started_at":"2026-10-02T10:00:00.000000Z","last_activity_at":"2026-10-02T12:00:00.000000Z","duration_ms":7200000,"turns":253,"generations":253,"models":["claude-x"],"input_tokens":1000,"output_tokens":20,"cost":0.5,"measured":253,"status":"unknown","total_count":%d}`, project, session, total)
+	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"started_at":"2026-10-02T10:00:00.000000Z","last_activity_at":"2026-10-02T12:00:00.000000Z","duration_ms":7200000,"turns":253,"generations":253,"models":["claude-x"],"input_tokens":1000,"output_tokens":20,"cost":0.5,"measured":253,"errors":2,"last_status":"success","total_count":%d}`, project, session, total)
 }
 
 func turnRowJSON(project, session, trace, start string) string {
-	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"trace_id":%q,"call_id":"r-1","started_at":%q,"ended_at":%q,"duration_ms":3000,"generations":1,"model":"claude-x","tools":["Read","Bash"],"input_tokens":10,"output_tokens":2,"cost":0.1,"measured":1,"status":"unknown"}`, project, session, trace, start, start)
+	return fmt.Sprintf(`{"project_id":%q,"session_id":%q,"trace_id":%q,"call_id":"r-1","started_at":%q,"ended_at":%q,"duration_ms":3000,"generations":1,"model":"claude-x","tools":["Read","Bash"],"input_tokens":10,"output_tokens":2,"cost":0.1,"measured":1,"errors":0,"status":"success","last_status":"success"}`, project, session, trace, start, start)
 }
 
 func readSessions(t *testing.T, q SessionQuery, bodies ...string) (SessionPage, *[]call) {
@@ -37,7 +37,7 @@ func sessionQuery() SessionQuery { return SessionQuery{Window: testWindow(), Lim
 
 func TestSessionsAreTheCallersOwnGenerations(t *testing.T) {
 	p, calls := readSessions(t, sessionQuery(), page(sessionRowJSON("p1", "s-1", 1)), page(`{"sessionless":86}`))
-	if len(p.Sessions) != 1 || p.Sessions[0].Turns != 253 || *p.TotalCount != 1 || *p.SessionlessTraces != 86 || p.Provenance.State != "available" {
+	if len(p.Sessions) != 1 || p.Sessions[0].Turns != 253 || p.Sessions[0].Status != "success" || p.Sessions[0].Errors != 2 || *p.TotalCount != 1 || *p.SessionlessTraces != 86 || p.Provenance.State != "available" {
 		t.Fatalf("page = %+v", p)
 	}
 	for i, c := range *calls {
@@ -102,7 +102,7 @@ func TestSessionDetailTurnsAndTotals(t *testing.T) {
 	if got := d.TurnsList[0].Tools; len(got) != 2 || got[0] != "Read" {
 		t.Errorf("turn tools = %v", got)
 	}
-	if d.Turns != 2 || len(d.TurnsList) != 2 || *d.InputTokens != 20 || d.DurationMS != 300000 || d.Classification.State != classified {
+	if d.Turns != 2 || len(d.TurnsList) != 2 || d.Status != "success" || d.TurnsList[0].Status != "success" || *d.InputTokens != 20 || d.DurationMS != 300000 || d.Classification.State != classified {
 		t.Errorf("detail = %+v", d)
 	}
 	if b := (*calls)[0].Body; !strings.Contains(b, "user_id={subject0:String}") || !strings.Contains(b, "= {session:String}") {

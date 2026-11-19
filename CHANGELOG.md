@@ -4,6 +4,14 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- Console Traces, Sessions view: a session's status is the outcome of its last
+  model call. A session whose calls all completed shows Success instead of
+  Unknown, and one that recovered from a failed call (for example an upstream
+  rate limit its client retried) shows Success instead of Failed, with the
+  number of failed calls beside it. The sessions API carries that count as
+  `errors`.
+
 ## [1.1.23] - 2026-11-19
 
 ### Fixed

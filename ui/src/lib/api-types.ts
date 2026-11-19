@@ -514,7 +514,10 @@ export interface SessionSummary {
   cost: number | null;
   /** Up to 3 distinct models, most used first. */
   models: string[];
+  /** Outcome of the session's last model call. */
   status: 'error' | 'success' | 'unknown';
+  /** Failed model calls in the session, retried ones included. */
+  errors: number;
 }
 
 export interface SessionPage {

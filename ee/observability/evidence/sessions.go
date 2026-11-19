@@ -47,7 +47,10 @@ type SessionSummary struct {
 	OutputTokens   *int     `json:"output_tokens"`
 	Cost           *float64 `json:"cost"`
 	Models         []string `json:"models"`
-	Status         string   `json:"status"`
+	// Status is the outcome of the session's last model call; Errors counts
+	// every failed call, retried ones included.
+	Status string `json:"status"`
+	Errors int    `json:"errors"`
 }
 
 // SessionPage is the list response; its JSON shape is sessions.schema.json.
@@ -91,14 +94,14 @@ type SessionDetail struct {
 	OutputTokens   *int                `json:"output_tokens"`
 	Cost           *float64            `json:"cost"`
 	Status         string              `json:"status"`
+	Errors         int                 `json:"errors"`
 	Classification TraceClassification `json:"classification"`
 	TurnsList      []SessionTurn       `json:"turns_list"`
 	TurnsTruncated bool                `json:"turns_truncated"`
 	Provenance     core.Provenance     `json:"provenance"`
 }
 
-// genSource is the caller's own generations in the window; the gateway does
-// not observe task success, so a session without an ERROR is unknown.
+// genSource is the caller's own generations in the window.
 const genSource = `
 FROM default.events_full AS source FINAL
 WHERE is_deleted = 0 AND (__SCOPE__)
@@ -111,7 +114,9 @@ const genUsage = `
        sumIf(usage_details['output'], mapContains(usage_details, 'output')) AS output_tokens,
        sumIf(toFloat64(cost_details['total']), mapContains(cost_details, 'total')) AS cost,
        countIf(mapContains(usage_details, 'input') OR mapContains(usage_details, 'output')) AS measured,
-       if(countIf(level = 'ERROR') > 0, 'error', 'unknown') AS status`
+       countIf(level = 'ERROR') AS errors,
+       multiIf(argMax(level, source.start_time) = 'ERROR', 'error',
+               argMax(isNotNull(source.end_time), source.start_time) = 1, 'success', 'unknown') AS last_status`
 
 const sessionGroupSQL = `
 SELECT project_id, ifNull(session_id, '') AS session_id,
@@ -144,7 +149,9 @@ SELECT project_id, ifNull(session_id, '') AS session_id, trace_id, parent_span_i
        dateDiff('millisecond', min(source.start_time), max(ifNull(source.end_time, source.start_time))) AS duration_ms,
        count() AS generations,
        anyIf(provided_model_name, provided_model_name != '') AS model,
-       arraySlice(groupArrayArray(tool_call_names), 1, 20) AS tools,` + genUsage + genSource + `
+       arraySlice(groupArrayArray(tool_call_names), 1, 20) AS tools,
+       multiIf(countIf(level = 'ERROR') > 0, 'error',
+               countIf(isNotNull(source.end_time)) = count(), 'success', 'unknown') AS status,` + genUsage + genSource + `
   AND ifNull(session_id, '') = {session:String}
 GROUP BY project_id, session_id, trace_id, parent_span_id
 ORDER BY started_at ASC, trace_id, call_id
@@ -164,7 +171,8 @@ type sessionRow struct {
 	OutputTokens   float64  `json:"output_tokens"`
 	Cost           float64  `json:"cost"`
 	Measured       float64  `json:"measured"`
-	Status         string   `json:"status"`
+	Errors         float64  `json:"errors"`
+	Status         string   `json:"last_status"`
 	TotalCount     float64  `json:"total_count"`
 }
 
@@ -183,7 +191,9 @@ type turnRow struct {
 	OutputTokens float64  `json:"output_tokens"`
 	Cost         float64  `json:"cost"`
 	Measured     float64  `json:"measured"`
+	Errors       float64  `json:"errors"`
 	Status       string   `json:"status"`
+	LastStatus   string   `json:"last_status"`
 }
 
 // usage is null, not 0, when no generation reported usage.
@@ -246,6 +256,7 @@ func (r *Reader) Sessions(ctx context.Context, s core.Scope, q SessionQuery) (Se
 			SessionID: row.SessionID, ProjectID: row.ProjectID, StartedAt: row.StartedAt, LastActivityAt: row.LastActivityAt,
 			DurationMS: int(row.DurationMS), Turns: int(row.Turns), Generations: int(row.Generations),
 			InputTokens: in, OutputTokens: out, Cost: cost, Models: append([]string{}, row.Models...), Status: row.Status,
+			Errors: int(row.Errors),
 		}
 	}
 	p := core.NewProvenance(q.Window, "session", "all scoped sessions in the requested window", "full-window-final-session-page")
@@ -312,7 +323,7 @@ func (r *Reader) Session(ctx context.Context, s core.Scope, sessionID, project s
 		rows = rows[:detailRowCap]
 	}
 
-	d := SessionDetail{SessionID: sessionID, ProjectID: rows[0].ProjectID, Status: core.StatusUnknown, Turns: len(rows), TurnsList: make([]SessionTurn, len(rows)), TurnsTruncated: truncated}
+	d := SessionDetail{SessionID: sessionID, ProjectID: rows[0].ProjectID, Turns: len(rows), TurnsList: make([]SessionTurn, len(rows)), TurnsTruncated: truncated}
 	var measured, in, out, cost float64
 	for i, row := range rows {
 		tin, tout, tcost := usage(row.Measured, row.InputTokens, row.OutputTokens, row.Cost)
@@ -323,13 +334,14 @@ func (r *Reader) Session(ctx context.Context, s core.Scope, sessionID, project s
 		}
 		d.Generations += int(row.Generations)
 		measured, in, out, cost = measured+row.Measured, in+row.InputTokens, out+row.OutputTokens, cost+row.Cost
-		if row.Status == statusError {
-			d.Status = statusError
-		}
+		d.Errors += int(row.Errors)
 		if row.EndedAt != nil && (d.LastActivityAt == nil || *row.EndedAt > *d.LastActivityAt) {
 			d.LastActivityAt = row.EndedAt
 		}
 	}
+	// ponytail: the latest-starting turn stands for the last call; a truncated
+	// session reports its last kept turn (the list carries the true one).
+	d.Status = rows[len(rows)-1].LastStatus
 	d.StartedAt = rows[0].StartedAt
 	d.InputTokens, d.OutputTokens, d.Cost = usage(measured, in, out, cost)
 	if d.StartedAt != nil && d.LastActivityAt != nil {

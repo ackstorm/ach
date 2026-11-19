@@ -134,7 +134,7 @@ export function Traces() {
     { key: 'tokens', header: 'Tokens', className: 'mono c-tok', sortAccessor: bySession, cell: (s) => formatTokens(s.input_tokens, s.output_tokens) },
     { key: 'cost', header: 'Cost', className: 'mono c-cost', sortAccessor: bySession, cell: (s) => cost(s.cost) },
     { key: 'models', header: 'Models', className: 'mono c-model', cell: (s) => <span title={s.models.join(', ')}>{s.models.length ? s.models.join(', ') : DASH}</span> },
-    { key: 'status', header: 'Status', className: 'c-status', cell: (s) => <StatusPill tone={traceOutcome(s.status).tone}>{traceOutcome(s.status).label}</StatusPill> },
+    { key: 'status', header: 'Status', className: 'c-status', cell: (s) => <><StatusPill tone={traceOutcome(s.status).tone}>{traceOutcome(s.status).label}</StatusPill>{s.errors > 0 && <small className="status-errors" title="Failed model calls in this session, retried ones included">{formatInt(s.errors)} {s.errors === 1 ? 'error' : 'errors'}</small>}</> },
   ];
   const turns = session.data?.turns_list ?? [];
   const turnColumns: DataTableColumn<SessionTurn>[] = [
