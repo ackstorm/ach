@@ -36,6 +36,7 @@ func TestMCPLoginUsesOriginalCredential(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			loginTestEnv(t)
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
 			issuer := newLoginTestServer(t, "unused.browser.token")
 			mux := http.NewServeMux()
 			mux.Handle("/", issuer.Config.Handler)

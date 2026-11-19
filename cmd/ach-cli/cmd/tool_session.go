@@ -71,6 +71,14 @@ func toolRedirect(next *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
+const mcpAuthRequiredStatus = "auth_required"
+
+var errMCPAuthRequired = errors.New("provider sign-in required")
+
+func mcpAuthRequired(server string) error {
+	return fmt.Errorf("%w: run ach-cli mcp login %s", errMCPAuthRequired, server)
+}
+
 func listRuntimeTools(ctx context.Context, cs *toolSession, server string) ([]*mcp.Tool, error) {
 	var tools []*mcp.Tool
 	params := &mcp.ListToolsParams{}
@@ -83,8 +91,8 @@ func listRuntimeTools(ctx context.Context, cs *toolSession, server string) ([]*m
 			outcome, _ := outcomes[server].(map[string]any)
 			switch status, _ := outcome["status"].(string); status {
 			case "ok":
-			case "auth_required":
-				return tools, fmt.Errorf("provider sign-in required: run ach-cli mcp login %s", server)
+			case mcpAuthRequiredStatus:
+				return tools, mcpAuthRequired(server)
 			default:
 				return tools, cs.wire.redactError(fmt.Errorf("could not query %s (gateway status %q)", server, status))
 			}

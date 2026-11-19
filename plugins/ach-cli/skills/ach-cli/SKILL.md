@@ -27,8 +27,8 @@ login` reads it on its own), or ask the user for it. Never guess a URL.
 
 When a user asks for a lookup and the server is missing from the session, run
 `ach-cli mcp search <words...>`. For a contact lookup, try `ach-cli mcp search zoho contacts`.
-Copy the returned names into `mcp describe <server> <tool>`, then use `mcp call` with
-arguments that fit the schema. For a request to another agent, use `ach-cli a2a search`
+Copy the dotted tool name into `ach-cli mcp describe <server.tool>`. Pass the fields the schema
+requires to `ach-cli mcp call <server.tool>` inline or from a file with `- < args.json`. For a request to another agent, use `ach-cli a2a search`
 and `ach-cli a2a call`. These commands use the active ACH credential from any directory.
 They work without installing a local server, hydrating an Environment, or editing the repo.
 See [MCP tools and A2A agents](references/mcp.md).
