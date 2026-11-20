@@ -16,6 +16,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   (`ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET`), so no
   other component holds its secret. An install that keeps them in the top-level
   `extraEnv` still works; move them to tighten it.
+- Releases publish `checksums.txt.pem`, the certificate `cosign verify-blob`
+  needs to check the signature of `checksums.txt`.
 
 ### Security
 - Helm chart: the operator's permissions are namespaced. It reads Secrets and

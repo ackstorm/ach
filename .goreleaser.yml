@@ -297,6 +297,7 @@ release:
 signs:
   - id: checksums
     cmd: cosign
+    certificate: '${artifact}.pem'
     args:
       - sign-blob
       - --yes
