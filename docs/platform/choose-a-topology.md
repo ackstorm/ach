@@ -117,9 +117,13 @@ forwarder: {replicas: 3}
 gateway: {replicas: 2}
 ```
 
-- These three keep no state of their own, so any number works. The chart adds
-  no PodDisruptionBudget and no anti-affinity; add them yourself if you need
-  them.
+- These three keep no state of their own, so any number works. Every
+  Deployment prefers to spread its pods across nodes, and above 1 replica the
+  chart adds a PodDisruptionBudget (`maxUnavailable: 1`). Run 2 or more on a
+  cluster with at least 2 nodes.
+- All replicas share one Postgres and one Valkey, which the chart does not
+  deploy: ACH stays up only as long as they do, so make them highly available
+  where they run.
 - During a rollout the old Pod serves until the new one is ready, and then
   lets open requests finish for
   [`shutdown.timeoutSeconds`](../reference/helm-values.md#shutdown), 120
