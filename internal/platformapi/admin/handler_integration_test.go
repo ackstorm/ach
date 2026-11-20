@@ -137,7 +137,6 @@ func TestRevokeKey_PkHappyPath_DBFirst(t *testing.T) {
 	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: rd,
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&auditBuf),
 		Namespace: testNs,
 		EndOAuthSessions: func(_ context.Context, e string) error {
@@ -193,7 +192,6 @@ func TestRevokeKey_PkLiteLLMUnreachable_WARN04(t *testing.T) {
 	var opBuf bytes.Buffer
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: rd,
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&auditBuf),
 		Logger:    sluggish(&opBuf),
 		Namespace: testNs,
@@ -228,7 +226,6 @@ func TestRevokeKey_PkUnknown(t *testing.T) {
 
 	deps := Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -253,7 +250,6 @@ func TestRevokeKey_EkHappyPath_LiteLLMFirst(t *testing.T) {
 	var auditBuf bytes.Buffer
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: rd,
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&auditBuf),
 		Namespace: testNs,
 	}
@@ -296,7 +292,6 @@ func TestRevokeKey_EkLiteLLMUnreachable(t *testing.T) {
 	ll := &fakeLitellm{revokeErr: errors.New("connection refused")}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -329,7 +324,6 @@ func TestRevokeKey_EkSuspended_Revokes(t *testing.T) {
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -361,7 +355,6 @@ func TestRevokeKey_EkAlreadyRevoked_Skipped(t *testing.T) {
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -390,7 +383,6 @@ func TestRevokeUserKeys_HappyPath(t *testing.T) {
 	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 		EndOAuthSessions: func(_ context.Context, e string) error {
@@ -430,7 +422,6 @@ func TestRevokeUserKeys_RevokesAcrossPages(t *testing.T) {
 	}
 	deps := Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -463,7 +454,6 @@ func TestRevokeUserKeys_ListFailureOnALaterPageIsNot200(t *testing.T) {
 	}}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -481,7 +471,6 @@ func TestRevokeUserKeys_MatchesAnyCase(t *testing.T) {
 	seedEnvironmentKey(t, pool, "ekid_mc", "ce-mc", "u@x.com", "envX", "lt2")
 	deps := Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -507,7 +496,6 @@ func TestRevokeUserKeys_EndsSessionsWithNoActivePk(t *testing.T) {
 	var ended []string
 	deps := Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 		EndOAuthSessions: func(_ context.Context, e string) error {
@@ -534,7 +522,6 @@ func TestRevokeUserKeys_SessionEndFailureIsNot200AndARerunRepairs(t *testing.T) 
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 		EndOAuthSessions: func(context.Context, string) error {
@@ -569,7 +556,6 @@ func TestRevokeUserKeys_NoKeys(t *testing.T) {
 
 	deps := Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -595,7 +581,6 @@ func TestRevokeUserKeys_URLDecodePlusSign(t *testing.T) {
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -625,7 +610,6 @@ func TestRevokeUserKeys_EkSuspended_Revokes(t *testing.T) {
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -660,7 +644,6 @@ func TestRevokeUserKeys_EkAlreadyRevoked_Skipped(t *testing.T) {
 	ll := &fakeLitellm{}
 	deps := Deps{
 		Pool: pool, LiteLLM: ll, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(),
 		Audit:     audit.NewLogger(&bytes.Buffer{}),
 		Namespace: testNs,
 	}
@@ -702,12 +685,11 @@ func TestAdminListKeysHandler_AllOwnersWithOwnerFilter(t *testing.T) {
 	}
 
 	deps := Deps{
-		Pool:      pool,
-		LiteLLM:   &fakeLitellm{},
-		Redis:     &recordingRedis{},
-		Allowlist: adminAllowlist(),
-		Audit:     discardLogger(),
-		Logger:    discardLogger(),
+		Pool:    pool,
+		LiteLLM: &fakeLitellm{},
+		Redis:   &recordingRedis{},
+		Audit:   discardLogger(),
+		Logger:  discardLogger(),
 	}
 	router := newAdminRouter(t, deps)
 
@@ -751,7 +733,7 @@ func TestAdminListKeysHandler_ShowsIdPRefusedOwner(t *testing.T) {
 	}
 	router := newAdminRouter(t, Deps{
 		Pool: pool, LiteLLM: &fakeLitellm{}, Redis: &recordingRedis{},
-		Allowlist: adminAllowlist(), Audit: discardLogger(), Logger: discardLogger(),
+		Audit: discardLogger(), Logger: discardLogger(),
 	})
 
 	rec := adminGetRequest(t, router, "/platform/admin/keys")

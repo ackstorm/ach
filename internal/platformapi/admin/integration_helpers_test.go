@@ -33,17 +33,9 @@ import (
 // testNs is the deployment namespace injected into admin Deps for tests.
 const testNs = "ach-test"
 
-// adminAllowlist returns a single-entry allowlist containing the email
-// injected by newAdminRouter as the caller identity.
-func adminAllowlist() map[string]struct{} {
-	return map[string]struct{}{
-		"admin@x.example": {},
-	}
-}
-
 // newAdminRouter builds a chi.Router with admin.Mount(deps) wired under
 // /platform/admin, injecting an admin pk_ KeyContext so AdminOnly passes.
-// The caller identity is always "admin@x.example" (must be in deps.Allowlist).
+// The caller identity is always "admin@x.example".
 func newAdminRouter(t *testing.T, deps Deps) chi.Router {
 	t.Helper()
 	r := chi.NewRouter()

@@ -103,6 +103,7 @@ func upsertEnv(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name strin
 		ContextPrompts:    []string{},
 		ContextPlugins:    []string{},
 		ContextArtifacts:  []string{},
+		ContextSkills:     []string{},
 		RuntimeModels:     []string{},
 		RuntimeMCPServers: nz(mcps),
 		RuntimeA2AAgents:  nz(a2as),

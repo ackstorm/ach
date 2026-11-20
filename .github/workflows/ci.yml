@@ -108,6 +108,21 @@ jobs:
       - name: Run controller + toolhive envtest
         run: make test-envtest-fast
 
+  integration:
+    name: Integration
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6  # v4.3.1
+
+      - name: Set up devtools (pull or build)
+        uses: ./.github/actions/setup-devtools
+
+      - name: Run integration tests
+        run: make test-integration
+
   security:
     name: Security
     needs: changes
@@ -155,7 +170,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, lint, unit, envtest, security]
+    needs: [changes, lint, unit, envtest, integration, security]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to pass or be skipped
