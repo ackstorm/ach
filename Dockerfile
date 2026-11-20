@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # alpine's musl is unused. nonroot user (uid 65532) is created so the
 # binary runs unprivileged, matching the prior distroless behaviour and
 # the chart's securityContext.runAsNonRoot=true.
-FROM alpine:3.20
+FROM alpine:3.23
 RUN apk add --no-cache git ca-certificates && \
     addgroup -g 65532 -S nonroot && \
     adduser -u 65532 -S nonroot -G nonroot
