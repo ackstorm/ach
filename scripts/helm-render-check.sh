@@ -113,4 +113,19 @@ render --show-only templates/operator-rbac.yaml | awk '
   END { flush(); exit bad }
 ' || fail "operator RBAC grants create/delete/patch on keygrants (directly or through a \"*\" resource)"
 
-echo "helm-render-check OK (8 topologies)"
+# 9. Scheduling: every Deployment prefers spreading its pods across nodes; a
+# PDB renders only for a stateless component scaled above 1, never at 1.
+out="$(render)"
+[ "$(grep -c 'podAntiAffinity:' <<<"$out")" -eq "$(grep -c '^kind: Deployment' <<<"$out")" ] \
+  || fail "default: a Deployment lacks podAntiAffinity"
+grep -q "kind: PodDisruptionBudget" <<<"$out" && fail "default: PDB rendered at 1 replica"
+out="$(render --set platformApi.replicas=2 --set forwarder.replicas=2 --set gateway.replicas=2 \
+              --set contentService.standalone=true --set contentService.replicas=2 \
+              --set operator.cache.accessMode=ReadWriteMany --set operator.cache.storageClassName=rwx-test \
+              --set operator.replicas=2)"
+for c in platform-api forwarder gateway content-service; do
+  grep -A3 "kind: PodDisruptionBudget" <<<"$out" | grep -q "name: ach-${c}$" || fail "replicas=2: PDB ach-${c} missing"
+done
+grep -A3 "kind: PodDisruptionBudget" <<<"$out" | grep -q "name: ach-operator$" && fail "operator must never get a PDB"
+
+echo "helm-render-check OK (9 topologies)"

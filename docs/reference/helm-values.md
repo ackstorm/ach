@@ -10,7 +10,11 @@ helm show values oci://ghcr.io/ackstorm/charts/ach --version <X.Y.Z>
 The sections follow the order of the chart's `values.yaml`. `operator`,
 `platformApi`, `forwarder`, `gateway` and `contentService` also take
 `replicas`, `resources`, `args` and `initContainers`; they are listed only
-where the default matters.
+where the default matters. Every Deployment prefers to place its pods on different nodes (a preferred
+pod anti-affinity on `kubernetes.io/hostname`; it never blocks scheduling). A
+PodDisruptionBudget with `maxUnavailable: 1` renders for `platformApi`,
+`forwarder`, `gateway` and a standalone `contentService` when their
+`replicas` is above 1; the operator and the classifier never get one.
 
 ## `installCRDs`
 
