@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.25] - 2026-11-20
+
 ### Changed
 - Helm chart: every Deployment prefers to place its pods on different nodes,
   and `platformApi`, `forwarder`, `gateway` and a standalone `contentService`
