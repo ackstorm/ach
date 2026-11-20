@@ -64,9 +64,8 @@ const ekDrainSleep = 100 * time.Millisecond
 //
 //   - client.Client (embedded): K8s API access (Get/Update/Status).
 //   - Scheme: runtime scheme — required by controller-runtime.
-//   - LiteLLM: D-11 interface. Phase 1 wires *litellm.NoopClient;
-//     Phase 2 wires the real REST client. Reconcile MUST type this as
-//     the interface so the swap is wiring-only.
+//   - LiteLLM: the litellm.Client interface; production wires the REST
+//     client, tests litellmtest.NoopClient.
 //   - Namespace: the WATCH_NAMESPACE the reconciler is scoped to
 //     (MULTI-01). cmd/operator/main.go (Plan 06) injects watchNS.
 //   - Log: structured logger, scoped with .WithName("Environment").

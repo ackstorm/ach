@@ -9,6 +9,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	achteams "github.com/ackstorm/ach/internal/platformapi/teams"
 )
 
@@ -19,7 +20,7 @@ import (
 // internal/platformapi/teams/lookup_test.go's fakeLiteLLM, minimized via
 // embedding instead of hand-stubbing every method.
 type fakeLiteLLMOwner struct {
-	litellm.NoopClient
+	litellmtest.NoopClient
 	teams []string
 	err   error
 }

@@ -48,6 +48,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -197,7 +198,7 @@ func TestEnvPluginContentPresent_NotSynced(t *testing.T) {
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	// Seed a plugins row with NULL last_successful_refresh (no content).
-	if err := achdb.UpsertPlugin(ctx, pool, achdb.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, achdb.PluginRow{
 		Namespace:             ns,
 		Name:                  "my-plugin",
 		StorageLocation:       "",    // no content yet
@@ -309,7 +310,7 @@ func TestEnvPluginContentPresent_Synced(t *testing.T) {
 	// Seed a plugins row WITH a non-null last_successful_refresh (content present).
 	now := time.Now().UTC()
 	storagePath := "/cache/plugin/my-synced-plugin.tar.gz"
-	if err := achdb.UpsertPlugin(ctx, pool, achdb.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, achdb.PluginRow{
 		Namespace:             ns,
 		Name:                  "my-synced-plugin",
 		StorageLocation:       storagePath,

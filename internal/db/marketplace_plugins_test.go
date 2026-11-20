@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertMarketplacePlugin_Insert: fresh row scans back via ListMarketplacePlugins.
@@ -32,7 +33,7 @@ func TestUpsertMarketplacePlugin_Insert(t *testing.T) {
 		NextRefreshAt:         now.Add(time.Hour),
 		MaxStalenessSeconds:   3600,
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, pool, want); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, want); err != nil {
 		t.Fatalf("UpsertMarketplacePlugin: %v", err)
 	}
 	got, err := db.ListMarketplacePlugins(ctx, pool, "acme")
@@ -62,13 +63,13 @@ func TestUpsertMarketplacePlugin_Update(t *testing.T) {
 		NextRefreshAt:         now.Add(10 * time.Minute),
 		MaxStalenessSeconds:   60,
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, pool, first); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, first); err != nil {
 		t.Fatalf("first upsert: %v", err)
 	}
 	second := first
 	second.StorageLocation = "/loc/v2"
 	second.UpstreamRev = "rev-2"
-	if err := db.UpsertMarketplacePlugin(ctx, pool, second); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, second); err != nil {
 		t.Fatalf("second upsert: %v", err)
 	}
 	got, err := db.ListMarketplacePlugins(ctx, pool, "acme")
@@ -103,7 +104,7 @@ func TestUpsertMarketplacePlugin_ClearsForceRefresh(t *testing.T) {
 		NextRefreshAt:         now,
 		MaxStalenessSeconds:   60,
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, row); err != nil {
 		t.Fatalf("initial upsert: %v", err)
 	}
 	if _, err := pool.Exec(ctx,
@@ -112,7 +113,7 @@ func TestUpsertMarketplacePlugin_ClearsForceRefresh(t *testing.T) {
 		t.Fatalf("manually set force_refresh_requested_at: %v", err)
 	}
 	row.LastSuccessfulRefresh = now.Add(time.Minute)
-	if err := db.UpsertMarketplacePlugin(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, row); err != nil {
 		t.Fatalf("second upsert: %v", err)
 	}
 	var nonNull bool
@@ -137,7 +138,7 @@ func TestListMarketplacePlugins(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	names := []string{"alpha", "bravo", "charlie"}
 	for _, n := range names {
-		if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+		if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 			MarketplaceName: "shared", Name: n,
 			StorageLocation:       "/cache/" + n,
 			UpstreamRev:           "r-" + n,
@@ -150,7 +151,7 @@ func TestListMarketplacePlugins(t *testing.T) {
 	}
 	// Insert one row under a different marketplace; ListMarketplacePlugins("shared")
 	// must NOT see it.
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName: "other", Name: "alpha",
 		StorageLocation: "/cache/other/alpha", UpstreamRev: "x",
 		LastSuccessfulRefresh: now, NextRefreshAt: now, MaxStalenessSeconds: 60,
@@ -199,7 +200,7 @@ func TestDeleteMarketplacePlugin(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName: "m", Name: "to-delete",
 		StorageLocation:       "/x",
 		UpstreamRev:           "v",
@@ -209,7 +210,7 @@ func TestDeleteMarketplacePlugin(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	if err := db.DeleteMarketplacePlugin(ctx, pool, "m", "to-delete"); err != nil {
+	if err := dbtest.DeleteMarketplacePlugin(ctx, pool, "m", "to-delete"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	got, err := db.ListMarketplacePlugins(ctx, pool, "m")
@@ -220,7 +221,7 @@ func TestDeleteMarketplacePlugin(t *testing.T) {
 		t.Errorf("got %d rows after delete; want 0", len(got))
 	}
 	// Idempotent delete.
-	if err := db.DeleteMarketplacePlugin(ctx, pool, "m", "to-delete"); err != nil {
+	if err := dbtest.DeleteMarketplacePlugin(ctx, pool, "m", "to-delete"); err != nil {
 		t.Errorf("delete-of-absent should be idempotent; got %v", err)
 	}
 }
@@ -240,7 +241,7 @@ func TestResetMarketplacePluginsRefreshOnEmptyCache(t *testing.T) {
 			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
 	}
 	for _, r := range rows {
-		if err := db.UpsertMarketplacePlugin(ctx, pool, r); err != nil {
+		if err := dbtest.UpsertMarketplacePlugin(ctx, pool, r); err != nil {
 			t.Fatalf("seed upsert: %v", err)
 		}
 	}

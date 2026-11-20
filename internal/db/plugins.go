@@ -103,12 +103,6 @@ const upsertPluginSQL = `
 	RETURNING namespace
 `
 
-func UpsertPlugin(ctx context.Context, pool *pgxpool.Pool, row PluginRow) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertPluginTx(ctx, tx, row)
-	})
-}
-
 // UpsertPluginTx — see UpsertEnvironmentTx.
 func UpsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
 	return upsertReturning(ctx, tx, upsertPluginSQL, "UpsertPlugin("+row.Namespace+"/"+row.Name+")",
@@ -116,33 +110,6 @@ func UpsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
 		row.ResourceVersion,
 	)
-}
-
-// GetPluginByName reads the plugins row keyed by (namespace, name).
-// pgx.ErrNoRows → (nil, nil).
-func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (*PluginRow, error) {
-	const sql = `
-		SELECT namespace, name, storage_location,
-		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at
-		  FROM plugins
-		 WHERE namespace = $1 AND name = $2
-	`
-	r := &PluginRow{}
-	if err := pool.QueryRow(ctx, sql, ns, name).Scan(
-		&r.Namespace, &r.Name, &r.StorageLocation,
-		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-		&r.ResourceVersion, &r.UpdatedAt,
-	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		if isTransientPgErr(err) {
-			return nil, err
-		}
-		return nil, fmt.Errorf("db: GetPluginByName(%s/%s): %w", ns, name, err)
-	}
-	return r, nil
 }
 
 // ListPlugins returns every plugins row in ns ordered by name ASC.
@@ -190,18 +157,6 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 }
 
 const deletePluginSQL = `DELETE FROM plugins WHERE namespace = $1 AND name = $2`
-
-// DeletePlugin removes the row keyed by (namespace, name). Absence is not an
-// error.
-func DeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, deletePluginSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeletePlugin(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
 
 // DeletePluginTx is DeletePlugin inside an outer transaction (db.WithTxNotify).
 func DeletePluginTx(ctx context.Context, tx pgx.Tx, ns, name string) error {

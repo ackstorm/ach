@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertAndListSkillMarketplaces: upsert two rows, assert
@@ -23,7 +24,7 @@ func TestUpsertAndListSkillMarketplaces(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"bravo", "alpha"} {
-		if err := db.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
+		if err := dbtest.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
 			Namespace: "ach", Name: name, SyncedStatus: "True", SyncedReason: "",
 			SkillsCount: 3, ResourceVersion: "100",
 		}); err != nil {
@@ -31,7 +32,7 @@ func TestUpsertAndListSkillMarketplaces(t *testing.T) {
 		}
 	}
 	// Other-namespace row must be excluded by ns scoping.
-	if err := db.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
+	if err := dbtest.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
 		Namespace: "other", Name: "charlie", SyncedStatus: "False", SyncedReason: "UpstreamInvalid",
 		SkillsCount: 0, ResourceVersion: "1",
 	}); err != nil {
@@ -53,7 +54,7 @@ func TestUpsertAndListSkillMarketplaces(t *testing.T) {
 	}
 
 	// Re-upsert updates in place (no duplicate row).
-	if err := db.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
+	if err := dbtest.UpsertSkillMarketplace(ctx, pool, db.SkillMarketplaceRow{
 		Namespace: "ach", Name: "alpha", SyncedStatus: "False", SyncedReason: "UpstreamInvalid",
 		SkillsCount: 5, ResourceVersion: "101",
 	}); err != nil {
@@ -71,7 +72,7 @@ func TestUpsertAndListSkillMarketplaces(t *testing.T) {
 	}
 
 	// Delete removes the row.
-	if err := db.DeleteSkillMarketplace(ctx, pool, "ach", "alpha"); err != nil {
+	if err := dbtest.DeleteSkillMarketplace(ctx, pool, "ach", "alpha"); err != nil {
 		t.Fatalf("DeleteSkillMarketplace: %v", err)
 	}
 	got, err = db.ListSkillMarketplaces(ctx, pool, "ach")

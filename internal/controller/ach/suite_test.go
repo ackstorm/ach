@@ -47,6 +47,7 @@ import (
 	"github.com/ackstorm/ach/internal/cachefs"
 	"github.com/ackstorm/ach/internal/connection"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/snapshot"
 )
 
@@ -73,13 +74,13 @@ var (
 	keyGrantLLM     *keyGrantLLMFake
 )
 
-// countingNoopClient wraps litellm.NoopClient and bumps an atomic counter
+// countingNoopClient wraps litellmtest.NoopClient and bumps an atomic counter
 // on each method invocation so finalizer specs can assert §6.5 step-2 +
 // step-3 ordering ("DeleteAccessGroup then DeleteTagByName, exactly once each").
 // The counter is monotonic and never decremented — tests Store(0) before
 // the assertion-relevant action.
 type countingNoopClient struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	counter     *atomic.Int64
 	accessGroup *accessGroupFakeImpl
 }

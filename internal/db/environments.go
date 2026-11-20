@@ -131,16 +131,9 @@ const upsertEnvironmentSQL = `
 	RETURNING namespace
 `
 
-func UpsertEnvironment(ctx context.Context, pool *pgxpool.Pool, row EnvironmentRow) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertEnvironmentTx(ctx, tx, row)
-	})
-}
-
 // UpsertEnvironmentTx is the tx-form helper that controllers use via
 // db.WithTxNotify so the projection write and the pg_notify call commit
-// atomically. The pool form above is retained for tests and callers without
-// an outer transaction. GitOps-wins: a CR takes over any UI-managed row, so
+// atomically. GitOps-wins: a CR takes over any UI-managed row, so
 // this never returns ErrOriginConflict. Transient pgconn 08/57 propagate raw;
 // other errors wrap with (namespace, name).
 func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {

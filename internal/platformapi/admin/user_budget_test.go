@@ -18,19 +18,20 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
 // budgetLiteLLM captures the tag budgets the admin user-budget route
 // writes; every other Client method comes from NoopClient.
 type budgetLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	tags      map[string]litellm.TagBudget
 	upsertErr error
 }
 
 func newBudgetLiteLLM() *budgetLiteLLM {
-	return &budgetLiteLLM{NoopClient: &litellm.NoopClient{}, tags: map[string]litellm.TagBudget{}}
+	return &budgetLiteLLM{NoopClient: &litellmtest.NoopClient{}, tags: map[string]litellm.TagBudget{}}
 }
 
 func (c *budgetLiteLLM) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {

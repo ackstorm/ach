@@ -17,7 +17,7 @@ import (
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
-	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -65,7 +65,7 @@ func (d *revokePersonalDB) UserKeyAllowance(context.Context, string, int) (int, 
 // revokePersonalLiteLLM is a fake litellm.Client that records whether RevokeKey
 // was called and can be configured to return an error.
 type revokePersonalLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	revokeErr    error  // if non-nil, RevokeKey returns this
 	revokedToken string // records the last token passed to RevokeKey
 }
@@ -175,7 +175,7 @@ func TestRevokeHandler_DispatchesByPrefix(t *testing.T) {
 		},
 		pkToken: &pkToken,
 	}
-	fll := &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}}
+	fll := &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}}
 	deps := Deps{
 		DB:      fdb,
 		LiteLLM: fll,
@@ -310,7 +310,7 @@ func TestRevokePersonalHandler(t *testing.T) {
 				revokeErr:   tc.dbErr,
 			}
 			fll := &revokePersonalLiteLLM{
-				NoopClient: &litellm.NoopClient{},
+				NoopClient: &litellmtest.NoopClient{},
 				revokeErr:  tc.llmErr,
 			}
 			deps := newRevokePersonalDeps(fdb, fll)
@@ -343,7 +343,7 @@ func TestRevokePersonal_EndsOwnerOAuthSessions(t *testing.T) {
 		var ended []string
 		deps := Deps{
 			DB:      &revokePersonalDB{revokeErr: dbErr},
-			LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}},
+			LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}},
 			Redis:   &noopRedis{},
 			Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -377,7 +377,7 @@ func TestRevokePersonal_EkCallerRefused(t *testing.T) {
 	fdb := &revokePersonalDB{}
 	deps := Deps{
 		DB:      fdb,
-		LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}},
+		LiteLLM: &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}},
 		Redis:   &noopRedis{},
 		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),

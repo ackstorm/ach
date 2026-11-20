@@ -30,9 +30,11 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 	"github.com/ackstorm/ach/internal/platformapi/store"
 )
@@ -81,7 +83,7 @@ func setupPostgres(t *testing.T) *pgxpool.Pool {
 // fakeTeams answers LookupCallerTeams and counts the calls, so the
 // ?all=true path can prove it never reaches LiteLLM.
 type fakeTeams struct {
-	litellm.NoopClient
+	litellmtest.NoopClient
 	teams []string
 	calls int
 }
@@ -105,7 +107,7 @@ func newEnvRouter(t *testing.T, isAdmin bool) (chi.Router, *fakeTeams) {
 			ContextPrompts: e, ContextPlugins: e, ContextArtifacts: e, ContextSkills: e,
 			RuntimeModels: e, RuntimeMCPServers: e, RuntimeA2AAgents: e, RuntimeGuardrails: e,
 		}
-		if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+		if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 			t.Fatalf("seed %s: %v", row.Name, err)
 		}
 	}

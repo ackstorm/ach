@@ -86,12 +86,6 @@ const upsertExternalRefSQL = `
 	RETURNING kind
 `
 
-func UpsertExternalRef(ctx context.Context, pool *pgxpool.Pool, r ExternalRef) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertExternalRefTx(ctx, tx, r)
-	})
-}
-
 // UpsertExternalRefTx — see UpsertEnvironmentTx.
 func UpsertExternalRefTx(ctx context.Context, tx pgx.Tx, r ExternalRef) error {
 	return upsertReturning(ctx, tx, upsertExternalRefSQL, "UpsertExternalRef("+r.Kind+"/"+r.Name+")",

@@ -345,3 +345,9 @@ func newTestFetcher(t *testing.T, srv *httptest.Server) *Fetcher {
 	f.setHTTPClientForTesting(srv.Client())
 	return f
 }
+
+// setHTTPClientForTesting injects an alternate http.Client (typically
+// httptest.NewTLSServer().Client()).
+func (f *Fetcher) setHTTPClientForTesting(c *nethttp.Client) {
+	f.httpClient = c
+}

@@ -56,21 +56,6 @@ const upsertSkillMarketplaceSQL = `
 	    updated_at         = now()
 `
 
-// UpsertSkillMarketplace inserts-or-updates the row keyed by (Namespace, Name).
-// Transient pgconn 08/57 errors propagate raw for controller-runtime backoff.
-func UpsertSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, row SkillMarketplaceRow) error {
-	if _, err := pool.Exec(ctx, upsertSkillMarketplaceSQL,
-		row.Namespace, row.Name, row.SyncedStatus, row.SyncedReason,
-		row.SkillsCount, row.ResourceVersion, row.UpstreamRev, row.LatestUpstreamRev,
-	); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertSkillMarketplace(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
-}
-
 // UpsertSkillMarketplaceTx exposes the tx-form upsert for callers inside
 // db.WithTxNotify.
 func UpsertSkillMarketplaceTx(ctx context.Context, tx pgx.Tx, row SkillMarketplaceRow) error {
@@ -124,19 +109,6 @@ func ListSkillMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) (
 		return nil, fmt.Errorf("db: ListSkillMarketplaces(%s) iterate: %w", ns, err)
 	}
 	return out, nil
-}
-
-// DeleteSkillMarketplace removes the row outright. Called from the finalizer
-// deletion path. Absence is not an error.
-func DeleteSkillMarketplace(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM skill_marketplaces WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteSkillMarketplace(%s/%s): %w", ns, name, err)
-	}
-	return nil
 }
 
 // DeleteSkillMarketplaceTx is the tx-form of DeleteSkillMarketplace, used

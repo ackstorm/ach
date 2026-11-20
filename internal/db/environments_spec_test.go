@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestEnvironmentSpec_RoundTrip asserts the verbatim spec column (000024)
@@ -37,7 +38,7 @@ func TestEnvironmentSpec_RoundTrip(t *testing.T) {
 
 	row := baseGuardrailRow("spec-cr", []string{})
 	row.Spec = spec
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	got, err := db.GetEnvironmentByName(ctx, pool, "ach-system", "spec-cr")

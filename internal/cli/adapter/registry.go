@@ -120,13 +120,3 @@ func Iter() []Adapter {
 	}
 	return out
 }
-
-// resetForTesting clears the registry. Test-only helper, unexported.
-// External packages cannot reach for it; the registry's
-// init-time-only mutation discipline stays intact at runtime.
-func resetForTesting() { //nolint:unused // used by registry_test.go
-	mu.Lock()
-	defer mu.Unlock()
-	registry = map[string]Adapter{}
-	aliasIndex = map[string]string{}
-}

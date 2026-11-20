@@ -50,6 +50,7 @@ import (
 	"github.com/ackstorm/ach/internal/contentservice/envcache"
 	"github.com/ackstorm/ach/internal/credhash"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
@@ -276,7 +277,7 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 		RuntimeA2AAgents:  []string{},
 		ResourceVersion:   "1",
 	}
-	if err := db.UpsertEnvironment(ctx, f.pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, f.pool, row); err != nil {
 		f.t.Fatalf("UpsertEnvironment(%s): %v", name, err)
 	}
 	// The env cache is an eager snapshot (not lazy load-through): re-snapshot
@@ -321,7 +322,7 @@ func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int6
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertPrompt(ctx, f.pool, row); err != nil {
+	if err := dbtest.UpsertPrompt(ctx, f.pool, row); err != nil {
 		f.t.Fatalf("UpsertPrompt: %v", err)
 	}
 }
@@ -341,7 +342,7 @@ func (f *testFixtures) seedPlugin(name string, lsr *time.Time, maxStaleness int6
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertPlugin(ctx, f.pool, row); err != nil {
+	if err := dbtest.UpsertPlugin(ctx, f.pool, row); err != nil {
 		f.t.Fatalf("UpsertPlugin: %v", err)
 	}
 }
@@ -365,7 +366,7 @@ func (f *testFixtures) seedMarketplacePlugin(marketplaceName, pluginName string,
 		NextRefreshAt:         lsr.Add(time.Hour),
 		MaxStalenessSeconds:   maxStaleness,
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
 		f.t.Fatalf("UpsertMarketplacePlugin: %v", err)
 	}
 }
@@ -387,7 +388,7 @@ func (f *testFixtures) seedMarketplacePluginWithLocation(marketplaceName, plugin
 		NextRefreshAt:         lsr.Add(time.Hour),
 		MaxStalenessSeconds:   maxStaleness,
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
+	if err := dbtest.UpsertMarketplacePlugin(ctx, f.pool, p); err != nil {
 		f.t.Fatalf("UpsertMarketplacePluginWithLocation: %v", err)
 	}
 }
@@ -409,7 +410,7 @@ func (f *testFixtures) seedSkill(name string, lsr *time.Time, maxStaleness int64
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertSkill(context.Background(), f.pool, row); err != nil {
+	if err := dbtest.UpsertSkill(context.Background(), f.pool, row); err != nil {
 		f.t.Fatalf("UpsertSkill: %v", err)
 	}
 }
@@ -445,7 +446,7 @@ func (f *testFixtures) seedMarketplaceSkillWithLocation(marketplaceName, skillNa
 		NextRefreshAt:         lsr.Add(time.Hour),
 		MaxStalenessSeconds:   maxStaleness,
 	}
-	if err := db.UpsertSkillMarketplaceSkill(context.Background(), f.pool, s); err != nil {
+	if err := dbtest.UpsertSkillMarketplaceSkill(context.Background(), f.pool, s); err != nil {
 		f.t.Fatalf("UpsertSkillMarketplaceSkill: %v", err)
 	}
 }
@@ -478,7 +479,7 @@ func (f *testFixtures) seedArtifact(name, scope string, lsr *time.Time, maxStale
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertArtifact(ctx, f.pool, row); err != nil {
+	if err := dbtest.UpsertArtifact(ctx, f.pool, row); err != nil {
 		f.t.Fatalf("UpsertArtifact: %v", err)
 	}
 }
@@ -815,7 +816,7 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		fx.seedPlugin("shared", &now, 600, []byte("from-crd"))
 		fx.seedMarketplacePlugin("anthropic-mkt", "shared", now, 600, []byte("from-mkt"))
 		defer func() {
-			_ = db.DeletePlugin(context.Background(), fx.pool, "default", "shared")
+			_ = dbtest.DeletePlugin(context.Background(), fx.pool, "default", "shared")
 		}()
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -882,7 +883,7 @@ func TestPipeline_PluginPrecedence(t *testing.T) {
 		// B2 semantics: deleted CRD plugin + bare ref → 404.
 		// No marketplace fallback for bare refs.
 		fx.seedPlugin("shared", &now, 600, []byte("crd-deleted"))
-		if err := db.DeletePlugin(context.Background(), fx.pool, "default", "shared"); err != nil {
+		if err := dbtest.DeletePlugin(context.Background(), fx.pool, "default", "shared"); err != nil {
 			t.Fatalf("DeletePlugin: %v", err)
 		}
 		rec := fx.doRequest("GET", "/content/plugin/shared", map[string]string{

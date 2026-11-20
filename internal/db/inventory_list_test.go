@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestListPlugins: live rows in ns ordered by name; deleted + other-ns
@@ -32,7 +33,7 @@ func TestListPlugins(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, n := range []string{"bravo", "alpha"} {
-		if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
+		if err := dbtest.UpsertPlugin(ctx, pool, db.PluginRow{
 			Namespace: "ns1", Name: n, StorageLocation: "/x/" + n,
 			LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, ResourceVersion: "1",
 		}); err != nil {
@@ -40,16 +41,16 @@ func TestListPlugins(t *testing.T) {
 		}
 	}
 	// Deleted row in ns1 must be excluded.
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, db.PluginRow{
 		Namespace: "ns1", Name: "gone", StorageLocation: "/x/gone", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.DeletePlugin(ctx, pool, "ns1", "gone"); err != nil {
+	if err := dbtest.DeletePlugin(ctx, pool, "ns1", "gone"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	// Row in another namespace must be excluded.
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, db.PluginRow{
 		Namespace: "ns2", Name: "other", StorageLocation: "/x/other", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed other-ns: %v", err)
@@ -84,19 +85,19 @@ func TestListPrompts(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, n := range []string{"charlie", "alpha"} {
-		if err := db.UpsertPrompt(ctx, pool, db.PromptRow{
+		if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
 			Namespace: "ns1", Name: n, StorageLocation: "/p/" + n,
 			LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, ResourceVersion: "1",
 		}); err != nil {
 			t.Fatalf("seed %s: %v", n, err)
 		}
 	}
-	if err := db.UpsertPrompt(ctx, pool, db.PromptRow{
+	if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
 		Namespace: "ns1", Name: "gone", StorageLocation: "/p/gone", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.DeletePrompt(ctx, pool, "ns1", "gone"); err != nil {
+	if err := dbtest.DeletePrompt(ctx, pool, "ns1", "gone"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -121,19 +122,19 @@ func TestListArtifacts(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, n := range []string{"bravo", "alpha"} {
-		if err := db.UpsertArtifact(ctx, pool, db.ArtifactRow{
+		if err := dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{
 			Namespace: "ns1", Name: n, StorageLocation: "/a/" + n, Scope: "object",
 			LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, ResourceVersion: "1",
 		}); err != nil {
 			t.Fatalf("seed %s: %v", n, err)
 		}
 	}
-	if err := db.UpsertArtifact(ctx, pool, db.ArtifactRow{
+	if err := dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{
 		Namespace: "ns1", Name: "gone", StorageLocation: "/a/gone", Scope: "directory", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := db.DeleteArtifact(ctx, pool, "ns1", "gone"); err != nil {
+	if err := dbtest.DeleteArtifact(ctx, pool, "ns1", "gone"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
@@ -175,7 +176,7 @@ func TestListAllMarketplacePlugins(t *testing.T) {
 		{"anthropic-mkt", "aaa"},
 	}
 	for _, s := range seed {
-		if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+		if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 			MarketplaceName: s.mkt, Name: s.name, StorageLocation: "/m/" + s.mkt + "/" + s.name,
 			UpstreamRev: "rev", LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 600,
 		}); err != nil {

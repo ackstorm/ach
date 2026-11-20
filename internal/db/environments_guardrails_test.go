@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // baseGuardrailRow is the minimal valid projection row for these tests. Every
@@ -44,7 +45,7 @@ func TestUpsertEnvironment_GuardrailsRoundTrip(t *testing.T) {
 
 	want := []string{"pii-filter", "credential-filter"}
 	row := baseGuardrailRow("guardrail-demo", want)
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 
@@ -72,7 +73,7 @@ func TestUpsertEnvironment_GuardrailsRoundTrip(t *testing.T) {
 	// leave the previous value behind.
 	cleared := baseGuardrailRow("guardrail-demo", []string{})
 	cleared.ResourceVersion = "2"
-	if err := db.UpsertEnvironment(ctx, pool, cleared); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, cleared); err != nil {
 		t.Fatalf("UpsertEnvironment(clear): %v", err)
 	}
 	after, err := db.GetEnvironmentByName(ctx, pool, "ach-system", "guardrail-demo")
@@ -93,7 +94,7 @@ func TestUpsertEnvironment_GuardrailsDefaultEmpty(t *testing.T) {
 	defer cleanup()
 
 	row := baseGuardrailRow("guardrail-absent", nil)
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	got, err := db.GetEnvironmentByName(ctx, pool, "ach-system", "guardrail-absent")

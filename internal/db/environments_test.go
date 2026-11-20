@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertEnvironment_InsertThenUpdate: Upsert → Get returns hydrated row;
@@ -49,7 +50,7 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 		RuntimeA2AAgents:  []string{"agent-1"},
 		ResourceVersion:   "100",
 	}
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	got, err := db.GetEnvironmentByName(ctx, pool, "default", "env1")
@@ -77,7 +78,7 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	row.ContextPlugins = []string{"caveman", "extra"}
 	row.ResourceVersion = "101"
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("second UpsertEnvironment: %v", err)
 	}
 	got2, err := db.GetEnvironmentByName(ctx, pool, "default", "env1")
@@ -148,16 +149,16 @@ func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 
 	seeds := map[string]func(name string) error{
 		"plugins": func(name string) error {
-			return db.UpsertPlugin(ctx, pool, db.PluginRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+			return dbtest.UpsertPlugin(ctx, pool, db.PluginRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
 		},
 		"prompts": func(name string) error {
-			return db.UpsertPrompt(ctx, pool, db.PromptRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+			return dbtest.UpsertPrompt(ctx, pool, db.PromptRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
 		},
 		"artifacts": func(name string) error {
-			return db.UpsertArtifact(ctx, pool, db.ArtifactRow{Namespace: "ns1", Name: name, Scope: "object", ResourceVersion: "1"})
+			return dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{Namespace: "ns1", Name: name, Scope: "object", ResourceVersion: "1"})
 		},
 		"skills": func(name string) error {
-			return db.UpsertSkill(ctx, pool, db.SkillRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+			return dbtest.UpsertSkill(ctx, pool, db.SkillRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
 		},
 	}
 	for table, seed := range seeds {
@@ -206,7 +207,7 @@ func TestDeleteEnvironment_RemovesRow(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
+	if err := dbtest.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace: "ns1", Name: "e", ResourceVersion: "1",
 		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
 		AuthorizedTeams: []string{}, ContextPrompts: []string{},

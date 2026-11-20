@@ -6,10 +6,9 @@
 // contracts.
 //
 // The package exposes the Client interface (consumed by every domain
-// reconciler) and two implementations: RESTClient (production) and
-// NoopClient (unit tests + Phase 1 carry-forward). Reconcilers MUST type
-// their litellm dependency as Client — the swap from NoopClient to
-// RESTClient is a wiring-only edit in cmd/operator/main.go (Plan 09).
+// reconciler) and RESTClient, its production implementation; the test double
+// is litellmtest.NoopClient. Reconcilers MUST type their litellm dependency
+// as Client.
 //
 // Invariants enforced at the package level:
 //

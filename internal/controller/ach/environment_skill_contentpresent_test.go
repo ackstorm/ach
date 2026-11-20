@@ -32,6 +32,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestEnvSkillContentPresent_NotSynced: an Environment whose
@@ -48,7 +49,7 @@ func TestEnvSkillContentPresent_NotSynced(t *testing.T) {
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	// Seed a skills row with NULL last_successful_refresh (no content).
-	if err := achdb.UpsertSkill(ctx, pool, achdb.SkillRow{
+	if err := dbtest.UpsertSkill(ctx, pool, achdb.SkillRow{
 		Namespace:             ns,
 		Name:                  "my-skill",
 		StorageLocation:       "",
@@ -145,7 +146,7 @@ func TestEnvSkillContentPresent_Synced(t *testing.T) {
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	now := time.Now().UTC()
-	if err := achdb.UpsertSkill(ctx, pool, achdb.SkillRow{
+	if err := dbtest.UpsertSkill(ctx, pool, achdb.SkillRow{
 		Namespace:             ns,
 		Name:                  "my-synced-skill",
 		StorageLocation:       "/cache/skill/my-synced-skill.tar.gz",
@@ -232,7 +233,7 @@ func TestEnvSkillContentPresent_MarketplaceSynced(t *testing.T) {
 	accessGroupFake.SeedTeam("default", "t-uuid-default")
 
 	now := time.Now().UTC()
-	if err := achdb.UpsertSkillMarketplaceSkill(ctx, pool, achdb.SkillMarketplaceSkill{
+	if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, achdb.SkillMarketplaceSkill{
 		MarketplaceName:       "ackstorm",
 		Name:                  "branding",
 		StorageLocation:       "/cache/skill-marketplace/ackstorm/branding.tar.gz",

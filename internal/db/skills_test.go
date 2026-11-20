@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 func TestUpsertGetListSkills(t *testing.T) {
@@ -20,7 +21,7 @@ func TestUpsertGetListSkills(t *testing.T) {
 
 	last := time.Now()
 	for _, name := range []string{"bravo", "alpha"} {
-		if err := db.UpsertSkill(ctx, pool, db.SkillRow{
+		if err := dbtest.UpsertSkill(ctx, pool, db.SkillRow{
 			Namespace: "ach", Name: name, StorageLocation: "/var/cache/ach/skill/" + name + ".tar.gz",
 			LastSuccessfulRefresh: &last, MaxStalenessSeconds: 600, ResourceVersion: "1",
 		}); err != nil {
@@ -31,7 +32,7 @@ func TestUpsertGetListSkills(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0].Name != "alpha" || got[1].Name != "bravo" {
 		t.Fatalf("ListSkills = %+v err=%v, want alpha,bravo", got, err)
 	}
-	one, err := db.GetSkillByName(ctx, pool, "ach", "alpha")
+	one, err := dbtest.GetSkillByName(ctx, pool, "ach", "alpha")
 	if err != nil || one == nil || one.MaxStalenessSeconds != 600 {
 		t.Fatalf("GetSkillByName = %+v err=%v", one, err)
 	}
@@ -39,14 +40,14 @@ func TestUpsertGetListSkills(t *testing.T) {
 	if err != nil || res == nil || res.LastSuccessfulRefresh == nil {
 		t.Fatalf("ResolveSkillByName = %+v err=%v", res, err)
 	}
-	if err := db.DeleteSkill(ctx, pool, "ach", "alpha"); err != nil {
+	if err := dbtest.DeleteSkill(ctx, pool, "ach", "alpha"); err != nil {
 		t.Fatalf("DeleteSkill: %v", err)
 	}
 	got, _ = db.ListSkills(ctx, pool, "ach")
 	if len(got) != 1 || got[0].Name != "bravo" {
 		t.Errorf("after delete want only bravo; got %+v", got)
 	}
-	if err := db.DeleteSkill(ctx, pool, "ach", "bravo"); err != nil {
+	if err := dbtest.DeleteSkill(ctx, pool, "ach", "bravo"); err != nil {
 		t.Fatalf("DeleteSkill: %v", err)
 	}
 }

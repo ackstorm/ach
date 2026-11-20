@@ -119,11 +119,6 @@ func WithCacheMetrics(m *achmetrics.KeystoreCollectors) Option {
 	return func(r *redisCachedResolver) { r.metrics = m }
 }
 
-// WithClock replaces the wall clock (tests: the AC-08 fake-clock race).
-func WithClock(now func() time.Time) Option {
-	return func(r *redisCachedResolver) { r.now = now }
-}
-
 // NewCachedResolver constructs the production redisCachedResolver
 // instance. Refuses an empty pepper (D-07: every cache key derives from
 // the pepper, so a missing pepper would silently weaken the hash and

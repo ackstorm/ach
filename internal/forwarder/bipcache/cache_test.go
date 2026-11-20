@@ -18,6 +18,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 	"github.com/ackstorm/ach/internal/forwarder/bipcache"
 )
 
@@ -88,7 +89,7 @@ func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 
 func upsertBIP(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name, kind, target string, forwardJWT bool) {
 	t.Helper()
-	err := db.UpsertBIP(ctx, pool, db.BIPRow{
+	err := dbtest.UpsertBIP(ctx, pool, db.BIPRow{
 		Namespace:          testNS,
 		Name:               name,
 		TargetKind:         kind,

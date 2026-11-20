@@ -76,12 +76,6 @@ const upsertArtifactSQL = `
 	RETURNING namespace
 `
 
-func UpsertArtifact(ctx context.Context, pool *pgxpool.Pool, row ArtifactRow) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertArtifactTx(ctx, tx, row)
-	})
-}
-
 // UpsertArtifactTx — see UpsertEnvironmentTx.
 func UpsertArtifactTx(ctx context.Context, tx pgx.Tx, row ArtifactRow) error {
 	return upsertReturning(ctx, tx, upsertArtifactSQL, "UpsertArtifact("+row.Namespace+"/"+row.Name+")",
@@ -163,18 +157,6 @@ func ListArtifacts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Artifa
 }
 
 const deleteArtifactSQL = `DELETE FROM artifacts WHERE namespace = $1 AND name = $2`
-
-// DeleteArtifact removes the row keyed by (namespace, name). Absence is not an
-// error.
-func DeleteArtifact(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, deleteArtifactSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteArtifact(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
 
 // DeleteArtifactTx is DeleteArtifact inside an outer transaction (db.WithTxNotify).
 func DeleteArtifactTx(ctx context.Context, tx pgx.Tx, ns, name string) error {

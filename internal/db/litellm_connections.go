@@ -65,32 +65,6 @@ const upsertLiteLLMConnectionSQL = `
 	RETURNING namespace
 `
 
-// UpsertLiteLLMConnection inserts-or-updates the row keyed by (Namespace,
-// Name). The ON CONFLICT DO UPDATE replaces every non-PK column. Returns
-// ErrOriginConflict if a UI-owned row already
-// holds the same PK; transient pgconn 08/57 propagated raw for
-// controller-runtime backoff.
-func UpsertLiteLLMConnection(ctx context.Context, pool *pgxpool.Pool, row LiteLLMConnectionRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertLiteLLMConnection(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := UpsertLiteLLMConnectionTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertLiteLLMConnection(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
-}
-
 // UpsertLiteLLMConnectionTx exposes the tx-form upsert for callers inside
 // db.WithTxNotify.
 func UpsertLiteLLMConnectionTx(ctx context.Context, tx pgx.Tx, row LiteLLMConnectionRow) error {

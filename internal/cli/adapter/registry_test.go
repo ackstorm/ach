@@ -236,3 +236,11 @@ func TestRegister_AliasNamespaceFlat_RejectsAliasCollisionWithCanonicalID(t *tes
 	}()
 	Register(&fakeAdapter{id: "codex", aliases: []string{"claude-code"}})
 }
+
+// resetForTesting clears the registry.
+func resetForTesting() {
+	mu.Lock()
+	defer mu.Unlock()
+	registry = map[string]Adapter{}
+	aliasIndex = map[string]string{}
+}

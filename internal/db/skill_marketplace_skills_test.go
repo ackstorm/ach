@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestSkillMarketplaceSkills_UpsertListDelete: upsert rows under one
@@ -24,7 +25,7 @@ func TestSkillMarketplaceSkills_UpsertListDelete(t *testing.T) {
 
 	last := time.Now()
 	for _, name := range []string{"bravo", "alpha"} {
-		if err := db.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
+		if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
 			MarketplaceName: "ackstorm", Name: name,
 			StorageLocation:       "/var/cache/ach/skill-marketplace/ackstorm/" + name + ".tar.gz",
 			UpstreamRev:           "abc1234",
@@ -35,7 +36,7 @@ func TestSkillMarketplaceSkills_UpsertListDelete(t *testing.T) {
 		}
 	}
 	// A row under another marketplace must be excluded by scoping.
-	if err := db.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
+	if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
 		MarketplaceName: "other", Name: "charlie",
 		StorageLocation:       "/var/cache/ach/skill-marketplace/other/charlie.tar.gz",
 		LastSuccessfulRefresh: last, NextRefreshAt: last.Add(time.Hour), MaxStalenessSeconds: 1,
@@ -52,7 +53,7 @@ func TestSkillMarketplaceSkills_UpsertListDelete(t *testing.T) {
 	}
 
 	// Re-upsert updates in place (no duplicate row).
-	if err := db.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
+	if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
 		MarketplaceName: "ackstorm", Name: "alpha",
 		StorageLocation:       "/var/cache/ach/skill-marketplace/ackstorm/alpha.tar.gz",
 		UpstreamRev:           "def5678",
@@ -79,7 +80,7 @@ func TestSkillMarketplaceSkills_UpsertListDelete(t *testing.T) {
 	}
 
 	// Delete removes the row.
-	if err := db.DeleteSkillMarketplaceSkill(ctx, pool, "ackstorm", "alpha"); err != nil {
+	if err := dbtest.DeleteSkillMarketplaceSkill(ctx, pool, "ackstorm", "alpha"); err != nil {
 		t.Fatalf("DeleteSkillMarketplaceSkill: %v", err)
 	}
 	got, _ = db.ListSkillMarketplaceSkills(ctx, pool, "ackstorm")
@@ -98,7 +99,7 @@ func TestResolveSkillByName_MarketplaceArm(t *testing.T) {
 	defer cleanup()
 
 	last := time.Now()
-	if err := db.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
+	if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
 		MarketplaceName: "ackstorm", Name: "branding",
 		StorageLocation:       "/var/cache/ach/skill-marketplace/ackstorm/branding.tar.gz",
 		LastSuccessfulRefresh: last, NextRefreshAt: last.Add(time.Hour), MaxStalenessSeconds: 600,
@@ -143,7 +144,7 @@ func TestResetSkillMarketplaceSkillsRefreshOnEmptyCache(t *testing.T) {
 			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
 	}
 	for _, r := range rows {
-		if err := db.UpsertSkillMarketplaceSkill(ctx, pool, r); err != nil {
+		if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, r); err != nil {
 			t.Fatalf("seed upsert: %v", err)
 		}
 	}
