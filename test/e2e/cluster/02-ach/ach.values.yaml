@@ -35,18 +35,6 @@ extraEnv:
   # They are derived from the litellmConnection block below (the chart's
   # ach.litellmConnectionEnv helper injects them into platform-api +
   # content-service), exercising the single-source path real deployments use.
-  # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
-  # injects into scripts/dex-config.yaml (in-cluster URL, not the
-  # localhost one Dex ships with for the docker-run UAT path).
-  - name: ACH_DEX_ISSUER_URL
-    value: "http://dex.dex-system.svc.cluster.local:5556/dex"
-  - name: ACH_DEX_CLIENT_ID
-    value: "ach-platform-api"
-  - name: ACH_DEX_CLIENT_SECRET
-    # Must match the `secret:` value in scripts/dex-config.yaml's
-    # staticClient for the ach-platform-api OAuth client. Plaintext
-    # dev value — production reads from a Secret.
-    value: "dev-secret-not-for-prod"
   - name: ACH_REDIS_ADDR
     value: "valkey-primary.ach-system.svc.cluster.local:6379"
   # The OAuth binding cookie hardening is derived from the ACH_BASE_URL
@@ -83,6 +71,19 @@ platformApi:
   # default remains 0 (deny-by-default).
   userDefaults:
     maxKeys: 1000
+  extraEnv:
+    # ACH_DEX_ISSUER_URL MUST match the rewritten issuer that hydrate_dex
+    # injects into scripts/dex-config.yaml (in-cluster URL, not the
+    # localhost one Dex ships with for the docker-run UAT path).
+    - name: ACH_DEX_ISSUER_URL
+      value: "http://dex.dex-system.svc.cluster.local:5556/dex"
+    - name: ACH_DEX_CLIENT_ID
+      value: "ach-platform-api"
+    - name: ACH_DEX_CLIENT_SECRET
+      # Must match the `secret:` value in scripts/dex-config.yaml's
+      # staticClient for the ach-platform-api OAuth client. Plaintext
+      # dev value — production reads from a Secret.
+      value: "dev-secret-not-for-prod"
 
 # Declared credential slots (chart defaults, spelled out so the e2e values
 # document what the suite exercises): x-ach-key (ach-cli, hydrate, ach-agent)

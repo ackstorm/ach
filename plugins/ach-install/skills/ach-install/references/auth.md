@@ -42,17 +42,19 @@ creates with `ach-cli keys create`.
 
 ## The Dex client for ACH
 
-platform-api reads three variables, set through `extraEnv`:
+platform-api reads three variables, set through `platformApi.extraEnv` so no
+other component holds the secret:
 
 ```yaml
-extraEnv:
-  - name: ACH_DEX_ISSUER_URL      # must equal Dex's `issuer`, byte for byte
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
+platformApi:
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL      # must equal Dex's `issuer`, byte for byte
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 The matching static client in the Dex configuration:

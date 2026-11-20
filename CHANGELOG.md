@@ -4,6 +4,24 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Breaking
+- Helm chart: the gateway no longer receives the top-level `extraEnv`, so the
+  database password and any other credential set there stay out of the public
+  entry point. If you set a gateway variable (`ACH_GATEWAY_*`) in the top-level
+  `extraEnv`, move it to `gateway.extraEnv`.
+
+### Added
+- Helm chart: `platformApi.extraEnv` sets environment variables for
+  platform-api only. The install guides put the Dex client there
+  (`ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET`), so no
+  other component holds its secret. An install that keeps them in the top-level
+  `extraEnv` still works; move them to tighten it.
+
+### Security
+- Helm chart: the operator's permissions are namespaced. It reads Secrets and
+  ACH resources in the release namespace only, through a Role in place of the
+  ClusterRole. It never read anything outside that namespace.
+
 ## [1.1.25] - 2026-11-20
 
 ### Changed

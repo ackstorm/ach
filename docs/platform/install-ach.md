@@ -55,6 +55,14 @@ platformApi:
     users: [you@example.com]
   userDefaults:
     maxKeys: 5
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 
 genai:
   providerName: my-org
@@ -79,13 +87,6 @@ extraEnv:
     value: postgresql://ach:$(DB_PASSWORD)@ach-postgresql:5432/ach?sslmode=disable
   - name: ACH_REDIS_ADDR
     value: ach-valkey-primary:6379
-  - name: ACH_DEX_ISSUER_URL
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 `providerName` is the name OpenCode users will sign in with. Choose it now:

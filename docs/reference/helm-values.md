@@ -60,6 +60,7 @@ The REST API, the OAuth server and the console.
 | Key | Default | Purpose |
 |---|---|---|
 | `platformApi.enabled` | `true` | Deploy platform-api. |
+| `platformApi.extraEnv` | `[]` | Environment variables for platform-api only. The Dex client goes here. |
 | `platformApi.admins.users` | `[]` | Emails of the platform admins. Read at start, matched case-sensitively. |
 | `platformApi.admins.sso` | `[]` | Identity-provider groups whose members are admins. Re-read at login and at every token refresh. With both lists empty, every admin call answers 403. |
 | `platformApi.headers` | `x-ach-key`, `x-api-key`, both `resolve` | Request headers read for a credential, in order. Only `mode: resolve` is accepted. |
@@ -233,7 +234,7 @@ How the gateway, the forwarder and platform-api stop on a rollout.
 
 | Key | Default | Purpose |
 |---|---|---|
-| `extraEnv` | `[]` | Environment variables added to the operator, platform-api, the forwarder, the gateway, content-service and the migration Job. The classifier gets none. |
+| `extraEnv` | `[]` | Environment variables added to the operator, platform-api, the forwarder, content-service and the migration Job. The gateway and the classifier get none. |
 
 Settings with no value of their own are set here:
 
@@ -243,7 +244,7 @@ Settings with no value of their own are set here:
 | `ACH_DB_URL` | yes | operator, platform-api, forwarder, content-service, migration Job | Postgres connection URL. |
 | `ACH_REDIS_ADDR` | yes | platform-api, forwarder, content-service | `host:port` of Redis or Valkey. |
 | `ACH_REDIS_PASSWORD`, `ACH_REDIS_TLS`, `ACH_REDIS_DB` | no | same | Redis password, TLS switch and database. |
-| `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | yes | platform-api | The Dex client ACH signs users in with. |
+| `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | yes | platform-api | The Dex client ACH signs users in with. Set them in `platformApi.extraEnv`, so no other component holds the secret. |
 | `ACH_OAUTH_ACCESS_TTL` | no | platform-api | Access token lifetime; default `1h`, minimum `1m`. |
 | `ACH_OAUTH_REFRESH_TTL` | no | platform-api | Refresh token lifetime; default `720h`, minimum `1h`. |
 | `ACH_DISABLE_UI_WRITES` | no | platform-api | `true` refuses Environments created from the console. |

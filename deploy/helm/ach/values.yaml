@@ -112,6 +112,10 @@ platformApi:
   replicas: 1
   resources: {}
   args: ["platform-api"]
+  # extraEnv: env vars for platform-api only. The Dex client goes here
+  # (ACH_DEX_ISSUER_URL, ACH_DEX_CLIENT_ID, ACH_DEX_CLIENT_SECRET via
+  # valueFrom), so no other component holds its secret.
+  extraEnv: []
   # admins: who may use the admin endpoints (ach-cli admin …, the console's
   # admin views). Someone in either list is an admin; both empty = no admins
   # (every admin call is 403 not_admin).
@@ -628,8 +632,10 @@ shutdown:
   drainSeconds: 10
   timeoutSeconds: 120
 
-# extraEnv: list of additional env vars to inject into every component's
-# main container. Each item is {name, value}.
+# extraEnv: list of additional env vars to inject into the main container of
+# the operator, platform-api, forwarder and content-service, and into the
+# migrate Job. The gateway and the classifier get none. Each item is
+# {name, value}.
 extraEnv: []
 
 # initContainers: init containers injected into EVERY ach Deployment

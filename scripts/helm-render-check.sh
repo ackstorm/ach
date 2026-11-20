@@ -128,4 +128,17 @@ for c in platform-api forwarder gateway content-service; do
 done
 grep -A3 "kind: PodDisruptionBudget" <<<"$out" | grep -q "name: ach-operator$" && fail "operator must never get a PDB"
 
-echo "helm-render-check OK (9 topologies)"
+# 10. Least privilege: the operator's grants are namespaced; the top-level
+# extraEnv never reaches the gateway; platformApi.extraEnv reaches platform-api only.
+grep -q "kind: ClusterRole" <<<"$(render --show-only templates/operator-rbac.yaml)" \
+  && fail "operator RBAC must be namespaced (no ClusterRole or ClusterRoleBinding)"
+probe=(--set 'extraEnv[0].name=GLOBAL_PROBE' --set 'extraEnv[0].value=x'
+       --set 'platformApi.extraEnv[0].name=PAPI_PROBE' --set 'platformApi.extraEnv[0].value=x')
+grep -q "GLOBAL_PROBE" <<<"$(render "${probe[@]}" --show-only templates/gateway-deployment.yaml)" \
+  && fail "top-level extraEnv reached the gateway"
+grep -q "PAPI_PROBE" <<<"$(render "${probe[@]}" --show-only templates/platform-api-deployment.yaml)" \
+  || fail "platformApi.extraEnv not rendered into platform-api"
+[ "$(render "${probe[@]}" | grep -c "PAPI_PROBE")" -eq 1 ] \
+  || fail "platformApi.extraEnv reached a component other than platform-api"
+
+echo "helm-render-check OK (10 topologies)"

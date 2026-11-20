@@ -117,7 +117,7 @@ chart defaults; any name works if the values point at it.
 | `ach-key-encryption-key` | `dek` | base64 of exactly 32 random bytes | platform-api, forwarder |
 | `ach-credential-hash-pepper` | `pepper` | random, at least 32 bytes | operator, platform-api, forwarder, content-service |
 | `litellm-master-key` | `master_key` | LiteLLM master key | all services (via `litellmConnection`) |
-| your choice, e.g. `ach-dex-client-secret` | your choice | the Dex client secret for ACH | platform-api (via `extraEnv`) |
+| your choice, e.g. `ach-dex-client-secret` | your choice | the Dex client secret for ACH | platform-api (via `platformApi.extraEnv`) |
 | your choice, e.g. `ach-postgresql` | `password` | the ACH DB password | everything that builds `ACH_DB_URL` |
 | your choice, e.g. `ach-valkey` | `password` | Valkey password, if auth is on | platform-api, forwarder, content-service |
 
@@ -144,7 +144,9 @@ seed (recipe in `references/auth.md`).
 ## A worked `extraEnv` block
 
 The infrastructure settings have no dedicated chart values; they go in the
-top-level `extraEnv`, which every component and the migrate Job receive.
+top-level `extraEnv`, which the migrate Job and every component except the
+gateway and the classifier receive. The Dex client goes in
+`platformApi.extraEnv`, so only platform-api holds its secret.
 Kubernetes expands `$(VAR)` from variables defined earlier in the same list,
 which keeps the password out of the DSN literal:
 
@@ -162,13 +164,16 @@ extraEnv:
   - name: ACH_REDIS_PASSWORD
     valueFrom:
       secretKeyRef: {name: ach-valkey, key: password}
-  - name: ACH_DEX_ISSUER_URL
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
+
+platformApi:
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 Use `sslmode=require` (or stricter) when Postgres is outside the cluster
