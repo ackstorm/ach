@@ -90,6 +90,8 @@ spec:
               value: {{ required "classifier.modelUrl is required with classifier.enabled" .modelUrl | quote }}
             - name: ACH_CLASSIFIER_MODEL
               value: {{ .model | quote }}
+            - name: ACH_CLASSIFIER_MODEL_API
+              value: {{ .modelApi | quote }}
             {{- with .langfuseUrl }}
             - name: ACH_CLASSIFIER_LANGFUSE_URL
               value: {{ . | quote }}
