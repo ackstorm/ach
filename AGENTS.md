@@ -242,9 +242,9 @@ independent collections.)
 
 ## CI gating
 
-| Event | lint | unit | envtest | security |
-|-------|------|------|---------|----------|
-| pull_request → main | ✓ | ✓ | ✓ | ✓ |
+| Event | lint | unit | envtest | integration | security |
+|-------|------|------|---------|-------------|----------|
+| pull_request → main | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 `ci.yml` is **PR-only** — `pull_request → main` is the single trigger, no
 `push:` trigger. Release commits (`chore(release): v*`) → `release.yml`.
@@ -329,6 +329,7 @@ umbrella and deliberately avoids `docker system prune` / `image prune -a`.
 | `make qa-lint`          | golangci-lint full sweep | before commit; also runs in CI |
 | `make test-envtest`     | controller-runtime envtest (race), ~7m | before commit on controller changes |
 | `make test-envtest-fast`| envtest without -race, ~3m | dev inner loop |
+| `make test-integration` | `integration`-tagged tests against a real Postgres in containers (testcontainers), ~8m (`internal/db` is most of it) | before commit on `internal/db` or anything with a `*_integration_test.go`; `make test-integration-pkg PKG=…` for one package |
 | `make e2e-full`         | kind + Helm + e2e binary build + stdlib testing, ~6m | final gate before commit |
 | `make e2e-focus`        | `RUN='TestPhase4Promotion/SC11a'` (stdlib) | dev loop on one sub-test |
 | `make qa-security`      | govulncheck + fuzz-short, ≤6m (gosec via qa-lint) | in-container; **rarely — CI owns it, see below** |
@@ -374,7 +375,7 @@ Remote: `git@github.com:ackstorm/ach.git`. `ci-ok` on the PR is the only gate:
 lint (`make qa-lint`, which also covers the nested `test/e2e/mcp-echo` module),
 `make qa-edition`, chart, generated-code and `go mod tidy` drift, SPDX headers
 (`gen-code` runs `scripts/fix-spdx.sh`), Helm render, dashboards, unit, console,
-envtest and security. There is no local git hook. **CI does not scan for
+envtest, integration and security. There is no local git hook. **CI does not scan for
 secrets**: run `gitleaks git --log-opts="HEAD --not --remotes" --redact
 --no-banner` before pushing (allowlist `.gitleaks.toml`). A secret pushed to a
 branch is already public.
