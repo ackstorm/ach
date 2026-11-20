@@ -645,6 +645,31 @@ func TestToken_ConcurrentRefreshOnlyOneWins(t *testing.T) {
 	}
 }
 
+// fakeSerialDex mimics Dex on Postgres: a replay that overlaps another fails
+// with a 500 (Dex's serialization failure), and only the current token
+// rotates.
+type fakeSerialDex struct {
+	mu                    sync.Mutex
+	current               string
+	inFlight, maxInFlight int
+}
+
+func (x *fakeSerialDex) refresh(_ context.Context, rt string) (string, []string, error) {
+	x.mu.Lock()
+	x.inFlight++
+	x.maxInFlight = max(x.maxInFlight, x.inFlight)
+	x.mu.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	x.inFlight--
+	if rt != x.current {
+		return "", nil, &oauth2.RetrieveError{Response: &http.Response{StatusCode: 500}, ErrorCode: "invalid_request"}
+	}
+	x.current = rt + "+"
+	return x.current, nil, nil
+}
+
 // Refreshes of DIFFERENT tokens of one user (Claude Code reconnecting every
 // MCP server at once) share the user's single Dex token: they must replay it
 // one at a time. Dex (Postgres storage) answers overlapping replays of one
@@ -662,23 +687,8 @@ func TestToken_ConcurrentRefreshesOfOneUserReplayDexOneAtATime(t *testing.T) {
 		refreshes[i] = url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tb.RefreshToken}, "client_id": {cid}}.Encode()
 	}
 
-	var mu sync.Mutex
-	current, inFlight, maxInFlight := "dex-rt-0", 0, 0
-	f.deps.DexRefresh = func(_ context.Context, rt string) (string, []string, error) {
-		mu.Lock()
-		inFlight++
-		maxInFlight = max(maxInFlight, inFlight)
-		mu.Unlock()
-		time.Sleep(20 * time.Millisecond)
-		mu.Lock()
-		defer mu.Unlock()
-		inFlight--
-		if rt != current {
-			return "", nil, &oauth2.RetrieveError{Response: &http.Response{StatusCode: 500}, ErrorCode: "invalid_request"}
-		}
-		current = rt + "+"
-		return current, nil, nil
-	}
+	dex := &fakeSerialDex{current: "dex-rt-0"}
+	f.deps.DexRefresh = dex.refresh
 	f.mount()
 
 	codes := make([]int, n)
@@ -696,8 +706,52 @@ func TestToken_ConcurrentRefreshesOfOneUserReplayDexOneAtATime(t *testing.T) {
 			t.Errorf("refresh %d: %d", i, c)
 		}
 	}
-	if maxInFlight != 1 {
-		t.Fatalf("Dex replays overlapped: %d at once", maxInFlight)
+	if dex.maxInFlight != 1 {
+		t.Fatalf("Dex replays overlapped: %d at once", dex.maxInFlight)
+	}
+}
+
+// Two platform-api replicas (two OAuthDeps sharing one Valkey) revalidating
+// the same user at once replay the user's Dex token one at a time. It calls
+// replayDexTokenLocked directly: the in-process singleflight is one package
+// variable shared by both "replicas" here and would hide the race.
+func TestReplayDexTokenLocked_ReplicasReplayOneAtATime(t *testing.T) {
+	store := newOAuthStore(t)
+	ctx := context.Background()
+	if err := store.Put(ctx, dexRefreshKind, "u@x.com", "dex-rt-0", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	dex := &fakeSerialDex{current: "dex-rt-0"}
+	replica := func() OAuthDeps {
+		return OAuthDeps{
+			Auth:  Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+			Store: store, RefreshTTL: time.Hour, DexRefresh: dex.refresh,
+		}
+	}
+	replicas := []OAuthDeps{replica(), replica()}
+
+	const n = 6
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = replicas[i%2].replayDexTokenLocked(ctx, "u@x.com")
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("replay %d: %v", i, err)
+		}
+	}
+	if dex.maxInFlight != 1 {
+		t.Fatalf("Dex replays overlapped across replicas: %d at once", dex.maxInFlight)
+	}
+	var stored string
+	if _, err := store.Get(ctx, dexRefreshKind, "u@x.com", &stored); err != nil || stored != dex.current {
+		t.Fatalf("stored Dex token %q, Dex holds %q (err %v)", stored, dex.current, err)
 	}
 }
 

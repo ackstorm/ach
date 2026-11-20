@@ -174,18 +174,55 @@ const dexRefreshTimeout = 30 * time.Second
 // ErrIdPUnreachable: Dex did not answer; the presented credential stays valid.
 var ErrIdPUnreachable = errors.New("identity provider unreachable")
 
-// dexReplays makes the concurrent revalidations of one user share a single
-// Dex call. Each of the user's tools holds its own ACH refresh token but all
-// of them replay the same Dex token, and Dex answers overlapping replays of
-// one token with a 500 serialization failure (a 503 here), so a client that
+// dexReplays makes the concurrent revalidations of one user on this replica
+// share a single Dex call; replayDexTokenLocked makes replicas take turns.
+// Each of the user's tools holds its own ACH refresh token but all of them
+// replay the same Dex token, and Dex answers overlapping replays of one
+// token with a 500 serialization failure (a 503 here), so a client that
 // refreshes every MCP server at once was sent back to login.
-// ponytail: per replica; a second platform-api replica needs a Valkey lock.
 var dexReplays singleflight.Group
 
 func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) ([]string, error) {
-	v, err, _ := dexReplays.Do(sub, func() (any, error) { return d.replayDexToken(ctx, sub) })
+	v, err, _ := dexReplays.Do(sub, func() (any, error) { return d.replayDexTokenLocked(ctx, sub) })
 	groups, _ := v.([]string)
 	return groups, err
+}
+
+// dexReplayKind is the per-user lock replicas hold around a Dex replay. Its
+// TTL outlives the replay, which dexRefreshTimeout bounds, so the holder
+// always deletes its own lock and a plain DEL is safe.
+const (
+	dexReplayKind    = "dex_replay"
+	dexReplayLockTTL = 2 * dexRefreshTimeout
+	dexReplayPoll    = 100 * time.Millisecond
+)
+
+// replayDexTokenLocked runs replayDexToken under the user's dex_replay lock.
+// A replica that finds the lock taken waits up to dexRefreshTimeout, then
+// replays the token the holder rotated; past that it answers
+// ErrIdPUnreachable and the presented refresh token stays valid.
+func (d OAuthDeps) replayDexTokenLocked(ctx context.Context, sub string) ([]string, error) {
+	ctx = context.WithoutCancel(ctx)
+	deadline := time.Now().Add(dexRefreshTimeout)
+	for {
+		took, err := d.Store.Claim(ctx, dexReplayKind, sub, dexReplayLockTTL)
+		if err != nil {
+			return nil, err
+		}
+		if took {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("%w: another replica holds the Dex replay of %s", ErrIdPUnreachable, sub)
+		}
+		time.Sleep(dexReplayPoll)
+	}
+	defer func() {
+		if err := d.Store.Del(ctx, dexReplayKind, sub); err != nil {
+			d.Auth.Logger.Warn("oauth: releasing the Dex replay lock failed; it expires on its own", "sub", sub, "err", err)
+		}
+	}()
+	return d.replayDexToken(ctx, sub)
 }
 
 // replayDexToken replays the user's shared Dex refresh token (D-22) — the

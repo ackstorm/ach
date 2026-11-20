@@ -15,7 +15,8 @@ import (
 // namespaced "ach:oauth:<kind>:<id>". Kinds: client (DCR registration),
 // pending (an /authorize or device confirmation waiting on Dex), code
 // (single use), refresh (rotated on use), rotating (a refresh a grant holds),
-// device + device_user (RFC 8628), session_gen (see SessionGen), idp_check (see Claim). A Redis flush
+// device + device_user (RFC 8628), session_gen (see SessionGen), idp_check (see Claim),
+// dex_replay (the Dex replay lock, see replayDexTokenLocked). A Redis flush
 // logs every OAuth client out — they re-run the browser flow. Accepted for v1.
 type OAuthStore struct {
 	RDB *redis.Client

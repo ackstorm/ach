@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- With `platformApi.replicas` above 1, replicas no longer refresh the same
+  user's sign-in at the identity provider at the same moment, which answered
+  503 and asked MCP clients to re-authenticate.
+
 ## [1.1.24] - 2026-11-19
 
 ### Fixed
