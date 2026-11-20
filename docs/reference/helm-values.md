@@ -170,6 +170,7 @@ Enterprise. A job that labels idle sessions with one category.
 | `classifier.projectId` | `default` | Langfuse project to classify. |
 | `classifier.modelUrl` | `""` | OpenAI-compatible base URL of the model. Required when enabled. |
 | `classifier.model` | `ackstorm.smart` | Model that classifies. |
+| `classifier.modelApi` | `chat` | How the model is called: `chat` (`/chat/completions`) or `decisions` (LiteLLM's `/decisions`, for a decision model). |
 | `classifier.langfuseUrl` | `""` | Langfuse the labels are written to; empty classifies and logs without writing. |
 | `classifier.onlyUser` | `""` | Classify only this user's sessions. |
 | `classifier.interval` | `10m` | Time between runs. |

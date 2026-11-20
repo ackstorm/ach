@@ -39,6 +39,8 @@ Environment:
   ACH_CLASSIFIER_MODEL_URL             OpenAI-compatible base, e.g. https://api.example.com/v1 (required)
   ACH_CLASSIFIER_MODEL_KEY             gateway key (required)
   ACH_CLASSIFIER_MODEL                 default: ackstorm.smart
+  ACH_CLASSIFIER_MODEL_API             chat = POST <model url>/chat/completions (default);
+                                       decisions = POST <model url>/decisions, for a decision model
   ACH_CLASSIFIER_LANGFUSE_URL          Langfuse host; set = scores are written (both keys required),
                                        empty = dry run
   ACH_CLASSIFIER_LANGFUSE_PUBLIC_KEY
@@ -62,7 +64,7 @@ Environment:
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
-		logger.Info("classifier starting", "model", job.Model.Name, "dry_run", job.Writer == nil,
+		logger.Info("classifier starting", "model", job.Model.Name, "model_api", job.Model.API, "dry_run", job.Writer == nil,
 			"only_user", job.OnlyUser != "", "taxonomy", job.Tax.Version, "categories", len(job.Tax.Categories))
 		if classifierOnce {
 			job.Pass(ctx)
@@ -122,6 +124,10 @@ func classifierFromEnv(logger *slog.Logger) (*classifier.Job, time.Duration, err
 	if err != nil {
 		return nil, 0, err
 	}
+	api := config.EnvOr("ACH_CLASSIFIER_MODEL_API", classifier.APIChat)
+	if api != classifier.APIChat && api != classifier.APIDecisions {
+		return nil, 0, fmt.Errorf("ACH_CLASSIFIER_MODEL_API: must be %s or %s", classifier.APIChat, classifier.APIDecisions)
+	}
 	job := &classifier.Job{
 		Tax:    tax,
 		Reader: classifier.Reader{CH: ch, Project: config.EnvOr("ACH_CLASSIFIER_LANGFUSE_PROJECT_ID", "default")},
@@ -129,6 +135,7 @@ func classifierFromEnv(logger *slog.Logger) (*classifier.Job, time.Duration, err
 			URL:  strings.TrimRight(req["ACH_CLASSIFIER_MODEL_URL"], "/"),
 			Key:  req["ACH_CLASSIFIER_MODEL_KEY"],
 			Name: config.EnvOr("ACH_CLASSIFIER_MODEL", "ackstorm.smart"),
+			API:  api,
 		},
 		Lookback: lookback, Idle: idle, Batch: batch,
 		OnlyUser: os.Getenv("ACH_CLASSIFIER_ONLY_USER"), Log: logger,

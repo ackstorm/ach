@@ -68,6 +68,7 @@ classifier:
   projectId: default
   modelUrl: https://ach.example.com/v1     # an OpenAI-compatible address
   model: <a model of the classifier's Environment>
+  modelApi: chat                           # decisions for a decision model
   langfuseUrl: ""                          # empty: label and log, write nothing
   onlyUser: ""                             # label only this user's sessions
 ```
@@ -83,6 +84,15 @@ The Secret named by `secretName` holds:
 Keep these in that Secret and never in `extraEnv`. `extraEnv` reaches the
 operator, the forwarder and content-service too, and this ClickHouse user can
 read conversations.
+
+`modelApi` says how `model` is called. `chat`, the default, is for a chat
+model: any OpenAI-compatible `/chat/completions`. `decisions` is for a decision
+model, which picks one category and gives a probability for each instead of
+writing text. It is called at `/decisions`, so `modelUrl` must be a LiteLLM
+that serves `/v1/decisions` for that model: the route exists from 1.104.2, and
+each provider needs the LiteLLM version that added it. A decision model costs less per session and its
+confidence is a measured probability. The model receives the text of every
+session it labels, so check where it is hosted before choosing one.
 
 Send the model calls through ACH: create an Environment for the classifier
 with one model and a budget, create an environment key for it, and use that

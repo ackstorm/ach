@@ -197,6 +197,57 @@ func TestClassifyRetriesOnceThenFails(t *testing.T) {
 	}
 }
 
+// A decision model gets the rules as instructions and the categories as
+// choices, never trivial; a refusal carries no choice and is an error.
+func TestClassifyAsksTheDecisionsAPIOneChoiceQuestion(t *testing.T) {
+	answer := `{"type":"choice","choice":"sales.proposals","confidence":0.93}`
+	var got struct {
+		Model, Input string
+		Questions    []struct {
+			Type, Name, Instructions string
+			Choices                  []struct{ Value, Description string }
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/decisions" || r.Header.Get("Authorization") != "Bearer k" {
+			w.WriteHeader(400)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("x-litellm-response-cost", "0.0001")
+		_, _ = io.WriteString(w, `{"answers":[`+answer+`]}`)
+	}))
+	t.Cleanup(srv.Close)
+	m := Model{URL: srv.URL + "/v1", Key: "k", Name: "m", API: APIDecisions, HC: srv.Client()}
+
+	lb, err := m.Classify(context.Background(), Builtin, "x")
+	if err != nil || lb != (Label{Category: "sales.proposals", Confidence: 0.93, Cost: 0.0001}) {
+		t.Fatalf("lb=%+v err=%v", lb, err)
+	}
+	if len(got.Questions) != 1 || got.Model != "m" || got.Input != "<pasted_message>\nx\n</pasted_message>" {
+		t.Fatalf("request = %+v", got)
+	}
+	q := got.Questions[0]
+	if q.Type != "choice" || q.Instructions != Builtin.Rules() || len(q.Choices) != len(Builtin.Categories)-1 {
+		t.Fatalf("question = %s, %d choices, instructions %q", q.Type, len(q.Choices), q.Instructions)
+	}
+	if !strings.HasPrefix(Builtin.Prompt(), q.Instructions) || strings.Contains(q.Instructions, "Categories") {
+		t.Error("the instructions are the prompt up to the category list")
+	}
+	for i, c := range q.Choices {
+		if want := Builtin.Categories[i]; c.Value != want.ID || c.Value == Trivial || !strings.HasPrefix(c.Description, want.Fits) {
+			t.Errorf("choice %d = %q", i, c.Value)
+		}
+	}
+
+	for _, bad := range []string{`{"type":"refusal","name":"category"}`, `{"type":"choice","choice":"made.up"}`} {
+		answer = bad
+		if _, err := m.Classify(context.Background(), Builtin, "x"); err == nil {
+			t.Errorf("%s is not a category", bad)
+		}
+	}
+}
+
 func TestScoreIsNumericWithMetadataAndDeterministicID(t *testing.T) {
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

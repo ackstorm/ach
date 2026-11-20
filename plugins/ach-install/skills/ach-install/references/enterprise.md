@@ -71,6 +71,7 @@ classifier:
   projectId: default
   modelUrl: http://litellm.litellm.svc:4000/v1   # OpenAI-compatible base URL
   model: <a model name in LiteLLM>
+  modelApi: chat             # chat | decisions
   langfuseUrl: ""            # empty = dry run (classify and log, write nothing)
   onlyUser: ""               # label only this user's sessions during rollout
   interval: 10m
@@ -89,6 +90,12 @@ classifier:
   `ACH_CLASSIFIER_LANGFUSE_SECRET_KEY`. `langfuseUrl` set without the key pair
   refuses to start. Never put these in `extraEnv`: that reaches every
   Deployment, and this user can read conversation content.
+- `modelApi: chat` posts to `<modelUrl>/chat/completions` (any
+  OpenAI-compatible chat model). `modelApi: decisions` posts one choice
+  question to `<modelUrl>/decisions` for a decision model; LiteLLM serves that
+  route from 1.104.2, and each provider from the version that added it. A chat model
+  on `decisions`, or the reverse, fails every session with `model status 4xx`
+  in the log. The model receives the session text: check where it is hosted.
 - Rollout: dry run (check the logs) → `langfuseUrl` + `onlyUser` → clear
   `onlyUser`.
 - `taxonomy` replaces the built-in categories. It is also mounted into
