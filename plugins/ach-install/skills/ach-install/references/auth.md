@@ -90,7 +90,8 @@ idle user stays signed in.
 ```yaml
 platformApi:
   oauth:
-    redirectHosts: []          # e.g. [claude.ai] for claude.ai's web MCP connector
+    redirectHosts: []          # e.g. [claude.ai] for claude.ai's web MCP connector;
+                               # "*.example.com" = every host under example.com
 ```
 
 Client registration is anonymous (RFC 7591). By default only loopback

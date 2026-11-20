@@ -175,6 +175,7 @@ platformApi:
     tokenTTL: 15m
   # oauth.redirectHosts: hosts an OAuth client registered at /platform/oauth/register
   # may redirect to over https (e.g. claude.ai for its web MCP connector).
+  # "*.example.com" allows every host under example.com, not example.com itself.
   # Loopback (http://127.0.0.1, localhost — ach-cli, OpenCode) is always allowed.
   # Empty = loopback only. Registration is anonymous: never list a host you
   # do not trust to receive your users' authorization codes.

@@ -32,7 +32,8 @@ type OAuthDeps struct {
 	RefreshTTL time.Duration
 
 	// RedirectHosts are the only hosts an https redirect_uri may name
-	// (platformApi.oauth.redirectHosts -> ACH_OAUTH_REDIRECT_HOSTS). Loopback
+	// (platformApi.oauth.redirectHosts -> ACH_OAUTH_REDIRECT_HOSTS): an exact
+	// host, or "*.example.com" for every host under example.com. Loopback
 	// http is always allowed. Registration is anonymous and Dex logs a
 	// signed-in user in silently, so any other https host could collect a
 	// victim's authorization code.
@@ -122,7 +123,17 @@ func (d OAuthDeps) redirectAllowed(raw string) bool {
 	if err != nil || u.Scheme != "https" {
 		return false
 	}
-	return slices.ContainsFunc(d.RedirectHosts, func(h string) bool { return strings.EqualFold(h, u.Hostname()) })
+	host := u.Hostname()
+	return slices.ContainsFunc(d.RedirectHosts, func(h string) bool {
+		domain, wildcard := strings.CutPrefix(h, "*.")
+		if !wildcard {
+			return strings.EqualFold(h, host)
+		}
+		// EqualFold, not ToLower: ToLower turns U+0130 into "i", and a browser
+		// resolves that host to another name.
+		dot := len(host) - len(domain) - 1
+		return domain != "" && dot > 0 && host[dot] == '.' && strings.EqualFold(host[dot+1:], domain)
+	})
 }
 
 // redirectMatches: exact, except a loopback redirect may change port

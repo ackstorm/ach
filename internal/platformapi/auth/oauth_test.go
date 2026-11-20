@@ -192,6 +192,28 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+func TestRedirectAllowed_WildcardDomain(t *testing.T) {
+	d := OAuthDeps{RedirectHosts: []string{"*.Example.com", "*.inside.test", "*.", "*"}}
+	for uri, want := range map[string]bool{
+		"https://app.example.com/cb":         true,
+		"https://a--b--c.Tools.example.com/": true,
+		"https://app.example.com:8443/cb":    true,
+		"https://example.com/cb":             false,
+		"https://.example.com/cb":            false,
+		"https://app.example.com@evil.test/": false,
+		// A browser resolves U+0130 to a name other than "inside.test".
+		"https://a.İnside.test/cb":         false,
+		"https://evilexample.com/cb":       false,
+		"https://example.com.evil.test/cb": false,
+		"https://evil.test./cb":            false,
+		"http://app.example.com/cb":        false,
+	} {
+		if got := d.redirectAllowed(uri); got != want {
+			t.Errorf("redirectAllowed(%q) = %v, want %v", uri, got, want)
+		}
+	}
+}
+
 func TestAuthorize_RejectsStoredClientWithDisallowedHost(t *testing.T) {
 	f := withFakeDex(newAS(t), "u@x.com")
 	c := oauthClient{ClientID: "legacy", RedirectURIs: []string{"https://evil.example/cb"}}

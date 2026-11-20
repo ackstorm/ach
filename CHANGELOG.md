@@ -4,6 +4,14 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- Helm chart: a `platformApi.oauth.redirectHosts` entry that starts with `*.`
+  allows every host under that domain (`*.example.com` covers
+  `app.example.com` and `a.b.example.com`, not `example.com`). Web tools that
+  run on one host per user, such as OpenChamber in a cloud workspace, can then
+  sign users in to MCP servers. A `*.` entry trusts everyone who can serve a
+  page under that domain.
+
 ## [1.1.26] - 2026-11-20
 
 ### Breaking

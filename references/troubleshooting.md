@@ -60,7 +60,11 @@ CSRF / code injection; v0.9.0 security review, fixed in v0.9.1).
 ```
 ✅ Only loopback `http` redirects (ach-cli, OpenCode) are accepted by default.
 An `https` redirect needs its host in `platformApi.oauth.redirectHosts`
-(chart value -> `ACH_OAUTH_REDIRECT_HOSTS`, JSON list), e.g. `[claude.ai]`.
+(chart value -> `ACH_OAUTH_REDIRECT_HOSTS`, JSON list), e.g. `[claude.ai]`;
+`*.example.com` allows every host under `example.com`. OpenChamber opened
+over https from another machine registers
+`https://<its own host>/api/mcp/oauth/<server>/callback`, so its host needs
+an entry.
 The allowlist is also checked at `/authorize`, so a client registered before
 a host was removed stops working at once.
 WHY: registration is anonymous and Dex signs a logged-in user in silently, so

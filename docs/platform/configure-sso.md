@@ -68,8 +68,19 @@ platformApi:
     redirectHosts: [claude.ai]
 ```
 
+An entry that starts with `*.` allows every host under that domain, at any
+depth, but not the domain itself. Use it for a web tool that runs on a
+different host for each user, such as OpenChamber in a cloud workspace:
+
+```yaml
+platformApi:
+  oauth:
+    redirectHosts: ["*.workspaces.example.com"]
+```
+
 Any application can register itself as a client, so list only hosts you trust
-to receive your users' sign-in. Removing a host cuts its clients off at once.
+to receive your users' sign-in. A `*.` entry trusts everyone who can serve a
+page under that domain. Removing a host cuts its clients off at once.
 
 ## Admins
 
