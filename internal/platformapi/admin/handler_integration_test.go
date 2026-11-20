@@ -685,11 +685,11 @@ func TestAdminListKeysHandler_AllOwnersWithOwnerFilter(t *testing.T) {
 	}
 
 	deps := Deps{
-		Pool:      pool,
-		LiteLLM:   &fakeLitellm{},
-		Redis:     &recordingRedis{},
-		Audit:     discardLogger(),
-		Logger:    discardLogger(),
+		Pool:    pool,
+		LiteLLM: &fakeLitellm{},
+		Redis:   &recordingRedis{},
+		Audit:   discardLogger(),
+		Logger:  discardLogger(),
 	}
 	router := newAdminRouter(t, deps)
 
