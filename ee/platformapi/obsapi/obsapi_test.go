@@ -132,7 +132,7 @@ const (
 func TestRejectedCallersMakeZeroEvidenceCalls(t *testing.T) {
 	for name, ctx := range map[string]context.Context{
 		"no key context": context.Background(),
-		"ek credential": ctxFor(keys.PrefixEk, "a@x"),
+		"ek credential":  ctxFor(keys.PrefixEk, "a@x"),
 	} {
 		for _, path := range []string{listPath, listPath + "/t1", sessionsPath, contextPath, workPath, costPath, latencyPath, perfPath, classPath} {
 			t.Run(name+path, func(t *testing.T) {
