@@ -90,7 +90,7 @@ const (
 
 func TestRejectedCallersMakeZeroEvidenceCalls(t *testing.T) {
 	for name, ctx := range map[string]context.Context{
-		"no key context (foreign credential passed through)": context.Background(),
+		"no key context": context.Background(),
 		"ek credential": ctxFor(keys.PrefixEk, "a@x"),
 	} {
 		for _, path := range []string{contextPath, workloadsPath} {

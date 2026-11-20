@@ -622,21 +622,6 @@ func TestAuthn_ForeignAuthorizationIs401WithoutAllowForeign(t *testing.T) {
 	}
 }
 
-func TestSecurityHeaders(t *testing.T) {
-	rec := httptest.NewRecorder()
-	SecurityHeaders(helloHandler(t)).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	for name, want := range map[string]string{
-		"X-Content-Type-Options":  "nosniff",
-		"X-Frame-Options":         "DENY",
-		"Content-Security-Policy": "frame-ancestors 'none'",
-		"Referrer-Policy":         "same-origin",
-	} {
-		if got := rec.Header().Get(name); got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
-		}
-	}
-}
-
 var (
 	achKey   = CredentialHeader{Name: "x-ach-key", Mode: ModeResolve}
 	apiKey   = CredentialHeader{Name: "x-api-key", Mode: ModeResolve}

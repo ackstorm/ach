@@ -158,8 +158,15 @@ func TestServer_SecurityHeaders(t *testing.T) {
 	for _, path := range []string{"/healthz", "/", "/platform/keys"} {
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
-		if rr.Header().Get("X-Frame-Options") != "DENY" || rr.Header().Get("X-Content-Type-Options") != "nosniff" {
-			t.Errorf("%s: security headers missing: %v", path, rr.Header())
+		for name, want := range map[string]string{
+			"X-Content-Type-Options":  "nosniff",
+			"X-Frame-Options":         "DENY",
+			"Content-Security-Policy": "frame-ancestors 'none'",
+			"Referrer-Policy":         "same-origin",
+		} {
+			if got := rr.Header().Get(name); got != want {
+				t.Errorf("%s: %s = %q, want %q", path, name, got, want)
+			}
 		}
 	}
 }
