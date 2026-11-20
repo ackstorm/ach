@@ -18,6 +18,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `extraEnv` still works; move them to tighten it.
 - Releases publish `checksums.txt.pem`, the certificate `cosign verify-blob`
   needs to check the signature of `checksums.txt`.
+- Conversation classifier (Enterprise): `classifier.modelApi: decisions` labels
+  sessions with a decision model through LiteLLM's `/v1/decisions`. The label's
+  confidence is then the model's probability for the category. The default,
+  `chat`, calls `/chat/completions` as before.
 
 ### Security
 - Helm chart: the operator's permissions are namespaced. It reads Secrets and

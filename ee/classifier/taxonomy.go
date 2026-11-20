@@ -30,6 +30,7 @@ type Taxonomy struct {
 	Version    string
 	Categories []Category // the deployment's, then other, then trivial
 	prompt     string
+	rules      string // the prompt up to the category list
 }
 
 // Other and Trivial belong to the classifier: every taxonomy ends with them.
@@ -68,23 +69,32 @@ func build(rules []string, cats []Category) Taxonomy {
 	for i, r := range rules {
 		fmt.Fprintf(&b, "%d. %s\n", fixedRules+1+i, r)
 	}
+	intro := b.String()
 	b.WriteString(promptCategories)
 	for _, c := range all {
 		if c.ID == Trivial {
 			continue
 		}
-		fmt.Fprintf(&b, "- %s: %s", c.ID, c.Fits)
-		if c.NotFits != "" {
-			fmt.Fprintf(&b, " Does not fit: %s", c.NotFits)
-		}
-		b.WriteString("\n")
+		fmt.Fprintf(&b, "- %s: %s\n", c.ID, c.describe())
 	}
 	b.WriteString(promptOutput)
-	return Taxonomy{Categories: all, prompt: b.String()}
+	return Taxonomy{Categories: all, prompt: b.String(), rules: intro}
+}
+
+// describe is what the model reads about a category.
+func (c Category) describe() string {
+	if c.NotFits == "" {
+		return c.Fits
+	}
+	return c.Fits + " Does not fit: " + c.NotFits
 }
 
 // Prompt is the system message.
 func (t Taxonomy) Prompt() string { return t.prompt }
+
+// Rules is the prompt without the category list and the output format: the
+// instructions of a decisions question, whose choices carry the categories.
+func (t Taxonomy) Rules() string { return t.rules }
 
 // Index returns the score value of a category id, or -1.
 func (t Taxonomy) Index(id string) int {

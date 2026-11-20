@@ -455,6 +455,9 @@ classifier:
   # OpenAI-compatible base, e.g. https://api.example.com/v1
   modelUrl: ""
   model: ackstorm.smart
+  # modelApi: chat = POST <modelUrl>/chat/completions; decisions = POST
+  # <modelUrl>/decisions (LiteLLM), for a decision model.
+  modelApi: chat
   langfuseUrl: ""
   # onlyUser: when set, label only this user's sessions (rollout).
   onlyUser: ""
