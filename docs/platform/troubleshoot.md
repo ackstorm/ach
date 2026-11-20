@@ -61,7 +61,7 @@ ach-cli admin list environments
 | `no refresh_token in the Dex response` | The Dex connector issues no refresh token | Use a connector that does |
 | `default team unreachable` on the first sign-in after an install | The operator has not created the team `default` yet, or a team in `platformApi.teams.default` does not exist in LiteLLM | Try again after a minute; create your own default teams in LiteLLM |
 | `this browser did not start the authorization request` | The sign-in link was opened in another browser, cookies are blocked, or a proxy removes `Cookie` or `Set-Cookie` on `/platform/oauth/` | Start again from the tool, in the same browser; correct the proxy |
-| `invalid_redirect_uri` when a web application registers | Its host is not allowed | Add it to [`platformApi.oauth.redirectHosts`](configure-sso.md#oauth-redirect-hosts) |
+| `invalid_redirect_uri` when a web application registers | Its host is not allowed | Add it, or `*.` and its domain, to [`platformApi.oauth.redirectHosts`](configure-sso.md#oauth-redirect-hosts) |
 | A user signs in and sees no Environment | See [Users without access](#users-without-access) | |
 | A group mapping never applies | The sign-in carries no `groups`, or the team does not exist in LiteLLM | Configure groups on the Dex connector; create the team |
 | Everyone is signed out after an upgrade | One of the [values that must not change](upgrade.md#values-that-must-not-change) changed | Restore the old value |

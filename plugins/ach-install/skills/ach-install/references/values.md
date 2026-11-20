@@ -126,7 +126,7 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.userDefaults.maxBudget` | `""` | Per-user spend ceiling seeded at login (`ACH_USER_MAX_BUDGET`). `""` = no cap, `0` = refuse everything. |
 | `platformApi.userDefaults.budgetDuration` | `"30d"` | Reset window (`ACH_USER_BUDGET_DURATION`), rendered only with a `maxBudget`. |
 | `platformApi.userDefaults.maxKeys` | `0` | `ek-` keys per user (`ACH_USER_MAX_KEYS`). |
-| `platformApi.oauth.redirectHosts` | `[]` | https redirect hosts allowed for OAuth clients (`ACH_OAUTH_REDIRECT_HOSTS`). Loopback always allowed. |
+| `platformApi.oauth.redirectHosts` | `[]` | https redirect hosts allowed for OAuth clients (`ACH_OAUTH_REDIRECT_HOSTS`): an exact host, or `*.example.com` for every host under `example.com`. Loopback always allowed. |
 | `platformApi.teams.default` | `[default]` | LiteLLM team aliases every user joins at login (`ACH_TEAMS_DEFAULT`). At least one. |
 | `platformApi.teams.users` | `{}` | email → team aliases (`ACH_TEAMS_USER`). |
 | `platformApi.teams.sso` | `{}` | Dex `groups` value → team aliases (`ACH_TEAMS_SSO`). |

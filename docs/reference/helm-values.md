@@ -68,7 +68,7 @@ The REST API, the OAuth server and the console.
 | `platformApi.userDefaults.budgetDuration` | `"30d"` | Window after which the spend resets; `""` never resets. |
 | `platformApi.userDefaults.maxKeys` | `0` | Environment keys one user may hold. `0` allows none until an admin grants an allowance. |
 | `platformApi.keyExchange.tokenTTL` | `15m` | Lifetime of the token a ServiceAccount exchange returns, from `1m` to `1h`. |
-| `platformApi.oauth.redirectHosts` | `[]` | Hosts an OAuth client may redirect to over HTTPS. Loopback is always allowed. |
+| `platformApi.oauth.redirectHosts` | `[]` | Hosts an OAuth client may redirect to over HTTPS: an exact host, or `*.example.com` for every host under `example.com`. Loopback is always allowed. |
 | `platformApi.teams.default` | `[default]` | LiteLLM team aliases every user joins at login. A missing team fails the login. |
 | `platformApi.teams.users` | `{}` | Email → team aliases joined at login. |
 | `platformApi.teams.sso` | `{}` | Identity-provider group → team aliases joined at login. |
