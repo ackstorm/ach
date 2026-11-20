@@ -142,9 +142,11 @@ the schema back. Full procedure: `references/upgrade.md`.
 
 - **`extraEnv` is where the infrastructure lives.** `ACH_BASE_URL`,
   `ACH_DB_URL`, `ACH_REDIS_ADDR`, the three `ACH_DEX_*` variables have no
-  dedicated chart value. Put them in the top-level `extraEnv` (every component
-  and the migrate Job read it), not `forwarder.extraEnv`: the migrate Job sees
-  only the top-level list.
+  dedicated chart value. Put the first three in the top-level `extraEnv` (the
+  migrate Job and every component except the gateway and the classifier read
+  it), not `forwarder.extraEnv`: the migrate Job sees only the top-level list.
+  Put the `ACH_DEX_*` variables in `platformApi.extraEnv`: only platform-api
+  reads them, and nothing else should hold the Dex client secret.
 - **Never duplicate what the chart already injects.** Do not set
   `ACH_KEY_ENCRYPTION_KEY`, `ACH_CREDENTIAL_HASH_PEPPER`, `ACH_LITELLM_BASE_URL`
   or `ACH_LITELLM_MASTER_KEY` in `extraEnv`; the `security` and

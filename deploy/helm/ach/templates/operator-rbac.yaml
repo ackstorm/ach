@@ -1,22 +1,17 @@
 {{- if .Values.operator.enabled }}
 ---
-# ClusterRole — operator informer cache watches CRD instances and Secrets
-# across the cluster (or watch-namespace subset). The Secrets rule is the
-# direct fix for the "cannot list resource secrets" error from
-# controller-runtime's reflector. Cluster-scope is the minimal grant
-# kubebuilder convention prescribes for multi-tenant CRD reconcilers;
-# tighten to a namespaced Role + RoleBinding only if the deployment
-# topology is single-namespace.
+# The operator reads and reconciles its own namespace only: its cache watches
+# ACH_NAMESPACE, which the Deployment sets to the release namespace.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: operator
 rules:
-# Secrets: read everywhere the informer cache watches. Creating the
-# ach-jwt-signing-keys Secret is the namespaced operator-jwt-signing Role below.
+# Creating the ach-jwt-signing-keys Secret is the operator-jwt-signing Role below.
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get", "list", "watch"]
@@ -68,15 +63,16 @@ rules:
   verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "ach.commonLabels" . | nindent 4 }}
     app.kubernetes.io/component: operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ .Release.Name }}-operator
 subjects:
 - kind: ServiceAccount
@@ -125,9 +121,8 @@ subjects:
 #
 # NOTE: Kubernetes RBAC cannot restrict `create` by resourceNames (the object
 # name is unknown at admission), so a namespaced Role is the tightest scope
-# achievable — not the cluster-wide operator ClusterRole. The existence check
-# (get, to no-op when present) is already covered by the operator ClusterRole's
-# secrets get;list;watch.
+# achievable. The existence check (get, to no-op when present) is covered by
+# the operator Role's secrets get;list;watch.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

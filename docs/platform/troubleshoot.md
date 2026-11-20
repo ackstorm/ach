@@ -38,7 +38,8 @@ ach-cli admin list environments
 | In the log or the Pod events | Cause | Do |
 |---|---|---|
 | `ACH_BASE_URL required`, `ACH_BASE_URL must be http(s)://` | Not set, set in one component's `extraEnv` only, or without a scheme | Set the full origin in the top-level `extraEnv` |
-| `config: ACH_DB_URL is empty or unset`, or the same for `ACH_REDIS_ADDR`, `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | The variable is missing | Add it to the top-level `extraEnv` |
+| `config: ACH_DB_URL is empty or unset`, or the same for `ACH_REDIS_ADDR` | The variable is missing | Add it to the top-level `extraEnv` |
+| `config: ACH_DEX_ISSUER_URL is empty or unset`, or the same for `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | The variable is missing | Add it to `platformApi.extraEnv` |
 | An error while parsing the database URL | A short URL | Use the full form: `postgres://user:password@host:5432/db?sslmode=…` |
 | `oidc.NewProvider: …` | platform-api cannot read Dex | The issuer must be reachable from the Pod and equal Dex's `issuer` exactly |
 | `ACH_KEY_ENCRYPTION_KEY decoded to N bytes: must be 32 bytes` | The key Secret has the wrong content | Store `openssl rand -base64 32` in it |

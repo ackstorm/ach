@@ -23,17 +23,20 @@ staticClients:
       - https://ach.example.com/platform/oauth/as-callback
 ```
 
-Give ACH the same client through [`extraEnv`](../reference/helm-values.md#extraenv):
+Give ACH the same client through
+[`platformApi.extraEnv`](../reference/helm-values.md#platformapi), which only
+platform-api receives:
 
 ```yaml
-extraEnv:
-  - name: ACH_DEX_ISSUER_URL
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
+platformApi:
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 `ACH_DEX_ISSUER_URL` must equal the `issuer` of the Dex configuration

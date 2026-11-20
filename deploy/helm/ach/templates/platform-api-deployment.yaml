@@ -110,6 +110,9 @@ spec:
               value: ":8080"
             - name: ACH_SHUTDOWN_TIMEOUT
               value: "{{ .Values.shutdown.timeoutSeconds }}s"
+            {{- with .Values.platformApi.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

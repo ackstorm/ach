@@ -43,6 +43,14 @@ platformApi:
     maxBudget: 100           # USD per user for each budgetDuration
     budgetDuration: "30d"
     maxKeys: 5               # environment keys one user may hold
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 
 genai:
   providerName: my-org       # the name OpenCode users sign in with
@@ -67,21 +75,16 @@ extraEnv:
     value: postgresql://ach:$(DB_PASSWORD)@ach-postgresql:5432/ach?sslmode=disable
   - name: ACH_REDIS_ADDR
     value: ach-valkey-primary:6379
-  - name: ACH_DEX_ISSUER_URL
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 What to know about these values:
 
-- **The database, Valkey and Dex settings have no value of their own.** They
-  go in the top-level [`extraEnv`](../reference/helm-values.md#extraenv), which
-  the migration Job and every component except the classifier receive. A component's own `extraEnv`
-  does not reach the migration Job.
+- **The database, Valkey and Dex settings have no value of their own.** The
+  database and Valkey go in the top-level
+  [`extraEnv`](../reference/helm-values.md#extraenv), which the migration Job
+  and every component except the gateway and the classifier receive. The Dex
+  client goes in `platformApi.extraEnv`, so only platform-api holds its
+  secret. A component's own `extraEnv` does not reach the migration Job.
 - **`$(DB_PASSWORD)`** is replaced by Kubernetes with the variable defined
   above it, so the password stays in its Secret.
 - **`ACH_BASE_URL`** is the public origin of this install, with `https://` and

@@ -40,6 +40,14 @@ platformApi:
     maxKeys: 5               # ek- keys per user; 0 = nobody until an admin grants
   teams:
     default: [default]
+  extraEnv:
+    - name: ACH_DEX_ISSUER_URL
+      value: https://auth.example.com
+    - name: ACH_DEX_CLIENT_ID
+      value: ach
+    - name: ACH_DEX_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 
 genai:
   providerName: my-org       # OpenCode provider id; choose once, never change
@@ -64,13 +72,6 @@ extraEnv:
     value: postgresql://ach:$(DB_PASSWORD)@ach-postgresql:5432/ach?sslmode=disable
   - name: ACH_REDIS_ADDR
     value: ach-valkey-primary:6379
-  - name: ACH_DEX_ISSUER_URL
-    value: https://auth.example.com
-  - name: ACH_DEX_CLIENT_ID
-    value: ach
-  - name: ACH_DEX_CLIENT_SECRET
-    valueFrom:
-      secretKeyRef: {name: ach-dex-client-secret, key: ACH_DEX_CLIENT_SECRET}
 ```
 
 ## Global
@@ -83,7 +84,7 @@ extraEnv:
 | `image.tag` | the chart's version | Pin it. |
 | `image.pullPolicy` | `IfNotPresent` | `Always` is fine in production. |
 | `image.rebuildId` | `""` | Dev only: a changing value forces a roll when the same tag is rebuilt. Leave empty. |
-| `extraEnv` | `[]` | `{name, value|valueFrom}` items added to every component except the classifier, and to the migrate Job. Where `ACH_BASE_URL`, `ACH_DB_URL`, Redis and Dex settings live. |
+| `extraEnv` | `[]` | `{name, value|valueFrom}` items added to the migrate Job and every component except the gateway and the classifier. Where `ACH_BASE_URL`, `ACH_DB_URL` and Redis settings live. |
 | `shutdown.drainSeconds` | `10` | gateway, forwarder and platform-api wait this long (preStop) before stopping, so they leave their Service first. |
 | `shutdown.timeoutSeconds` | `120` | How long open requests (model streams, MCP sessions) may finish after a stop; longer ones are cut. Pod grace period = drain + timeout + 5. |
 | `initContainers` | `[]` | Raw init containers added to every ACH Deployment (not the migrate Job). Use a bounded wait, never an endless loop. |
@@ -118,6 +119,7 @@ release's `ACH_BASE_URL`, never foreign keys.
 | `platformApi.enabled` | `true` | REST API, OAuth server, console. |
 | `platformApi.replicas` | `1` | |
 | `platformApi.resources` | `{}` | |
+| `platformApi.extraEnv` | `[]` | platform-api-only env. Where the three `ACH_DEX_*` variables live, so no other component holds the Dex client secret. |
 | `platformApi.admins.users` | `[]` | Admin emails, rendered into the `ach-platform-api-admins` ConfigMap. |
 | `platformApi.admins.sso` | `[]` | Dex groups whose members are admins (`ACH_ADMINS_SSO`), re-read at every token refresh. Both lists empty = every admin route 403. |
 | `platformApi.headers` | `x-ach-key`, `x-api-key` (both `resolve`) | `ACH_CREDENTIAL_HEADERS`. `resolve` only; `passthrough` or `authorization` refuse to start. |
@@ -244,7 +246,7 @@ Set through `extraEnv` (or the component's own `extraEnv`).
 | `ACH_DB_URL` | yes | all + migrate Job | Full Postgres DSN. |
 | `ACH_REDIS_ADDR` | yes | platform-api, forwarder, content-service | `host:port`. |
 | `ACH_REDIS_PASSWORD`, `ACH_REDIS_TLS`, `ACH_REDIS_DB` | no | same | |
-| `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | yes | platform-api | |
+| `ACH_DEX_ISSUER_URL`, `ACH_DEX_CLIENT_ID`, `ACH_DEX_CLIENT_SECRET` | yes | platform-api | Set in `platformApi.extraEnv`. |
 | `ACH_OAUTH_ACCESS_TTL` | no | platform-api | Default `1h`, minimum `1m`. |
 | `ACH_OAUTH_REFRESH_TTL` | no | platform-api | Default `720h`, minimum `1h`. |
 | `ACH_DISABLE_UI_WRITES` | no | platform-api | `true` makes every UI Objects API write (`/platform/objects`) answer 403 `ui_writes_disabled`: Environments come only from GitOps. |
