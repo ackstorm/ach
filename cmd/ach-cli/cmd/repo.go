@@ -385,7 +385,7 @@ func resolveAndDetect(
 // sentinels directly via errors.Is, defaulting to exit.General.
 //
 // This wrapper is used both for genuine source-fetch failures (gitfetch wraps
-// the sourceserr sentinels) AND to wrap broad manager.Resolve errors from the
+// the sourceserr sentinels) AND to wrap broad manager.ResolveWithCache errors from the
 // install/update paths. Those Resolve errors include pure LOGIC failures
 // (name mismatch, "plugin/skill not found", verify-fail, "no SKILL.md") that
 // carry no sentinel. We must NOT lean on sourceserr.ReasonOf here: its default

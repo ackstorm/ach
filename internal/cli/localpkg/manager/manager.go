@@ -229,7 +229,7 @@ func normSubPath(p string) string {
 	return p
 }
 
-// Resolve clones the repo, locates the named resource via the lens,
+// ResolveWithCache clones the repo, locates the named resource via the lens,
 // verifies its contents, and extracts it to a fresh temp stage dir.
 //
 // lens ∈ "plugin-marketplace" | "plugin" | "skill-marketplace" | "skill".
@@ -237,13 +237,10 @@ func normSubPath(p string) string {
 //
 // The returned ResolveResult.StageDir is owned by the CALLER; call
 // os.RemoveAll(result.StageDir) when done.
-func Resolve(ctx context.Context, repo store.RepoEntry, token, name, lens string) (ResolveResult, error) {
-	return ResolveWithCache(ctx, repo, token, name, lens, nil)
-}
-
-// ResolveWithCache is Resolve with a per-invocation FetchCache so a batch
-// install/update fetches each repo at most once (shared across all plugins or
-// skills sourced from it). A nil cache disables caching (identical to Resolve).
+//
+// A per-invocation FetchCache lets a batch install/update fetch each repo at
+// most once (shared across all plugins or skills sourced from it). A nil cache
+// disables caching.
 func ResolveWithCache(ctx context.Context, repo store.RepoEntry, token, name, lens string, cache *FetchCache) (ResolveResult, error) {
 	scheme := schemeFor(repo.AuthScheme)
 	ref := defaultRef(repo.GitRef)

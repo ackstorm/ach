@@ -230,7 +230,7 @@ func TestResolve_DirectPlugin(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "my-plugin", "plugin")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin", nil)
 	if err != nil {
 		t.Fatalf("Resolve(plugin): %v", err)
 	}
@@ -272,7 +272,7 @@ func TestResolve_DirectPlugin_NameMismatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	_, err := manager.Resolve(ctx, repo, "", "other-plugin", "plugin")
+	_, err := manager.ResolveWithCache(ctx, repo, "", "other-plugin", "plugin", nil)
 	if err == nil {
 		t.Fatal("expected error for name mismatch, got nil")
 	}
@@ -296,7 +296,7 @@ func TestResolve_DirectSkill(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "my-skill", "skill")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "my-skill", "skill", nil)
 	if err != nil {
 		t.Fatalf("Resolve(skill): %v", err)
 	}
@@ -341,7 +341,7 @@ func TestResolve_DirectSkill_ThenProject(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "hello-skill", "skill")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "hello-skill", "skill", nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestResolve_DirectPlugin_ThenProject(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "my-plugin", "plugin")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin", nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestResolve_MarketplacePlugin(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "my-plugin", "plugin-marketplace")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "my-plugin", "plugin-marketplace", nil)
 	if err != nil {
 		t.Fatalf("Resolve(plugin-marketplace): %v", err)
 	}
@@ -481,7 +481,7 @@ func TestResolve_MarketplacePlugin(t *testing.T) {
 func TestResolve_UnknownLens(t *testing.T) {
 	ctx := context.Background()
 	repo := store.RepoEntry{Name: "x", Kind: "git", CloneURL: "file:///tmp/nonexistent"}
-	_, err := manager.Resolve(ctx, repo, "", "x", "unknown-lens")
+	_, err := manager.ResolveWithCache(ctx, repo, "", "x", "unknown-lens", nil)
 	if err == nil {
 		t.Fatal("expected error for unknown lens")
 	}

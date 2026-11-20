@@ -133,7 +133,7 @@ func resolveRichPlugin(t *testing.T, url string) manager.ResolveResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	res, err := manager.Resolve(ctx, repo, "", "rich-plugin", "plugin")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "rich-plugin", "plugin", nil)
 	if err != nil {
 		t.Fatalf("Resolve(plugin): %v", err)
 	}
@@ -366,7 +366,7 @@ func TestResolve_SkillMarketplace_ThenProject(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	res, err := manager.Resolve(ctx, repo, "", "alpha", "skill-marketplace")
+	res, err := manager.ResolveWithCache(ctx, repo, "", "alpha", "skill-marketplace", nil)
 	if err != nil {
 		t.Fatalf("Resolve(skill-marketplace, alpha): %v", err)
 	}
@@ -433,7 +433,7 @@ func TestResolve_SkillMarketplace_NotFound(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	_, err := manager.Resolve(ctx, repo, "", "missing", "skill-marketplace")
+	_, err := manager.ResolveWithCache(ctx, repo, "", "missing", "skill-marketplace", nil)
 	if err == nil {
 		t.Fatal("expected error for missing skill, got nil")
 	}
