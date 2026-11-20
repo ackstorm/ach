@@ -25,7 +25,8 @@ import (
 // where the Anthropic SDK puts a key (Claude Code with ANTHROPIC_API_KEY or
 // an apiKeyHelper); Authorization is consulted LAST and only consumed when
 // it carries our JWT or a pk-/ek- key — otherwise it is the upstream
-// provider's credential and passes through untouched. A pk-/ek- key is
+// provider's credential: it passes through untouched where
+// AuthnOptions.AllowForeign is set (the forwarder) and is a 401 elsewhere. A pk-/ek- key is
 // resolved in ANY slot, passthrough included: it never leaves ACH. Authn reads the slot
 // once, resolves it, and DISCARDS it from r.Header before the inner handler
 // runs (D-19 / T-03-05-02).
