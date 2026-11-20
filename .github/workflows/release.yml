@@ -203,13 +203,15 @@ jobs:
 
       # Install goreleaser directly. goreleaser-action@v7 verifies the
       # downloaded binary against a sigstore bundle that the cosign on
-      # the runner cannot parse — we trust the official release tarball
-      # over TLS instead.
+      # the runner cannot parse, so the tarball is checked against the
+      # sha256 in that version's signed checksums.txt. Bump both together.
       - name: Install GoReleaser
         run: |
           GORELEASER_VERSION=v2.14.0
+          GORELEASER_SHA256=95e3a3a2adeacd1b8dd704743c71eec8343dde472d3efe71101a62570c47cbbd
           curl -sSL -o /tmp/goreleaser.tar.gz \
             "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_x86_64.tar.gz"
+          echo "${GORELEASER_SHA256}  /tmp/goreleaser.tar.gz" | sha256sum -c -
           tar -xzf /tmp/goreleaser.tar.gz -C /tmp goreleaser
           sudo install -m 0755 /tmp/goreleaser /usr/local/bin/goreleaser
           goreleaser --version

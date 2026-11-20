@@ -133,7 +133,9 @@ Per-release flow (after the `chore(release): v0.1.0` PR merges):
        migrations). Consumed by the `examples/ach-cli-initcontainer.yaml`
        headless-agent bootstrap.
      - `sboms:` block generates the CycloneDX SBOM via cyclonedx-gomod.
-     - `signs:` block signs the checksums file with cosign keyless OIDC.
+     - `signs:` block signs the checksums file with cosign keyless OIDC and
+       publishes the signature (`checksums.txt.sig`) with its certificate
+       (`checksums.txt.pem`), which `cosign verify-blob` needs.
      - `docker_signs:` block signs all image artifacts (per-arch +
        manifest list) with cosign keyless OIDC, by digest
        (`${artifact}@${digest}`), never by the mutable tag.
