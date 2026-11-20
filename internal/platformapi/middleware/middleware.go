@@ -94,6 +94,10 @@ type AuthnOptions struct {
 	// Headers are the declared credential slots, consulted in order; the
 	// first one present decides.
 	Headers []CredentialHeader
+	// AllowForeign lets an Authorization that is not ACH's (LiteLLM's UI
+	// bearer, a raw sk- key) through with no identity, for an upstream that
+	// authenticates it: the forwarder. Unset, it is a 401.
+	AllowForeign bool
 	// Cookie, when set, also accepts the console session cookie (§5.3):
 	// a request carrying BOTH the cookie and any API credential is
 	// rejected, and cookie-authenticated mutations pass the D-28 SameSite
@@ -111,9 +115,10 @@ type AuthnOptions struct {
 // mode). With none present, Authorization: Bearer is a resolve candidate
 // ONLY when it is ours — JWS-shaped (ACH's OAuth token; the resolver's
 // signature check decides) or a pk-/ek- key. Anything else in Authorization
-// is not ours to judge: no candidate, and foreign=true — the request goes
-// through with no ACH identity and the header untouched (LiteLLM's UI
-// bearer, a raw sk- key); the upstream authenticates it.
+// is not ours to judge: no candidate, and foreign=true (LiteLLM's UI bearer,
+// a raw sk- key). Authn lets it through with no ACH identity and the header
+// untouched only where AuthnOptions.AllowForeign says an upstream
+// authenticates it.
 //
 // A pk-/ek- value is resolved whatever slot carries it, passthrough
 // included: LiteLLM accepts only sk- keys, so forwarding one could never
@@ -335,6 +340,20 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 	})
 }
 
+// SecurityHeaders sets the browser protections every response carries: no
+// MIME sniffing, no framing (clickjacking of the console and the OAuth
+// pages), and no Referer sent to another origin (OAuth URLs carry codes).
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Authn is the load-bearing middleware. It reads the credential from the
 // first declared slot present (opts.Headers, in order) and either:
 //
@@ -346,7 +365,8 @@ func ContentTypeJSON(next http.Handler) http.Handler {
 //     (RawLiteLLMKeyFromCtx), header kept; or
 //   - no declared slot present: Authorization: Bearer is resolved only as
 //     ACH's own OAuth token (JWS that verifies); anything else there is not
-//     ours — forwarded untouched with no ACH identity, the upstream decides;
+//     ours — with opts.AllowForeign forwarded untouched with no ACH identity
+//     (the upstream decides), otherwise 401;
 //   - nothing at all: 401 (+ Challenge). There is no anonymous pass-through
 //     (the forwarder's catch-all is gone, D-18);
 //   - opts.Cookie set and the console cookie present: the session resolves
@@ -442,7 +462,7 @@ func Authn(resolver keystore.Resolver, allowlist map[string]struct{}, auditLog *
 				return
 			}
 			if plaintext == "" {
-				if foreign {
+				if foreign && opts.AllowForeign {
 					next.ServeHTTP(w, r) // no identity: the upstream decides
 					return
 				}

@@ -599,6 +599,44 @@ func opts(hdrs ...CredentialHeader) AuthnOptions {
 	}}
 }
 
+// forwarderOpts is opts with the forwarder's policy: a foreign Authorization
+// goes through.
+func forwarderOpts(hdrs ...CredentialHeader) AuthnOptions {
+	o := opts(hdrs...)
+	o.AllowForeign = true
+	return o
+}
+
+// Without AllowForeign (platform-api) a foreign Authorization is no
+// credential at all: 401, and the handler never runs.
+func TestAuthn_ForeignAuthorizationIs401WithoutAllowForeign(t *testing.T) {
+	for _, v := range []string{"Bearer sk-foreign", "Basic dXNlcjpwYXNz"} {
+		req := httptest.NewRequest("GET", "/platform/console/bootstrap", nil)
+		req.Header.Set("Authorization", v)
+		rec := serveAuthn(&slotResolver{}, opts(achKey), req, func(http.ResponseWriter, *http.Request) {
+			t.Fatalf("Authorization %q reached the handler", v)
+		})
+		if rec.Code != 401 || !strings.Contains(rec.Body.String(), `"missing_key"`) || rec.Header().Get("WWW-Authenticate") == "" {
+			t.Fatalf("Authorization %q: %d %s, want 401 missing_key with the challenge", v, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	rec := httptest.NewRecorder()
+	SecurityHeaders(helloHandler(t)).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	for name, want := range map[string]string{
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
+		"Content-Security-Policy": "frame-ancestors 'none'",
+		"Referrer-Policy":         "same-origin",
+	} {
+		if got := rec.Header().Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
 var (
 	achKey   = CredentialHeader{Name: "x-ach-key", Mode: ModeResolve}
 	apiKey   = CredentialHeader{Name: "x-api-key", Mode: ModeResolve}
@@ -691,7 +729,7 @@ func TestAuthn_AuthorizationResolvesOnlyOurOAuthToken(t *testing.T) {
 		var hasKC bool
 		req := httptest.NewRequest("GET", "/v1/models", nil)
 		req.Header.Set("Authorization", v)
-		rec := serveAuthn(res, opts(achKey), req, func(_ http.ResponseWriter, r *http.Request) {
+		rec := serveAuthn(res, forwarderOpts(achKey), req, func(_ http.ResponseWriter, r *http.Request) {
 			_, hasKC = KeyContextFromCtx(r.Context())
 			seen = r.Header.Clone()
 		})
@@ -744,7 +782,7 @@ func TestAuthn_ACHKeyResolvedInAnySlot(t *testing.T) {
 // nothing presented at all the answer is 401 (the catch-all is gone, D-18).
 func TestAuthn_ForeignAuthorizationGoesThrough(t *testing.T) {
 	res := &slotResolver{} // every credential resolves to "unknown"
-	o := opts(achKey)
+	o := forwarderOpts(achKey)
 	for _, v := range []string{"Bearer sk-foreign", "Basic dXNlcjpwYXNz"} {
 		var seen http.Header
 		var hasKC bool

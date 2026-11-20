@@ -168,6 +168,10 @@ type Deps struct {
 	KeyExchangeTTL time.Duration
 }
 
+// maxRequestBody caps every request body: the API takes small JSON documents
+// and OAuth forms.
+const maxRequestBody = 1 << 20
+
 // New returns the composed chi.Mux. The Mux is the manager.Runnable's
 // inner handler; server.go does NOT own the *http.Server lifecycle
 // (that belongs to runnable.go).
@@ -185,6 +189,8 @@ func New(deps Deps) http.Handler {
 	r.Use(pamw.RecoverPanic(deps.Logger, deps.Audit))
 	r.Use(pamw.AccessLog(deps.Logger))
 	r.Use(pamw.ContentTypeJSON)
+	r.Use(pamw.SecurityHeaders)
+	r.Use(func(next http.Handler) http.Handler { return http.MaxBytesHandler(next, maxRequestBody) })
 
 	// Health probes (unauthenticated). These are the ONLY routes that
 	// are not under /platform/ — API-01's documented carve-out.

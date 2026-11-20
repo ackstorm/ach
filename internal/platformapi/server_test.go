@@ -128,6 +128,56 @@ func TestServer_S2_AuthenticatedRoutesRejected401WithoutKey(t *testing.T) {
 	}
 }
 
+// A foreign Authorization (Basic, a raw sk- key) is no ACH credential:
+// platform-api has no upstream to judge it, so every authenticated route
+// answers 401 and no handler runs without an identity.
+func TestServer_ForeignAuthorizationIs401(t *testing.T) {
+	h := New(newTestDeps(t, &fakeResolver{}))
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/platform/console/bootstrap"},
+		{http.MethodPost, "/platform/hydrate"},
+		{http.MethodGet, "/platform/keys"},
+		{http.MethodGet, "/platform/environments"},
+		{http.MethodPost, "/platform/admin/keys/revoke"},
+	} {
+		for _, auth := range []string{"Basic dXNlcjpwYXNz", "Bearer sk-foreign"} {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader("{}"))
+			req.Header.Set("Authorization", auth)
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != http.StatusUnauthorized || !strings.Contains(rr.Body.String(), `"code":"missing_key"`) {
+				t.Errorf("%s %s with %q: %d %s, want 401 missing_key", tc.method, tc.path, auth, rr.Code, rr.Body)
+			}
+		}
+	}
+}
+
+// Every response carries the browser protections, the console page included.
+func TestServer_SecurityHeaders(t *testing.T) {
+	h := New(newTestDeps(t, &fakeResolver{}))
+	for _, path := range []string{"/healthz", "/", "/platform/keys"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Header().Get("X-Frame-Options") != "DENY" || rr.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: security headers missing: %v", path, rr.Header())
+		}
+	}
+}
+
+// A request body above maxRequestBody is refused before a handler decodes it.
+func TestServer_RequestBodyIsCapped(t *testing.T) {
+	pk := &keystore.KeyInfo{KeyType: keys.PrefixPk, OwnerEmail: "u@example.com"}
+	h := New(newTestDeps(t, &fakeResolver{result: pk}))
+	body := `{"environment":"e","name":"` + strings.Repeat("a", maxRequestBody) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/platform/keys", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer pk-x")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "invalid request body") {
+		t.Errorf("oversized body: %d %s, want 400 invalid request body", rr.Code, rr.Body)
+	}
+}
+
 // TestServer_S3_AllRoutesUnderPlatformOrHealth enumerates every
 // registered route via chi.Walk and asserts each path either begins
 // with "/platform/" OR matches one of the three health probes. This

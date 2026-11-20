@@ -31,7 +31,6 @@ const (
 // configuration. It writes the rejection itself and reports whether to go on.
 func ScopeFrom(w http.ResponseWriter, r *http.Request, configured bool) (evidence.Scope, bool) {
 	reqID := middleware.RequestIDFromCtx(r.Context())
-	// Authn can pass foreign credentials through without a key context.
 	kc, ok := middleware.KeyContextFromCtx(r.Context())
 	if !ok || kc.KeyType != keys.PrefixPk {
 		render.Error(w, http.StatusUnauthorized, audit.OutcomeInvalidKeyType, "observability requires a personal identity", reqID)
