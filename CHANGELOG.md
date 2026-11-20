@@ -23,7 +23,22 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   confidence is then the model's probability for the category. The default,
   `chat`, calls `/chat/completions` as before.
 
+### Changed
+- The `ach` image is built on Alpine 3.23 (was 3.20).
+- `ach` and `ach-cli` run with the Go 1.26 runtime defaults instead of the
+  Go 1.23 ones: the thread count follows the container's CPU limit, and TLS
+  SHA-1 signatures and RSA keys under 1024 bits are refused.
+
 ### Security
+- platform-api answers 401 to a request whose `Authorization` is not an ACH
+  credential (Basic, a raw LiteLLM key). `/platform/console/bootstrap` answered
+  200 to it with the chat URL, the provider name and the Enterprise flag, and
+  `/platform/hydrate` answered 500. The forwarder still forwards such a
+  request for LiteLLM to authenticate.
+- platform-api cuts a request body off at 1 MiB.
+- platform-api sends `X-Content-Type-Options`, `X-Frame-Options`,
+  `Content-Security-Policy: frame-ancestors 'none'` and `Referrer-Policy` on
+  every response, so the console and the sign-in pages cannot be framed.
 - Helm chart: the operator's permissions are namespaced. It reads Secrets and
   ACH resources in the release namespace only, through a Role in place of the
   ClusterRole. It never read anything outside that namespace.
