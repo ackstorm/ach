@@ -6,7 +6,7 @@ We release patches for security vulnerabilities. Which versions are eligible for
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 1.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
@@ -16,10 +16,7 @@ The ach team and community take security bugs seriously. We appreciate your effo
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via one of the following methods:
-
-1. **Email**: Send an email to [security@your-domain.com](mailto:security@your-domain.com)
-2. **Private GitHub Security Advisory**: Use GitHub's [private vulnerability reporting feature](https://github.com/ackstorm/ach/security/advisories/new)
+Instead, report them through GitHub's [private vulnerability reporting](https://github.com/ackstorm/ach/security/advisories/new).
 
 ### What to Include
 
@@ -61,7 +58,3 @@ When deploying ach, we recommend:
 - We will provide advance notification to users about security updates when possible
 - Security advisories will be published on GitHub Security Advisories
 - We follow a coordinated disclosure timeline of 90 days from initial report to public disclosure
-
-## Questions?
-
-If you have any questions about this security policy, please contact us at [security@your-domain.com](mailto:security@your-domain.com). 
