@@ -54,9 +54,8 @@ func TestPhase4Invariants(t *testing.T) {
 
 // testPhase4SC1HeaderRewrite — pk_ → /v1/chat/completions reaches LiteLLM
 // authenticated as the CALLER's own LiteLLM virtual key AND without any
-// client-supplied Authorization or x-ach-*. TESTING-PHASE (reverts FIX01 §A.6 /
-// D-13): the forwarder no longer injects the shared master key — it forwards
-// the per-user material persisted at mint (migration 000011) as
+// client-supplied Authorization or x-ach-*. The forwarder never injects the
+// shared master key: it forwards the per-user material persisted at mint as
 // x-litellm-api-key. A freshly-minted e2e pk_ therefore carries real material,
 // so LiteLLM accepts it. We can't peek inside the in-cluster LiteLLM upstream's
 // request log directly, so we rely on the fact that LiteLLM returns 401 when the

@@ -933,9 +933,8 @@ take an hour to show; a 200 with no row for an alias means its target has no
 deployment in LiteLLM.
 
 ### ❌ LiteLLM 401 on `/v1` or `/mcp` for a key that used to work
-After migration `000011` the forwarder authenticates to LiteLLM with the
-**caller's own** virtual key (`litellm_key_material`), not the master key
-(TESTING-PHASE reversal of FIX01 §A.6). A key minted **before** `000011` has a
+The forwarder authenticates to LiteLLM with the **caller's own** virtual key
+(`litellm_key_material`), not the master key. A key minted **before** `000011` has a
 NULL `litellm_key_material`, so the forwarder sends an empty `x-litellm-api-key`
 (`Bearer ` on `/mcp`) and LiteLLM rejects it `401`.
 ✅ Re-mint the pk_/ek_ (`ach-cli login` again, or recreate the env-key) — the

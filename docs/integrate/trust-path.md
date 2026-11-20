@@ -610,16 +610,15 @@ so a BIP in `default` is invisible and shows up as `reason=no_policy`.
 
 ---
 
-## 2.6 LiteLLM gateway auth — `x-litellm-api-key` (per-user, TESTING-PHASE)
+## 2.6 LiteLLM gateway auth — `x-litellm-api-key` (per-user)
 
 Distinct from the backend-facing `Authorization` JWT (§2-§3), the Forwarder
-must authenticate the proxied request **to LiteLLM itself**. As of migration
-`000011` it does this with the **caller's own LiteLLM virtual key**, not the
-shared master key.
+must authenticate the proxied request **to LiteLLM itself**. It does this with
+the **caller's own LiteLLM virtual key**, not the shared master key.
 
-- At pk_/ek_ mint, platform-api persists the `/key/generate` `sk-…` plaintext
-  into the new `litellm_key_material` column (reversing FIX01 §A.6 — plaintext,
-  deliberate for this testing phase).
+- At pk_/ek_ mint, platform-api stores the `/key/generate` `sk-…` key in the
+  `litellm_key_material` column, sealed with the key-encryption key
+  (AES-256-GCM, `security.keyEncryptionKey`).
 - The resolver carries it through `KeyInfo` → `KeyContext`; the Director writes
   it as `x-litellm-api-key` — **bare** on `/v1`/`/a2a`, `Bearer `-prefixed on
   `/mcp` (LiteLLM's MCP key parser requires the prefix).
@@ -645,8 +644,7 @@ shared master key.
 The master key survives **only** for the Forwarder's `TeamsResolver` precheck
 (`/user/info`, `unauthorized_team`) and for operator/platform-api admin tasks
 (`/key/generate`, `/user/new`, access-group sync) — never in the proxied user
-request. This is a TESTING-PHASE simplification; grep `TESTING-PHASE (reverts
-FIX01` for the full revert surface.
+request.
 
 ### 2.6.1 The MCP gateway accepts the user key only on the bare path + `allow_all_keys`
 

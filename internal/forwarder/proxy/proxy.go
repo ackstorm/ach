@@ -44,9 +44,8 @@ func jwtFromCtx(ctx context.Context) (string, bool) {
 
 // Deps wires the proxy's static configuration. One *url.URL pre-parsed
 // at process start; one structured logger. The per-request LiteLLM auth key
-// (the caller's own virtual key) is sourced from the KeyContext in Director —
-// TESTING-PHASE (reverts FIX01 §A.6 / D-13), the shared master key is no longer
-// part of the forward path.
+// (the caller's own virtual key) is sourced from the KeyContext in Director;
+// the shared master key is not part of the forward path.
 type Deps struct {
 	LiteLLMUpstream *url.URL
 	Logger          *slog.Logger
@@ -133,9 +132,8 @@ func New(deps Deps) *httputil.ReverseProxy {
 			// req.Host stays what the client dialled: LiteLLM composes its
 			// redirects (/ → /ui/) from Host and ignores X-Forwarded-Host.
 
-			// TESTING-PHASE (reverts FIX01 §A.6 / D-13): forward the CALLER's
-			// own LiteLLM virtual key as x-litellm-api-key (1:1 identity). The
-			// master key is no longer sent; x-litellm-key-id delegation is gone.
+			// Forward the CALLER's own LiteLLM virtual key as x-litellm-api-key
+			// (1:1 identity). The master key is never sent.
 			// G3: the KeyContext carries the material SEALED at rest — decrypt it
 			// once here. A nil/empty material (or a decrypt failure) writes an
 			// empty header (no fallback) — keys minted before migration 000014,

@@ -160,13 +160,12 @@ func pkLookupFor(pool *pgxpool.Pool, extendHook PkExtendHook) dbLookupFn {
 func KeyInfoFromPK(row *db.PkKeyInfo) *KeyInfo {
 	expires := row.ExpiresAt
 	return &KeyInfo{
-		KeyID:         row.KeyID,
-		KeyType:       keys.PrefixPk,
-		OwnerEmail:    row.OwnerEmail,
-		ExpiresAt:     &expires,
-		LiteLLMUserID: row.LiteLLMUserID,
-		LiteLLMToken:  row.LiteLLMToken,
-		// TESTING-PHASE (reverts FIX01 §A.6)
+		KeyID:              row.KeyID,
+		KeyType:            keys.PrefixPk,
+		OwnerEmail:         row.OwnerEmail,
+		ExpiresAt:          &expires,
+		LiteLLMUserID:      row.LiteLLMUserID,
+		LiteLLMToken:       row.LiteLLMToken,
 		LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 	}
 }
@@ -190,14 +189,13 @@ func ekLookupFor(pool *pgxpool.Pool) dbLookupFn {
 // Shared by the ek_ path and the exchange-JWT resolver (same row shape).
 func keyInfoFromEK(row *db.EkKeyInfo) *KeyInfo {
 	return &KeyInfo{
-		KeyID:         row.KeyID,
-		KeyType:       keys.PrefixEk,
-		OwnerEmail:    row.OwnerEmail,
-		ExpiresAt:     row.ExpiresAt,
-		Environment:   row.Environment,
-		LiteLLMUserID: row.LiteLLMUserID,
-		LiteLLMToken:  row.LiteLLMToken,
-		// TESTING-PHASE (reverts FIX01 §A.6)
+		KeyID:              row.KeyID,
+		KeyType:            keys.PrefixEk,
+		OwnerEmail:         row.OwnerEmail,
+		ExpiresAt:          row.ExpiresAt,
+		Environment:        row.Environment,
+		LiteLLMUserID:      row.LiteLLMUserID,
+		LiteLLMToken:       row.LiteLLMToken,
 		LiteLLMKeyMaterial: row.LiteLLMKeyMaterial,
 	}
 }

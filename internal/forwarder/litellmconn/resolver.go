@@ -49,9 +49,9 @@ type Resolution struct {
 	// MasterKey is the literal string read from the Secret data at the
 	// key named by CR Spec.MasterKeySecretRef.Key. Used by the forwarder
 	// as the litellm REST admin credential for the TeamsResolver precheck
-	// (/user/info) and the alias caps on GET /v2/model/info. TESTING-PHASE (reverts FIX01 §A.6 / D-13): it is NO
-	// LONGER injected as the x-litellm-api-key header on proxied requests —
-	// the Director forwards the caller's own LiteLLM virtual key instead.
+	// (/user/info) and the alias caps on GET /v2/model/info. It is never
+	// sent on proxied requests: the Director forwards the caller's own
+	// LiteLLM virtual key.
 	MasterKey string
 }
 

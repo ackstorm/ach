@@ -210,9 +210,8 @@ func (c *captureLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGenera
 	c.lastKeyGenerateReq = req
 	resp, err := c.NoopClient.KeyGenerate(ctx, req)
 	if resp != nil {
-		// TESTING-PHASE (reverts FIX01 §A.6): production LiteLLM returns its
-		// own minted virtual-key plaintext (sk-…) in the response; ACH now
-		// persists it. The NoopClient echoes the (empty) req.Key, so override
+		// Production LiteLLM returns its own minted virtual-key plaintext
+		// (sk-…) in the response; ACH persists it sealed. The NoopClient echoes the (empty) req.Key, so override
 		// with a sentinel the mint test can assert on.
 		resp.Key = "sk-ek-xyz"
 	}

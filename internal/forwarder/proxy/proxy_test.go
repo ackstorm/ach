@@ -91,7 +91,7 @@ func TestNew_NonNil(t *testing.T) {
 }
 
 // PR2+PR3: Director rewrites scheme/host, strips Authorization + x-ach-*, and
-// — TESTING-PHASE (reverts FIX01 §A.6 / D-13) — writes the CALLER's own LiteLLM
+// writes the CALLER's own LiteLLM
 // virtual key as x-litellm-api-key (bare on /v1), with NO x-litellm-key-id.
 func TestDirector_ForwardsUserMaterial(t *testing.T) {
 	deps := Deps{
