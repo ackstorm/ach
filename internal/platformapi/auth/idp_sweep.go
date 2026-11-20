@@ -64,9 +64,7 @@ func (d OAuthDeps) sweepIdP(ctx context.Context) {
 		}
 		if _, err := d.revalidateAtIdP(ctx, email); err != nil && !errors.Is(err, errIdPRefused) {
 			d.Auth.Logger.Warn("oauth: idp sweep: owner not verifiable at the IdP", "owner", email, "err", err)
-			if errors.Is(err, ErrIdPUnreachable) {
-				d.releaseIdPCheck(ctx, email)
-			}
+			d.releaseIdPCheck(ctx, email)
 		}
 	}
 }

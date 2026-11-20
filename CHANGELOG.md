@@ -14,6 +14,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - With `platformApi.replicas` above 1, replicas no longer refresh the same
   user's sign-in at the identity provider at the same moment, which answered
   503 and asked MCP clients to re-authenticate.
+- The hourly identity-provider check of `ek_` owners retries an owner at the
+  next sweep after a Valkey error, instead of skipping them for 24 hours.
 
 ## [1.1.24] - 2026-11-19
 

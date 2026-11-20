@@ -178,8 +178,8 @@ var ErrIdPUnreachable = errors.New("identity provider unreachable")
 // share a single Dex call; replayDexTokenLocked makes replicas take turns.
 // Each of the user's tools holds its own ACH refresh token but all of them
 // replay the same Dex token, and Dex answers overlapping replays of one
-// token with a 500 serialization failure (a 503 here), so a client that
-// refreshes every MCP server at once was sent back to login.
+// token with a 500 serialization failure: a 503 here for every refresh but
+// one.
 var dexReplays singleflight.Group
 
 func (d OAuthDeps) revalidateAtIdP(ctx context.Context, sub string) ([]string, error) {
