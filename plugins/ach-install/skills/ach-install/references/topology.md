@@ -116,8 +116,10 @@ re-fetches everything into the new one) as part of that change.
 ## Replicas and HA
 
 - `platformApi.replicas`, `forwarder.replicas`, `gateway.replicas`: stateless,
-  scale freely; state lives in Postgres and Valkey. Add PodDisruptionBudgets
-  and anti-affinity yourself if needed (the chart ships none). A rollout
+  scale freely; state lives in Postgres and Valkey. Every Deployment prefers
+  to spread its pods across nodes, and above 1 replica the chart adds a
+  PodDisruptionBudget (`maxUnavailable: 1`), so run 2 or more on a cluster
+  with at least 2 nodes for HA. A rollout
   keeps the old Pod serving until the new one is Ready, and the old Pod lets
   open requests finish for `shutdown.timeoutSeconds` (default 120 s).
 - `operator.replicas`: keep 1. The Deployment uses the Recreate strategy and

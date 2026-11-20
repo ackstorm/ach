@@ -23,6 +23,27 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 
 {{/*
+ach.podAntiAffinity — the scheduler prefers not to put two pods of one
+component on the same node. Preferred, never required: a cluster with fewer
+nodes than replicas still schedules them all. Call with the component name,
+the value of the Deployment's app.kubernetes.io/component selector:
+
+    {{- include "ach.podAntiAffinity" "forwarder" | nindent 6 }}
+*/}}
+{{- define "ach.podAntiAffinity" -}}
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ach
+              app.kubernetes.io/component: {{ . }}
+{{- end -}}
+
+{{/*
 ach.initContainers renders the pod's `initContainers:` block from the global
 `.Values.initContainers` plus the component's own list, mirroring how extraEnv
 composes global + per-component. Global entries run FIRST, then the

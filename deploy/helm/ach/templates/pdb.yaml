@@ -1,0 +1,29 @@
+{{/*
+A PodDisruptionBudget per stateless component scaled above 1: a voluntary
+eviction (node drain, cluster upgrade) takes at most one of its pods at a
+time. None at 1 replica, where a budget either blocks the drain or protects
+nothing. The operator and the classifier run Recreate with one pod: none.
+*/}}
+{{- range $c := list
+    (dict "name" "platform-api" "enabled" .Values.platformApi.enabled "replicas" .Values.platformApi.replicas)
+    (dict "name" "forwarder" "enabled" .Values.forwarder.enabled "replicas" .Values.forwarder.replicas)
+    (dict "name" "gateway" "enabled" .Values.gateway.enabled "replicas" .Values.gateway.replicas)
+    (dict "name" "content-service" "enabled" (and .Values.contentService.enabled .Values.contentService.standalone) "replicas" .Values.contentService.replicas) }}
+{{- if and $c.enabled (gt (int ($c.replicas | default 1)) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ach-{{ $c.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "ach.commonLabels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $c.name }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ach
+      app.kubernetes.io/component: {{ $c.name }}
+{{- end }}
+{{- end }}

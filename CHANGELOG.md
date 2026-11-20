@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- Helm chart: every Deployment prefers to place its pods on different nodes,
+  and `platformApi`, `forwarder`, `gateway` and a standalone `contentService`
+  get a PodDisruptionBudget (`maxUnavailable: 1`) when their `replicas` is
+  above 1. No new values; installs at 1 replica render no budget.
+
 ### Fixed
 - With `platformApi.replicas` above 1, replicas no longer refresh the same
   user's sign-in at the identity provider at the same moment, which answered

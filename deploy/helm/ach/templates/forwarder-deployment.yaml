@@ -40,6 +40,7 @@ spec:
         app.kubernetes.io/component: forwarder
     spec:
       serviceAccountName: ach-forwarder
+      {{- include "ach.podAntiAffinity" "forwarder" | nindent 6 }}
       {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.forwarder.initContainers)) }}
       {{- . | nindent 6 }}
       {{- end }}

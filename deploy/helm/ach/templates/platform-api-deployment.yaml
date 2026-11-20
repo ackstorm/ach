@@ -68,6 +68,7 @@ spec:
         app.kubernetes.io/component: platform-api
     spec:
       serviceAccountName: ach-platform-api
+      {{- include "ach.podAntiAffinity" "platform-api" | nindent 6 }}
       {{- with (include "ach.initContainers" (dict "global" .Values.initContainers "component" .Values.platformApi.initContainers)) }}
       {{- . | nindent 6 }}
       {{- end }}
