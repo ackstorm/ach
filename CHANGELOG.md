@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.26] - 2026-11-20
+
 ### Breaking
 - Helm chart: the gateway no longer receives the top-level `extraEnv`, so the
   database password and any other credential set there stay out of the public
