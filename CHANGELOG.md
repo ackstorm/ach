@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.1.27] - 2026-11-20
+
 ### Added
 - Helm chart: a `platformApi.oauth.redirectHosts` entry that starts with `*.`
   allows every host under that domain (`*.example.com` covers
