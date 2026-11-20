@@ -104,9 +104,8 @@ func newFakeLiteLLM() *fakeLiteLLM {
 		teamMemberAddError: func(string, string, string) error { return nil },
 		keyGenerateBehaviour: func(req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 			return &litellm.KeyGenerateResponse{
-				// TESTING-PHASE (reverts FIX01 §A.6): LiteLLM mints its own
-				// virtual-key plaintext (sk-…) in the response; ACH now
-				// persists it. Use a fixed sentinel so the mint test can
+				// LiteLLM mints its own virtual-key plaintext (sk-…) in the
+				// response; ACH persists it sealed. Use a fixed sentinel so the mint test can
 				// assert the inserted row carries it.
 				Key:    "sk-test-pk-material",
 				Token:  "litellm-token-" + req.UserID,

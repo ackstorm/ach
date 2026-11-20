@@ -24,8 +24,8 @@ type KeyContext struct {
 	ExpiresAt    *time.Time
 	Environment  string
 	LiteLLMToken *string
-	// TESTING-PHASE (reverts FIX01 §A.6): caller's own LiteLLM virtual-key
-	// plaintext (sk-…), forwarded by the proxy as x-litellm-api-key.
+	// The caller's own LiteLLM virtual key (sk-…), sealed with keycrypt; the
+	// proxy opens it and forwards it as x-litellm-api-key.
 	LiteLLMKeyMaterial *string
 	LiteLLMUserID      *string
 	IsAdmin            bool
@@ -53,13 +53,12 @@ func WithKeyContext(ctx context.Context, info *keystore.KeyInfo, isAdmin bool) c
 		return ctx
 	}
 	kc := KeyContext{
-		KeyID:        info.KeyID,
-		KeyType:      info.KeyType,
-		OwnerEmail:   info.OwnerEmail,
-		ExpiresAt:    info.ExpiresAt,
-		Environment:  info.Environment,
-		LiteLLMToken: info.LiteLLMToken,
-		// TESTING-PHASE (reverts FIX01 §A.6)
+		KeyID:              info.KeyID,
+		KeyType:            info.KeyType,
+		OwnerEmail:         info.OwnerEmail,
+		ExpiresAt:          info.ExpiresAt,
+		Environment:        info.Environment,
+		LiteLLMToken:       info.LiteLLMToken,
 		LiteLLMKeyMaterial: info.LiteLLMKeyMaterial,
 		LiteLLMUserID:      info.LiteLLMUserID,
 		IsAdmin:            isAdmin,

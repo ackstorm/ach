@@ -18,8 +18,8 @@ import (
 // KeySize is the required data-encryption-key length (AES-256).
 const KeySize = 32
 
-// formatV1 tags the on-disk blob so a future rotation/format can be told apart
-// without ambiguity. Single-key only today; multi-key rotation is a P1 follow-up.
+// formatV1 tags the on-disk blob so another format can be told apart. One key
+// only: there is no rotation (references/known-gaps.md).
 const formatV1 byte = 1
 
 var (

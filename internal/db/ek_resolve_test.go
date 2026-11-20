@@ -72,8 +72,8 @@ func TestEkResolve_Active(t *testing.T) {
 }
 
 // TestEkResolve_ReturnsKeyMaterial verifies the round-trip of the
-// TESTING-PHASE (reverts FIX01 §A.6) litellm_key_material column: a row
-// inserted with the plaintext virtual key surfaces it on the resolve path.
+// litellm_key_material column: a row inserted with key material surfaces it
+// on the resolve path.
 func TestEkResolve_ReturnsKeyMaterial(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
