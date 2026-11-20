@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/keys"
@@ -463,13 +461,4 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 		})
 	}
 	return out
-}
-
-// Mount returns a chi.Router subtree wiring the hydrate endpoint. The
-// caller mounts the subtree at "/platform/hydrate" inside the authenticated
-// chi.Group (Plan 03-11's server.go composes this).
-func Mount(deps Deps) func(chi.Router) {
-	return func(r chi.Router) {
-		r.Post("/", HydrateHandler(deps))
-	}
 }

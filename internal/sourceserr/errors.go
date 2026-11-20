@@ -50,37 +50,3 @@ var (
 	// such a CR per the spec.type kubebuilder validation marker.
 	ErrUnknownSource = errors.New("sources: unknown source type")
 )
-
-// ReasonOf classifies err into a Hub §6.6 SourceReachable.reason enum
-// value. The returned string MUST be passed verbatim into
-// apimeta.SetStatusCondition's Reason field by Plan 02-05/02-06
-// reconcilers — the value is part of the wire contract with kubectl-
-// describe consumers and any downstream alerting that filters on the
-// reason enum.
-//
-// Dispatch order is deterministic and uses errors.Is against the
-// sentinels:
-//
-//  1. [ErrUnauthorized]     → "Unauthorized"
-//  2. [ErrNotFound]          → "NotFound"
-//  3. [ErrUpstreamInvalid]   → "UpstreamInvalid"
-//  4. [ErrUnreachable]       → "Unreachable"
-//  5. (default, incl. nil)   → "Unreachable" — conservative; caller
-//     retries. The default mirrors how transport errors (no wrapped
-//     sentinel) are treated as transient/network issues.
-//
-// Callers should never see nil err pass through ReasonOf in practice —
-// the function is invoked only when a Fetch returned a non-nil error —
-// but the nil branch is defensive against caller bugs.
-func ReasonOf(err error) string {
-	switch {
-	case errors.Is(err, ErrUnauthorized):
-		return "Unauthorized"
-	case errors.Is(err, ErrNotFound):
-		return "NotFound"
-	case errors.Is(err, ErrUpstreamInvalid):
-		return "UpstreamInvalid"
-	default:
-		return "Unreachable"
-	}
-}
