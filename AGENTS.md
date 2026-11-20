@@ -252,7 +252,7 @@ independent collections.)
 **local-only, on demand**. `e2e.yml` runs `make e2e-full` on PRs touching the
 surfaces below as a **non-required** measurement of hosted runners. Until that
 decision lands, run `make e2e-full` locally before merging any change touching
-`internal/controller|platformapi|forwarder|contentservice/`, `api/v1alpha1/`,
+`internal/controller|platformapi|forwarder|contentservice/`, `api/ach/v1alpha1/`,
 `deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop" (presentation-only
 changes are exempt, see there). A failing `e2e.yml` does not block a merge. `main` is protected, admins included: every commit
 arrives through a PR with `ci-ok` green and the branch up to date, and no
@@ -500,7 +500,7 @@ make cluster-down && make e2e-full            # clean-room start; cluster kept a
 ```
 
 Never push a change touching `internal/controller|platformapi|forwarder|
-contentservice/`, `api/v1alpha1/`, `deploy/helm/ach/`, or `test/e2e/` without
+contentservice/`, `api/ach/v1alpha1/`, `deploy/helm/ach/`, or `test/e2e/` without
 confirming E2E green. **Exempt — presentation-only changes** (HTML/CSS
 templates, copy text, `ui/`): no behavior or contract moves, so the package's
 unit tests + lint + a rendered-page check are the gate, not a ~15 min e2e.

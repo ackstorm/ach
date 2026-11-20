@@ -28,7 +28,7 @@ first, then walk the matrix.
 
 ## The 11 surfaces
 
-1. **CRD + CEL** — `api/v1alpha1/<kind>_types.go` with kubebuilder validation
+1. **CRD + CEL** — `api/ach/v1alpha1/<kind>_types.go` with kubebuilder validation
    markers and CEL `x-kubernetes-validations` for cross-field invariants. Run
    `make gen-code` (deepcopy + CRD bases) and `make gen-crd-ref-docs`.
 2. **Projection table + `with_tx_notify`** — a Postgres projection table written

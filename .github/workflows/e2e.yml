@@ -10,7 +10,7 @@ on:
       - 'internal/platformapi/**'
       - 'internal/forwarder/**'
       - 'internal/contentservice/**'
-      - 'api/v1alpha1/**'
+      - 'api/ach/v1alpha1/**'
       - 'deploy/helm/ach/**'
       - 'db/migrations/**'
       - 'test/e2e/**'
