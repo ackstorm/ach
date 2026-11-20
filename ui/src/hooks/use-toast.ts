@@ -30,9 +30,6 @@ import { create } from 'zustand';
 /** Auto-dismiss duration — ported VERBATIM from toast.js (UI-SPEC §10, 2500ms). */
 export const TOAST_DURATION_MS = 2500;
 
-/** Locked "Coming soon" copy from toast.js (13-UI-SPEC §Copywriting Contract). */
-export const TOAST_COMING_SOON = 'Coming soon';
-
 /** Toast variants. `success` = primary/green, `error` = destructive, `info` = neutral. */
 export type ToastVariant = 'success' | 'error' | 'info';
 

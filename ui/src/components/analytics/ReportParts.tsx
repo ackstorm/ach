@@ -21,11 +21,6 @@ export function Paged<T>({ rows, size = 10, footer, children }: { rows: T[]; siz
   const pager = rows.length > size && <Pager start={start} count={shown.length} total={rows.length} onPrev={current > 0 ? () => setPage(current - 1) : undefined} onNext={current < last ? () => setPage(current + 1) : undefined} />;
   return <>{children(shown)}{(footer || pager) && <div className="report-foot">{footer}{pager}</div>}</>;
 }
-// The period lives in the header picker; this bar only carries a page's own filter.
-export function ReportFilters({ label, options = [], value = '', onChange }: { label: 'Client' | 'Model'; options?: string[]; value?: string; onChange?: (value: string) => void }) {
-  if (!options.length) return null;
-  return <div className="panel filtersbar report-filters"><label className="filter"><span>{label}</span><select aria-label={`${label} filter`} value={value} onChange={(event) => onChange?.(event.target.value)}><option value="">All {label.toLowerCase()}s</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label></div>;
-}
 export function Metric({ icon, label, value = '—', children }: { icon: string; label: string; value?: ReactNode; children: ReactNode }) { return <div className="panel kpi metric"><div className="khead"><span className="badge" aria-hidden="true">{icon}</span>{label}</div><div className="value">{value}</div><p>{children}</p></div>; }
 export function Panel({ title, subtitle, action, children, className = '' }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode; className?: string }) { return <section className={`panel ${className}`}><div className="panel-title"><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}{action}</div>{children}</section>; }
 // One pattern for every bar list: right figure = `value · share%`, the share of
