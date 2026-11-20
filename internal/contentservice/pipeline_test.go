@@ -598,6 +598,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	fx.seedPersonalKey("pkid_a", "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice@x.com")
 	fx.seedEnvironmentKey("ekid_a", "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob@x.com", "prod")
 	fx.teamsFake.setTeams("alice@x.com", []string{"team-a"})
+	fx.teamsFake.setTeams("bob@x.com", []string{"team-a"}) // an ek_ is gated on its owner's teams
 	fx.teamsFake.setTeams("alice-team-mismatch@x.com", []string{"team-z"})
 
 	t.Run("200 success pk_ skill", func(t *testing.T) {
