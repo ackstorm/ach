@@ -123,13 +123,16 @@ func (d OAuthDeps) redirectAllowed(raw string) bool {
 	if err != nil || u.Scheme != "https" {
 		return false
 	}
-	host := strings.ToLower(u.Hostname())
+	host := u.Hostname()
 	return slices.ContainsFunc(d.RedirectHosts, func(h string) bool {
-		h = strings.ToLower(h)
-		if domain, ok := strings.CutPrefix(h, "*."); ok {
-			return domain != "" && strings.HasSuffix(host, "."+domain)
+		domain, wildcard := strings.CutPrefix(h, "*.")
+		if !wildcard {
+			return strings.EqualFold(h, host)
 		}
-		return h == host
+		// EqualFold, not ToLower: ToLower turns U+0130 into "i", and a browser
+		// resolves that host to another name.
+		dot := len(host) - len(domain) - 1
+		return domain != "" && dot > 0 && host[dot] == '.' && strings.EqualFold(host[dot+1:], domain)
 	})
 }
 
