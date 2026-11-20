@@ -72,17 +72,6 @@ func NewDBResolver(pool *pgxpool.Pool, pepper []byte, extendHook PkExtendHook) (
 	}, nil
 }
 
-// newDBResolverWith is the test-only constructor that injects the
-// per-prefix lookup callables directly. Production code MUST use
-// NewDBResolver.
-func newDBResolverWith(pepper []byte, pkFn, ekFn dbLookupFn) *dbResolver {
-	return &dbResolver{
-		pepper: append([]byte(nil), pepper...),
-		pkFn:   pkFn,
-		ekFn:   ekFn,
-	}
-}
-
 // Resolve implements the prefix-dispatched DB lookup path per D-08.
 //
 //  1. ClassifyBearer rejects malformed input. ErrInvalidBearer maps to

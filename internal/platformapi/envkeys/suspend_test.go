@@ -20,6 +20,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -89,7 +90,7 @@ func (d *envKeyStateDB) UserKeyAllowance(context.Context, string, int) (int, int
 // (raw ids, matched directly against the Environment's authorizedTeams —
 // no ListAllTeams alias resolution needed for these tests).
 type resumeLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	teams       []string
 	userInfoErr error
 }
@@ -294,7 +295,7 @@ func TestResume_RequiresAccessAndLiveness(t *testing.T) {
 		active.Status = statusActive
 		fdb := &envKeyStateDB{getRow: row, resumeRow: &active}
 		redis := &recordRedis{}
-		fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, teams: []string{"team-a"}}
+		fll := &resumeLiteLLM{NoopClient: &litellmtest.NoopClient{}, teams: []string{"team-a"}}
 		deps := captureAuditDeps(fdb, fll, env, redis, &bytes.Buffer{})
 
 		rec := serveResume(deps, row.KeyID)
@@ -314,7 +315,7 @@ func TestResume_RequiresAccessAndLiveness(t *testing.T) {
 		row := suspendableEkRow()
 		row.Status = "suspended"
 		fdb := &envKeyStateDB{getRow: row}
-		fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, teams: []string{"team-z"}}
+		fll := &resumeLiteLLM{NoopClient: &litellmtest.NoopClient{}, teams: []string{"team-z"}}
 		deps := captureAuditDeps(fdb, fll, env, &recordRedis{}, &bytes.Buffer{})
 
 		rec := serveResume(deps, row.KeyID)
@@ -331,7 +332,7 @@ func TestResume_RequiresAccessAndLiveness(t *testing.T) {
 		row := suspendableEkRow()
 		row.Status = "suspended"
 		fdb := &envKeyStateDB{getRow: row}
-		fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, teams: []string{"team-z"}}
+		fll := &resumeLiteLLM{NoopClient: &litellmtest.NoopClient{}, teams: []string{"team-z"}}
 		deps := captureAuditDeps(fdb, fll, env, &recordRedis{}, &bytes.Buffer{})
 
 		rec := serveResumeAsAdmin(deps, row.KeyID)
@@ -348,7 +349,7 @@ func TestResume_RequiresAccessAndLiveness(t *testing.T) {
 		row := suspendableEkRow()
 		row.Status = "suspended"
 		fdb := &envKeyStateDB{getRow: row}
-		fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, userInfoErr: errors.New("dial tcp: connection refused")}
+		fll := &resumeLiteLLM{NoopClient: &litellmtest.NoopClient{}, userInfoErr: errors.New("dial tcp: connection refused")}
 		deps := captureAuditDeps(fdb, fll, env, &recordRedis{}, &bytes.Buffer{})
 
 		rec := serveResume(deps, row.KeyID)
@@ -413,7 +414,7 @@ func TestResume_RaceWithRevokeIsNotResurrection(t *testing.T) {
 	revoked.Status = "revoked"
 	fdb := &envKeyStateDB{getRow: row, getRowNext: &revoked, resumeRow: nil, resumeErr: nil}
 	env := &fakeEnvStore{env: &db.EnvironmentRow{Name: "platform", AuthorizedTeams: []string{"team-a"}}}
-	fll := &resumeLiteLLM{NoopClient: &litellm.NoopClient{}, teams: []string{"team-a"}}
+	fll := &resumeLiteLLM{NoopClient: &litellmtest.NoopClient{}, teams: []string{"team-a"}}
 	deps := captureAuditDeps(fdb, fll, env, &recordRedis{}, &bytes.Buffer{})
 
 	rec := serveResume(deps, row.KeyID)
@@ -432,7 +433,7 @@ func TestRevoke_FromAnyStateAndIdempotent(t *testing.T) {
 		tok := "sk-llt-token"
 		row.LiteLLMToken = &tok
 		fdb := &revokeEnvDB{getRow: row}
-		fll := &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}}
+		fll := &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}}
 		redis := &recordRedis{}
 
 		rec := serveRevokeEnv(revokeEnvDeps(fdb, fll, redis), row.KeyID)
@@ -452,7 +453,7 @@ func TestRevoke_FromAnyStateAndIdempotent(t *testing.T) {
 		row := suspendableEkRow()
 		row.Status = "revoked"
 		fdb := &revokeEnvDB{getRow: row}
-		fll := &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}}
+		fll := &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}}
 		redis := &recordRedis{}
 
 		rec := serveRevokeEnv(revokeEnvDeps(fdb, fll, redis), row.KeyID)
@@ -475,7 +476,7 @@ func TestRevoke_FromAnyStateAndIdempotent(t *testing.T) {
 		tok := "sk-llt-token"
 		row.LiteLLMToken = &tok
 		fdb := &revokeEnvDB{getRow: row}
-		fll := &revokePersonalLiteLLM{NoopClient: &litellm.NoopClient{}}
+		fll := &revokePersonalLiteLLM{NoopClient: &litellmtest.NoopClient{}}
 		redis := &recordRedis{}
 
 		rec := serveRevokeEnv(revokeEnvDeps(fdb, fll, redis), row.KeyID)

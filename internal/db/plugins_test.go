@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // ----- Standard CRUD tests -----
@@ -47,10 +48,10 @@ func TestUpsertPlugin_InsertThenUpdate(t *testing.T) {
 		MaxStalenessSeconds:   600,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertPlugin(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertPlugin: %v", err)
 	}
-	got, err := db.GetPluginByName(ctx, pool, "default", "caveman")
+	got, err := dbtest.GetPluginByName(ctx, pool, "default", "caveman")
 	if err != nil {
 		t.Fatalf("GetPluginByName: %v", err)
 	}
@@ -68,10 +69,10 @@ func TestUpsertPlugin_InsertThenUpdate(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	row.MaxStalenessSeconds = 1200
 	row.ResourceVersion = "2"
-	if err := db.UpsertPlugin(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertPlugin(ctx, pool, row); err != nil {
 		t.Fatalf("second UpsertPlugin: %v", err)
 	}
-	got2, err := db.GetPluginByName(ctx, pool, "default", "caveman")
+	got2, err := dbtest.GetPluginByName(ctx, pool, "default", "caveman")
 	if err != nil {
 		t.Fatalf("second Get: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestGetPluginByName_AbsenceReturnsNilNil(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	got, err := db.GetPluginByName(ctx, pool, "default", "missing")
+	got, err := dbtest.GetPluginByName(ctx, pool, "default", "missing")
 	if err != nil {
 		t.Fatalf("absent Get: got error %v", err)
 	}
@@ -109,22 +110,22 @@ func TestDeletePlugin_RemovesRow(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, db.PluginRow{
 		Namespace: "ns", Name: "p", StorageLocation: "/x", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := db.DeletePlugin(ctx, pool, "ns", "p"); err != nil {
+	if err := dbtest.DeletePlugin(ctx, pool, "ns", "p"); err != nil {
 		t.Fatalf("DeletePlugin: %v", err)
 	}
-	got, err := db.GetPluginByName(ctx, pool, "ns", "p")
+	got, err := dbtest.GetPluginByName(ctx, pool, "ns", "p")
 	if err != nil {
 		t.Fatalf("Get after Delete: %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)
 	}
-	if err := db.DeletePlugin(ctx, pool, "ns", "p"); err != nil {
+	if err := dbtest.DeletePlugin(ctx, pool, "ns", "p"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
 	}
 }
@@ -141,7 +142,7 @@ func TestResolvePluginByName_CRDWins(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpsertPlugin(ctx, pool, db.PluginRow{
+	if err := dbtest.UpsertPlugin(ctx, pool, db.PluginRow{
 		Namespace: "test", Name: "foo",
 		StorageLocation:       "/crd/foo.tar.gz",
 		LastSuccessfulRefresh: &now,
@@ -150,7 +151,7 @@ func TestResolvePluginByName_CRDWins(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed plugins: %v", err)
 	}
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "zzz-mkt",
 		Name:                  "foo",
 		StorageLocation:       "/mkt/foo.tar.gz",
@@ -193,7 +194,7 @@ func TestResolvePluginByName_BareNameNoMarketplaceFallback(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "anthropic-mkt",
 		Name:                  "only-in-mkt",
 		StorageLocation:       "/mkt/only-in-mkt.tar.gz",
@@ -227,7 +228,7 @@ func TestResolvePluginByName_ScopedExactPK(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	// Seed two marketplace rows for the same plugin name "shared".
 	for _, m := range []string{"mkt-a", "mkt-b"} {
-		if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+		if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 			MarketplaceName:       m,
 			Name:                  "shared",
 			StorageLocation:       "/mkt/" + m + "/shared.tar.gz",
@@ -270,7 +271,7 @@ func TestResolvePluginByName_ScopedNoMatch_NilNil(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "mkt-a",
 		Name:                  "shared",
 		StorageLocation:       "/mkt/mkt-a/shared.tar.gz",
@@ -304,7 +305,7 @@ func TestResolvePluginByName_ScopedDisambiguatesMarketplace(t *testing.T) {
 	// Insert in deliberately wrong order: zzz first, anthropic last.
 	insertOrder := []string{"zzz-mkt", "internal-mkt", "anthropic-mkt"}
 	for _, m := range insertOrder {
-		if err := db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+		if err := dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 			MarketplaceName:       m,
 			Name:                  "foo",
 			StorageLocation:       "/mkt/" + m + "/foo.tar.gz",

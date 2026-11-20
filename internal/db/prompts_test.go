@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertPrompt_InsertThenUpdate: Upsert → Get round-trip + UPDATE-in-place
@@ -33,7 +34,7 @@ func TestUpsertPrompt_InsertThenUpdate(t *testing.T) {
 		MaxStalenessSeconds:   3600,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertPrompt(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertPrompt(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertPrompt: %v", err)
 	}
 	got, err := db.GetPromptByName(ctx, pool, "default", "welcome")
@@ -62,7 +63,7 @@ func TestUpsertPrompt_InsertThenUpdate(t *testing.T) {
 	row.ContentType = nil
 	row.MaxStalenessSeconds = 7200
 	row.ResourceVersion = "2"
-	if err := db.UpsertPrompt(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertPrompt(ctx, pool, row); err != nil {
 		t.Fatalf("second UpsertPrompt: %v", err)
 	}
 	got2, err := db.GetPromptByName(ctx, pool, "default", "welcome")
@@ -106,12 +107,12 @@ func TestDeletePrompt_RemovesRow(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertPrompt(ctx, pool, db.PromptRow{
+	if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
 		Namespace: "ns", Name: "p", StorageLocation: "/x", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := db.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
+	if err := dbtest.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
 		t.Fatalf("DeletePrompt: %v", err)
 	}
 	got, err := db.GetPromptByName(ctx, pool, "ns", "p")
@@ -121,7 +122,7 @@ func TestDeletePrompt_RemovesRow(t *testing.T) {
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)
 	}
-	if err := db.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
+	if err := dbtest.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
 	}
 }

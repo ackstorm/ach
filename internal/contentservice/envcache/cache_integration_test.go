@@ -19,6 +19,7 @@ import (
 
 	"github.com/ackstorm/ach/internal/contentservice/envcache"
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 const testNS = "ach-system"
@@ -85,7 +86,7 @@ func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 
 func upsertEnv(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
-	require.NoError(t, db.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
+	require.NoError(t, dbtest.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace:         testNS,
 		Name:              name,
 		AuthorizedTeams:   []string{"team-" + name},

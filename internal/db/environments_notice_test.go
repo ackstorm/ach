@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertEnvironment_NoticeRoundTrips asserts spec.notice survives the
@@ -34,7 +35,7 @@ func TestUpsertEnvironment_NoticeRoundTrips(t *testing.T) {
 		ResourceVersion:   "1",
 		Notice:            "remember to re-login after key rotation",
 	}
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 

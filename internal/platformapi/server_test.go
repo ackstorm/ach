@@ -426,3 +426,10 @@ func TestServer_MountsKeyExchangeOutsideAuthn(t *testing.T) {
 		t.Fatalf("the rest of /platform/keys must stay behind Authn: %d %s", w.Code, w.Body)
 	}
 }
+
+// newRunnableWithListener is NewRunnable serving l instead of binding a port.
+func newRunnableWithListener(handler http.Handler, l net.Listener, logger *slog.Logger) *ServerRunnable {
+	rn := NewRunnable("", handler, logger, 10*time.Second)
+	rn.listener = l
+	return rn
+}

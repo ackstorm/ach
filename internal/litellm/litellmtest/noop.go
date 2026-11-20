@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package litellm
+// Package litellmtest holds the litellm.Client test double.
+package litellmtest
 
 import (
 	"context"
@@ -8,17 +9,12 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/ackstorm/ach/internal/litellm"
 	"github.com/ackstorm/ach/internal/observability"
 )
 
-// NoopClient is the Phase 1 Client implementation (D-11). Every method
-// logs the intended LiteLLM operation and returns nil. No HTTP traffic
-// is generated; the operator has no LiteLLM connectivity in Phase 1.
-//
-// Phase 2 swaps in a real implementation via dependency-injection at
-// EnvironmentReconciler construction time in cmd/operator/main.go.
-// Reconcilers are typed against the Client interface so the swap is a
-// wiring-only change.
+// NoopClient is a litellm.Client for tests: every method logs the call and
+// returns nil or a canned value, and no HTTP traffic is generated.
 type NoopClient struct {
 	// Log is the structured logger used for the "stub: would …" lines
 	// emitted by each method. Setting Log to a zero-value logr.Logger
@@ -35,14 +31,14 @@ func (c *NoopClient) DeleteAccessGroup(_ context.Context, name string) error {
 }
 
 // UpsertTagBudget is the tag-budget write. NoopClient logs and returns nil.
-func (c *NoopClient) UpsertTagBudget(_ context.Context, name string, b TagBudget) error {
+func (c *NoopClient) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
 	c.Log.Info("stub: would upsert LiteLLM tag budget", "name", name, "max_budget", b.MaxBudget)
 	return nil
 }
 
 // TagInfo is the tag-budget read. NoopClient returns (nil, nil) — "no
 // budget configured", NOT an error.
-func (c *NoopClient) TagInfo(_ context.Context, name string) (*TagInfoEntry, error) {
+func (c *NoopClient) TagInfo(_ context.Context, name string) (*litellm.TagInfoEntry, error) {
 	c.Log.Info("stub: would read LiteLLM tag info", "name", name)
 	return nil, nil
 }
@@ -68,28 +64,28 @@ func (c *NoopClient) DeleteBudget(_ context.Context, id string) error {
 // ListModels is the Plan 07 snapshot-Runnable call. NoopClient returns
 // (nil, nil) — an empty registered-model set, NOT an error — so Plan 07
 // tests against NoopClient compute the empty intersection consistently.
-func (c *NoopClient) ListModels(_ context.Context) ([]ModelInfoResponse, error) {
+func (c *NoopClient) ListModels(_ context.Context) ([]litellm.ModelInfoResponse, error) {
 	c.Log.Info("stub: would list LiteLLM models")
 	return nil, nil
 }
 
 // ListMCPServers is the Plan 07 snapshot-Runnable call. NoopClient
 // returns (nil, nil) — empty MCP-server set, NOT an error.
-func (c *NoopClient) ListMCPServers(_ context.Context) ([]MCPServerEntry, error) {
+func (c *NoopClient) ListMCPServers(_ context.Context) ([]litellm.MCPServerEntry, error) {
 	c.Log.Info("stub: would list LiteLLM MCP servers")
 	return nil, nil
 }
 
 // ListA2AAgents is the Plan 07 snapshot-Runnable call. NoopClient
 // returns (nil, nil) — empty A2A-agent set, NOT an error.
-func (c *NoopClient) ListA2AAgents(_ context.Context) ([]AgentEntry, error) {
+func (c *NoopClient) ListA2AAgents(_ context.Context) ([]litellm.AgentEntry, error) {
 	c.Log.Info("stub: would list LiteLLM A2A agents")
 	return nil, nil
 }
 
 // ListGuardrails is the snapshot-Runnable call. NoopClient returns (nil, nil) —
 // an empty guardrail set, NOT an error.
-func (c *NoopClient) ListGuardrails(_ context.Context) ([]GuardrailEntry, error) {
+func (c *NoopClient) ListGuardrails(_ context.Context) ([]litellm.GuardrailEntry, error) {
 	c.Log.Info("stub: would list LiteLLM guardrails")
 	return nil, nil
 }
@@ -97,7 +93,7 @@ func (c *NoopClient) ListGuardrails(_ context.Context) ([]GuardrailEntry, error)
 // ListUserKeys is the Plan 08 orphan-cleanup call. NoopClient returns
 // (nil, nil) — no keys reported, the orphan loop is a no-op against
 // NoopClient (which is the desired behavior for unit tests).
-func (c *NoopClient) ListUserKeys(_ context.Context, userID string) ([]UserKeyInfo, error) {
+func (c *NoopClient) ListUserKeys(_ context.Context, userID string) ([]litellm.UserKeyInfo, error) {
 	c.Log.Info("stub: would list LiteLLM user keys", "userID", userID)
 	return nil, nil
 }
@@ -113,9 +109,9 @@ func (c *NoopClient) RevokeKey(_ context.Context, keyID string) error {
 // the supplied email and synthesizes a stable "noop-<email>" user_id so
 // unit-test assertions can detect a stubbed value vs a real LiteLLM-
 // assigned id. Returns nil error.
-func (c *NoopClient) UserNew(_ context.Context, req *UserNewRequest) (*UserInfo, error) {
+func (c *NoopClient) UserNew(_ context.Context, req *litellm.UserNewRequest) (*litellm.UserInfo, error) {
 	c.Log.Info("stub: would create LiteLLM user", "user_email", req.UserEmail)
-	return &UserInfo{
+	return &litellm.UserInfo{
 		UserID:    "noop-" + req.UserEmail,
 		UserEmail: req.UserEmail,
 	}, nil
@@ -126,13 +122,13 @@ func (c *NoopClient) UserNew(_ context.Context, req *UserNewRequest) (*UserInfo,
 // drive the SSO first-time-user branch (UserInfoByEmail → 404 → UserNew).
 // Tests that need the existing-user branch construct a stand-in *UserInfo
 // directly rather than fooling around with stub state.
-func (c *NoopClient) UserInfoByEmail(_ context.Context, email string) (*UserInfo, error) {
+func (c *NoopClient) UserInfoByEmail(_ context.Context, email string) (*litellm.UserInfo, error) {
 	c.Log.Info("stub: would look up LiteLLM user by email", "user_email", email)
-	return nil, ErrNotFound
+	return nil, litellm.ErrNotFound
 }
 
 // UserUpdate logs and returns nil.
-func (c *NoopClient) UserUpdate(_ context.Context, req *UserUpdateRequest) error {
+func (c *NoopClient) UserUpdate(_ context.Context, req *litellm.UserUpdateRequest) error {
 	c.Log.Info("stub: would update LiteLLM user", "user_id", req.UserID)
 	return nil
 }
@@ -150,9 +146,9 @@ func (c *NoopClient) TeamMemberAdd(_ context.Context, teamID, userID, role strin
 // deterministic "noop-token-<user_id>" Token so the SSO + env-keys
 // handler tests can assert the persisted litellm_token value without
 // stub state leakage between tests. Returns nil error.
-func (c *NoopClient) KeyGenerate(_ context.Context, req *KeyGenerateRequest) (*KeyGenerateResponse, error) {
+func (c *NoopClient) KeyGenerate(_ context.Context, req *litellm.KeyGenerateRequest) (*litellm.KeyGenerateResponse, error) {
 	c.Log.Info("stub: would generate LiteLLM key", "user_id", req.UserID)
-	return &KeyGenerateResponse{
+	return &litellm.KeyGenerateResponse{
 		Key:    req.Key,
 		Token:  "noop-token-" + req.UserID,
 		UserID: req.UserID,
@@ -162,7 +158,7 @@ func (c *NoopClient) KeyGenerate(_ context.Context, req *KeyGenerateRequest) (*K
 // ListTeamsByAlias returns an empty slice — the noop client has no
 // team state. Production SSO callers must run against a RESTClient
 // against a real LiteLLM with the "default" Team pre-provisioned.
-func (c *NoopClient) ListTeamsByAlias(_ context.Context, alias string) ([]TeamListEntry, error) {
+func (c *NoopClient) ListTeamsByAlias(_ context.Context, alias string) ([]litellm.TeamListEntry, error) {
 	c.Log.Info("stub: would list LiteLLM teams by alias", "alias", alias)
 	return nil, nil
 }
@@ -170,30 +166,30 @@ func (c *NoopClient) ListTeamsByAlias(_ context.Context, alias string) ([]TeamLi
 // ListAllTeams returns an empty slice — the noop client has no team
 // state. Production callers must run against a RESTClient against a real
 // LiteLLM with the teams pre-provisioned.
-func (c *NoopClient) ListAllTeams(_ context.Context) ([]TeamListEntry, error) {
+func (c *NoopClient) ListAllTeams(_ context.Context) ([]litellm.TeamListEntry, error) {
 	c.Log.Info("stub: would list all LiteLLM teams")
 	return nil, nil
 }
 
 // CreateTeam is a stub — Phase 1 logs and returns a synthetic entry so the
 // caller's control flow is exercised without LiteLLM connectivity.
-func (c *NoopClient) CreateTeam(_ context.Context, req *NewTeamRequest) (*TeamListEntry, error) {
+func (c *NoopClient) CreateTeam(_ context.Context, req *litellm.NewTeamRequest) (*litellm.TeamListEntry, error) {
 	alias := ""
 	if req != nil {
 		alias = req.TeamAlias
 	}
 	c.Log.Info("stub: would create LiteLLM team", "alias", alias)
-	return &TeamListEntry{TeamID: alias, TeamAlias: alias}, nil
+	return &litellm.TeamListEntry{TeamID: alias, TeamAlias: alias}, nil
 }
 
 // UpdateTeam is a stub — logs and echoes the requested team.
-func (c *NoopClient) UpdateTeam(_ context.Context, req *TeamUpdateRequest) (*TeamListEntry, error) {
+func (c *NoopClient) UpdateTeam(_ context.Context, req *litellm.TeamUpdateRequest) (*litellm.TeamListEntry, error) {
 	id := ""
 	if req != nil {
 		id = req.TeamID
 	}
 	c.Log.Info("stub: would update LiteLLM team", "team_id", id)
-	return &TeamListEntry{TeamID: id}, nil
+	return &litellm.TeamListEntry{TeamID: id}, nil
 }
 
 // DeleteTeam is a stub — logs and returns nil.
@@ -204,9 +200,9 @@ func (c *NoopClient) DeleteTeam(_ context.Context, teamID string) error {
 
 // GetTeamInfo is a stub — returns an entry with no ObjectPermission, which
 // callers must read as "unverifiable", not as "no permissions".
-func (c *NoopClient) GetTeamInfo(_ context.Context, teamID string) (*TeamListEntry, error) {
+func (c *NoopClient) GetTeamInfo(_ context.Context, teamID string) (*litellm.TeamListEntry, error) {
 	c.Log.Info("stub: would read LiteLLM team info", "team_id", teamID)
-	return &TeamListEntry{TeamID: teamID}, nil
+	return &litellm.TeamListEntry{TeamID: teamID}, nil
 }
 
 // EnsureDefaultTeam is a no-op for the stub client. Production
@@ -222,9 +218,9 @@ func (c *NoopClient) EnsureDefaultTeam(_ context.Context) error {
 // NoopClient logs and returns a synthetic response with a deterministic
 // UUID so envtests that don't override the LiteLLM client can still
 // progress through reconcileAccessGroup without ID-resolution surprises.
-func (c *NoopClient) CreateAccessGroup(_ context.Context, req AccessGroupCreateRequest) (*AccessGroupResponse, error) {
+func (c *NoopClient) CreateAccessGroup(_ context.Context, req litellm.AccessGroupCreateRequest) (*litellm.AccessGroupResponse, error) {
 	c.Log.Info("stub: would create LiteLLM access group", "name", req.AccessGroupName, "modelNames", req.AccessModelNames)
-	return &AccessGroupResponse{
+	return &litellm.AccessGroupResponse{
 		AccessGroupID:      "noop-" + req.AccessGroupName,
 		AccessGroupName:    req.AccessGroupName,
 		AccessModelNames:   req.AccessModelNames,
@@ -238,15 +234,15 @@ func (c *NoopClient) CreateAccessGroup(_ context.Context, req AccessGroupCreateR
 // GetAccessGroupByName always returns (nil, nil) — the reconciler will
 // take the POST branch on every reconcile in noop mode, which is
 // harmless (the noop POST returns synthetic success).
-func (c *NoopClient) GetAccessGroupByName(_ context.Context, name string) (*AccessGroupResponse, error) {
+func (c *NoopClient) GetAccessGroupByName(_ context.Context, name string) (*litellm.AccessGroupResponse, error) {
 	c.Log.V(2).Info("stub: would lookup LiteLLM access group by name", "name", name)
 	return nil, nil
 }
 
 // UpdateAccessGroup logs and echoes the request back.
-func (c *NoopClient) UpdateAccessGroup(_ context.Context, id string, req AccessGroupUpdateRequest) (*AccessGroupResponse, error) {
+func (c *NoopClient) UpdateAccessGroup(_ context.Context, id string, req litellm.AccessGroupUpdateRequest) (*litellm.AccessGroupResponse, error) {
 	c.Log.Info("stub: would update LiteLLM access group", "id", id)
-	resp := &AccessGroupResponse{AccessGroupID: id}
+	resp := &litellm.AccessGroupResponse{AccessGroupID: id}
 	if req.AccessModelNames != nil {
 		resp.AccessModelNames = req.AccessModelNames
 	}
@@ -275,4 +271,4 @@ func (c *NoopClient) DeleteAccessGroupByID(_ context.Context, id string) error {
 // interface adds or changes a method, the build breaks here until
 // NoopClient catches up — matching the sister project's discipline
 // (ach_litellm/internal/controller/noop_controller.go line 188).
-var _ Client = (*NoopClient)(nil)
+var _ litellm.Client = (*NoopClient)(nil)

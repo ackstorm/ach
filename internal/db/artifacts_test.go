@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertArtifact_InsertThenUpdate: round-trip both scope variants and
@@ -37,7 +38,7 @@ func TestUpsertArtifact_InsertThenUpdate(t *testing.T) {
 		MaxStalenessSeconds:   600,
 		ResourceVersion:       "1",
 	}
-	if err := db.UpsertArtifact(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertArtifact(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertArtifact: %v", err)
 	}
 	got, err := db.GetArtifactByName(ctx, pool, "default", "templates")
@@ -60,7 +61,7 @@ func TestUpsertArtifact_InsertThenUpdate(t *testing.T) {
 	row.Scope = "object"
 	row.StorageLocation = "/var/cache/ach/artifact/templates.tar.gz"
 	row.ResourceVersion = "2"
-	if err := db.UpsertArtifact(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertArtifact(ctx, pool, row); err != nil {
 		t.Fatalf("second UpsertArtifact: %v", err)
 	}
 	got2, err := db.GetArtifactByName(ctx, pool, "default", "templates")
@@ -87,7 +88,7 @@ func TestUpsertArtifact_InvalidScopeRejected(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	err := db.UpsertArtifact(ctx, pool, db.ArtifactRow{
+	err := dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{
 		Namespace: "default", Name: "bad", StorageLocation: "/x",
 		Scope: "wrong-value", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	})
@@ -130,13 +131,13 @@ func TestDeleteArtifact_RemovesRow(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertArtifact(ctx, pool, db.ArtifactRow{
+	if err := dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{
 		Namespace: "ns", Name: "a", StorageLocation: "/x",
 		Scope: "object", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := db.DeleteArtifact(ctx, pool, "ns", "a"); err != nil {
+	if err := dbtest.DeleteArtifact(ctx, pool, "ns", "a"); err != nil {
 		t.Fatalf("DeleteArtifact: %v", err)
 	}
 	got, err := db.GetArtifactByName(ctx, pool, "ns", "a")
@@ -146,7 +147,7 @@ func TestDeleteArtifact_RemovesRow(t *testing.T) {
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)
 	}
-	if err := db.DeleteArtifact(ctx, pool, "ns", "a"); err != nil {
+	if err := dbtest.DeleteArtifact(ctx, pool, "ns", "a"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
 	}
 }

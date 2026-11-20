@@ -16,18 +16,19 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 )
 
 // budgetFake records tag-budget writes. Everything else is the NoopClient.
 type budgetFake struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	upsertedTags map[string]litellm.TagBudget
 	upsertTagErr error
 }
 
 func newBudgetFake() *budgetFake {
 	return &budgetFake{
-		NoopClient:   &litellm.NoopClient{Log: logr.Discard()},
+		NoopClient:   &litellmtest.NoopClient{Log: logr.Discard()},
 		upsertedTags: map[string]litellm.TagBudget{},
 	}
 }

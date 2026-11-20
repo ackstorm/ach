@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 func TestConsentBIP_AlphaFirstAndFields(t *testing.T) {
@@ -27,10 +28,10 @@ func TestConsentBIP_AlphaFirstAndFields(t *testing.T) {
 			ResourceVersion: "1",
 		}
 	}
-	if err := db.UpsertBIP(ctx, pool, mk("b-on", true, "https://broker", "svc-name")); err != nil {
+	if err := dbtest.UpsertBIP(ctx, pool, mk("b-on", true, "https://broker", "svc-name")); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.UpsertBIP(ctx, pool, mk("a-off", false, "https://x", "y")); err != nil {
+	if err := dbtest.UpsertBIP(ctx, pool, mk("a-off", false, "https://x", "y")); err != nil {
 		t.Fatal(err)
 	}
 

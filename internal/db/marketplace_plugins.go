@@ -67,12 +67,6 @@ const upsertMarketplacePluginSQL = `
 	RETURNING marketplace_name
 `
 
-func UpsertMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, p MarketplacePlugin) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertMarketplacePluginTx(ctx, tx, p)
-	})
-}
-
 // UpsertMarketplacePluginTx — see UpsertEnvironmentTx.
 func UpsertMarketplacePluginTx(ctx context.Context, tx pgx.Tx, p MarketplacePlugin) error {
 	return upsertReturning(ctx, tx, upsertMarketplacePluginSQL, "UpsertMarketplacePlugin("+p.MarketplaceName+"/"+p.Name+")",
@@ -167,19 +161,6 @@ func ListAllMarketplacePlugins(ctx context.Context, pool *pgxpool.Pool) ([]Marke
 		return nil, fmt.Errorf("db: ListAllMarketplacePlugins iterate: %w", err)
 	}
 	return out, nil
-}
-
-// DeleteMarketplacePlugin removes the row keyed by (marketplaceName, name).
-// Absence is not an error.
-func DeleteMarketplacePlugin(ctx context.Context, pool *pgxpool.Pool, marketplaceName, name string) error {
-	const sql = `DELETE FROM marketplace_plugins WHERE marketplace_name = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, marketplaceName, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteMarketplacePlugin(%s/%s): %w", marketplaceName, name, err)
-	}
-	return nil
 }
 
 // DeleteMarketplacePluginTx is the tx-form of DeleteMarketplacePlugin,

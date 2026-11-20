@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertAndListMarketplaces: upsert two rows, assert ListMarketplaces
@@ -22,7 +23,7 @@ func TestUpsertAndListMarketplaces(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"bravo", "alpha"} {
-		if err := db.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
+		if err := dbtest.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
 			Namespace: "ach", Name: name, SyncedStatus: "True", SyncedReason: "",
 			PluginsCount: 3, ResourceVersion: "100",
 		}); err != nil {
@@ -30,7 +31,7 @@ func TestUpsertAndListMarketplaces(t *testing.T) {
 		}
 	}
 	// Other-namespace row must be excluded by ns scoping.
-	if err := db.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
+	if err := dbtest.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
 		Namespace: "other", Name: "charlie", SyncedStatus: "False", SyncedReason: "UpstreamInvalid",
 		PluginsCount: 0, ResourceVersion: "1",
 	}); err != nil {
@@ -52,7 +53,7 @@ func TestUpsertAndListMarketplaces(t *testing.T) {
 	}
 
 	// Re-upsert updates in place (no duplicate row).
-	if err := db.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
+	if err := dbtest.UpsertMarketplace(ctx, pool, db.MarketplaceRow{
 		Namespace: "ach", Name: "alpha", SyncedStatus: "False", SyncedReason: "Unreachable",
 		PluginsCount: 5, ResourceVersion: "101",
 	}); err != nil {
@@ -70,7 +71,7 @@ func TestUpsertAndListMarketplaces(t *testing.T) {
 	}
 
 	// Delete removes the row.
-	if err := db.DeleteMarketplace(ctx, pool, "ach", "alpha"); err != nil {
+	if err := dbtest.DeleteMarketplace(ctx, pool, "ach", "alpha"); err != nil {
 		t.Fatalf("DeleteMarketplace: %v", err)
 	}
 	got, err = db.ListMarketplaces(ctx, pool, "ach")

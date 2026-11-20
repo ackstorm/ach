@@ -21,6 +21,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -136,14 +137,14 @@ func TestClassifyLitellmErr(t *testing.T) {
 // --- happy-path ek_ mint test (KeyAlias attribution) ---------------------
 
 // captureLiteLLM is a fake litellm.Client for the ek_ create happy path. It
-// embeds *litellm.NoopClient (which satisfies the full Client interface) and
+// embeds *litellmtest.NoopClient (which satisfies the full Client interface) and
 // overrides only the three methods CreateHandler exercises: UserInfoByEmail
 // (so the caller is a member of an authorized team), ListAllTeams (so the
 // id→alias resolution in LookupCallerTeams AND the mintAndInsert shell-team
 // lookup have data), and KeyGenerate (which captures the incoming request so
 // the test can assert on KeyAlias/TeamID).
 type captureLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	lastKeyGenerateReq *litellm.KeyGenerateRequest
 	// teams overrides the default ListAllTeams fixture below when non-nil —
 	// used by TestCreateEkRejectsWhenShellTeamMissing to omit the shell team.
@@ -159,7 +160,7 @@ type captureLiteLLM struct {
 
 func newCaptureLiteLLM() *captureLiteLLM {
 	return &captureLiteLLM{
-		NoopClient:     &litellm.NoopClient{},
+		NoopClient:     &litellmtest.NoopClient{},
 		upsertedTags:   map[string]litellm.TagBudget{},
 		deletedTags:    map[string]bool{},
 		deletedBudgets: map[string]bool{},
@@ -469,7 +470,7 @@ func TestCreateEkRejectsWhenShellTeamMissing(t *testing.T) {
 // forces the UserNew branch. UserNew records the request so the test can
 // assert user_id=email + auto_create_key=false.
 type firstTimeLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	userInfoCalls      int
 	lastUserNewReq     *litellm.UserNewRequest
 	userNewErr         error // if set, UserNew returns it (after recording the req)
@@ -518,7 +519,7 @@ func (c *firstTimeLiteLLM) KeyGenerate(ctx context.Context, req *litellm.KeyGene
 // deterministic user_id=email and auto_create_key=false (regression guard
 // for the 2026-06-04 prod finding: no untracked default key leaked).
 func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
-	flm := &firstTimeLiteLLM{NoopClient: &litellm.NoopClient{}}
+	flm := &firstTimeLiteLLM{NoopClient: &litellmtest.NoopClient{}}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{
 		Namespace:       "ach",
 		Name:            "prod",
@@ -575,7 +576,7 @@ func TestCreateHandler_FirstTimeUser_UserIDEmailAndNoAutoKey(t *testing.T) {
 // not 500.
 func TestCreateHandler_FirstTimeUser_DuplicateUserRecovers(t *testing.T) {
 	flm := &firstTimeLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		userNewErr: &litellm.APIError{ // captured prod signature (Task 4)
 			Method:     "POST",
 			Path:       "/user/new",
@@ -635,7 +636,7 @@ func TestListAllHandler_CallerScopedAndDefaults(t *testing.T) {
 	// (this test predates D-30 access derivation and is not itself testing it).
 	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
 	fll := &listTeamsLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		teams:      map[string][]string{"user@example.com": {"team-a"}},
 	}
 	deps := Deps{
@@ -682,7 +683,7 @@ func TestListAllHandler_CallerScopedAndDefaults(t *testing.T) {
 // UserInfoByEmail ran — D-30 requires at most one lookup per list call. err,
 // when set, is returned unconditionally (simulates a LiteLLM outage).
 type listTeamsLiteLLM struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	teams     map[string][]string
 	callCount int
 	err       error
@@ -891,7 +892,7 @@ func TestListAll_DerivesInvalidOncePerOwner(t *testing.T) {
 	fdb := &fakeEkDB{items: items}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
 	fll := &listTeamsLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		teams:      map[string][]string{"u@x.com": {"team-b"}}, // no intersection with team-a
 	}
 	deps := Deps{
@@ -952,7 +953,7 @@ func TestListAll_AdminCallerNoAccessBypass(t *testing.T) {
 	fdb := &fakeEkDB{items: items}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
 	fll := &listTeamsLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		teams:      map[string][]string{"admin@x.com": {"team-b"}}, // no intersection with team-a
 	}
 	deps := Deps{
@@ -991,7 +992,7 @@ func TestListAll_TeamsLookupFailureIsUnverifiedNotInvalid(t *testing.T) {
 	}
 	fdb := &fakeEkDB{items: items}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
-	fll := &listTeamsLiteLLM{NoopClient: &litellm.NoopClient{}, err: errors.New("dial tcp: connection refused")}
+	fll := &listTeamsLiteLLM{NoopClient: &litellmtest.NoopClient{}, err: errors.New("dial tcp: connection refused")}
 	deps := Deps{
 		DB: fdb, Store: store, LiteLLM: fll,
 		Audit: slog.New(slog.NewTextHandler(io.Discard, nil)), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -1032,7 +1033,7 @@ func TestListAll_StatusFilterInvalid(t *testing.T) {
 	fdb := &fakeEkDB{items: items}
 	store := &fakeEnvStore{env: &db.EnvironmentRow{Name: "demo", AuthorizedTeams: []string{"team-a"}}}
 	fll := &listTeamsLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		teams:      map[string][]string{"u@x.com": {"team-z"}}, // no access at all
 	}
 	deps := Deps{
@@ -1095,7 +1096,7 @@ func TestListAll_StatusFilterIsOnEffectiveState(t *testing.T) {
 		"lost": {Name: "lost", AuthorizedTeams: []string{"team-b"}},
 	}}
 	fll := &listTeamsLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		teams:      map[string][]string{"u@x.com": {"team-a"}}, // member of team-a only
 	}
 	newDeps := func() (Deps, *fakeEkDB) {
@@ -1156,7 +1157,7 @@ func TestListAllHandler_EkCallerRefused(t *testing.T) {
 		DB:      fdb,
 		Audit:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		LiteLLM: &litellm.NoopClient{},
+		LiteLLM: &litellmtest.NoopClient{},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/platform/keys", nil)
 	ctx := middleware.WithKeyContext(req.Context(), &keystore.KeyInfo{

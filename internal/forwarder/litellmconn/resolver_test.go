@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 	"github.com/ackstorm/ach/internal/forwarder/litellmconn"
 )
 
@@ -96,7 +97,7 @@ func newScheme(t *testing.T) *runtime.Scheme {
 
 func seedConn(t *testing.T, ctx context.Context, pool *pgxpool.Pool, endpoint, secretNS, secretName, secretKey string) {
 	t.Helper()
-	require.NoError(t, db.UpsertLiteLLMConnection(ctx, pool, db.LiteLLMConnectionRow{
+	require.NoError(t, dbtest.UpsertLiteLLMConnection(ctx, pool, db.LiteLLMConnectionRow{
 		Namespace:                testNS,
 		Name:                     "default",
 		Endpoint:                 endpoint,

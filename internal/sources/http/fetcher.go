@@ -175,13 +175,5 @@ func splitPriorRev(rev string) (etag, lastMod string) {
 	return rev[:idx], rev[idx+1:]
 }
 
-// setHTTPClientForTesting is the test-only override that injects an
-// alternate http.Client (typically httptest.NewTLSServer().Client()).
-// Not part of the public API — tests in the same package call it
-// directly on the returned *Fetcher.
-func (f *Fetcher) setHTTPClientForTesting(c *nethttp.Client) {
-	f.httpClient = c
-}
-
 // Compile-time assertion that *Fetcher satisfies sources.Fetcher.
 var _ sources.Fetcher = (*Fetcher)(nil)

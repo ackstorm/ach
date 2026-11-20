@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertExternalRef_Insert: a fresh row scans back equal under GetExternalRef.
@@ -39,7 +40,7 @@ func TestUpsertExternalRef_Insert(t *testing.T) {
 		NextRefreshAt:         now.Add(15 * time.Minute),
 		MaxStalenessSeconds:   3600,
 	}
-	if err := db.UpsertExternalRef(ctx, pool, want); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, want); err != nil {
 		t.Fatalf("UpsertExternalRef: %v", err)
 	}
 	got, err := db.GetExternalRef(ctx, pool, "plugin", "demo-1")
@@ -69,13 +70,13 @@ func TestUpsertExternalRef_Update(t *testing.T) {
 		NextRefreshAt:         now.Add(10 * time.Minute),
 		MaxStalenessSeconds:   60,
 	}
-	if err := db.UpsertExternalRef(ctx, pool, first); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, first); err != nil {
 		t.Fatalf("first upsert: %v", err)
 	}
 	second := first
 	second.StorageLocation = "/var/cache/ach/prompt/p.v2"
 	second.UpstreamRev = "etag-2"
-	if err := db.UpsertExternalRef(ctx, pool, second); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, second); err != nil {
 		t.Fatalf("second upsert: %v", err)
 	}
 
@@ -110,7 +111,7 @@ func TestExternalRef_LatestUpstreamRev(t *testing.T) {
 	defer cleanup()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := db.UpsertExternalRef(ctx, pool, db.ExternalRef{
+	if err := dbtest.UpsertExternalRef(ctx, pool, db.ExternalRef{
 		Kind: "plugin", Name: "p", StorageLocation: "/var/cache/ach/plugin/p.tar.gz",
 		UpstreamRev: "pinned", LatestUpstreamRev: "head-1",
 		LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Minute), MaxStalenessSeconds: 60,
@@ -147,7 +148,7 @@ func TestUpsertExternalRef_ClearsForceRefresh(t *testing.T) {
 		NextRefreshAt:         now.Add(time.Hour),
 		MaxStalenessSeconds:   3600,
 	}
-	if err := db.UpsertExternalRef(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, row); err != nil {
 		t.Fatalf("initial upsert: %v", err)
 	}
 	// Simulate Platform API (Phase 3) writing the force-refresh marker.
@@ -168,7 +169,7 @@ func TestUpsertExternalRef_ClearsForceRefresh(t *testing.T) {
 	}
 	// Run the reconciler-style UPSERT and confirm the column clears.
 	row.LastSuccessfulRefresh = now.Add(time.Minute)
-	if err := db.UpsertExternalRef(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, row); err != nil {
 		t.Fatalf("second upsert: %v", err)
 	}
 	var afterNonNull bool
@@ -214,7 +215,7 @@ func TestResetExternalRefRefreshOnEmptyCache(t *testing.T) {
 			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
 	}
 	for _, r := range rows {
-		if err := db.UpsertExternalRef(ctx, pool, r); err != nil {
+		if err := dbtest.UpsertExternalRef(ctx, pool, r); err != nil {
 			t.Fatalf("seed upsert %s/%s: %v", r.Kind, r.Name, err)
 		}
 	}
@@ -246,7 +247,7 @@ func TestDeleteExternalRef(t *testing.T) {
 		StorageLocation: "/x", UpstreamRev: "v",
 		LastSuccessfulRefresh: now, NextRefreshAt: now, MaxStalenessSeconds: 60,
 	}
-	if err := db.UpsertExternalRef(ctx, pool, r); err != nil {
+	if err := dbtest.UpsertExternalRef(ctx, pool, r); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	if err := db.DeleteExternalRef(ctx, pool, "plugin", "to-delete"); err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/ackstorm/ach/internal/keys"
 	"github.com/ackstorm/ach/internal/keystore"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 	"github.com/ackstorm/ach/internal/platformapi/middleware"
 )
 
@@ -105,7 +106,7 @@ func revokeEnvDeps(fdb dbOps, fll litellm.Client, redis redisOps) Deps {
 func TestRevokeEnvironmentKey_LiteLLMNotFound_ProceedsToDBFlip(t *testing.T) {
 	fdb := &revokeEnvDB{getRow: activeEkRow()}
 	fll := &revokePersonalLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		revokeErr: &litellm.APIError{
 			Method: http.MethodPost, Path: "/key/delete",
 			StatusCode: http.StatusNotFound, Code: "not_found_error",
@@ -134,7 +135,7 @@ func TestRevokeEnvironmentKey_LiteLLMNotFound_ProceedsToDBFlip(t *testing.T) {
 func TestRevokeEnvironmentKey_LiteLLMOtherError_FailsClosed(t *testing.T) {
 	fdb := &revokeEnvDB{getRow: activeEkRow()}
 	fll := &revokePersonalLiteLLM{
-		NoopClient: &litellm.NoopClient{},
+		NoopClient: &litellmtest.NoopClient{},
 		revokeErr: &litellm.APIError{
 			Method: http.MethodPost, Path: "/key/delete",
 			StatusCode: http.StatusInternalServerError, Code: "500", Transient: true,

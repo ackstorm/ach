@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestDeleteMarketplacePluginTx_EmitsNotify mirrors the bipcache NOTIFY
@@ -33,7 +34,7 @@ func TestDeleteMarketplacePluginTx_EmitsNotify(t *testing.T) {
 
 	// Seed a row so the delete has something to remove.
 	now := time.Now().UTC().Truncate(time.Second)
-	require.NoError(t, db.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
+	require.NoError(t, dbtest.UpsertMarketplacePlugin(ctx, pool, db.MarketplacePlugin{
 		MarketplaceName:       "mkt",
 		Name:                  "pluginA",
 		StorageLocation:       "/var/cache/ach/marketplace/mkt/pluginA.tar.gz",

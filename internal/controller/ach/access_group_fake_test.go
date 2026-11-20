@@ -21,10 +21,11 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 )
 
 type accessGroupFakeImpl struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 
 	mu sync.Mutex
 
@@ -104,7 +105,7 @@ type accessGroupFakeImpl struct {
 
 func newAccessGroupFake() *accessGroupFakeImpl {
 	return &accessGroupFakeImpl{
-		NoopClient:      &litellm.NoopClient{Log: logr.Discard()},
+		NoopClient:      &litellmtest.NoopClient{Log: logr.Discard()},
 		createCalls:     map[string]int{},
 		updateCalls:     map[string]int{},
 		deleteCalls:     map[string]int{},

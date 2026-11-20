@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 func uiEnvRow(ns, name string) db.EnvironmentRow {
@@ -87,7 +88,7 @@ func TestUpsertEnvironment_TakesOverUIRow(t *testing.T) {
 	crRow := crEnvRow("ach", "demo", "1000")
 	crRow.AuthorizedTeams = []string{"team-b"}
 	crRow.RuntimeModels = []string{"claude-opus-4-8"}
-	if err := db.UpsertEnvironment(ctx, pool, crRow); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, crRow); err != nil {
 		t.Fatalf("UpsertEnvironment (takeover) returned error: %v", err)
 	}
 	if origin, locked := readOriginLocked(t, ctx, pool, "ach", "demo"); origin != "cr" || !locked {
@@ -140,7 +141,7 @@ func TestInsertUIEnvironment_ConflictWithCR(t *testing.T) {
 	defer cleanup()
 
 	// Operator owns the row first.
-	if err := db.UpsertEnvironment(ctx, pool, crEnvRow("ach", "owned", "1")); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, crEnvRow("ach", "owned", "1")); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	err := db.InsertUIEnvironment(ctx, pool, uiEnvRow("ach", "owned"))
@@ -197,7 +198,7 @@ func TestUpdateUIEnvironment_ImmutableViaUI(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertEnvironment(ctx, pool, crEnvRow("ach", "crobj", "1")); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, crEnvRow("ach", "crobj", "1")); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	err := db.UpdateUIEnvironment(ctx, pool, uiEnvRow("ach", "crobj"))
@@ -240,7 +241,7 @@ func TestDeleteUIEnvironment(t *testing.T) {
 	}
 
 	// Immutable path: operator-owned row cannot be deleted via UI.
-	if err := db.UpsertEnvironment(ctx, pool, crEnvRow("ach", "crdel", "1")); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, crEnvRow("ach", "crdel", "1")); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	if err := db.DeleteUIEnvironment(ctx, pool, "ach", "crdel"); !errors.Is(err, db.ErrImmutableViaUI) {

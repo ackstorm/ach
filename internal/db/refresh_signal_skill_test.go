@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestSetForceRefresh_Skill — a "skill" kind sets force_refresh_requested_at
@@ -25,7 +26,7 @@ func TestSetForceRefresh_Skill(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertExternalRef(ctx, pool, db.ExternalRef{
+	if err := dbtest.UpsertExternalRef(ctx, pool, db.ExternalRef{
 		Kind:                  "skill",
 		Name:                  "demo-skill",
 		StorageLocation:       "/cache/skill/demo-skill.tar.gz",
@@ -61,7 +62,7 @@ func TestSetForceRefresh_SkillMarketplace(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := db.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
+	if err := dbtest.UpsertSkillMarketplaceSkill(ctx, pool, db.SkillMarketplaceSkill{
 		MarketplaceName:       "demo-mkt",
 		Name:                  "sk1",
 		StorageLocation:       "/cache/skill-marketplace/demo-mkt/sk1.tar.gz",

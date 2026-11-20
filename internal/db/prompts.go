@@ -71,12 +71,6 @@ const upsertPromptSQL = `
 	RETURNING namespace
 `
 
-func UpsertPrompt(ctx context.Context, pool *pgxpool.Pool, row PromptRow) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertPromptTx(ctx, tx, row)
-	})
-}
-
 // UpsertPromptTx — see UpsertEnvironmentTx.
 func UpsertPromptTx(ctx context.Context, tx pgx.Tx, row PromptRow) error {
 	return upsertReturning(ctx, tx, upsertPromptSQL, "UpsertPrompt("+row.Namespace+"/"+row.Name+")",
@@ -158,18 +152,6 @@ func ListPrompts(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PromptRo
 }
 
 const deletePromptSQL = `DELETE FROM prompts WHERE namespace = $1 AND name = $2`
-
-// DeletePrompt removes the row keyed by (namespace, name). Absence is not an
-// error.
-func DeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	if _, err := pool.Exec(ctx, deletePromptSQL, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeletePrompt(%s/%s): %w", ns, name, err)
-	}
-	return nil
-}
 
 // DeletePromptTx is DeletePrompt inside an outer transaction (db.WithTxNotify).
 func DeletePromptTx(ctx context.Context, tx pgx.Tx, ns, name string) error {

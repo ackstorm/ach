@@ -18,7 +18,7 @@ import (
 // NoopClient to RESTClient is a wiring change in cmd/operator/main.go
 // only (Plan 09), no reconciler edit. The compile-time assertions
 //
-//	var _ Client = (*NoopClient)(nil)   // noop.go
+//	var _ litellm.Client = (*NoopClient)(nil)   // litellmtest/noop.go
 //	var _ Client = (*RESTClient)(nil)   // bottom of this file
 //
 // are the canaries that break the build if either implementation drifts

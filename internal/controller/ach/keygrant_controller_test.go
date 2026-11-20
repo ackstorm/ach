@@ -23,6 +23,7 @@ import (
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	achdb "github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
+	"github.com/ackstorm/ach/internal/litellm/litellmtest"
 )
 
 // keyGrantStoreFake is the in-memory KeyGrantStore the suite reconciler writes.
@@ -107,7 +108,7 @@ func (s *keyGrantStoreFake) status(keyID string) string {
 
 // keyGrantLLMFake answers the identity lookup and records revokes and budgets.
 type keyGrantLLMFake struct {
-	*litellm.NoopClient
+	*litellmtest.NoopClient
 	mu      sync.Mutex
 	users   map[string]bool
 	revoked []string
@@ -115,7 +116,7 @@ type keyGrantLLMFake struct {
 }
 
 func newKeyGrantLLMFake() *keyGrantLLMFake {
-	return &keyGrantLLMFake{NoopClient: &litellm.NoopClient{Log: logr.Discard()},
+	return &keyGrantLLMFake{NoopClient: &litellmtest.NoopClient{Log: logr.Discard()},
 		users: map[string]bool{}, budgets: map[string]litellm.TagBudget{}}
 }
 

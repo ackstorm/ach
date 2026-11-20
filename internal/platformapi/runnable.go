@@ -54,16 +54,6 @@ func NewRunnable(addr string, handler http.Handler, logger *slog.Logger, shutdow
 	}
 }
 
-// newRunnableWithListener is the test seam — same config as NewRunnable
-// but the supplied net.Listener is served instead of binding the
-// configured Addr. Used by server_test.go to exercise lifecycle
-// without hitting a real port.
-func newRunnableWithListener(handler http.Handler, l net.Listener, logger *slog.Logger) *ServerRunnable {
-	rn := NewRunnable("", handler, logger, 10*time.Second)
-	rn.listener = l
-	return rn
-}
-
 // Start blocks until ctx is cancelled OR ListenAndServe returns. On
 // cancellation the runnable drains via Shutdown for shutdownTimeout; ListenAndServe's http.ErrServerClosed is folded to nil
 // (clean shutdown) so the manager sees Start return without error.

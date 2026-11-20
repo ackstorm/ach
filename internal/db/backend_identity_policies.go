@@ -65,29 +65,6 @@ const upsertBIPSQL = `
 	RETURNING namespace
 `
 
-// UpsertBIP inserts-or-updates the row keyed by (Namespace, Name). Returns
-// ErrOriginConflict on UI-owned-row collision.
-func UpsertBIP(ctx context.Context, pool *pgxpool.Pool, row BIPRow) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertBIP(%s/%s): begin: %w", row.Namespace, row.Name, err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := UpsertBIPTx(ctx, tx, row); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertBIP(%s/%s): commit: %w", row.Namespace, row.Name, err)
-	}
-	return nil
-}
-
 // UpsertBIPTx exposes the tx-form upsert for callers inside db.WithTxNotify.
 func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 	var ns string

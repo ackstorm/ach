@@ -564,3 +564,17 @@ func TestCachedResolverSharesLeaderAnchorAcrossFollowers(t *testing.T) {
 		t.Fatalf("cache TTL %v, want ≤15s (60s − 45s elapsed from the LEADER's anchor — a follower-anchored bug would show ≈45s instead)", ttl)
 	}
 }
+
+// newDBResolverWith injects the per-prefix lookup callables directly.
+func newDBResolverWith(pepper []byte, pkFn, ekFn dbLookupFn) *dbResolver {
+	return &dbResolver{
+		pepper: append([]byte(nil), pepper...),
+		pkFn:   pkFn,
+		ekFn:   ekFn,
+	}
+}
+
+// WithClock replaces the wall clock.
+func WithClock(now func() time.Time) Option {
+	return func(r *redisCachedResolver) { r.now = now }
+}

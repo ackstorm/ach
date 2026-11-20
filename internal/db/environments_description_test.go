@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
+	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
 // TestUpsertEnvironment_DescriptionRoundTrips asserts spec.description survives
@@ -32,7 +33,7 @@ func TestUpsertEnvironment_DescriptionRoundTrips(t *testing.T) {
 		ResourceVersion:   "1",
 		Description:       "production env for the data team",
 	}
-	if err := db.UpsertEnvironment(ctx, pool, row); err != nil {
+	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
 	}
 	got, err := db.GetEnvironmentByName(ctx, pool, "ach-system", "desc-demo")

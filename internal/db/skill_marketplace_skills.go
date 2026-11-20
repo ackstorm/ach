@@ -66,12 +66,6 @@ const upsertSkillMarketplaceSkillSQL = `
 	RETURNING marketplace_name
 `
 
-func UpsertSkillMarketplaceSkill(ctx context.Context, pool *pgxpool.Pool, s SkillMarketplaceSkill) error {
-	return runInTx(ctx, pool, func(tx pgx.Tx) error {
-		return UpsertSkillMarketplaceSkillTx(ctx, tx, s)
-	})
-}
-
 // UpsertSkillMarketplaceSkillTx — see UpsertMarketplacePluginTx.
 func UpsertSkillMarketplaceSkillTx(ctx context.Context, tx pgx.Tx, s SkillMarketplaceSkill) error {
 	return upsertReturning(ctx, tx, upsertSkillMarketplaceSkillSQL, "UpsertSkillMarketplaceSkill("+s.MarketplaceName+"/"+s.Name+")",
@@ -164,19 +158,6 @@ func ListAllSkillMarketplaceSkills(ctx context.Context, pool *pgxpool.Pool) ([]S
 		return nil, fmt.Errorf("db: ListAllSkillMarketplaceSkills iterate: %w", err)
 	}
 	return out, nil
-}
-
-// DeleteSkillMarketplaceSkill removes the row keyed by (marketplaceName, name).
-// Absence is not an error.
-func DeleteSkillMarketplaceSkill(ctx context.Context, pool *pgxpool.Pool, marketplaceName, name string) error {
-	const sql = `DELETE FROM skill_marketplace_skills WHERE marketplace_name = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, marketplaceName, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteSkillMarketplaceSkill(%s/%s): %w", marketplaceName, name, err)
-	}
-	return nil
 }
 
 // DeleteSkillMarketplaceSkillTx is the tx-form of DeleteSkillMarketplaceSkill,

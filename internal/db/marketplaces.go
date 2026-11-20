@@ -56,21 +56,6 @@ const upsertMarketplaceSQL = `
 	    updated_at         = now()
 `
 
-// UpsertMarketplace inserts-or-updates the row keyed by (Namespace, Name).
-// Transient pgconn 08/57 errors propagate raw for controller-runtime backoff.
-func UpsertMarketplace(ctx context.Context, pool *pgxpool.Pool, row MarketplaceRow) error {
-	if _, err := pool.Exec(ctx, upsertMarketplaceSQL,
-		row.Namespace, row.Name, row.SyncedStatus, row.SyncedReason,
-		row.PluginsCount, row.ResourceVersion, row.UpstreamRev, row.LatestUpstreamRev,
-	); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: UpsertMarketplace(%s/%s): %w", row.Namespace, row.Name, err)
-	}
-	return nil
-}
-
 // UpsertMarketplaceTx exposes the tx-form upsert for callers inside
 // db.WithTxNotify.
 func UpsertMarketplaceTx(ctx context.Context, tx pgx.Tx, row MarketplaceRow) error {
@@ -124,19 +109,6 @@ func ListMarketplaces(ctx context.Context, pool *pgxpool.Pool, ns string) ([]Mar
 		return nil, fmt.Errorf("db: ListMarketplaces(%s) iterate: %w", ns, err)
 	}
 	return out, nil
-}
-
-// DeleteMarketplace removes the row outright. Called from the finalizer
-// deletion path. Absence is not an error.
-func DeleteMarketplace(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	const sql = `DELETE FROM marketplaces WHERE namespace = $1 AND name = $2`
-	if _, err := pool.Exec(ctx, sql, ns, name); err != nil {
-		if isTransientPgErr(err) {
-			return err
-		}
-		return fmt.Errorf("db: DeleteMarketplace(%s/%s): %w", ns, name, err)
-	}
-	return nil
 }
 
 // DeleteMarketplaceTx is the tx-form of DeleteMarketplace, used inside
