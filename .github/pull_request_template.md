@@ -13,7 +13,7 @@
      A new kind MUST satisfy every applicable row IN THIS PR — no second-class
      kinds. Tick what applies to the kind's archetype; mark N/A rows explicitly. -->
 
-- [ ] **CRD + CEL** — `api/v1alpha1/<kind>_types.go` + validation/CEL markers; `make gen-code` + `make gen-crd-ref-docs` run
+- [ ] **CRD + CEL** — `api/ach/v1alpha1/<kind>_types.go` + validation/CEL markers; `make gen-code` + `make gen-crd-ref-docs` run
 - [ ] **Projection table + `with_tx_notify`** — operator-only writer, `NOTIFY ach_<kind>_changed` in-tx
 - [ ] **Status conditions** — incl. `Synced=False reason=NameConflict` on duplicate identity (G15); `origin`/`locked` if UI-writable
 - [ ] **Reconciler + finalizer** — `internal/controller/ach/<kind>_controller.go`; finalizer cleans projection + delete `NOTIFY`
