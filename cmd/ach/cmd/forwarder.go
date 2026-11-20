@@ -438,6 +438,8 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 			Challenge: proxy.ChallengeFor(cfg.BaseURL),
 			Headers:   cfg.CredentialHeaders,
 			LoginURL:  strings.TrimRight(cfg.BaseURL, "/") + "/",
+			// LiteLLM authenticates what is not ACH's.
+			AllowForeign: true,
 		},
 		GeminiStripModelPrefixes: cfg.GeminiStripModelPrefixes,
 		TestTagsHeader:           cfg.TestTagsHeader,
