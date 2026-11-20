@@ -4,8 +4,6 @@ go 1.26.0
 
 toolchain go1.26.11
 
-godebug default=go1.23
-
 require (
 	cloud.google.com/go/storage v1.62.2
 	github.com/BurntSushi/toml v1.6.0

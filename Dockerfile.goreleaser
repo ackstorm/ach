@@ -6,7 +6,7 @@
 # use alpine + apk add git ca-certificates. CGO_ENABLED=0 in the build,
 # so musl is not exercised. nonroot uid 65532 matches the chart's
 # securityContext.runAsNonRoot=true.
-FROM alpine:3.20
+FROM alpine:3.23
 
 RUN apk add --no-cache git ca-certificates && \
     addgroup -g 65532 -S nonroot && \
