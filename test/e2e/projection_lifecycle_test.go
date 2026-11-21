@@ -9,7 +9,7 @@
 // full projection lifecycle of the demo Environment's caveman plugin, for every
 // canonical adapter id:
 //
-//	claude-code · codex · gemini-cli · opencode · pi
+//	claude-code · codex · opencode · pi
 //
 // The existing Phase 7 CLI-engine suite (cli_hydrate_engine_test.go) proves
 // RUNTIME-config emission + drift/SIGKILL/safe-extract, but NO existing e2e

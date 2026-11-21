@@ -28,12 +28,13 @@ import (
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
 
-	// Named-import all five adapters: instantiate each Adapter directly for the
+	// Named-import every adapter: instantiate each Adapter directly for the
 	// route-table assertions. The import also fires init() Register, but
 	// registration is asserted by each subpackage's own test, not here.
+	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
-	"github.com/ackstorm/ach/internal/cli/adapter/gemini"
+	"github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	"github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	"github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
@@ -43,9 +44,10 @@ import (
 // race the in-package registry_test.go introduces into this shared test binary.
 func adapters() map[string]route.RuleProvider {
 	return map[string]route.RuleProvider{
+		"antigravity": &antigravity.Adapter{},
 		"claude-code": &claudecode.Adapter{},
 		"codex":       &codex.Adapter{},
-		"gemini-cli":  &gemini.Adapter{},
+		"cursor":      &cursor.Adapter{},
 		"opencode":    &opencode.Adapter{},
 		"pi":          &pi.Adapter{},
 	}
@@ -97,6 +99,20 @@ var fullTree = map[string]string{
 // ProjectionRules() breaks the gate.
 var conformanceTables = []adapterConformance{
 	{
+		id:             "antigravity",
+		mappingSection: "§antigravity: everything under .agents/ (skills, agents, mcp_config.json); no command directory",
+		rowCount:       4,
+		rules: map[string]wantRule{
+			"skills/**/*":    {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"agents/**/*.md": {to: ".agents/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
+			"mcp/**/*":       {to: ".agents/mcp_config.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":      {to: ".agents/mcp_config.json", merge: adapter.MergeDeep, hasXform: true},
+		},
+		// antigravity routes skills/agents/mcp; commands/, rules/, prompts/,
+		// AGENTS.md, hooks/ have no rule → dropped.
+		wantDropped: []string{"AGENTS.md", "commands", "hooks", "prompts", "rules"},
+	},
+	{
 		id:             "claude-code",
 		mappingSection: "the adapter table §claude-code (drops = NONE at field level; FMT-03 CUT)",
 		rowCount:       6,
@@ -128,23 +144,19 @@ var conformanceTables = []adapterConformance{
 		wantDropped: []string{"AGENTS.md", "hooks", "prompts", "rules"},
 	},
 	{
-		id:             "gemini-cli",
-		mappingSection: "the adapter table §gemini-cli (ACH-original; drop hooks)",
-		rowCount:       7,
+		id:             "cursor",
+		mappingSection: "§cursor: commands/agents verbatim under .cursor/, skills in .agents/skills, MCP deep-merged into .cursor/mcp.json",
+		rowCount:       5,
 		rules: map[string]wantRule{
-			"agents/**/*":  {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"prompts/**/*": {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
-			// gemini-cli custom commands are TOML: commands/*.md is converted
-			// (geminiCommandTOML), commands/*.toml passes through verbatim.
-			"commands/**/*.md":   {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: true},
-			"commands/**/*.toml": {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":        {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"mcp/**/*":           {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
-			".mcp.json":          {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
+			"commands/**/*.md": {to: ".cursor/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"agents/**/*.md":   {to: ".cursor/agents/**/*.md", merge: adapter.MergeReplace, hasXform: false},
+			"mcp/**/*":         {to: ".cursor/mcp.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":        {to: ".cursor/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},
-		// gemini routes agents/prompts/commands/skills/mcp; rules/, AGENTS.md
-		// and hooks/ have no rule → dropped.
-		wantDropped: []string{"AGENTS.md", "hooks", "rules"},
+		// cursor routes commands/skills/agents/mcp; rules/, prompts/, AGENTS.md,
+		// hooks/ have no rule → dropped.
+		wantDropped: []string{"AGENTS.md", "hooks", "prompts", "rules"},
 	},
 	{
 		id:             "opencode",
@@ -153,7 +165,7 @@ var conformanceTables = []adapterConformance{
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"agents/**/*.md":   {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
-			"skills/**/*":      {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":        {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 		},
@@ -163,11 +175,11 @@ var conformanceTables = []adapterConformance{
 	},
 	{
 		id:             "pi",
-		mappingSection: "§pi: project .pi/{prompts,skills} (global remap to .pi/agent/) + D-33 .pi/mcp.json deep",
+		mappingSection: "§pi: project .pi/prompts (global remap to .pi/agent/) + .agents/skills + D-33 .pi/mcp.json deep",
 		rowCount:       4,
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".pi/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":      {to: ".pi/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":        {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},
@@ -178,7 +190,7 @@ var conformanceTables = []adapterConformance{
 }
 
 // TestProjectionRules_Conformance is the cross-adapter spec-drift gate. For each
-// of the five adapters it (1) asserts the ProjectionRules() route table FromGlob
+// of the adapters it (1) asserts the ProjectionRules() route table FromGlob
 // / ToGlob / Merge + Transform-presence against the literal expected fixture
 // transcribed from the adapter table, and (2) asserts the EXACT drop set
 // route.Project records over a plugin tree carrying every canonical source kind.
@@ -249,7 +261,7 @@ func TestProjectionRules_Conformance(t *testing.T) {
 // TestProjectionRules_StayInsideToolConfig pins that no adapter routes plugin
 // content to a file the user owns: every destination is the tool's own
 // dot-prefixed config dir or file (first path segment, so "./x" and "../x"
-// do not pass), never a root CLAUDE.md / AGENTS.md / GEMINI.md.
+// do not pass), never a root CLAUDE.md / AGENTS.md.
 func TestProjectionRules_StayInsideToolConfig(t *testing.T) {
 	for id, rp := range adapters() {
 		for _, r := range rp.ProjectionRules() {

@@ -3,7 +3,7 @@
 ACH is identity and access for AI agents. An Environment binds what an agent
 may call (models, MCP servers, A2A agents, budgets) to what it is given
 (plugins, skills, prompts, artifacts) and to who may use it, and `ach-cli`
-delivers it into Claude Code, Codex, Gemini CLI, OpenCode and Pi.
+delivers it into Antigravity, Claude Code, Codex, Cursor, OpenCode and Pi.
 
 Work is grouped as **Now**, **Next** and **Later**. An item moves up when the
 one before it ships; dates are not promised. Shipped work is in

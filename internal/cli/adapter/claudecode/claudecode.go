@@ -248,9 +248,10 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "rules/**/*", ToGlob: ".claude/rules/**/*", Merge: adapter.MergeReplace},
 		// commands are .md-scoped: Claude Code commands are markdown. A plugin
-		// authored for multiple tools may also ship gemini-format commands/*.toml
-		// in the same dir; those are NOT Claude commands and must not leak into
-		// .claude/commands/ (the verbatim "commands/**/*" glob used to copy them).
+		// authored for multiple tools may also ship commands in another tool's
+		// format (.toml) in the same dir; those are NOT Claude commands and must
+		// not leak into .claude/commands/ (the verbatim "commands/**/*" glob used
+		// to copy them).
 		{FromGlob: "commands/**/*.md", ToGlob: ".claude/commands/**/*.md", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "/"},
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: route.SkillDirSep, NameSep: ":"},

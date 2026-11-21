@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
-	"github.com/ackstorm/ach/internal/cli/adapter/gemini"
+	"github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	"github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	"github.com/ackstorm/ach/internal/cli/adapter/pi"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
@@ -19,7 +20,7 @@ import (
 // silently swallowed.
 func TestKnownComponentKinds_CoversAllAdapterRules(t *testing.T) {
 	providers := []route.RuleProvider{
-		&claudecode.Adapter{}, &codex.Adapter{}, &gemini.Adapter{},
+		&antigravity.Adapter{}, &claudecode.Adapter{}, &codex.Adapter{}, &cursor.Adapter{},
 		&opencode.Adapter{}, &pi.Adapter{},
 	}
 	for _, p := range providers {

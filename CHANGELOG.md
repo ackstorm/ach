@@ -6,8 +6,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Security
 - `ach-cli environment hydrate` no longer writes a plugin's top-level
-  `AGENTS.md` into the folder's `CLAUDE.md` or `GEMINI.md` (`~/CLAUDE.md`,
-  `~/GEMINI.md` with `--global`). A plugin author could put text there that the
+  `AGENTS.md` into the folder's `CLAUDE.md` (`~/CLAUDE.md` with `--global`).
+  A plugin author could put text there that the
   tool loads in every session, in a file you own and usually commit. Hydrate
   reports `AGENTS.md` as dropped, as it already did for Codex, OpenCode and Pi.
 
@@ -20,6 +20,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Docs: an "Audit events" reference page lists every audit event ACH and the
   callback write, and "Collect audit events" shows how to query them in Grafana
   Loki and give them their own stream and retention.
+- `ach-cli environment hydrate` and `ach-cli local plugin install|update|uninstall` remind you to run `opencode service restart` when they add or remove an MCP server for OpenCode, which loads them when its service starts.
+- ach-cli supports Antigravity CLI as a target (`--target antigravity`, `launch agy`): MCP servers in `.agents/mcp_config.json`, skills in `.agents/skills`, subagents in `.agents/agents`. Plugin commands are not installed: Antigravity has none.
+- ach-cli supports Cursor as a target (`--target cursor`, `launch cursor`): MCP servers in `.cursor/mcp.json`, skills in `.agents/skills`, commands and subagents in `.cursor/`.
 
 ### Changed
 - Audit: a caller refused on an admin route is recorded as
@@ -29,6 +32,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `<namespace>/<ServiceAccount username>`. It was the username alone.
 - Audit: `operator.orphan-cleanup` events carry `action` and
   `actor` (`<namespace>/system:operator`), like every other event.
+- `ach-cli` writes skills for Codex, OpenCode and pi to the shared `.agents/skills` directory (`~/.agents/skills` with `-g`). The next hydrate moves existing ones; a skill you edited in place is kept at its old path with a warning.
+- ach-cli writes OpenCode MCP servers in the OpenCode 2 format (`mcp.servers`). OpenCode 1.x is not supported.
+
+### Removed
+- ach-cli no longer supports Gemini CLI as a target (`--target gemini-cli`, `launch gemini`).
+- `--target pimono` and `--target pi-mono`: use `--target pi`.
+- `environment hydrate --target pi` no longer renames a `state-pimono.json` left by an ach-cli older than 1.0.0.
 
 ## [1.1.27] - 2026-11-20
 

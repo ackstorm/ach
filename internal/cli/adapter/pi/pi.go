@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package pi is the Pi (pi-mono) platform Adapter implementation — the
-// optional 5th target (CONTEXT.md Phase 5, D-33). It is the thinnest adapter:
-// a 3-row ProjectionRules table plus a gemini-shaped RenderRuntime pointed at
+// Package pi is the Pi platform Adapter implementation. It is the thinnest adapter:
+// a 3-row ProjectionRules table plus an mcpServers-shaped RenderRuntime pointed at
 // .pi/mcp.json. There is NO format conversion — plugin commands/skills are
-// projected verbatim (MergeReplace) into Pi's project layout
-// .pi/{prompts,skills}/ (RemapGlobalPath moves them under ~/.pi/agent/ for
-// --global, the only place pi reads them there), and
+// projected verbatim (MergeReplace): commands into Pi's project layout
+// .pi/prompts/ (RemapGlobalPath moves them under ~/.pi/agent/ for --global,
+// the only place pi reads them there), skills into the shared .agents/skills/, and
 // MCP definitions deep-merge into .pi/mcp.json (MergeDeep).
 //
 // D-33 (this phase) makes RenderRuntime NON-EMPTY (it emits Environment runtime
-// MCP servers into .pi/mcp.json, mirroring claude/gemini) and removes `mcp`
+// MCP servers into .pi/mcp.json, mirroring claude) and removes `mcp`
 // from the Dropped set — pi now supports MCP. The other top-level kinds
 // without a rule (rules/, agents/, AGENTS.md) fall to route.Project's
 // accumulate-once drop set, yielding Dropped = {rules, agents, AGENTS.md}.
@@ -61,7 +60,7 @@ func init() {
 func (a *Adapter) ID() string { return canonicalID }
 
 // Aliases returns the case-folded alternate identifiers the user may type.
-func (a *Adapter) Aliases() []string { return []string{"pimono", "pi-mono"} }
+func (a *Adapter) Aliases() []string { return []string{} }
 
 // Detect scans root for Pi signals. Each present signal boosts confidence;
 // 3+ → High, 2 → Medium, 1 → Low. signals==0 → empty Match (no-match).
@@ -78,8 +77,7 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 		{Path: filepath.Join(root, ".pi", "mcp.json"), Reason: "found .pi/mcp.json"},
 	}
 
-	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`
-	// (mirrors gemini's $HOME/.gemini/settings.json global-settings probe).
+	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`.
 	// A specific file — NOT the bare $HOME/.pi directory (WR-03): a populated
 	// global config is a far stronger signal than the mere existence of a
 	// scratch ~/.pi dir, so an unrelated cwd no longer trips a spurious
@@ -188,7 +186,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 // state.files[*].keys[] (STATE-02 + ADAPT-05) and the runtime-wins drop (D-10)
 // can drop ids that clash with the runtime MCP set.
 //
-// Unlike gemini, pi enumerates ONLY mcpServers — it has no a2aAgents
+// Pi enumerates ONLY mcpServers — it has no a2aAgents
 // surface, so an a2aAgents branch in the input is intentionally ignored.
 func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 	return route.MCPDeepKeys("pi", srcRel, in, "mcpServers")
@@ -198,7 +196,7 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 // D-06 seam). Exactly 3 rows:
 //
 //   - commands/**/*.md → .pi/prompts/**/* (MergeReplace verbatim)
-//   - skills/**/*      → .pi/skills/**/*  (MergeReplace verbatim)
+//   - skills/**/*      → .agents/skills/**/*  (MergeReplace verbatim)
 //   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys; D-33)
 //
 // A root/**/* catch-all is OMITTED (D-36). No rules/agents/
@@ -209,7 +207,7 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*.md", ToGlob: ".pi/prompts/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "-"},
-		{FromGlob: "skills/**/*", ToGlob: ".pi/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-"},
+		{FromGlob: "skills/**/*", ToGlob: ".agents/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-"},
 		{FromGlob: "mcp/**/*", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 		// Root .mcp.json is Claude Code's standard plugin MCP location — merge it
 		// into .pi/mcp.json too.

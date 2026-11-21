@@ -5,6 +5,7 @@ package hydrate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -297,7 +298,7 @@ func TestComposeNextState_IsPure_AndReflectsRender(t *testing.T) {
 // just opencode.json); the other adapters' paths pass through.
 func TestRemapGlobalPath(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -306,7 +307,6 @@ func TestRemapGlobalPath(t *testing.T) {
 		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
 		{"opencode", ".opencode/plugins/foo/x.md", ".config/opencode/plugins/foo/x.md"}, // D-22: all .opencode/* remap
 		{"claude-code", ".claude/settings.json", ".claude/settings.json"},
-		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 	}
 	for _, tc := range cases {
@@ -601,43 +601,6 @@ func TestCommit_SigkillSeam_FiresForEachKnownStep(t *testing.T) {
 // complementary release-build assertion that the env var is IGNORED
 // in release builds lives in commit_release_build_test.go behind
 // //go:build !e2e.
-
-// TestNewCommit_MigratesLegacyPimonoState: a workspace hydrated as pimono
-// (state-pimono.json) hydrates as pi from the same state, so the next run
-// prunes what the old one wrote, and ends with only state-pi.json.
-func TestNewCommit_MigratesLegacyPimonoState(t *testing.T) {
-	dir := t.TempDir()
-	envDir := filepath.Join(dir, ".ach", "demo")
-	if err := os.MkdirAll(envDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	prev := &state.File{
-		SchemaVersion: "3",
-		Environment:   "demo",
-		Plugins:       []state.FileEntry{{Target: ".pi/prompts/old.md", Merge: "replace"}},
-	}
-	if err := state.Save(filepath.Join(envDir, "state-pimono.json"), prev); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := newCommit(Opts{Output: dir, Environment: "demo", Platform: "pi"})
-	if err != nil {
-		t.Fatalf("newCommit: %v", err)
-	}
-	if want := filepath.Join(envDir, "state-pi.json"); c.statePath != want {
-		t.Fatalf("statePath = %q; want %q", c.statePath, want)
-	}
-	loaded, err := c.step3ReadState()
-	if err != nil {
-		t.Fatalf("step3ReadState: %v", err)
-	}
-	if loaded == nil || len(loaded.Plugins) != 1 || loaded.Plugins[0].Target != ".pi/prompts/old.md" {
-		t.Fatalf("migrated state = %+v; want the pimono run's Plugins", loaded)
-	}
-	if _, err := os.Stat(filepath.Join(envDir, "state-pimono.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("state-pimono.json still present (err=%v)", err)
-	}
-}
 
 // TestNewCommit_PopulatesExtractorAndAdapter asserts that the
 // Extractor + AdapterDispatcher fields on Opts are read by newCommit
@@ -2085,6 +2048,113 @@ func TestStep11Sync_PrunesMovedPluginFilesWithoutSync(t *testing.T) {
 	}
 	if _, err := os.Stat(gone); err != nil {
 		t.Errorf("a plugin that left the Environment is --sync's job, must stay: %v", err)
+	}
+}
+
+// TestRehydrate_MovedSkillDir_OldCopyPruned: a standalone Skill still in the
+// Environment whose directory moved (.opencode/skills -> .agents/skills) loses
+// its old copy on a plain hydrate; a copy the user edited is kept with a
+// warning.
+func TestRehydrate_MovedSkillDir_OldCopyPruned(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	var stderr bytes.Buffer
+	c.opts.Stderr = &stderr
+	write := func(rel, body string) string {
+		abs := filepath.Join(c.toolRoot, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+	moved := write(".opencode/skills/demo/SKILL.md", "demo")
+	edited := write(".opencode/skills/mine/SKILL.md", "mine (edited by the user)")
+	existing := &state.File{Skills: []state.FileEntry{
+		{Target: ".opencode/skills/demo/SKILL.md", Hash: hash.HashBytes([]byte("demo")), SourceHash: hash.HashBytes([]byte("demo")), Merge: "replace", Source: "demo"},
+		{Target: ".opencode/skills/mine/SKILL.md", Hash: hash.HashBytes([]byte("mine")), SourceHash: hash.HashBytes([]byte("mine")), Merge: "replace", Source: "mine"},
+	}}
+	render := RenderResult{ProjectedSkillFiles: []FileWrite{
+		{Target: ".agents/skills/demo/SKILL.md", Merge: "replace", Source: "demo"},
+		{Target: ".agents/skills/mine/SKILL.md", Merge: "replace", Source: "mine"},
+	}}
+
+	var res Result
+	if err := c.step11Sync(existing, nil, render, true, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(moved); !os.IsNotExist(err) {
+		t.Errorf("unchanged old copy must be removed; stat err=%v", err)
+	}
+	if _, err := os.Stat(edited); err != nil {
+		t.Errorf("user-edited old copy must be kept: %v", err)
+	}
+	if !strings.Contains(stderr.String(), ".opencode/skills/mine/SKILL.md") {
+		t.Errorf("want a warning naming the kept file, stderr=%q", stderr.String())
+	}
+	next := c.composeNextState(existing, nil, render, true, "opencode", nil)
+	if len(next.Skills) != 2 || next.Skills[0].Target != ".agents/skills/demo/SKILL.md" {
+		t.Errorf("new Skills rows = %+v", next.Skills)
+	}
+}
+
+// TestRehydrate_Opencode_V1KeysReplaced: adapter keys the render no longer emits
+// (the old `mcp.<id>` shape) leave the shared opencode.json on a plain
+// hydrate; the user's own `mcp.mine` and the new `mcp.servers.<id>` stay.
+func TestRehydrate_Opencode_V1KeysReplaced(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	abs := filepath.Join(c.toolRoot, ".opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"mcp":{"mcp-echo":{"type":"remote","url":"https://old","enabled":true},` +
+		`"mine":{"type":"local","command":["x"]},` +
+		`"servers":{"mcp-echo":{"type":"remote","url":"https://new"}}}}`
+	if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldKeys := []string{"mcp.mcp-echo"}
+	doc, err := merge.ParseDoc([]byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, _ := merge.ExtractByKeys(doc, oldKeys)
+	h, err := merge.SubtreeHash(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := &state.File{Adapter: state.AdapterSection{ID: "opencode", Files: []state.FileEntry{
+		{Target: ".opencode/opencode.json", Hash: h, SourceHash: h, Merge: mergeStrDeep, Keys: oldKeys},
+	}}}
+	render := RenderResult{WrittenFiles: []FileWrite{
+		{Target: ".opencode/opencode.json", Merge: mergeStrDeep, Keys: []string{"mcp.servers.mcp-echo"}},
+	}}
+
+	var res Result
+	if err := c.step11Sync(existing, nil, render, true, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		MCP map[string]map[string]any `json:"mcp"`
+	}
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := out.MCP["mcp-echo"]; ok {
+		t.Errorf("old mcp.mcp-echo not pruned: %v\n%s", v, got)
+	}
+	if _, ok := out.MCP["mine"]; !ok {
+		t.Errorf("user's mcp.mine removed:\n%s", got)
+	}
+	if _, ok := out.MCP["servers"]["mcp-echo"]; !ok {
+		t.Errorf("mcp.servers.mcp-echo missing:\n%s", got)
 	}
 }
 

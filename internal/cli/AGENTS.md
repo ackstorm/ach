@@ -60,7 +60,7 @@ ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | 
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
 ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <claude|codex|gemini|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused
+ach-cli launch <agy|claude|codex|cursor|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity, `cursor` starts `cursor-agent`). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
@@ -124,7 +124,11 @@ updated, `-` removed, `!` kept/edited, `✓` installed in status), collapsed to
 `… N more (--verbose)` after 8. `Finished` closes every successful run with the
 result + elapsed time; the Environment's notice, the engine's `note:`/`warning:`
 lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
-AFTER it. Hints only on a first hydrate of that Environment+target (or a clone).
+AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
+`opencode service restart`, printed on any run (not `--dry-run`) that adds or
+removes an MCP server or A2A agent for OpenCode. `local plugin
+install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
+once per run, not `--dry-run`) when an opencode record holds `mcp.servers.*` keys.
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
@@ -176,7 +180,7 @@ destination is the tool's own dot-prefixed config dir or file
 on both install paths. A plugin's top-level `AGENTS.md` has no rule on any
 tool: it is not part of a plugin format (Claude Code ignores a plugin-root
 `CLAUDE.md`), and routing it would put a plugin author's text, always loaded,
-into the user's own `CLAUDE.md` / `GEMINI.md`.
+into the user's own `CLAUDE.md`.
 
 **Plugin namespacing** (`route/prefix.go`). `ProjectPlugin` gives every
 plugin command and skill the plugin's name (the part before `@<marketplace>`),
@@ -188,20 +192,21 @@ only): Claude Code registers the frontmatter name as an alias too, so
 renaming the dir alone still answered `/ladder`. The form per tool was
 measured, not guessed (2026-10-26):
 
-| | claude-code | opencode | codex | gemini-cli | pi |
-|---|---|---|---|---|---|
-| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (it rewrites `:` to `-`) | `bro-ladder` (`:` warns) |
-| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `commands/bro/x.toml` → `/bro:x` | `bro-x.md` (no subdirs read) |
+| | claude-code | opencode | codex | pi | cursor | antigravity |
+|---|---|---|---|---|---|---|
+| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (`:` warns) | `bro-ladder` | `bro-ladder` |
+| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `bro-x.md` (no subdirs read) | `bro-x.md` | none (dropped) |
 
 opencode ignores `disable-model-invocation` and has no slash invocation for
 skills, so its skill rule also emits each such user-only skill as a command
 (`UserOnlyCommandDir`) — the skill stays too, so the model may still pick it.
 
-**Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin STILL
-in the Environment that it no longer writes (`keptPluginRows` in
-`hydrate/commit.go` → `Sync`), so the pre-namespacing paths are removed, never
-orphaned; an edited file is kept with a warning. A plugin that LEFT the
-Environment stays `--sync`'s call.
+**Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin or
+standalone Skill STILL in the Environment that it no longer writes
+(`keptSourceRows` in `hydrate/commit.go` → `Sync`), so a path that moved
+(namespacing, `.opencode/skills` → `.agents/skills`) is removed, never
+orphaned; an edited file is kept with a warning. A plugin or Skill that LEFT
+the Environment stays `--sync`'s call.
 
 `KnownComponentKinds`: `rules, commands, agents, skills, mcp, .mcp.json,
 prompts, AGENTS.md, hooks`. **INVARIANT** (`kinds_test.go`): every FromGlob
@@ -219,7 +224,7 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
   `CLAUDE.md`/`README.md` is NOT a component. A `README.md` INSIDE a skill
   (`skills/<n>/README.md`) IS part of it and rides through.
 - **`.md` command scoping**: claude/opencode commands are markdown; a multi-tool
-  plugin shipping `commands/*.toml` (gemini format) must not leak `.toml` into
+  plugin shipping `commands/*.toml` (another tool's format) must not leak `.toml` into
   `.claude/`/`.opencode/`. The `commands/**/*.md` glob enforces this.
 - **Conflict** (`manager/conflict.go`): `--conflict` ∈
   {namespace(default), refuse, replace, skip}; only `MergeReplace` clashes
@@ -322,7 +327,7 @@ projected (self-heals on `<b>`'s next hydrate).
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in
 plaintext (project-root `.mcp.json`, `.codex/config.toml`,
-`.opencode/opencode.json`, `.gemini/settings.json`, `.pi/mcp.json`). mode `0600`
+`.opencode/opencode.json`, `.cursor/mcp.json`, `.pi/mcp.json`). mode `0600`
 guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
 in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
@@ -343,25 +348,25 @@ written path to its pattern (`.claude/agents/x.md` → `.claude/`; `.mcp.json` �
 removal would need cross-env reference counting). The hydrate engine guards
 `toolRoot == ""` so direct-struct unit tests never pollute cwd.
 
-## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
+## The 6 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
 MCP runtime config: the Environment's MCP servers plus each A2A agent's MCP
 face `a2a-<agent>` at `<endpoint>/mcp`, via `adapter.RuntimeMCPServers`),
 `ProjectionRules()` (the plugin→tool routing). The
-`RenderRuntime` path (remote MCP via the ACH forwarder: `httpUrl`/`url` +
+`RenderRuntime` path (remote MCP via the ACH forwarder: `url` +
 `x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
 merge) — don't conflate them.
 
-| input kind | claude-code | codex | gemini-cli | opencode | pi |
-|---|---|---|---|---|---|
-| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.gemini/commands` **(T→.toml)** | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` |
-| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | →`.gemini/agents` | `.md`→`.opencode/agents` (T) | drop |
-| skills | →`.claude/skills` | →`.agents/skills` | →`.gemini/skills` | →`.opencode/skills` | →`.pi/skills` |
-| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.gemini/settings.json` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
-| rules | →`.claude/rules` | drop | drop | drop | drop |
-| AGENTS.md | drop | drop | drop | drop | drop |
-| hooks | drop | drop | drop | drop | drop |
+| input kind | claude-code | codex | opencode | pi | cursor | antigravity |
+|---|---|---|---|---|---|---|
+| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` | `.md`→`.cursor/commands` | drop |
+| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop | `.md`→`.cursor/agents` | `.md`→`.agents/agents` (T) |
+| skills | →`.claude/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` |
+| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` | →`.cursor/mcp.json` | →`.agents/mcp_config.json` (T) |
+| rules | →`.claude/rules` | drop | drop | drop | drop | drop |
+| AGENTS.md | drop | drop | drop | drop | drop | drop |
+| hooks | drop | drop | drop | drop | drop | drop |
 
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
 asserted in e2e — not a bug).
@@ -392,28 +397,28 @@ that tool actually reads it. One table drives both write paths:
 |---|---|---|---|---|
 | claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json` |
 | codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
-| gemini-cli | `GEMINI_CLI_HOME` | **parent** (`$VAR/.gemini/`) | `.gemini/` | — |
 | opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
-| pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/{skills,prompts}/` → `.pi/agent/…` | `.pi/mcp.json` |
+| pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/prompts/` → `.pi/agent/…` | `.pi/mcp.json` |
+| cursor | none | — | — | everything (`~/.cursor`, `~/.agents/skills` are home-relative) |
+| antigravity | none | — | `.agents/` → `~/.gemini/config/` (skills, agents, `mcp_config.json`) | — |
 
 Hard-won details — do NOT re-derive:
 
-- **Gemini's var is `GEMINI_CLI_HOME`, and it is a PARENT.** `GEMINI_CONFIG_DIR`
-  was proposed upstream (gemini-cli #2815) and never shipped. A `settings.json`
-  written at `$GEMINI_CLI_HOME/settings.json` is silently ignored (#23622) — it
-  must go to `$GEMINI_CLI_HOME/.gemini/settings.json`.
 - **Pi's config dir defaults to `~/.pi/agent`, not `~/.pi` — but only
-  globally.** In a project pi reads `.pi/skills` and `.pi/prompts`
-  (pi 0.83 `core/skills.js`, `core/prompt-templates.js`); `.pi/agent/` there is
-  read by nothing. So the rules write the project layout and `--global` maps
-  just those two subdirs to `.pi/agent/` (`globalScope.subdirs`);
-  `.pi/mcp.json` is outside both. (Until 2026-10-26 project hydrates wrote
+  globally.** In a project pi reads `.pi/prompts`
+  (pi 0.83 `core/prompt-templates.js`); `.pi/agent/` there is read by nothing.
+  So the rules write the project layout and `--global` maps just that subdir
+  to `.pi/agent/` (`globalScope.subdirs`); `.pi/mcp.json` is outside it. Pi
+  reads skills from the cross-tool `.agents/skills` (project and `~`), which
+  no adapter redirects. (Until 2026-10-26 project hydrates wrote
   `.pi/agent/…`, which pi never loaded. `ackstorm/agent-profile` documents
   `~/.pi` — off by one level.)
 - **Redirection is keyed on the PATH PREFIX, not the adapter.** `.agents/` is a
   cross-tool convention dir that `CODEX_HOME` does not own, so codex's skills
   stay under `$HOME/.agents/skills/`. One adapter can therefore write to two
-  roots in a single run.
+  roots in a single run. The prefix is read per adapter: Antigravity owns its
+  `.agents/` paths, so they go to `~/.gemini/config/`, while codex, cursor,
+  opencode and pi keep `.agents/skills` under `$HOME`.
 - **A relative env value is IGNORED** (falls back to `$HOME`). The real tools
   resolve it against their own cwd, which is not ach-cli's.
 - **Anti-churn rule:** when an override resolves to the location the relative
@@ -467,30 +472,58 @@ were rewritten clean-room from the Codex docs on 2026-10-28 for that reason.
   (`[mcp_servers]`: `bearer_token_env_var`, `http_headers`, `env_http_headers`,
   `startup_timeout_sec`) and the Codex custom-agent TOML docs.
 - **ccplugin** — `~/workspace/local/ccplugin`, ACKstorm's own Python project, supports
-  claude/opencode/**gemini**. `transforms.py` / `paths.py` / `mcp_config.py`.
-  The ONLY reference for gemini (TOML commands, `Tool`-suffix tool names).
+  claude/opencode. `transforms.py` / `paths.py` / `mcp_config.py`.
 
 ### Status vs the references
 
 **Faithful:** claude (no-op canonical), codex (field-lift + bearer/header
 surgery per the Codex config reference).
 
-**opencode MCP — CONVERTS per-entry shape (`opencodeMCPConvert`), NOT a bare
-rename.** ⚠ Hard-won: OpenPackage's opencode export is just
-`{mcpServers→mcp}`, and trusting it shipped invalid config — real opencode
-(1.16.0) `ConfigInvalidError`: it validates each entry against a CLOSED
-`local|remote` schema. **ccplugin's `transform_mcp_entry_to_opencode` is the
-correct reference, not OpenPackage.** Conversion (schema
-https://opencode.ai/docs/mcp-servers/, verified against the real binary):
-stdio `{command,args,env}` → `{type:"local", command:[cmd,…args], enabled:true,
-environment}`; remote `{url|type:streamable-http,…}` →
-`{type:"remote", url, enabled:true, headers}`. Non-schema fields (description,
-…) dropped; `type` normalized (streamable-http→remote); header/`environment`
-values have env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` —
-opencode does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
+**opencode MCP — OpenCode 2 format only, under `mcp.servers`; CONVERTS
+per-entry shape (`opencodeMCPConvert`), NOT a bare rename.** Contributed keys
+are `mcp.servers.<id>` (`opencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
+parses them, and an item's name is `<id>`, never `servers.<id>`). Source of truth:
+`anomalyco/opencode` v2.3.2, `packages/schema/src/mcp.ts` (`RemoteConfig`:
+`type:"remote"`, `url`, optional `headers`, `oauth`, `disabled`, `timeout`;
+`LocalConfig`: `type:"local"`, `command` string array, optional `cwd`,
+`environment`, `disabled`, `timeout`) and `packages/schema/src/config/mcp.ts`
+(`mcp: {timeout?, servers?}`). There is no `enabled` field: a source
+`enabled:false` or `disabled:true` becomes `disabled:true`, otherwise nothing is
+emitted. Conversion: stdio `{command,args,env}` → `{type:"local",
+command:[cmd,…args], environment}`; remote `{url|type:streamable-http,…}` →
+`{type:"remote", url, headers}`. Non-schema fields (description, …) dropped;
+`type` normalized (streamable-http→remote); header/`environment` values have
+env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` — opencode
+does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
 un-interpolated; ACH rewrites only the wrapper, never reads the secret).
-**Lesson: validate adapter output against the real tool — OpenPackage ≠ ground
-truth for opencode's strict schema.**
+Markdown agents under `.opencode/agents/` are decoded by OpenCode with the V1
+frontmatter schema, so `tools: {name: true}` stays. **Lesson: validate adapter
+output against the real tool's schema — OpenPackage's `{mcpServers→mcp}` rename
+is not ground truth.**
+
+**Checked against the real tools (2026-11-21)**
+- OpenCode 2.3.2: `opencode mcp add <name> --url <u>` itself writes
+  `{"mcp": {"servers": {"<name>": {"type": "remote", "url": "<u>"}}}}`, the shape
+  the adapter emits; `opencode debug config` parses the adapter's output with no
+  diagnostic and `opencode debug agents` lists a `.opencode/agents/*.md`
+  subagent. An unknown key such as `enabled` is dropped silently, and an entry
+  with an unknown `type` is dropped whole. `opencode mcp list` prints "No MCP
+  servers configured" in a container without a login even for a server written
+  by `opencode mcp add`, so it is not a usable check there. OpenCode loads MCP
+  servers when its service starts: `opencode service restart` after a change.
+- Cursor CLI 2026.11.19: the install provides `agent` and `cursor-agent` (same
+  binary). `cursor-agent mcp list` reads the project `.cursor/mcp.json` without a
+  login and reports each server as "not loaded (needs approval)" until
+  `cursor-agent mcp enable <name>`; an entry carrying `"type": "http"` next to
+  `url` and `headers` is accepted. Skills, commands and subagents cannot be
+  listed without a login.
+- Antigravity CLI 1.5.14: `~/.gemini/config/mcp_config.json` loads, with
+  `serverUrl` and also with `url` + `"type": "http"`; `agy mcp add` writes only
+  that user file (`{"disabled": false, "serverUrl": …}`) and has no scope flag.
+  `agy mcp list` does not show servers from a project `.agents/mcp_config.json`,
+  trusted workspace or not; the docs (antigravity.google/docs/mcp) name that file
+  as the workspace configuration, and whether a signed-in session loads it is NOT
+  verified. Skills and subagents cannot be listed without a login.
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage
@@ -506,24 +539,9 @@ truth for opencode's strict schema.**
   `NotebookEdit→notebook`, `ExitPlanMode→exitplan`) — `normalizeOpencodeToolName`
   in `opencode.go`. opencode's tool registry is lowercase; a PascalCase `Read`
   would not resolve. Verified live.
-- ✅ **gemini commands → TOML**: `commands/**/*.md` → `.gemini/commands/**/*.toml`
-  via `geminiCommandTOML` (description lifted, body→`prompt`, `$ARGUMENTS`→
-  `{{args}}`); gemini-native `commands/*.toml` pass through. gemini-cli reads
-  commands ONLY as TOML (https://geminicli.com/docs/cli/custom-commands/).
-
-**Remaining GAPS (lower priority):**
-- **gemini plugin MCP shape** — likely the SAME latent bug opencode had:
-  `mcpDeepKeys` passes a plugin's `.mcp.json` entry verbatim into
-  `.gemini/settings.json` `mcpServers`, but gemini-cli wants `httpUrl` for an
-  HTTP server (a plain `url` = SSE). A streamable-http plugin MCP would project
-  wrong. Not yet hit (no one installs gemini MCP); verify gemini-cli's schema
-  before writing the transform. (RenderRuntime/governed-env already uses
-  `httpUrl` correctly — only the local plugin-install path is suspect.)
-- **gemini frontmatter strip** (`color`, `allowed-tools`) per ccplugin — gemini
-  agents/skills still route verbatim; no strong reference, not clearly broken.
 
 **Deliberately NOT doing** (fragile): OpenPackage/ccplugin body-regex rewrites
-(`~/.claude/`→`~/.gemini/`, `Bash`→`BashTool` via word-boundary regex over
+(`~/.claude/`→another tool's dir, `Bash`→`BashTool` via word-boundary regex over
 arbitrary markdown) — mutates prose, edge-case-prone.
 
 ## `internal/cli/localpkg/` — the local package manager
@@ -617,7 +635,7 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   (`manager.Project`) allows exactly that one root file. Fixed; pinned by
   `TestProject_RootMcpJson_Routed`.
 - **`.toml` leaking into `.claude`/`.opencode` commands**: fixed by the
-  `commands/**/*.md` glob (claude/opencode); gemini keeps `commands/**/*`.
+  `commands/**/*.md` glob (claude/opencode).
 - **`slice subtree "." empty`**: a whole-repo plugin entry (`source: "."`) must
   serve the cached repo tar directly, not slice — see the `path.Clean(Subtree)`
   switch in `resolvePluginMarketplace`.

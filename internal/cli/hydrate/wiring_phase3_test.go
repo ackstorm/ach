@@ -76,7 +76,7 @@ func TestPublishFile_ThreadsSourceHash(t *testing.T) {
 // non-opencode platforms are untouched.
 func TestRemapGlobalPath_AllOpencodeDirs(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -143,18 +143,18 @@ func TestDropRuntimeOwnedMCP_TOML(t *testing.T) {
 	}
 }
 
-// TestDropRuntimeOwnedMCP_OpencodeJSON proves the opencode JSON / mcp. prefix
-// arm: a projected mcp.<id> the runtime owns is dropped from the JSON content.
+// TestDropRuntimeOwnedMCP_OpencodeJSON proves the opencode JSON / mcp.servers. prefix
+// arm: a projected mcp.servers.<id> the runtime owns is dropped from the JSON content.
 func TestDropRuntimeOwnedMCP_OpencodeJSON(t *testing.T) {
-	jsonContent := `{"mcp":{"foo":{"type":"remote","url":"https://PLUGIN-foo"},"bar":{"type":"remote","url":"https://PLUGIN-bar"}}}`
+	jsonContent := `{"mcp":{"servers":{"foo":{"type":"remote","url":"https://PLUGIN-foo"},"bar":{"type":"remote","url":"https://PLUGIN-bar"}}}}`
 	fw := adapter.FileWrite{
 		Path:    ".opencode/opencode.json",
 		Content: []byte(jsonContent),
 		Merge:   adapter.MergeDeep,
-		Keys:    []string{"mcp.foo", "mcp.bar"},
+		Keys:    []string{"mcp.servers.foo", "mcp.servers.bar"},
 	}
 	runtime := []FileWrite{
-		{Target: ".opencode/opencode.json", Merge: mergeStrDeep, Keys: []string{"mcp.foo"}},
+		{Target: ".opencode/opencode.json", Merge: mergeStrDeep, Keys: []string{"mcp.servers.foo"}},
 	}
 	published, drops, err := dropRuntimeOwnedMCP(&fw, runtime)
 	if err != nil {
@@ -169,8 +169,8 @@ func TestDropRuntimeOwnedMCP_OpencodeJSON(t *testing.T) {
 	if !strings.Contains(string(fw.Content), "PLUGIN-bar") {
 		t.Errorf("non-colliding bar should survive:\n%s", fw.Content)
 	}
-	if len(fw.Keys) != 1 || fw.Keys[0] != "mcp.bar" {
-		t.Errorf("fw.Keys = %v; want [mcp.bar]", fw.Keys)
+	if len(fw.Keys) != 1 || fw.Keys[0] != "mcp.servers.bar" {
+		t.Errorf("fw.Keys = %v; want [mcp.servers.bar]", fw.Keys)
 	}
 	var sawFoo bool
 	for _, dr := range drops {
@@ -183,7 +183,7 @@ func TestDropRuntimeOwnedMCP_OpencodeJSON(t *testing.T) {
 	}
 }
 
-// TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged proves the existing claude/gemini
+// TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged proves the existing claude
 // JSON / mcpServers. arm still works after parameterization.
 func TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged(t *testing.T) {
 	jsonContent := `{"mcpServers":{"foo":{"type":"http","url":"https://PLUGIN-foo"}}}`
@@ -248,19 +248,19 @@ func TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes(t *testing.T) {
 // adapter's contributed runtime key shape to the right kind, and ignores
 // non-runtime keys (so 0 runtime servers yields no "mcp"/"a2a" bucket and the
 // summary never prints "0 mcp"). MCP prefixes vary per adapter: mcpServers.
-// (claude/gemini/pi), mcp_servers. (codex), mcp. (opencode); an MCP server
+// (claude/pi), mcp_servers. (codex), mcp.servers. (opencode); an MCP server
 // named a2a-<agent> is an A2A agent's MCP face.
 func TestRuntimeKindForKey(t *testing.T) {
 	cases := []struct {
 		key  string
 		want string
 	}{
-		{"mcpServers.my-mcp", "mcp"},        // claude/gemini/pi
+		{"mcpServers.my-mcp", "mcp"},        // claude/pi
 		{"mcp_servers.my-mcp", "mcp"},       // codex (TOML snake_case)
-		{"mcp.my-mcp", "mcp"},               // opencode
-		{"mcpServers.a2a-my-agent", "a2a"},  // claude/gemini/pi
+		{"mcp.servers.my-mcp", "mcp"},       // opencode
+		{"mcpServers.a2a-my-agent", "a2a"},  // claude/pi
 		{"mcp_servers.a2a-my-agent", "a2a"}, // codex
-		{"mcp.a2a-my-agent", "a2a"},         // opencode
+		{"mcp.servers.a2a-my-agent", "a2a"}, // opencode
 		{"a2aAgents.my-agent", ""},          // no tool reads it; never written
 		{"settings.foo", ""},                // unrelated key
 		{"", ""},                            // empty

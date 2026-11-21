@@ -20,14 +20,15 @@ import (
 
 // launchTools maps a hydrate target to the command that starts the tool.
 var launchTools = map[string]string{
+	"antigravity": "agy",
 	"claude-code": "claude",
 	"codex":       "codex",
-	"gemini-cli":  "gemini",
+	"cursor":      "cursor-agent",
 	"opencode":    "opencode",
 	"pi":          "pi",
 }
 
-const launchToolList = "claude, codex, gemini, opencode, pi"
+const launchToolList = "agy, claude, codex, cursor, opencode, pi"
 
 // claudeCodeID is the target launch fronts with its proxy.
 const claudeCodeID = "claude-code"

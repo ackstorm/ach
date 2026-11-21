@@ -40,7 +40,7 @@ ach-cli local plugin install <plugin>@<repo> --target claude-code
 ach-cli local skill install <skill>@<repo> --target codex,opencode
 ```
 
-`--target` is one or more of `claude-code`, `codex`, `gemini-cli`, `opencode`
+`--target` is one or more of `antigravity`, `claude-code`, `codex`, `cursor`, `opencode`
 and `pi`. The install goes into the current folder; `-g` puts it in the
 tool's global configuration. `--dry-run` prints the plan and writes nothing.
 
@@ -55,7 +55,10 @@ Move your file away, or pass `--force` to replace it.
 ach-cli local plugin list     # or: ach-cli local skill list
 ```
 
-The item is listed, and the tool shows it the next time it starts.
+The item is listed, and the tool shows it the next time it starts. OpenCode
+loads MCP servers when its service starts: when a plugin install, update or
+uninstall for `opencode` adds or removes an MCP server, the command prints a
+hint to run `opencode service restart`.
 
 ## Update and remove
 

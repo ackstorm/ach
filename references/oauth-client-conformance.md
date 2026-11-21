@@ -2,8 +2,7 @@
 
 Research verified 2026-09-17 against the three human-facing tools ACH hydrates
 for. Each was checked from source (or the shipped binary) and from the version
-installed on the dev box, not from docs alone. Gemini CLI is deprecated and was
-not researched.
+installed on the dev box, not from docs alone.
 
 | Tool | Version checked | Source read |
 |------|-----------------|-------------|
@@ -112,7 +111,7 @@ ceremony. This is what personal hydrate writes.
 
 ```json
 // opencode — OAuth is opt-OUT: any remote entry without "oauth": false gets a provider.
-{"mcp": {"ach": {"type": "remote", "url": "https://ach.example.com/mcp/<svc>"}}}
+{"mcp": {"servers": {"ach": {"type": "remote", "url": "https://ach.example.com/mcp/<svc>"}}}}
 ```
 
 ```toml

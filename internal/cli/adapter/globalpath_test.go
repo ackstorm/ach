@@ -13,7 +13,7 @@ import (
 func clearAll(t *testing.T) {
 	t.Helper()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -35,10 +35,9 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 		{"claude-code", ".mcp.json", ".mcp.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 		{"codex", ".agents/skills/a/b.md", ".agents/skills/a/b.md"},
-		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
-		// pi reads project resources from .pi/{skills,prompts} but global ones
-		// from ~/.pi/agent/{skills,prompts}; .pi/mcp.json is the same file both ways.
-		{"pi", ".pi/skills/a/SKILL.md", ".pi/agent/skills/a/SKILL.md"},
+		// pi reads project prompts from .pi/prompts but global ones from
+		// ~/.pi/agent/prompts; .pi/mcp.json is the same file both ways.
+		{"pi", ".pi/skills/x/SKILL.md", ".pi/skills/x/SKILL.md"},
 		{"pi", ".pi/prompts/a.md", ".pi/agent/prompts/a.md"},
 		{"pi", ".pi/mcp.json", ".pi/mcp.json"},
 		{"unknown-adapter", ".claude/settings.json", ".claude/settings.json"},
@@ -50,20 +49,18 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 	}
 }
 
-// TestRemapGlobalPath_EnvSet covers each adapter's own var, including the two
-// PARENT-shaped ones (gemini appends .gemini, opencode appends opencode).
+// TestRemapGlobalPath_EnvSet covers each adapter's own var, including the
+// PARENT-shaped one (opencode appends opencode).
 func TestRemapGlobalPath_EnvSet(t *testing.T) {
 	cases := []struct{ name, adapterID, envVar, envVal, in, want string }{
 		{"claude dir-itself", "claude-code", "CLAUDE_CONFIG_DIR", "/p/claude",
 			".claude/skills/a/b.md", "/p/claude/skills/a/b.md"},
 		{"codex dir-itself", "codex", "CODEX_HOME", "/p/codex",
 			".codex/config.toml", "/p/codex/config.toml"},
-		{"gemini parent", "gemini-cli", "GEMINI_CLI_HOME", "/p/gem",
-			".gemini/settings.json", "/p/gem/.gemini/settings.json"},
 		{"opencode parent", "opencode", "XDG_CONFIG_HOME", "/p/xdg",
 			".opencode/opencode.json", "/p/xdg/opencode/opencode.json"},
 		{"pi dir-itself", "pi", "PI_CODING_AGENT_DIR", "/p/pi",
-			".pi/skills/a/SKILL.md", "/p/pi/skills/a/SKILL.md"},
+			".pi/prompts/a.md", "/p/pi/prompts/a.md"},
 		// Value is cleaned, so no ".." survives into the destination.
 		{"cleaned", "codex", "CODEX_HOME", "/p/x/../codex",
 			".codex/config.toml", "/p/codex/config.toml"},
@@ -153,7 +150,7 @@ func TestResolveDest(t *testing.T) {
 func TestGlobalRoot(t *testing.T) {
 	home := "/home/u"
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -165,5 +162,27 @@ func TestGlobalRoot(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/config")
 	if got, want := GlobalRoot("opencode", home), "/tmp/config/opencode"; got != want {
 		t.Fatalf("GlobalRoot(opencode) = %q; want %q", got, want)
+	}
+}
+
+func TestRemapGlobalPath_AgentsSkillsStaysUnderHome(t *testing.T) {
+	for _, id := range []string{"codex", "opencode", "pi", "cursor"} {
+		got := RemapGlobalPath(id, "/home/u", ".agents/skills/x/SKILL.md")
+		if got != ".agents/skills/x/SKILL.md" {
+			t.Fatalf("%s: got %q", id, got)
+		}
+	}
+}
+
+func TestRemapGlobalPath_Antigravity(t *testing.T) {
+	cases := map[string]string{
+		".agents/skills/x/SKILL.md": ".gemini/config/skills/x/SKILL.md",
+		".agents/agents/r.md":       ".gemini/config/agents/r.md",
+		".agents/mcp_config.json":   ".gemini/config/mcp_config.json",
+	}
+	for in, want := range cases {
+		if got := RemapGlobalPath("antigravity", "/home/u", in); got != want {
+			t.Fatalf("%s: got %q want %q", in, got, want)
+		}
 	}
 }

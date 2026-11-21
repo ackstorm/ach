@@ -181,7 +181,7 @@ The inventory reads the stored projection only — to force a re-sync use
 For direct, personal use you don't need an Environment, the operator, or
 Postgres. `ach-cli repo`/`plugin`/`skill` register an external marketplace (or a
 direct plugin/skill source) and install straight into per-tool adapter dirs
-(`.claude/`, `.codex/`, `.gemini/`, `.opencode/`, `.pi/`). State lives in a local
+(`.agents/`, `.claude/`, `.codex/`, `.cursor/`, `.opencode/`, `.pi/`). State lives in a local
 registry under `~/.config/ach/local/` (tokens in a separate `0600`
 `credentials.json`).
 
@@ -203,8 +203,8 @@ ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (set
 ```
 
 Notes:
-- `--target` takes adapter ids (`claude-code`, `codex`, `gemini-cli`,
-  `opencode`, `pi`) or their aliases (`claude`, `gemini`, `pimono`), comma-separated
+- `--target` takes adapter ids (`antigravity`, `claude-code`, `codex`,
+  `cursor`, `opencode`, `pi`) or their aliases (`agy`, `claude`), comma-separated
   or repeated — the same vocabulary as `environment hydrate --target`. MCP/`AGENTS.md` contributions deep-/composite-merge into the
   tool's native config and are inverse-merged on uninstall (other plugins' and
   your own keys survive).

@@ -472,18 +472,28 @@ func hasDirectRuntime(m *manifest.Manifest) bool {
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary
 // component kind, or "" when the key is not a runtime component. MCP keys are
-// "mcpServers." (claude/gemini/pi), "mcp_servers." (codex) or "mcp."
+// "mcpServers." (claude/pi), "mcp_servers." (codex) or "mcp.servers."
 // (opencode); a server named "a2a-<agent>" is an A2A agent's MCP face.
 func runtimeKindForKey(k string) string {
-	for _, p := range []string{"mcpServers.", "mcp_servers.", "mcp."} {
+	name, ok := mcpServerNameFromKey(k)
+	if !ok {
+		return ""
+	}
+	if strings.HasPrefix(name, "a2a-") {
+		return kindA2A
+	}
+	return kindMCP
+}
+
+// mcpServerNameFromKey returns the server name of a contributed MCP settings
+// key, stripping whichever adapter prefix it carries.
+func mcpServerNameFromKey(k string) (string, bool) {
+	for _, p := range []string{mcpServersPrefix, mcpServersTOMLPrefix, mcpOpencodePrefix} {
 		if name, ok := strings.CutPrefix(k, p); ok {
-			if strings.HasPrefix(name, "a2a-") {
-				return kindA2A
-			}
-			return kindMCP
+			return name, true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // projectPlugins runs the route.Project projection leg for every extracted
@@ -1020,7 +1030,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 
 // skillNameFromPath extracts the skill name from an adapter destination path.
 // All adapters route skills to paths of the form <prefix>/skills/<name>/…
-// (e.g. ".claude/skills/docx/SKILL.md", ".pi/agent/skills/docx/SKILL.md"),
+// (e.g. ".claude/skills/docx/SKILL.md", ".agents/skills/docx/SKILL.md"),
 // so the skill name is always the segment that follows "skills". Returns ""
 // when the path does not contain a "skills" segment (should not occur in
 // practice, but handled defensively so a routing change never panics). root is
@@ -1043,22 +1053,20 @@ func skillNameFromPath(path, root string) string {
 // MCP server-key prefixes per adapter config format (D-17). The projected
 // plugin MCP FileWrite contributes a dotted key of the form
 // "<prefix><id>" from its mcpDeepKeys Transform:
-//   - claude / gemini settings.json → "mcpServers.<id>"
+//   - claude .mcp.json / pi mcp.json → "mcpServers.<id>"
 //   - codex .codex/config.toml      → "mcp_servers.<id>"
-//   - opencode .opencode/opencode.json → "mcp.<id>"
+//   - opencode .opencode/opencode.json → "mcp.servers.<id>"
 const (
-	mcpServersPrefix     = "mcpServers."  // claude / gemini (JSON)
+	mcpServersPrefix     = "mcpServers."  // claude / pi (JSON)
 	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
-	mcpOpencodePrefix    = "mcp."         // opencode (JSON)
+	mcpOpencodePrefix    = "mcp.servers." // opencode (JSON)
 )
 
 // mcpContainerKeyFor returns the dotted-key prefix the contributed MCP keys of
-// fw use, derived from fw.Keys. Codex uses "mcp_servers.", opencode "mcp.",
-// claude/gemini "mcpServers.". When no contributed key matches a known prefix
-// (no MCP keys), the default "mcpServers." is returned harmlessly — the
-// collision loop will then never match. The longest-prefix check orders
-// mcp_servers. / mcpServers. before the bare "mcp." so a "mcpServers.x" key is
-// not mis-attributed to the opencode "mcp." prefix.
+// fw use, derived from fw.Keys. Codex uses "mcp_servers.", opencode
+// "mcp.servers.", claude/pi "mcpServers.". When no contributed key matches a
+// known prefix (no MCP keys), the default "mcpServers." is returned harmlessly
+// — the collision loop will then never match.
 func mcpServersPrefixFor(keys []string) string {
 	for _, k := range keys {
 		switch {
@@ -1085,7 +1093,7 @@ func mcpServersPrefixFor(keys []string) string {
 // Format- and prefix-aware (D-17): the config format is detected from the
 // target extension (.toml → TOML for codex, JSON otherwise), and the server-key
 // prefix is derived from the contributed keys ("mcp_servers." for codex,
-// "mcp." for opencode, "mcpServers." for claude/gemini).
+// "mcp.servers." for opencode, "mcpServers." for claude/pi).
 //
 // Returns (publish, drops, err): publish=false means every contributed key
 // collided, so the caller skips publishing this FileWrite entirely (still
@@ -1343,8 +1351,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		default:
 			// MergeReplace (file-owned) covers ONLY the Phase-3 projected
 			// plugin resource files — .codex/agents/*.toml, .codex/prompts/*.md,
-			// .agents/skills/*, .opencode/agents/*.md, .opencode/commands/*,
-			// .opencode/skills/* — none of which carry credentials (WR-04).
+			// .agents/skills/*, .opencode/agents/*.md, .opencode/commands/*
+			// — none of which carry credentials (WR-04).
 			// 0o600 (owner-only) is reserved for the credential-bearing
 			// MergeDeep runtime configs above; non-secret projected resources
 			// use 0o644 so cross-account use (service user, mounted docker
@@ -1890,7 +1898,7 @@ func appendUniqueSorted(xs []string, name string) []string {
 //
 // Both Adapter.Files AND Plugins resolve against toolRoot: projectPlugins
 // publishes each projected plugin FileWrite under toolRoot (the adapter-native
-// resource dirs — .claude/agents/…, .pi/agent/skills/…, etc., see publishFile
+// resource dirs — .claude/agents/…, .agents/skills/…, etc., see publishFile
 // call in projectPlugins), recording a toolRoot-RELATIVE Target. Prompts and
 // Artifacts are extracted into the achDir content cache (ExtractContent's base
 // is achDir) and are NOT projected to toolRoot, so they resolve against achDir.

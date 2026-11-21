@@ -94,7 +94,7 @@ func TestLaunch_Refusals(t *testing.T) {
 		failEngine bool
 		args       []string
 	}{
-		{"unknown tool", `unknown tool "cursor"`, false, []string{"cursor", "--environment", "e"}},
+		{"unknown tool", `unknown tool "windsurf"`, false, []string{"windsurf", "--environment", "e"}},
 		{"not on PATH", `"codex" not found on PATH`, false, []string{"codex", "--environment", "e"}},
 		{"models for claude", "--models writes apiKeyHelper", false, []string{"claude", "--models", "--environment", "e"}},
 		{"hydrate fails", "boom", true, []string{"claude", "--environment", "e"}},

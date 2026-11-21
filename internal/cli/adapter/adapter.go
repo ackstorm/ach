@@ -138,7 +138,7 @@ type FileWrite struct {
 // Adapter is the closed-set platform-adapter contract per CONTEXT.md
 // D-07 + ADAPT-01. Every adapter MUST implement all four methods.
 // Pass-through adapters (claudecode) return source bytes verbatim from
-// ResolveOutputContent; merge adapters (codex/gemini/opencode)
+// ResolveOutputContent; merge adapters (codex/opencode/pi)
 // recompute the merged target bytes for the SAFE-04 cascade Tier 2 from
 // 07-W2-03.
 //
@@ -148,7 +148,7 @@ type FileWrite struct {
 // for v1alpha1.
 type Adapter interface {
 	// ID returns the canonical platform identifier (e.g. "claude-code",
-	// "codex", "gemini-cli", "opencode"). Used as the primary registry
+	// "codex", "opencode", "pi"). Used as the primary registry
 	// key.
 	ID() string
 

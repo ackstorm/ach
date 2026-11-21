@@ -63,7 +63,6 @@ type allPlatformExpect struct {
 	skillSep    string // a plugin skill lands as <plugin><skillSep><skill>/ (route/prefix.go)
 	agentsDir   string // dir holding the projected agent files
 	agentExt    string // ".md" (verbatim) | ".toml" (format-converted)
-	commandsDir string // dir holding <plugin>/<command>.toml; "" when the adapter has no command rule
 }
 
 // allPlatformExpects is the closed set of supported agent types. codex
@@ -72,6 +71,17 @@ type allPlatformExpect struct {
 // no command rule.
 var allPlatformExpects = []allPlatformExpect{
 	{
+		// antigravity: MCP deep-merges into .agents/mcp_config.json
+		// (mcpServers.serverUrl); no command directory, so commands are dropped.
+		id:          "antigravity",
+		runtimePath: ".agents/mcp_config.json",
+		runtimeFmt:  "json",
+		skillsDir:   ".agents/skills",
+		skillSep:    "-",
+		agentsDir:   ".agents/agents",
+		agentExt:    ".md",
+	},
+	{
 		id:          "claude-code",
 		runtimePath: ".mcp.json",
 		runtimeFmt:  "json",
@@ -79,10 +89,9 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    ":",
 		agentsDir:   ".claude/agents",
 		agentExt:    ".md",
-		// caveman commands are .toml (gemini-format); claude's rule is
+		// caveman commands are .toml; claude's rule is
 		// commands/**/*.md, so they are NOT projected here (format-filter). Broad
 		// claude command coverage lives in TestProjectionLifecycle.
-		commandsDir: "",
 	},
 	{
 		id:          "codex",
@@ -92,44 +101,56 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    "-",
 		agentsDir:   ".codex/agents",
 		agentExt:    ".toml",
-		commandsDir: "", // codex has no command projection rule
 	},
 	{
-		id:          "gemini-cli",
-		runtimePath: ".gemini/settings.json",
+		// cursor: MCP deep-merges into .cursor/mcp.json (mcpServers.url);
+		// skills go to .agents/skills, agents are copied verbatim.
+		id:          "cursor",
+		runtimePath: ".cursor/mcp.json",
 		runtimeFmt:  "json",
-		skillsDir:   ".gemini/skills",
+		skillsDir:   ".agents/skills",
 		skillSep:    "-",
-		agentsDir:   ".gemini/agents",
+		agentsDir:   ".cursor/agents",
 		agentExt:    ".md",
-		commandsDir: ".gemini/commands",
 	},
 	{
 		id:          "opencode",
 		runtimePath: ".opencode/opencode.json",
 		runtimeFmt:  "json",
-		skillsDir:   ".opencode/skills",
+		skillsDir:   ".agents/skills",
 		skillSep:    "-",
 		agentsDir:   ".opencode/agents",
 		agentExt:    ".md",
-		// caveman commands are .toml (gemini-format); opencode's rule is
+		// caveman commands are .toml; opencode's rule is
 		// commands/**/*.md, so they are NOT projected here (format-filter).
-		commandsDir: "",
 	},
 	{
-		// pi (Pi / pi-mono, Phase 5 D-33): thinnest adapter. skills +
-		// commands project verbatim into pi's project layout .pi/{skills,prompts}/
-		// (.pi/agent/ is global-only); MCP deep-merges into .pi/mcp.json. NO
+		// pi: thinnest adapter. skills +
+		// commands project verbatim into pi's project layout .pi/prompts/
+		// (.pi/agent/ is global-only), skills into .agents/skills/; MCP deep-merges into .pi/mcp.json. NO
 		// a2aAgents surface; agents are dropped (no rule).
 		id:          "pi",
 		runtimePath: ".pi/mcp.json",
 		runtimeFmt:  "json",
-		skillsDir:   ".pi/skills",
+		skillsDir:   ".agents/skills",
 		skillSep:    "-",
 		agentsDir:   "", // pi has no agent projection rule (dropped)
 		agentExt:    "",
-		commandsDir: "", // not asserted for pi
 	},
+}
+
+// claudeCodeExpect is the claude-code row: the ek_ and runtime subtests assert
+// claude-code's own layout (.mcp.json, .claude/skills), so they select it by id,
+// not by position in the table.
+func claudeCodeExpect(t *testing.T) allPlatformExpect {
+	t.Helper()
+	for _, pe := range allPlatformExpects {
+		if pe.id == "claude-code" {
+			return pe
+		}
+	}
+	t.Fatal("allPlatformExpects has no claude-code row")
+	return allPlatformExpect{}
 }
 
 // demoPluginSkills are the skill names the demo fixture's `caveman`
@@ -184,7 +205,6 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			assertRuntimeConfig(t, output, pe, pk)
 			assertProjectedSkills(t, output, pe)
 			assertProjectedAgents(t, output, pe)
-			assertProjectedCommands(t, output, pe)
 			assertHooksDropped(t, pe.id, stderr)
 			assertStateJSON(t, output, pe.id)
 			assertPerEnvNamespacing(t, output)
@@ -231,8 +251,9 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Fatalf("ek_path hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
 		}
 		// An ek_ (agents / CI, no interactive login) keeps the key-in-file contract.
-		assertProjectedSkills(t, output, allPlatformExpects[0]) // claude-code
-		runtime := filepath.Join(output, allPlatformExpects[0].runtimePath)
+		cc := claudeCodeExpect(t)
+		assertProjectedSkills(t, output, cc)
+		runtime := filepath.Join(output, cc.runtimePath)
 		b, rErr := os.ReadFile(runtime)
 		if rErr != nil {
 			t.Fatalf("ek_path: read runtime config %s: %v", runtime, rErr)
@@ -268,7 +289,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Errorf("include_runtime: regression — runtime entry hit ExtractContent\nstderr=%s", stderr)
 		}
 		// Context projection + runtime config still land.
-		assertProjectedSkills(t, output, allPlatformExpects[0])
+		assertProjectedSkills(t, output, claudeCodeExpect(t))
 		mcpJSON, err := os.ReadFile(filepath.Join(output, ".mcp.json"))
 		if err != nil {
 			t.Fatalf("include_runtime: read .mcp.json: %v", err)
@@ -276,7 +297,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		if !bytes.Contains(mcpJSON, []byte(`"a2a-demo-agent"`)) || !bytes.Contains(mcpJSON, []byte("/a2a/demo-agent/mcp")) {
 			t.Errorf("include_runtime: .mcp.json lacks the a2a-demo-agent MCP entry:\n%s", mcpJSON)
 		}
-		assertRuntimeConfig(t, output, allPlatformExpects[0], pk)
+		assertRuntimeConfig(t, output, claudeCodeExpect(t), pk)
 	})
 }
 
@@ -366,22 +387,6 @@ func assertProjectedAgents(t *testing.T, output string, pe allPlatformExpect) {
 	}
 	if n := countFilesWithExt(t, agentsRoot, pe.agentExt); n < 1 {
 		t.Errorf("%s: no %s agent files projected under %s", pe.id, pe.agentExt, pe.agentsDir)
-	}
-}
-
-// assertProjectedCommands asserts a representative command file projected,
-// for adapters that declare a command rule. codex (commandsDir == "")
-// asserts the inverse: no .codex/commands dir was created.
-func assertProjectedCommands(t *testing.T, output string, pe allPlatformExpect) {
-	t.Helper()
-	if pe.commandsDir == "" {
-		return // adapter has no asserted command destination (codex / pi)
-	}
-	// gemini namespaces plugin commands as <plugin>/<cmd>.toml (/caveman:caveman).
-	want := filepath.Join(output, pe.commandsDir, demoPlugin, "caveman.toml")
-	if _, err := os.Stat(want); err != nil {
-		t.Errorf("%s: expected projected command %s/caveman.toml missing under %s: %v",
-			pe.id, demoPlugin, pe.commandsDir, err)
 	}
 }
 

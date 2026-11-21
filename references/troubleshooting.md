@@ -558,7 +558,7 @@ success, but the agent CLI never sees the skill/MCP server.
 config-dir var; it never sets it. If you run your agent under a redirected
 profile (e.g. `ackstorm/agent-profile`) but the var is not set in the shell that
 runs ach-cli, ach-cli writes to `$HOME` while the agent reads the profile dir.
-Check: `env | grep -E 'CLAUDE_CONFIG_DIR|CODEX_HOME|GEMINI_CLI_HOME|PI_CODING_AGENT_DIR|XDG_CONFIG_HOME'`.
+Check: `env | grep -E 'CLAUDE_CONFIG_DIR|CODEX_HOME|PI_CODING_AGENT_DIR|XDG_CONFIG_HOME'`.
 Fix: export the var in the same shell (or via direnv) before hydrating.
 
 **Cause B — the value is relative.** A relative value is deliberately ignored

@@ -8,9 +8,10 @@ your `PATH`.
 
 | `launch` name | Tool |
 |---|---|
+| `agy` | Antigravity CLI |
 | `claude` | Claude Code |
 | `codex` | Codex |
-| `gemini` | Gemini CLI |
+| `cursor` | Cursor (starts `cursor-agent`) |
 | `opencode` | OpenCode |
 | `pi` | pi |
 
@@ -37,6 +38,10 @@ Without `--environment`, `launch` starts the tool without hydrating.
 `--update-environments` (or `--update-envs`) first updates every Environment
 already hydrated in that folder. An Environment installed globally with `-g`
 does not count.
+
+`launch opencode` starts the tool but does not restart an OpenCode service that
+is already running. After a hydrate or a `local plugin` command that changes MCP servers, run
+`opencode service restart`.
 
 ## Start it in another folder
 
@@ -71,6 +76,11 @@ ach-cli environment status
 ```
 
 It shows the Environment, the tool as its target, and `up to date`.
+
+## Cursor asks to approve MCP servers
+
+Cursor's CLI asks you to approve a project MCP server before it uses it. Approve
+the Environment's servers with `cursor-agent mcp enable <name>`.
 
 ## Related
 

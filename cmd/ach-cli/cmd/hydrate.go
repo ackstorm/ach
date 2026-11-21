@@ -34,8 +34,8 @@
 //   - D-12: <name> positional argument REQUIRED for pk-; OPTIONAL for ek-.
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
-// Adapter registration: the 4 platform adapters
-// (claudecode/codex/gemini/opencode) self-register via init() side
+// Adapter registration: the platform adapters
+// (antigravity/claudecode/codex/cursor/opencode/pi) self-register via init() side
 // effects in their subpackages; the blank-imports live in
 // adapters_register.go in this package so this file stays focused on
 // cobra wiring + dispatch.
@@ -144,8 +144,8 @@ Locking:
 Location:
   --dir <dir>         Workspace root (default: current directory).
   -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
-  --target <id[,id…]> Agent target(s): claude-code / codex / gemini-cli /
-                      opencode / pi (comma-separated or repeated;
+  --target <id[,id…]> Agent target(s): antigravity / claude-code / codex /
+                      cursor / opencode / pi (comma-separated or repeated;
                       ACH_TARGET is the same). Omitted: autodetected from
                       the workspace.
 
@@ -193,7 +193,7 @@ Exit codes:
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
 		"Override platform autodetection; "+
 			"comma-separated or repeated for several targets, e.g. codex,opencode "+
-			"(claude-code / codex / gemini-cli / opencode / pi + case-folded aliases)")
+			"(antigravity / claude-code / codex / cursor / opencode / pi + case-folded aliases)")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
 		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
 
@@ -885,11 +885,16 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	}
 	first := false
 	var logins []string
+	restart := false
 	for _, r := range results {
 		first = first || r.FirstRun
 		if c, ok := mcpLoginCmd[r.PlatformID]; ok && addsMCP(r) {
 			logins = append(logins, c)
 		}
+		restart = restart || (!meta.dryRun && r.PlatformID == opencodeTarget && changesServers(r))
+	}
+	if restart {
+		hints = append(hints, opencodeRestartHint)
 	}
 	if !first {
 		return hints
@@ -909,7 +914,27 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 
 func addsMCP(r hydrate.Result) bool {
 	for _, c := range r.Changes {
-		if c.Op == hydrate.OpAdd && c.Kind == "mcp" {
+		if c.Op == hydrate.OpAdd && c.Kind == kindMCP {
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	kindMCP        = "mcp"
+	opencodeTarget = "opencode"
+)
+
+// opencodeRestartHint is printed when ach-cli adds or removes an MCP server
+// for OpenCode (hydrate and local plugin commands).
+const opencodeRestartHint = "opencode service restart  — OpenCode loads MCP servers when its service starts"
+
+// changesServers reports an MCP server or A2A agent (written as an MCP server)
+// added or removed.
+func changesServers(r hydrate.Result) bool {
+	for _, c := range r.Changes {
+		if (c.Kind == kindMCP || c.Kind == "a2a") && (c.Op == hydrate.OpAdd || c.Op == hydrate.OpRemove) {
 			return true
 		}
 	}

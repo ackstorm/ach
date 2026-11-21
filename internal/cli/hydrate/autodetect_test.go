@@ -13,14 +13,13 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 
-	// Blank-import all four adapter subpackages so their init() side-
+	// Blank-import every adapter subpackages so their init() side-
 	// effect registrations fire before adapter.Iter() runs. The
 	// autodetect path consumes adapter.Iter() — without these imports,
 	// the registry is empty and every Autodetect call returns the
 	// zero-match arm regardless of on-disk state.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 )
 
@@ -162,7 +161,7 @@ func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 // TestResolvePlatform_Canonical asserts the canonical id round-trips
 // through ResolvePlatform unchanged.
 func TestResolvePlatform_Canonical(t *testing.T) {
-	for _, id := range []string{"claude-code", "codex", "gemini-cli", "opencode"} {
+	for _, id := range []string{"claude-code", "codex", "opencode"} {
 		got, err := hydrate.ResolvePlatform(id)
 		if err != nil {
 			t.Errorf("ResolvePlatform(%q): unexpected error: %v", id, err)

@@ -508,7 +508,7 @@ Flags:
       --no-warnings      Suppress the tip to use an environment key (ek-) instead of your sign-in
       --only-runtime     Install ONLY runtime entries (skip context)
       --profile string   Use this profile instead of the active one
-      --target strings   Agent target(s), comma-separated or repeated: claude-code / codex / gemini-cli / opencode / pi
+      --target strings   Agent target(s), comma-separated or repeated: antigravity / claude-code / codex / cursor / opencode / pi
       --verbose          Dump request headers to stderr (credentials redacted)
 ```
 
@@ -596,8 +596,8 @@ Locking:
 Location:
   --dir <dir>         Workspace root (default: current directory).
   -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
-  --target <id[,id…]> Agent target(s): claude-code / codex / gemini-cli /
-                      opencode / pi (comma-separated or repeated;
+  --target <id[,id…]> Agent target(s): antigravity / claude-code / codex /
+                      cursor / opencode / pi (comma-separated or repeated;
                       ACH_TARGET is the same). Omitted: autodetected from
                       the workspace.
 
@@ -639,7 +639,7 @@ Flags:
       --only-runtime            Reconcile ONLY runtime entries (skip context)
       --profile string          Use this profile instead of the active one
       --sync                    Delete state entries no longer in the environment (deepest-first)
-      --target strings          Override platform autodetection; comma-separated or repeated for several targets, e.g. codex,opencode (claude-code / codex / gemini-cli / opencode / pi + case-folded aliases)
+      --target strings          Override platform autodetection; comma-separated or repeated for several targets, e.g. codex,opencode (antigravity / claude-code / codex / cursor / opencode / pi + case-folded aliases)
       --verbose                 Dump request headers to stderr (credentials redacted)
       --wait                    Block indefinitely on workspace lock contention
 ```
@@ -934,7 +934,7 @@ ANTHROPIC_CUSTOM_HEADERS in your shell are ignored; a Claude settings file
 that sets ANTHROPIC_BASE_URL stops the launch. --models is refused for
 claude.
 
-Tools: claude, codex, gemini, opencode, pi
+Tools: agy, claude, codex, cursor, opencode, pi
 
 Arguments after <tool> are passed to the tool; put the tool's own flags
 after --.
@@ -1031,7 +1031,7 @@ Flags:
       --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
-      --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
+      --target strings    Tool(s) to install for, comma-separated or repeated: antigravity, claude-code, codex, cursor, opencode, pi
       --verbose           Narrate per-repo clone + per-target projection progress
 ```
 
@@ -1225,7 +1225,7 @@ Flags:
       --force             Replace files that already exist and ach-cli did not install
   -g, --global            Install to the tool's global config root
   -h, --help              help for install
-      --target strings    Tool(s) to install for, comma-separated or repeated: claude-code, codex, gemini-cli, opencode, pi
+      --target strings    Tool(s) to install for, comma-separated or repeated: antigravity, claude-code, codex, cursor, opencode, pi
       --verbose           Narrate per-repo clone + per-target projection progress
 ```
 

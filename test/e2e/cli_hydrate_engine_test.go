@@ -83,7 +83,6 @@ import (
 const (
 	phase7PlatformClaudeCode = "claude-code"
 	phase7PlatformCodex      = "codex"
-	phase7PlatformGemini     = "gemini-cli"
 	phase7PlatformOpencode   = "opencode"
 )
 
@@ -94,7 +93,6 @@ const (
 const (
 	phase7ClaudeCodeRuntimePath = ".mcp.json"
 	phase7CodexRuntimePath      = ".codex/config.toml"
-	phase7GeminiRuntimePath     = ".gemini/settings.json"
 	phase7OpencodeRuntimePath   = ".opencode/opencode.json"
 )
 
@@ -123,13 +121,11 @@ func phase7AchTmpDir(output, environment string) string {
 func TestPhase7CLIEngine(t *testing.T) {
 	t.Run("w1_baseline_no_op", testPhase7BaselineNoOp)
 
-	// 4 platforms × {pk_, ek_} = 8 sc1_* subtests.
+	// 3 platforms × {pk_, ek_} = 6 sc1_* subtests.
 	t.Run("sc1_claudecode_pk", testPhase7Sc1ClaudeCodePk)
 	t.Run("sc1_claudecode_ek", testPhase7Sc1ClaudeCodeEk)
 	t.Run("sc1_codex_pk", testPhase7Sc1CodexPk)
 	t.Run("sc1_codex_ek", testPhase7Sc1CodexEk)
-	t.Run("sc1_gemini_pk", testPhase7Sc1GeminiPk)
-	t.Run("sc1_gemini_ek", testPhase7Sc1GeminiEk)
 	t.Run("sc1_opencode_pk", testPhase7Sc1OpencodePk)
 	t.Run("sc1_opencode_ek", testPhase7Sc1OpencodeEk)
 
@@ -299,7 +295,7 @@ func testPhase7Sc5SkillProjection(t *testing.T) {
 //
 // Mode-0o600 assertion is load-bearing for the W5-02 close. The
 // runtime-config file (.claude/.mcp.json / .codex/config.toml /
-// .gemini/settings.json / .opencode/opencode.json) embeds plaintext
+// .opencode/opencode.json) embeds plaintext
 // `x-ach-key` bearer credentials in its headers map; a 0o644 mode would
 // leak the bearer to any other local UID. Pre-W5-02 the engine called
 // state.WriteAtomic with no mode parameter (hardcoded 0o644); post-W5-02
@@ -418,12 +414,6 @@ func testPhase7Sc1CodexPk(t *testing.T) {
 }
 func testPhase7Sc1CodexEk(t *testing.T) {
 	phase7Sc1RunEk(t, phase7PlatformCodex, phase7CodexRuntimePath)
-}
-func testPhase7Sc1GeminiPk(t *testing.T) {
-	phase7Sc1RunPk(t, phase7PlatformGemini, phase7GeminiRuntimePath)
-}
-func testPhase7Sc1GeminiEk(t *testing.T) {
-	phase7Sc1RunEk(t, phase7PlatformGemini, phase7GeminiRuntimePath)
 }
 func testPhase7Sc1OpencodePk(t *testing.T) {
 	phase7Sc1RunPk(t, phase7PlatformOpencode, phase7OpencodeRuntimePath)

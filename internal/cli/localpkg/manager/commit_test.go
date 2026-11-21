@@ -18,7 +18,7 @@ import (
 
 func TestRemapGlobalPath(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -176,7 +176,7 @@ func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
 func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 	root := t.TempDir()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -215,6 +215,37 @@ func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 
 	if recs[0].RelPath != ".config/opencode/agents/a.md" {
 		t.Errorf("RelPath = %q; want .config/opencode/agents/a.md", recs[0].RelPath)
+	}
+}
+
+// ---------- Commit: antigravity global remap ---------------------------------
+
+func TestCommit_AntigravityGlobalRemap(t *testing.T) {
+	root := t.TempDir()
+	writes := []PlannedWrite{
+		{Path: ".agents/skills/s/SKILL.md", Content: []byte("# s\n"), Merge: adapter.MergeReplace},
+		{Path: ".agents/mcp_config.json", Content: []byte(`{"mcpServers":{"a":{"serverUrl":"https://x"}}}`),
+			Merge: adapter.MergeDeep, Keys: []string{"mcpServers.a"}},
+	}
+	for i := range writes {
+		writes[i].Path = adapter.RemapGlobalPath("antigravity", root, writes[i].Path)
+	}
+
+	recs, err := Commit(root, true, writes)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	want := []string{".gemini/config/skills/s/SKILL.md", ".gemini/config/mcp_config.json"}
+	for i, rel := range want {
+		if recs[i].RelPath != rel {
+			t.Errorf("RelPath[%d] = %q; want %q", i, recs[i].RelPath, rel)
+		}
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Errorf("missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agents")); !os.IsNotExist(err) {
+		t.Errorf("nothing may be written under .agents: %v", err)
 	}
 }
 

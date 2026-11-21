@@ -18,17 +18,12 @@
 //     Transform). hooks/, rules/, AGENTS.md fall into route.Project's
 //     drop set (no matching rule).
 //
-//   - gemini-cli (subpackage internal/cli/adapter/gemini,
-//     plan 07-W3-03): JSON merge into .gemini/settings.json + plugin
-//     projection via route.Project + ProjectionRules. hooks/ and rules/
-//     fall into route.Project's drop set.
-//
 //   - opencode (subpackage internal/cli/adapter/opencode,
 //     plan 07-W3-04): platform-specific merge + plugin projection via
 //     route.Project + ProjectionRules per spec §7.4 opencode.
 //
-//   - pi (subpackage internal/cli/adapter/pi, Phase 5 D-33):
-//     the optional 5th target (Pi / pi-mono). RenderRuntime deep-merges
+//   - pi (subpackage internal/cli/adapter/pi):
+//     RenderRuntime deep-merges
 //     Environment runtime MCP servers into .pi/mcp.json (MergeDeep) and
 //     a 3-row ProjectionRules table passes plugin commands/skills
 //     verbatim through 2 .pi/-prefixed globs. rules/, agents/, AGENTS.md,
@@ -73,7 +68,7 @@
 //
 // Each adapter's ProjectionRules table omits rules for components the
 // platform cannot meaningfully use (e.g. hooks/ for all adapters,
-// commands/ for gemini-cli). route.Project accumulates each unrouted
+// agents/ for pi). route.Project accumulates each unrouted
 // top-level kind exactly once into the drop set returned to the
 // orchestrator. The orchestrator emits a single end-of-hydration stderr
 // warning; exit code is unchanged.

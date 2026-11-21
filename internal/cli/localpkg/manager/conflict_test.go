@@ -13,7 +13,7 @@ import (
 
 func TestResolveConflicts(t *testing.T) {
 	const target = ".claude/commands/review.md"
-	owners := map[string]string{target: "gemini@ackstorm"}
+	owners := map[string]string{target: "codex@ackstorm"}
 
 	replace := []manager.PlannedWrite{{Path: target, Merge: adapter.MergeReplace}}
 
@@ -57,8 +57,8 @@ func TestResolveConflicts(t *testing.T) {
 		if len(out) != 0 {
 			t.Errorf("skip: want 0 writes; got %v", out)
 		}
-		if len(acts) != 1 || acts[0].Policy != conflict.Skip || acts[0].Owner != "gemini@ackstorm" {
-			t.Errorf("skip: want one skip action owned by gemini@ackstorm; got %v", acts)
+		if len(acts) != 1 || acts[0].Policy != conflict.Skip || acts[0].Owner != "codex@ackstorm" {
+			t.Errorf("skip: want one skip action owned by codex@ackstorm; got %v", acts)
 		}
 	})
 

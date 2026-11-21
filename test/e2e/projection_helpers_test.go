@@ -43,9 +43,8 @@
 //	              still matches the rule's first segment, so route.Project does
 //	              not add it to the dropped set — the individual .toml files are
 //	              skipped by the WR-03 terminal-extension guard.)
-//	gemini-cli   agents→.gemini/agents/  commands→.gemini/commands/  skills→.gemini/skills/
-//	opencode     commands→.opencode/commands/  agents(*.md)→.opencode/agents/  skills→.opencode/skills/
-//	pi       skills→.pi/skills/
+//	opencode     commands→.opencode/commands/  agents(*.md)→.opencode/agents/  skills→.agents/skills/
+//	pi       skills→.agents/skills/
 //	             (commands rule is commands/**/*.md; caveman commands are .toml
 //	              → NOT projected. NO agents rule → caveman's agents/ is DROPPED:
 //	              pi is the one adapter in this matrix whose drop set
@@ -62,7 +61,7 @@
 // Metadata/docs/unknown top-levels (.claude-plugin, .codex-plugin, src,
 // LICENSE, README.md) are now SILENTLY skipped — they never appear in the
 // warning (route.KnownComponentKinds gates the drop set). So an adapter that
-// routes all of caveman's component kinds (claude-code/codex/gemini/opencode)
+// routes all of caveman's component kinds (claude-code/codex/opencode)
 // prints NO drop warning at all; only pi (no `agents` rule) warns, naming
 // `agents` + the caveman plugin. assertDropsWarned checks for the presence of
 // the kinds we KNOW must (or must not) be dropped, not for an exact full list.
@@ -82,7 +81,7 @@ import (
 // expectations for the demo Environment's caveman plugin.
 type projectionDescriptor struct {
 	// platformID is the canonical --platform value (claude-code / codex /
-	// gemini-cli / opencode / pi).
+	// opencode / pi).
 	platformID string
 
 	// nativeDirs are the adapter-native destination directories under the
@@ -101,15 +100,15 @@ type projectionDescriptor struct {
 	// file (workspace-relative). uninstall inverse-merges this file: ACH's
 	// keys are subtracted while a pre-seeded user key survives. Derived from
 	// each adapter's runtime-path const (claudecode settingsJSONPath, codex
-	// configTOMLPath, gemini settingsJSONPath, opencode configJSONPath,
+	// configTOMLPath, opencode configJSONPath,
 	// pi mcpJSONPath).
 	coOwnedFile string
 
 	// coOwnedKind selects the pre-seed shape + the survivor assertion:
-	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude / gemini)
-	// "json-mcp-opencode" → {"mcp": {"<userKey>": …}} (opencode)
+	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude)
+	// "json-mcp-opencode" → {"mcp": {"servers": {"<userKey>": …}}} (opencode)
 	// "toml-mcp"  → [mcp_servers.<userKey>] (codex)
-	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json)
+	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json, cursor .cursor/mcp.json, antigravity .agents/mcp_config.json)
 	coOwnedKind string
 
 	// mustDrop are kind names that MUST appear in the WIRE-03 stderr warning
@@ -136,6 +135,18 @@ type projectionDescriptor struct {
 // user key survives the subtraction.
 var projectionDescriptors = []projectionDescriptor{
 	{
+		platformID: phase7PlatformAntigravity, // "antigravity"
+		// antigravity routes agents(*.md)→.agents/agents/ and skills→
+		// .agents/skills/; it has no command directory, so caveman's
+		// commands/ is dropped + warned.
+		nativeDirs:     []string{".agents/agents", ".agents/skills"},
+		mustNotProject: []string{"agents", "commands", "skills"},
+		coOwnedFile:    ".agents/mcp_config.json",
+		coOwnedKind:    "json-pi",
+		mustDrop:       []string{"commands"},
+		mustNotDrop:    []string{"agents", "skills"},
+	},
+	{
 		platformID:     phase7PlatformClaudeCode, // "claude-code"
 		nativeDirs:     []string{".claude/agents", ".claude/commands", ".claude/skills"},
 		mustNotProject: []string{"agents", "commands", "skills"},
@@ -160,18 +171,19 @@ var projectionDescriptors = []projectionDescriptor{
 		mustNotDrop: []string{"agents", "skills"},
 	},
 	{
-		platformID:     phase7PlatformGemini, // "gemini-cli"
-		nativeDirs:     []string{".gemini/agents", ".gemini/commands", ".gemini/skills"},
+		platformID: phase7PlatformCursor, // "cursor"
+		// cursor routes commands(*.md)→.cursor/commands/, agents(*.md)→
+		// .cursor/agents/ and skills→.agents/skills/.
+		nativeDirs:     []string{".cursor/commands", ".cursor/agents", ".agents/skills"},
 		mustNotProject: []string{"agents", "commands", "skills"},
-		coOwnedFile:    ".gemini/settings.json",
-		coOwnedKind:    "json-mcp",
-		// gemini drops `hooks`; caveman has no top-level hooks/ → no drop.
-		mustDrop:    nil,
-		mustNotDrop: []string{"agents", "commands", "skills"},
+		coOwnedFile:    ".cursor/mcp.json",
+		coOwnedKind:    "json-pi",
+		mustDrop:       nil,
+		mustNotDrop:    []string{"agents", "commands", "skills"},
 	},
 	{
 		platformID:     phase7PlatformOpencode, // "opencode"
-		nativeDirs:     []string{".opencode/commands", ".opencode/agents", ".opencode/skills"},
+		nativeDirs:     []string{".opencode/commands", ".opencode/agents", ".agents/skills"},
 		mustNotProject: []string{"agents", "commands", "skills"},
 		coOwnedFile:    ".opencode/opencode.json",
 		coOwnedKind:    "json-mcp-opencode",
@@ -180,11 +192,11 @@ var projectionDescriptors = []projectionDescriptor{
 	},
 	{
 		platformID: phase7PlatformPi, // "pi"
-		// pi routes commands(*.md)→.pi/prompts/ and skills→.pi/skills/ (pi's
-		// project layout; .pi/agent/ is global-only). caveman commands are
+		// pi routes commands(*.md)→.pi/prompts/ and skills→.agents/skills/ (.pi/agent/
+		// is global-only). caveman commands are
 		// .toml → not projected, but the demo env's feature-dev plugin ships
 		// .md commands → they land under .pi/prompts/.
-		nativeDirs:     []string{".pi/skills", ".pi/prompts"},
+		nativeDirs:     []string{".agents/skills", ".pi/prompts"},
 		mustNotProject: []string{"skills"},
 		coOwnedFile:    ".pi/mcp.json",
 		coOwnedKind:    "json-pi",
@@ -196,6 +208,12 @@ var projectionDescriptors = []projectionDescriptor{
 		mustNotDrop: []string{"skills", ".claude-plugin", "README.md"},
 	},
 }
+
+// phase7PlatformAntigravity is the canonical antigravity id.
+const phase7PlatformAntigravity = "antigravity"
+
+// phase7PlatformCursor is the canonical cursor id.
+const phase7PlatformCursor = "cursor"
 
 // phase7PlatformPi is the canonical pi id (the four other ids are
 // declared in cli_hydrate_engine_test.go; pi post-dates that file).
@@ -370,7 +388,9 @@ func seedCoOwnedUserKey(t *testing.T, output string, d projectionDescriptor) str
 	case "json-mcp-opencode":
 		body = []byte(`{
   "mcp": {
-    "` + userKey + `": {"type": "remote", "url": "http://localhost:9/user"}
+    "servers": {
+      "` + userKey + `": {"type": "remote", "url": "http://localhost:9/user"}
+    }
   }
 }
 `)

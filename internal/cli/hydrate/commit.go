@@ -170,16 +170,6 @@ func newCommit(opts Opts) (*commit, error) {
 		}
 	}
 
-	if opts.Platform != "" && !opts.DryRun {
-		if merr := state.MigrateLegacyPiState(statePath); merr != nil {
-			return nil, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("migrate legacy pimono state: %v", merr),
-				Wrapped: merr,
-			}
-		}
-	}
-
 	// Resolve toolRoot — the base for adapter runtime-config writes. In
 	// project scope it is the workspace root (the dir that CONTAINS
 	// .ach/). In --global scope adapter configs go under $HOME (the tools'
@@ -1023,13 +1013,17 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 		if !adapterRan {
 			return nil
 		}
-		// Plugin files a plugin STILL in the Environment no longer writes (a
+		// Files a plugin or Skill STILL in the Environment no longer writes (a
 		// path it moved, e.g. namespacing .claude/skills/x → .claude/skills/p:x,
 		// or a component it dropped) are ours alone: prune them like adapter
-		// keys, or they linger untracked once composed replaces the bucket. A
-		// plugin that left the Environment stays --sync's call.
-		prev = &state.File{Adapter: existing.Adapter, Plugins: keptPluginRows(existing.Plugins, composed.Plugins)}
-		composed = &state.File{Adapter: composed.Adapter, Plugins: composed.Plugins}
+		// keys, or they linger untracked once composed replaces the bucket. One
+		// that left the Environment stays --sync's call.
+		prev = &state.File{
+			Adapter: existing.Adapter,
+			Plugins: keptSourceRows(existing.Plugins, composed.Plugins),
+			Skills:  keptSourceRows(existing.Skills, composed.Skills),
+		}
+		composed = &state.File{Adapter: composed.Adapter, Plugins: composed.Plugins, Skills: composed.Skills}
 	}
 	stats, err := syncFn(prev, composed, c.achDir, c.toolRoot, SyncOptions{
 		Force:  c.opts.Force,
@@ -1052,9 +1046,8 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 	return nil
 }
 
-// keptPluginRows returns the prev plugin rows whose plugin (Source) still
-// projects in next.
-func keptPluginRows(prev, next []state.FileEntry) []state.FileEntry {
+// keptSourceRows returns the prev rows whose Source still projects in next.
+func keptSourceRows(prev, next []state.FileEntry) []state.FileEntry {
 	live := map[string]bool{}
 	for _, e := range next {
 		live[e.Source] = true

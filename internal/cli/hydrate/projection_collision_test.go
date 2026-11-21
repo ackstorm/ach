@@ -209,6 +209,76 @@ func TestProjection_MultiPlugin_DistinctPaths_TwoTargets(t *testing.T) {
 	}
 }
 
+// TestProjection_SharedSkillsDir_TwoTargets proves codex and opencode share
+// .agents/skills in one folder: the second target adopts the identical file,
+// a re-hydrate of both succeeds, and uninstalling both leaves no skill dir.
+func TestProjection_SharedSkillsDir_TwoTargets(t *testing.T) {
+	withCleanHome(t)
+	achDir := t.TempDir()
+	toolRoot := t.TempDir()
+
+	const rel = ".agents/skills/plug-sk/SKILL.md"
+	abs := filepath.Join(toolRoot, filepath.FromSlash(rel))
+	stage := func(body string) {
+		stagePluginTree(t, achDir, "plug", map[string]string{"skills/sk/SKILL.md": body})
+	}
+	record := func(res hydrate.RenderResult) *state.File {
+		f := &state.File{SchemaVersion: "3", Environment: "demo"}
+		for _, pf := range res.ProjectedFiles {
+			f.Plugins = append(f.Plugins, state.FileEntry{
+				Target: pf.Target, Hash: pf.Hash, SourceHash: pf.SourceHash,
+				Merge: pf.Merge, Keys: pf.Keys, Source: pf.Source,
+			})
+		}
+		return f
+	}
+	targets := []string{"codex", "opencode"}
+	priors := map[string]*state.File{}
+	run := func(phase string) {
+		for _, id := range targets {
+			_, disp := hydrate.NewWiring(nil, id, extract.DefaultLimits(), false, false, false, conflict.Namespace)
+			res, err := disp.Render(context.Background(), newProjectionManifest(), priors[id], achDir, toolRoot, true, true)
+			if err != nil {
+				t.Fatalf("%s %s: %v", phase, id, err)
+			}
+			found := false
+			for _, pf := range res.ProjectedFiles {
+				found = found || pf.Target == rel
+			}
+			if !found {
+				t.Fatalf("%s %s: %s not recorded; got %+v", phase, id, rel, res.ProjectedFiles)
+			}
+			priors[id] = record(res)
+		}
+	}
+
+	stage("v1\n")
+	run("first")
+	if _, err := os.Stat(abs); err != nil {
+		t.Fatalf("shared skill missing: %v", err)
+	}
+
+	stage("v2\n")
+	run("re-hydrate")
+	got, err := os.ReadFile(abs)
+	if err != nil || !strings.HasSuffix(string(got), "v2\n") {
+		t.Fatalf("shared skill after re-hydrate = %q, err=%v", got, err)
+	}
+
+	for _, id := range targets {
+		stats, err := hydrate.Sync(priors[id], &state.File{SchemaVersion: "3"}, toolRoot, toolRoot, hydrate.SyncOptions{})
+		if err != nil {
+			t.Fatalf("uninstall %s: %v", id, err)
+		}
+		if stats.Preserved != 0 {
+			t.Errorf("uninstall %s preserved %d file(s); want 0", id, stats.Preserved)
+		}
+	}
+	if _, err := os.Stat(filepath.Dir(abs)); !os.IsNotExist(err) {
+		t.Errorf("shared skill dir must be gone after uninstall; stat err=%v", err)
+	}
+}
+
 // keysOf is a tiny helper to render the set of recorded Targets in an error.
 func keysOf(m map[string]hydrate.FileWrite) []string {
 	out := make([]string, 0, len(m))

@@ -5,7 +5,6 @@ package hydrate
 import (
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/state"
 )
@@ -74,7 +73,8 @@ func ItemsOf(f *state.File) []StateItem {
 	for _, e := range f.Adapter.Files {
 		for _, k := range e.Keys {
 			if kind := runtimeKindForKey(k); kind != "" {
-				add(kind, k[strings.IndexByte(k, '.')+1:], k, "")
+				name, _ := mcpServerNameFromKey(k)
+				add(kind, name, k, "")
 			}
 		}
 	}

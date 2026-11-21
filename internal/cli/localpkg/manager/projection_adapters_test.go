@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Hermetic integration coverage for the localpkg manager's Resolve+Project
-// pipeline across ALL FIVE registered adapters (Group A) and the
+// pipeline across EVERY registered adapter (Group A) and the
 // skill-marketplace lens end-to-end (Group B).
 //
 // The existing manager_test.go only exercises the claude-code adapter; this
@@ -27,10 +27,11 @@ import (
 	"testing"
 	"time"
 
-	// Blank-import all five adapters so their init() registers them.
+	// Blank-import every adapter so their init() registers them.
+	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
+	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 
@@ -159,7 +160,7 @@ func pathList(writes []manager.PlannedWrite) []string {
 	return out
 }
 
-// ---- Group A: projection across all five adapters ---------------------------
+// ---- Group A: projection across every adapter ---------------------------
 
 // TestProject_AllAdapters_DirectPlugin verifies that a single rich direct-plugin
 // (command + agent + mcp) projects to the expected destination paths for each
@@ -179,6 +180,18 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 		absent    []string // paths that MUST NOT be present
 	}{
 		{
+			adapterID: "antigravity",
+			// antigravity has no command directory: the command is dropped.
+			want: []string{
+				".agents/agents/agent-a.md",
+				".agents/mcp_config.json",
+			},
+			absent: []string{
+				".agents/commands/hello.md",
+				".agents/prompts/hello.md",
+			},
+		},
+		{
 			adapterID: "claude-code",
 			want: []string{
 				".claude/commands/hello.md",
@@ -196,14 +209,11 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 			},
 		},
 		{
-			adapterID: "gemini-cli",
+			adapterID: "cursor",
 			want: []string{
-				".gemini/commands/hello.toml", // claude .md command → gemini TOML
-				".gemini/agents/agent-a.md",
-				".gemini/settings.json",
-			},
-			absent: []string{
-				".gemini/commands/hello.md", // must be converted, not copied verbatim
+				".cursor/commands/hello.md",
+				".cursor/agents/agent-a.md",
+				".cursor/mcp.json",
 			},
 		},
 		{

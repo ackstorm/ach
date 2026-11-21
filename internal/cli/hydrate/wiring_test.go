@@ -26,12 +26,11 @@ import (
 	"github.com/ackstorm/ach/internal/cli/merge"
 	"github.com/ackstorm/ach/internal/cli/state"
 
-	// Blank-import all four adapter subpackages so init() registers
+	// Blank-import every adapter subpackages so init() registers
 	// them — adapter.Lookup will need claudecode in the dispatcher
 	// tests below.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 )
 

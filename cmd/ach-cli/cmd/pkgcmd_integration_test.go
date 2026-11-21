@@ -205,7 +205,7 @@ func TestPluginCmd_Install_Verbose(t *testing.T) {
 // ---- Group C: multi-target INSTALL in one command ---------------------------
 
 // TestPluginCmd_Install_MultiTarget_OneArg verifies that
-// `plugin install <name>@<repo> --target claude,codex,gemini` (comma-separated
+// `plugin install <name>@<repo> --target claude,codex,pi` (comma-separated
 // in ONE arg) installs to all three adapters: three installed.json entries and
 // projected files under each adapter's dir.
 func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
@@ -235,7 +235,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
 	// All three targets in ONE comma-separated --target value.
-	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,gemini", "--dir", destDir})
+	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,pi", "--dir", destDir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin install multi-target: %v (output: %s)", err, buf.String())
 	}
@@ -245,7 +245,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadInstalled: %v", err)
 	}
-	wantTargets := map[string]bool{"claude-code": false, "codex": false, "gemini-cli": false}
+	wantTargets := map[string]bool{"claude-code": false, "codex": false, "pi": false}
 	for _, e := range installed.Installed {
 		if e.Ref == "mt@mt" {
 			if _, known := wantTargets[e.Target]; known {
@@ -264,12 +264,10 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	// Projected files must exist under each adapter's dir.
 	wantFiles := []string{
 		// Every target namespaces the plugin's command with its name, in the
-		// form that tool accepts: a subdir for claude/gemini, a "-" for codex.
+		// form that tool accepts: a subdir for claude, a "-" for codex and pi.
 		filepath.Join(destDir, ".claude", "commands", "mt", "x.md"),
 		filepath.Join(destDir, ".codex", "prompts", "mt-x.md"),
-		// gemini-cli reads custom commands as TOML, so commands/x.md is
-		// converted to .gemini/commands/mt/x.toml (geminiCommandTOML), not copied.
-		filepath.Join(destDir, ".gemini", "commands", "mt", "x.toml"),
+		filepath.Join(destDir, ".pi", "prompts", "mt-x.md"),
 	}
 	for _, f := range wantFiles {
 		if _, err := os.Stat(f); err != nil {
@@ -487,7 +485,7 @@ func TestPluginCmd_Update_RefusedKeepsOldInstall(t *testing.T) {
 func pinConfigDirEnv(t *testing.T) {
 	t.Helper()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -790,4 +788,88 @@ func TestPluginCmd_Update_RefusesUnownedFile(t *testing.T) {
 	if b, _ := os.ReadFile(newFile); string(b) != "new command\n" {
 		t.Errorf("new.md = %q; want the next version's file after --force", b)
 	}
+}
+
+// makeMCPPluginRepo creates a bare repo for a direct plugin that ships a
+// command and a root .mcp.json with one remote server. Returns the file:// URL.
+func makeMCPPluginRepo(t *testing.T) string {
+	t.Helper()
+	work := t.TempDir()
+	runPkgGit(t, work, "init", "-b", "main", ".")
+	runPkgGit(t, work, "config", "user.email", "t@t")
+	runPkgGit(t, work, "config", "user.name", "t")
+	for rel, body := range map[string]string{
+		"commands/x.md": "# x\nA test command.\n",
+		".mcp.json":     `{"mcpServers":{"srv":{"url":"https://mcp.example.com/mcp"}}}`,
+	} {
+		p := filepath.Join(work, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	runPkgGit(t, work, "add", "-A")
+	runPkgGit(t, work, "commit", "-m", "init mcp plugin")
+	bare := t.TempDir()
+	runPkgGit(t, work, "clone", "--bare", ".", bare)
+	return "file://" + bare
+}
+
+func seedPluginRepo(t *testing.T, name, url string) {
+	t.Helper()
+	seedRepo(t, store.RepoEntry{
+		Name: name, Source: "git:" + url, Kind: "git", CloneURL: url, GitRef: "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}},
+		AddedAt:  "2026-01-01T00:00:00Z",
+	})
+}
+
+// TestPluginCmd_OpencodeServiceRestartHint: the restart hint appears once when
+// a plugin install or uninstall writes or removes an MCP server entry for
+// opencode, and never otherwise.
+func TestPluginCmd_OpencodeServiceRestartHint(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	seedPluginRepo(t, "m", makeMCPPluginRepo(t))
+	seedPluginRepo(t, "p", makeDirectPluginRepo(t))
+	hints := func(out string) int { return strings.Count(out, opencodeRestartHint) }
+
+	t.Run("install opencode with MCP", func(t *testing.T) {
+		out, err := runPluginCmd("install", "m@m", "--target", "opencode", "--dir", t.TempDir())
+		if err != nil || hints(out) != 1 {
+			t.Fatalf("err=%v hints=%d; want 1\n%s", err, hints(out), out)
+		}
+	})
+	t.Run("install claude-code with MCP", func(t *testing.T) {
+		out, err := runPluginCmd("install", "m@m", "--target", "claude-code", "--dir", t.TempDir())
+		if err != nil || hints(out) != 0 {
+			t.Fatalf("err=%v hints=%d; want 0\n%s", err, hints(out), out)
+		}
+	})
+	t.Run("install opencode without MCP", func(t *testing.T) {
+		out, err := runPluginCmd("install", "p@p", "--target", "opencode", "--dir", t.TempDir())
+		if err != nil || hints(out) != 0 {
+			t.Fatalf("err=%v hints=%d; want 0\n%s", err, hints(out), out)
+		}
+	})
+	t.Run("install opencode dry-run", func(t *testing.T) {
+		out, err := runPluginCmd("install", "m@m", "--target", "opencode", "--dir", t.TempDir(), "--dry-run")
+		if err != nil || hints(out) != 0 {
+			t.Fatalf("err=%v hints=%d; want 0\n%s", err, hints(out), out)
+		}
+	})
+	t.Run("uninstall opencode with MCP", func(t *testing.T) {
+		dir := t.TempDir()
+		if out, err := runPluginCmd("install", "m@m", "--target", "opencode", "--dir", dir); err != nil {
+			t.Fatalf("install: %v\n%s", err, out)
+		}
+		out, err := runPluginCmd("uninstall", "m@m", "--target", "opencode", "--dir", dir)
+		if err != nil || hints(out) != 1 {
+			t.Fatalf("err=%v hints=%d; want 1\n%s", err, hints(out), out)
+		}
+	})
 }

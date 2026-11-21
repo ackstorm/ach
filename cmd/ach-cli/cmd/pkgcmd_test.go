@@ -280,7 +280,7 @@ func TestPluginCmd_Install_UnknownTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown target, got nil")
 	}
-	for _, id := range []string{"claude-code", "codex", "gemini-cli", "opencode", "pi"} {
+	for _, id := range []string{"antigravity", "claude-code", "codex", "cursor", "opencode", "pi"} {
 		if !strings.Contains(err.Error(), id) {
 			t.Errorf("unknown-target error should list %q: %v", id, err)
 		}
@@ -311,11 +311,11 @@ func TestPluginCmd_Install_EmptyTarget_Exit1(t *testing.T) {
 // TestParseTargets_CommaAndRepeat: --target values split on commas AND
 // repeat, resolve aliases, and dedupe in order.
 func TestParseTargets_CommaAndRepeat(t *testing.T) {
-	got, err := parseTargets([]string{"claude,codex-cli", "gemini", "cc"})
+	got, err := parseTargets([]string{"claude,codex-cli", "pi", "cc"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"claude-code", "codex", "gemini-cli"}; !slices.Equal(got, want) {
+	if want := []string{"claude-code", "codex", "pi"}; !slices.Equal(got, want) {
 		t.Errorf("parseTargets = %v, want %v", got, want)
 	}
 }
