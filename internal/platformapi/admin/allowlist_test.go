@@ -266,6 +266,9 @@ func TestAdminOnlyRejectsNonAdmin(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("inner must not be called; got %d calls", calls.Load())
 	}
+	if !strings.Contains(auditBuf.String(), `"action":"platform.admin.authz"`) {
+		t.Fatalf("expected audit action=platform.admin.authz; got %s", auditBuf.String())
+	}
 	if !strings.Contains(auditBuf.String(), `"outcome":"not_admin"`) {
 		t.Fatalf("expected audit outcome=not_admin; got %s", auditBuf.String())
 	}

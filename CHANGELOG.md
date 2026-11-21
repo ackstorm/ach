@@ -4,6 +4,24 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- Audit: `examples/litellm/ach_audit.py`, a LiteLLM callback that writes one
+  audit event per model, MCP tool and A2A agent call (`litellm.model.call`,
+  `litellm.tool.call`, `litellm.agent.call`) with the caller, key, Environment,
+  target, guardrail verdicts, tokens and cost, and no request or response
+  content. "Connect ACH to LiteLLM" in the docs has the install steps.
+- Docs: an "Audit events" reference page lists every audit event ACH and the
+  callback write.
+
+### Changed
+- Audit: a caller refused on an admin route is recorded as
+  `platform.admin.authz`. It was `platform.admin.keys.revoke`; update any alert
+  or query that matches the old name.
+- Audit: the `actor` of a `platform.ek.exchange` event is
+  `<namespace>/<ServiceAccount username>`. It was the username alone.
+- Audit: `operator.orphan-cleanup` events carry `action` and
+  `actor` (`<namespace>/system:operator`), like every other event.
+
 ## [1.1.27] - 2026-11-20
 
 ### Added

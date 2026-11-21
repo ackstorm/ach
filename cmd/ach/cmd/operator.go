@@ -429,6 +429,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// Register the orphan-cleanup collectors on controller-runtime's
 	// global metrics Registry so the operator /metrics surfaces them.
 	orphanRunnable.Metrics = orphan.NewMetrics(crmetrics.Registry)
+	orphanRunnable.Actor = watchNS + "/system:operator"
 	if err := mgr.Add(orphanRunnable); err != nil {
 		return fmt.Errorf("unable to add orphan-cleanup Runnable: %w", err)
 	}

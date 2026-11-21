@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/litellm"
 )
@@ -86,6 +87,7 @@ type Runnable struct {
 	Client   litellm.Client
 	DB       *pgxpool.Pool
 	Audit    *slog.Logger
+	Actor    string // audit actor: "<namespace>/system:operator"
 	Interval time.Duration
 	Log      logr.Logger
 
@@ -112,6 +114,12 @@ type Runnable struct {
 	// NewRunnable wires the defaults.
 	ListUsers  listUsersFn
 	ListKeyIDs listKeyIDsFn
+}
+
+// emitAudit writes one orphan-cleanup audit event.
+func (r *Runnable) emitAudit(attrs ...any) {
+	r.Audit.Info(audit.ActionOrphanCleanup,
+		append([]any{"action", audit.ActionOrphanCleanup, "actor", r.Actor}, attrs...)...)
 }
 
 // NewRunnable constructs a Runnable wired against the live db helpers.
@@ -230,7 +238,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			// channel carries only the closed-enum outcome + identifiers
 			// per Hub §16.1 / §18.2.
 			r.mSkipped(SkipReasonLiteLLMUnreachable, 1)
-			r.Audit.Info("operator.orphan-cleanup",
+			r.emitAudit(
 				"target.kind", "tick",
 				"outcome", OutcomeLiteLLMUnreachable,
 				"user_id", uid)
@@ -308,7 +316,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			r.previewDryRun(candidates) // still surface the batch this guard would abort
 		}
 		r.mSkipped(SkipReasonEmptyActiveSet, len(candidates))
-		r.Audit.Info("operator.orphan-cleanup",
+		r.emitAudit(
 			"target.kind", "tick",
 			"outcome", OutcomeSkippedEmptyActiveSet,
 			"candidate_count", len(candidates))
@@ -329,7 +337,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			r.previewDryRun(candidates) // still surface the batch this guard would abort
 		}
 		r.mSkipped(SkipReasonCircuitBreaker, len(candidates))
-		r.Audit.Info("operator.orphan-cleanup",
+		r.emitAudit(
 			"target.kind", "tick",
 			"outcome", OutcomeSkippedCircuitBreaker,
 			"candidate_count", len(candidates))
@@ -355,7 +363,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			// CR-03: err.Error() is NOT included on the audit event; see
 			// the litellm_unreachable branch above for rationale.
 			r.mSkipped(SkipReasonRevokeFailed, 1)
-			r.Audit.Info("operator.orphan-cleanup",
+			r.emitAudit(
 				"target.kind", "litellm_key",
 				"target.name", c.token,
 				"outcome", OutcomeRevokeFailed,
@@ -365,7 +373,7 @@ func (r *Runnable) TickOnce(ctx context.Context) {
 			continue
 		}
 		r.mRevoked()
-		r.Audit.Info("operator.orphan-cleanup",
+		r.emitAudit(
 			"target.kind", "litellm_key",
 			"target.name", c.token,
 			"outcome", OutcomeRevoked,

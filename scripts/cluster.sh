@@ -267,9 +267,15 @@ reconcile_litellm() {
   trap "rm -rf '${tmpdir}'" EXIT
   ( cd "${tmpdir}" && helm pull oci://docker.litellm.ai/berriai/litellm-helm --version "${version}" --untar )
 
+  # The audit callback is mounted by subPath, which never refreshes: the
+  # checksum annotation rolls the Pod when the file changes.
+  kubectl -n litellm-system create configmap ach-audit-callback \
+    --from-file=examples/litellm/ach_audit.py --dry-run=client -o yaml | kubectl apply -f -
+
   helm upgrade --install litellm "${tmpdir}/litellm-helm" \
     --namespace litellm-system \
     --values "${CLUSTER_DIR}/01-base/litellm.values.yaml" \
+    --set-string "podAnnotations.ach-audit-sha=$(sha256sum examples/litellm/ach_audit.py | cut -c1-12)" \
     --atomic --wait --timeout 5m
 
   # helm --wait covers Deployment readiness + PreSync hook completion,

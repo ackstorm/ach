@@ -104,6 +104,17 @@ service:
   type: ClusterIP
   port: 4000
 
+# LiteLLM resolves a callback module next to its config.yaml. cluster.sh
+# creates the ConfigMap from examples/litellm/ach_audit.py.
+volumes:
+  - name: ach-audit
+    configMap:
+      name: ach-audit-callback
+volumeMounts:
+  - name: ach-audit
+    mountPath: /etc/litellm/ach_audit.py
+    subPath: ach_audit.py
+
 # proxy_config is rendered verbatim into the proxy's config.yaml. The chart
 # default already supplies general_settings.master_key + an example model_list;
 # Helm deep-merges maps, so adding litellm_settings here keeps those defaults.
@@ -129,6 +140,9 @@ proxy_config:
     use_x_forwarded_for: true
     mcp_trusted_proxy_ranges: ["10.244.0.0/16"]
   litellm_settings:
+    # examples/litellm/ach_audit.py, mounted above; TestAuditCallEvents reads its lines.
+    callbacks:
+      - ach_audit.proxy_handler_instance
     model_group_settings:
       forward_client_headers_to_llm_api:
         - demo-model

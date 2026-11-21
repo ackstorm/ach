@@ -48,6 +48,7 @@ nav:
       - reference/helm-values.md
       - CRD API: api-reference/ach.ackstorm.ai.md
       - reference/jwt.md
+      - reference/audit-events.md
       - reference/changelog.md
 
 theme:

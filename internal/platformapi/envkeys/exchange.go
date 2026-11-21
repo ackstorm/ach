@@ -185,7 +185,7 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			deny(http.StatusUnauthorized, audit.OutcomeInvalidToken, "invalid ServiceAccount token", why)
 			return
 		}
-		ev.Actor = st.User.Username
+		ev.Actor = d.Namespace + "/" + st.User.Username
 		ev.Extra["exchange.requester"] = requester
 		ev.Extra["exchange.pod_name"] = firstExtra(st.User.Extra[extraPodName])
 		ev.Extra["exchange.pod_uid"] = firstExtra(st.User.Extra[extraPodUID])
