@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# OVERSIZE instruction (negative-path fixture). The source is a third-party
+# Markdown file of 456,105 bytes (measured 2026-11-21), far above the
+# 23,900-byte limit, so the fetch succeeds and the content gate rejects it:
+# Synced=False, reason UpstreamInvalid. SYNCED but EXCLUDED from the happy-state
+# gate; verify_all asserts the expected FAILURE state instead.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Instruction
+metadata:
+  name: instruction-oversize
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: asgeirtj/system_prompts_leaks
+    ref: main
+    path: Anthropic/claude-opus-4.8.md

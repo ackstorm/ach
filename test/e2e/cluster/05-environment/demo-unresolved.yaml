@@ -25,6 +25,6 @@ spec:
     a2aAgents:
       - nonexistent-agent
   context:
-    prompts: []
+    instructions: []
     plugins: []
     artifacts: []

@@ -79,7 +79,7 @@ ach/
 │       │      ach-gateway pod; it is NOT the primary router anymore)
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
-│       │                    matrix: {plugin,prompt,artifact}-{valid,invalid})
+│       │                    matrix: {plugin,instruction,artifact}-{valid,invalid})
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
 │                            + guardrail-unresolved (P0-A provisioning barrier)
@@ -112,7 +112,7 @@ applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
 step). The e2e suite **asserts** against this synced state; tests do NOT apply
 their own copies of these objects. The set includes a **valid/invalid matrix**
 for the content-service exercise (`plugin-valid`/`plugin-invalid`,
-`prompt-valid`/`prompt-invalid`, `artifact-valid`/`artifact-invalid`,
+`instruction-valid`/`instruction-invalid` (plus `instruction-oversize`, `Synced=False` `UpstreamInvalid`), `artifact-valid`/`artifact-invalid`,
 `env-valid`): `verify_all` gates the valid half to its healthy condition
 (`SourceReachable`/`Available`) and the invalid half to its **expected failure
 state** (`SourceReachable=False`, nonexistent upstream), so "everything is in
@@ -126,7 +126,7 @@ a fourth Environment fixture exercising the P0-A provisioning barrier: it
 declares a guardrail name that does not exist on the (unlicensed) e2e LiteLLM,
 so it is `Available=False` BY DESIGN and `verify_all` gates it on the
 **failure** state (`ExecutionResourcesResolved=False`), mirroring the
-`prompt-invalid` idiom — the unresolved name makes `reconcileAccessGroup` bail
+`instruction-invalid` idiom — the unresolved name makes `reconcileAccessGroup` bail
 before the (premium-gated) shell-team guardrail write ever runs. Tests only create/delete throwaways for
 mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
 `examples/` holds **curated, user-facing

@@ -3,7 +3,7 @@
 # A copy of test/e2e/cluster/05-environment/demo.yaml renamed to demo-drain so
 # the drain test (apply → assert resolved → delete → assert finalizer drains)
 # never mutates the SYNCED "demo" Environment that other specs assert against.
-# The execution resources it references (caveman / claude-code-system-prompt /
+# The execution resources it references (caveman / instruction-valid /
 # openclaw-templates + the LiteLLM-seeded models/mcp/agents/team) are pre-synced
 # by cluster.sh (stage 04 + reconcile_litellm), so this only adds + removes the
 # Environment itself.
@@ -24,8 +24,8 @@ spec:
     a2aAgents:
       - demo-agent
   context:
-    prompts:
-      - claude-code-system-prompt
+    instructions:
+      - instruction-valid
     plugins:
       - caveman
     artifacts:

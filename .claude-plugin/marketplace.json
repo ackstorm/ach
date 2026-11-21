@@ -14,7 +14,7 @@
     {
       "name": "ach-gitops",
       "source": "./plugins/ach-gitops",
-      "description": "Write and maintain ACH custom resources in a GitOps repo: Environments, plugin and skill marketplaces, Plugins, Skills, Prompts, Artifacts, BackendIdentityPolicies and LiteLLMConnections, and debug their status."
+      "description": "Write and maintain ACH custom resources in a GitOps repo: Environments, plugin and skill marketplaces, Plugins, Skills, Instructions, Artifacts, BackendIdentityPolicies and LiteLLMConnections, and debug their status."
     },
     {
       "name": "ach-install",

@@ -386,6 +386,31 @@ token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
 refresh) or, for a machine profile, its `key`.
 
+### Instruction delivery (`adapter.InstructionTarget`, `hydrate/wiring_instructions.go`)
+
+Each Instruction of the Environment is written as an always-loaded rules file; the
+target is the adapter's `InstructionFiles`, the global path goes through
+`RemapGlobalPath`.
+
+| tool | project file | frontmatter | global |
+|---|---|---|---|
+| claude-code | `.claude/rules/ach-<name>.md` | none | `~/.claude/rules/` |
+| opencode | `.opencode/ach/<name>.md` | none | `~/.config/opencode/ach/` |
+| cursor | `.cursor/rules/ach-<name>.mdc` | `alwaysApply: true` | none (warning) |
+| antigravity | `.agents/rules/ach-<name>.md` | `trigger: always_on` | `~/.gemini/config/rules/` |
+| pi | `.pi/ach/<name>.md` | none | `~/.pi/agent/ach/` |
+| codex | none (note on stderr) | | |
+
+- **Shared loader**: OpenCode needs the entry `.opencode/ach/*.md` (global
+  `~/.config/opencode/ach/*.md`) in `instructions` of `opencode.json`; Pi needs the
+  extension `.pi/extensions/ach-instructions.ts` (global `~/.pi/agent/extensions/`). Neither
+  is recorded in state: each exists exactly while its folder holds a `*.md`, created
+  after the files are written and removed after pruning (`tidyInstructionLoader`) on
+  hydrate and on uninstall. Both are shared by every Environment of the folder.
+- **State**: `state.Instructions` records the files. It is pruned whole on every
+  hydrate (an Instruction that left the Environment loses its file); a recorded file
+  missing on disk is rewritten.
+
 ### Global-scope root resolution (`--global`)
 
 `--global` does NOT mean "$HOME-relative". Each agent CLI exposes its own
@@ -524,6 +549,21 @@ is not ground truth.**
   trusted workspace or not; the docs (antigravity.google/docs/mcp) name that file
   as the workspace configuration, and whether a signed-in session loads it is NOT
   verified. Skills and subagents cannot be listed without a login.
+
+- Instruction loading, checked by sending a request to a fake OpenAI-compatible
+  server and looking for the text in the request body. OpenCode 1.19.6 (npm
+  `opencode-ai`; no 2.x is published there): the entry `.opencode/ach/*.md` in a
+  project `opencode.json` loads (relative to the project root; `ach/*.md` does
+  not), and so does `~/.config/opencode/ach/*.md` or an absolute glob in the
+  global one; an entry that matches nothing is silent. `opencode debug config` does
+  not expand globs. Pi 1.6.0 (`@earendil-works/pi-coding-agent`): the extension
+  loads from `.pi/extensions/` only in a trusted project (`-a`; untrusted is
+  silently not loaded) and from `~/.pi/agent/extensions/`; the text reaches the
+  system prompt once per request over two turns; a missing or empty `.pi/ach/` is
+  silent; `import.meta.url` and `__dirname` both work. NOT verified: OpenCode 2.x,
+  Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`), Antigravity `.agents/rules/*.md`
+  (`trigger: always_on`) and Claude Code `.claude/rules/*.md` loading (no official
+  non-`curl | sh` install, or a login is needed).
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage

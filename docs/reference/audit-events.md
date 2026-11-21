@@ -86,7 +86,7 @@ An event never holds a key, a token, a request or response body, or raw error te
 | `platform.environments.list`, `platform.environments.get` | platform-api | LiteLLM cannot be reached while listing or reading Environments | `environment` on `get` | |
 | `platform.authn` | platform-api | Authentication fails on an internal error | | |
 | `platform.recover` | platform-api | A request handler panics | | |
-| `content.get` | content-service | Content is fetched, served or refused | `prompt`, `plugin`, `artifact` or `skill`, and its name | |
+| `content.get` | content-service | Content is fetched, served or refused | `instruction`, `plugin`, `artifact` or `skill`, and its name | |
 | `operator.orphan-cleanup` | operator | The hourly orphan-key reaper revokes a key, fails to, or skips a run | `litellm_key` and the LiteLLM token id, or `tick` for a skipped run | `user_id`, `candidate_count` |
 
 ## Calls

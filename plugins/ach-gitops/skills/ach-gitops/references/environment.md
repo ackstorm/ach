@@ -38,8 +38,8 @@ spec:
     skills:
       - pdf@anthropic-skills         # from SkillMarketplace anthropic-skills
       - finops-audit                 # standalone Skill CR
-    prompts:
-      - backend-system-prompt        # Prompt CR
+    instructions:
+      - backend-conventions          # Instruction CR
     artifacts:
       - service-templates            # Artifact CR
   budget:
@@ -112,13 +112,13 @@ and traffic keep working, unprotected.
 |-------|------------------------|-------------------------------|
 | `plugins` | a `Plugin` CR | that `PluginMarketplace`'s plugin |
 | `skills` | a `Skill` CR | that `SkillMarketplace`'s skill |
-| `prompts` | a `Prompt` CR | (not supported) |
+| `instructions` | an `Instruction` CR | (not supported) |
 | `artifacts` | an `Artifact` CR | (not supported) |
 
 Names may not contain `/`, `\`, `?`, `#`, `%` or whitespace. All referenced CRs must
-live in the ACH namespace. A plugin or skill must not only exist but have content
+live in the ACH namespace. A plugin, skill or instruction must not only exist but have content
 fetched at least once; until then it is listed in `status.unresolvedContextPlugins` /
-`status.unresolvedContextSkills` and the Environment stays not Available.
+`status.unresolvedContextSkills` / `status.unresolvedContextInstructions` and the Environment stays not Available.
 
 ### authorizedTeams
 
@@ -168,6 +168,7 @@ people using their personal login.
 
 Useful status fields: `status.unresolvedRuntime.{models,mcpServers,a2aAgents,guardrails}`,
 `status.unresolvedContextPlugins`, `status.unresolvedContextSkills`,
+`status.unresolvedContextInstructions`,
 `status.expandedRuntime.{mcpServers,a2aAgents}` (granted only through a group).
 
 What each condition blocks:

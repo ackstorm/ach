@@ -4,6 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Breaking
+- The `Prompt` kind is replaced by the `Instruction` kind (same spec without `contentType`), and `spec.context.prompts` by `spec.context.instructions`. Renamed with it: `ach-cli admin list prompts` → `admin list instructions`, `ach-cli admin refresh prompt` → `admin refresh instruction`, `ach-cli environment fetch <env> prompt <name>` → `… instruction <name>`, the JSON key `prompts` in `environment describe`/`search` output → `instructions`, the routes `/platform/admin/prompts` → `/platform/admin/instructions` and `/content/prompt/{name}` → `/content/instruction/{name}`, and the Environment version item kind `prompt` → `instruction`. Prompt data is not migrated. Steps: (1) before upgrading, delete every `Prompt` and remove `spec.context.prompts` from your Environments, so the running operator clears finalizers and cache; (2) upgrade; (3) `kubectl delete crd prompts.ach.ackstorm.ai` — Helm keeps CRDs (`helm.sh/resource-policy: keep`); (4) if a `Prompt` is stuck deleting, remove its finalizer with `kubectl patch prompt <name> -n <ns> --type=merge -p '{"metadata":{"finalizers":null}}'`; (5) recreate your texts as `Instruction` objects. The operator cache keeps an unused `prompt/` folder. An Instruction must be plain UTF-8 Markdown without frontmatter, at most 23,900 bytes. ach-cli older than this release fails to hydrate an Environment that lists instructions: run `ach-cli upgrade`.
+
 ### Security
 - `ach-cli environment hydrate` no longer writes a plugin's top-level
   `AGENTS.md` into the folder's `CLAUDE.md` (`~/CLAUDE.md` with `--global`).
@@ -12,6 +15,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   reports `AGENTS.md` as dropped, as it already did for Codex, OpenCode and Pi.
 
 ### Added
+- `ach-cli environment hydrate` writes each Instruction of the Environment as an always-loaded rules file for Claude Code, OpenCode, Cursor, Antigravity and Pi. Codex does not get them, and Cursor gets none with `--global`.
+- An Environment stays not ready while one of its Instructions has never been fetched (`status.unresolvedContextInstructions`).
 - Audit: `examples/litellm/ach_audit.py`, a LiteLLM callback that writes one
   audit event per model, MCP tool and A2A agent call (`litellm.model.call`,
   `litellm.tool.call`, `litellm.agent.call`) with the caller, key, Environment,

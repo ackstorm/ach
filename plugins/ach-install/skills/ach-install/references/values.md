@@ -163,7 +163,7 @@ Detail: `references/litellm.md` (headers, Gemini) and `references/auth.md`
 | `gateway.enabled` | `true` | Single-origin reverse proxy, Service `ach-gateway:80`. |
 | `gateway.replicas`, `.resources`, `.initContainers` | | |
 | `gateway.extraEnv` | `[]` | e.g. `ACH_GATEWAY_ACCESS_LOG` = `combined` (default) / `common` / `off`. |
-| `contentService.enabled` | `true` | Serves plugin/skill/prompt/artifact archives to hydrate. |
+| `contentService.enabled` | `true` | Serves plugin/skill/instruction/artifact archives to hydrate. |
 | `contentService.standalone` | `false` | `false` = sidecar in the operator Pod; `true` = own Deployment (needs RWX cache). |
 | `contentService.replicas` | `1` | Only with `standalone: true`. |
 | `contentService.resources`, `.initContainers` | | `initContainers` only apply standalone. |

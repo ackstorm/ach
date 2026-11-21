@@ -122,7 +122,7 @@ off the hourly path.
 and the same caller rules (a `pk_` names the Environment, an `ek_` is bound to
 one, a non-admin needs a shared team). It answers
 `{environment, version, items[{kind, name, rev}]}`: every item a hydrate writes
-(`prompt|plugin|artifact|skill|model|mcp|a2a`, sorted by kind then name), `rev`
+(`instruction|plugin|artifact|skill|model|mcp|a2a`, sorted by kind then name), `rev`
 the revision it serves (the content row's `upstream_rev`; a `name@marketplace`
 item takes its marketplace's; empty for model/mcp/a2a), and `version` the
 sha256 of the sorted items. A full `ach-cli environment hydrate` records it and

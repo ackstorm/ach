@@ -111,13 +111,13 @@ The API server refuses the resource and prints one of these:
 
 ### `SourceReachable=False`
 
-A Plugin, Skill, Prompt or Artifact could not be fetched. The reason says why:
+A Plugin, Skill, Instruction or Artifact could not be fetched. The reason says why:
 
 | Reason | Cause | Do |
 |---|---|---|
 | `Unauthorized` | A private repository without credentials, a wrong token, a missing Secret, or a repository or `ref` that does not exist. Git cannot tell these apart | Check that the repository and `ref` exist; add `authSecretRef`; check that the Secret is in the resource's namespace |
 | `NotFound` | The file, key or `ref` is missing at the source | Correct `ref`, `path` or the address |
-| `UpstreamInvalid` | Fetched, but unusable: a plugin without `.claude-plugin/plugin.json`, a skill without a valid `SKILL.md`, a wrong `path`, or an unsafe archive | Point `path` at the real root, or correct the source |
+| `UpstreamInvalid` | Fetched, but unusable: a plugin without `.claude-plugin/plugin.json`, a skill without a valid `SKILL.md`, an Instruction that is empty, not UTF-8, over 23,900 bytes or starts with frontmatter, a wrong `path`, or an unsafe archive | Point `path` at the real root, or correct the source |
 | `PluginTooLarge` | Larger than the limit, 50 MiB by default | Make the source smaller, or raise `ACH_PLUGIN_MAX_SIZE_MIB` or `ACH_SKILL_MAX_SIZE_MIB` |
 | `Unreachable` | A network error or a failing source | Usually passes; the operator retries. If it lasts, check outbound access and the host name |
 | `StaleCacheExpired` | Fetching failed for longer than `maxStaleness`, and ACH stopped serving the content | Correct the fetch error |

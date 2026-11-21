@@ -1,7 +1,7 @@
 # See, search and describe Environments
 
 An Environment is what a tool may use: models, MCP servers, A2A agents (runtime) and
-plugins, skills, prompts, artifacts (context).
+plugins, skills, instructions, artifacts (context).
 
 ```bash
 ach-cli environment list                       # the Environments your teams may use
@@ -10,7 +10,7 @@ ach-cli environment search <text>              # find a plugin, skill, MCP serve
 ```
 
 - `environment search finops` matches each Environment's name and description and the NAME of
-  everything it serves (plugins, skills, prompts, artifacts, MCP servers, models, A2A
+  everything it serves (plugins, skills, instructions, artifacts, MCP servers, models, A2A
   agents), case-insensitively; several words must all match. It searches names only, not
   what a skill or plugin says inside.
 - `environment describe --metadata-only` skips the content lookup and is faster when you only

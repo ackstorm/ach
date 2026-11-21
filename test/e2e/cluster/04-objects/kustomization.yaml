@@ -26,7 +26,7 @@ resources:
   - marketplace-conflict-a.yaml
   - marketplace-conflict-b.yaml
   - plugin-caveman.yaml
-  - prompt-claude-code.yaml
+  - instruction-oversize.yaml
   - artifact-openclaw.yaml
   - bip-context7.yaml
   - bip-duplicate.yaml
@@ -39,7 +39,7 @@ resources:
   # *-invalid fixtures settle at SourceReachable=False (negative path).
   - plugin-valid.yaml
   - plugin-invalid.yaml
-  - prompt-valid.yaml
-  - prompt-invalid.yaml
+  - instruction-valid.yaml
+  - instruction-invalid.yaml
   - artifact-valid.yaml
   - artifact-invalid.yaml

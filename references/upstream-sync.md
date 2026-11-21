@@ -50,7 +50,7 @@ Gate 13 (govulncheck) / Gate 15 (SPDX) all PASS on bare scaffolding.
 ## 2026-05-25 (Task 5.1) — CRD scaffold side effects
 
 Ran `kubebuilder create api` for 6 CRDs (Environment, Plugin, PluginMarketplace,
-Artifact, Prompt, BackendIdentityPolicy). Side effects worth flagging upstream.
+Artifact, Instruction, BackendIdentityPolicy). Side effects worth flagging upstream.
 
 | ach file | alitellm file | Follow-up |
 |---|---|---|
@@ -90,7 +90,7 @@ Replaced kubebuilder's e2e scaffold (`test/e2e/e2e_suite_test.go`,
 (`test/e2e/suite_test.go`, `test/e2e/utils/{forensics,secret_cr}.go`).
 Rewrote `forensics.go` for ACH context: operator deploy name `ach-operator`
 in namespace `ach-system`, CRs list updated to ACH kinds
-(environments, plugins, pluginmarketplaces, artifacts, prompts,
+(environments, plugins, pluginmarketplaces, artifacts, instructions,
 backendidentitypolicies), prefix `e2e-` instead of `tier2-`. All files
 gated with `//go:build e2e`. `go build -tags=e2e ./test/e2e/...` PASS.
 (`test/e2e/utils` removed 2026-07-13 — zero importers; `cluster.sh` dumps

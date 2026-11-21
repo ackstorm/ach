@@ -13,7 +13,7 @@
 # Runtime + context blocks are intentionally non-empty so the §15.2
 # hydrate response carries representative items (the operator
 # eventually reconciles them into the LiteLLM access group); SC#2
-# asserts at least one Plugin or Prompt entry in the response.
+# asserts at least one context entry in the response.
 apiVersion: ach.ackstorm.ai/v1alpha1
 kind: Environment
 metadata:
@@ -28,7 +28,5 @@ spec:
     mcpServers: []
     a2aAgents: []
   context:
-    prompts:
-      - e2e-prompt-prod
     plugins: []
     artifacts: []

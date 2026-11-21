@@ -33,7 +33,7 @@ KIND_CONFIG="${KIND_CONFIG:-scripts/kind-config.yaml}"
 #   03-test-backends/ kustomize base — nginx gateway + ach-mcp-echo +
 #                   ach-mock-model (apply -k, post-ach)
 #   04-objects/     kustomize base — all non-Environment ACH CRs (apply -k,
-#                   post-ach; LiteLLMConnection/plugins/prompts/artifacts/BIPs/
+#                   post-ach; LiteLLMConnection/plugins/instructions/artifacts/BIPs/
 #                   marketplaces) sourced from their real upstreams (option B)
 #   05-environment/ kustomize base — the demo Environments LAST (reference 04)
 #   06-verify       NOT a directory — the verify_all step that blocks until
@@ -760,8 +760,10 @@ verify_all() {
   # later as unrelated-looking hydrate failures across the whole suite instead of
   # a loud failure here with the operator's reason attached.
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" plugin/caveman
-  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/claude-code-system-prompt
+  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" instruction/instruction-valid
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/openclaw-templates
+  # Fetched fine, content rejected by the Instruction gate (over 23,900 bytes).
+  kubectl -n ach-system wait --for='jsonpath={.status.conditions[?(@.type=="Synced")].reason}=UpstreamInvalid' --timeout="${to}" instruction/instruction-oversize
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/anthropic-code
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" pluginmarketplace/caveman
   # Phase 02 SC#3 same-plugin-name pair (both filter the real anthropic
@@ -785,7 +787,6 @@ verify_all() {
   # Phase 5 content-service exercise matrix — valid half healthy (Synced: the
   # content-service exercise reads the materialized bytes, see the note above).
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" plugin/plugin-valid
-  kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" prompt/prompt-valid
   kubectl -n ach-system wait --for=condition=Synced          --timeout="${to}" artifact/artifact-valid
   kubectl -n ach-system wait --for=condition=Available       --timeout="${to}" environment/env-valid
   # Runtime groups only (no explicit names) — tag-granted model + MCP server.
@@ -815,7 +816,7 @@ verify_all() {
   # upstream whose content was merely bad, so the fixture could rot into
   # passing for the wrong reason.
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" plugin/plugin-invalid
-  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" prompt/prompt-invalid
+  kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" instruction/instruction-invalid
   kubectl -n ach-system wait --for=condition=SourceReachable=false --timeout="${to}" artifact/artifact-invalid
   echo "[cluster.sh] all synced objects and seeded MCP tools healthy."
 }

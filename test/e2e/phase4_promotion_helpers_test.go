@@ -19,7 +19,7 @@ import (
 )
 
 // forceRefreshAndAssert drives one §11a-shape round trip for an
-// external-reference CR (Plugin / Prompt / Artifact / PluginMarketplace):
+// external-reference CR (Plugin / Instruction / Artifact / PluginMarketplace):
 //
 //  1. Snapshot status.upstreamRev and status.lastSuccessfulRefresh.
 //  2. kubectl annotate <kind>/<name> ach.ackstorm.ai/force-refresh=now --overwrite
