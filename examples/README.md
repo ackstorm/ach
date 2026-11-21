@@ -29,6 +29,7 @@ for the object the operator reconciles in e2e, look there.
 | `keygrant.yaml`                       | `KeyGrant`                                 | Lets the `ach-agent/ach-agent-control` ServiceAccount exchange its pod token for `ai.run@ackstorm.com`'s `agent-k8s-doctor` credential (see `docs/integrate/exchange-a-serviceaccount-token.md`). |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
 | `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
+| `litellm/ach_audit.py`                | LiteLLM callback                           | Writes one audit event per model, MCP tool and A2A agent call to LiteLLM's stdout. Install steps: `docs/platform/connect-litellm.md`; fields: `docs/reference/audit-events.md`. The e2e cluster mounts this file (`scripts/cluster.sh`). |
 | `hydrate.json`                        | json                                       | Golden `/platform/hydrate` output — the CLI e2e suite (`test/e2e/cli_login_hydrate_test.go`) byte-for-byte diffs `ach-cli environment hydrate demo` stdout against this file (normalized for the live cluster's platform-api host + scheme). |
 
 ## End-to-end demo

@@ -49,8 +49,8 @@
 // Per D-19 audit emission lives in handlers, NOT middleware. AdminOnly
 // is the exception — it emits OutcomeInvalidKeyType / OutcomeNotAdmin on
 // the rejection paths so the actor + request_id are still recorded when
-// the inner handler never runs. ActionAdminKeysRevoke is used as a
-// generic admin marker on rejection; the inner handler emits the
+// the inner handler never runs. A rejection carries ActionAdminAuthz;
+// the inner handler emits the
 // appropriate per-key-type Action* constant (ActionPkRevoke,
 // ActionEkRevoke, ActionAdminRefresh, ActionAdminUsersRevokeKeys) on
 // success and on per-row failure.

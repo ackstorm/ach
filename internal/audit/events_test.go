@@ -29,7 +29,8 @@ func TestEventConstantsAreStable(t *testing.T) {
 		{"ActionPkRevoke", audit.ActionPkRevoke, "platform.pk.revoke"},
 		{"ActionHydrate", audit.ActionHydrate, "platform.hydrate"},
 		{"ActionAdminRefresh", audit.ActionAdminRefresh, "platform.admin.refresh"},
-		{"ActionAdminKeysRevoke", audit.ActionAdminKeysRevoke, "platform.admin.keys.revoke"},
+		{"ActionAdminAuthz", audit.ActionAdminAuthz, "platform.admin.authz"},
+		{"ActionOrphanCleanup", audit.ActionOrphanCleanup, "operator.orphan-cleanup"},
 		{"ActionAdminUsersRevokeKeys", audit.ActionAdminUsersRevokeKeys, "platform.admin.users.revoke_keys"},
 
 		// Outcomes — Hub §18.2 (16 verbatim)

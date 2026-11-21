@@ -63,6 +63,8 @@
 // # Audit event shape (D-18)
 //
 //	slog.Info("operator.orphan-cleanup",
+//	    "action", "operator.orphan-cleanup",
+//	    "actor", "<namespace>/system:operator",
 //	    "target.kind", "litellm_key",      // or "tick" for tick-level outcomes
 //	    "target.name", token,              // omitted for tick-level events
 //	    "outcome", "revoked"               // revoked | revoke_failed |

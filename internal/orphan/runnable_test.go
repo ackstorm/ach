@@ -124,6 +124,7 @@ func newTestRunnable(t *testing.T, fake *fakeLiteLLM) (*Runnable, *bytes.Buffer)
 		Client:   fake,
 		DB:       (*pgxpool.Pool)(nil),
 		Audit:    audit.NewLogger(buf),
+		Actor:    "ach/system:operator",
 		Interval: 10 * time.Minute,
 		Log:      logr.Discard(),
 		// Fresh registry per test: counters start at 0 and there is no
@@ -224,6 +225,9 @@ func TestRunnable_TickOnce_OneOrphan(t *testing.T) {
 	}
 	if got := lines[0]["msg"]; got != "operator.orphan-cleanup" {
 		t.Errorf("msg = %v; want operator.orphan-cleanup", got)
+	}
+	if action, actor := lines[0]["action"], lines[0]["actor"]; action != "operator.orphan-cleanup" || actor != "ach/system:operator" {
+		t.Errorf("action, actor = %v, %v; want operator.orphan-cleanup, ach/system:operator", action, actor)
 	}
 	if got := lines[0]["target.name"]; got != "sk-orphan" {
 		t.Errorf("target.name = %v; want sk-orphan", got)
@@ -779,7 +783,8 @@ func TestRunnable_AuditEventShape(t *testing.T) {
 	// slog always includes "time" and "level" at the top — accept those.
 	allowed := map[string]struct{}{
 		"time": {}, "level": {}, "msg": {},
-		"audit":       {},
+		"audit":  {},
+		"action": {}, "actor": {},
 		"target.kind": {}, "target.name": {},
 		"outcome": {}, "user_id": {},
 	}

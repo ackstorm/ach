@@ -49,6 +49,7 @@ stale line there is a broken instruction for every user. Validate with
 | **Generic/workflow** failure mode | "Common failure modes" here |
 | New MANDATORY-read file for a workflow | MANDATORY Reading Table |
 | Service contract (endpoint, status code, header, env var, reconcile behavior) | `references/services/<service>.md`; a shift in the overall picture also `docs/overview/architecture.md` |
+| Audit event field, action or outcome (`internal/audit` and its emit sites, `examples/litellm/ach_audit.py`) | `docs/reference/audit-events.md` |
 | Anything a user or operator can see (behavior, output, chart, install requirement) | `CHANGELOG.md` `[Unreleased]` entry in the same PR; tests, CI and agent-only docs need none. A correction to something an earlier entry told users is itself an entry |
 | Breaking change (removes/renames a command, flag, API field, Helm value or CRD field, changes a default) | `### Breaking` entry first in `[Unreleased]`, with the operator's step; the release bumps the major version (`references/release-pipeline.md` "Versioning") |
 
