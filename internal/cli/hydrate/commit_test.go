@@ -602,43 +602,6 @@ func TestCommit_SigkillSeam_FiresForEachKnownStep(t *testing.T) {
 // in release builds lives in commit_release_build_test.go behind
 // //go:build !e2e.
 
-// TestNewCommit_MigratesLegacyPimonoState: a workspace hydrated as pimono
-// (state-pimono.json) hydrates as pi from the same state, so the next run
-// prunes what the old one wrote, and ends with only state-pi.json.
-func TestNewCommit_MigratesLegacyPimonoState(t *testing.T) {
-	dir := t.TempDir()
-	envDir := filepath.Join(dir, ".ach", "demo")
-	if err := os.MkdirAll(envDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	prev := &state.File{
-		SchemaVersion: "3",
-		Environment:   "demo",
-		Plugins:       []state.FileEntry{{Target: ".pi/prompts/old.md", Merge: "replace"}},
-	}
-	if err := state.Save(filepath.Join(envDir, "state-pimono.json"), prev); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := newCommit(Opts{Output: dir, Environment: "demo", Platform: "pi"})
-	if err != nil {
-		t.Fatalf("newCommit: %v", err)
-	}
-	if want := filepath.Join(envDir, "state-pi.json"); c.statePath != want {
-		t.Fatalf("statePath = %q; want %q", c.statePath, want)
-	}
-	loaded, err := c.step3ReadState()
-	if err != nil {
-		t.Fatalf("step3ReadState: %v", err)
-	}
-	if loaded == nil || len(loaded.Plugins) != 1 || loaded.Plugins[0].Target != ".pi/prompts/old.md" {
-		t.Fatalf("migrated state = %+v; want the pimono run's Plugins", loaded)
-	}
-	if _, err := os.Stat(filepath.Join(envDir, "state-pimono.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("state-pimono.json still present (err=%v)", err)
-	}
-}
-
 // TestNewCommit_PopulatesExtractorAndAdapter asserts that the
 // Extractor + AdapterDispatcher fields on Opts are read by newCommit
 // and assigned to the *commit struct's extractor / adapter slots

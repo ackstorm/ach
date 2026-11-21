@@ -37,6 +37,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Removed
 - ach-cli no longer supports Gemini CLI as a target (`--target gemini-cli`, `launch gemini`).
+- `environment hydrate --target pi` no longer renames a `state-pimono.json` left by an ach-cli older than 1.0.0.
 
 ## [1.1.27] - 2026-11-20
 

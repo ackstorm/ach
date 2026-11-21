@@ -170,16 +170,6 @@ func newCommit(opts Opts) (*commit, error) {
 		}
 	}
 
-	if opts.Platform != "" && !opts.DryRun {
-		if merr := state.MigrateLegacyPiState(statePath); merr != nil {
-			return nil, &exit.CodedError{
-				Code:    exit.General,
-				Msg:     fmt.Sprintf("migrate legacy pimono state: %v", merr),
-				Wrapped: merr,
-			}
-		}
-	}
-
 	// Resolve toolRoot — the base for adapter runtime-config writes. In
 	// project scope it is the workspace root (the dir that CONTAINS
 	// .ach/). In --global scope adapter configs go under $HOME (the tools'

@@ -3,7 +3,6 @@
 package state
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,28 +86,6 @@ func ResolvePlatformPath(workspaceCwd, environment, platform string, global bool
 		return "", err
 	}
 	return filepath.Join(filepath.Dir(base), "state-"+platform+".json"), nil
-}
-
-// MigrateLegacyPiState renames <ach-dir>/state-pimono.json to statePath when
-// statePath is the pi target's state-pi.json and does not exist yet. The
-// pimono target was renamed to pi; without this a workspace hydrated before
-// the rename loses its prior state, so the next hydrate cannot prune what the
-// old run wrote.
-//
-// ponytail: one-time migration for the pimono→pi rename; remove after a
-// release or two.
-func MigrateLegacyPiState(statePath string) error {
-	if filepath.Base(statePath) != "state-pi.json" {
-		return nil
-	}
-	if _, err := os.Lstat(statePath); err == nil {
-		return nil
-	}
-	legacy := filepath.Join(filepath.Dir(statePath), "state-pimono.json")
-	if err := os.Rename(legacy, statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
 }
 
 // ListStatePaths enumerates every per-platform state-<platform>.json for an

@@ -216,21 +216,6 @@ func TestRun_DanglingLockLinkCreatesNothing(t *testing.T) {
 	assertEmptyDir(t, outside)
 }
 
-func TestRun_LegacyStateNotMigratedThroughSymlinkedEnvDir(t *testing.T) {
-	ws, outside := t.TempDir(), t.TempDir()
-	mustWrite(t, filepath.Join(outside, "state-pimono.json"), "x")
-	if err := os.Mkdir(filepath.Join(ws, ".ach"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	mustSymlink(t, outside, filepath.Join(ws, ".ach", containEnv))
-
-	_, err := containCommit(t, ws, func(o *Opts) { o.Platform = "pi" })
-	if !errors.Is(err, state.ErrNotContained) {
-		t.Fatalf("newCommit = %v, want ErrNotContained", err)
-	}
-	assertBody(t, filepath.Join(outside, "state-pimono.json"), "x")
-}
-
 func TestRun_TmpSymlinkLeavesTargetIntact(t *testing.T) {
 	for _, dryRun := range []bool{false, true} {
 		ws, outside := t.TempDir(), t.TempDir()
