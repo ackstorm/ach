@@ -62,8 +62,10 @@ type InstalledEntry struct {
 	Ref         string    `json:"ref"` // "<name>@<repo>"
 	Repo        string    `json:"repo"`
 	Name        string    `json:"name"`
-	Kind        string    `json:"kind"`   // "plugin"|"skill"
-	Target      string    `json:"target"` // adapter id
+	Kind        string    `json:"kind"`             // "plugin"|"skill"
+	Target      string    `json:"target"`           // adapter id
+	Dir         string    `json:"dir,omitempty"`    // absolute project root; empty for a -g install
+	Global      bool      `json:"global,omitempty"` // installed with -g
 	ResolvedSHA string    `json:"resolvedSHA,omitempty"`
 	Files       []FileRec `json:"files"`
 	InstalledAt string    `json:"installedAt"`

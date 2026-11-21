@@ -247,7 +247,8 @@ adopted. Deep writes share their file by key and never refuse.
   `--force`. Once both have a row, the "disk already equals what we write"
   rule keeps them in step.
 - `local plugin|skill install|update`: `refuseUnowned` (`pkgcmd.go`) →
-  `manager.CheckUnowned`, record = any `installed.json` entry at that target.
+  `manager.CheckUnowned`, record = any `installed.json` entry at that target
+  and location.
   Checked for every target before the first write or removal.
 - `local … update` never writes a path `manager.Uninstall` skipped as
   user-modified: the write is dropped and the old `FileRec` kept.
@@ -553,9 +554,13 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 - `store/store.go` — local state under `~/.config/ach/local/`:
   `repos.json` (`hasToken:true` only — **token NEVER stored here**),
   `credentials.json` (mode `0600`, `{repo: token}`), `installed.json`
-  (`{ref, repo, name, kind, target, resolvedSHA, files:[{relPath,hash}]}` — the
-  files ledger drives clean uninstall; designed as a superset of an Environment
-  CR for future GitOps export).
+  (`{ref, repo, name, kind, target, dir|global, resolvedSHA, files:[{relPath,hash}]}`
+  — the files ledger drives clean uninstall; designed as a superset of an
+  Environment CR for future GitOps export). An install is keyed by ref + kind +
+  target + location (`dir`, absolute, or `global` for `-g`; `location` in
+  `pkgcmd.go`): `update`/`uninstall` and the ownership checks see only the
+  current `--dir`/`-g` location's records, `list`/`outdated` show all with a
+  LOCATION column. A record with neither field matches every location.
 - `discover/discover.go` — repo capability detection (the 4 lenses:
   plugin-marketplace / skill-marketplace / direct-plugin / direct-skill),
   reusing `contentkit` parsers.
