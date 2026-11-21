@@ -210,7 +210,7 @@ func setupIntegration(t *testing.T) *testFixtures {
 	auditLog := slog.New(slog.NewJSONHandler(auditBuf, nil))
 
 	cacheRoot := t.TempDir()
-	for _, sub := range []string{"prompt", "plugin", "artifact", "skill", "skill-marketplace"} {
+	for _, sub := range []string{"instruction", "plugin", "artifact", "skill", "skill-marketplace"} {
 		if err := os.MkdirAll(filepath.Join(cacheRoot, sub), 0o755); err != nil {
 			t.Fatalf("mkdir cache root: %v", err)
 		}
@@ -249,7 +249,7 @@ func setupIntegration(t *testing.T) *testFixtures {
 // seedEnvironment seeds an environments projection row. `skills` is variadic
 // rather than a fifth slice purely to keep the pre-existing call sites
 // untouched — it populates context.skills exactly like the others.
-func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, plugins, artifacts []string, skills ...string) {
+func (f *testFixtures) seedEnvironment(name string, authorizedTeams, instructions, plugins, artifacts []string, skills ...string) {
 	f.t.Helper()
 	ctx := context.Background()
 	// Postgres NOT NULL applies to every text[] column in the
@@ -262,12 +262,12 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 		return s
 	}
 	row := db.EnvironmentRow{
-		Namespace:        "default",
-		Name:             name,
-		AuthorizedTeams:  defaultSlice(authorizedTeams),
-		ContextPrompts:   defaultSlice(prompts),
-		ContextPlugins:   defaultSlice(plugins),
-		ContextArtifacts: defaultSlice(artifacts),
+		Namespace:           "default",
+		Name:                name,
+		AuthorizedTeams:     defaultSlice(authorizedTeams),
+		ContextInstructions: defaultSlice(instructions),
+		ContextPlugins:      defaultSlice(plugins),
+		ContextArtifacts:    defaultSlice(artifacts),
 		// context_skills is NOT NULL (migration 000009); bind an explicit empty
 		// slice so UpsertEnvironment does not send NULL. These cases do not
 		// exercise the skills allowlist.
@@ -288,7 +288,7 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, prompts, pl
 }
 
 // tarGzFixture returns a 1-entry gzip tar (entry "f", given content) — the
-// on-disk shape the operator now publishes for prompt + artifact-object.
+// on-disk shape the operator now publishes for instruction + artifact-object.
 func tarGzFixture(t *testing.T, content []byte) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -305,25 +305,24 @@ func tarGzFixture(t *testing.T, content []byte) []byte {
 	return buf.Bytes()
 }
 
-func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int64, contentType *string, body []byte) {
+func (f *testFixtures) seedInstruction(name string, lsr *time.Time, maxStaleness int64, body []byte) {
 	f.t.Helper()
 	ctx := context.Background()
-	// Operator now publishes prompts as a 1-entry gzip tar at <name>.tar.gz.
-	path := filepath.Join(f.cacheRoot, "prompt", name+".tar.gz")
+	// Operator now publishes instructions as a 1-entry gzip tar at <name>.tar.gz.
+	path := filepath.Join(f.cacheRoot, "instruction", name+".tar.gz")
 	if err := os.WriteFile(path, tarGzFixture(f.t, body), 0o600); err != nil {
-		f.t.Fatalf("write prompt file: %v", err)
+		f.t.Fatalf("write instruction file: %v", err)
 	}
-	row := db.PromptRow{
+	row := db.InstructionRow{
 		Namespace:             "default",
 		Name:                  name,
 		StorageLocation:       path,
-		ContentType:           contentType,
 		LastSuccessfulRefresh: lsr,
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
 	}
-	if err := dbtest.UpsertPrompt(ctx, f.pool, row); err != nil {
-		f.t.Fatalf("UpsertPrompt: %v", err)
+	if err := dbtest.UpsertInstruction(ctx, f.pool, row); err != nil {
+		f.t.Fatalf("UpsertInstruction: %v", err)
 	}
 }
 
@@ -577,7 +576,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	defer fx.cleanup()
 
 	// Common seed: prod environment authorizes team-a, allowlists
-	// p1/p2 (prompts), a1/a2 (artifacts), sk1/sk2/shared@smkt-b (skills).
+	// p1/p2 (instructions), a1/a2 (artifacts), sk1/sk2/shared@smkt-b (skills).
 	// shared@smkt-b tests the scoped-ref (name@marketplace) resolution path.
 	//
 	// The content kind here is Skill: it exercises the same gates, the same
@@ -590,7 +589,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		"sk1", "sk2", "sk-no-row", "shared@smkt-b",
 	)
 	now := time.Now().UTC()
-	fx.seedPrompt("p1", &now, 600, nil, []byte("hello prompt"))
+	fx.seedInstruction("p1", &now, 600, []byte("hello instruction"))
 	fx.seedSkill("sk1", &now, 600, []byte{0x1f, 0x8b, 0x08, 0x00, 0xAA, 0xBB, 0xCC})
 	fx.seedArtifact("a1", "object", &now, 600, []byte("artifact-bytes"))
 	// Seed the scoped marketplace skill: (marketplace_name="smkt-b", name="shared").
@@ -633,8 +632,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("200 success ek_ prompt", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+	t.Run("200 success ek_ instruction", func(t *testing.T) {
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key": "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		})
 		resp := rec.Result()
@@ -645,26 +644,26 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	})
 
 	t.Run("400 missing_environment pk_", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key": "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		})
 		requireOutcome(t, rec, 400, "missing_environment")
 	})
 
 	t.Run("400 invalid_key_format garbage", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key": "garbage_no_prefix",
 		})
 		requireOutcome(t, rec, 400, "invalid_key_format")
 	})
 
 	t.Run("400 invalid_key_format empty", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{})
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{})
 		requireOutcome(t, rec, 400, "invalid_key_format")
 	})
 
 	t.Run("401 expired_or_revoked pk_ not in DB", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key":         "pk-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			"x-ach-environment": "prod",
 		})
@@ -674,7 +673,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	t.Run("403 unauthorized_team", func(t *testing.T) {
 		// Seed pk_ with mismatched team.
 		fx.seedPersonalKey("pkid_z", "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "alice-team-mismatch@x.com")
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key":         "pk-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
 			"x-ach-environment": "prod",
 		})
@@ -685,7 +684,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is bound to prod; request asks for staging.
 		fx.seedEnvironment("staging", []string{"team-a"},
 			[]string{"p1"}, []string{}, []string{})
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key":         "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			"x-ach-environment": "staging",
 		})
@@ -693,9 +692,9 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	})
 
 	t.Run("403 unauthorized_content cheaper-first", func(t *testing.T) {
-		// Seed a prompt row that the environment does NOT allow-list.
-		fx.seedPrompt("p-disallowed", &now, 600, nil, []byte("nope"))
-		rec := fx.doRequest("GET", "/content/prompt/p-disallowed", map[string]string{
+		// Seed an instruction row that the environment does NOT allow-list.
+		fx.seedInstruction("p-disallowed", &now, 600, []byte("nope"))
+		rec := fx.doRequest("GET", "/content/instruction/p-disallowed", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
@@ -705,7 +704,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	})
 
 	t.Run("404 environment_not_found", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "does-not-exist",
 		})
@@ -724,8 +723,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 
 	t.Run("503 stale_cache_expired", func(t *testing.T) {
 		stale := now.Add(-1 * time.Hour)
-		fx.seedPrompt("p2", &stale, 60, nil, []byte("stale"))
-		rec := fx.doRequest("GET", "/content/prompt/p2", map[string]string{
+		fx.seedInstruction("p2", &stale, 60, []byte("stale"))
+		rec := fx.doRequest("GET", "/content/instruction/p2", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})
@@ -751,7 +750,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		// no flush needed for teams.
 		// Need to use the alice@x.com pk_ but the team cache is hit-
 		// avoided because we use the resolver directly.
-		rec := fx.doRequest("GET", "/content/prompt/p1", map[string]string{
+		rec := fx.doRequest("GET", "/content/instruction/p1", map[string]string{
 			"x-ach-key":         "pk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"x-ach-environment": "prod",
 		})

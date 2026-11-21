@@ -108,7 +108,7 @@ type Result struct {
 // is zero. 512 MiB covers the long tail of Artifact directory-scope
 // targets that pull from larger upstream repos (e.g. openclaw/openclaw
 // at ~261 MiB depth-1) while still bounding a runaway clone. Typical
-// claude-plugin Plugin/Prompt repos are <10 MiB and well under the cap.
+// claude-plugin Plugin/Instruction repos are <10 MiB and well under the cap.
 const gitDefaultMaxCloneBytes = 512 << 20
 
 // gitCloneTimeout is the wall-clock bound on a single fetch operation.
@@ -376,7 +376,7 @@ func ClassifyError(err error) error {
 // tarSubtree gzip-tars the contents of root (or root/subtree if non-empty),
 // stripping the root prefix from entry names so the resulting archive looks
 // like the worktree was at /. When subtree points at a single regular FILE
-// (not a directory) it returns that file's RAW bytes instead — Prompt and
+// (not a directory) it returns that file's RAW bytes instead — Instruction and
 // Artifact scope=object name a single file via spec.path (F1).
 //
 // Symlink containment (F1 review): a crafted repo can plant a symlink at ANY
@@ -419,7 +419,7 @@ func tarSubtree(root, subtree string) ([]byte, error) {
 		}
 		switch {
 		case info.Mode().IsRegular():
-			// A spec.path pointing at a single FILE (Prompt / Artifact
+			// A spec.path pointing at a single FILE (Instruction / Artifact
 			// scope=object) returns that file's RAW bytes — no tar wrapper (F1).
 			return os.ReadFile(realStart) //nolint:gosec // bounded: clone size-capped by MaxCloneBytes
 		case !info.IsDir():

@@ -10,7 +10,7 @@
 // Routing topology (chi):
 //
 //	GET /healthz
-//	GET /content/prompt/{name}
+//	GET /content/instruction/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
 //	GET /content/skill/{name}
@@ -99,7 +99,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	r.Get("/content/prompt/{name}", d.serve(kindPrompt))
+	r.Get("/content/instruction/{name}", d.serve(kindInstruction))
 	r.Get("/content/plugin/{name}", d.serve(kindPlugin))
 	r.Get("/content/artifact/{name}", d.serve(kindArtifact))
 	r.Get("/content/skill/{name}", d.serve(kindSkill))

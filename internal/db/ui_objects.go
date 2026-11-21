@@ -62,7 +62,7 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 	return []any{
 		row.Namespace, row.Name,
 		orEmptyStrings(row.AuthorizedTeams),
-		orEmptyStrings(row.ContextPrompts),
+		orEmptyStrings(row.ContextInstructions),
 		orEmptyStrings(row.ContextPlugins),
 		orEmptyStrings(row.ContextArtifacts),
 		orEmptyStrings(row.RuntimeModels),
@@ -79,7 +79,7 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 const insertUIEnvironmentSQL = `
 	INSERT INTO environments
 	    (namespace, name,
-	     authorized_teams, context_prompts, context_plugins, context_artifacts,
+	     authorized_teams, context_instructions, context_plugins, context_artifacts,
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     context_skills, notice, description, runtime_guardrails, spec,
 	     resource_version, updated_at, origin, locked)
@@ -125,7 +125,7 @@ func InsertUIEnvironment(ctx context.Context, pool *pgxpool.Pool, row Environmen
 const updateUIEnvironmentSQL = `
 	UPDATE environments SET
 	    authorized_teams    = $3,
-	    context_prompts     = $4,
+	    context_instructions     = $4,
 	    context_plugins     = $5,
 	    context_artifacts   = $6,
 	    runtime_models      = $7,

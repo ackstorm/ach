@@ -38,17 +38,17 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 	defer cleanup()
 
 	row := db.EnvironmentRow{
-		Namespace:         "default",
-		Name:              "env1",
-		AuthorizedTeams:   []string{"team-a", "team-b"},
-		ContextPrompts:    []string{"welcome"},
-		ContextPlugins:    []string{"caveman"},
-		ContextArtifacts:  []string{"openclaw"},
-		ContextSkills:     []string{"pdf-processing"},
-		RuntimeModels:     []string{"gpt-4o"},
-		RuntimeMCPServers: []string{"context7"},
-		RuntimeA2AAgents:  []string{"agent-1"},
-		ResourceVersion:   "100",
+		Namespace:           "default",
+		Name:                "env1",
+		AuthorizedTeams:     []string{"team-a", "team-b"},
+		ContextInstructions: []string{"welcome"},
+		ContextPlugins:      []string{"caveman"},
+		ContextArtifacts:    []string{"openclaw"},
+		ContextSkills:       []string{"pdf-processing"},
+		RuntimeModels:       []string{"gpt-4o"},
+		RuntimeMCPServers:   []string{"context7"},
+		RuntimeA2AAgents:    []string{"agent-1"},
+		ResourceVersion:     "100",
 	}
 	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)
@@ -126,8 +126,8 @@ func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestMigration000028_DropsDeletionTimestamp: rolled back to the schema with
-// the column, the migration removes the rows a drain marked, keeps the others,
+// TestMigration000028_DropsDeletionTimestamp: rolled back (past 000031) to the
+// schema with the column, the migration removes the rows a drain marked, keeps the others,
 // and leaves no table with the column.
 func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -145,6 +145,7 @@ func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 			t.Fatalf("apply %s: %v", file, err)
 		}
 	}
+	applyMigration("000031_instruction_kind.down.sql")
 	applyMigration("000028_drop_deletion_timestamp.down.sql")
 
 	seeds := map[string]func(name string) error{
@@ -152,7 +153,9 @@ func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 			return dbtest.UpsertPlugin(ctx, pool, db.PluginRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
 		},
 		"prompts": func(name string) error {
-			return dbtest.UpsertPrompt(ctx, pool, db.PromptRow{Namespace: "ns1", Name: name, ResourceVersion: "1"})
+			_, err := pool.Exec(ctx,
+				`INSERT INTO prompts (namespace, name, resource_version, locked) VALUES ('ns1', $1, '1', TRUE)`, name)
+			return err
 		},
 		"artifacts": func(name string) error {
 			return dbtest.UpsertArtifact(ctx, pool, db.ArtifactRow{Namespace: "ns1", Name: name, Scope: "object", ResourceVersion: "1"})
@@ -210,7 +213,7 @@ func TestDeleteEnvironment_RemovesRow(t *testing.T) {
 	if err := dbtest.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
 		Namespace: "ns1", Name: "e", ResourceVersion: "1",
 		// text[] columns are NOT NULL; explicit binds map nil → SQL NULL.
-		AuthorizedTeams: []string{}, ContextPrompts: []string{},
+		AuthorizedTeams: []string{}, ContextInstructions: []string{},
 		ContextPlugins: []string{}, ContextArtifacts: []string{},
 		ContextSkills: []string{},
 		RuntimeModels: []string{}, RuntimeMCPServers: []string{},

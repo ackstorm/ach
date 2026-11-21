@@ -51,7 +51,7 @@ resources:
   controller: true
   domain: ackstorm.ai
   group: ach
-  kind: Prompt
+  kind: Instruction
   path: github.com/ackstorm/ach/api/ach/v1alpha1
   version: v1alpha1
 - api:

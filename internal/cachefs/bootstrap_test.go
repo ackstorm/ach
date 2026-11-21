@@ -16,7 +16,7 @@ import (
 // asserts the §10.3 contract from the OUTSIDE — a refactor that drops a
 // subdirectory from cachefs.SubDirs would silently break the contract if the
 // test only iterated the package's own variable.
-var expectedSubdirs = []string{"prompt", "plugin", "marketplace", "artifact", ".tmp"}
+var expectedSubdirs = []string{"instruction", "plugin", "marketplace", "artifact", ".tmp"}
 
 // TestEnsureLayoutCreatesAllFiveSubdirs asserts the §10.3 contract: after a
 // single EnsureLayout call on an empty directory, every OP-10 subdirectory
@@ -111,7 +111,7 @@ func TestEnsureLayoutSurvivesExistingSubdirs(t *testing.T) {
 
 	// Pre-create one subdir so EnsureLayout has to skip over an existing
 	// directory before creating the rest.
-	if err := os.MkdirAll(filepath.Join(root, "prompt"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "instruction"), 0o755); err != nil {
 		t.Fatalf("failed to pre-create subdir: %v", err)
 	}
 

@@ -20,15 +20,15 @@ import (
 // It also asserts the render is deterministic (byte-identical across calls).
 func TestExportEnvironmentYAML_Canonical(t *testing.T) {
 	row := db.EnvironmentRow{
-		Namespace:          "ach",
-		Name:               "dev",
-		AuthorizedTeams:    []string{"team-a"},
-		RuntimeModels:      []string{"gpt-4"},
-		ContextPrompts:     []string{"welcome"},
-		Notice:             "re-login after rotation",
-		Description:        "developer sandbox",
-		ResourceVersion:    "12345",
-		AvailableCondition: []byte(`{"type":"Available","status":"True"}`),
+		Namespace:           "ach",
+		Name:                "dev",
+		AuthorizedTeams:     []string{"team-a"},
+		RuntimeModels:       []string{"gpt-4"},
+		ContextInstructions: []string{"welcome"},
+		Notice:              "re-login after rotation",
+		Description:         "developer sandbox",
+		ResourceVersion:     "12345",
+		AvailableCondition:  []byte(`{"type":"Available","status":"True"}`),
 	}
 
 	out, err := ExportEnvironmentYAML(row, "ach")

@@ -24,13 +24,13 @@ import (
 
 func uiEnvRow(ns, name string) db.EnvironmentRow {
 	return db.EnvironmentRow{
-		Namespace:       ns,
-		Name:            name,
-		AuthorizedTeams: []string{"team-a"},
-		ContextPrompts:  []string{"welcome"},
-		RuntimeModels:   []string{"gpt-4o"},
-		Notice:          "draft via UI",
-		Description:     "a UI-authored environment",
+		Namespace:           ns,
+		Name:                name,
+		AuthorizedTeams:     []string{"team-a"},
+		ContextInstructions: []string{"welcome"},
+		RuntimeModels:       []string{"gpt-4o"},
+		Notice:              "draft via UI",
+		Description:         "a UI-authored environment",
 	}
 }
 
@@ -40,17 +40,17 @@ func uiEnvRow(ns, name string) db.EnvironmentRow {
 // passes spec slices that are non-nil in practice).
 func crEnvRow(ns, name, rv string) db.EnvironmentRow {
 	return db.EnvironmentRow{
-		Namespace:         ns,
-		Name:              name,
-		ResourceVersion:   rv,
-		AuthorizedTeams:   []string{},
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: []string{},
-		RuntimeA2AAgents:  []string{},
+		Namespace:           ns,
+		Name:                name,
+		ResourceVersion:     rv,
+		AuthorizedTeams:     []string{},
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   []string{},
+		RuntimeA2AAgents:    []string{},
 	}
 }
 
@@ -122,8 +122,8 @@ func TestInsertUIEnvironment_RoundTrip(t *testing.T) {
 	if got.Notice != "draft via UI" || got.Description != "a UI-authored environment" {
 		t.Fatalf("round-trip mismatch: notice=%q description=%q", got.Notice, got.Description)
 	}
-	if len(got.ContextPrompts) != 1 || got.ContextPrompts[0] != "welcome" {
-		t.Fatalf("round-trip context_prompts=%v", got.ContextPrompts)
+	if len(got.ContextInstructions) != 1 || got.ContextInstructions[0] != "welcome" {
+		t.Fatalf("round-trip context_instructions=%v", got.ContextInstructions)
 	}
 	// Draft has no status → condition columns NULL.
 	if got.AvailableCondition != nil {

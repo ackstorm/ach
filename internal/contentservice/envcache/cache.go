@@ -32,11 +32,11 @@ const refreshInterval = 5 * time.Minute
 // projected; the projection PK and staleness columns gate on the contentRow,
 // not the EnvRow.
 type EnvRow struct {
-	AuthorizedTeams  []string
-	ContextPrompts   []string
-	ContextPlugins   []string
-	ContextArtifacts []string
-	ContextSkills    []string
+	AuthorizedTeams     []string
+	ContextInstructions []string
+	ContextPlugins      []string
+	ContextArtifacts    []string
+	ContextSkills       []string
 }
 
 // Cache is a Postgres-backed Environment lookup table keyed by name, refreshed
@@ -95,11 +95,11 @@ func (c *Cache) Refresh(ctx context.Context) error {
 	next := make(map[string]EnvRow, len(rows))
 	for _, r := range rows {
 		next[r.Name] = EnvRow{
-			AuthorizedTeams:  r.AuthorizedTeams,
-			ContextPrompts:   r.ContextPrompts,
-			ContextPlugins:   r.ContextPlugins,
-			ContextArtifacts: r.ContextArtifacts,
-			ContextSkills:    r.ContextSkills,
+			AuthorizedTeams:     r.AuthorizedTeams,
+			ContextInstructions: r.ContextInstructions,
+			ContextPlugins:      r.ContextPlugins,
+			ContextArtifacts:    r.ContextArtifacts,
+			ContextSkills:       r.ContextSkills,
 		}
 	}
 	c.rows.Store(&next)

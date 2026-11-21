@@ -7,15 +7,15 @@
 // SYNC semantics are computed server-side from the projection alone (no live
 // LiteLLM / k8s cross-check):
 //
-//   - content kinds (plugin/prompt/artifact/marketplace/external-ref):
+//   - content kinds (plugin/instruction/artifact/marketplace/external-ref):
 //     last_successful_refresh + max_staleness_seconds staleness →
 //     fresh / STALE(<age over>) / never.
 //   - bip / litellm-connection: projected (presence).
 //
 // false-green caveat (memory plugin-scoping-followups): only context.plugins
 // content-presence gates the Environment ExecutionResourcesResolved condition.
-// prompts/artifacts are name-only / pass-through — their last_successful_refresh
-// reflects "name resolved", not "content present + current". So the prompt and
+// instructions/artifacts are name-only / pass-through — their last_successful_refresh
+// reflects "name resolved", not "content present + current". So the instruction and
 // artifact mappers render a fresh state as "fresh*" (syncFreshFalseGreen); the
 // CLI renderer turns the asterisk into a footnote. STALE/never stay honest and
 // carry no asterisk. Marketplace plugins and external_refs ARE real
@@ -30,7 +30,7 @@ import (
 )
 
 // SYNC state vocabulary. The asterisk on syncFreshFalseGreen is data the CLI
-// renderer keys on to emit the prompts/artifacts footnote — see package doc.
+// renderer keys on to emit the instructions/artifacts footnote — see package doc.
 const (
 	syncFresh           = "fresh"
 	syncFreshFalseGreen = "fresh*"
@@ -81,7 +81,7 @@ func contentSync(last *time.Time, maxStalenessSeconds int64, now time.Time) (sta
 }
 
 // markFalseGreen upgrades a bare "fresh" to "fresh*" for kinds whose
-// content-presence is NOT actually gated (prompts/artifacts). STALE/never are
+// content-presence is NOT actually gated (instructions/artifacts). STALE/never are
 // already honest and pass through unchanged.
 func markFalseGreen(state string) string {
 	if state == syncFresh {
@@ -197,23 +197,19 @@ func skillMarketplaceRowToView(r db.SkillMarketplaceRow) AdminObjectView {
 	}
 }
 
-func promptRowToView(r db.PromptRow, now time.Time) AdminObjectView {
+func instructionRowToView(r db.InstructionRow, now time.Time) AdminObjectView {
 	sync, reason := contentSync(r.LastSuccessfulRefresh, r.MaxStalenessSeconds, now)
-	v := AdminObjectView{
-		Kind:              "prompt",
+	return AdminObjectView{
+		Kind:              "instruction",
 		Namespace:         r.Namespace,
 		Name:              r.Name,
 		Version:           r.ResourceVersion,
 		UpstreamRev:       r.UpstreamRev,
 		LatestUpstreamRev: r.LatestUpstreamRev,
-		Sync:              markFalseGreen(sync), // prompts are name-only / not content-gated
+		Sync:              markFalseGreen(sync), // instructions are name-only / not content-gated
 		SyncReason:        reason,
 		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
 	}
-	if r.ContentType != nil && *r.ContentType != "" {
-		v.Extra = map[string]string{"contentType": *r.ContentType}
-	}
-	return v
 }
 
 func artifactRowToView(r db.ArtifactRow, now time.Time) AdminObjectView {

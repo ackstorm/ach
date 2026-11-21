@@ -25,7 +25,7 @@ import (
 
 // externalRefCR is the constraint for the generic content-reconciler
 // driver: any CR whose pointer is a client.Object exposing the shared
-// ExternalRefStatus. Satisfied by *Plugin, *Prompt, *Artifact.
+// ExternalRefStatus. Satisfied by *Plugin, *Instruction, *Artifact.
 type externalRefCR[T any] interface {
 	*T
 	client.Object
@@ -39,8 +39,8 @@ type externalRefSpecView struct {
 	SourceSpec    sources.SourceSpec
 	AuthSecretRef *achv1alpha1.SourceAuthSecretRef
 	Refresh       achv1alpha1.RefreshBlock
-	Scope         string // "" for plugin/prompt; cr.Spec.Scope for artifact
-	SizeCapBytes  int64  // plugin: PluginMaxSizeMiB<<20; prompt/artifact: 0
+	Scope         string // "" for plugin/instruction; cr.Spec.Scope for artifact
+	SizeCapBytes  int64  // plugin: PluginMaxSizeMiB<<20; instruction/artifact: 0
 }
 
 // externalRefDriverConfig wires a per-kind reconciler into the generic
@@ -59,8 +59,8 @@ type externalRefDriverConfig[T any, PT externalRefCR[T]] struct {
 	// the per-kind unit reconcilers leave it unset and skip the increment.
 	metrics *achmetrics.OperatorCollectors
 
-	kind      string // "plugin" / "prompt" / "artifact" / "skill"
-	finalizer string // pluginFinalizer / promptFinalizer / artifactFinalizer
+	kind      string // "plugin" / "instruction" / "artifact" / "skill"
+	finalizer string // pluginFinalizer / instructionFinalizer / artifactFinalizer
 
 	// specView projects cr.Spec → the driver's needed fields.
 	specView func(PT) externalRefSpecView
@@ -72,7 +72,7 @@ type externalRefDriverConfig[T any, PT externalRefCR[T]] struct {
 }
 
 // reconcileExternalRefCR is the shared content-reconciler state machine.
-// See plugin/prompt/artifact_controller.go Reconcile wrappers for usage.
+// See plugin/instruction/artifact_controller.go Reconcile wrappers for usage.
 func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 	ctx context.Context,
 	req ctrl.Request,

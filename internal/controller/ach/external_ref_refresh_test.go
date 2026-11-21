@@ -7,7 +7,7 @@
 //
 // All tests run with DB=nil so the suite stays Docker-free; the
 // reconciler's nil-DB branch skips Get/Upsert/Delete external_refs calls
-// and the Plugin/Prompt/Artifact reconcilers' steady-state paths still
+// and the Plugin/Instruction/Artifact reconcilers' steady-state paths still
 // exercise materializeExternalRef end-to-end via a fake fetcher.
 
 package ach
@@ -120,7 +120,7 @@ func minimalPluginTarGz(t *testing.T) []byte {
 
 // newCacheRoot allocates a per-test isolated cache root with the
 // canonical OP-10 layout so materializeExternalRef's CreateTemp finds
-// .tmp/ and computeFinalPath's plugin/, prompt/, artifact/ subdirs exist.
+// .tmp/ and computeFinalPath's plugin/, instruction/, artifact/ subdirs exist.
 func newCacheRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -139,7 +139,7 @@ func TestComputeFinalPath(t *testing.T) {
 		want              string
 	}{
 		{"plugin", "p1", "", "/cache/plugin/p1.tar.gz"},
-		{"prompt", "pr1", "", "/cache/prompt/pr1.tar.gz"},
+		{"instruction", "pr1", "", "/cache/instruction/pr1.tar.gz"},
 		{"artifact", "a1", "object", "/cache/artifact/a1.tar.gz"},
 		{"artifact", "a1", "directory", "/cache/artifact/a1.tar.gz"},
 		{"unknown", "x", "", ""},
@@ -244,18 +244,18 @@ func TestExtractAuthSecretRef(t *testing.T) {
 func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	root := newCacheRoot(t)
 	fake := &fakeFetcher{body: []byte("hello"), upstreamRev: "sha-abc"}
-	// Kind="prompt" so the body is taken verbatim — bypasses the
+	// Kind="instruction" so the body is taken verbatim — bypasses the
 	// Step 5.5 plugin content filter (issue #26) which only fires on
 	// Kind="plugin" and would reject the raw "hello" bytes as
 	// not-a-gzip. The test target here is the generic state machine
 	// (stage/rename/cleanup), not plugin-specific filtering.
-	finalPath := filepath.Join(root, "prompt", "mat-p1")
+	finalPath := filepath.Join(root, "instruction", "mat-p1")
 
 	deps := ExternalRefRefreshDeps{
 		Client:    k8sClient,
 		Namespace: WatchNamespace,
 		CacheRoot: root,
-		Kind:      "prompt",
+		Kind:      "instruction",
 		Name:      "mat-p1",
 		FinalPath: finalPath,
 		Fetchers:  fakeFactory(fake),
@@ -272,7 +272,7 @@ func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	if res.UpstreamRev != "sha-abc" {
 		t.Errorf("UpstreamRev = %q; want %q", res.UpstreamRev, "sha-abc")
 	}
-	// The published prompt is now a 1-entry gzip tar, NOT raw bytes.
+	// The published instruction is now a 1-entry gzip tar, NOT raw bytes.
 	published, err := os.ReadFile(finalPath)
 	if err != nil {
 		t.Fatalf("read finalPath: %v", err)

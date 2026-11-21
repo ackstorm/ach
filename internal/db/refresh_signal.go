@@ -13,7 +13,7 @@
 //
 //  2. UPDATE external_refs / marketplace_plugins SET force_refresh_requested_at = now()
 //     on the matching row (force_refresh_requested_at lives on the source
-//     table — external_refs for plugin/prompt/artifact, marketplace_plugins
+//     table — external_refs for plugin/instruction/artifact, marketplace_plugins
 //     for pluginmarketplace).
 //
 //  3. NOTIFY ach_refresh '<kind>/<name>' via db.Emit. The operator's A11
@@ -57,7 +57,7 @@ const refreshSignalChannel = "ach_refresh"
 // for reconcile.
 //
 // Kind discipline:
-//   - "plugin", "prompt", "artifact", "skill" → external_refs (kind, name) PK.
+//   - "plugin", "instruction", "artifact", "skill" → external_refs (kind, name) PK.
 //   - "pluginmarketplace"            → marketplace_plugins (marketplace_name, name)
 //     PK — the operator's marketplace reconciler
 //     sweeps every plugin under the named
@@ -81,7 +81,7 @@ const refreshSignalChannel = "ach_refresh"
 // WithTxNotify). See package doc-comment for the no-transaction rationale.
 func SetForceRefresh(ctx context.Context, pool *pgxpool.Pool, ns, kind, name string) error {
 	switch kind {
-	case "plugin", "prompt", "artifact", "skill":
+	case "plugin", "instruction", "artifact", "skill":
 		if err := setForceRefreshExternalRef(ctx, pool, kind, name); err != nil {
 			return err
 		}

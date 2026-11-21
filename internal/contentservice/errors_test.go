@@ -42,7 +42,7 @@ func newTestDeps(t *testing.T) (Deps, *bytes.Buffer, *prometheus.Registry) {
 // requestWithID wires a request whose context carries a stable
 // request-id (so envelope/audit assertions can match it).
 func requestWithID(reqID string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/content/prompt/foo", nil)
+	r := httptest.NewRequest(http.MethodGet, "/content/instruction/foo", nil)
 	ctx := middleware.WithRequestID(r.Context(), reqID)
 	return r.WithContext(ctx)
 }
@@ -52,7 +52,7 @@ func TestWriteError_RendersEnvelope(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_01TEST")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
+	d.writeError(rec, r, "instruction", "foo", nil, errMissingEnvironment)
 
 	resp := rec.Result()
 	t.Cleanup(func() { _ = resp.Body.Close() })
@@ -84,13 +84,13 @@ func TestWriteError_EmitsAudit(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_01ABCD")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
+	d.writeError(rec, r, "instruction", "foo", nil, errMissingEnvironment)
 
 	got := buf.String()
 	for _, want := range []string{
 		`"action":"content.get"`,
 		`"outcome":"missing_environment"`,
-		`"target.kind":"prompt"`,
+		`"target.kind":"instruction"`,
 		`"target.name":"foo"`,
 		`"request_id":"req_01ABCD"`,
 	} {
@@ -129,7 +129,7 @@ func TestWriteError_PopulatedKeyInfo_Actor(t *testing.T) {
 		KeyType:    keys.PrefixPk,
 		OwnerEmail: "alice@example.com",
 	}
-	d.writeError(rec, r, "prompt", "doc", info, errUnauthorizedContent)
+	d.writeError(rec, r, "instruction", "doc", info, errUnauthorizedContent)
 
 	got := buf.String()
 	if !strings.Contains(got, `"actor":"/alice@example.com"`) {
@@ -145,11 +145,11 @@ func TestWriteError_IncsMetric(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r := requestWithID("req_z")
 
-	d.writeError(rec, r, "prompt", "foo", nil, errMissingEnvironment)
+	d.writeError(rec, r, "instruction", "foo", nil, errMissingEnvironment)
 
 	// Gather from the registry and verify the counter increment.
 	got := gatherCounter(t, reg, "ach_content_service_requests_total",
-		map[string]string{"kind": "prompt", "outcome": "missing_environment"})
+		map[string]string{"kind": "instruction", "outcome": "missing_environment"})
 	if got != 1 {
 		t.Errorf("metric counter=%v, want 1", got)
 	}

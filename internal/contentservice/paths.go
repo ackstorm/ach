@@ -48,7 +48,7 @@ func PluginStoragePathWithinRoot(cacheRoot, storageLocation string) (string, boo
 
 // ResolvePath returns the single on-disk filename for a (kind, name,
 // scope) tuple under cacheRoot. Every context kind now resolves to
-// name + ".tar.gz" (uniform context format): prompt, plugin, and skill
+// name + ".tar.gz" (uniform context format): instruction, plugin, and skill
 // always use .tar.gz; for kind=artifact both scope="object" (1-entry
 // tar) and scope="directory" (subtree tar) resolve to name + ".tar.gz".
 // Scope is still consumed for artifact only — an unknown scope is
@@ -68,8 +68,8 @@ func ResolvePath(cacheRoot, kind, name, scope string) (string, error) {
 		return "", err
 	}
 	switch kind {
-	case kindPrompt:
-		return filepath.Join(cacheRoot, kindPrompt, name+gzipSuffix), nil
+	case kindInstruction:
+		return filepath.Join(cacheRoot, kindInstruction, name+gzipSuffix), nil
 	case kindPlugin:
 		return filepath.Join(cacheRoot, kindPlugin, name+gzipSuffix), nil
 	case kindSkill:

@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-// Integration tests for internal/db/prompts.go.
+// Integration tests for internal/db/instructions.go.
 
 package db_test
 
@@ -15,40 +15,35 @@ import (
 	"github.com/ackstorm/ach/internal/db/dbtest"
 )
 
-// TestUpsertPrompt_InsertThenUpdate: Upsert → Get round-trip + UPDATE-in-place
-// on second Upsert with mutated content_type override.
-func TestUpsertPrompt_InsertThenUpdate(t *testing.T) {
+// TestUpsertInstruction_InsertThenUpdate: Upsert → Get round-trip + UPDATE-in-place
+// on second Upsert with a changed staleness bound.
+func TestUpsertInstruction_InsertThenUpdate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	ct := "text/plain"
 	now := time.Now().UTC().Truncate(time.Second)
-	row := db.PromptRow{
+	row := db.InstructionRow{
 		Namespace:             "default",
 		Name:                  "welcome",
-		StorageLocation:       "/var/cache/ach/prompt/welcome",
-		ContentType:           &ct,
+		StorageLocation:       "/var/cache/ach/instruction/welcome",
 		LastSuccessfulRefresh: &now,
 		MaxStalenessSeconds:   3600,
 		ResourceVersion:       "1",
 	}
-	if err := dbtest.UpsertPrompt(ctx, pool, row); err != nil {
-		t.Fatalf("UpsertPrompt: %v", err)
+	if err := dbtest.UpsertInstruction(ctx, pool, row); err != nil {
+		t.Fatalf("UpsertInstruction: %v", err)
 	}
-	got, err := db.GetPromptByName(ctx, pool, "default", "welcome")
+	got, err := db.GetInstructionByName(ctx, pool, "default", "welcome")
 	if err != nil {
-		t.Fatalf("GetPromptByName: %v", err)
+		t.Fatalf("GetInstructionByName: %v", err)
 	}
 	if got == nil {
-		t.Fatal("GetPromptByName returned nil after insert")
+		t.Fatal("GetInstructionByName returned nil after insert")
 	}
-	if got.StorageLocation != "/var/cache/ach/prompt/welcome" {
+	if got.StorageLocation != "/var/cache/ach/instruction/welcome" {
 		t.Errorf("StorageLocation: got %q", got.StorageLocation)
-	}
-	if got.ContentType == nil || *got.ContentType != "text/plain" {
-		t.Errorf("ContentType: got %v, want pointer to 'text/plain'", got.ContentType)
 	}
 	if got.LastSuccessfulRefresh == nil {
 		t.Error("LastSuccessfulRefresh: got nil, want set")
@@ -58,20 +53,16 @@ func TestUpsertPrompt_InsertThenUpdate(t *testing.T) {
 	}
 	firstUpdatedAt := got.UpdatedAt
 
-	// Second Upsert — clear ContentType (override removed); MaxStaleness change.
+	// Second Upsert — MaxStaleness change.
 	time.Sleep(50 * time.Millisecond)
-	row.ContentType = nil
 	row.MaxStalenessSeconds = 7200
 	row.ResourceVersion = "2"
-	if err := dbtest.UpsertPrompt(ctx, pool, row); err != nil {
-		t.Fatalf("second UpsertPrompt: %v", err)
+	if err := dbtest.UpsertInstruction(ctx, pool, row); err != nil {
+		t.Fatalf("second UpsertInstruction: %v", err)
 	}
-	got2, err := db.GetPromptByName(ctx, pool, "default", "welcome")
+	got2, err := db.GetInstructionByName(ctx, pool, "default", "welcome")
 	if err != nil {
 		t.Fatalf("second Get: %v", err)
-	}
-	if got2.ContentType != nil {
-		t.Errorf("after Upsert with nil ContentType: got %v, want nil (SQL NULL)", got2.ContentType)
 	}
 	if got2.MaxStalenessSeconds != 7200 {
 		t.Errorf("MaxStalenessSeconds: got %d, want 7200", got2.MaxStalenessSeconds)
@@ -84,14 +75,14 @@ func TestUpsertPrompt_InsertThenUpdate(t *testing.T) {
 	}
 }
 
-// TestGetPromptByName_AbsenceReturnsNilNil.
-func TestGetPromptByName_AbsenceReturnsNilNil(t *testing.T) {
+// TestGetInstructionByName_AbsenceReturnsNilNil.
+func TestGetInstructionByName_AbsenceReturnsNilNil(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	got, err := db.GetPromptByName(ctx, pool, "default", "missing")
+	got, err := db.GetInstructionByName(ctx, pool, "default", "missing")
 	if err != nil {
 		t.Fatalf("absent Get: got error %v", err)
 	}
@@ -100,29 +91,29 @@ func TestGetPromptByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestDeletePrompt_RemovesRow.
-func TestDeletePrompt_RemovesRow(t *testing.T) {
+// TestDeleteInstruction_RemovesRow.
+func TestDeleteInstruction_RemovesRow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
+	if err := dbtest.UpsertInstruction(ctx, pool, db.InstructionRow{
 		Namespace: "ns", Name: "p", StorageLocation: "/x", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := dbtest.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
-		t.Fatalf("DeletePrompt: %v", err)
+	if err := dbtest.DeleteInstruction(ctx, pool, "ns", "p"); err != nil {
+		t.Fatalf("DeleteInstruction: %v", err)
 	}
-	got, err := db.GetPromptByName(ctx, pool, "ns", "p")
+	got, err := db.GetInstructionByName(ctx, pool, "ns", "p")
 	if err != nil {
 		t.Fatalf("Get after Delete: %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)
 	}
-	if err := dbtest.DeletePrompt(ctx, pool, "ns", "p"); err != nil {
+	if err := dbtest.DeleteInstruction(ctx, pool, "ns", "p"); err != nil {
 		t.Errorf("idempotent Delete: %v", err)
 	}
 }

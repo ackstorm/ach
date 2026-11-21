@@ -4,7 +4,7 @@
 //
 //	GET /healthz
 //	GET /metrics
-//	GET /content/prompt/{name}
+//	GET /content/instruction/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
 //
@@ -58,7 +58,7 @@ var contentServiceCmd = &cobra.Command{
 	Use:   "content-service",
 	Short: "Run the ACH artifact content service",
 	Long: `Boot the Content Service. Binds /healthz, /metrics, and
-/content/{prompt,plugin,artifact}/{name} on
+/content/{instruction,plugin,artifact}/{name} on
 CONTENT_SERVICE_HEALTH_BIND_ADDRESS (default :8082). Streams cached
 files from ACH_CACHE_ROOT (default /var/cache/ach) via io.Copy →
 sendfile(2). Reads ACH CRD state from Postgres + Redis envcache only

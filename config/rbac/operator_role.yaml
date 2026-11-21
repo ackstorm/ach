@@ -17,7 +17,7 @@ rules:
   - litellmconnections
   - pluginmarketplaces
   - plugins
-  - prompts
+  - instructions
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 # Finalizer removal on §6.5 / §10.3 deletion drain.
 - apiGroups: ["ach.ackstorm.ai"]
@@ -28,7 +28,7 @@ rules:
   - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
-  - prompts/finalizers
+  - instructions/finalizers
   verbs: ["update"]
 # Status subresource writes (condition updates).
 - apiGroups: ["ach.ackstorm.ai"]
@@ -39,7 +39,7 @@ rules:
   - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
-  - prompts/status
+  - instructions/status
   verbs: ["get", "patch", "update"]
 # Reserved: read the credential-hash pepper Secret if ever moved from env to K8s API.
 # Phase 1 reads pepper from ACH_CREDENTIAL_HASH_PEPPER env (D-09); this rule is

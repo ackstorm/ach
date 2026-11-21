@@ -652,7 +652,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		Namespace:                           env.Namespace,
 		Name:                                env.Name,
 		AuthorizedTeams:                     env.Spec.AuthorizedTeams,
-		ContextPrompts:                      env.Spec.Context.Prompts,
+		ContextInstructions:                 env.Spec.Context.Instructions,
 		ContextPlugins:                      env.Spec.Context.Plugins,
 		ContextArtifacts:                    env.Spec.Context.Artifacts,
 		ContextSkills:                       env.Spec.Context.Skills,

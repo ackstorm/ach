@@ -34,7 +34,7 @@ spec:
           Environment is the Schema for the environments API (Hub §6).
 
           An Environment is the ACH product boundary: a bundle of runtime
-          (models, mcpServers, a2aAgents, guardrails) and context (prompts, plugins,
+          (models, mcpServers, a2aAgents, guardrails) and context (instructions, plugins,
           artifacts) capabilities exposed to authorized Teams. The ACH
           Operator reconciles spec.runtime into a LiteLLM access group of
           the same name (§6.2). The CEL XValidation rules above enforce
@@ -105,8 +105,22 @@ spec:
                     default: []
                     description: |-
                       Artifacts lists referenced Artifact names.
-                      Same strict deny-pattern as Prompts (no "/" "\" ? # % whitespace
+                      Same strict deny-pattern as Instructions (no "/" "\" ? # % whitespace
                       control chars or DEL).
+                    items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      type: string
+                    type: array
+                  instructions:
+                    default: []
+                    description: |-
+                      Instructions lists Instruction names. ach-cli writes each one as an
+                      always-loaded rules file for the hydrated tool. Order has no meaning.
+                      Context names map to content
+                      filenames served by the Content Service, so the strict deny-pattern
+                      forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,
+                      control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).
                     items:
                       maxLength: 253
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
@@ -119,20 +133,8 @@ spec:
                       resolves to an internal Plugin CRD; a scoped name
                       ("code-review@anthropics-official") resolves to that
                       PluginMarketplace's plugin by exact (marketplace, name). Same strict
-                      deny-pattern as Prompts (no "/" "\" ? # % whitespace, control chars
+                      deny-pattern as Instructions (no "/" "\" ? # % whitespace, control chars
                       or DEL); "@" is permitted as the marketplace separator.
-                    items:
-                      maxLength: 253
-                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
-                      type: string
-                    type: array
-                  prompts:
-                    default: []
-                    description: |-
-                      Prompts lists referenced Prompt names. Context names map to content
-                      filenames served by the Content Service, so the strict deny-pattern
-                      forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,
-                      control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).
                     items:
                       maxLength: 253
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$

@@ -191,14 +191,13 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 // open and the stat has succeeded.
 //
 // Every context kind is now served as a gzip tarball (uniform context
-// format): prompt + artifact-object are wrapped into a 1-entry gzip-tar
+// format): instruction + artifact-object are wrapped into a 1-entry gzip-tar
 // at ingestion, plugin/skill/artifact-directory are already gzip tars.
-// So all known kinds advertise application/gzip. Prompt's
-// spec.contentType override is no longer applied to the wire — the file
-// keeps its real MIME via its extension INSIDE the tar.
+// So all known kinds advertise application/gzip; the file keeps its real
+// MIME via its extension INSIDE the tar.
 func contentTypeFor(kind string) string {
 	switch kind {
-	case kindPrompt, kindPlugin, kindSkill, kindArtifact:
+	case kindInstruction, kindPlugin, kindSkill, kindArtifact:
 		return contentTypeGzip
 	}
 	return contentTypeOctet

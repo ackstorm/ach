@@ -13,7 +13,7 @@
 //
 // Column set is pinned by Phase 5 D-13:
 //
-//   - authorized_teams text[], context_prompts/plugins/artifacts text[],
+//   - authorized_teams text[], context_instructions/plugins/artifacts text[],
 //     runtime_models/mcp_servers/a2a_agents text[]: §5.1 authorization
 //     surface.
 //   - available_condition, access_group_synced_condition,
@@ -49,17 +49,17 @@ import (
 // 05-04 JSON-marshals []metav1.Condition slices before passing. Nil
 // slices map to SQL NULL via pgx's []byte/jsonb default mapping.
 type EnvironmentRow struct {
-	Namespace         string   // PK part 1 — K8s namespace
-	Name              string   // PK part 2 — Environment metadata.name
-	AuthorizedTeams   []string // spec.authorizedTeams
-	ContextPrompts    []string // spec.context.prompts
-	ContextPlugins    []string // spec.context.plugins
-	ContextArtifacts  []string // spec.context.artifacts
-	ContextSkills     []string // spec.context.skills
-	RuntimeModels     []string // spec.runtime.models
-	RuntimeMCPServers []string // spec.runtime.mcpServers
-	RuntimeA2AAgents  []string // spec.runtime.a2aAgents
-	RuntimeGuardrails []string // spec.runtime.guardrails
+	Namespace           string   // PK part 1 — K8s namespace
+	Name                string   // PK part 2 — Environment metadata.name
+	AuthorizedTeams     []string // spec.authorizedTeams
+	ContextInstructions []string // spec.context.instructions
+	ContextPlugins      []string // spec.context.plugins
+	ContextArtifacts    []string // spec.context.artifacts
+	ContextSkills       []string // spec.context.skills
+	RuntimeModels       []string // spec.runtime.models
+	RuntimeMCPServers   []string // spec.runtime.mcpServers
+	RuntimeA2AAgents    []string // spec.runtime.a2aAgents
+	RuntimeGuardrails   []string // spec.runtime.guardrails
 
 	// Raw jsonb-encoded condition payloads (caller JSON-marshals).
 	AvailableCondition                  []byte
@@ -98,7 +98,7 @@ type EnvironmentRow struct {
 const upsertEnvironmentSQL = `
 	INSERT INTO environments
 	    (namespace, name,
-	     authorized_teams, context_prompts, context_plugins, context_artifacts,
+	     authorized_teams, context_instructions, context_plugins, context_artifacts,
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     available_condition, access_group_synced_condition,
 	     execution_resources_resolved_condition,
@@ -110,7 +110,7 @@ const upsertEnvironmentSQL = `
 	        $13, $14, $15, $16, $17, $18, now(), 'cr', TRUE)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    authorized_teams                       = EXCLUDED.authorized_teams,
-	    context_prompts                        = EXCLUDED.context_prompts,
+	    context_instructions                        = EXCLUDED.context_instructions,
 	    context_plugins                        = EXCLUDED.context_plugins,
 	    context_artifacts                      = EXCLUDED.context_artifacts,
 	    context_skills                         = EXCLUDED.context_skills,
@@ -139,7 +139,7 @@ const upsertEnvironmentSQL = `
 func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) error {
 	return upsertReturning(ctx, tx, upsertEnvironmentSQL, "UpsertEnvironment("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name,
-		row.AuthorizedTeams, row.ContextPrompts, row.ContextPlugins, row.ContextArtifacts,
+		row.AuthorizedTeams, row.ContextInstructions, row.ContextPlugins, row.ContextArtifacts,
 		row.RuntimeModels, row.RuntimeMCPServers, row.RuntimeA2AAgents,
 		row.AvailableCondition, row.AccessGroupSyncedCondition,
 		row.ExecutionResourcesResolvedCondition,
@@ -157,7 +157,7 @@ func UpsertEnvironmentTx(ctx context.Context, tx pgx.Tx, row EnvironmentRow) err
 
 // environmentColumns is the SELECT list scanEnvironment reads, in order.
 const environmentColumns = `namespace, name,
-		       authorized_teams, context_prompts, context_plugins, context_artifacts,
+		       authorized_teams, context_instructions, context_plugins, context_artifacts,
 		       context_skills, notice, description,
 		       runtime_models, runtime_mcp_servers, runtime_a2a_agents, runtime_guardrails,
 		       available_condition, access_group_synced_condition,
@@ -168,7 +168,7 @@ const environmentColumns = `namespace, name,
 func scanEnvironment(row pgx.Row, r *EnvironmentRow) error {
 	return row.Scan(
 		&r.Namespace, &r.Name,
-		&r.AuthorizedTeams, &r.ContextPrompts, &r.ContextPlugins, &r.ContextArtifacts,
+		&r.AuthorizedTeams, &r.ContextInstructions, &r.ContextPlugins, &r.ContextArtifacts,
 		&r.ContextSkills, &r.Notice, &r.Description,
 		&r.RuntimeModels, &r.RuntimeMCPServers, &r.RuntimeA2AAgents, &r.RuntimeGuardrails,
 		&r.AvailableCondition, &r.AccessGroupSyncedCondition,

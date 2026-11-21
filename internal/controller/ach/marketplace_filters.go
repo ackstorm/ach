@@ -28,7 +28,7 @@ import (
 // Declared as exported (capital E) for parity with the sources.Err*
 // sentinels, even though it is consumed only inside this package today —
 // future Stage-1.5 extensions (CRD-driven include/exclude on Plugin or
-// Prompt or Artifact CRDs in v1beta1) would consume this sentinel from
+// Instruction or Artifact CRDs in v1beta1) would consume this sentinel from
 // other packages without churn.
 var ErrInvalidConfig = errors.New("marketplace: invalid configuration")
 

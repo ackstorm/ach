@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.0
-  name: prompts.ach.ackstorm.ai
+  name: instructions.ach.ackstorm.ai
 spec:
   group: ach.ackstorm.ai
   names:
-    kind: Prompt
-    listKind: PromptList
-    plural: prompts
-    singular: prompt
+    kind: Instruction
+    listKind: InstructionList
+    plural: instructions
+    singular: instruction
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -30,7 +30,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Prompt is the Schema for the prompts API (Hub §14).
+        description: Instruction is the Schema for the instructions API (Hub §14).
         properties:
           apiVersion:
             description: |-
@@ -51,9 +51,11 @@ spec:
             type: object
           spec:
             description: |-
-              PromptSpec defines the desired state of Prompt (Hub §14).
-
-              A Prompt references a single upstream file served by ACH Content Service.
+              InstructionSpec defines the desired state of Instruction: one upstream
+              Markdown file that ach-cli delivers as an always-loaded rules file to the
+              coding tools that support one. The content must be plain UTF-8 Markdown
+              without frontmatter and at most 23,900 bytes; anything else fails the
+              refresh with reason UpstreamInvalid.
               CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
               CRD-04: spec.refresh.maxStaleness is REQUIRED.
             properties:
@@ -144,13 +146,6 @@ spec:
                 - repo
                 - workspace
                 type: object
-              contentType:
-                description: |-
-                  ContentType is the HTTP Content-Type the Content Service returns for
-                  this prompt. Optional; when empty, Content Service falls back to the
-                  upstream response's Content-Type or application/octet-stream
-                  (Hub §14).
-                type: string
               gcs:
                 description: GCS source. Required when spec.type == "gcs".
                 properties:
@@ -285,7 +280,7 @@ spec:
                   path:
                     description: |-
                       Path within the repo, honored at fetch time (F1): a directory narrows the
-                      fetched content to that subtree; a single file (Prompt, Artifact
+                      fetched content to that subtree; a single file (Instruction, Artifact
                       scope=object) returns that file's raw bytes. Empty → whole repo.
                       PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this
                       as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path
@@ -374,7 +369,7 @@ spec:
                       Host of the GitLab instance. Accepts a bare host ("git.example.com")
                       or a full "https://git.example.com" form — the scheme is stripped and
                       the clone/REST URL is always built as https://<host>. Behaves
-                      identically for every consumer (Artifact / Plugin / Prompt /
+                      identically for every consumer (Artifact / Plugin / Instruction /
                       PluginMarketplace). Defaults to gitlab.com when empty.
                     type: string
                   path:
@@ -570,7 +565,7 @@ spec:
             - type
             type: object
           status:
-            description: PromptStatus defines the observed state of Prompt.
+            description: InstructionStatus defines the observed state of Instruction.
             properties:
               conditions:
                 description: |-
@@ -668,12 +663,14 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
-        - message: Prompt.spec.refresh.maxStaleness is REQUIRED (CRD-04)
+        - message: Instruction.spec.refresh.maxStaleness is REQUIRED (CRD-04)
           rule: has(self.spec.refresh) && has(self.spec.refresh.maxStaleness)
-        - message: Prompt.spec.refresh.interval must be <= refresh.maxStaleness (CRD-03)
+        - message: Instruction.spec.refresh.interval must be <= refresh.maxStaleness
+            (CRD-03)
           rule: '!has(self.spec.refresh.interval) || duration(self.spec.refresh.interval)
             <= duration(self.spec.refresh.maxStaleness)'
-        - message: Prompt.spec must include the subobject matching spec.type (CRD-03)
+        - message: Instruction.spec must include the subobject matching spec.type
+            (CRD-03)
           rule: (self.spec.type == 'github' && has(self.spec.github)) || (self.spec.type
             == 'gitlab' && has(self.spec.gitlab)) || (self.spec.type == 'bitbucket'
             && has(self.spec.bitbucket)) || (self.spec.type == 's3' && has(self.spec.s3))

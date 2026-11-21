@@ -63,8 +63,8 @@ func TestUpsertExternalRef_Update(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	first := db.ExternalRef{
-		Kind: "prompt", Name: "p",
-		StorageLocation:       "/var/cache/ach/prompt/p",
+		Kind: "instruction", Name: "p",
+		StorageLocation:       "/var/cache/ach/instruction/p",
 		UpstreamRev:           "etag-1",
 		LastSuccessfulRefresh: now,
 		NextRefreshAt:         now.Add(10 * time.Minute),
@@ -74,7 +74,7 @@ func TestUpsertExternalRef_Update(t *testing.T) {
 		t.Fatalf("first upsert: %v", err)
 	}
 	second := first
-	second.StorageLocation = "/var/cache/ach/prompt/p.v2"
+	second.StorageLocation = "/var/cache/ach/instruction/p.v2"
 	second.UpstreamRev = "etag-2"
 	if err := dbtest.UpsertExternalRef(ctx, pool, second); err != nil {
 		t.Fatalf("second upsert: %v", err)
@@ -84,17 +84,17 @@ func TestUpsertExternalRef_Update(t *testing.T) {
 	var count int
 	if err := pool.QueryRow(ctx,
 		`SELECT count(*) FROM external_refs WHERE kind=$1 AND name=$2`,
-		"prompt", "p").Scan(&count); err != nil {
+		"instruction", "p").Scan(&count); err != nil {
 		t.Fatalf("count rows: %v", err)
 	}
 	if count != 1 {
 		t.Errorf("expected 1 row after upsert-twice; got %d", count)
 	}
-	got, err := db.GetExternalRef(ctx, pool, "prompt", "p")
+	got, err := db.GetExternalRef(ctx, pool, "instruction", "p")
 	if err != nil {
 		t.Fatalf("GetExternalRef: %v", err)
 	}
-	if got.StorageLocation != "/var/cache/ach/prompt/p.v2" {
+	if got.StorageLocation != "/var/cache/ach/instruction/p.v2" {
 		t.Errorf("StorageLocation: got %q, want updated value", got.StorageLocation)
 	}
 	if got.UpstreamRev != "etag-2" {
@@ -211,7 +211,7 @@ func TestResetExternalRefRefreshOnEmptyCache(t *testing.T) {
 	rows := []db.ExternalRef{
 		{Kind: "plugin", Name: "p1", StorageLocation: "/p1", UpstreamRev: "r1",
 			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
-		{Kind: "prompt", Name: "p2", StorageLocation: "/p2", UpstreamRev: "r2",
+		{Kind: "instruction", Name: "p2", StorageLocation: "/p2", UpstreamRev: "r2",
 			LastSuccessfulRefresh: now, NextRefreshAt: now.Add(time.Hour), MaxStalenessSeconds: 3600},
 	}
 	for _, r := range rows {

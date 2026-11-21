@@ -107,13 +107,16 @@ type RuntimeBlock struct {
 	Guardrails []string      `json:"guardrails,omitempty"`
 }
 
-// ContextBlock is the {prompts, plugins, artifacts, skills} envelope; every
-// slice is ALWAYS present and serialized as `[]` when empty per API-04.
+// ContextBlock is the {instructions, plugins, artifacts, skills} envelope.
+// plugins, artifacts and skills are ALWAYS present and serialized as `[]` when
+// empty per API-04. Instructions is omitempty: internal/cli/manifest decodes
+// with DisallowUnknownFields, so emitting the key unconditionally would break
+// every ach-cli built before it existed.
 type ContextBlock struct {
-	Prompts   []ContextItem `json:"prompts"`
-	Plugins   []ContextItem `json:"plugins"`
-	Artifacts []ContextItem `json:"artifacts"`
-	Skills    []ContextItem `json:"skills"`
+	Instructions []ContextItem `json:"instructions,omitempty"`
+	Plugins      []ContextItem `json:"plugins"`
+	Artifacts    []ContextItem `json:"artifacts"`
+	Skills       []ContextItem `json:"skills"`
 }
 
 // HydrateResponse is the §15.2 manifest shape Phase 6 + 7 CLI binds to.
@@ -145,7 +148,7 @@ func emptyRuntime() RuntimeBlock {
 // invariant, same shape.
 func emptyContext() ContextBlock {
 	return ContextBlock{
-		Prompts:   []ContextItem{},
+		// Instructions is deliberately left nil — nil is the omitted case.
 		Plugins:   []ContextItem{},
 		Artifacts: []ContextItem{},
 		Skills:    []ContextItem{},
@@ -419,10 +422,10 @@ func knownTokens(v *float64) *int {
 }
 
 // toContextBlockFromRow maps the projection row's flat context arrays
-// (context_prompts / context_plugins / context_artifacts) into the §15.2
+// (context_instructions / context_plugins / context_artifacts) into the §15.2
 // response shape (slice of {name, id, downloadUrl} per kind). The downloadUrl
 // is the §15.6 Content Service URL; kind in the path is the singular form
-// (prompt|plugin|artifact) — Phase 5 binds against this.
+// (instruction|plugin|artifact) — Phase 5 binds against this.
 //
 // Renamed from toContextBlock (issue #34): same reasoning as
 // toRuntimeBlockFromRow above.
@@ -432,11 +435,11 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 	// Content Service URL construction grep-able from a single place and
 	// makes the §15.6 contract obvious to future readers.
 	const contentPrefix = "/content/"
-	for _, name := range row.ContextPrompts {
-		out.Prompts = append(out.Prompts, ContextItem{
+	for _, name := range row.ContextInstructions {
+		out.Instructions = append(out.Instructions, ContextItem{
 			Name:        name,
 			ID:          name,
-			DownloadURL: baseURL + contentPrefix + "prompt/" + url.PathEscape(name),
+			DownloadURL: baseURL + contentPrefix + "instruction/" + url.PathEscape(name),
 		})
 	}
 	for _, name := range row.ContextPlugins {

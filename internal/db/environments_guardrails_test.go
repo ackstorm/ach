@@ -17,18 +17,18 @@ import (
 // slice is explicitly non-nil because the columns are `text[] NOT NULL`.
 func baseGuardrailRow(name string, guardrails []string) db.EnvironmentRow {
 	return db.EnvironmentRow{
-		Namespace:         "ach-system",
-		Name:              name,
-		AuthorizedTeams:   []string{"default"},
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: []string{},
-		RuntimeA2AAgents:  []string{},
-		RuntimeGuardrails: guardrails,
-		ResourceVersion:   "1",
+		Namespace:           "ach-system",
+		Name:                name,
+		AuthorizedTeams:     []string{"default"},
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   []string{},
+		RuntimeA2AAgents:    []string{},
+		RuntimeGuardrails:   guardrails,
+		ResourceVersion:     "1",
 	}
 }
 
