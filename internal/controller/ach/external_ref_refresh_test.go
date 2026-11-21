@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/cachefs"
+	"github.com/ackstorm/ach/internal/contentkit"
 	"github.com/ackstorm/ach/internal/sources"
 )
 
@@ -822,4 +824,45 @@ func TestPluginReconciler_MissingCacheFile_RefetchesWithinInterval(t *testing.T)
 // ctrlReq builds a controller-runtime reconcile.Request for an object.
 func ctrlReq(obj client.Object) ctrl.Request {
 	return ctrl.Request{NamespacedName: client.ObjectKeyFromObject(obj)}
+}
+
+func TestMaterializeExternalRef_InstructionGate(t *testing.T) {
+	cases := map[string]struct {
+		body    []byte
+		invalid bool
+	}{
+		"ok":          {[]byte("# ok\n"), false},
+		"oversize":    {bytes.Repeat([]byte("a"), contentkit.MaxInstructionBytes+1), true},
+		"frontmatter": {[]byte("---\nx: 1\n---\n"), true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := newCacheRoot(t)
+			deps := ExternalRefRefreshDeps{
+				Client:       k8sClient,
+				Namespace:    WatchNamespace,
+				CacheRoot:    root,
+				Kind:         "instruction",
+				Name:         "mat-instr-" + name,
+				FinalPath:    filepath.Join(root, "instruction", "mat-instr-"+name+".tar.gz"),
+				SizeCapBytes: 1 << 20,
+				Fetchers:     fakeFactory(&fakeFetcher{body: tc.body, upstreamRev: "sha-" + name}),
+				Refresh:      achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+				Log:          logr.Discard(),
+			}
+			res := materializeExternalRef(context.Background(), deps)
+			if !tc.invalid {
+				if res.Err != nil {
+					t.Fatalf("want ok, got %v", res.Err)
+				}
+				return
+			}
+			if !errors.Is(res.Err, sources.ErrUpstreamInvalid) {
+				t.Fatalf("want ErrUpstreamInvalid, got %v", res.Err)
+			}
+			if reason, _ := classifyFetchError(res.Err, deps.Refresh, time.Time{}); reason != ReasonUpstreamInvalid {
+				t.Errorf("reason = %q; want %q", reason, ReasonUpstreamInvalid)
+			}
+		})
+	}
 }

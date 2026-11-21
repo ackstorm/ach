@@ -309,6 +309,17 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		result.Body = io.NopCloser(bytes.NewReader(raw)) // re-feed staged bytes (no filter)
 	}
 
+	// ─── Step 5.6b: Instruction content gate. ───
+	// One plain Markdown file within MaxInstructionBytes; failures wrap
+	// sources.ErrUpstreamInvalid → ReasonUpstreamInvalid.
+	if deps.Kind == "instruction" {
+		raw, verr := contentkit.StageInstructionBody(result.Body)
+		if verr != nil {
+			return MaterializeResult{Err: verr}
+		}
+		result.Body = io.NopCloser(bytes.NewReader(raw))
+	}
+
 	// Step 5.7: single-file → 1-entry gzip-tar (uniform context format).
 	// Instruction and Artifact scope=object arrive as RAW single-file bytes;
 	// skill / plugin / directory-artifact already arrive as gzip tarballs.
@@ -416,7 +427,7 @@ func classifyFetchError(err error, refresh achv1alpha1.RefreshBlock, lastRefresh
 // table in 02-CONTEXT.md:
 //
 //   - plugin   → CacheRoot/plugin/<name>.tar.gz
-//   - instruction   → CacheRoot/instruction/<name>            (raw bytes)
+//   - instruction → CacheRoot/instruction/<name>.tar.gz
 //   - artifact + scope=object    → CacheRoot/artifact/<name>
 //   - artifact + scope=directory → CacheRoot/artifact/<name>.tar.gz
 //
