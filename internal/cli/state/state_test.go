@@ -51,7 +51,7 @@ func TestLoad_SchemaV2_RoundTrip(t *testing.T) {
 		SchemaVersion: "3",
 		Environment:   "engineering-prod",
 		Profile:       "ackstorm-prod",
-		Prompts: []state.FileEntry{
+		Instructions: []state.FileEntry{
 			{Target: ".ach/prompts/foo.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},
 		},
 		Plugins: []state.FileEntry{
@@ -199,7 +199,7 @@ func TestSave_WritesValidJSON(t *testing.T) {
 		SchemaVersion: "3",
 		Environment:   "prod",
 		Profile:       "ackstorm-prod",
-		Prompts: []state.FileEntry{
+		Instructions: []state.FileEntry{
 			// Path includes `<`/`>`/`&` to assert SetEscapeHTML(false).
 			{Target: ".ach/prompts/<weird>&name.md", Hash: "xxh3:aa", SourceHash: "xxh3:aa"},
 		},

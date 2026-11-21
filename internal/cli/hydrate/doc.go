@@ -42,7 +42,7 @@
 //     W1 STUB — concrete impl lands in 07-W2.
 //  8. extract     — safe tar policy + bomb defense + auto-claim. Plugins
 //     extract to the per-run ephemeral pluginStageRoot (<achDir>/tmp, swept
-//     at steps 2 + 13) — NO persistent plugin cache; prompts/artifacts keep
+//     at steps 2 + 13) — NO persistent plugin cache; artifacts keep
 //     their <achDir>/<kind> deliverable path (CLI §6.4).
 //     W1 STUB — 07-W2.
 //  9. hash        — xxh3 of bytes written vs upstream-source; feed

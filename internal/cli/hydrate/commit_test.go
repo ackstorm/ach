@@ -662,7 +662,7 @@ func TestCommit_Step4_PrunesMissingFiles(t *testing.T) {
 		return &state.File{
 			SchemaVersion: "3",
 			Environment:   "demo",
-			Prompts: []state.FileEntry{
+			Instructions: []state.FileEntry{
 				{Target: "nonexistent.md", Hash: "xxh3:aaaa", SourceHash: "xxh3:aaaa"},
 			},
 		}, nil
@@ -679,13 +679,13 @@ func TestCommit_Step4_PrunesMissingFiles(t *testing.T) {
 	if store.savedFile == nil {
 		t.Fatal("savedFile = nil; expected step 12 to save")
 	}
-	if got := len(store.savedFile.Prompts); got != 0 {
-		t.Errorf("savedFile.Prompts len = %d, want 0 (pruned)", got)
+	if got := len(store.savedFile.Instructions); got != 0 {
+		t.Errorf("savedFile.Instructions len = %d, want 0 (pruned)", got)
 	}
 }
 
 // TestRun_InvokesExtractorPerDiffTarget seeds a manifest with two
-// context Prompts so step6Diff produces 2 diffTargets; injects a
+// context Artifacts so step6Diff produces 2 diffTargets; injects a
 // fakeExtractor (calls counter) and a fakeAdapterDispatcher (calls
 // counter, returns one FileWrite). Asserts: extractor invoked exactly
 // 2 times, adapter invoked exactly 1 time, Result.FilesWritten == 3
@@ -700,9 +700,9 @@ func TestRun_InvokesExtractorPerDiffTarget(t *testing.T) {
 			Environment:   "demo",
 			Runtime:       &manifest.RuntimeBlock{},
 			Context: &manifest.ContextBlock{
-				Prompts: []manifest.ContentRef{
-					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
-					{ID: "p2", DownloadURL: "http://local/content/prompt/p2"},
+				Artifacts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/artifact/p1"},
+					{ID: "p2", DownloadURL: "http://local/content/artifact/p2"},
 				},
 			},
 		}, nil
@@ -747,9 +747,9 @@ func TestRun_InvokesExtractorPerDiffTarget(t *testing.T) {
 // the plugin extract too double-counts the on-disk file total (observed
 // 110 reported vs 54 on disk).
 //
-// Setup: 1 prompt + 1 plugin diffTarget. The fake extractor returns 2
+// Setup: 1 artifact + 1 plugin diffTarget. The fake extractor returns 2
 // WrittenFiles per call; the fake adapter returns 1 runtime WrittenFile +
-// 2 ProjectedFiles (the published plugin). On-disk reality = prompt(2) +
+// 2 ProjectedFiles (the published plugin). On-disk reality = artifact(2) +
 // runtime(1) + projected-plugin(2) = 5; the plugin's ephemeral extract(2)
 // must NOT be counted. Pre-fix this returned 7.
 func TestRun_PluginExtractNotDoubleCounted(t *testing.T) {
@@ -761,8 +761,8 @@ func TestRun_PluginExtractNotDoubleCounted(t *testing.T) {
 			Environment:   "demo",
 			Runtime:       &manifest.RuntimeBlock{},
 			Context: &manifest.ContextBlock{
-				Prompts: []manifest.ContentRef{
-					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+				Artifacts: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/artifact/p1"},
 				},
 				Plugins: []manifest.ContentRef{
 					{ID: "plug1", DownloadURL: "http://local/content/plugin/plug1"},
@@ -771,7 +771,7 @@ func TestRun_PluginExtractNotDoubleCounted(t *testing.T) {
 		}, nil
 	}
 	var extCalls, adCalls int
-	// Every extract returns 2 files. The prompt's 2 are real (final dest);
+	// Every extract returns 2 files. The artifact's 2 are real (final dest);
 	// the plugin's 2 are ephemeral staging and must be excluded.
 	c.extractor = fakeExtractor{
 		calls: &extCalls,
@@ -793,9 +793,9 @@ func TestRun_PluginExtractNotDoubleCounted(t *testing.T) {
 		t.Fatalf("c.run = %v, want nil", err)
 	}
 	if extCalls != 2 {
-		t.Errorf("extractor calls = %d, want 2 (prompt + plugin)", extCalls)
+		t.Errorf("extractor calls = %d, want 2 (artifact + plugin)", extCalls)
 	}
-	// prompt extract(2) + render WrittenFiles(1) + ProjectedFiles(2) = 5.
+	// artifact extract(2) + render WrittenFiles(1) + ProjectedFiles(2) = 5.
 	// The plugin extract(2) is ephemeral → excluded. Pre-fix this was 7.
 	if result.FilesWritten != 5 {
 		t.Errorf("result.FilesWritten = %d, want 5 (plugin ephemeral extract must NOT be double-counted; pre-fix=7)", result.FilesWritten)
@@ -816,7 +816,7 @@ func TestFilesWrittenVsPreserved(t *testing.T) {
 			Environment:   "demo",
 			Runtime:       &manifest.RuntimeBlock{},
 			Context: &manifest.ContextBlock{
-				Prompts: []manifest.ContentRef{{ID: "p1", DownloadURL: "http://local/content/prompt/p1"}},
+				Artifacts: []manifest.ContentRef{{ID: "p1", DownloadURL: "http://local/content/artifact/p1"}},
 			},
 		}, nil
 	}
@@ -861,12 +861,12 @@ func TestFilesWrittenVsPreserved(t *testing.T) {
 }
 
 // TestRun_ExtractSkipsRuntimeKinds asserts the extraction loop runs ONLY for
-// context kinds (prompt/plugin/artifact) and skips runtime kinds
+// context kinds (instruction/plugin/artifact) and skips runtime kinds
 // (model/mcpServer/a2aAgent) by default (runtime-on). Runtime entries carry an
 // {id, endpoint}, not a /content/{kind}/{name} tarball; feeding one to
 // ExtractContent derives an empty content name → "content name: empty" (the
 // historical --include-runtime crash). step6Diff still emits 4 diffTargets
-// here for scope symmetry, but only the 1 context prompt is extracted.
+// here for scope symmetry, but only the 1 context instruction is extracted.
 func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 	c, _, _ := newTestCommit(t)
 	c.opts.Platform = "claude-code"
@@ -881,8 +881,8 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 				A2AAgents:  []manifest.ContentRef{{ID: "a1", Endpoint: "http://local/a2a/a1"}},
 			},
 			Context: &manifest.ContextBlock{
-				Prompts: []manifest.ContentRef{
-					{ID: "p1", DownloadURL: "http://local/content/prompt/p1"},
+				Instructions: []manifest.ContentRef{
+					{ID: "p1", DownloadURL: "http://local/content/instruction/p1"},
 				},
 			},
 		}
@@ -892,7 +892,7 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 	}
 
 	// Precondition: by default (runtime-on) step6Diff emits 4 targets
-	// (1 context prompt + 3 runtime) — the scope contract is unchanged.
+	// (1 context instruction + 3 runtime) — the scope contract is unchanged.
 	if targets, _ := c.step6Diff(manifestFn()); len(targets) != 4 {
 		got := len(targets)
 		t.Fatalf("precondition: step6Diff = %d targets, want 4 (1 context + 3 runtime)", got)
@@ -906,7 +906,7 @@ func TestRun_ExtractSkipsRuntimeKinds(t *testing.T) {
 		t.Fatalf("c.run = %v, want nil (runtime kinds must not be extracted)", err)
 	}
 	if extCalls != 1 {
-		t.Errorf("extractor calls = %d, want 1 (context prompt only; runtime kinds skipped)", extCalls)
+		t.Errorf("extractor calls = %d, want 1 (context instruction only; runtime kinds skipped)", extCalls)
 	}
 	if adCalls != 1 {
 		t.Errorf("adapter calls = %d, want 1 (RenderRuntime still projects mcp/a2a)", adCalls)
@@ -1007,7 +1007,7 @@ func mustRuntimeManifest() *manifest.Manifest {
 // TestRun_DryRun_PreviewsMovedPlugin pins #205: --dry-run renders (the
 // dispatcher writes nothing under withDryRun), so a plugin still in the
 // Environment whose files moved (the plugin-namespacing migration) is a `~`,
-// exactly as the real run reports it. Prompts are not extracted (they would
+// exactly as the real run reports it. Artifacts are not extracted (they would
 // land in <achDir>) and no state is written.
 func TestRun_DryRun_PreviewsMovedPlugin(t *testing.T) {
 	c, store, _ := newTestCommit(t)
@@ -1027,8 +1027,8 @@ func TestRun_DryRun_PreviewsMovedPlugin(t *testing.T) {
 	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
 		return &manifest.Manifest{SchemaVersion: "v1alpha1", Environment: "demo", Runtime: &manifest.RuntimeBlock{},
 			Context: &manifest.ContextBlock{
-				Plugins: []manifest.ContentRef{{Name: "bro", DownloadURL: "http://local/content/plugin/bro"}},
-				Prompts: []manifest.ContentRef{{Name: "p1", DownloadURL: "http://local/content/prompt/p1"}},
+				Plugins:   []manifest.ContentRef{{Name: "bro", DownloadURL: "http://local/content/plugin/bro"}},
+				Artifacts: []manifest.ContentRef{{Name: "p1", DownloadURL: "http://local/content/artifact/p1"}},
 			}}, nil
 	}
 	var extracted []string
@@ -1310,9 +1310,9 @@ func TestCommit_Step6Diff_OnlyRuntime_SkipsContext(t *testing.T) {
 			A2AAgents:  []manifest.ContentRef{{ID: "a1"}},
 		},
 		Context: &manifest.ContextBlock{
-			Prompts:   []manifest.ContentRef{{ID: "p1"}},
-			Plugins:   []manifest.ContentRef{{ID: "pl1"}},
-			Artifacts: []manifest.ContentRef{{ID: "ar1"}},
+			Instructions: []manifest.ContentRef{{ID: "p1"}},
+			Plugins:      []manifest.ContentRef{{ID: "pl1"}},
+			Artifacts:    []manifest.ContentRef{{ID: "ar1"}},
 		},
 	}
 	targets, _ := c.step6Diff(m)
@@ -1320,7 +1320,7 @@ func TestCommit_Step6Diff_OnlyRuntime_SkipsContext(t *testing.T) {
 		t.Fatalf("OnlyRuntime: got %d targets, want 3 (runtime only): %+v", len(targets), targets)
 	}
 	for _, tgt := range targets {
-		if tgt.Kind == "prompt" || tgt.Kind == "plugin" || tgt.Kind == "artifact" {
+		if tgt.Kind == "instruction" || tgt.Kind == "plugin" || tgt.Kind == "artifact" {
 			t.Errorf("OnlyRuntime leaked context kind %q", tgt.Kind)
 		}
 	}
@@ -1337,12 +1337,12 @@ func TestCommit_Step6Diff_DefaultScope_ContextAndRuntime(t *testing.T) {
 			MCPServers: []manifest.ContentRef{{ID: "s1"}},
 		},
 		Context: &manifest.ContextBlock{
-			Prompts: []manifest.ContentRef{{ID: "p1"}},
+			Instructions: []manifest.ContentRef{{ID: "p1"}},
 		},
 	}
 	targets, _ := c.step6Diff(m)
 	if len(targets) != 3 {
-		t.Fatalf("default scope: got %d targets, want 3 (1 prompt + 1 model + 1 mcp)", len(targets))
+		t.Fatalf("default scope: got %d targets, want 3 (1 instruction + 1 model + 1 mcp)", len(targets))
 	}
 }
 
@@ -1354,11 +1354,11 @@ func TestCommit_Step6Diff_NoRuntime_ContextOnly(t *testing.T) {
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Runtime:       &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "m1"}}},
-		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
+		Context:       &manifest.ContextBlock{Instructions: []manifest.ContentRef{{ID: "p1"}}},
 	}
 	targets, _ := c.step6Diff(m)
-	if len(targets) != 1 || targets[0].Kind != "prompt" {
-		t.Fatalf("--no-runtime scope: got %+v, want 1 prompt only", targets)
+	if len(targets) != 1 || targets[0].Kind != "instruction" {
+		t.Fatalf("--no-runtime scope: got %+v, want 1 instruction only", targets)
 	}
 }
 
@@ -1370,7 +1370,7 @@ func TestCommit_Step6Diff_OnlyRuntime_RuntimeOnly(t *testing.T) {
 	m := &manifest.Manifest{
 		SchemaVersion: "v1alpha1",
 		Runtime:       &manifest.RuntimeBlock{MCPServers: []manifest.ContentRef{{ID: "s1"}}},
-		Context:       &manifest.ContextBlock{Prompts: []manifest.ContentRef{{ID: "p1"}}},
+		Context:       &manifest.ContextBlock{Instructions: []manifest.ContentRef{{ID: "p1"}}},
 	}
 	targets, _ := c.step6Diff(m)
 	if len(targets) != 1 || targets[0].Kind != "mcpServer" {
@@ -2209,5 +2209,62 @@ func TestComposeNextState_RecordsEnvVersion(t *testing.T) {
 	}
 	if got := compose(Opts{Environment: "demo"}); got != old {
 		t.Errorf("no fetched version must keep the recorded one, got %+v", got)
+	}
+}
+
+// An Instruction that left the Environment is pruned on a plain hydrate: the
+// whole Instructions bucket reaches Sync, not just the rows still in the
+// Environment.
+func TestRun_Step11Sync_PrunesWholeInstructionsBucket(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	c.opts.Platform = "claude-code"
+	if err := os.WriteFile(filepath.Join(c.toolRoot, "gone.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store.loadFn = func(_ string) (*state.File, error) {
+		return &state.File{SchemaVersion: "3", Environment: "demo",
+			Instructions: []state.FileEntry{{Target: "gone.md", Hash: "h", Source: "gone"}}}, nil
+	}
+	c.extractor = fakeExtractor{}
+	c.adapter = fakeAdapterDispatcher{result: RenderResult{}}
+
+	prevSync := syncFn
+	t.Cleanup(func() { syncFn = prevSync })
+	var prev, next *state.File
+	syncFn = func(p, n *state.File, _, _ string, _ SyncOptions) (SyncStats, error) {
+		prev, next = p, n
+		return SyncStats{}, nil
+	}
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run = %v", err)
+	}
+	if prev == nil || len(prev.Instructions) != 1 {
+		t.Fatalf("Sync prev.Instructions = %+v, want the recorded row", prev)
+	}
+	if len(next.Instructions) != 0 {
+		t.Errorf("Sync next.Instructions = %+v, want none", next.Instructions)
+	}
+}
+
+// --dry-run extracts Instructions to the stage like skills, so the preview
+// can render them.
+func TestRun_DryRun_ExtractsInstructions(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.opts.DryRun = true
+	c.fetcher = func(_ context.Context, _ string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{SchemaVersion: "v1alpha1", Environment: "demo", Runtime: &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{
+				Instructions: []manifest.ContentRef{{Name: "base", DownloadURL: "http://local/content/instruction/base"}},
+				Artifacts:    []manifest.ContentRef{{Name: "a1", DownloadURL: "http://local/content/artifact/a1"}},
+			}}, nil
+	}
+	var extracted []string
+	c.extractor = fakeExtractor{names: &extracted}
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("c.run --dry-run = %v", err)
+	}
+	if len(extracted) != 1 || extracted[0] != "base" {
+		t.Errorf("extracted %v, want just the instruction", extracted)
 	}
 }

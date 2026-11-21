@@ -89,7 +89,7 @@ The positional <name> is the target Environment — REQUIRED, it namespaces
 the <ach-dir> in project and --global scope.
 
 Scope (mirrors hydrate):
-  (default)           Remove EVERYTHING hydrate wrote: context (prompts /
+  (default)           Remove EVERYTHING hydrate wrote: context (instructions /
                       plugins / artifacts / skills) AND runtime config.
   --only-runtime      Strip ONLY runtime config (MCP servers / A2A agents).
   --only <kind>/<name>
@@ -245,8 +245,8 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	}
 
 	// (e-g) Tear down each platform's state in turn: scope-filtered survivor set
-	// → inverse-merge teardown → state cleanup. Shared workspace content (prompts/
-	// artifacts) removed by the first state is a graceful no-op for the rest.
+	// → inverse-merge teardown → state cleanup. Shared workspace content
+	// (artifacts) removed by the first state is a graceful no-op for the rest.
 	u := newUI(cmd.OutOrStdout(), false)
 	scope := scopeProject
 	if in.global {

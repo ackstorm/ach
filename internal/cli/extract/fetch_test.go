@@ -49,12 +49,12 @@ func TestFetchContent_Plugin(t *testing.T) {
 	}
 }
 
-// TestFetchContent_Prompt asserts the kind path segment routes
-// distinctly for KindPrompt — the Content Service URL discriminates
+// TestFetchContent_Instruction asserts the kind path segment routes
+// distinctly for KindInstruction — the Content Service URL discriminates
 // per-kind.
-func TestFetchContent_Prompt(t *testing.T) {
+func TestFetchContent_Instruction(t *testing.T) {
 	const name = "leak-claude-code"
-	const wantPath = "/content/prompt/leak-claude-code"
+	const wantPath = "/content/instruction/leak-claude-code"
 
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -65,7 +65,7 @@ func TestFetchContent_Prompt(t *testing.T) {
 	defer srv.Close()
 
 	client := &httpclient.Client{BaseURL: srv.URL, APIKey: "pk_test"}
-	resp, err := extract.FetchContent(context.Background(), client, extract.KindPrompt, name)
+	resp, err := extract.FetchContent(context.Background(), client, extract.KindInstruction, name)
 	if err != nil {
 		t.Fatalf("FetchContent: %v", err)
 	}

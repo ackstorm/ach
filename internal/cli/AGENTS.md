@@ -133,7 +133,7 @@ Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
 derives it from the state before/after (`FileEntry.Source` per
-plugin/skill/prompt/artifact; MCP/A2A from the adapter deep-merge keys, so an
+plugin/skill/instruction/artifact; MCP/A2A from the adapter deep-merge keys, so an
 MCP server is only ever `+`/`-`, never `~`). `--dry-run` extracts plugins/skills
 to the stage (swept on every dry-run exit, failures included, so a dry run
 leaves no `.ach/` behind) and renders through a no-write dispatcher (`withDryRun` →
@@ -276,8 +276,7 @@ keeps the bare name. Two properties worth not re-deriving:
 
 Only the per-platform `state-<platform>.json` is consulted — a claim for a
 different target writes a different tree. NOT covered: `Plugin` (same problem);
-prompts/artifacts extract
-to the per-env `<achDir>` so they cannot collide; adapter runtime files are
+artifacts extract to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
 cross-env reference counting, so `environment uninstall <a>` removes a file `<b>` also
 projected (self-heals on `<b>`'s next hydrate).
@@ -297,7 +296,8 @@ projected (self-heals on `<b>`'s next hydrate).
   `Adapter` bucket only, so keys the render stopped emitting (the `--models`
   helper after a run without `--models`, an MCP server dropped from the
   Environment) leave the file. They are ACH-generated, never user content.
-  `--sync` widens it to every bucket (plugins/skills/prompts files).
+  The `Instructions` bucket is pruned whole on every hydrate too (ACH-generated
+  files). `--sync` widens it to every bucket (plugins/skills/instructions files).
 - **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
   at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
   a row report a phantom edit on every re-hydrate/uninstall whenever the doc
@@ -307,8 +307,8 @@ projected (self-heals on `<b>`'s next hydrate).
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
   or `<env>-<name>` for a de-collided skill; plus any Source the fresh render
-  carries — the per-run stage holds only that item). Prompts/artifacts are refused:
-  they are never recorded in state, so they could not be removed again.
+  carries — the per-run stage holds only that item). Instructions/artifacts are refused:
+  they are delivered with the whole Environment, never one by one.
   `environment uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
   item's rows) to the same `Sync`, skipping per-platform states without it.
   Under `--only`, other items' installed replace-files are collision claims

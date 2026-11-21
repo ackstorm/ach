@@ -25,7 +25,7 @@ func TestFormatStateList_Empty(t *testing.T) {
 // header KIND / TARGET / ENVIRONMENT and one line per entry (detailed=true).
 func TestFormatStateList_Table(t *testing.T) {
 	entries := []render.StateEntryView{
-		{Kind: "prompt", Target: ".claude/prompts/a.md", Environment: "prod"},
+		{Kind: "instruction", Target: ".claude/instructions/a.md", Environment: "prod"},
 		{Kind: "plugin", Target: ".claude/plugins/p", Environment: "prod"},
 		{Kind: "artifact", Target: ".ach/artifacts/x", Environment: "prod"},
 	}
@@ -62,11 +62,11 @@ func TestFormatStateList_Table(t *testing.T) {
 func TestFormatStateListJSON_Deterministic(t *testing.T) {
 	a := []render.StateEntryView{
 		{Kind: "plugin", Target: "b", Environment: "prod"},
-		{Kind: "prompt", Target: "a", Environment: "prod"},
+		{Kind: "instruction", Target: "a", Environment: "prod"},
 	}
 	// Same set, reversed order.
 	b := []render.StateEntryView{
-		{Kind: "prompt", Target: "a", Environment: "prod"},
+		{Kind: "instruction", Target: "a", Environment: "prod"},
 		{Kind: "plugin", Target: "b", Environment: "prod"},
 	}
 

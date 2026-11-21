@@ -26,7 +26,7 @@ func (e *baseCapturingExtractor) ExtractContent(_ context.Context, ref manifest.
 
 // TestCommit_PluginsExtractToEphemeralStage proves the no-cache contract: a
 // plugin diffTarget is extracted under pluginStageRoot (<achDir>/tmp, swept
-// every run) while a prompt diffTarget keeps the <achDir> base. This is what
+// every run) while an artifact diffTarget keeps the <achDir> base. This is what
 // makes the orphan cross-plugin-collision bug structurally impossible — the
 // projection source only ever contains the current run's plugins.
 func TestCommit_PluginsExtractToEphemeralStage(t *testing.T) {
@@ -41,9 +41,13 @@ func TestCommit_PluginsExtractToEphemeralStage(t *testing.T) {
 					Name:        "myplugin",
 					DownloadURL: "https://x/content/plugin/myplugin",
 				}},
-				Prompts: []manifest.ContentRef{{
-					Name:        "myprompt",
-					DownloadURL: "https://x/content/prompt/myprompt",
+				Instructions: []manifest.ContentRef{{
+					Name:        "myinstruction",
+					DownloadURL: "https://x/content/instruction/myinstruction",
+				}},
+				Artifacts: []manifest.ContentRef{{
+					Name:        "myartifact",
+					DownloadURL: "https://x/content/artifact/myartifact",
 				}},
 			},
 		}, nil
@@ -58,8 +62,11 @@ func TestCommit_PluginsExtractToEphemeralStage(t *testing.T) {
 	if got, want := ext.bases["myplugin"], c.pluginStageRoot(); got != want {
 		t.Errorf("plugin extract base = %q, want pluginStageRoot %q", got, want)
 	}
-	if got, want := ext.bases["myprompt"], c.achDir; got != want {
-		t.Errorf("prompt extract base = %q, want achDir %q (deliverable, not cache)", got, want)
+	if got, want := ext.bases["myinstruction"], c.pluginStageRoot(); got != want {
+		t.Errorf("instruction extract base = %q, want stage root %q", got, want)
+	}
+	if got, want := ext.bases["myartifact"], c.achDir; got != want {
+		t.Errorf("artifact extract base = %q, want achDir %q (deliverable, not cache)", got, want)
 	}
 	// pluginStageRoot must sit under <achDir>/tmp so SweepTmp reclaims it.
 	if want := filepath.Join(c.achDir, "tmp"); c.pluginStageRoot() != want {

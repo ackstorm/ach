@@ -303,7 +303,7 @@ func TestUninstall_Only_RejectsOnlyRuntimeAndBadItem(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"--dir", ws, "demo", "--only", "plugin/a", "--only-runtime"},
-		{"--dir", ws, "demo", "--only", "prompt/a"},
+		{"--dir", ws, "demo", "--only", "instruction/a"},
 	} {
 		_, _, code, err := executeUninstall(t, args...)
 		if err == nil || code != exit.General {

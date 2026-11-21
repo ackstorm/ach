@@ -38,7 +38,7 @@ const (
 	kindA2A = "a2a"
 )
 
-var kindRank = map[string]int{kindMCP: 0, kindA2A: 1, kindPlugin: 2, kindSkill: 3, kindPrompt: 4, kindArtifact: 5}
+var kindRank = map[string]int{kindMCP: 0, kindA2A: 1, kindPlugin: 2, kindSkill: 3, kindInstruction: 4, kindArtifact: 5}
 
 func isRuntimeKind(k string) bool { return k == kindMCP || k == kindA2A }
 
@@ -60,7 +60,7 @@ func ItemsOf(f *state.File) []StateItem {
 		it.Files[target] = hash
 	}
 	for kind, bucket := range map[string][]state.FileEntry{
-		kindPlugin: f.Plugins, kindSkill: f.Skills, kindPrompt: f.Prompts, kindArtifact: f.Artifacts,
+		kindPlugin: f.Plugins, kindSkill: f.Skills, kindInstruction: f.Instructions, kindArtifact: f.Artifacts,
 	} {
 		for _, e := range bucket {
 			name := e.Source

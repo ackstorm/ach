@@ -71,7 +71,7 @@ func TestEnvFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	srv := newContentTestServer(t)
 	sessionEnv(t, srv.URL)
 
-	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prod", "prompt", "foo")
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prod", "instruction", "foo")
 	if err != nil {
 		t.Fatalf("fetch err = %v", err)
 	}
@@ -81,8 +81,8 @@ func TestEnvFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	if stdout != "RAW-PROMPT-BYTES" {
 		t.Errorf("stdout = %q; want raw body", stdout)
 	}
-	if srv.lastPath != "/content/prompt/foo" {
-		t.Errorf("path = %q; want /content/prompt/foo", srv.lastPath)
+	if srv.lastPath != "/content/instruction/foo" {
+		t.Errorf("path = %q; want /content/instruction/foo", srv.lastPath)
 	}
 	if srv.lastKey != "h.p.s" {
 		t.Errorf("x-ach-key = %q; want the bearer", srv.lastKey)
@@ -123,7 +123,7 @@ func TestEnvFetch_RequiresEnvironment(t *testing.T) {
 	srv := newContentTestServer(t)
 	sessionEnv(t, srv.URL)
 
-	_, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prompt", "foo")
+	_, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "instruction", "foo")
 	if err == nil {
 		t.Fatal("expected error without <env>")
 	}
@@ -143,7 +143,7 @@ func TestEnvFetch_NotFound(t *testing.T) {
 	srv.errBody = `{"error":{"code":"content_not_found","message":"no such artifact"},"request_id":"req_x"}`
 	synthEnv(t, srv.URL, validEkBearer)
 
-	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "demo", "prompt", "missing")
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "demo", "instruction", "missing")
 	if err == nil {
 		t.Fatal("expected error for 404")
 	}

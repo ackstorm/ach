@@ -8,7 +8,7 @@
 //	  "schemaVersion": "3",
 //	  "environment":   "engineering-prod",
 //	  "profile":    "ackstorm-prod",
-//	  "prompts":       [{target, hash, sourceHash, merge?, keys?}],
+//	  "instructions":  [{target, hash, sourceHash, merge?, keys?}],
 //	  "plugins":       [{target, hash, sourceHash, merge?, keys?}],
 //	  "artifacts":     [{target, hash, sourceHash, merge?, keys?}],
 //	  "runtimeFiles":  [{target, hash, sourceHash, merge?, keys?}],

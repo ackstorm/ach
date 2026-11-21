@@ -21,7 +21,7 @@ type File struct {
 	SchemaVersion string         `json:"schemaVersion"`
 	Environment   string         `json:"environment"`
 	Profile       string         `json:"profile"`
-	Prompts       []FileEntry    `json:"prompts,omitempty"`
+	Instructions  []FileEntry    `json:"instructions,omitempty"`
 	Plugins       []FileEntry    `json:"plugins,omitempty"`
 	Artifacts     []FileEntry    `json:"artifacts,omitempty"`
 	Skills        []FileEntry    `json:"skills,omitempty"`
@@ -57,7 +57,7 @@ type FileEntry struct {
 	SourceHash string   `json:"sourceHash"`
 	Merge      string   `json:"merge,omitempty"`
 	Keys       []string `json:"keys,omitempty"`
-	// Source is the resource (skill/artifact/prompt) name this file came
+	// Source is the resource (skill/artifact/instruction) name this file came
 	// from, for per-resource grouping in 'environment status'; empty for
 	// adapter/runtime files.
 	Source string `json:"source,omitempty"`

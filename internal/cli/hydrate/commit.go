@@ -151,7 +151,7 @@ func newCommit(opts Opts) (*commit, error) {
 	// <ach-dir>/state-<platform>.json so a multi-target hydrate cannot let one
 	// platform's render overwrite another's projection buckets (step12WriteState
 	// replaces buckets wholesale). achDir stays the per-environment dir, so the
-	// platform-independent content cache (prompt/, artifact/, plugin/) is shared.
+	// platform-independent content cache (artifact/, plugin/) is shared.
 	if opts.Platform != "" {
 		platformStatePath, perr := state.ResolvePlatformPath(workspaceCwd, opts.Environment, opts.Platform, opts.Global)
 		if perr != nil {
@@ -240,7 +240,7 @@ func checkWorkspacePaths(root, achDir, statePath, platform string) error {
 		filepath.Join(root, ".gitignore"),
 		filepath.Join(achDir, "runtime-"+platform),
 	}
-	for _, kind := range []string{kindPrompt, kindPlugin, kindArtifact, kindSkill} {
+	for _, kind := range []string{kindPlugin, kindArtifact, kindSkill} {
 		paths = append(paths, filepath.Join(achDir, kind))
 	}
 	for _, p := range paths {
@@ -341,10 +341,10 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	//
 	// --dry-run extracts plugins/skills too: they land in the per-run stage
 	// root (swept at step 13), and the preview needs them to render.
-	// Prompts/artifacts extract straight into <achDir>, so a dry run skips them.
+	// Artifacts extract straight into <achDir>, so a dry run skips them.
 	if c.extractor != nil {
 		for _, dt := range diffTargets {
-			if c.opts.DryRun && dt.Kind != kindPlugin && dt.Kind != kindSkill {
+			if c.opts.DryRun && !isStagedKind(dt.Kind) {
 				continue
 			}
 			// Runtime kinds (model / mcpServer / a2aAgent) are NOT extractable
@@ -359,19 +359,14 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 			if !dt.isExtractableContent() {
 				continue
 			}
-			// Plugins AND skills are projection CACHE (projectPlugins /
-			// projectSkills disk-walk the extracted tree); extract them to the
-			// per-run ephemeral stage root so the projection source holds ONLY
-			// this run's diffTargets and a removed plugin/skill can never linger
-			// and be re-projected. Prompts/artifacts are hydrator-core
-			// deliverables (CLI §6.4) and keep their <achDir>/<kind> destination.
-			extractBase := c.achDir
-			switch dt.Kind {
-			case kindPlugin:
-				extractBase = c.pluginStageRoot()
-			case kindSkill:
-				extractBase = c.skillStageRoot()
-			}
+			// Plugins, skills AND instructions are projection CACHE
+			// (projectPlugins / projectSkills disk-walk the extracted tree);
+			// extract them to the per-run ephemeral stage root so the
+			// projection source holds ONLY this run's diffTargets and a removed
+			// item can never linger and be re-projected. Artifacts are
+			// hydrator-core deliverables (CLI §6.4) and keep their
+			// <achDir>/<kind> destination.
+			extractBase := c.extractBase(dt.Kind)
 			extractResult, err := c.extractor.ExtractContent(ctx, dt.Ref, extractBase, existingState)
 			if err != nil {
 				// adapter / extractor errors that already carry a
@@ -538,10 +533,10 @@ func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {
 		return ContextSummary{}
 	}
 	return ContextSummary{
-		Plugins:   len(m.Context.Plugins),
-		Prompts:   len(m.Context.Prompts),
-		Artifacts: len(m.Context.Artifacts),
-		Skills:    len(m.Context.Skills),
+		Plugins:      len(m.Context.Plugins),
+		Instructions: len(m.Context.Instructions),
+		Artifacts:    len(m.Context.Artifacts),
+		Skills:       len(m.Context.Skills),
 	}
 }
 
@@ -666,15 +661,20 @@ func (c *commit) pluginStageRoot() string {
 	return filepath.Join(c.achDir, "tmp")
 }
 
-// skillStageRoot is the per-run ephemeral base under which skill content is
-// extracted (<root>/skill/<name>) AND from which projectSkills reads. Skills
-// share the plugin tmp base — ExtractContent appends the /skill/ subdir from
-// the resource kind, so this is the SAME directory as pluginStageRoot, named
-// separately for call-site clarity. Living under <achDir>/tmp means SweepTmp
-// reclaims the extracted skills (and the synthetic skills/ projection tree)
-// every run.
-func (c *commit) skillStageRoot() string {
-	return c.pluginStageRoot()
+// isStagedKind reports whether a context kind extracts to the per-run stage
+// root (so a dry run can extract it too) rather than into <achDir>.
+func isStagedKind(kind string) bool {
+	return kind == kindPlugin || kind == kindSkill || kind == kindInstruction
+}
+
+// extractBase is the directory a context kind is extracted under. Skills and
+// instructions share the plugin tmp base: ExtractContent appends the
+// /<kind>/ subdir, and SweepTmp reclaims everything each run.
+func (c *commit) extractBase(kind string) string {
+	if isStagedKind(kind) {
+		return c.pluginStageRoot()
+	}
+	return c.achDir
 }
 
 // step3ReadState — state.Load + GuardEnvironment. Schema mismatch
@@ -767,7 +767,6 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 	// workspace root in project scope, but $HOME under --global (where achDir
 	// is $HOME/.ach/<env>, so achDir/.. would wrongly point at $HOME/.ach).
 	wsRoot := filepath.Join(c.achDir, "..")
-	loaded.Prompts, pruned = c.pruneMissing(loaded.Prompts, wsRoot, pruned)
 	// Projected plugin resources are published under toolRoot (native resource
 	// dirs), so their reconcile-vs-disk stat must resolve there too — symmetric
 	// with the Adapter.Files line below and with walkEntriesTagged tagging every
@@ -780,6 +779,9 @@ func (c *commit) step4ReconcileVsDisk(loaded *state.File) (*state.File, int) {
 	// Projected skill resources land under toolRoot (.claude/skills/…), like
 	// plugins — stat against toolRoot for the same --global correctness reason.
 	loaded.Skills, pruned = c.pruneMissing(loaded.Skills, c.toolRoot, pruned)
+	// Projected instruction files land under toolRoot too; a recorded file
+	// deleted from disk (a sibling Environment's uninstall) is rewritten.
+	loaded.Instructions, pruned = c.pruneMissing(loaded.Instructions, c.toolRoot, pruned)
 	// RuntimeFiles live UNDER achDir (.ach/runtime/*.json) in BOTH scopes —
 	// their Target is achDir-relative, so they stat against achDir (not wsRoot,
 	// which points at $HOME/.ach under --global and would mis-prune).
@@ -845,7 +847,7 @@ func (c *commit) step5Manifest(ctx context.Context) (*manifest.Manifest, error) 
 // 7. W2/W3 consume this slice; W1 unit tests assert the right entries
 // are produced for a given scope filter (STATE-10).
 type diffTarget struct {
-	// Kind names the resource category (prompt / plugin / artifact /
+	// Kind names the resource category (instruction / plugin / artifact /
 	// model / mcpServer / a2aAgent). Used for routing in step 7+.
 	Kind string
 
@@ -859,10 +861,10 @@ type diffTarget struct {
 // Runtime kinds (model / mcpServer / a2aAgent) are NOT extractable (see
 // diffTarget.isExtractableContent).
 const (
-	kindPrompt   = "prompt"
-	kindPlugin   = "plugin"
-	kindArtifact = "artifact"
-	kindSkill    = "skill"
+	kindInstruction = "instruction"
+	kindPlugin      = "plugin"
+	kindArtifact    = "artifact"
+	kindSkill       = "skill"
 )
 
 // isExtractableContent reports whether dt is a context kind whose Ref points at
@@ -872,7 +874,7 @@ const (
 // ExtractContent yields "content name: empty".
 func (dt diffTarget) isExtractableContent() bool {
 	switch dt.Kind {
-	case kindPrompt, kindPlugin, kindArtifact, kindSkill:
+	case kindInstruction, kindPlugin, kindArtifact, kindSkill:
 		return true
 	default:
 		return false
@@ -899,8 +901,8 @@ func (c *commit) step6Diff(m *manifest.Manifest) ([]diffTarget, error) {
 	includeRuntime := c.includeRuntime()
 
 	if includeContext && m.Context != nil {
-		for _, p := range m.Context.Prompts {
-			targets = append(targets, diffTarget{Kind: kindPrompt, Ref: p})
+		for _, i := range m.Context.Instructions {
+			targets = append(targets, diffTarget{Kind: kindInstruction, Ref: i})
 		}
 		for _, p := range m.Context.Plugins {
 			targets = append(targets, diffTarget{Kind: kindPlugin, Ref: p})
@@ -1022,8 +1024,12 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 			Adapter: existing.Adapter,
 			Plugins: keptSourceRows(existing.Plugins, composed.Plugins),
 			Skills:  keptSourceRows(existing.Skills, composed.Skills),
+			// Instruction files are ACH-generated like adapter keys: the whole
+			// bucket is pruned, so an Instruction that left the Environment
+			// does not stay on disk untracked and still loaded.
+			Instructions: existing.Instructions,
 		}
-		composed = &state.File{Adapter: composed.Adapter, Plugins: composed.Plugins, Skills: composed.Skills}
+		composed = &state.File{Adapter: composed.Adapter, Plugins: composed.Plugins, Skills: composed.Skills, Instructions: composed.Instructions}
 	}
 	stats, err := syncFn(prev, composed, c.achDir, c.toolRoot, SyncOptions{
 		Force:  c.opts.Force,
@@ -1065,7 +1071,7 @@ func keptSourceRows(prev, next []state.FileEntry) []state.FileEntry {
 // (= state.WriteAtomic, STATE-07 four-step contract). The caller skips it
 // under opts.DryRun so a `hydrate --dry-run` is genuinely read-only.
 //
-// Content buckets (Prompts/Plugins/Artifacts/RuntimeFiles) are carried
+// Content buckets (Plugins/Artifacts/RuntimeFiles) are carried
 // forward from the prior state (their composition from ExtractResult is a
 // separate follow-up; see issue tracker / W6-01 notes). The ADAPTER section,
 // however, IS composed from the fresh render (W6-01): recording the adapter
@@ -1089,7 +1095,7 @@ func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, re
 	if existing != nil {
 		// Preserve everything not (re)composed this hydrate.
 		next.Profile = existing.Profile
-		next.Prompts = existing.Prompts
+		next.Instructions = existing.Instructions
 		next.Plugins = existing.Plugins
 		next.Artifacts = existing.Artifacts
 		next.Skills = existing.Skills
@@ -1145,6 +1151,7 @@ func (c *commit) composeNextState(existing *state.File, m *manifest.Manifest, re
 	if adapterRan && !c.opts.OnlyRuntime {
 		next.Plugins = pluginsSectionFromRender(render)
 		next.Skills = skillsSectionFromRender(render)
+		next.Instructions = instructionsSectionFromRender(render)
 	}
 
 	// RuntimeFiles is composed from the fresh runtime mirror written at
@@ -1176,12 +1183,12 @@ var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
 // tallies. Plugins extract to the ephemeral pluginStageRoot (swept, never a
 // final write) and are re-counted as renderResult.ProjectedFiles when
 // published — counting them here would double-count (observed 110 reported
-// vs 54 on disk), so only prompts/artifacts (final dest extractBase==achDir)
+// vs 54 on disk), so only artifacts (final dest extractBase==achDir)
 // count. A re-hydrate no-op reports zero WrittenFiles + a Preserved count
 // (the on-disk tree was left untouched) → "N preserved", not "N written".
 func addExtractCounts(result *Result, kind string, er ExtractResult) {
-	if kind == kindPlugin || kind == kindSkill {
-		// Skills, like plugins, extract to the ephemeral stage root and are
+	if isStagedKind(kind) {
+		// Skills and instructions, like plugins, extract to the ephemeral stage root and are
 		// re-counted as render ProjectedSkillFiles when published — counting
 		// the extract WrittenFiles here would double-count.
 		return
@@ -1190,8 +1197,6 @@ func addExtractCounts(result *Result, kind string, er ExtractResult) {
 	result.FilesPreserved += er.Preserved
 	fileCount := len(er.WrittenFiles) + er.Preserved
 	switch kind {
-	case kindPrompt:
-		result.ContextSummary.PromptFiles += fileCount
 	case kindArtifact:
 		result.ContextSummary.ArtifactFiles += fileCount
 	}
@@ -1225,6 +1230,7 @@ func addPublishedCounts(result *Result, rr RenderResult) {
 	// Standalone-skill projected files feed the summary's Skills line (distinct
 	// from the plugin ProjectedByKind aggregate).
 	result.ContextSummary.SkillFiles += len(rr.ProjectedSkillFiles)
+	result.ContextSummary.InstructionFiles += len(rr.ProjectedInstructionFiles)
 }
 
 // step10bRuntimeMirror writes the credential-free runtime mirror and folds
@@ -1377,6 +1383,22 @@ func skillsSectionFromRender(render RenderResult) []state.FileEntry {
 	return out
 }
 
+// instructionsSectionFromRender projects RenderResult.ProjectedInstructionFiles
+// into the state.File.Instructions bucket, one FileEntry per file.
+func instructionsSectionFromRender(render RenderResult) []state.FileEntry {
+	if len(render.ProjectedInstructionFiles) == 0 {
+		return nil
+	}
+	out := make([]state.FileEntry, 0, len(render.ProjectedInstructionFiles))
+	for _, fw := range render.ProjectedInstructionFiles {
+		out = append(out, state.FileEntry{
+			Target: fw.Target, Hash: fw.Hash, SourceHash: fw.SourceHash,
+			Merge: fw.Merge, Keys: fw.Keys, Source: fw.Source,
+		})
+	}
+	return out
+}
+
 // step12bGitignore appends an ach-managed block to <toolRoot>/.gitignore listing
 // the top-level dirs/files this hydrate wrote under the project root (the adapter
 // dirs, a project-root .mcp.json when claude generated one, and ACH's own .ach/
@@ -1394,7 +1416,7 @@ func (c *commit) step12bGitignore(render RenderResult) {
 		return
 	}
 	entries := []string{".ach/"}
-	for _, set := range [][]FileWrite{render.WrittenFiles, render.ProjectedFiles, render.ProjectedSkillFiles} {
+	for _, set := range [][]FileWrite{render.WrittenFiles, render.ProjectedFiles, render.ProjectedSkillFiles, render.ProjectedInstructionFiles} {
 		for _, fw := range set {
 			if e := gitignore.TopLevelEntry(fw.Target); e != "" {
 				entries = append(entries, e)

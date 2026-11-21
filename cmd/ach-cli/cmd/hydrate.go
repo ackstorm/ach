@@ -111,12 +111,12 @@ func newHydrateCmd() *cobra.Command {
 		SuggestFor: []string{"pull", "sync"},
 		Args:       cobra.MaximumNArgs(1),
 		Short:      "Install an Environment's content and MCP/A2A config into your agent tool",
-		Long: `Download an environment's content (prompts, skills, artifacts) into your
+		Long: `Download an environment's content (instructions, skills, artifacts) into your
 agent tool's config directory, and wire up its runtime (MCP / A2A; models
 only with --models).
 
 Scope:
-  (default)           Project context (prompts / plugins / artifacts /
+  (default)           Project context (instructions / plugins / artifacts /
                       skills) AND runtime (MCP servers / A2A agents).
   --only-runtime      Project ONLY runtime entries (excludes context).
   --only <kind>/<name>

@@ -34,7 +34,7 @@ import (
 // JSON document followed by a trailing newline.
 const canonicalHydrateJSON = `{"schemaVersion":"v1alpha1","environment":"demo",` +
 	`"runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},` +
-	`"context":{"prompts":[],"plugins":[],"artifacts":[]}}` + "\n"
+	`"context":{"instructions":[],"plugins":[],"artifacts":[]}}` + "\n"
 
 // executeHydrate runs newHydrateCmd with args and returns stdout,
 // stderr, exit code, raw error. Drives the same dispatch path that
@@ -977,7 +977,7 @@ func TestRunHydrate_Only(t *testing.T) {
 		}
 	})
 	for name, args := range map[string][]string{
-		"bad item":     {"demo", "--only", "prompt/x"},
+		"bad item":     {"demo", "--only", "instruction/x"},
 		"sync":         {"demo", "--only", "plugin/x", "--sync"},
 		"only-runtime": {"demo", "--only", "plugin/x", "--only-runtime"},
 		"raw":          {"demo", "--only", "plugin/x", "--raw"},

@@ -29,7 +29,7 @@ const goldenHydratePath = "../../../examples/hydrate.json"
 // (the literal bytes the W3-P3 e2e --raw test diffs against) round-
 // trips through Decode without loss. Every field the orchestrator and
 // adapters read MUST survive: SchemaVersion, Environment,
-// Runtime.{Models,MCPServers,A2AAgents}, Context.{Prompts,Plugins,
+// Runtime.{Models,MCPServers,A2AAgents}, Context.{Instructions,Plugins,
 // Artifacts}, and ContentRef.{ID,Name,DownloadURL,Endpoint}.
 //
 // Runtime entries MUST carry non-empty Endpoint (adapters consume
@@ -91,20 +91,20 @@ func TestDecode_GoldenHydrate(t *testing.T) {
 	}
 
 	// Context arms — non-empty DownloadURL on every entry.
-	if got, want := len(m.Context.Prompts), 1; got != want {
-		t.Errorf("len(Context.Prompts) = %d, want %d", got, want)
+	if got, want := len(m.Context.Instructions), 1; got != want {
+		t.Errorf("len(Context.Instructions) = %d, want %d", got, want)
 	} else {
-		if m.Context.Prompts[0].DownloadURL == "" {
-			t.Error("Context.Prompts[0].DownloadURL is empty — must round-trip")
+		if m.Context.Instructions[0].DownloadURL == "" {
+			t.Error("Context.Instructions[0].DownloadURL is empty — must round-trip")
 		}
-		if m.Context.Prompts[0].Name != "claude-code-system-prompt" {
-			t.Errorf("Context.Prompts[0].Name = %q, want claude-code-system-prompt",
-				m.Context.Prompts[0].Name)
+		if m.Context.Instructions[0].Name != "instruction-valid" {
+			t.Errorf("Context.Instructions[0].Name = %q, want instruction-valid",
+				m.Context.Instructions[0].Name)
 		}
 		// Context entries MUST NOT carry Endpoint (round-trips to "").
-		if m.Context.Prompts[0].Endpoint != "" {
-			t.Errorf("Context.Prompts[0].Endpoint = %q, want empty (context entries have no endpoint)",
-				m.Context.Prompts[0].Endpoint)
+		if m.Context.Instructions[0].Endpoint != "" {
+			t.Errorf("Context.Instructions[0].Endpoint = %q, want empty (context entries have no endpoint)",
+				m.Context.Instructions[0].Endpoint)
 		}
 	}
 	// Plugins: the demo env declares caveman + the marketplace-sourced
@@ -343,5 +343,27 @@ func TestDecodeAcceptsGuardrailsArm(t *testing.T) {
 	}
 	if len(m2.Runtime.Guardrails) != 0 {
 		t.Fatalf("guardrails = %v, want empty", m2.Runtime.Guardrails)
+	}
+}
+
+func TestDecode_Instructions(t *testing.T) {
+	body := `{"schemaVersion":"v1alpha1","environment":"e","runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},
+	"context":{"instructions":[{"name":"base","id":"base","downloadUrl":"https://hub/content/instruction/base"}],
+	"plugins":[],"artifacts":[],"skills":[]}}`
+	m, err := manifest.Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Context.Instructions) != 1 || m.Context.Instructions[0].Name != "base" {
+		t.Fatalf("instructions not decoded: %+v", m.Context.Instructions)
+	}
+}
+
+func TestDecode_IgnoresPrompts(t *testing.T) {
+	body := `{"schemaVersion":"v1alpha1","environment":"e","runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},
+	"context":{"prompts":[{"name":"p","id":"p","downloadUrl":"https://hub/content/prompt/p"}],
+	"plugins":[],"artifacts":[],"skills":[]}}`
+	if _, err := manifest.Decode(strings.NewReader(body)); err != nil {
+		t.Fatalf("a server that still sends prompts must decode: %v", err)
 	}
 }
