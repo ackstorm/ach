@@ -68,8 +68,9 @@ It has no command directory, so a plugin's commands are not installed for it.
 Cursor reads MCP servers from `.cursor/mcp.json`; its commands and subagents go
 to `.cursor/commands` and `.cursor/agents`.
 
-OpenCode loads MCP servers when its service starts. After a hydrate that adds or
-removes one, run `opencode service restart`.
+OpenCode loads MCP servers when its service starts. After a hydrate (or a
+`local plugin` install, update or uninstall) that adds or removes one, run
+`opencode service restart`.
 
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
 in that folder.

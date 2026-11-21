@@ -40,7 +40,7 @@ already hydrated in that folder. An Environment installed globally with `-g`
 does not count.
 
 `launch opencode` starts the tool but does not restart an OpenCode service that
-is already running. After a hydrate that changes MCP servers, run
+is already running. After a hydrate or a `local plugin` command that changes MCP servers, run
 `opencode service restart`.
 
 ## Start it in another folder

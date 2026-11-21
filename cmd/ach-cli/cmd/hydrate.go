@@ -891,10 +891,10 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 		if c, ok := mcpLoginCmd[r.PlatformID]; ok && addsMCP(r) {
 			logins = append(logins, c)
 		}
-		restart = restart || (!meta.dryRun && r.PlatformID == "opencode" && changesServers(r))
+		restart = restart || (!meta.dryRun && r.PlatformID == opencodeTarget && changesServers(r))
 	}
 	if restart {
-		hints = append(hints, "opencode service restart  — OpenCode loads MCP servers when its service starts")
+		hints = append(hints, opencodeRestartHint)
 	}
 	if !first {
 		return hints
@@ -921,7 +921,14 @@ func addsMCP(r hydrate.Result) bool {
 	return false
 }
 
-const kindMCP = "mcp"
+const (
+	kindMCP        = "mcp"
+	opencodeTarget = "opencode"
+)
+
+// opencodeRestartHint is printed when ach-cli adds or removes an MCP server
+// for OpenCode (hydrate and local plugin commands).
+const opencodeRestartHint = "opencode service restart  — OpenCode loads MCP servers when its service starts"
 
 // changesServers reports an MCP server or A2A agent (written as an MCP server)
 // added or removed.

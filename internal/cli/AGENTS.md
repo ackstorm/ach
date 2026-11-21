@@ -126,7 +126,9 @@ result + elapsed time; the Environment's notice, the engine's `note:`/`warning:`
 lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
 AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
 `opencode service restart`, printed on any run (not `--dry-run`) that adds or
-removes an MCP server or A2A agent for OpenCode.
+removes an MCP server or A2A agent for OpenCode. `local plugin
+install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
+once per run, not `--dry-run`) when an opencode record holds `mcp.servers.*` keys.
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
