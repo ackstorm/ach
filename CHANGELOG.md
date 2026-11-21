@@ -11,7 +11,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   target, guardrail verdicts, tokens and cost, and no request or response
   content. "Connect ACH to LiteLLM" in the docs has the install steps.
 - Docs: an "Audit events" reference page lists every audit event ACH and the
-  callback write.
+  callback write, and "Collect audit events" shows how to query them in Grafana
+  Loki and give them their own stream and retention.
 
 ### Changed
 - Audit: a caller refused on an admin route is recorded as
