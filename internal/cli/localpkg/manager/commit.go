@@ -121,9 +121,7 @@ func (o uninstallOp) String() string {
 //   - "deep": remove only this plugin's contributed dotted Keys from the
 //     JSON/TOML document; opRemove when the document becomes empty, else opModify
 //     with the re-encoded body. A non-parseable file (user broke it) → opSkip.
-//   - "" (replace): hash-check; opRemove on match, opSkip on drift (user-edited).
-//   - any other kind: opSkip. The record does not say how to undo the write,
-//     and its file may be one the user shares.
+//   - "" / replace: hash-check; opRemove on match, opSkip on drift (user-edited).
 //
 // Co-owned (deep) files are NOT hash-checked — removing only OUR
 // contribution is always safe. For opModify the rewritten content is returned.
@@ -146,11 +144,8 @@ func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error
 		}
 		return opModify, out, nil
 
-	case "":
-		return classifyReplace(f, body), nil, nil
-
 	default:
-		return opSkip, nil, nil
+		return classifyReplace(f, body), nil, nil
 	}
 }
 

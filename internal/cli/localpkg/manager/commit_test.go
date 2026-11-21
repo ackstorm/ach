@@ -289,31 +289,6 @@ func TestUninstall_SkipsModifiedFiles(t *testing.T) {
 	}
 }
 
-// TestUninstall_UnknownMergeKindSkips: a record whose Merge this version does
-// not know is left alone even when its hash matches the file, so a file shared
-// with the user is never deleted whole.
-func TestUninstall_UnknownMergeKindSkips(t *testing.T) {
-	root := t.TempDir()
-	abs := filepath.Join(root, "CLAUDE.md")
-	body := []byte("# mine\n")
-	if err := os.WriteFile(abs, body, 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	skipped, err := Uninstall(root, false, []store.FileRec{
-		{RelPath: "CLAUDE.md", Hash: hash.HashBytes(body), Merge: "composite", Keys: []string{"p"}},
-	})
-	if err != nil {
-		t.Fatalf("Uninstall: %v", err)
-	}
-	if len(skipped) != 1 || skipped[0] != "CLAUDE.md" {
-		t.Errorf("skipped = %v; want [CLAUDE.md]", skipped)
-	}
-	if got, rerr := os.ReadFile(abs); rerr != nil || string(got) != string(body) {
-		t.Errorf("file changed or gone: %v %q", rerr, got)
-	}
-}
-
 func TestUninstall_MissingFileIsNoOp(t *testing.T) {
 	root := t.TempDir()
 	files := []store.FileRec{
