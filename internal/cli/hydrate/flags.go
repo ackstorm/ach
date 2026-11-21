@@ -32,7 +32,7 @@ type Opts struct {
 	Environment string
 
 	// Platform is the adapter id (ADAPT-01: claude-code / codex /
-	// gemini-cli / opencode). Empty → autodetect via the adapter
+	// opencode / pi). Empty → autodetect via the adapter
 	// registry's Detect() (ADAPT-02 / D-06). Multi-match autodetect
 	// exits 1 with the candidate list.
 	Platform string

@@ -33,7 +33,6 @@ import (
 	// registration is asserted by each subpackage's own test, not here.
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
-	"github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	"github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	"github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
@@ -45,7 +44,6 @@ func adapters() map[string]route.RuleProvider {
 	return map[string]route.RuleProvider{
 		"claude-code": &claudecode.Adapter{},
 		"codex":       &codex.Adapter{},
-		"gemini-cli":  &gemini.Adapter{},
 		"opencode":    &opencode.Adapter{},
 		"pi":          &pi.Adapter{},
 	}
@@ -126,25 +124,6 @@ var conformanceTables = []adapterConformance{
 		// codex routes commands/skills/agents/mcp; rules/, prompts/, AGENTS.md,
 		// hooks/ have no rule → dropped.
 		wantDropped: []string{"AGENTS.md", "hooks", "prompts", "rules"},
-	},
-	{
-		id:             "gemini-cli",
-		mappingSection: "the adapter table §gemini-cli (ACH-original; drop hooks)",
-		rowCount:       7,
-		rules: map[string]wantRule{
-			"agents/**/*":  {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"prompts/**/*": {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
-			// gemini-cli custom commands are TOML: commands/*.md is converted
-			// (geminiCommandTOML), commands/*.toml passes through verbatim.
-			"commands/**/*.md":   {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: true},
-			"commands/**/*.toml": {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":        {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"mcp/**/*":           {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
-			".mcp.json":          {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
-		},
-		// gemini routes agents/prompts/commands/skills/mcp; rules/, AGENTS.md
-		// and hooks/ have no rule → dropped.
-		wantDropped: []string{"AGENTS.md", "hooks", "rules"},
 	},
 	{
 		id:             "opencode",
@@ -249,7 +228,7 @@ func TestProjectionRules_Conformance(t *testing.T) {
 // TestProjectionRules_StayInsideToolConfig pins that no adapter routes plugin
 // content to a file the user owns: every destination is the tool's own
 // dot-prefixed config dir or file (first path segment, so "./x" and "../x"
-// do not pass), never a root CLAUDE.md / AGENTS.md / GEMINI.md.
+// do not pass), never a root CLAUDE.md / AGENTS.md.
 func TestProjectionRules_StayInsideToolConfig(t *testing.T) {
 	for id, rp := range adapters() {
 		for _, r := range rp.ProjectionRules() {

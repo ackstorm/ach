@@ -43,7 +43,6 @@
 //	              still matches the rule's first segment, so route.Project does
 //	              not add it to the dropped set — the individual .toml files are
 //	              skipped by the WR-03 terminal-extension guard.)
-//	gemini-cli   agents→.gemini/agents/  commands→.gemini/commands/  skills→.gemini/skills/
 //	opencode     commands→.opencode/commands/  agents(*.md)→.opencode/agents/  skills→.opencode/skills/
 //	pi       skills→.pi/skills/
 //	             (commands rule is commands/**/*.md; caveman commands are .toml
@@ -62,7 +61,7 @@
 // Metadata/docs/unknown top-levels (.claude-plugin, .codex-plugin, src,
 // LICENSE, README.md) are now SILENTLY skipped — they never appear in the
 // warning (route.KnownComponentKinds gates the drop set). So an adapter that
-// routes all of caveman's component kinds (claude-code/codex/gemini/opencode)
+// routes all of caveman's component kinds (claude-code/codex/opencode)
 // prints NO drop warning at all; only pi (no `agents` rule) warns, naming
 // `agents` + the caveman plugin. assertDropsWarned checks for the presence of
 // the kinds we KNOW must (or must not) be dropped, not for an exact full list.
@@ -82,7 +81,7 @@ import (
 // expectations for the demo Environment's caveman plugin.
 type projectionDescriptor struct {
 	// platformID is the canonical --platform value (claude-code / codex /
-	// gemini-cli / opencode / pi).
+	// opencode / pi).
 	platformID string
 
 	// nativeDirs are the adapter-native destination directories under the
@@ -101,12 +100,12 @@ type projectionDescriptor struct {
 	// file (workspace-relative). uninstall inverse-merges this file: ACH's
 	// keys are subtracted while a pre-seeded user key survives. Derived from
 	// each adapter's runtime-path const (claudecode settingsJSONPath, codex
-	// configTOMLPath, gemini settingsJSONPath, opencode configJSONPath,
+	// configTOMLPath, opencode configJSONPath,
 	// pi mcpJSONPath).
 	coOwnedFile string
 
 	// coOwnedKind selects the pre-seed shape + the survivor assertion:
-	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude / gemini)
+	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude)
 	// "json-mcp-opencode" → {"mcp": {"<userKey>": …}} (opencode)
 	// "toml-mcp"  → [mcp_servers.<userKey>] (codex)
 	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json)
@@ -158,16 +157,6 @@ var projectionDescriptors = []projectionDescriptor{
 		// `commands` matches the rule's first segment so it is NOT dropped.
 		mustDrop:    nil,
 		mustNotDrop: []string{"agents", "skills"},
-	},
-	{
-		platformID:     phase7PlatformGemini, // "gemini-cli"
-		nativeDirs:     []string{".gemini/agents", ".gemini/commands", ".gemini/skills"},
-		mustNotProject: []string{"agents", "commands", "skills"},
-		coOwnedFile:    ".gemini/settings.json",
-		coOwnedKind:    "json-mcp",
-		// gemini drops `hooks`; caveman has no top-level hooks/ → no drop.
-		mustDrop:    nil,
-		mustNotDrop: []string{"agents", "commands", "skills"},
 	},
 	{
 		platformID:     phase7PlatformOpencode, // "opencode"

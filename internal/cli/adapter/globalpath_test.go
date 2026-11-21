@@ -13,7 +13,7 @@ import (
 func clearAll(t *testing.T) {
 	t.Helper()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -35,7 +35,6 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 		{"claude-code", ".mcp.json", ".mcp.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 		{"codex", ".agents/skills/a/b.md", ".agents/skills/a/b.md"},
-		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
 		// pi reads project resources from .pi/{skills,prompts} but global ones
 		// from ~/.pi/agent/{skills,prompts}; .pi/mcp.json is the same file both ways.
 		{"pi", ".pi/skills/a/SKILL.md", ".pi/agent/skills/a/SKILL.md"},
@@ -50,16 +49,14 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 	}
 }
 
-// TestRemapGlobalPath_EnvSet covers each adapter's own var, including the two
-// PARENT-shaped ones (gemini appends .gemini, opencode appends opencode).
+// TestRemapGlobalPath_EnvSet covers each adapter's own var, including the
+// PARENT-shaped one (opencode appends opencode).
 func TestRemapGlobalPath_EnvSet(t *testing.T) {
 	cases := []struct{ name, adapterID, envVar, envVal, in, want string }{
 		{"claude dir-itself", "claude-code", "CLAUDE_CONFIG_DIR", "/p/claude",
 			".claude/skills/a/b.md", "/p/claude/skills/a/b.md"},
 		{"codex dir-itself", "codex", "CODEX_HOME", "/p/codex",
 			".codex/config.toml", "/p/codex/config.toml"},
-		{"gemini parent", "gemini-cli", "GEMINI_CLI_HOME", "/p/gem",
-			".gemini/settings.json", "/p/gem/.gemini/settings.json"},
 		{"opencode parent", "opencode", "XDG_CONFIG_HOME", "/p/xdg",
 			".opencode/opencode.json", "/p/xdg/opencode/opencode.json"},
 		{"pi dir-itself", "pi", "PI_CODING_AGENT_DIR", "/p/pi",
@@ -153,7 +150,7 @@ func TestResolveDest(t *testing.T) {
 func TestGlobalRoot(t *testing.T) {
 	home := "/home/u"
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")

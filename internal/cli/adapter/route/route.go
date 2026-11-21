@@ -272,14 +272,14 @@ func resolveRecursiveGlobTarget(fromGlob, toGlob, srcRel string) (string, error)
 // to any source; a gated rule applies only when source == gate.
 //
 // Terminal-extension disambiguation: when several rules share a top-level
-// anchor but differ on a "*.<ext>" terminal segment (e.g. gemini's
-// commands/**/*.md → .toml converter AND commands/**/*.toml passthrough), a
-// FILE is matched to the rule whose terminal extension equals the file's. The
-// anchor-only classification alone would always return the FIRST such rule and
-// the WR-03 terminal-extension guard would then silently drop every file of the
-// OTHER extension (this is the bug that dropped a plugin's native gemini-format
-// commands/*.toml). isFile=false (directories, anchor-only probes) keeps the
-// permissive first-anchor match so Project still recurses into the kind dir.
+// anchor but differ on a "*.<ext>" terminal segment (e.g. a commands/**/*.md
+// converter AND a commands/**/*.toml passthrough), a FILE is matched to the
+// rule whose terminal extension equals the file's. The anchor-only
+// classification alone would always return the FIRST such rule and the WR-03
+// terminal-extension guard would then silently drop every file of the OTHER
+// extension (this is the bug that dropped a plugin's native .toml commands).
+// isFile=false (directories, anchor-only probes) keeps the permissive
+// first-anchor match so Project still recurses into the kind dir.
 func matchRule(rules []Rule, topLevel, rel, source string, isFile bool) (Rule, bool) {
 	var fallback Rule
 	var haveFallback bool

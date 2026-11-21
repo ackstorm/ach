@@ -30,7 +30,7 @@ import (
 // required (no package default) because WriteAtomic is the
 // publication primitive for BOTH `state.json` (no secrets — 0o644 is
 // correct) AND adapter runtime-config files (`.claude/.mcp.json`,
-// `.codex/config.toml`, `.gemini/settings.json`, `.opencode/opencode.json`)
+// `.codex/config.toml`, `.opencode/opencode.json`)
 // that embed plaintext `x-ach-key` bearer credentials in headers
 // maps. Credential-bearing callers MUST pass 0o600 so other local
 // UIDs on multi-user hosts cannot read the bearer; only callers

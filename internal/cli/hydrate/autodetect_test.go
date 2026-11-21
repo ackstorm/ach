@@ -20,7 +20,6 @@ import (
 	// zero-match arm regardless of on-disk state.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 )
 
@@ -162,7 +161,7 @@ func TestAutodetect_Multi_ListsBoth_ExitsOne(t *testing.T) {
 // TestResolvePlatform_Canonical asserts the canonical id round-trips
 // through ResolvePlatform unchanged.
 func TestResolvePlatform_Canonical(t *testing.T) {
-	for _, id := range []string{"claude-code", "codex", "gemini-cli", "opencode"} {
+	for _, id := range []string{"claude-code", "codex", "opencode"} {
 		got, err := hydrate.ResolvePlatform(id)
 		if err != nil {
 			t.Errorf("ResolvePlatform(%q): unexpected error: %v", id, err)

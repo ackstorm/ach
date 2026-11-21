@@ -6,8 +6,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Security
 - `ach-cli environment hydrate` no longer writes a plugin's top-level
-  `AGENTS.md` into the folder's `CLAUDE.md` or `GEMINI.md` (`~/CLAUDE.md`,
-  `~/GEMINI.md` with `--global`). A plugin author could put text there that the
+  `AGENTS.md` into the folder's `CLAUDE.md` (`~/CLAUDE.md` with `--global`).
+  A plugin author could put text there that the
   tool loads in every session, in a file you own and usually commit. Hydrate
   reports `AGENTS.md` as dropped, as it already did for Codex, OpenCode and Pi.
 
@@ -29,6 +29,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `<namespace>/<ServiceAccount username>`. It was the username alone.
 - Audit: `operator.orphan-cleanup` events carry `action` and
   `actor` (`<namespace>/system:operator`), like every other event.
+
+### Removed
+- ach-cli no longer supports Gemini CLI as a target (`--target gemini-cli`, `launch gemini`).
 
 ## [1.1.27] - 2026-11-20
 

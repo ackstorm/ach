@@ -78,7 +78,7 @@ func TestUninstall_UnsafeStateStopsEveryTarget(t *testing.T) {
 	containWrite(t, victim, "x")
 	sound := writeState(t, ws, &state.File{SchemaVersion: "3", Environment: "prod",
 		Plugins: []state.FileEntry{{Target: ".claude/own.md", Merge: "replace"}}})
-	if err := state.Save(filepath.Join(filepath.Dir(sound), "state-gemini-cli.json"), &state.File{
+	if err := state.Save(filepath.Join(filepath.Dir(sound), "state-pi.json"), &state.File{
 		SchemaVersion: "3", Environment: "prod",
 		Plugins: []state.FileEntry{{Target: victim, Merge: "replace"}},
 	}); err != nil {

@@ -300,11 +300,11 @@ func TestProject_TerminalExtensionEnforced(t *testing.T) {
 }
 
 // TestProject_TerminalExtensionDisambiguatesSameAnchor proves that when two
-// rules share a top-level anchor but differ on a "*.<ext>" terminal (gemini's
+// rules share a top-level anchor but differ on a "*.<ext>" terminal (a
 // commands/**/*.md converter AND commands/**/*.toml passthrough), a FILE routes
 // to the rule whose terminal extension matches its own — NOT unconditionally to
 // the FIRST anchor match. Regression guard for the bug where a plugin's native
-// gemini-format commands/*.toml were silently dropped: matchRule returned the
+// commands/*.toml were silently dropped: matchRule returned the
 // .md rule for every file under commands/, and the WR-03 terminal-extension
 // guard then dropped the .toml ones (the .toml passthrough rule was dead code).
 func TestProject_TerminalExtensionDisambiguatesSameAnchor(t *testing.T) {
@@ -318,7 +318,7 @@ func TestProject_TerminalExtensionDisambiguatesSameAnchor(t *testing.T) {
 		// .md → .toml with a converting Transform (must NOT see the .toml files).
 		{
 			FromGlob: "commands/**/*.md",
-			ToGlob:   ".gemini/commands/**/*.toml",
+			ToGlob:   ".tool/commands/**/*.toml",
 			Merge:    adapter.MergeReplace,
 			Transform: func(_ string, in []byte) ([]byte, []string, error) {
 				mdCalls++
@@ -326,7 +326,7 @@ func TestProject_TerminalExtensionDisambiguatesSameAnchor(t *testing.T) {
 			},
 		},
 		// native .toml passthrough (verbatim) — previously shadowed/dead.
-		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*.toml", ToGlob: ".tool/commands/**/*.toml", Merge: adapter.MergeReplace},
 	}
 
 	pr, err := Project(rules, src, "")
@@ -341,13 +341,13 @@ func TestProject_TerminalExtensionDisambiguatesSameAnchor(t *testing.T) {
 		got[fw.Path] = string(fw.Content)
 	}
 	// The .md converts; both .toml files pass through verbatim (NOT dropped).
-	if v, ok := got[".gemini/commands/from-md.toml"]; !ok || v != "converted" {
+	if v, ok := got[".tool/commands/from-md.toml"]; !ok || v != "converted" {
 		t.Errorf(".md route: got %q (present=%v), want converted", v, ok)
 	}
-	if v, ok := got[".gemini/commands/native.toml"]; !ok || v != "prompt = \"native\"\n" {
+	if v, ok := got[".tool/commands/native.toml"]; !ok || v != "prompt = \"native\"\n" {
 		t.Errorf(".toml passthrough native: got %q (present=%v), want verbatim (the dropped-command bug)", v, ok)
 	}
-	if v, ok := got[".gemini/commands/sub/deep.toml"]; !ok || v != "prompt = \"deep\"\n" {
+	if v, ok := got[".tool/commands/sub/deep.toml"]; !ok || v != "prompt = \"deep\"\n" {
 		t.Errorf(".toml passthrough nested: got %q (present=%v), want verbatim", v, ok)
 	}
 	if len(pr.FileWrites) != 3 {
@@ -647,10 +647,10 @@ func TestProject_SameDestNativeBeatsConverted(t *testing.T) {
 	})
 	rules := []Rule{
 		{
-			FromGlob: "commands/**/*.md", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace,
+			FromGlob: "commands/**/*.md", ToGlob: ".tool/commands/**/*.toml", Merge: adapter.MergeReplace,
 			Transform: func(_ string, _ []byte) ([]byte, []string, error) { return []byte("CONVERTED"), nil, nil },
 		},
-		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace},
+		{FromGlob: "commands/**/*.toml", ToGlob: ".tool/commands/**/*.toml", Merge: adapter.MergeReplace},
 	}
 	// Both rule orders must yield the same survivor.
 	for _, order := range [][]Rule{rules, {rules[1], rules[0]}} {

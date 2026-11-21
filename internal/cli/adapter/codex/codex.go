@@ -2,7 +2,7 @@
 
 // Package codex is the OpenAI Codex CLI platform adapter per CLI spec
 // §7.2 row 2 and §7.4 codex section. It is the second of four adapters
-// in the v1alpha1 closed set (claude-code, codex, gemini-cli, opencode)
+// in the v1alpha1 closed set (claude-code, codex, opencode, pi)
 // and the first NON-pass-through adapter — its runtime-config target is
 // TOML (not JSON) and its plugin transformation rewrites Claude-format
 // agent frontmatter into the Codex agent schema, with silent-drop
@@ -11,8 +11,7 @@
 // Per CONTEXT.md D-05 the four-adapter set must demonstrably translate
 // the same Hub manifest into four distinct on-disk shapes; the codex
 // adapter is the first non-trivial transformation reference that the
-// gemini-cli and opencode siblings mirror (W3-03 and W3-04 land in
-// parallel against this plan).
+// opencode and pi siblings mirror.
 //
 // Design notes:
 //
@@ -257,8 +256,8 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 
 // ProjectionRules returns the codex ROUTE-03 projection table satisfying
 // route.RuleProvider (the D-06 seam). It is the real Phase-3
-// format-converting table (D-13/D-14), mirroring the claudecode.go /
-// gemini.go rule-list-literal shape (Transform only on the converting
+// format-converting table (D-13/D-14), mirroring the claudecode.go
+// rule-list-literal shape (Transform only on the converting
 // rows):
 //
 //   - commands/**/*.md → .codex/prompts/**/*.md (MergeReplace): codex calls

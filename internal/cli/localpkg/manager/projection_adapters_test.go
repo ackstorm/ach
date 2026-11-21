@@ -30,7 +30,6 @@ import (
 	// Blank-import all five adapters so their init() registers them.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 
@@ -193,17 +192,6 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 				".codex/prompts/hello.md",
 				".codex/agents/agent-a.toml", // transformed .md → .toml
 				".codex/config.toml",
-			},
-		},
-		{
-			adapterID: "gemini-cli",
-			want: []string{
-				".gemini/commands/hello.toml", // claude .md command → gemini TOML
-				".gemini/agents/agent-a.md",
-				".gemini/settings.json",
-			},
-			absent: []string{
-				".gemini/commands/hello.md", // must be converted, not copied verbatim
 			},
 		},
 		{

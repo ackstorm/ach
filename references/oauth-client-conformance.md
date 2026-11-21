@@ -2,8 +2,7 @@
 
 Research verified 2026-09-17 against the three human-facing tools ACH hydrates
 for. Each was checked from source (or the shipped binary) and from the version
-installed on the dev box, not from docs alone. Gemini CLI is deprecated and was
-not researched.
+installed on the dev box, not from docs alone.
 
 | Tool | Version checked | Source read |
 |------|-----------------|-------------|

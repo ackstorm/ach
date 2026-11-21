@@ -7,8 +7,8 @@
 //   - Containment: write NOTHING outside the target adapter's dot-dir, the
 //     project-root .mcp.json aside. A plugin's root AGENTS.md has no route, so
 //     the user's own root files (CLAUDE.md, README.md) are never touched.
-//   - .md command scoping: a multi-tool plugin may ship gemini-format
-//     commands/*.toml alongside commands/*.md; the .toml must not leak into
+//   - .md command scoping: a multi-tool plugin may ship commands in another tool's
+//     format (.toml) alongside commands/*.md; the .toml must not leak into
 //     .claude/ or .opencode/ command dirs (claude/opencode commands are markdown).
 //
 // Also pins the user-clarified read rule: a README.md that lives INSIDE a skill
@@ -77,7 +77,7 @@ func TestProject_RootMcpJson_Routed(t *testing.T) {
 }
 
 // stageMixedTree builds a staged plugin tree carrying: a root AGENTS.md (which
-// must not project), a command in BOTH markdown and gemini-toml form,
+// must not project), a command in BOTH markdown and .toml form,
 // an agent, and a skill that contains its own README.md. Returns the stage dir.
 func stageMixedTree(t *testing.T) string {
 	t.Helper()
@@ -93,7 +93,7 @@ func stageMixedTree(t *testing.T) string {
 	}
 	write("AGENTS.md", "plugin memory prose\n")
 	write("commands/review.md", "# review\n")
-	write("commands/review.toml", "description = \"gemini review\"\n")
+	write("commands/review.toml", "description = \"toml review\"\n")
 	write("agents/agent-a.md", "---\nname: agent-a\n---\nbody\n")
 	write("skills/superpowers/SKILL.md", "---\nname: superpowers\ndescription: x\n---\n# s\n")
 	write("skills/superpowers/README.md", "skill-internal readme\n")

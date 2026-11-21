@@ -40,7 +40,7 @@ ach-cli local plugin install <plugin>@<repo> --target claude-code
 ach-cli local skill install <skill>@<repo> --target codex,opencode
 ```
 
-`--target` is one or more of `claude-code`, `codex`, `gemini-cli`, `opencode`
+`--target` is one or more of `claude-code`, `codex`, `opencode`
 and `pi`. The install goes into the current folder; `-g` puts it in the
 tool's global configuration. `--dry-run` prints the plan and writes nothing.
 

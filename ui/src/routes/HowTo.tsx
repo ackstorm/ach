@@ -4,7 +4,7 @@
 // Login (SSO) is the default path, keys come last. All STATIC (no backend, no fetch):
 //
 //   §1 Editors/CLI — OpenCode only (SSO plugin install). The other tools (Pi,
-//                    Claude Code, Codex, Qwen, Gemini, Copilot) stay in TOOL_GROUPS
+//                    Claude Code, Codex, Qwen, Copilot) stay in TOOL_GROUPS
 //                    with `enabled: false`: kept in source, not rendered.
 //   §2 MCP servers — `opencode mcp add/auth` against /mcp/<server>. The
 //                    generic-client tabs (Cursor, Claude Desktop, VS Code, JSON,
@@ -260,7 +260,7 @@ opencode mcp auth`;
 │  ○ mcp-aws-documentation ✓ (disabled)`;
 
   // ── Editor / CLI setup ───────────────────────────────────────────────────────
-  // Live setup for Claude Code, Gemini CLI, opencode, and codex. The base URL is
+  // Live setup for Claude Code, opencode, and codex. The base URL is
   // the user's live gateway (apiBase); the key is the `ek_...` placeholder (mint
   // it on Keys). `caption` overrides the code-box label (e.g. a config-file path);
   // `note` adds a one-line instruction; `guide` links the authoritative doc.
@@ -488,28 +488,6 @@ qwen`,
           // `Authorization: Bearer`, which ACH does not resolve for a raw key. Say
           // so plainly rather than presenting this as a working setup.
           note: "Qwen Code sends this key via Authorization: Bearer, which ACH does not resolve by default — this snippet will 401 unless your admin has added Authorization to the forwarder's credential headers. Prefer a tool above with a custom-header option (Codex, Pi, the Python/TypeScript SDK snippets).",
-        },
-      ],
-    },
-    {
-      id: 'gemini',
-      label: 'Gemini CLI',
-      // Deprecated upstream — use the Pi agent `google` provider instead.
-      enabled: false,
-      variants: [
-        {
-          id: 'gemini',
-          ready: true,
-          code: `# Gemini CLI → ACH gateway
-export GOOGLE_GEMINI_BASE_URL=${apiBase}/gemini
-export GEMINI_BASE_URL=${apiBase}/gemini/v1beta
-export GEMINI_API_KEY=${KEY_PLACEHOLDER}
-
-gemini`,
-          // GEMINI_API_KEY is Gemini CLI's own credential slot, not ACH's declared
-          // header — verify how it sends the key before re-enabling this tab; the Pi
-          // `google` provider (above) sends it via an explicit custom header instead.
-          note: 'GEMINI_API_KEY is Gemini CLI’s own credential mechanism, not ACH’s declared header slot — confirm it sends the key in a header ACH resolves before relying on this. The Pi agent’s `google` provider (above) is the verified path.',
         },
       ],
     },

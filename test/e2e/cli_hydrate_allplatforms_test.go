@@ -63,7 +63,6 @@ type allPlatformExpect struct {
 	skillSep    string // a plugin skill lands as <plugin><skillSep><skill>/ (route/prefix.go)
 	agentsDir   string // dir holding the projected agent files
 	agentExt    string // ".md" (verbatim) | ".toml" (format-converted)
-	commandsDir string // dir holding <plugin>/<command>.toml; "" when the adapter has no command rule
 }
 
 // allPlatformExpects is the closed set of supported agent types. codex
@@ -79,10 +78,9 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    ":",
 		agentsDir:   ".claude/agents",
 		agentExt:    ".md",
-		// caveman commands are .toml (gemini-format); claude's rule is
+		// caveman commands are .toml; claude's rule is
 		// commands/**/*.md, so they are NOT projected here (format-filter). Broad
 		// claude command coverage lives in TestProjectionLifecycle.
-		commandsDir: "",
 	},
 	{
 		id:          "codex",
@@ -92,17 +90,6 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    "-",
 		agentsDir:   ".codex/agents",
 		agentExt:    ".toml",
-		commandsDir: "", // codex has no command projection rule
-	},
-	{
-		id:          "gemini-cli",
-		runtimePath: ".gemini/settings.json",
-		runtimeFmt:  "json",
-		skillsDir:   ".gemini/skills",
-		skillSep:    "-",
-		agentsDir:   ".gemini/agents",
-		agentExt:    ".md",
-		commandsDir: ".gemini/commands",
 	},
 	{
 		id:          "opencode",
@@ -112,9 +99,8 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    "-",
 		agentsDir:   ".opencode/agents",
 		agentExt:    ".md",
-		// caveman commands are .toml (gemini-format); opencode's rule is
+		// caveman commands are .toml; opencode's rule is
 		// commands/**/*.md, so they are NOT projected here (format-filter).
-		commandsDir: "",
 	},
 	{
 		// pi (Pi / pi-mono, Phase 5 D-33): thinnest adapter. skills +
@@ -128,7 +114,6 @@ var allPlatformExpects = []allPlatformExpect{
 		skillSep:    "-",
 		agentsDir:   "", // pi has no agent projection rule (dropped)
 		agentExt:    "",
-		commandsDir: "", // not asserted for pi
 	},
 }
 
@@ -184,7 +169,6 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			assertRuntimeConfig(t, output, pe, pk)
 			assertProjectedSkills(t, output, pe)
 			assertProjectedAgents(t, output, pe)
-			assertProjectedCommands(t, output, pe)
 			assertHooksDropped(t, pe.id, stderr)
 			assertStateJSON(t, output, pe.id)
 			assertPerEnvNamespacing(t, output)
@@ -366,22 +350,6 @@ func assertProjectedAgents(t *testing.T, output string, pe allPlatformExpect) {
 	}
 	if n := countFilesWithExt(t, agentsRoot, pe.agentExt); n < 1 {
 		t.Errorf("%s: no %s agent files projected under %s", pe.id, pe.agentExt, pe.agentsDir)
-	}
-}
-
-// assertProjectedCommands asserts a representative command file projected,
-// for adapters that declare a command rule. codex (commandsDir == "")
-// asserts the inverse: no .codex/commands dir was created.
-func assertProjectedCommands(t *testing.T, output string, pe allPlatformExpect) {
-	t.Helper()
-	if pe.commandsDir == "" {
-		return // adapter has no asserted command destination (codex / pi)
-	}
-	// gemini namespaces plugin commands as <plugin>/<cmd>.toml (/caveman:caveman).
-	want := filepath.Join(output, pe.commandsDir, demoPlugin, "caveman.toml")
-	if _, err := os.Stat(want); err != nil {
-		t.Errorf("%s: expected projected command %s/caveman.toml missing under %s: %v",
-			pe.id, demoPlugin, pe.commandsDir, err)
 	}
 }
 

@@ -31,7 +31,6 @@ import (
 	// tests below.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/gemini"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 )
 

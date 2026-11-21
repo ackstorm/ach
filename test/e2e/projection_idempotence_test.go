@@ -33,7 +33,7 @@
 // their projected output passes through a TOML / JSON re-encode, so a
 // non-deterministic map-iteration-order encode would surface as a run1≠run2
 // byte diff right here. The verbatim-passthrough adapters (claude-code,
-// gemini-cli, pi) prove the copy path is equally stable.
+// pi) prove the copy path is equally stable.
 //
 // Activation (mirrors cli_hydrate_engine_test.go / projection_lifecycle_test.go):
 //

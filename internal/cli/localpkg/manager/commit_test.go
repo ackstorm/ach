@@ -18,7 +18,7 @@ import (
 
 func TestRemapGlobalPath(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -176,7 +176,7 @@ func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
 func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 	root := t.TempDir()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")

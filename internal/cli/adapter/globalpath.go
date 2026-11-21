@@ -12,9 +12,9 @@ import (
 //
 // Each supported agent CLI exposes its own config-dir environment variable, and
 // they are not the same shape: CLAUDE_CONFIG_DIR / CODEX_HOME /
-// PI_CODING_AGENT_DIR name the config dir itself, while GEMINI_CLI_HOME and
-// XDG_CONFIG_HOME name a parent under which the tool creates its own subdir
-// (.gemini and opencode respectively). envSuffix encodes that difference.
+// PI_CODING_AGENT_DIR name the config dir itself, while
+// XDG_CONFIG_HOME names a parent under which the tool creates its own subdir
+// (opencode). envSuffix encodes that difference.
 type globalScope struct {
 	envVar     string
 	fromPrefix string
@@ -31,7 +31,6 @@ type globalScope struct {
 var globalScopes = map[string]globalScope{
 	"claude-code": {envVar: "CLAUDE_CONFIG_DIR", fromPrefix: ".claude/"},
 	"codex":       {envVar: "CODEX_HOME", fromPrefix: ".codex/"},
-	"gemini-cli":  {envVar: "GEMINI_CLI_HOME", fromPrefix: ".gemini/", envSuffix: ".gemini"},
 	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"skills/", "prompts/"}},
 	"opencode": {
 		envVar:     "XDG_CONFIG_HOME",

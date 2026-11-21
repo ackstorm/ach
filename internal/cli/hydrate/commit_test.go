@@ -297,7 +297,7 @@ func TestComposeNextState_IsPure_AndReflectsRender(t *testing.T) {
 // just opencode.json); the other adapters' paths pass through.
 func TestRemapGlobalPath(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -306,7 +306,6 @@ func TestRemapGlobalPath(t *testing.T) {
 		{"opencode", ".opencode/opencode.json", ".config/opencode/opencode.json"},
 		{"opencode", ".opencode/plugins/foo/x.md", ".config/opencode/plugins/foo/x.md"}, // D-22: all .opencode/* remap
 		{"claude-code", ".claude/settings.json", ".claude/settings.json"},
-		{"gemini-cli", ".gemini/settings.json", ".gemini/settings.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 	}
 	for _, tc := range cases {

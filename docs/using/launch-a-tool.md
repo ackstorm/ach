@@ -10,7 +10,6 @@ your `PATH`.
 |---|---|
 | `claude` | Claude Code |
 | `codex` | Codex |
-| `gemini` | Gemini CLI |
 | `opencode` | OpenCode |
 | `pi` | pi |
 

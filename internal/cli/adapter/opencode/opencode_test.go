@@ -349,7 +349,7 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	// with only its package's transitive imports, so the opencode
 	// test binary sees only opencode's init() side-effect — Iter()
 	// length is exactly 1 here. The full 4-adapter closed-set
-	// assertion (claudecode + codex + gemini + opencode) belongs to
+	// assertion (claudecode + codex + opencode + pi) belongs to
 	// W3-05 cobra wiring, where all four are blank-imported under a
 	// single compilation unit. From this test we only assert the
 	// per-plan invariant: the opencode adapter IS in the registry

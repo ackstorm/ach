@@ -5,7 +5,7 @@ servers and A2A agents, plus plugins, skills, prompts and artifacts.
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
-`claude-code`, `codex`, `gemini-cli`, `opencode` or `pi`.
+`claude-code`, `codex`, `opencode` or `pi`.
 
 ## Find an Environment
 

@@ -20,7 +20,7 @@ import (
 
 const (
 	containEnv      = "demo"
-	containPlatform = "gemini-cli"
+	containPlatform = "pi"
 )
 
 func hashStr(s string) string { return hash.HashBytes([]byte(s)) }
@@ -36,7 +36,7 @@ func mcpManifest() *manifest.Manifest {
 	}
 }
 
-// containCommit is a production-wired commit for the Gemini target rooted at
+// containCommit is a production-wired commit for the pi target rooted at
 // ws, with only the network fetch replaced.
 func containCommit(t *testing.T, ws string, mutate func(*Opts)) (*commit, error) {
 	t.Helper()
@@ -129,7 +129,7 @@ func assertEmptyDir(t *testing.T, dir string) {
 
 func TestRun_SymlinkedToolDirRefused(t *testing.T) {
 	ws, outside := t.TempDir(), t.TempDir()
-	mustSymlink(t, outside, filepath.Join(ws, ".gemini"))
+	mustSymlink(t, outside, filepath.Join(ws, ".pi"))
 
 	err := containRun(t, ws, nil)
 	if !errors.Is(err, state.ErrNotContained) {
@@ -140,7 +140,7 @@ func TestRun_SymlinkedToolDirRefused(t *testing.T) {
 
 func TestRun_DryRunRefusesSymlinkedToolDir(t *testing.T) {
 	ws, outside := t.TempDir(), t.TempDir()
-	mustSymlink(t, outside, filepath.Join(ws, ".gemini"))
+	mustSymlink(t, outside, filepath.Join(ws, ".pi"))
 
 	err := containRun(t, ws, func(o *Opts) { o.DryRun = true })
 	if !errors.Is(err, state.ErrNotContained) {
@@ -156,13 +156,13 @@ func TestRun_SymlinkStayingInsideWorkspaceAllowed(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(ws, "shared"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustSymlink(t, "shared", filepath.Join(ws, ".gemini"))
+	mustSymlink(t, "shared", filepath.Join(ws, ".pi"))
 
 	if err := containRun(t, ws, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(ws, "shared", "settings.json")); err != nil {
-		t.Fatalf("settings.json not written through the inner link: %v", err)
+	if _, err := os.Stat(filepath.Join(ws, "shared", "mcp.json")); err != nil {
+		t.Fatalf("mcp.json not written through the inner link: %v", err)
 	}
 }
 
@@ -299,7 +299,7 @@ func TestRun_RelativeDir_SymlinksRefused(t *testing.T) {
 		filepath.Join(envDir, "lock"),
 		filepath.Join(envDir, "artifact"),
 		".gitignore",
-		".gemini",
+		".pi",
 	} {
 		t.Run(link, func(t *testing.T) {
 			ws, abs, outside := relativeWorkspace(t)
@@ -377,17 +377,17 @@ func TestRun_RelativeDir_SoundWorkspaceHydrates(t *testing.T) {
 			t.Fatalf("run %d: %v", run, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(abs, ".gemini", "settings.json")); err != nil {
-		t.Fatalf("settings.json not in the workspace: %v", err)
+	if _, err := os.Stat(filepath.Join(abs, ".pi", "mcp.json")); err != nil {
+		t.Fatalf("mcp.json not in the workspace: %v", err)
 	}
 }
 
-// TestRun_Global_SymlinkedDirStillWorks: dotfile managers link ~/.gemini.
+// TestRun_Global_SymlinkedDirStillWorks: dotfile managers link ~/.pi.
 func TestRun_Global_SymlinkedDirStillWorks(t *testing.T) {
 	home, dotfiles := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("GEMINI_CLI_HOME", "")
-	mustSymlink(t, dotfiles, filepath.Join(home, ".gemini"))
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	mustSymlink(t, dotfiles, filepath.Join(home, ".pi"))
 	global := func(o *Opts) { o.Global, o.Output, o.Sync = true, "", true }
 
 	for run := range 2 {
@@ -395,15 +395,15 @@ func TestRun_Global_SymlinkedDirStillWorks(t *testing.T) {
 			t.Fatalf("global run %d: %v", run, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dotfiles, "settings.json")); err != nil {
-		t.Fatalf("settings.json not in the linked dir: %v", err)
+	if _, err := os.Stat(filepath.Join(dotfiles, "mcp.json")); err != nil {
+		t.Fatalf("mcp.json not in the linked dir: %v", err)
 	}
 }
 
 func TestRun_Global_StateTargets(t *testing.T) {
 	home, cfg, outside := t.TempDir(), t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("GEMINI_CLI_HOME", cfg)
+	t.Setenv("PI_CODING_AGENT_DIR", cfg)
 	statePath, err := state.ResolvePlatformPath("", containEnv, containPlatform, true)
 	if err != nil {
 		t.Fatal(err)
@@ -435,7 +435,7 @@ func TestRun_Global_StateTargets(t *testing.T) {
 	}
 	assertBody(t, victim, "x")
 
-	redirected := filepath.Join(cfg, ".gemini", "skills", "a.md")
+	redirected := filepath.Join(cfg, "skills", "a.md")
 	mustWrite(t, redirected, "x")
 	save(redirected)
 	if err := containRun(t, "", global); err != nil {
@@ -446,11 +446,11 @@ func TestRun_Global_StateTargets(t *testing.T) {
 func TestSync_SymlinkedParentRefusedBeforeAnyDelete(t *testing.T) {
 	ws, outside := t.TempDir(), t.TempDir()
 	mustWrite(t, filepath.Join(outside, "x.md"), "x")
-	mustSymlink(t, outside, filepath.Join(ws, ".gemini"))
+	mustSymlink(t, outside, filepath.Join(ws, ".pi"))
 	mustWrite(t, filepath.Join(ws, ".claude", "own.md"), "o")
 	prev := &state.File{Plugins: []state.FileEntry{
 		{Target: ".claude/own.md", Hash: hashStr("o"), Merge: "replace"},
-		{Target: ".gemini/x.md", Hash: hashStr("x"), Merge: "replace"},
+		{Target: ".pi/x.md", Hash: hashStr("x"), Merge: "replace"},
 	}}
 	achDir := filepath.Join(ws, ".ach", containEnv)
 

@@ -205,7 +205,7 @@ func TestPluginCmd_Install_Verbose(t *testing.T) {
 // ---- Group C: multi-target INSTALL in one command ---------------------------
 
 // TestPluginCmd_Install_MultiTarget_OneArg verifies that
-// `plugin install <name>@<repo> --target claude,codex,gemini` (comma-separated
+// `plugin install <name>@<repo> --target claude,codex,pi` (comma-separated
 // in ONE arg) installs to all three adapters: three installed.json entries and
 // projected files under each adapter's dir.
 func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
@@ -235,7 +235,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
 	// All three targets in ONE comma-separated --target value.
-	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,gemini", "--dir", destDir})
+	cmd.SetArgs([]string{"install", "mt@mt", "--target", "claude,codex,pi", "--dir", destDir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("plugin install multi-target: %v (output: %s)", err, buf.String())
 	}
@@ -245,7 +245,7 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadInstalled: %v", err)
 	}
-	wantTargets := map[string]bool{"claude-code": false, "codex": false, "gemini-cli": false}
+	wantTargets := map[string]bool{"claude-code": false, "codex": false, "pi": false}
 	for _, e := range installed.Installed {
 		if e.Ref == "mt@mt" {
 			if _, known := wantTargets[e.Target]; known {
@@ -264,12 +264,10 @@ func TestPluginCmd_Install_MultiTarget_OneArg(t *testing.T) {
 	// Projected files must exist under each adapter's dir.
 	wantFiles := []string{
 		// Every target namespaces the plugin's command with its name, in the
-		// form that tool accepts: a subdir for claude/gemini, a "-" for codex.
+		// form that tool accepts: a subdir for claude, a "-" for codex and pi.
 		filepath.Join(destDir, ".claude", "commands", "mt", "x.md"),
 		filepath.Join(destDir, ".codex", "prompts", "mt-x.md"),
-		// gemini-cli reads custom commands as TOML, so commands/x.md is
-		// converted to .gemini/commands/mt/x.toml (geminiCommandTOML), not copied.
-		filepath.Join(destDir, ".gemini", "commands", "mt", "x.toml"),
+		filepath.Join(destDir, ".pi", "prompts", "mt-x.md"),
 	}
 	for _, f := range wantFiles {
 		if _, err := os.Stat(f); err != nil {
@@ -487,7 +485,7 @@ func TestPluginCmd_Update_RefusedKeepsOldInstall(t *testing.T) {
 func pinConfigDirEnv(t *testing.T) {
 	t.Helper()
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")

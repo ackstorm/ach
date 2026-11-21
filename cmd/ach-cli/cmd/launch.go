@@ -22,12 +22,11 @@ import (
 var launchTools = map[string]string{
 	"claude-code": "claude",
 	"codex":       "codex",
-	"gemini-cli":  "gemini",
 	"opencode":    "opencode",
 	"pi":          "pi",
 }
 
-const launchToolList = "claude, codex, gemini, opencode, pi"
+const launchToolList = "claude, codex, opencode, pi"
 
 // claudeCodeID is the target launch fronts with its proxy.
 const claudeCodeID = "claude-code"

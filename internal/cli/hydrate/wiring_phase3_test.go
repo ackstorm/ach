@@ -76,7 +76,7 @@ func TestPublishFile_ThreadsSourceHash(t *testing.T) {
 // non-opencode platforms are untouched.
 func TestRemapGlobalPath_AllOpencodeDirs(t *testing.T) {
 	for _, v := range []string{
-		"CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME",
+		"CLAUDE_CONFIG_DIR", "CODEX_HOME",
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME",
 	} {
 		t.Setenv(v, "")
@@ -183,7 +183,7 @@ func TestDropRuntimeOwnedMCP_OpencodeJSON(t *testing.T) {
 	}
 }
 
-// TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged proves the existing claude/gemini
+// TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged proves the existing claude
 // JSON / mcpServers. arm still works after parameterization.
 func TestDropRuntimeOwnedMCP_ClaudeJSON_Unchanged(t *testing.T) {
 	jsonContent := `{"mcpServers":{"foo":{"type":"http","url":"https://PLUGIN-foo"}}}`
@@ -248,17 +248,17 @@ func TestDropRuntimeOwnedMCP_AllCollide_NonMCPSurvives_ReEncodes(t *testing.T) {
 // adapter's contributed runtime key shape to the right kind, and ignores
 // non-runtime keys (so 0 runtime servers yields no "mcp"/"a2a" bucket and the
 // summary never prints "0 mcp"). MCP prefixes vary per adapter: mcpServers.
-// (claude/gemini/pi), mcp_servers. (codex), mcp. (opencode); an MCP server
+// (claude/pi), mcp_servers. (codex), mcp. (opencode); an MCP server
 // named a2a-<agent> is an A2A agent's MCP face.
 func TestRuntimeKindForKey(t *testing.T) {
 	cases := []struct {
 		key  string
 		want string
 	}{
-		{"mcpServers.my-mcp", "mcp"},        // claude/gemini/pi
+		{"mcpServers.my-mcp", "mcp"},        // claude/pi
 		{"mcp_servers.my-mcp", "mcp"},       // codex (TOML snake_case)
 		{"mcp.my-mcp", "mcp"},               // opencode
-		{"mcpServers.a2a-my-agent", "a2a"},  // claude/gemini/pi
+		{"mcpServers.a2a-my-agent", "a2a"},  // claude/pi
 		{"mcp_servers.a2a-my-agent", "a2a"}, // codex
 		{"mcp.a2a-my-agent", "a2a"},         // opencode
 		{"a2aAgents.my-agent", ""},          // no tool reads it; never written
