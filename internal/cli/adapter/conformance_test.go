@@ -296,3 +296,26 @@ func writeTree(t *testing.T, files map[string]string) string {
 // races that reset. Each subpackage already proves its own init() Register via
 // its TestRegistry_RegistersOnImport; this file owns the route-table spec-drift
 // gate only.
+
+func TestInstructionFiles_StayInsideToolConfig(t *testing.T) {
+	inside := func(p string) bool {
+		top, _, _ := strings.Cut(p, "/")
+		return strings.HasPrefix(top, ".") && top != "." && top != ".."
+	}
+	for id, a := range adapters() {
+		it, ok := a.(adapter.InstructionTarget)
+		if !ok {
+			continue
+		}
+		for _, global := range []bool{false, true} {
+			for _, fw := range it.InstructionFiles("n", []byte("x"), global) {
+				if !inside(fw.Path) {
+					t.Errorf("%s: instruction write %q is outside the tool's config", id, fw.Path)
+				}
+			}
+			if l := it.InstructionLoader(global); l != nil && (!inside(l.Path) || !inside(l.Dir)) {
+				t.Errorf("%s: loader %+v is outside the tool's config", id, l)
+			}
+		}
+	}
+}

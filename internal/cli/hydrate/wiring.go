@@ -448,6 +448,9 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		if err := d.projectSkills(ad, s, achDir, toolRoot, &result); err != nil {
 			return RenderResult{}, err
 		}
+		if err := d.projectInstructions(ad, s, achDir, toolRoot, &result); err != nil {
+			return RenderResult{}, err
+		}
 	}
 
 	return result, nil

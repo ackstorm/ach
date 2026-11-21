@@ -213,6 +213,11 @@ type RenderResult struct {
 	// ProjectedInstructionFiles flows into step 12 (state.File.Instructions).
 	ProjectedInstructionFiles []FileWrite
 
+	// InstructionNotes and InstructionWarnings report a target or scope that
+	// cannot load the Environment's instructions.
+	InstructionNotes    []string
+	InstructionWarnings []string
+
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types
 	// the active adapter cannot meaningfully translate (e.g.

@@ -466,6 +466,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// warnings, never errors. Skipped entirely when nothing was dropped.
 		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
 		c.warnConflicts(result.ConflictWarnings)
+		c.reportInstructions(renderResult)
 	}
 	c.maybeKill(10)
 
@@ -481,6 +482,9 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	// sc2_commit_sequence_sigkill. T-07-W5-01-03 — gated on !DryRun.
 	c.maybeKill(11)
 	if err := c.step11Sync(existingState, m, renderResult, adapterRan, runtimeFiles, &result); err != nil {
+		return result, err
+	}
+	if err := c.tidyInstructionLoader(result.PlatformID); err != nil {
 		return result, err
 	}
 
@@ -994,6 +998,23 @@ func (c *commit) warnConflicts(lines []string) {
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(c.opts.Stderr, "warning: %s\n", line)
 	}
+}
+
+// reportInstructions prints the instruction notes and warnings of a render.
+func (c *commit) reportInstructions(render RenderResult) {
+	for _, line := range render.InstructionNotes {
+		_, _ = fmt.Fprintf(c.opts.Stderr, "note: %s\n", line)
+	}
+	c.warnConflicts(render.InstructionWarnings)
+}
+
+// tidyInstructionLoader removes the target's instruction loader once pruning
+// left its folder without instruction files.
+func (c *commit) tidyInstructionLoader(platformID string) error {
+	if c.opts.DryRun || c.toolRoot == "" {
+		return nil
+	}
+	return TidyInstructionLoader(platformID, c.toolRoot, c.opts.Global)
 }
 
 // step11Sync is the STATE-05 / D-16 inverse-merge sync. With --sync it prunes

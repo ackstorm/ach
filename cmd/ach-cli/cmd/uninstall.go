@@ -296,6 +296,9 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			}
 		}
 		if !in.dryRun {
+			if terr := hydrate.TidyInstructionLoader(platformOfState(sp), toolRoot, in.global); terr != nil {
+				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("uninstall: %v", terr), Wrapped: terr}
+			}
 			if cerr := cleanupState(sp, scopedEmpty); cerr != nil {
 				return cerr
 			}
