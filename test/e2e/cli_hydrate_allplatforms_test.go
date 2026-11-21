@@ -139,6 +139,20 @@ var allPlatformExpects = []allPlatformExpect{
 	},
 }
 
+// claudeCodeExpect is the claude-code row: the ek_ and runtime subtests assert
+// claude-code's own layout (.mcp.json, .claude/skills), so they select it by id,
+// not by position in the table.
+func claudeCodeExpect(t *testing.T) allPlatformExpect {
+	t.Helper()
+	for _, pe := range allPlatformExpects {
+		if pe.id == "claude-code" {
+			return pe
+		}
+	}
+	t.Fatal("allPlatformExpects has no claude-code row")
+	return allPlatformExpect{}
+}
+
 // demoPluginSkills are the skill names the demo fixture's `caveman`
 // plugin ships (projected as caveman<skillSep><name>). The suite asserts a representative-stable subset is
 // present (coupling to the demo plugin is the same trade-off the golden
@@ -237,8 +251,9 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Fatalf("ek_path hydrate: exit %d (want 0)\nstdout=%s\nstderr=%s", code, stdout, stderr)
 		}
 		// An ek_ (agents / CI, no interactive login) keeps the key-in-file contract.
-		assertProjectedSkills(t, output, allPlatformExpects[0]) // claude-code
-		runtime := filepath.Join(output, allPlatformExpects[0].runtimePath)
+		cc := claudeCodeExpect(t)
+		assertProjectedSkills(t, output, cc)
+		runtime := filepath.Join(output, cc.runtimePath)
 		b, rErr := os.ReadFile(runtime)
 		if rErr != nil {
 			t.Fatalf("ek_path: read runtime config %s: %v", runtime, rErr)
@@ -274,7 +289,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 			t.Errorf("include_runtime: regression — runtime entry hit ExtractContent\nstderr=%s", stderr)
 		}
 		// Context projection + runtime config still land.
-		assertProjectedSkills(t, output, allPlatformExpects[0])
+		assertProjectedSkills(t, output, claudeCodeExpect(t))
 		mcpJSON, err := os.ReadFile(filepath.Join(output, ".mcp.json"))
 		if err != nil {
 			t.Fatalf("include_runtime: read .mcp.json: %v", err)
@@ -282,7 +297,7 @@ func TestPhase7AllPlatformsProjection(t *testing.T) {
 		if !bytes.Contains(mcpJSON, []byte(`"a2a-demo-agent"`)) || !bytes.Contains(mcpJSON, []byte("/a2a/demo-agent/mcp")) {
 			t.Errorf("include_runtime: .mcp.json lacks the a2a-demo-agent MCP entry:\n%s", mcpJSON)
 		}
-		assertRuntimeConfig(t, output, allPlatformExpects[0], pk)
+		assertRuntimeConfig(t, output, claudeCodeExpect(t), pk)
 	})
 }
 

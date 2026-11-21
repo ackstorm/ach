@@ -28,7 +28,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
 
-	// Named-import all five adapters: instantiate each Adapter directly for the
+	// Named-import every adapter: instantiate each Adapter directly for the
 	// route-table assertions. The import also fires init() Register, but
 	// registration is asserted by each subpackage's own test, not here.
 	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
@@ -190,7 +190,7 @@ var conformanceTables = []adapterConformance{
 }
 
 // TestProjectionRules_Conformance is the cross-adapter spec-drift gate. For each
-// of the five adapters it (1) asserts the ProjectionRules() route table FromGlob
+// of the adapters it (1) asserts the ProjectionRules() route table FromGlob
 // / ToGlob / Merge + Transform-presence against the literal expected fixture
 // transcribed from the adapter table, and (2) asserts the EXACT drop set
 // route.Project records over a plugin tree carrying every canonical source kind.

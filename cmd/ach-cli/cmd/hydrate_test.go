@@ -1042,3 +1042,43 @@ func TestRenderHydrate(t *testing.T) {
 		t.Fatalf("multi/dry run:\n%s", multi)
 	}
 }
+
+func TestHydrateHints_OpencodeServiceRestart(t *testing.T) {
+	const restart = "opencode service restart  — OpenCode loads MCP servers when its service starts"
+	res := func(platform string, first bool, op hydrate.Op, kind string) hydrate.Result {
+		return hydrate.Result{PlatformID: platform, FirstRun: first,
+			Changes: []hydrate.ItemChange{{Op: op, Kind: kind, Name: "x"}}}
+	}
+	count := func(hints []string) int {
+		n := 0
+		for _, h := range hints {
+			if h == restart {
+				n++
+			}
+		}
+		return n
+	}
+	for name, tc := range map[string]struct {
+		results []hydrate.Result
+		meta    summaryMeta
+		want    int
+	}{
+		"mcp add, first run": {
+			[]hydrate.Result{res("opencode", true, hydrate.OpAdd, "mcp")}, summaryMeta{oauth: true}, 1},
+		"mcp remove, not first run": {[]hydrate.Result{res("opencode", false, hydrate.OpRemove, "mcp")}, summaryMeta{}, 1},
+		"a2a add":                   {[]hydrate.Result{res("opencode", false, hydrate.OpAdd, "a2a")}, summaryMeta{}, 1},
+		"skill only":                {[]hydrate.Result{res("opencode", false, hydrate.OpAdd, "skill")}, summaryMeta{}, 0},
+		"mcp update only":           {[]hydrate.Result{res("opencode", false, hydrate.OpUpdate, "mcp")}, summaryMeta{}, 0},
+		"claude-code mcp add":       {[]hydrate.Result{res("claude-code", false, hydrate.OpAdd, "mcp")}, summaryMeta{}, 0},
+		"dry run": {
+			[]hydrate.Result{res("opencode", false, hydrate.OpAdd, "mcp")}, summaryMeta{dryRun: true}, 0},
+		"two opencode results": {[]hydrate.Result{
+			res("opencode", false, hydrate.OpAdd, "mcp"), res("opencode", false, hydrate.OpAdd, "mcp")}, summaryMeta{}, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := count(hydrateHints(tc.results, tc.meta)); got != tc.want {
+				t.Errorf("restart hints = %d; want %d", got, tc.want)
+			}
+		})
+	}
+}

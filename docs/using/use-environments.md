@@ -64,8 +64,12 @@ for Codex, Cursor, OpenCode and pi (`~/.agents/skills` with `-g`), so those four
 tools read one copy. Antigravity reads everything from `.agents/` (MCP servers in
 `.agents/mcp_config.json`, skills in `.agents/skills`, subagents in
 `.agents/agents`) and from `~/.gemini/config/` with `-g`, its user directory.
-It has no command directory, so a plugin's commands are not installed for it. Cursor reads MCP servers from `.cursor/mcp.json`; its
-commands and subagents go to `.cursor/commands` and `.cursor/agents`.
+It has no command directory, so a plugin's commands are not installed for it.
+Cursor reads MCP servers from `.cursor/mcp.json`; its commands and subagents go
+to `.cursor/commands` and `.cursor/agents`.
+
+OpenCode loads MCP servers when its service starts. After a hydrate that adds or
+removes one, run `opencode service restart`.
 
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
 in that folder.

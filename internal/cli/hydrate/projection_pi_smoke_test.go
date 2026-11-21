@@ -20,7 +20,7 @@ import (
 
 	// Blank-import the pi adapter so its init() Register fires before the
 	// NewWiring(nil, "pi", ...) lookup resolves it (D-37). Mirrors the
-	// autodetect_test.go pattern for the other four adapters.
+	// autodetect_test.go pattern for the other adapters.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
 

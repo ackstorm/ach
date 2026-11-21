@@ -27,6 +27,8 @@
   server`): run `ach-cli upgrade` ([install](install.md)). Commands usually keep working
   until then. An `unknown field` error from hydrate has this same cause, and older CLIs
   print no warning, so upgrade on that error too.
+- **An MCP server from ACH is missing in OpenCode**: OpenCode loads MCP servers when its
+  service starts; run `opencode service restart`.
 - **Hydrate says another hydrate holds the lock**: one is still running in that folder.
   Wait for it, or pass `--lock-timeout 2m`.
 - **Hydrate or uninstall fails `refusing to hydrate:` / `refusing to uninstall:`** (exit 1): a path

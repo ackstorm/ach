@@ -13,7 +13,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 
-	// Blank-import all four adapter subpackages so their init() side-
+	// Blank-import every adapter subpackages so their init() side-
 	// effect registrations fire before adapter.Iter() runs. The
 	// autodetect path consumes adapter.Iter() — without these imports,
 	// the registry is empty and every Autodetect call returns the

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Hermetic integration coverage for the localpkg manager's Resolve+Project
-// pipeline across ALL FIVE registered adapters (Group A) and the
+// pipeline across EVERY registered adapter (Group A) and the
 // skill-marketplace lens end-to-end (Group B).
 //
 // The existing manager_test.go only exercises the claude-code adapter; this
@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	// Blank-import all five adapters so their init() registers them.
+	// Blank-import every adapter so their init() registers them.
 	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
@@ -160,7 +160,7 @@ func pathList(writes []manager.PlannedWrite) []string {
 	return out
 }
 
-// ---- Group A: projection across all five adapters ---------------------------
+// ---- Group A: projection across every adapter ---------------------------
 
 // TestProject_AllAdapters_DirectPlugin verifies that a single rich direct-plugin
 // (command + agent + mcp) projects to the expected destination paths for each

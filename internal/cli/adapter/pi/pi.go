@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package pi is the Pi (pi-mono) platform Adapter implementation — the
-// optional 5th target (CONTEXT.md Phase 5, D-33). It is the thinnest adapter:
+// optional target (CONTEXT.md Phase 5, D-33). It is the thinnest adapter:
 // a 3-row ProjectionRules table plus an mcpServers-shaped RenderRuntime pointed at
 // .pi/mcp.json. There is NO format conversion — plugin commands/skills are
 // projected verbatim (MergeReplace): commands into Pi's project layout

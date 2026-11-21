@@ -39,6 +39,10 @@ Without `--environment`, `launch` starts the tool without hydrating.
 already hydrated in that folder. An Environment installed globally with `-g`
 does not count.
 
+`launch opencode` starts the tool but does not restart an OpenCode service that
+is already running. After a hydrate that changes MCP servers, run
+`opencode service restart`.
+
 ## Start it in another folder
 
 ```bash

@@ -348,9 +348,9 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 	// ADAPT-01 closed-set assertion: each Go test binary compiles
 	// with only its package's transitive imports, so the opencode
 	// test binary sees only opencode's init() side-effect — Iter()
-	// length is exactly 1 here. The full 4-adapter closed-set
-	// assertion (claudecode + codex + opencode + pi) belongs to
-	// W3-05 cobra wiring, where all four are blank-imported under a
+	// length is exactly 1 here. The full closed-set
+	// assertion belongs to
+	// W3-05 cobra wiring, where every adapter is blank-imported under a
 	// single compilation unit. From this test we only assert the
 	// per-plan invariant: the opencode adapter IS in the registry
 	// after import, and Iter() contains it.

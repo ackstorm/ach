@@ -885,11 +885,16 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	}
 	first := false
 	var logins []string
+	restart := false
 	for _, r := range results {
 		first = first || r.FirstRun
 		if c, ok := mcpLoginCmd[r.PlatformID]; ok && addsMCP(r) {
 			logins = append(logins, c)
 		}
+		restart = restart || (!meta.dryRun && r.PlatformID == "opencode" && changesServers(r))
+	}
+	if restart {
+		hints = append(hints, "opencode service restart  — OpenCode loads MCP servers when its service starts")
 	}
 	if !first {
 		return hints
@@ -909,7 +914,20 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 
 func addsMCP(r hydrate.Result) bool {
 	for _, c := range r.Changes {
-		if c.Op == hydrate.OpAdd && c.Kind == "mcp" {
+		if c.Op == hydrate.OpAdd && c.Kind == kindMCP {
+			return true
+		}
+	}
+	return false
+}
+
+const kindMCP = "mcp"
+
+// changesServers reports an MCP server or A2A agent (written as an MCP server)
+// added or removed.
+func changesServers(r hydrate.Result) bool {
+	for _, c := range r.Changes {
+		if (c.Kind == kindMCP || c.Kind == "a2a") && (c.Op == hydrate.OpAdd || c.Op == hydrate.OpRemove) {
 			return true
 		}
 	}

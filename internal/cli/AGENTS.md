@@ -124,7 +124,9 @@ updated, `-` removed, `!` kept/edited, `✓` installed in status), collapsed to
 `… N more (--verbose)` after 8. `Finished` closes every successful run with the
 result + elapsed time; the Environment's notice, the engine's `note:`/`warning:`
 lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
-AFTER it. Hints only on a first hydrate of that Environment+target (or a clone).
+AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
+`opencode service restart`, printed on any run (not `--dry-run`) that adds or
+removes an MCP server or A2A agent for OpenCode.
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
@@ -496,6 +498,30 @@ Markdown agents under `.opencode/agents/` are decoded by OpenCode with the V1
 frontmatter schema, so `tools: {name: true}` stays. **Lesson: validate adapter
 output against the real tool's schema — OpenPackage's `{mcpServers→mcp}` rename
 is not ground truth.**
+
+**Checked against the real tools (2026-11-21)**
+- OpenCode 2.3.2: `opencode mcp add <name> --url <u>` itself writes
+  `{"mcp": {"servers": {"<name>": {"type": "remote", "url": "<u>"}}}}`, the shape
+  the adapter emits; `opencode debug config` parses the adapter's output with no
+  diagnostic and `opencode debug agents` lists a `.opencode/agents/*.md`
+  subagent. An unknown key such as `enabled` is dropped silently, and an entry
+  with an unknown `type` is dropped whole. `opencode mcp list` prints "No MCP
+  servers configured" in a container without a login even for a server written
+  by `opencode mcp add`, so it is not a usable check there. OpenCode loads MCP
+  servers when its service starts: `opencode service restart` after a change.
+- Cursor CLI 2026.11.19: the install provides `agent` and `cursor-agent` (same
+  binary). `cursor-agent mcp list` reads the project `.cursor/mcp.json` without a
+  login and reports each server as "not loaded (needs approval)" until
+  `cursor-agent mcp enable <name>`; an entry carrying `"type": "http"` next to
+  `url` and `headers` is accepted. Skills, commands and subagents cannot be
+  listed without a login.
+- Antigravity CLI 1.5.14: `~/.gemini/config/mcp_config.json` loads, with
+  `serverUrl` and also with `url` + `"type": "http"`; `agy mcp add` writes only
+  that user file (`{"disabled": false, "serverUrl": …}`) and has no scope flag.
+  `agy mcp list` does not show servers from a project `.agents/mcp_config.json`,
+  trusted workspace or not; the docs (antigravity.google/docs/mcp) name that file
+  as the workspace configuration, and whether a signed-in session loads it is NOT
+  verified. Skills and subagents cannot be listed without a login.
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage

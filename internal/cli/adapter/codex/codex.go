@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package codex is the OpenAI Codex CLI platform adapter per CLI spec
-// §7.2 row 2 and §7.4 codex section. It is the second of four adapters
-// in the v1alpha1 closed set (claude-code, codex, opencode, pi)
+// §7.2 row 2 and §7.4 codex section. It is one of the adapters
+// in the v1alpha1 closed set
 // and the first NON-pass-through adapter — its runtime-config target is
 // TOML (not JSON) and its plugin transformation rewrites Claude-format
 // agent frontmatter into the Codex agent schema, with silent-drop
 // accounting for source-tree components Codex has no destination for.
 //
-// Per CONTEXT.md D-05 the four-adapter set must demonstrably translate
-// the same Hub manifest into four distinct on-disk shapes; the codex
+// Per CONTEXT.md D-05 the adapter set must demonstrably translate
+// the same Hub manifest into distinct on-disk shapes; the codex
 // adapter is the first non-trivial transformation reference that the
 // opencode and pi siblings mirror.
 //

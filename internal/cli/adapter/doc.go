@@ -23,7 +23,7 @@
 //     route.Project + ProjectionRules per spec §7.4 opencode.
 //
 //   - pi (subpackage internal/cli/adapter/pi, Phase 5 D-33):
-//     the optional 5th target (Pi / pi-mono). RenderRuntime deep-merges
+//     an optional target (Pi / pi-mono). RenderRuntime deep-merges
 //     Environment runtime MCP servers into .pi/mcp.json (MergeDeep) and
 //     a 3-row ProjectionRules table passes plugin commands/skills
 //     verbatim through 2 .pi/-prefixed globs. rules/, agents/, AGENTS.md,
