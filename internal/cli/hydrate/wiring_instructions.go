@@ -90,7 +90,7 @@ func readSingleFile(dir string) ([]byte, error) {
 	if path == "" {
 		return nil, fmt.Errorf("no file in %s", dir)
 	}
-	return os.ReadFile(path)
+	return os.ReadFile(path) // #nosec G304 — the one file ach-cli extracted into its own stage
 }
 
 // resolveLoader remaps the loader's paths for --global and resolves them
@@ -117,11 +117,11 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	if l.ArrayKey == "" {
-		cur, err := os.ReadFile(path)
+		cur, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
 		if err == nil && bytes.Equal(cur, l.Content) {
 			return nil
 		}
@@ -191,7 +191,7 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		}
 		return nil
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
 	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(l.Entry))) {
 		return nil
 	}
