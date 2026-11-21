@@ -106,7 +106,7 @@ type projectionDescriptor struct {
 
 	// coOwnedKind selects the pre-seed shape + the survivor assertion:
 	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude)
-	// "json-mcp-opencode" → {"mcp": {"<userKey>": …}} (opencode)
+	// "json-mcp-opencode" → {"mcp": {"servers": {"<userKey>": …}}} (opencode)
 	// "toml-mcp"  → [mcp_servers.<userKey>] (codex)
 	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json)
 	coOwnedKind string
@@ -359,7 +359,9 @@ func seedCoOwnedUserKey(t *testing.T, output string, d projectionDescriptor) str
 	case "json-mcp-opencode":
 		body = []byte(`{
   "mcp": {
-    "` + userKey + `": {"type": "remote", "url": "http://localhost:9/user"}
+    "servers": {
+      "` + userKey + `": {"type": "remote", "url": "http://localhost:9/user"}
+    }
   }
 }
 `)

@@ -106,31 +106,32 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}), nil
 }
 
+// opencodeMCPKeyPrefix is the dotted-key prefix of every MCP server ACH
+// contributes to `.opencode/opencode.json`.
+const opencodeMCPKeyPrefix = "mcp.servers."
+
 // configJSONShape is the `.opencode/opencode.json` document OpenCode
-// reads. The `mcp` top-level key holds MCP server registrations per
-// spec §7.4 opencode row. A2A agents are not written: OpenCode reads no
-// A2A key.
+// reads. MCP server registrations live under `mcp.servers`. A2A agents are
+// not written: OpenCode reads no A2A key.
 //
 // Deterministic output: encoding/json sorts map keys lexicographically,
 // so the same manifest + credential always yields byte-identical bytes.
 // SAFE-04 Tier 2 cascade depends on this byte-equality.
 //
-// opencodeMCPEntry is the per-server JSON shape OpenCode consumes under
-// the `mcp` key for a remote (HTTP) MCP server. OpenCode uses
-// `"type":"remote"` (NOT "http"), `url`, optional `"enabled":true`, and a
-// `headers` map. The earlier {type:"http"} shape (copied from claudecode)
-// was silently ignored. Schema ref: https://opencode.ai/docs/mcp-servers/.
+// opencodeMCPEntry is a remote (HTTP) MCP server under `mcp.servers`:
+// `"type":"remote"` (NOT "http"), `url` and a `headers` map (OpenCode
+// packages/schema/src/mcp.ts RemoteConfig).
 type opencodeMCPEntry struct {
 	Type    string            `json:"type"` // "remote"
 	URL     string            `json:"url"`
-	Enabled bool              `json:"enabled"`
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// MCP carries the per-server JSON shape OpenCode consumes under the
-// `mcp` key (opencodeMCPEntry: type=remote, url, enabled, headers).
+// MCP carries the `mcp.servers` map of opencodeMCPEntry.
 type configJSONShape struct {
-	MCP map[string]opencodeMCPEntry `json:"mcp"`
+	MCP struct {
+		Servers map[string]opencodeMCPEntry `json:"servers"`
+	} `json:"mcp"`
 }
 
 // renderConfigJSON builds the `.opencode/opencode.json` bytes from a
@@ -141,9 +142,8 @@ type configJSONShape struct {
 // discipline CLI-04 (D-04) establishes (and the cross-adapter
 // symmetry claudecode established).
 func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
-	shape := configJSONShape{
-		MCP: map[string]opencodeMCPEntry{},
-	}
+	var shape configJSONShape
+	shape.MCP.Servers = map[string]opencodeMCPEntry{}
 
 	// Track contributed top-level keys for state.adapter.files[*].keys[]
 	// (STATE-02 + ADAPT-05). Sorted lexicographically so the output
@@ -155,11 +155,10 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 		entry := opencodeMCPEntry{
 			Type:    opencodeMCPRemote,
 			URL:     server.Endpoint,
-			Enabled: true,
 			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
-		shape.MCP[server.ID] = entry
-		contributedKeys = append(contributedKeys, "mcp."+server.ID)
+		shape.MCP.Servers[server.ID] = entry
+		contributedKeys = append(contributedKeys, opencodeMCPKeyPrefix+server.ID)
 	}
 
 	sort.Strings(contributedKeys)
@@ -347,36 +346,34 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 }
 
 // opencodeMCPConvert is the MCP Transform (D-21). It parses the plugin
-// `mcp.json`, renames the top-level `mcpServers` key to `mcp` (opencode's MCP
-// merge key under .opencode/opencode.json), CONVERTS each server entry to
-// opencode's strict per-server schema, and re-emits canonical JSON via
+// `mcp.json`, CONVERTS each server entry of its `mcpServers` key to opencode's
+// per-server schema, and emits them under `mcp.servers` (opencode's MCP
+// merge key under .opencode/opencode.json) as canonical JSON via
 // route.CanonicalJSON (sorted keys — D-24) so re-hydrate is byte-identical.
 //
-// Per-entry conversion is MANDATORY — opencode validates each entry and aborts
-// the whole config on a mismatch (real ConfigInvalidError observed against
-// opencode 1.16.0). A Claude/universal `.mcp.json` entry is one of:
+// Per-entry conversion is MANDATORY — opencode validates each entry. A
+// Claude/universal `.mcp.json` entry is one of:
 //
 //   - stdio:  {command, args, env}      → {type:"local",  command:[cmd,…args],
-//     enabled:true, environment:{…}}
-//   - remote: {url[, type, headers]}    → {type:"remote", url, enabled:true,
-//     headers:{…}}
+//     environment:{…}}
+//   - remote: {url[, type, headers]}    → {type:"remote", url, headers:{…}}
 //
-// opencode's schema (https://opencode.ai/docs/mcp-servers/): local requires
+// opencode's schema (packages/schema/src/mcp.ts): local requires
 // type+command (command is an ARRAY), env uses the "environment" key; remote
 // requires type="remote" (NOT "http"/"streamable-http") + url, headers optional.
-// `enabled` is carried (default true). Every other source field (description,
-// timeout-spelling variants, …) is DROPPED so a closed-schema reject can't
-// happen. Header/environment values have their env-var refs rewritten from the
-// universal `${VAR}` to opencode's `{env:VAR}` (rewriteEnvVarsInStringMap):
-// opencode does NOT understand `${VAR}`, so a verbatim ref would reach it
-// un-interpolated and (for an API-key header) auth would fail. ACH rewrites only
-// the placeholder wrapper — it never reads the secret value.
+// `disabled: true` is emitted only when the source says `enabled: false` or
+// `disabled: true`; there is no `enabled` field. Every other source field
+// (description, …) is DROPPED. Header/environment values have their env-var
+// refs rewritten from the universal `${VAR}` to opencode's `{env:VAR}`
+// (rewriteEnvVarsInStringMap): opencode does NOT understand `${VAR}`, so a
+// verbatim ref would reach it un-interpolated and (for an API-key header) auth
+// would fail. ACH rewrites only the placeholder wrapper — it never reads the
+// secret value.
 //
-// keys returns the contributed dotted paths `["mcp.<id>", …]` (sorted) matching
-// the runtime encoder prefix (renderConfigJSON contributes `mcp.<server.ID>`),
-// so the Wave-1 prefix-aware dropRuntimeOwnedMCP dedups a projected server
-// against an identically-named runtime server on a `mcp.<id>` clash. The
-// runtime emission (renderConfigJSON / the `json:"mcp"` shape) is UNTOUCHED.
+// keys returns the contributed dotted paths `["mcp.servers.<id>", …]` (sorted)
+// matching the runtime encoder prefix (opencodeMCPKeyPrefix), so the
+// prefix-aware dropRuntimeOwnedMCP dedups a projected server against an
+// identically-named runtime server.
 func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, err error) {
 	var top map[string]any
 	if err := json.Unmarshal(in, &top); err != nil {
@@ -387,12 +384,13 @@ func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, er
 	}
 
 	// Source servers live under `mcpServers` (Claude/universal) or already under
-	// `mcp` (a re-hydrate of converted output — keeps the Transform idempotent).
+	// `mcp.servers` (a re-hydrate of converted output — keeps the Transform
+	// idempotent).
 	var raw any
 	if v, ok := top["mcpServers"]; ok {
 		raw = v
-	} else if v, ok := top["mcp"]; ok {
-		raw = v
+	} else if mcp, ok := top["mcp"].(map[string]any); ok {
+		raw = mcp["servers"]
 	}
 	servers, _ := raw.(map[string]any)
 
@@ -406,11 +404,11 @@ func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, er
 			continue
 		}
 		converted[id] = convertOpencodeMCPEntry(em)
-		keys = append(keys, "mcp."+id)
+		keys = append(keys, opencodeMCPKeyPrefix+id)
 	}
 	sort.Strings(keys)
 
-	out, err = route.CanonicalJSON(map[string]any{"mcp": converted})
+	out, err = route.CanonicalJSON(map[string]any{"mcp": map[string]any{"servers": converted}})
 	if err != nil {
 		return nil, nil, fmt.Errorf("opencode: opencodeMCPConvert encode %q: %w", srcRel, err)
 	}
@@ -448,22 +446,27 @@ func rewriteEnvVarsInStringMap(m map[string]any) map[string]any {
 	return out
 }
 
-// opencodeMCPEntry converts a single Claude/universal MCP server entry to
+// convertOpencodeMCPEntry converts a single Claude/universal MCP server entry to
 // opencode's local|remote schema. Idempotent: a value already in opencode shape
 // (command as an array, type already local/remote) round-trips unchanged.
+// `disabled: true` is emitted only when the source is disabled (`enabled: false`
+// or `disabled: true`).
 func convertOpencodeMCPEntry(e map[string]any) map[string]any {
 	typ, _ := e["type"].(string)
 	_, hasURL := e["url"]
 	isRemote := hasURL ||
 		typ == opencodeMCPRemote || typ == "http" || typ == "streamable-http" || typ == "sse"
 
-	enabled := true
-	if v, ok := e["enabled"].(bool); ok {
-		enabled = v
+	disabled, _ := e["disabled"].(bool)
+	if v, ok := e["enabled"].(bool); ok && !v {
+		disabled = true
 	}
 
 	if isRemote {
-		out := map[string]any{"type": opencodeMCPRemote, "enabled": enabled}
+		out := map[string]any{"type": opencodeMCPRemote}
+		if disabled {
+			out["disabled"] = true
+		}
 		if u, ok := e["url"].(string); ok {
 			out["url"] = u
 		}
@@ -492,7 +495,10 @@ func convertOpencodeMCPEntry(e map[string]any) map[string]any {
 		cmd = append(cmd, c...)
 	}
 
-	out := map[string]any{"type": opencodeMCPLocal, "enabled": enabled, "command": cmd}
+	out := map[string]any{"type": opencodeMCPLocal, "command": cmd}
+	if disabled {
+		out["disabled"] = true
+	}
 	// env (Claude) or environment (opencode) → environment.
 	if env, ok := e["environment"].(map[string]any); ok && len(env) > 0 {
 		out["environment"] = rewriteEnvVarsInStringMap(env)

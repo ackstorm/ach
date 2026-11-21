@@ -5,6 +5,7 @@ package hydrate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -2133,6 +2134,64 @@ func TestRehydrate_MovedSkillDir_OldCopyPruned(t *testing.T) {
 	next := c.composeNextState(existing, nil, render, true, "opencode", nil)
 	if len(next.Skills) != 2 || next.Skills[0].Target != ".agents/skills/demo/SKILL.md" {
 		t.Errorf("new Skills rows = %+v", next.Skills)
+	}
+}
+
+// TestRehydrate_Opencode_V1KeysReplaced: adapter keys the render no longer emits
+// (the old `mcp.<id>` shape) leave the shared opencode.json on a plain
+// hydrate; the user's own `mcp.mine` and the new `mcp.servers.<id>` stay.
+func TestRehydrate_Opencode_V1KeysReplaced(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	abs := filepath.Join(c.toolRoot, ".opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"mcp":{"mcp-echo":{"type":"remote","url":"https://old","enabled":true},` +
+		`"mine":{"type":"local","command":["x"]},` +
+		`"servers":{"mcp-echo":{"type":"remote","url":"https://new"}}}}`
+	if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldKeys := []string{"mcp.mcp-echo"}
+	doc, err := merge.ParseDoc([]byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, _ := merge.ExtractByKeys(doc, oldKeys)
+	h, err := merge.SubtreeHash(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := &state.File{Adapter: state.AdapterSection{ID: "opencode", Files: []state.FileEntry{
+		{Target: ".opencode/opencode.json", Hash: h, SourceHash: h, Merge: mergeStrDeep, Keys: oldKeys},
+	}}}
+	render := RenderResult{WrittenFiles: []FileWrite{
+		{Target: ".opencode/opencode.json", Merge: mergeStrDeep, Keys: []string{"mcp.servers.mcp-echo"}},
+	}}
+
+	var res Result
+	if err := c.step11Sync(existing, nil, render, true, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		MCP map[string]map[string]any `json:"mcp"`
+	}
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := out.MCP["mcp-echo"]; ok {
+		t.Errorf("old mcp.mcp-echo not pruned: %v\n%s", v, got)
+	}
+	if _, ok := out.MCP["mine"]; !ok {
+		t.Errorf("user's mcp.mine removed:\n%s", got)
+	}
+	if _, ok := out.MCP["servers"]["mcp-echo"]; !ok {
+		t.Errorf("mcp.servers.mcp-echo missing:\n%s", got)
 	}
 }
 

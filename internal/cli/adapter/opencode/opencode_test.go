@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -215,11 +216,12 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	// JSON round-trip: top-level `mcp` (NOT `mcpServers`) per spec §7.4
 	// opencode row.
 	var got struct {
-		MCP map[string]struct {
-			Type    string            `json:"type"`
-			URL     string            `json:"url"`
-			Enabled bool              `json:"enabled"`
-			Headers map[string]string `json:"headers"`
+		MCP struct {
+			Servers map[string]struct {
+				Type    string            `json:"type"`
+				URL     string            `json:"url"`
+				Headers map[string]string `json:"headers"`
+			} `json:"servers"`
 		} `json:"mcp"`
 		A2AAgents map[string]struct {
 			Type    string            `json:"type"`
@@ -230,22 +232,18 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	if err := json.Unmarshal(w.Content, &got); err != nil {
 		t.Fatalf("json.Unmarshal Content: %v", err)
 	}
-	if len(got.MCP) != 3 {
-		t.Errorf("mcp map size = %d, want 3", len(got.MCP))
+	if len(got.MCP.Servers) != 3 {
+		t.Errorf("mcp.servers size = %d, want 3", len(got.MCP.Servers))
 	}
-	if a := got.MCP["a2a-demo-agent"]; a.Type != "remote" || a.URL != "http://localhost:8080/a2a/demo-agent/mcp" {
+	if a := got.MCP.Servers["a2a-demo-agent"]; a.Type != "remote" || a.URL != "http://localhost:8080/a2a/demo-agent/mcp" {
 		t.Errorf("mcp[a2a-demo-agent] = %+v; want remote entry at /a2a/demo-agent/mcp", a)
 	}
-	if got.MCP["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
-		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCP["demo-mcp-jwt"].URL)
+	if got.MCP.Servers["demo-mcp-jwt"].URL != "http://localhost:8080/mcp/demo-mcp-jwt" {
+		t.Errorf("MCP url = %q, want endpoint from manifest", got.MCP.Servers["demo-mcp-jwt"].URL)
 	}
-	// OpenCode remote MCP uses type=="remote" (NOT "http") + enabled=true.
-	// Schema: https://opencode.ai/docs/mcp-servers/.
-	if got.MCP["demo-mcp-jwt"].Type != "remote" {
-		t.Errorf("MCP type = %q, want remote", got.MCP["demo-mcp-jwt"].Type)
-	}
-	if !got.MCP["demo-mcp-jwt"].Enabled {
-		t.Errorf("MCP enabled = false, want true")
+	// OpenCode remote MCP uses type=="remote" (NOT "http").
+	if got.MCP.Servers["demo-mcp-jwt"].Type != "remote" {
+		t.Errorf("MCP type = %q, want remote", got.MCP.Servers["demo-mcp-jwt"].Type)
 	}
 	if len(got.A2AAgents) != 0 {
 		t.Errorf("a2aAgents written = %v; no tool reads it, so hydrate writes none", got.A2AAgents)
@@ -255,9 +253,9 @@ func TestRenderRuntime_ConfigJsonShape(t *testing.T) {
 	// claudecode) — this is the inverse-merge path identifier and MUST
 	// match the on-disk JSON structure.
 	wantPrefixes := map[string]bool{
-		"mcp.demo-mcp-jwt":   false,
-		"mcp.demo-mcp-nojwt": false,
-		"mcp.a2a-demo-agent": false,
+		"mcp.servers.demo-mcp-jwt":   false,
+		"mcp.servers.demo-mcp-nojwt": false,
+		"mcp.servers.a2a-demo-agent": false,
 	}
 	for _, k := range w.Keys {
 		if _, ok := wantPrefixes[k]; ok {
@@ -307,13 +305,15 @@ func TestRenderRuntime_EmptyRuntime_EmitsEmptyMcp(t *testing.T) {
 		t.Fatalf("RenderRuntime returned %d FileWrites, want 1", len(writes))
 	}
 	var got struct {
-		MCP map[string]any `json:"mcp"`
+		MCP struct {
+			Servers map[string]any `json:"servers"`
+		} `json:"mcp"`
 	}
 	if err := json.Unmarshal(writes[0].Content, &got); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	if len(got.MCP) != 0 {
-		t.Errorf("empty runtime → mcp should be empty, got %d entries", len(got.MCP))
+	if len(got.MCP.Servers) != 0 {
+		t.Errorf("empty runtime → mcp.servers should be empty, got %d entries", len(got.MCP.Servers))
 	}
 	if len(writes[0].Keys) != 0 {
 		t.Errorf("empty runtime → Keys should be empty, got %d entries", len(writes[0].Keys))
@@ -633,8 +633,8 @@ func TestOpencodeAgentTools_Idempotent(t *testing.T) {
 // top key. Schema: https://opencode.ai/docs/mcp-servers/.
 
 // TestOpencodeMCPConvert_RemoteShape: a streamable-http/url entry → opencode
-// remote {type:"remote", url, enabled:true, headers}. The type is normalized
-// (streamable-http is NOT a valid opencode type) and enabled is injected.
+// remote {type:"remote", url, headers}. The type is normalized
+// (streamable-http is NOT a valid opencode type).
 func TestOpencodeMCPConvert_RemoteShape(t *testing.T) {
 	in := []byte(`{"mcpServers":{"cal":{"type":"streamable-http","url":"https://mcp/cal",` +
 		`"description":"x","headers":{"x-key":"${LITELLM_API_KEY}"}}}}`)
@@ -649,12 +649,12 @@ func TestOpencodeMCPConvert_RemoteShape(t *testing.T) {
 	if _, ok := got["mcpServers"]; ok {
 		t.Errorf("top key 'mcpServers' must be renamed away:\n%s", out)
 	}
-	cal, _ := got["mcp"].(map[string]any)["cal"].(map[string]any)
+	cal, _ := got["mcp"].(map[string]any)["servers"].(map[string]any)["cal"].(map[string]any)
 	if cal["type"] != "remote" {
 		t.Errorf("type = %v, want \"remote\" (streamable-http is invalid for opencode):\n%s", cal["type"], out)
 	}
-	if cal["enabled"] != true {
-		t.Errorf("enabled missing/false; opencode requires it:\n%s", out)
+	if _, has := cal["enabled"]; has {
+		t.Errorf("enabled must not be emitted:\n%s", out)
 	}
 	if cal["url"] != "https://mcp/cal" {
 		t.Errorf("url not preserved: %v", cal["url"])
@@ -672,8 +672,8 @@ func TestOpencodeMCPConvert_RemoteShape(t *testing.T) {
 	if bytes.Contains(out, []byte(`${LITELLM_API_KEY}`)) {
 		t.Errorf("universal ${VAR} form must not survive for opencode:\n%s", out)
 	}
-	if !reflect.DeepEqual(keys, []string{"mcp.cal"}) {
-		t.Errorf("keys = %v, want [mcp.cal]", keys)
+	if !reflect.DeepEqual(keys, []string{"mcp.servers.cal"}) {
+		t.Errorf("keys = %v, want [mcp.servers.cal]", keys)
 	}
 }
 
@@ -718,8 +718,7 @@ func TestOpencodeMCPConvert_LocalEnvVarRewrite(t *testing.T) {
 }
 
 // TestOpencodeMCPConvert_LocalShape: a stdio {command, args, env} entry →
-// opencode local {type:"local", command:[cmd,...args], enabled:true,
-// environment}. command MUST be an array (opencode rejects a bare string).
+// opencode local {type:"local", command:[cmd,...args], environment}. command MUST be an array (opencode rejects a bare string).
 func TestOpencodeMCPConvert_LocalShape(t *testing.T) {
 	in := []byte(`{"mcpServers":{"ccplugin":{"command":"ccplugin","args":["mcp"],` +
 		`"env":{"TOK":"abc"}}}}`)
@@ -727,12 +726,12 @@ func TestOpencodeMCPConvert_LocalShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
-	cc, _ := mustJSON(t, out)["mcp"].(map[string]any)["ccplugin"].(map[string]any)
+	cc, _ := mustJSON(t, out)["mcp"].(map[string]any)["servers"].(map[string]any)["ccplugin"].(map[string]any)
 	if cc["type"] != "local" {
 		t.Errorf("type = %v, want \"local\":\n%s", cc["type"], out)
 	}
-	if cc["enabled"] != true {
-		t.Errorf("enabled missing/false:\n%s", out)
+	if _, has := cc["enabled"]; has {
+		t.Errorf("enabled must not be emitted:\n%s", out)
 	}
 	cmd, ok := cc["command"].([]any)
 	if !ok || len(cmd) != 2 || cmd[0] != "ccplugin" || cmd[1] != "mcp" {
@@ -747,15 +746,15 @@ func TestOpencodeMCPConvert_LocalShape(t *testing.T) {
 	}
 }
 
-// TestOpencodeMCPConvert_MultipleServersSortedKeys: keys are sorted mcp.<id>.
+// TestOpencodeMCPConvert_MultipleServersSortedKeys: keys are sorted mcp.servers.<id>.
 func TestOpencodeMCPConvert_MultipleServersSortedKeys(t *testing.T) {
 	in := []byte(`{"mcpServers":{"b":{"url":"https://b"},"a":{"url":"https://a"}}}`)
 	_, keys, err := opencodeMCPConvert("mcp/x.json", in)
 	if err != nil {
 		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
-	if !reflect.DeepEqual(keys, []string{"mcp.a", "mcp.b"}) {
-		t.Errorf("keys = %v, want sorted [mcp.a mcp.b]", keys)
+	if !reflect.DeepEqual(keys, []string{"mcp.servers.a", "mcp.servers.b"}) {
+		t.Errorf("keys = %v, want sorted [mcp.servers.a mcp.servers.b]", keys)
 	}
 }
 
@@ -864,10 +863,10 @@ func TestOpencodeMCPConvert_NoHeaderSurgery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opencodeMCPConvert: %v", err)
 	}
-	if !reflect.DeepEqual(keys, []string{"mcp.svc"}) {
-		t.Errorf("keys = %v, want [mcp.svc]", keys)
+	if !reflect.DeepEqual(keys, []string{"mcp.servers.svc"}) {
+		t.Errorf("keys = %v, want [mcp.servers.svc]", keys)
 	}
-	svc, _ := mustJSON(t, out)["mcp"].(map[string]any)["svc"].(map[string]any)
+	svc, _ := mustJSON(t, out)["mcp"].(map[string]any)["servers"].(map[string]any)["svc"].(map[string]any)
 	if svc["type"] != "remote" {
 		t.Errorf("type = %v, want remote:\n%s", svc["type"], out)
 	}
@@ -1051,5 +1050,77 @@ func TestRenderRuntime_EmptyCredentialWritesNoHeaders(t *testing.T) {
 	}
 	if bytes.Contains(writes[0].Content, []byte(`"headers"`)) || bytes.Contains(writes[0].Content, []byte(`x-ach-key`)) {
 		t.Errorf("credential-free render must carry no headers block; got:\n%s", writes[0].Content)
+	}
+}
+
+func TestOpencode_RenderRuntime_V2Shape(t *testing.T) {
+	m := &manifest.Manifest{
+		Environment: "dev",
+		Runtime:     &manifest.RuntimeBlock{MCPServers: []manifest.ContentRef{{ID: "mcp-echo", Endpoint: "https://ach.example/mcp/mcp-echo"}}},
+	}
+	fws, err := (&Adapter{}).RenderRuntime(adapter.WithCredential(context.Background(), "ek-test"), m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "mcp": {
+    "servers": {
+      "mcp-echo": {
+        "type": "remote",
+        "url": "https://ach.example/mcp/mcp-echo",
+        "headers": {
+          "x-ach-environment": "dev",
+          "x-ach-key": "ek-test"
+        }
+      }
+    }
+  }
+}
+`
+	if string(fws[0].Content) != want {
+		t.Fatalf("content:\n%s", fws[0].Content)
+	}
+	if len(fws[0].Keys) != 1 || fws[0].Keys[0] != "mcp.servers.mcp-echo" {
+		t.Fatalf("keys: %v", fws[0].Keys)
+	}
+}
+
+func TestOpencodeMCPConvert_V2Shape(t *testing.T) {
+	in := []byte(`{"mcpServers":{
+		"remote":{"type":"http","url":"https://x/mcp","headers":{"Authorization":"Bearer ${TOKEN}"}},
+		"off":{"url":"https://y/mcp","enabled":false},
+		"local":{"command":"npx","args":["-y","srv"],"env":{"K":"${V}"}}}}`)
+	out, keys, err := opencodeMCPConvert("mcp/x.json", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		MCP struct {
+			Servers map[string]map[string]any `json:"servers"`
+		} `json:"mcp"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatal(err)
+	}
+	s := doc.MCP.Servers
+	if s["remote"]["type"] != "remote" || s["remote"]["headers"].(map[string]any)["Authorization"] != "Bearer {env:TOKEN}" {
+		t.Fatalf("remote: %v", s["remote"])
+	}
+	if _, has := s["remote"]["enabled"]; has {
+		t.Fatalf("enabled must not be emitted: %v", s["remote"])
+	}
+	if s["off"]["disabled"] != true {
+		t.Fatalf("off: %v", s["off"])
+	}
+	if s["local"]["type"] != "local" || len(s["local"]["command"].([]any)) != 3 {
+		t.Fatalf("local: %v", s["local"])
+	}
+	want := []string{"mcp.servers.local", "mcp.servers.off", "mcp.servers.remote"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("keys: %v", keys)
+	}
+	out2, _, err := opencodeMCPConvert("mcp/x.json", out)
+	if err != nil || !bytes.Equal(out, out2) {
+		t.Fatalf("not idempotent: %v\n%s", err, out2)
 	}
 }

@@ -57,3 +57,18 @@ func TestDiffItems_NilPrevIsAllAdds(t *testing.T) {
 		t.Fatalf("got %+v unchanged %d", got, unchanged)
 	}
 }
+
+func TestItemsOf_OpencodeKeyNames(t *testing.T) {
+	f := &state.File{}
+	f.Adapter.Files = []state.FileEntry{{
+		Target: ".opencode/opencode.json", Hash: "h", Merge: "deep",
+		Keys: []string{"mcp.servers.mcp-echo", "mcp.servers.a2a-bot"},
+	}}
+	got := map[[2]string]bool{}
+	for _, it := range ItemsOf(f) {
+		got[[2]string{it.Kind, it.Name}] = true
+	}
+	if !got[[2]string{"mcp", "mcp-echo"}] || !got[[2]string{"a2a", "a2a-bot"}] || len(got) != 2 {
+		t.Fatalf("items = %v", got)
+	}
+}

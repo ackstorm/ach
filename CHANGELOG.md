@@ -30,6 +30,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Audit: `operator.orphan-cleanup` events carry `action` and
   `actor` (`<namespace>/system:operator`), like every other event.
 - `ach-cli` writes skills for Codex, OpenCode and pi to the shared `.agents/skills` directory (`~/.agents/skills` with `-g`). The next hydrate moves existing ones; a skill you edited in place is kept at its old path with a warning.
+- ach-cli writes OpenCode MCP servers in the OpenCode 2 format (`mcp.servers`). OpenCode 1.x is not supported.
 
 ### Removed
 - ach-cli no longer supports Gemini CLI as a target (`--target gemini-cli`, `launch gemini`).

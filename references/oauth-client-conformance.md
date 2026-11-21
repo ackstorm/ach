@@ -111,7 +111,7 @@ ceremony. This is what personal hydrate writes.
 
 ```json
 // opencode — OAuth is opt-OUT: any remote entry without "oauth": false gets a provider.
-{"mcp": {"ach": {"type": "remote", "url": "https://ach.example.com/mcp/<svc>"}}}
+{"mcp": {"servers": {"ach": {"type": "remote", "url": "https://ach.example.com/mcp/<svc>"}}}}
 ```
 
 ```toml

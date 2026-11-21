@@ -471,22 +471,27 @@ were rewritten clean-room from the Codex docs on 2026-10-28 for that reason.
 **Faithful:** claude (no-op canonical), codex (field-lift + bearer/header
 surgery per the Codex config reference).
 
-**opencode MCP — CONVERTS per-entry shape (`opencodeMCPConvert`), NOT a bare
-rename.** ⚠ Hard-won: OpenPackage's opencode export is just
-`{mcpServers→mcp}`, and trusting it shipped invalid config — real opencode
-(1.16.0) `ConfigInvalidError`: it validates each entry against a CLOSED
-`local|remote` schema. **ccplugin's `transform_mcp_entry_to_opencode` is the
-correct reference, not OpenPackage.** Conversion (schema
-https://opencode.ai/docs/mcp-servers/, verified against the real binary):
-stdio `{command,args,env}` → `{type:"local", command:[cmd,…args], enabled:true,
-environment}`; remote `{url|type:streamable-http,…}` →
-`{type:"remote", url, enabled:true, headers}`. Non-schema fields (description,
-…) dropped; `type` normalized (streamable-http→remote); header/`environment`
-values have env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` —
-opencode does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
+**opencode MCP — OpenCode 2 format only, under `mcp.servers`; CONVERTS
+per-entry shape (`opencodeMCPConvert`), NOT a bare rename.** Contributed keys
+are `mcp.servers.<id>` (`opencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
+parses them, and an item's name is `<id>`, never `servers.<id>`). Source of truth:
+`anomalyco/opencode` v2.3.2, `packages/schema/src/mcp.ts` (`RemoteConfig`:
+`type:"remote"`, `url`, optional `headers`, `oauth`, `disabled`, `timeout`;
+`LocalConfig`: `type:"local"`, `command` string array, optional `cwd`,
+`environment`, `disabled`, `timeout`) and `packages/schema/src/config/mcp.ts`
+(`mcp: {timeout?, servers?}`). There is no `enabled` field: a source
+`enabled:false` or `disabled:true` becomes `disabled:true`, otherwise nothing is
+emitted. Conversion: stdio `{command,args,env}` → `{type:"local",
+command:[cmd,…args], environment}`; remote `{url|type:streamable-http,…}` →
+`{type:"remote", url, headers}`. Non-schema fields (description, …) dropped;
+`type` normalized (streamable-http→remote); header/`environment` values have
+env-var refs rewritten `${VAR}`→`{env:VAR}` (`convertEnvVarSyntax` — opencode
+does NOT understand `${VAR}`, so a verbatim API-key ref would reach it
 un-interpolated; ACH rewrites only the wrapper, never reads the secret).
-**Lesson: validate adapter output against the real tool — OpenPackage ≠ ground
-truth for opencode's strict schema.**
+Markdown agents under `.opencode/agents/` are decoded by OpenCode with the V1
+frontmatter schema, so `tools: {name: true}` stays. **Lesson: validate adapter
+output against the real tool's schema — OpenPackage's `{mcpServers→mcp}` rename
+is not ground truth.**
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage
