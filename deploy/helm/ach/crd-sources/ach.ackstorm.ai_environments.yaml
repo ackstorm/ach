@@ -419,6 +419,14 @@ spec:
                   most recently processed.
                 format: int64
                 type: integer
+              unresolvedContextInstructions:
+                default: []
+                description: |-
+                  UnresolvedContextInstructions lists spec.context.instructions names whose
+                  Instruction has no successful refresh yet.
+                items:
+                  type: string
+                type: array
               unresolvedContextPlugins:
                 default: []
                 description: |-

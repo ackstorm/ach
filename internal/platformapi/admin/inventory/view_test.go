@@ -85,9 +85,9 @@ func TestRFC3339OrEmpty(t *testing.T) {
 	}
 }
 
-// TestInstructionArtifactFalseGreen: fresh instructions/artifacts render fresh*, STALE
-// stays bare.
-func TestInstructionArtifactFalseGreen(t *testing.T) {
+// TestInstructionArtifactSync: a fresh instruction is content-gated, so it renders
+// a bare fresh; a stale artifact stays STALE.
+func TestInstructionArtifactSync(t *testing.T) {
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	freshAgo := ptrTime(now.Add(-1 * time.Minute))
 
@@ -96,8 +96,8 @@ func TestInstructionArtifactFalseGreen(t *testing.T) {
 		LastSuccessfulRefresh: freshAgo, MaxStalenessSeconds: 600,
 		UpdatedAt: now,
 	}, now)
-	if pv.Sync != syncFreshFalseGreen {
-		t.Errorf("instruction fresh sync: got %q, want fresh*", pv.Sync)
+	if pv.Sync != syncFresh {
+		t.Errorf("instruction fresh sync: got %q, want fresh (no asterisk)", pv.Sync)
 	}
 	if pv.Version != "7" {
 		t.Errorf("instruction version: got %q, want 7", pv.Version)

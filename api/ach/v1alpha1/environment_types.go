@@ -325,6 +325,13 @@ type EnvironmentStatus struct {
 	// +kubebuilder:default={}
 	UnresolvedContextSkills []string `json:"unresolvedContextSkills,omitempty"`
 
+	// UnresolvedContextInstructions lists spec.context.instructions names whose
+	// Instruction has no successful refresh yet.
+	//
+	// +optional
+	// +kubebuilder:default={}
+	UnresolvedContextInstructions []string `json:"unresolvedContextInstructions,omitempty"`
+
 	// LitellmAccessGroup is the synced LiteLLM access group name (§6.4).
 	// Echoed for operator visibility; equals metadata.name when set.
 	//

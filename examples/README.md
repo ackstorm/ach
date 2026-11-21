@@ -158,10 +158,8 @@ NAME     NAMESPACE  VERSION  SYNC   AGE  ORIGIN
 caveman  ach        842      fresh  2m   -
 
 PROMPTS (1)
-NAME      NAMESPACE  VERSION  SYNC    AGE  ORIGIN
-greeting  ach        844      fresh*  2m   -
-
-* prompts/artifacts: name-resolved only; content presence is not gated
+NAME      NAMESPACE  VERSION  SYNC   AGE  ORIGIN
+greeting  ach        844      fresh  2m   -
 ```
 
 ### SYNC column semantics
@@ -169,8 +167,8 @@ greeting  ach        844      fresh*  2m   -
 | Value | Kinds | Meaning |
 |-------|-------|---------|
 | `Available` / `Degraded(<reason>)` / `Pending` | environments | the `Available` composite condition (rolls up `ExecutionResourcesResolved` + `AccessGroupSynced`) |
-| `fresh` / `STALE(<age> over)` / `never` | plugins, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
-| `fresh*` | prompts, artifacts | **false-green** — their refresh tracks *name resolution*, not content presence. Only `plugins` is truly content-gated, so the asterisk warns the inventory cannot promise the content is present + current. |
+| `fresh` / `STALE(<age> over)` / `never` | plugins, instructions, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
+| `fresh*` | artifacts | **false-green** — their refresh tracks *name resolution*, not content presence, so the asterisk warns the inventory cannot promise the content is present + current. |
 | `projected` | bips, litellm-connections | row is projected from its CR (presence only) |
 
 The inventory reads the stored projection only — to force a re-sync use

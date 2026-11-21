@@ -14,9 +14,9 @@
 //
 // false-green caveat (memory plugin-scoping-followups): only context.plugins
 // content-presence gates the Environment ExecutionResourcesResolved condition.
-// instructions/artifacts are name-only / pass-through — their last_successful_refresh
-// reflects "name resolved", not "content present + current". So the instruction and
-// artifact mappers render a fresh state as "fresh*" (syncFreshFalseGreen); the
+// artifacts are name-only / pass-through — their last_successful_refresh
+// reflects "name resolved", not "content present + current". So the artifact
+// mapper renders a fresh state as "fresh*" (syncFreshFalseGreen); the
 // CLI renderer turns the asterisk into a footnote. STALE/never stay honest and
 // carry no asterisk. Marketplace plugins and external_refs ARE real
 // upstream-fetch tracking, so they keep a bare "fresh".
@@ -81,7 +81,7 @@ func contentSync(last *time.Time, maxStalenessSeconds int64, now time.Time) (sta
 }
 
 // markFalseGreen upgrades a bare "fresh" to "fresh*" for kinds whose
-// content-presence is NOT actually gated (instructions/artifacts). STALE/never are
+// content-presence is NOT actually gated (artifacts). STALE/never are
 // already honest and pass through unchanged.
 func markFalseGreen(state string) string {
 	if state == syncFresh {
@@ -206,7 +206,7 @@ func instructionRowToView(r db.InstructionRow, now time.Time) AdminObjectView {
 		Version:           r.ResourceVersion,
 		UpstreamRev:       r.UpstreamRev,
 		LatestUpstreamRev: r.LatestUpstreamRev,
-		Sync:              markFalseGreen(sync), // instructions are name-only / not content-gated
+		Sync:              sync,
 		SyncReason:        reason,
 		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
 	}
