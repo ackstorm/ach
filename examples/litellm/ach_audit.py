@@ -5,6 +5,8 @@ Install: docs/platform/connect-litellm.md. Fields: docs/reference/audit-events.m
 Self-check, in an image that has LiteLLM: python ach_audit.py
 """
 
+import contextlib
+import io
 import json
 from datetime import datetime, timezone
 
@@ -85,7 +87,8 @@ def _emit(kwargs):
     payload = kwargs.get("standard_logging_object")
     line = audit_line(payload) if payload else None
     if line:
-        print(json.dumps(line, default=str), flush=True)
+        # Compact, like the lines ACH writes: one text filter, "audit":true, finds both.
+        print(json.dumps(line, default=str, separators=(",", ":")), flush=True)
 
 
 class AchAudit(CustomLogger):
@@ -169,6 +172,10 @@ def _demo():
     assert (blocked["outcome"], blocked["error.class"]) == ("guardrail_blocked", "GuardrailRaisedException")
     assert blocked["policy"] == [{"name": "pii", "mode": "pre_call", "status": "guardrail_intervened"}]
     assert failed["outcome"] == "failed"
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        _emit({"standard_logging_object": {**base, "call_type": "acompletion", "model": "gemini-flash"}})
+    assert '"level":"INFO","msg":"litellm.model.call","audit":true,' in out.getvalue(), out.getvalue()
     print("ok")
 
 

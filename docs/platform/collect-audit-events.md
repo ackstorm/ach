@@ -1,7 +1,7 @@
 # Collect audit events
 
 ACH and LiteLLM write each [audit event](../reference/audit-events.md) as one
-JSON line on stdout, marked `"audit": true`. Whatever already collects your pod
+JSON line on stdout, marked `"audit":true`. Whatever already collects your pod
 logs collects them too. This page shows how to pick them out, with Grafana Loki
 and Grafana Alloy as the worked example.
 
@@ -17,28 +17,28 @@ Nothing to configure. Select the two namespaces, keep the lines that carry the
 marker, and parse them:
 
 ```logql
-{namespace=~"ach|litellm"} |= `"audit":` | json | audit=`true`
+{namespace=~"ach|litellm"} |= `"audit":true` | json
 ```
 
-The first filter is a cheap text match that both writers satisfy (ACH writes
-`"audit":true`, LiteLLM `"audit": true`). `json` then turns every field of the
-event into a label you can filter and group on:
+ACH and LiteLLM write the marker the same way, so one text filter finds both.
+`json` then turns every field of the event into a label you can filter and
+group on:
 
 ```logql
 # Everything one person did. ACH writes the actor as <namespace>/<email>, LiteLLM as <email>.
-{namespace=~"ach|litellm"} |= `"audit":` | json | audit=`true` | actor=~`(.+/)?ana@example.com`
+{namespace=~"ach|litellm"} |= `"audit":true` | json | actor=~`(.+/)?ana@example.com`
 
 # Everything that was refused or failed.
-{namespace=~"ach|litellm"} |= `"audit":` | json | audit=`true`
+{namespace=~"ach|litellm"} |= `"audit":true` | json
   | outcome!~`created|revoked|suspended|resumed|updated|issued|forwarded|success`
 
 # One readable row per event.
-{namespace=~"ach|litellm"} |= `"audit":` | json | audit=`true`
+{namespace=~"ach|litellm"} |= `"audit":true` | json
   | line_format `{{.actor}} {{.action}} {{.outcome}} {{.target_name}}`
 
 # Events per action and outcome over the last hour.
 sum by (action, outcome) (
-  count_over_time({namespace=~"ach|litellm"} |= `"audit":` | json | audit=`true` [1h])
+  count_over_time({namespace=~"ach|litellm"} |= `"audit":true` | json [1h])
 )
 ```
 
@@ -58,7 +58,7 @@ loki.process "pod_logs" {
   stage.cri {}
 
   stage.match {
-    selector = `{namespace=~"ach|litellm"} |~ "^\\{.*\"audit\": ?true"`
+    selector = `{namespace=~"ach|litellm"} |= "\"audit\":true"`
 
     stage.static_labels {
       values = { audit = "true" }
@@ -76,8 +76,8 @@ audit event of every service is then one selector away:
 {audit="true"} | json
 ```
 
-The queries above work with `{audit="true"} | json` in place of everything up
-to and including ``audit=`true` ``.
+The queries above work with `{audit="true"} | json` in place of their selector,
+text filter and `json`.
 
 ## Keep them longer than other logs
 
