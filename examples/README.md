@@ -203,8 +203,8 @@ ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (set
 ```
 
 Notes:
-- `--target` takes adapter ids (`claude-code`, `codex`,
-  `cursor`, `opencode`, `pi`) or their aliases (`claude`, `pimono`), comma-separated
+- `--target` takes adapter ids (`antigravity`, `claude-code`, `codex`,
+  `cursor`, `opencode`, `pi`) or their aliases (`agy`, `claude`), comma-separated
   or repeated — the same vocabulary as `environment hydrate --target`. MCP/`AGENTS.md` contributions deep-/composite-merge into the
   tool's native config and are inverse-merged on uninstall (other plugins' and
   your own keys survive).

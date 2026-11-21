@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package pi is the Pi (pi-mono) platform Adapter implementation — the
-// optional target (CONTEXT.md Phase 5, D-33). It is the thinnest adapter:
+// Package pi is the Pi platform Adapter implementation. It is the thinnest adapter:
 // a 3-row ProjectionRules table plus an mcpServers-shaped RenderRuntime pointed at
 // .pi/mcp.json. There is NO format conversion — plugin commands/skills are
 // projected verbatim (MergeReplace): commands into Pi's project layout
@@ -61,7 +60,7 @@ func init() {
 func (a *Adapter) ID() string { return canonicalID }
 
 // Aliases returns the case-folded alternate identifiers the user may type.
-func (a *Adapter) Aliases() []string { return []string{"pimono", "pi-mono"} }
+func (a *Adapter) Aliases() []string { return []string{} }
 
 // Detect scans root for Pi signals. Each present signal boosts confidence;
 // 3+ → High, 2 → Medium, 1 → Low. signals==0 → empty Match (no-match).

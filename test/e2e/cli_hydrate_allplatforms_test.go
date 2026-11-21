@@ -125,7 +125,7 @@ var allPlatformExpects = []allPlatformExpect{
 		// commands/**/*.md, so they are NOT projected here (format-filter).
 	},
 	{
-		// pi (Pi / pi-mono, Phase 5 D-33): thinnest adapter. skills +
+		// pi: thinnest adapter. skills +
 		// commands project verbatim into pi's project layout .pi/prompts/
 		// (.pi/agent/ is global-only), skills into .agents/skills/; MCP deep-merges into .pi/mcp.json. NO
 		// a2aAgents surface; agents are dropped (no rule).

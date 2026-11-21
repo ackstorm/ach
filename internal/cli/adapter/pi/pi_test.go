@@ -27,7 +27,7 @@ func TestPi_ID(t *testing.T) {
 func TestPi_Aliases(t *testing.T) {
 	a := &Adapter{}
 	got := a.Aliases()
-	want := []string{"pimono", "pi-mono"}
+	want := []string{}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Aliases() = %v, want %v", got, want)
 	}
@@ -568,10 +568,5 @@ func TestPi_RegistersOnImport(t *testing.T) {
 	}
 	if got.ID() != "pi" {
 		t.Errorf("Lookup returned adapter with ID %q, want %q", got.ID(), "pi")
-	}
-	for _, alias := range []string{"pimono", "pi-mono", "PIMONO", "Pi-Mono"} {
-		if _, ok := adapter.Lookup(alias); !ok {
-			t.Errorf("adapter.Lookup(%q) returned false; alias did not register", alias)
-		}
 	}
 }
