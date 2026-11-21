@@ -40,6 +40,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - `--target pimono` and `--target pi-mono`: use `--target pi`.
 - `environment hydrate --target pi` no longer renames a `state-pimono.json` left by an ach-cli older than 1.0.0.
 
+### Fixed
+- `ach-cli local plugin|skill`: the same item installed for the same tool in
+  two folders, or in a folder and with `-g`, is two installs. Before, the second
+  install replaced the first one's record, so `uninstall` and `update` missed
+  the first folder's files. `update` and `uninstall` act on the current folder
+  (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
+
 ## [1.1.27] - 2026-11-20
 
 ### Added
