@@ -18,7 +18,7 @@ func TestCommitUninstall_KeepsNarrowFileMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"mcpServers":{"mine":{}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	recs, err := Commit(root, false, "p", []PlannedWrite{{
+	recs, err := Commit(root, false, []PlannedWrite{{
 		Path:    ".mcp.json",
 		Content: []byte(`{"mcpServers":{"x":{}}}`),
 		Merge:   adapter.MergeDeep,

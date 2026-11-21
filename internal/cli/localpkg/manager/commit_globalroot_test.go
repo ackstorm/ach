@@ -20,7 +20,7 @@ func TestCommit_AbsoluteDest(t *testing.T) {
 	dest := filepath.Join(cfg, "skills", "demo", "SKILL.md")
 	writes := []PlannedWrite{{Path: dest, Content: []byte("# demo\n"), Merge: adapter.MergeReplace}}
 
-	recs, err := Commit(root, true, "demo", writes)
+	recs, err := Commit(root, true, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestUninstallPlan_AbsoluteDest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recs, err := Commit(root, true, "demo", []PlannedWrite{
+	recs, err := Commit(root, true, []PlannedWrite{
 		{Path: dest, Content: body, Merge: adapter.MergeReplace},
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestUninstallPlan_AbsoluteDest(t *testing.T) {
 // TestCommit_RelativeDestUnchanged pins the default (non-redirected) behavior.
 func TestCommit_RelativeDestUnchanged(t *testing.T) {
 	root := t.TempDir()
-	recs, err := Commit(root, false, "demo", []PlannedWrite{
+	recs, err := Commit(root, false, []PlannedWrite{
 		{Path: ".claude/skills/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})
 	if err != nil {

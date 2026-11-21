@@ -488,21 +488,6 @@ func Project(stageDir, adapterID, plugin string) ([]PlannedWrite, error) {
 
 	out := make([]PlannedWrite, 0, len(pr.FileWrites))
 	for _, fw := range pr.FileWrites {
-		// Containment (local-installer policy): write nothing outside the
-		// target adapter's own dot-dir. Every legitimate adapter destination
-		// is under a dot-dir (.claude/, .codex/, .gemini/, .opencode/, .pi/,
-		// .agents/); the escaping rules are the AGENTS.md→CLAUDE.md /
-		// →GEMINI.md composites that land a loose file in the PROJECT ROOT.
-		// `ach-cli plugin/skill install` must not touch the user's root files
-		// (their own CLAUDE.md/README.md/etc.), so drop any project-root
-		// destination here — EXCEPT .mcp.json, which is Claude Code's per-project
-		// MCP registry (the file claude actually reads for plugin MCP servers);
-		// a plugin that ships MCP is useless without it. This is the local
-		// installer only — governed `environment hydrate` (internal/cli/hydrate) keeps
-		// the shared rules intact.
-		if path.Dir(fw.Path) == "." && path.Base(fw.Path) != ".mcp.json" {
-			continue
-		}
 		out = append(out, PlannedWrite{
 			Path:    fw.Path,
 			Content: fw.Content,

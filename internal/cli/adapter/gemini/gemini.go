@@ -254,9 +254,7 @@ func geminiCommandTOML(srcRel string, in []byte) (out []byte, keys []string, err
 // .gemini/commands/**/*.toml via geminiCommandTOML (gemini-native commands/*.toml
 // pass through).
 //
-// Two non-file rows complete the D-12 contract:
-//   - AGENTS.md → GEMINI.md as MergeComposite: the plugin's top-level AGENTS.md
-//     prose is composited (marker-bounded) into the host GEMINI.md memory file.
+// One non-file row completes the D-12 contract:
 //   - mcp/**/* → settingsJSONPath as MergeDeep with Transform=mcpDeepKeys: the
 //     plugin's MCP definitions deep-merge under mcpServers in the EXISTING
 //     .gemini/settings.json (D-08 — the same RenderRuntime MCP target; there is
@@ -264,7 +262,8 @@ func geminiCommandTOML(srcRel string, in []byte) (out []byte, keys []string, err
 //     Transform enumerates the contributed keys without altering the bytes.
 //
 // hooks/ has NO rule and falls into route.Project's dropped set (D-12 "drop
-// hooks": Gemini has no hook system). gemini-cli mapping is ACH-original;
+// hooks": Gemini has no hook system). A plugin's top-level AGENTS.md has no rule
+// either: plugin content never lands in the user's GEMINI.md. gemini-cli mapping is ACH-original;
 // ACH's existing gemini.go is canonical (PROJECT.md key decision) — this
 // extends it, it does NOT retrofit foreign rules. Projection runs via the
 // plan-02 Render leg (ProjectionRules -> route.Project). This method is pure
@@ -281,7 +280,6 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "commands/**/*.md", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace, Transform: geminiCommandTOML, Prefix: route.PrefixCommand, Sep: "/"},
 		{FromGlob: "commands/**/*.toml", ToGlob: ".gemini/commands/**/*.toml", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "/"},
 		{FromGlob: "skills/**/*", ToGlob: ".gemini/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-"},
-		{FromGlob: "AGENTS.md", ToGlob: "GEMINI.md", Merge: adapter.MergeComposite},
 		{FromGlob: "mcp/**/*", ToGlob: settingsJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 		// Root .mcp.json is Claude Code's standard plugin MCP location — deep-merge
 		// it into .gemini/settings.json too.

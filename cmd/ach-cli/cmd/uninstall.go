@@ -16,7 +16,7 @@
 //  4. Build the scope-filtered survivor File (hydrate.BuildScopedEmpty)
 //     and feed it to Sync as the set-difference target. Sync owns the
 //     entire inverse model: deepest-first delete, deep-key subtraction,
-//     composite marker removal, and the drift-wins gate that preserves
+//     and the drift-wins gate that preserves
 //     user-edited co-owned files unless --force (T-04-02/T-04-03).
 //  5. State cleanup (D-28): --dry-run writes nothing; a full teardown
 //     removes state.json; a scoped uninstall rewrites it via the atomic
@@ -96,9 +96,9 @@ Scope (mirrors hydrate):
                       Remove just one plugin or skill (plugin/<name> or
                       skill/<name>) installed from this environment.
 
-Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json,
-CLAUDE.md / GEMINI.md) are inverse-merged: only the engine's keys/marker
-blocks are removed; other contributors' and the user's keys survive.
+Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json)
+are inverse-merged: only the engine's keys are removed; other
+contributors' and the user's keys survive.
 User-edited projected files are preserved unless --force (drift-wins).
 
 Example:

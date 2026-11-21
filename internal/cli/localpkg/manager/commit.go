@@ -21,10 +21,7 @@ import (
 // Uninstall. The empty string is the replace/back-compat default (see
 // store.FileRec doc) and is deliberately NOT a named constant — absence of a
 // discriminator IS the replace case.
-const (
-	mergeKindDeep      = "deep"
-	mergeKindComposite = "composite"
-)
+const mergeKindDeep = "deep"
 
 // Commit writes planned writes under root (the tool root: project cwd or $HOME
 // for --global), honoring MergeKind, and returns the destinations written (for
@@ -32,15 +29,13 @@ const (
 // --global it may be an absolute path that adapter.RemapGlobalPath redirected
 // to the adapter's own config dir. The remap runs at the call site, before
 // conflict resolution, so every downstream consumer keys on one path string.
-// compositeID is used as the marker id for MergeComposite writes (typically
-// the plugin/skill name).
 //
 // Project scope (global false) refuses a destination that leaves root through
 // a symlink (see state.CheckContained). Every destination is checked before
 // the first write, merge or mkdir, so a refusal leaves nothing behind. Global
 // scope skips the check: the root is the user's home and dotfile managers
 // legitimately link ~/.claude out of it.
-func Commit(root string, global bool, compositeID string, writes []PlannedWrite) ([]store.FileRec, error) {
+func Commit(root string, global bool, writes []PlannedWrite) ([]store.FileRec, error) {
 	if err := CheckCommit(root, global, writes); err != nil {
 		return nil, err
 	}
@@ -73,32 +68,6 @@ func Commit(root string, global bool, compositeID string, writes []PlannedWrite)
 			finalBytes = merged
 			recMerge = mergeKindDeep
 			recKeys = append([]string(nil), w.Keys...)
-
-		case adapter.MergeComposite:
-			// Determine the marker id: the rule's first key (dispatcher-threaded
-			// plugin name) wins; fall back to the caller's compositeID, then the
-			// rel path as a last resort. Wrap the RAW content in markers via the
-			// shared CompositeBlock helper (WriteComposite inserts/replaces the
-			// block AS-IS — it does NOT wrap), then record the id so Uninstall can
-			// strip exactly this plugin's marked region.
-			id := compositeID
-			if len(w.Keys) > 0 && w.Keys[0] != "" {
-				id = w.Keys[0]
-			}
-			if id == "" {
-				id = rel
-			}
-			block := merge.CompositeBlock(id, w.Content)
-			if err := merge.WriteComposite(abs, id, block, 0o644); err != nil {
-				return nil, fmt.Errorf("commit: merge composite %s: %w", rel, err)
-			}
-			var err error
-			finalBytes, err = os.ReadFile(abs)
-			if err != nil {
-				return nil, fmt.Errorf("commit: read back composite %s: %w", rel, err)
-			}
-			recMerge = mergeKindComposite
-			recKeys = []string{id}
 
 		default:
 			// MergeReplace (and the zero value): write verbatim. No merge metadata
@@ -149,31 +118,19 @@ func (o uninstallOp) String() string {
 // what uninstalling FileRec f means for its current on-disk body, dispatching on
 // the Merge kind:
 //
-//   - "composite": strip only this plugin's marked region (Keys[0]); opRemove
-//     when nothing but whitespace remains, else opModify with the stripped body.
 //   - "deep": remove only this plugin's contributed dotted Keys from the
 //     JSON/TOML document; opRemove when the document becomes empty, else opModify
 //     with the re-encoded body. A non-parseable file (user broke it) → opSkip.
-//   - "" / replace: hash-check; opRemove on match, opSkip on drift (user-edited).
+//   - "" (replace): hash-check; opRemove on match, opSkip on drift (user-edited).
+//   - any other kind: opSkip. The record does not say how to undo the write,
+//     and its file may be one the user shares.
 //
-// Co-owned (deep/composite) files are NOT hash-checked — removing only OUR
+// Co-owned (deep) files are NOT hash-checked — removing only OUR
 // contribution is always safe. For opModify the rewritten content is returned.
 // Shared by Uninstall (which performs the I/O) and UninstallPlan (which only
 // reports), so the act path and the --dry-run preview can never drift.
 func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error) {
 	switch f.Merge {
-	case mergeKindComposite:
-		if len(f.Keys) == 0 || f.Keys[0] == "" {
-			// Defensive: a recorded composite should always carry its marker id;
-			// fall back to the hash-gated whole-file verdict.
-			return classifyReplace(f, body), nil, nil
-		}
-		stripped := merge.PluginMarkerRE(f.Keys[0]).ReplaceAll(body, nil)
-		if len(bytes.TrimSpace(stripped)) == 0 {
-			return opRemove, nil, nil
-		}
-		return opModify, stripped, nil
-
 	case mergeKindDeep:
 		isTOML := strings.HasSuffix(f.RelPath, ".toml")
 		doc, perr := merge.ParseDoc(body, isTOML)
@@ -189,8 +146,11 @@ func classifyUninstall(f store.FileRec, body []byte) (uninstallOp, []byte, error
 		}
 		return opModify, out, nil
 
-	default:
+	case "":
 		return classifyReplace(f, body), nil, nil
+
+	default:
+		return opSkip, nil, nil
 	}
 }
 
@@ -217,10 +177,10 @@ func CheckCommit(root string, global bool, writes []PlannedWrite) error {
 // CheckUnowned reports the first whole-file write whose destination already
 // exists with other content and is not in owned, the paths recorded for
 // installed packages: that file is the user's own, or another tool's. Deep
-// and composite writes share their file and are never reported.
+// writes share their file and are never reported.
 func CheckUnowned(root string, writes []PlannedWrite, owned map[string]bool) error {
 	for _, w := range writes {
-		if w.Merge == adapter.MergeDeep || w.Merge == adapter.MergeComposite || owned[w.Path] {
+		if w.Merge == adapter.MergeDeep || owned[w.Path] {
 			continue
 		}
 		if body, err := os.ReadFile(adapter.ResolveDest(root, w.Path)); err == nil && !bytes.Equal(body, w.Content) {
@@ -251,7 +211,7 @@ func checkContained(root string, global bool, abs string) error {
 // Uninstall removes a package's recorded files under root, applying the
 // classifyUninstall verdict for each: opRemove deletes the file (pruning now-
 // empty ancestor dirs up to but not including root), opModify rewrites the
-// inverse-merged content (co-owned deep/composite files), opSkip records the
+// inverse-merged content (co-owned deep files), opSkip records the
 // RelPath as skipped (drift — never clobbered). Missing files are treated as
 // already-removed. A remove failure is best-effort (non-fatal, no prune above
 // it). Returns the list of skipped RelPaths and any unexpected error.

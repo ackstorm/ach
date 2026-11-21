@@ -254,7 +254,6 @@ func TestFileRecMergeMetaRoundTrip(t *testing.T) {
 			Target: "claude-code",
 			Files: []store.FileRec{
 				{RelPath: ".claude/settings.json", Hash: "xxh3:a", Merge: "deep", Keys: []string{"mcpServers.demo"}},
-				{RelPath: "CLAUDE.md", Hash: "xxh3:b", Merge: "composite", Keys: []string{"demo"}},
 				{RelPath: ".claude/agents/x.md", Hash: "xxh3:c"}, // replace (no merge meta)
 			},
 			InstalledAt: "2026-06-08T00:00:00Z",
@@ -271,17 +270,14 @@ func TestFileRecMergeMetaRoundTrip(t *testing.T) {
 		t.Fatalf("want 1 entry, got %d", len(out.Installed))
 	}
 	files := out.Installed[0].Files
-	if len(files) != 3 {
-		t.Fatalf("want 3 files, got %d", len(files))
+	if len(files) != 2 {
+		t.Fatalf("want 2 files, got %d", len(files))
 	}
 	if files[0].Merge != "deep" || len(files[0].Keys) != 1 || files[0].Keys[0] != "mcpServers.demo" {
 		t.Errorf("deep FileRec round-trip lost meta: %+v", files[0])
 	}
-	if files[1].Merge != "composite" || len(files[1].Keys) != 1 || files[1].Keys[0] != "demo" {
-		t.Errorf("composite FileRec round-trip lost meta: %+v", files[1])
-	}
-	if files[2].Merge != "" || len(files[2].Keys) != 0 {
-		t.Errorf("replace FileRec should carry no merge meta: %+v", files[2])
+	if files[1].Merge != "" || len(files[1].Keys) != 0 {
+		t.Errorf("replace FileRec should carry no merge meta: %+v", files[1])
 	}
 }
 

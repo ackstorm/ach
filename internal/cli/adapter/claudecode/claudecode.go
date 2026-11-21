@@ -20,7 +20,7 @@
 //     the model-endpoint credential helper on a person hydrate.
 //
 // ADAPT-06 scope rule: this adapter emits .claude/-prefixed paths plus the
-// project-root .mcp.json (MCP) and CLAUDE.md (AGENTS.md composite).
+// project-root .mcp.json (MCP).
 // Prompts and artifacts are written by the hydrator core directly (CLI
 // spec §6.4); the adapter never touches them.
 package claudecode
@@ -232,14 +232,15 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 // NOT rewrite model/tools/permissions or any agent frontmatter; the canonical
 // plugin format IS Claude Code format, so pass-through is byte-faithful.
 //
-// Two non-file rows complete the D-11 contract:
-//   - AGENTS.md → CLAUDE.md as MergeComposite: the plugin's top-level AGENTS.md
-//     prose is composited (marker-bounded) into the host CLAUDE.md memory file.
+// One non-file row completes the D-11 contract:
 //   - mcp/**/* → mcpJSONPath as MergeDeep with Transform=mcpDeepKeys: the
 //     plugin's MCP definitions deep-merge under mcpServers in the project-root
 //     .mcp.json (the file claude reads — same target as RenderRuntime; no
 //     mcp_servers rename). The Transform enumerates the contributed keys
 //     without altering the bytes.
+//
+// A plugin's top-level AGENTS.md has no rule: plugin content never lands in
+// the user's CLAUDE.md.
 //
 // This method is pure data — no I/O. Projection runs through the Render leg
 // (ProjectionRules -> route.Project).
@@ -253,7 +254,6 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		{FromGlob: "commands/**/*.md", ToGlob: ".claude/commands/**/*.md", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "/"},
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: route.SkillDirSep, NameSep: ":"},
-		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
 		{FromGlob: "mcp/**/*", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 		// Root .mcp.json is Claude Code's standard plugin MCP location (alongside
 		// the mcp/ convention) — deep-merge it into the project-root .mcp.json,

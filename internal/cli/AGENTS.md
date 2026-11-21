@@ -168,8 +168,15 @@ UserOnlyCommandDir}`. `route.Project` flow (`route.go`):
    skipped (manifests, README, LICENSE).
 
 `Merge` kinds (`adapter.MergeKind`): `MergeReplace` (file-owned, default),
-`MergeDeep` (keyed JSON/TOML merge — settings/MCP), `MergeComposite`
-(marker-bounded prose, e.g. `AGENTS.md`→`CLAUDE.md`).
+`MergeDeep` (keyed JSON/TOML merge — settings/MCP).
+
+**Plugin content never lands in a file the user owns.** Every rule's
+destination is the tool's own dot-prefixed config dir or file
+(`TestProjectionRules_StayInsideToolConfig`, `adapter/conformance_test.go`),
+on both install paths. A plugin's top-level `AGENTS.md` has no rule on any
+tool: it is not part of a plugin format (Claude Code ignores a plugin-root
+`CLAUDE.md`), and routing it would put a plugin author's text, always loaded,
+into the user's own `CLAUDE.md` / `GEMINI.md`.
 
 **Plugin namespacing** (`route/prefix.go`). `ProjectPlugin` gives every
 plugin command and skill the plugin's name (the part before `@<marketplace>`),
@@ -205,9 +212,9 @@ first-segment across all adapters MUST appear here; add in the same commit.
 Enforced in `manager.Project`, NOT in the shared adapter rules:
 
 - **Containment** (`projection_containment_test.go`): write NOTHING outside the
-  target's dot-dir. Any project-root destination (the `AGENTS.md`→`CLAUDE.md`
-  composite) is DROPPED — the local installer never touches the user's own root
-  files. We deliberately DROP OpenPackage's `root/**/*` catch-all fallback.
+  target's dot-dir, the project-root `.mcp.json` aside. This comes from the
+  shared rules (above), not a filter here. We deliberately DROP OpenPackage's
+  `root/**/*` catch-all fallback.
 - **Read rule**: our inputs start at `plugins/`…`skills/`; a repo-root
   `CLAUDE.md`/`README.md` is NOT a component. A `README.md` INSIDE a skill
   (`skills/<n>/README.md`) IS part of it and rides through.
@@ -225,8 +232,7 @@ Enforced in `manager.Project`, NOT in the shared adapter rules:
 A whole-file (`MergeReplace`) destination that already exists with other
 content and has no record is the user's own file, or another tool's: it is
 refused with `exit.CollisionRefuse` (7) unless `--force`. Identical content is
-adopted. Deep and composite writes share their file by key or marker and
-never refuse.
+adopted. Deep writes share their file by key and never refuse.
 
 - `environment hydrate`: `publishFile` (`hydrate/wiring.go`), record = the
   prior state row of that Environment and target. `--dry-run` refuses too.
@@ -275,12 +281,11 @@ projected (self-heals on `<b>`'s next hydrate).
 
 - **`hydrate.Sync`'s keep set is per CONTRIBUTION, not per Target**
   (`syncKeep` in `wiring.go`). A prev row survives when the next state still
-  records it: any row on the Target for a whole-file row, the same marker id
-  for a composite row, EVERY key for a deep row (else only the uncovered keys
-  are pruned; the drift gate still hashes the row's recorded key set). Keying
-  on Target alone (before 2026-09-30) skipped a row dropped from a SHARED file,
-  so `hydrate --sync` left a removed plugin's `CLAUDE.md` block / `.mcp.json`
-  keys behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
+  records it: any row on the Target for a whole-file row, EVERY key for a deep
+  row (else only the uncovered keys are pruned; the drift gate still hashes the
+  row's recorded key set). Keying on Target alone skips a row dropped from a
+  SHARED file, so `hydrate --sync` leaves a removed plugin's `.mcp.json` keys
+  behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
   GREW would then prune keys Render just wrote.
 - **Adapter runtime keys are pruned on EVERY hydrate, `--sync` or not**
   (`commit.step11Sync`): without `--sync` it runs `Sync` over the
@@ -355,7 +360,7 @@ merge) — don't conflate them.
 | skills | →`.claude/skills` | →`.agents/skills` | →`.gemini/skills` | →`.opencode/skills` | →`.pi/skills` |
 | mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.gemini/settings.json` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
 | rules | →`.claude/rules` | drop | drop | drop | drop |
-| AGENTS.md | →`CLAUDE.md` (composite) | drop | →`GEMINI.md` (composite) | drop | drop |
+| AGENTS.md | drop | drop | drop | drop | drop |
 | hooks | drop | drop | drop | drop | drop |
 
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
@@ -385,9 +390,9 @@ that tool actually reads it. One table drives both write paths:
 
 | adapter | env var | shape | redirected prefix | NOT redirected |
 |---|---|---|---|---|
-| claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json`, `CLAUDE.md` |
+| claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json` |
 | codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
-| gemini-cli | `GEMINI_CLI_HOME` | **parent** (`$VAR/.gemini/`) | `.gemini/` | `GEMINI.md` |
+| gemini-cli | `GEMINI_CLI_HOME` | **parent** (`$VAR/.gemini/`) | `.gemini/` | — |
 | opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
 | pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/{skills,prompts}/` → `.pi/agent/…` | `.pi/mcp.json` |
 
@@ -594,7 +599,7 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   the HOST binary, not inside the container.
 - SPDX header on every new `*.go`: `// SPDX-License-Identifier: Apache-2.0`.
 - **A file the user may also edit is rewritten only through
-  `state.RewriteFile`** (tool config, `CLAUDE.md`/`GEMINI.md`, `.gitignore`):
+  `state.RewriteFile`** (tool config, `.gitignore`):
   it re-reads the file just before the rename and re-runs the merge when an
   editor saved it in between, so the save is kept. The `<achDir>/lock` flock
   only excludes other `ach-cli` runs. `state.WriteAtomic` alone is for files
@@ -616,5 +621,5 @@ arbitrary markdown) — mutates prose, edge-case-prone.
 - **`slice subtree "." empty`**: a whole-repo plugin entry (`source: "."`) must
   serve the cached repo tar directly, not slice — see the `path.Clean(Subtree)`
   switch in `resolvePluginMarketplace`.
-- **Root-file overwrite**: containment drops project-root destinations; never
-  overwrite the user's `CLAUDE.md`/`README.md`.
+- **Root-file overwrite**: no rule targets a project-root file other than
+  `.mcp.json`; never write the user's `CLAUDE.md`/`README.md`.

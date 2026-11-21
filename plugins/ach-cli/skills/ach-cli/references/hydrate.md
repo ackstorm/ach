@@ -118,8 +118,8 @@ ach-cli environment uninstall <environment>              # this folder (-g for t
 ```
 
 Only what hydrate wrote is removed. In shared files (`.mcp.json`,
-`.claude/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`, `CLAUDE.md`)
-only ACH's own keys or marked blocks go; the user's settings stay. `--only-runtime`
+`.claude/settings.json`, `.codex/config.toml`, `.opencode/opencode.json`)
+only ACH's own keys go; the user's settings stay. `--only-runtime`
 removes just the MCP entries.
 
 Each A2A agent of the Environment is written as an MCP server named `a2a-<agent>` with

@@ -318,7 +318,7 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 
 // TestProjectionRules_Rows (D-12) asserts the gemini-cli ProjectionRules table:
 // the four file-owned kinds stay verbatim MergeReplace with NO Transform,
-// AGENTS.md composites into GEMINI.md, mcp/**/* deep-merges into settingsJSONPath
+// AGENTS.md has no route, mcp/**/* deep-merges into settingsJSONPath
 // with the mcpDeepKeys Transform wired, and NO hooks rule is present (D-12 "drop
 // hooks" is the no-rule -> dropped-set mechanism).
 func TestProjectionRules_Rows(t *testing.T) {
@@ -392,19 +392,9 @@ func TestProjectionRules_Rows(t *testing.T) {
 		t.Errorf("commands/**/*.toml passthrough must be verbatim (nil Transform)")
 	}
 
-	// AGENTS.md -> GEMINI.md as MergeComposite, no Transform.
-	comp, ok := byFrom["AGENTS.md"]
-	if !ok {
-		t.Fatalf("ProjectionRules missing AGENTS.md composite row")
-	}
-	if comp.to != "GEMINI.md" {
-		t.Errorf("AGENTS.md ToGlob = %q, want GEMINI.md", comp.to)
-	}
-	if comp.merge != adapter.MergeComposite {
-		t.Errorf("AGENTS.md Merge = %v, want MergeComposite", comp.merge)
-	}
-	if comp.hasXform {
-		t.Errorf("AGENTS.md composite row must have nil Transform")
+	// A plugin's AGENTS.md has no route: nothing is written to GEMINI.md.
+	if _, ok := byFrom["AGENTS.md"]; ok {
+		t.Errorf("ProjectionRules must not route AGENTS.md")
 	}
 
 	// mcp/**/* -> settingsJSONPath as MergeDeep WITH a non-nil Transform.

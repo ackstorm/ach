@@ -21,7 +21,7 @@ func fullPrev() *state.File {
 			{Target: ".ach/prompts/a.md", Hash: "h1", SourceHash: "s1"},
 		},
 		Plugins: []state.FileEntry{
-			{Target: "CLAUDE.md", Hash: "h2", SourceHash: "s2", Merge: "composite", Keys: []string{"foo"}},
+			{Target: ".claude/rules/foo.md", Hash: "h2", SourceHash: "s2"},
 		},
 		Artifacts: []state.FileEntry{
 			{Target: ".ach/artifacts/bin", Hash: "h3", SourceHash: "s3"},

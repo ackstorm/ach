@@ -4,6 +4,17 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Security
+- `ach-cli environment hydrate` no longer writes a plugin's top-level
+  `AGENTS.md` into the folder's `CLAUDE.md` or `GEMINI.md` (`~/CLAUDE.md`,
+  `~/GEMINI.md` with `--global`). A plugin author could put text there that the
+  tool loads in every session, in a file you own and usually commit. Hydrate
+  reports `AGENTS.md` as dropped, as it already did for Codex, OpenCode and Pi.
+  ach-cli does not remove a block an earlier version wrote: delete the
+  `<!-- ach:begin:… -->` to `<!-- ach:end:… -->` lines from those files by
+  hand, and the `CLAUDE.md` / `GEMINI.md` line from the ach-cli block of the
+  folder's `.gitignore`.
+
 ## [1.1.27] - 2026-11-20
 
 ### Added

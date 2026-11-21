@@ -274,7 +274,7 @@ func TestRegistry_RegistersOnImport(t *testing.T) {
 
 // TestProjectionRules_Rows (D-11/D-02) asserts the claude-code ProjectionRules
 // table: the four file-owned kinds stay verbatim MergeReplace with NO Transform
-// (FMT-03 cut), AGENTS.md composites into CLAUDE.md, and mcp/**/* deep-merges
+// (FMT-03 cut), AGENTS.md has no route, and mcp/**/* deep-merges
 // into settingsJSONPath with the mcpDeepKeys Transform wired.
 func TestProjectionRules_Rows(t *testing.T) {
 	rules := (&Adapter{}).ProjectionRules()
@@ -322,19 +322,9 @@ func TestProjectionRules_Rows(t *testing.T) {
 		}
 	}
 
-	// AGENTS.md -> CLAUDE.md as MergeComposite, no Transform.
-	comp, ok := byFrom["AGENTS.md"]
-	if !ok {
-		t.Fatalf("ProjectionRules missing AGENTS.md composite row")
-	}
-	if comp.to != "CLAUDE.md" {
-		t.Errorf("AGENTS.md ToGlob = %q, want CLAUDE.md", comp.to)
-	}
-	if comp.merge != adapter.MergeComposite {
-		t.Errorf("AGENTS.md Merge = %v, want MergeComposite", comp.merge)
-	}
-	if comp.hasXform {
-		t.Errorf("AGENTS.md composite row must have nil Transform")
+	// A plugin's AGENTS.md has no route: nothing is written to CLAUDE.md.
+	if _, ok := byFrom["AGENTS.md"]; ok {
+		t.Errorf("ProjectionRules must not route AGENTS.md")
 	}
 
 	// mcp/**/* -> mcpJSONPath (project-root .mcp.json) as MergeDeep WITH a

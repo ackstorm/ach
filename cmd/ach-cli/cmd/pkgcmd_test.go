@@ -811,22 +811,19 @@ func TestCollisionWarn(t *testing.T) {
 		}
 	})
 
-	// Bug #1: a shared path written with an ADDITIVE merge (composite marker
-	// block, or keyed deep-merge) is not a clobber — the prior install's content
-	// is preserved alongside this one — so it must NOT raise an "overwrote"
-	// alarm, even though the path is owned by another entry. Only MergeReplace
-	// ("") collisions warn.
+	// Bug #1: a shared path written with an ADDITIVE merge (keyed deep-merge)
+	// is not a clobber — the prior install's content is preserved alongside
+	// this one — so it must NOT raise an "overwrote" alarm, even though the
+	// path is owned by another entry. Only MergeReplace ("") collisions warn.
 	t.Run("additive merge does not warn", func(t *testing.T) {
 		deepInstalled := &store.InstalledFile{Installed: []store.InstalledEntry{
 			mk("plugA@r", "claude-code", ".claude/settings.json"),
 		}}
-		for _, merge := range []string{"deep", "composite"} {
-			var buf bytes.Buffer
-			collisionWarn(&buf, deepInstalled, "plugB@r", "claude-code",
-				[]store.FileRec{{RelPath: ".claude/settings.json", Merge: merge}})
-			if buf.Len() != 0 {
-				t.Errorf("additive merge %q on shared path must not warn, got: %q", merge, buf.String())
-			}
+		var buf bytes.Buffer
+		collisionWarn(&buf, deepInstalled, "plugB@r", "claude-code",
+			[]store.FileRec{{RelPath: ".claude/settings.json", Merge: "deep"}})
+		if buf.Len() != 0 {
+			t.Errorf("deep merge on shared path must not warn, got: %q", buf.String())
 		}
 	})
 }

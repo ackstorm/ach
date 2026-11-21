@@ -2,11 +2,9 @@
 
 package hydrate
 
-// White-box tests for the D-07 CR-01 composite exemption + plugin-name
-// threading and the D-10 runtime-wins MCP drop in projectPlugins. These call
-// projectPlugins directly with a test-local fake adapter that supplies
-// composite + MCP-deep ProjectionRules — the real claude/gemini rows land in
-// plans 02-03/02-04, so end-to-end-through-Render coverage is out of scope here.
+// White-box tests for the CR-01 replace-collision fail-fast and the D-10
+// runtime-wins MCP drop in projectPlugins. These call projectPlugins directly
+// with a test-local fake adapter that supplies an MCP-deep ProjectionRule.
 
 import (
 	"context"
@@ -24,9 +22,8 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
-// fakeProjAdapter implements adapter.Adapter + route.RuleProvider with a
-// composite (AGENTS.md→CLAUDE.md) and an MCP-deep (mcp/**/*→settings.json)
-// projection rule. The MCP rule's Transform mirrors mcpDeepKeys: returns the
+// fakeProjAdapter implements adapter.Adapter + route.RuleProvider with an
+// MCP-deep (mcp/**/*→settings.json) projection rule. The MCP rule's Transform mirrors mcpDeepKeys: returns the
 // input bytes unchanged + the enumerated mcpServers.<id> keys.
 type fakeProjAdapter struct{}
 
@@ -41,7 +38,6 @@ func (fakeProjAdapter) RenderRuntime(context.Context, *manifest.Manifest, *state
 
 func (fakeProjAdapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
-		{FromGlob: "AGENTS.md", ToGlob: "CLAUDE.md", Merge: adapter.MergeComposite},
 		{
 			// Exact-file source → fixed settings.json (no ** suffix-append).
 			// The real D-11/D-12 mcp/**/*→settingsJSONPath routing lands in
@@ -70,61 +66,8 @@ func (fakeProjAdapter) ProjectionRules() []route.Rule {
 	}
 }
 
-// TestProjectPlugins_CompositeExempt_FromCR01 proves two distinct plugins both
-// projecting AGENTS.md→CLAUDE.md (MergeComposite) do NOT trip the CR-01
-// fail-fast — both co-own the host memory file via per-id blocks, emitted in
-// sorted plugin-name order.
-func TestProjectPlugins_CompositeExempt_FromCR01(t *testing.T) {
-	achDir := t.TempDir()
-	toolRoot := t.TempDir()
-	stageTree(t, achDir, "plug-a", map[string]string{"AGENTS.md": "A body\n"})
-	stageTree(t, achDir, "plug-b", map[string]string{"AGENTS.md": "B body\n"})
-
-	d := &adapterDispatcherImpl{platformID: "fake"}
-	var result RenderResult
-	if err := d.projectPlugins(fakeProjAdapter{}, nil, achDir, toolRoot, nil, false, &result); err != nil {
-		t.Fatalf("projectPlugins composite-exempt: want nil error, got %v", err)
-	}
-	if len(result.ProjectedFiles) != 2 {
-		t.Fatalf("ProjectedFiles = %d; want 2 (both composite contributors)", len(result.ProjectedFiles))
-	}
-	// Both rows record Keys=[plugin-name].
-	gotKeys := map[string]bool{}
-	for _, pf := range result.ProjectedFiles {
-		if pf.Target != "CLAUDE.md" {
-			t.Errorf("composite Target = %q; want CLAUDE.md", pf.Target)
-		}
-		if len(pf.Keys) != 1 {
-			t.Fatalf("composite Keys = %v; want [plugin-name]", pf.Keys)
-		}
-		gotKeys[pf.Keys[0]] = true
-	}
-	if !gotKeys["plug-a"] || !gotKeys["plug-b"] {
-		t.Errorf("composite rows missing a plugin name; got %v", gotKeys)
-	}
-
-	// On-disk CLAUDE.md contains BOTH per-id blocks, sorted by plugin name.
-	body, err := os.ReadFile(filepath.Join(toolRoot, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-	aIdx := strings.Index(string(body), "<!-- ach:begin:plug-a -->")
-	bIdx := strings.Index(string(body), "<!-- ach:begin:plug-b -->")
-	if aIdx < 0 || bIdx < 0 {
-		t.Fatalf("both per-id blocks must be present:\n%s", body)
-	}
-	if aIdx > bIdx {
-		t.Errorf("blocks not in sorted plugin-name order (plug-a after plug-b):\n%s", body)
-	}
-}
-
 // TestProjectPlugins_ReplaceCollision_StillFailsFast proves MergeReplace
-// targets KEEP the CR-01 fail-fast: two plugins both shipping rules/foo.md
-// (which the fake does NOT route — so use the real claudecode behavior). We
-// reuse the fake but add no rules/ rule; instead assert composite is exempt
-// while a hypothetical replace collision still errors via a dedicated rule.
-//
-// Simpler: drive the replace-collision through a fake whose only rule is a
+// targets KEEP the CR-01 fail-fast, driven through a fake whose only rule is a
 // MergeReplace rules/**/* → .claude/rules/**/* and two plugins colliding.
 func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 	achDir := t.TempDir()
@@ -238,8 +181,7 @@ func TestProjectPlugins_ReplaceProjectedFileIs0o644(t *testing.T) {
 }
 
 // fakeReplaceAdapter routes rules/**/* → .claude/rules/**/* (MergeReplace) only,
-// so a two-plugin same-file collision exercises the CR-01 fail-fast that
-// composite is exempt from.
+// so a two-plugin same-file collision exercises the CR-01 fail-fast.
 type fakeReplaceAdapter struct{ fakeProjAdapter }
 
 func (fakeReplaceAdapter) ProjectionRules() []route.Rule {

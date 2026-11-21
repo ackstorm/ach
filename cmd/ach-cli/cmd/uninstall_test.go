@@ -73,7 +73,7 @@ func TestUninstall_DryRunWritesNothing(t *testing.T) {
 		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins: []state.FileEntry{
-			{Target: "CLAUDE.md", Hash: "h", SourceHash: "s", Merge: "composite", Keys: []string{"foo"}},
+			{Target: ".claude/rules/foo.md", Hash: "h", SourceHash: "s"},
 		},
 		RuntimeFiles: []state.FileEntry{
 			{Target: ".mcp.json", Hash: "h2", SourceHash: "s2", Merge: "deep", Keys: []string{"mcpServers.x"}},
@@ -243,8 +243,8 @@ func onlyPrev() *state.File {
 		SchemaVersion: "3",
 		Environment:   "demo",
 		Plugins: []state.FileEntry{
-			{Target: "CLAUDE.md", Hash: "ha", Merge: "composite", Keys: []string{"a"}, Source: "a"},
-			{Target: "CLAUDE.md", Hash: "hb", Merge: "composite", Keys: []string{"b"}, Source: "b"},
+			{Target: ".claude/rules/a.md", Hash: "ha", Source: "a"},
+			{Target: ".claude/rules/b.md", Hash: "hb", Source: "b"},
 		},
 		Skills:       []state.FileEntry{{Target: ".claude/skills/s/SKILL.md", Hash: "hs", Source: "s"}},
 		RuntimeFiles: []state.FileEntry{{Target: "runtime/mcp.json", Hash: "hr"}},
