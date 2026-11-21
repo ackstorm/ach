@@ -132,7 +132,7 @@ var conformanceTables = []adapterConformance{
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".opencode/commands/**/*.md", merge: adapter.MergeReplace, hasXform: true},
 			"agents/**/*.md":   {to: ".opencode/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
-			"skills/**/*":      {to: ".opencode/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":        {to: ".opencode/opencode.json", merge: adapter.MergeDeep, hasXform: true},
 		},
@@ -142,11 +142,11 @@ var conformanceTables = []adapterConformance{
 	},
 	{
 		id:             "pi",
-		mappingSection: "§pi: project .pi/{prompts,skills} (global remap to .pi/agent/) + D-33 .pi/mcp.json deep",
+		mappingSection: "§pi: project .pi/prompts (global remap to .pi/agent/) + .agents/skills + D-33 .pi/mcp.json deep",
 		rowCount:       4,
 		rules: map[string]wantRule{
 			"commands/**/*.md": {to: ".pi/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":      {to: ".pi/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"mcp/**/*":         {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":        {to: ".pi/mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},

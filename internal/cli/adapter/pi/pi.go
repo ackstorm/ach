@@ -4,9 +4,9 @@
 // optional 5th target (CONTEXT.md Phase 5, D-33). It is the thinnest adapter:
 // a 3-row ProjectionRules table plus an mcpServers-shaped RenderRuntime pointed at
 // .pi/mcp.json. There is NO format conversion — plugin commands/skills are
-// projected verbatim (MergeReplace) into Pi's project layout
-// .pi/{prompts,skills}/ (RemapGlobalPath moves them under ~/.pi/agent/ for
-// --global, the only place pi reads them there), and
+// projected verbatim (MergeReplace): commands into Pi's project layout
+// .pi/prompts/ (RemapGlobalPath moves them under ~/.pi/agent/ for --global,
+// the only place pi reads them there), skills into the shared .agents/skills/, and
 // MCP definitions deep-merge into .pi/mcp.json (MergeDeep).
 //
 // D-33 (this phase) makes RenderRuntime NON-EMPTY (it emits Environment runtime
@@ -197,7 +197,7 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 // D-06 seam). Exactly 3 rows:
 //
 //   - commands/**/*.md → .pi/prompts/**/* (MergeReplace verbatim)
-//   - skills/**/*      → .pi/skills/**/*  (MergeReplace verbatim)
+//   - skills/**/*      → .agents/skills/**/*  (MergeReplace verbatim)
 //   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys; D-33)
 //
 // A root/**/* catch-all is OMITTED (D-36). No rules/agents/
@@ -208,7 +208,7 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*.md", ToGlob: ".pi/prompts/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "-"},
-		{FromGlob: "skills/**/*", ToGlob: ".pi/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-"},
+		{FromGlob: "skills/**/*", ToGlob: ".agents/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-"},
 		{FromGlob: "mcp/**/*", ToGlob: mcpJSONPath, Merge: adapter.MergeDeep, Transform: mcpDeepKeys},
 		// Root .mcp.json is Claude Code's standard plugin MCP location — merge it
 		// into .pi/mcp.json too.

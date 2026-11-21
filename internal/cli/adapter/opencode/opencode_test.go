@@ -414,10 +414,10 @@ func TestProjectionRules_RoutesAndDrops(t *testing.T) {
 	// Kept kinds must route to the PLURAL .opencode/<kind>/ dirs (+ the N→1
 	// mcp collapse onto opencode.json).
 	wantPaths := map[string]bool{
-		".opencode/commands/grunt.md":    false,
-		".opencode/agents/cave.md":       false,
-		".opencode/skills/fire/skill.md": false,
-		".opencode/opencode.json":        false,
+		".opencode/commands/grunt.md":  false,
+		".opencode/agents/cave.md":     false,
+		".agents/skills/fire/skill.md": false,
+		".opencode/opencode.json":      false,
 	}
 	for _, w := range pr.FileWrites {
 		p := filepath.ToSlash(w.Path)

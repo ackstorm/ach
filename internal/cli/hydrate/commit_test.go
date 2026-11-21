@@ -2087,6 +2087,55 @@ func TestStep11Sync_PrunesMovedPluginFilesWithoutSync(t *testing.T) {
 	}
 }
 
+// TestRehydrate_MovedSkillDir_OldCopyPruned: a standalone Skill still in the
+// Environment whose directory moved (.opencode/skills -> .agents/skills) loses
+// its old copy on a plain hydrate; a copy the user edited is kept with a
+// warning.
+func TestRehydrate_MovedSkillDir_OldCopyPruned(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	var stderr bytes.Buffer
+	c.opts.Stderr = &stderr
+	write := func(rel, body string) string {
+		abs := filepath.Join(c.toolRoot, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return abs
+	}
+	moved := write(".opencode/skills/demo/SKILL.md", "demo")
+	edited := write(".opencode/skills/mine/SKILL.md", "mine (edited by the user)")
+	existing := &state.File{Skills: []state.FileEntry{
+		{Target: ".opencode/skills/demo/SKILL.md", Hash: hash.HashBytes([]byte("demo")), SourceHash: hash.HashBytes([]byte("demo")), Merge: "replace", Source: "demo"},
+		{Target: ".opencode/skills/mine/SKILL.md", Hash: hash.HashBytes([]byte("mine")), SourceHash: hash.HashBytes([]byte("mine")), Merge: "replace", Source: "mine"},
+	}}
+	render := RenderResult{ProjectedSkillFiles: []FileWrite{
+		{Target: ".agents/skills/demo/SKILL.md", Merge: "replace", Source: "demo"},
+		{Target: ".agents/skills/mine/SKILL.md", Merge: "replace", Source: "mine"},
+	}}
+
+	var res Result
+	if err := c.step11Sync(existing, nil, render, true, nil, &res); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(moved); !os.IsNotExist(err) {
+		t.Errorf("unchanged old copy must be removed; stat err=%v", err)
+	}
+	if _, err := os.Stat(edited); err != nil {
+		t.Errorf("user-edited old copy must be kept: %v", err)
+	}
+	if !strings.Contains(stderr.String(), ".opencode/skills/mine/SKILL.md") {
+		t.Errorf("want a warning naming the kept file, stderr=%q", stderr.String())
+	}
+	next := c.composeNextState(existing, nil, render, true, "opencode", nil)
+	if len(next.Skills) != 2 || next.Skills[0].Target != ".agents/skills/demo/SKILL.md" {
+		t.Errorf("new Skills rows = %+v", next.Skills)
+	}
+}
+
 // TestCommit_ItemChanges: a first run reports every item as added; a re-run
 // over the saved state reports nothing changed (dry run: see
 // TestRun_DryRun_PreviewsMovedPlugin).

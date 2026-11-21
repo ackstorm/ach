@@ -213,7 +213,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 //     opencode's command schema; output stays markdown, .md only)
 //   - agents/**/*.md → .opencode/agents/**/*.md (MergeReplace, Transform:
 //     opencodeAgentTools — tools[]→{name:true}, color/model normalize, markdown)
-//   - skills/**/*    → .opencode/skills/**/*    (MergeReplace, verbatim copy)
+//   - skills/**/*    → .agents/skills/**/*    (MergeReplace, verbatim copy)
 //   - mcp/**/*       → .opencode/opencode.json  (MergeDeep, Transform:
 //     opencodeMCPConvert — mcpServers→mcp + per-entry local|remote shape, JSON)
 //
@@ -233,7 +233,7 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
 		{FromGlob: "commands/**/*.md", ToGlob: ".opencode/commands/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeCommandFrontmatter, Prefix: route.PrefixCommand, Sep: "-"},
 		{FromGlob: "agents/**/*.md", ToGlob: ".opencode/agents/**/*.md", Merge: adapter.MergeReplace, Transform: opencodeAgentTools},
-		{FromGlob: "skills/**/*", ToGlob: ".opencode/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-", UserOnlyCommandDir: ".opencode/commands"},
+		{FromGlob: "skills/**/*", ToGlob: ".agents/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: "-", UserOnlyCommandDir: ".opencode/commands"},
 		{FromGlob: "mcp/**/*", ToGlob: configJSONPath, Merge: adapter.MergeDeep, Transform: opencodeMCPConvert},
 		// Root .mcp.json is Claude Code's standard plugin MCP location — deep-merge
 		// it into .opencode/opencode.json too (same conversion transform).

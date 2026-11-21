@@ -370,13 +370,13 @@ func TestPi_ProjectionRules(t *testing.T) {
 		t.Errorf("commands row must have nil Transform")
 	}
 
-	// Row 2: skills/**/* → .pi/skills/**/* (MergeReplace, no Transform).
+	// Row 2: skills/**/* → .agents/skills/**/* (MergeReplace, no Transform).
 	sk, ok := byFrom["skills/**/*"]
 	if !ok {
 		t.Fatalf("ProjectionRules missing skills/**/* row")
 	}
-	if sk.to != ".pi/skills/**/*" {
-		t.Errorf("skills row ToGlob = %q, want %q", sk.to, ".pi/skills/**/*")
+	if sk.to != ".agents/skills/**/*" {
+		t.Errorf("skills row ToGlob = %q, want %q", sk.to, ".agents/skills/**/*")
 	}
 	if sk.merge != adapter.MergeReplace {
 		t.Errorf("skills row Merge = %v, want MergeReplace", sk.merge)
@@ -471,7 +471,7 @@ func TestPi_McpDeepKeys_Malformed(t *testing.T) {
 // the adapter table §pi. It asserts, via the REAL route.Project engine:
 //
 //	(a) the two passthrough globs route verbatim to .pi/prompts/ and
-//	    .pi/skills/ (pi's project layout) as MergeReplace (file-owned, byte-identical);
+//	    .agents/skills/ (the shared skills dir) as MergeReplace (file-owned, byte-identical);
 //	(b) the D-33 mcp/**/* → .pi/mcp.json rule is MergeDeep with mcpDeepKeys
 //	    enumerating the top-level mcpServers.<id> keys;
 //	(c) the drop set is EXACTLY {AGENTS.md, agents, rules} — mcp is NOT dropped
@@ -520,10 +520,10 @@ func TestPi_GlobalOnly_Conformance(t *testing.T) {
 		t.Errorf("commands Merge = %v, want MergeReplace", cmd.Merge)
 	}
 
-	// skills → .pi/skills/ verbatim MergeReplace.
-	sk, ok := byPath[".pi/skills/fire/skill.md"]
+	// skills → .agents/skills/ verbatim MergeReplace.
+	sk, ok := byPath[".agents/skills/fire/skill.md"]
 	if !ok {
-		t.Fatalf("no FileWrite for .pi/skills/fire/skill.md; got %v", keysOf(byPath))
+		t.Fatalf("no FileWrite for .agents/skills/fire/skill.md; got %v", keysOf(byPath))
 	}
 	if string(sk.Content) != skillBody {
 		t.Errorf("skills passthrough not byte-identical: got %q, want %q", sk.Content, skillBody)

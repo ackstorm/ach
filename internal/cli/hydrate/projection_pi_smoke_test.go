@@ -29,7 +29,7 @@ import (
 // registered pi adapter (--target pi) and asserts, end-to-end:
 //
 //	(1) commands/*.md projects verbatim to .pi/prompts/<plugin>-*, skills/* to
-//	    .pi/skills/<plugin>-* (pi's project layout, namespaced — SC2 routing);
+//	    .agents/skills/<plugin>-* (the shared skills dir, namespaced — SC2 routing);
 //	(2) .pi/mcp.json carries BOTH the plugin MCP server (from mcp/servers.json,
 //	    deep-merged via projection) AND the runtime MCP server (from
 //	    RenderRuntime) under top-level mcpServers (D-33);
@@ -37,7 +37,7 @@ import (
 //	    accumulate-once; mcp is NOT dropped (it has the mcp/**/* rule);
 //	(4) .pi/mcp.json is a co-owned deep-merge FileEntry — uninstall via
 //	    Sync(prev, empty) does inverse-merge key subtraction preserving a
-//	    co-owned user key, while the file-owned .pi/{prompts,skills}/... entries are
+//	    co-owned user key, while the file-owned .pi/prompts/ and .agents/skills/... entries are
 //	    plain-deleted (LIFE-04 + D-33);
 //	(5) re-hydrate is a byte-identical no-op for every pi-projected file
 //	    (FMT-05 idempotence).
@@ -93,7 +93,7 @@ func TestProjection_Pi_Smoke(t *testing.T) {
 
 	// --- (1) passthrough globs land at pi's project dests, namespaced ------
 	promptsAbs := filepath.Join(toolRoot, ".pi", "prompts", "caveman-hello.md")
-	skillAbs := filepath.Join(toolRoot, ".pi", "skills", "caveman-skill1", "SKILL.md")
+	skillAbs := filepath.Join(toolRoot, ".agents", "skills", "caveman-skill1", "SKILL.md")
 	mcpAbs := filepath.Join(toolRoot, ".pi", "mcp.json")
 
 	if got := readFile(t, promptsAbs); got != helloBody {
@@ -114,9 +114,9 @@ func TestProjection_Pi_Smoke(t *testing.T) {
 
 	// ProjectedFiles must include the two passthrough globs + the mcp deep-merge.
 	wantProjected := map[string]bool{
-		".pi/prompts/caveman-hello.md":       false,
-		".pi/skills/caveman-skill1/SKILL.md": false,
-		".pi/mcp.json":                       false,
+		".pi/prompts/caveman-hello.md":           false,
+		".agents/skills/caveman-skill1/SKILL.md": false,
+		".pi/mcp.json":                           false,
 	}
 	for _, pf := range res.ProjectedFiles {
 		if _, ok := wantProjected[pf.Target]; ok {
@@ -170,7 +170,7 @@ func TestProjection_Pi_Smoke(t *testing.T) {
 			},
 			// File-owned entries (replace) → plain whole-file deletion.
 			{Target: ".pi/prompts/caveman-hello.md", Merge: "replace"},
-			{Target: ".pi/skills/caveman-skill1/SKILL.md", Merge: "replace"},
+			{Target: ".agents/skills/caveman-skill1/SKILL.md", Merge: "replace"},
 		},
 	}
 
@@ -192,7 +192,7 @@ func TestProjection_Pi_Smoke(t *testing.T) {
 		t.Errorf("file-owned .pi/prompts/caveman-hello.md must be plain-deleted; stat err=%v", statErr)
 	}
 	if _, statErr := os.Stat(skillAbs); !os.IsNotExist(statErr) {
-		t.Errorf("file-owned .pi/skills/caveman-skill1/SKILL.md must be plain-deleted; stat err=%v", statErr)
+		t.Errorf("file-owned .agents/skills/caveman-skill1/SKILL.md must be plain-deleted; stat err=%v", statErr)
 	}
 
 	// --- (5) re-hydrate is a byte-identical no-op (FMT-05) ------------------

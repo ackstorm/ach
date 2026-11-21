@@ -29,6 +29,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   `<namespace>/<ServiceAccount username>`. It was the username alone.
 - Audit: `operator.orphan-cleanup` events carry `action` and
   `actor` (`<namespace>/system:operator`), like every other event.
+- `ach-cli` writes skills for Codex, OpenCode and pi to the shared `.agents/skills` directory (`~/.agents/skills` with `-g`). The next hydrate moves existing ones; a skill you edited in place is kept at its old path with a warning.
 
 ### Removed
 - ach-cli no longer supports Gemini CLI as a target (`--target gemini-cli`, `launch gemini`).

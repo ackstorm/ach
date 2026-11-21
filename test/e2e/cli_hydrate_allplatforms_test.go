@@ -95,7 +95,7 @@ var allPlatformExpects = []allPlatformExpect{
 		id:          "opencode",
 		runtimePath: ".opencode/opencode.json",
 		runtimeFmt:  "json",
-		skillsDir:   ".opencode/skills",
+		skillsDir:   ".agents/skills",
 		skillSep:    "-",
 		agentsDir:   ".opencode/agents",
 		agentExt:    ".md",
@@ -104,13 +104,13 @@ var allPlatformExpects = []allPlatformExpect{
 	},
 	{
 		// pi (Pi / pi-mono, Phase 5 D-33): thinnest adapter. skills +
-		// commands project verbatim into pi's project layout .pi/{skills,prompts}/
-		// (.pi/agent/ is global-only); MCP deep-merges into .pi/mcp.json. NO
+		// commands project verbatim into pi's project layout .pi/prompts/
+		// (.pi/agent/ is global-only), skills into .agents/skills/; MCP deep-merges into .pi/mcp.json. NO
 		// a2aAgents surface; agents are dropped (no rule).
 		id:          "pi",
 		runtimePath: ".pi/mcp.json",
 		runtimeFmt:  "json",
-		skillsDir:   ".pi/skills",
+		skillsDir:   ".agents/skills",
 		skillSep:    "-",
 		agentsDir:   "", // pi has no agent projection rule (dropped)
 		agentExt:    "",

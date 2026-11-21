@@ -1020,7 +1020,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 
 // skillNameFromPath extracts the skill name from an adapter destination path.
 // All adapters route skills to paths of the form <prefix>/skills/<name>/…
-// (e.g. ".claude/skills/docx/SKILL.md", ".pi/agent/skills/docx/SKILL.md"),
+// (e.g. ".claude/skills/docx/SKILL.md", ".agents/skills/docx/SKILL.md"),
 // so the skill name is always the segment that follows "skills". Returns ""
 // when the path does not contain a "skills" segment (should not occur in
 // practice, but handled defensively so a routing change never panics). root is
@@ -1343,8 +1343,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		default:
 			// MergeReplace (file-owned) covers ONLY the Phase-3 projected
 			// plugin resource files — .codex/agents/*.toml, .codex/prompts/*.md,
-			// .agents/skills/*, .opencode/agents/*.md, .opencode/commands/*,
-			// .opencode/skills/* — none of which carry credentials (WR-04).
+			// .agents/skills/*, .opencode/agents/*.md, .opencode/commands/*
+			// — none of which carry credentials (WR-04).
 			// 0o600 (owner-only) is reserved for the credential-bearing
 			// MergeDeep runtime configs above; non-secret projected resources
 			// use 0o644 so cross-account use (service user, mounted docker
@@ -1890,7 +1890,7 @@ func appendUniqueSorted(xs []string, name string) []string {
 //
 // Both Adapter.Files AND Plugins resolve against toolRoot: projectPlugins
 // publishes each projected plugin FileWrite under toolRoot (the adapter-native
-// resource dirs — .claude/agents/…, .pi/agent/skills/…, etc., see publishFile
+// resource dirs — .claude/agents/…, .agents/skills/…, etc., see publishFile
 // call in projectPlugins), recording a toolRoot-RELATIVE Target. Prompts and
 // Artifacts are extracted into the achDir content cache (ExtractContent's base
 // is achDir) and are NOT projected to toolRoot, so they resolve against achDir.

@@ -59,6 +59,10 @@ ach-cli environment hydrate <environment> --target <tool>
 `--target` takes several tools (`--target claude-code,opencode`). Inside a
 folder that already holds one tool's configuration you may leave it out.
 
+Skills go to `.claude/skills` for Claude Code and to the shared `.agents/skills`
+for Codex, OpenCode and pi (`~/.agents/skills` with `-g`), so those three tools
+read one copy.
+
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
 in that folder.
 

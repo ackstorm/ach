@@ -21,8 +21,8 @@ type globalScope struct {
 	envSuffix  string
 	fallback   string
 	// subdirs, when set, limits the remap to these project subdirs under
-	// fromPrefix: pi reads project resources from .pi/{skills,prompts} but
-	// global ones from ~/.pi/agent/{skills,prompts}, and .pi/mcp.json is
+	// fromPrefix: pi reads project prompts from .pi/prompts but global ones from
+	// ~/.pi/agent/prompts, and .pi/mcp.json is
 	// outside that layout either way.
 	subdirs []string
 }
@@ -31,7 +31,7 @@ type globalScope struct {
 var globalScopes = map[string]globalScope{
 	"claude-code": {envVar: "CLAUDE_CONFIG_DIR", fromPrefix: ".claude/"},
 	"codex":       {envVar: "CODEX_HOME", fromPrefix: ".codex/"},
-	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"skills/", "prompts/"}},
+	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"prompts/"}},
 	"opencode": {
 		envVar:     "XDG_CONFIG_HOME",
 		fromPrefix: ".opencode/",

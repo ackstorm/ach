@@ -197,11 +197,12 @@ opencode ignores `disable-model-invocation` and has no slash invocation for
 skills, so its skill rule also emits each such user-only skill as a command
 (`UserOnlyCommandDir`) — the skill stays too, so the model may still pick it.
 
-**Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin STILL
-in the Environment that it no longer writes (`keptPluginRows` in
-`hydrate/commit.go` → `Sync`), so the pre-namespacing paths are removed, never
-orphaned; an edited file is kept with a warning. A plugin that LEFT the
-Environment stays `--sync`'s call.
+**Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin or
+standalone Skill STILL in the Environment that it no longer writes
+(`keptSourceRows` in `hydrate/commit.go` → `Sync`), so a path that moved
+(namespacing, `.opencode/skills` → `.agents/skills`) is removed, never
+orphaned; an edited file is kept with a warning. A plugin or Skill that LEFT
+the Environment stays `--sync`'s call.
 
 `KnownComponentKinds`: `rules, commands, agents, skills, mcp, .mcp.json,
 prompts, AGENTS.md, hooks`. **INVARIANT** (`kinds_test.go`): every FromGlob
@@ -357,7 +358,7 @@ merge) — don't conflate them.
 |---|---|---|---|---|
 | commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` |
 | agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop |
-| skills | →`.claude/skills` | →`.agents/skills` | →`.opencode/skills` | →`.pi/skills` |
+| skills | →`.claude/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` |
 | mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
 | rules | →`.claude/rules` | drop | drop | drop |
 | AGENTS.md | drop | drop | drop | drop |
@@ -393,16 +394,17 @@ that tool actually reads it. One table drives both write paths:
 | claude-code | `CLAUDE_CONFIG_DIR` | dir itself | `.claude/` | `.mcp.json` |
 | codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
 | opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
-| pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/{skills,prompts}/` → `.pi/agent/…` | `.pi/mcp.json` |
+| pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/prompts/` → `.pi/agent/…` | `.pi/mcp.json` |
 
 Hard-won details — do NOT re-derive:
 
 - **Pi's config dir defaults to `~/.pi/agent`, not `~/.pi` — but only
-  globally.** In a project pi reads `.pi/skills` and `.pi/prompts`
-  (pi 0.83 `core/skills.js`, `core/prompt-templates.js`); `.pi/agent/` there is
-  read by nothing. So the rules write the project layout and `--global` maps
-  just those two subdirs to `.pi/agent/` (`globalScope.subdirs`);
-  `.pi/mcp.json` is outside both. (Until 2026-10-26 project hydrates wrote
+  globally.** In a project pi reads `.pi/prompts`
+  (pi 0.83 `core/prompt-templates.js`); `.pi/agent/` there is read by nothing.
+  So the rules write the project layout and `--global` maps just that subdir
+  to `.pi/agent/` (`globalScope.subdirs`); `.pi/mcp.json` is outside it. Pi
+  reads skills from the cross-tool `.agents/skills` (project and `~`), which
+  no adapter redirects. (Until 2026-10-26 project hydrates wrote
   `.pi/agent/…`, which pi never loaded. `ackstorm/agent-profile` documents
   `~/.pi` — off by one level.)
 - **Redirection is keyed on the PATH PREFIX, not the adapter.** `.agents/` is a

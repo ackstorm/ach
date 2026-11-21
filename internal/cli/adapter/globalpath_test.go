@@ -35,9 +35,9 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 		{"claude-code", ".mcp.json", ".mcp.json"},
 		{"codex", ".codex/config.toml", ".codex/config.toml"},
 		{"codex", ".agents/skills/a/b.md", ".agents/skills/a/b.md"},
-		// pi reads project resources from .pi/{skills,prompts} but global ones
-		// from ~/.pi/agent/{skills,prompts}; .pi/mcp.json is the same file both ways.
-		{"pi", ".pi/skills/a/SKILL.md", ".pi/agent/skills/a/SKILL.md"},
+		// pi reads project prompts from .pi/prompts but global ones from
+		// ~/.pi/agent/prompts; .pi/mcp.json is the same file both ways.
+		{"pi", ".pi/skills/x/SKILL.md", ".pi/skills/x/SKILL.md"},
 		{"pi", ".pi/prompts/a.md", ".pi/agent/prompts/a.md"},
 		{"pi", ".pi/mcp.json", ".pi/mcp.json"},
 		{"unknown-adapter", ".claude/settings.json", ".claude/settings.json"},
@@ -60,7 +60,7 @@ func TestRemapGlobalPath_EnvSet(t *testing.T) {
 		{"opencode parent", "opencode", "XDG_CONFIG_HOME", "/p/xdg",
 			".opencode/opencode.json", "/p/xdg/opencode/opencode.json"},
 		{"pi dir-itself", "pi", "PI_CODING_AGENT_DIR", "/p/pi",
-			".pi/skills/a/SKILL.md", "/p/pi/skills/a/SKILL.md"},
+			".pi/prompts/a.md", "/p/pi/prompts/a.md"},
 		// Value is cleaned, so no ".." survives into the destination.
 		{"cleaned", "codex", "CODEX_HOME", "/p/x/../codex",
 			".codex/config.toml", "/p/codex/config.toml"},
@@ -162,5 +162,14 @@ func TestGlobalRoot(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/config")
 	if got, want := GlobalRoot("opencode", home), "/tmp/config/opencode"; got != want {
 		t.Fatalf("GlobalRoot(opencode) = %q; want %q", got, want)
+	}
+}
+
+func TestRemapGlobalPath_AgentsSkillsStaysUnderHome(t *testing.T) {
+	for _, id := range []string{"codex", "opencode", "pi"} {
+		got := RemapGlobalPath(id, "/home/u", ".agents/skills/x/SKILL.md")
+		if got != ".agents/skills/x/SKILL.md" {
+			t.Fatalf("%s: got %q", id, got)
+		}
 	}
 }

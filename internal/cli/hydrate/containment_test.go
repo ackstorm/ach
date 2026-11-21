@@ -435,7 +435,7 @@ func TestRun_Global_StateTargets(t *testing.T) {
 	}
 	assertBody(t, victim, "x")
 
-	redirected := filepath.Join(cfg, "skills", "a.md")
+	redirected := filepath.Join(cfg, "prompts", "a.md")
 	mustWrite(t, redirected, "x")
 	save(redirected)
 	if err := containRun(t, "", global); err != nil {

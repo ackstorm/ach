@@ -43,8 +43,8 @@
 //	              still matches the rule's first segment, so route.Project does
 //	              not add it to the dropped set — the individual .toml files are
 //	              skipped by the WR-03 terminal-extension guard.)
-//	opencode     commands→.opencode/commands/  agents(*.md)→.opencode/agents/  skills→.opencode/skills/
-//	pi       skills→.pi/skills/
+//	opencode     commands→.opencode/commands/  agents(*.md)→.opencode/agents/  skills→.agents/skills/
+//	pi       skills→.agents/skills/
 //	             (commands rule is commands/**/*.md; caveman commands are .toml
 //	              → NOT projected. NO agents rule → caveman's agents/ is DROPPED:
 //	              pi is the one adapter in this matrix whose drop set
@@ -160,7 +160,7 @@ var projectionDescriptors = []projectionDescriptor{
 	},
 	{
 		platformID:     phase7PlatformOpencode, // "opencode"
-		nativeDirs:     []string{".opencode/commands", ".opencode/agents", ".opencode/skills"},
+		nativeDirs:     []string{".opencode/commands", ".opencode/agents", ".agents/skills"},
 		mustNotProject: []string{"agents", "commands", "skills"},
 		coOwnedFile:    ".opencode/opencode.json",
 		coOwnedKind:    "json-mcp-opencode",
@@ -169,11 +169,11 @@ var projectionDescriptors = []projectionDescriptor{
 	},
 	{
 		platformID: phase7PlatformPi, // "pi"
-		// pi routes commands(*.md)→.pi/prompts/ and skills→.pi/skills/ (pi's
-		// project layout; .pi/agent/ is global-only). caveman commands are
+		// pi routes commands(*.md)→.pi/prompts/ and skills→.agents/skills/ (.pi/agent/
+		// is global-only). caveman commands are
 		// .toml → not projected, but the demo env's feature-dev plugin ships
 		// .md commands → they land under .pi/prompts/.
-		nativeDirs:     []string{".pi/skills", ".pi/prompts"},
+		nativeDirs:     []string{".agents/skills", ".pi/prompts"},
 		mustNotProject: []string{"skills"},
 		coOwnedFile:    ".pi/mcp.json",
 		coOwnedKind:    "json-pi",
