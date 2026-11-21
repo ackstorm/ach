@@ -121,7 +121,7 @@ func AdminOnly(auditLog *slog.Logger, ns string) func(http.Handler) http.Handler
 			if keyCtx.KeyType != keys.PrefixPk {
 				if auditLog != nil {
 					audit.EmitAudit(ctx, auditLog, audit.Event{
-						Action:    audit.ActionAdminKeysRevoke,
+						Action:    audit.ActionAdminAuthz,
 						Outcome:   audit.OutcomeInvalidKeyType,
 						Actor:     actor,
 						RequestID: reqID,
@@ -134,7 +134,7 @@ func AdminOnly(auditLog *slog.Logger, ns string) func(http.Handler) http.Handler
 			if !keyCtx.IsAdmin {
 				if auditLog != nil {
 					audit.EmitAudit(ctx, auditLog, audit.Event{
-						Action:    audit.ActionAdminKeysRevoke,
+						Action:    audit.ActionAdminAuthz,
 						Outcome:   audit.OutcomeNotAdmin,
 						Actor:     actor,
 						RequestID: reqID,

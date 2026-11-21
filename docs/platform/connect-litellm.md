@@ -113,6 +113,52 @@ forwarder:
 The forwarder removes the first prefix that matches from the model name in a
 `/gemini` request. It leaves `/v1` requests alone.
 
+## Audit model, tool and agent calls
+
+LiteLLM is the only component that sees which model answered, what a call cost
+and what a guardrail decided. ACH ships a LiteLLM callback,
+[`examples/litellm/ach_audit.py`](https://github.com/ackstorm/ach/blob/main/examples/litellm/ach_audit.py),
+that writes one [audit event](../reference/audit-events.md#calls) per call to
+LiteLLM's stdout. The line holds no prompt, response or tool argument.
+
+1. Put `ach_audit.py` in the directory that holds LiteLLM's `config.yaml`.
+   With the LiteLLM Helm chart, mount it from a ConfigMap:
+
+    ```bash
+    kubectl -n litellm create configmap ach-audit-callback --from-file=ach_audit.py
+    ```
+
+    ```yaml
+    volumes:
+      - name: ach-audit
+        configMap:
+          name: ach-audit-callback
+    volumeMounts:
+      - name: ach-audit
+        mountPath: /etc/litellm/ach_audit.py
+        subPath: ach_audit.py
+    ```
+
+2. Add the callback to LiteLLM's configuration and restart LiteLLM:
+
+    ```yaml
+    litellm_settings:
+      callbacks:
+        - ach_audit.proxy_handler_instance
+    ```
+
+3. Send one request through ACH, then read the line:
+
+    ```bash
+    kubectl -n litellm logs deploy/litellm | jq -cR 'fromjson? | select(.audit == true)'
+    ```
+
+A file mounted with `subPath` does not change when the ConfigMap does: restart
+LiteLLM after you replace the callback.
+
+[Collect audit events](collect-audit-events.md) shows how to query the lines in
+Loki and give them their own stream and retention.
+
 ## Verify
 
 ```bash

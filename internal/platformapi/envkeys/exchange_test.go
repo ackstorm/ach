@@ -110,6 +110,7 @@ func newExchangeFixture(t *testing.T) *exchangeFixture {
 	fdb := &fakeEkDB{}
 	deps, llm := newCreateDeps(fdb)
 	deps.Issuer = exIssuer
+	deps.Namespace = "ach"
 	// 0 with fakeEkDB's zero allowance would refuse any CreateHandler call:
 	// the exchange tests pass only because exchange never consults max_keys.
 	deps.DefaultMaxKeys = 0
@@ -436,7 +437,7 @@ func TestExchange_AuditOneEventPerRequestWithoutCredentials(t *testing.T) {
 		t.Fatalf("want 2 audit events, got %d: %s", len(lines), f.audit)
 	}
 	for _, want := range []string{`"action":"platform.ek.exchange"`, `"outcome":"issued"`, `"key.id":"` + resp.KeyID + `"`,
-		`"actor":"` + exUser + `"`, `"exchange.requester":"` + exRequester + `"`, `"exchange.pod_uid":"uid-1"`} {
+		`"actor":"ach/` + exUser + `"`, `"exchange.requester":"` + exRequester + `"`, `"exchange.pod_uid":"uid-1"`} {
 		if !strings.Contains(lines[0], want) {
 			t.Errorf("issued event lacks %s: %s", want, lines[0])
 		}

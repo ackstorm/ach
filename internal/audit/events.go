@@ -54,11 +54,12 @@ const (
 	ActionPkRevoke             = "platform.pk.revoke"
 	ActionHydrate              = "platform.hydrate"
 	ActionAdminRefresh         = "platform.admin.refresh"
-	ActionAdminKeysRevoke      = "platform.admin.keys.revoke"
+	ActionAdminAuthz           = "platform.admin.authz"
 	ActionAdminUsersRevokeKeys = "platform.admin.users.revoke_keys"
 	ActionAdminUserBudget      = "platform.admin.user.budget"
 	ActionAdminUserLimits      = "platform.admin.user.limits"
 	ActionEkExchange           = "platform.ek.exchange"
+	ActionOrphanCleanup        = "operator.orphan-cleanup"
 
 	// ActionContentGet is the Content Service emission action (Phase 5
 	// D-Discretion / Plan 05-05). The handler emits exactly one audit
