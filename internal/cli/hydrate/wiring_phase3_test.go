@@ -262,7 +262,6 @@ func TestRuntimeKindForKey(t *testing.T) {
 		{"mcp_servers.a2a-my-agent", "a2a"}, // codex
 		{"mcp.a2a-my-agent", "a2a"},         // opencode
 		{"a2aAgents.my-agent", ""},          // no tool reads it; never written
-		{"ach:begin", ""},                   // composite marker — not a runtime component
 		{"settings.foo", ""},                // unrelated key
 		{"", ""},                            // empty
 	}

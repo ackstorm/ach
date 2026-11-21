@@ -533,57 +533,6 @@ func TestSync_InverseMerge_RemovesContributedKeys(t *testing.T) {
 	}
 }
 
-// TestSync_CompositeBlock_RemovesMarkedRegion seeds a markdown file with a
-// per-plugin block `<!-- ach:begin:p -->X<!-- ach:end:p -->Y`; after Sync only
-// Y should remain (D-07: the row's Keys names the plugin block).
-func TestSync_CompositeBlock_RemovesMarkedRegion(t *testing.T) {
-	withCleanHome(t)
-	achDir := t.TempDir()
-
-	target := filepath.Join(achDir, "PROJECT.md")
-	original := "<!-- ach:begin:p -->XXX<!-- ach:end:p -->\nY tail content\n"
-	if err := os.WriteFile(target, []byte(original), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	prev := &state.File{
-		SchemaVersion: "3",
-		Environment:   "demo",
-		Adapter: state.AdapterSection{
-			ID: "claude-code",
-			Files: []state.FileEntry{
-				{
-					Target: target,
-					// Realistic partial hash: publishFile stores the hash of
-					// ACH's marker-bounded region (incl. the trailing \n the
-					// marker regex captures), NOT the whole file. (#2)
-					Hash:  hash.HashBytes([]byte("<!-- ach:begin:p -->XXX<!-- ach:end:p -->\n")),
-					Merge: "composite",
-					Keys:  []string{"p"},
-				},
-			},
-		},
-	}
-	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
-
-	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{}); err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
-	body, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("read after Sync: %v", err)
-	}
-	if strings.Contains(string(body), "XXX") {
-		t.Errorf("composite block content not removed: %s", string(body))
-	}
-	if !strings.Contains(string(body), "Y tail content") {
-		t.Errorf("non-block content lost: %s", string(body))
-	}
-	if strings.Contains(string(body), "ach:begin") || strings.Contains(string(body), "ach:end") {
-		t.Errorf("marker tags not removed: %s", string(body))
-	}
-}
-
 // TestSync_Force_BypassesDriftWins seeds a drift case and asserts
 // --force deletes anyway.
 func TestSync_Force_BypassesDriftWins(t *testing.T) {
@@ -630,7 +579,7 @@ func TestSync_Nil_Prev(t *testing.T) {
 // TestSync_DryRun_ClassifiesButWritesNothing is the CR-01 regression
 // guard: with SyncOptions.DryRun the engine must report the same
 // would-prune SyncStats a real run produces, yet leave every on-disk
-// file (replace-unlink, deep inverse-merge, composite block) byte-for-byte
+// file (replace-unlink, deep inverse-merge) byte-for-byte
 // unchanged and prune no parent directories.
 func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	withCleanHome(t)
@@ -656,15 +605,8 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 		t.Fatalf("seed deep: %v", err)
 	}
 
-	// (3) composite block entry.
-	compTarget := filepath.Join(achDir, "PROJECT.md")
-	compBody := "<!-- ach:begin:p -->XXX<!-- ach:end:p -->\nY tail content\n"
-	if err := os.WriteFile(compTarget, []byte(compBody), 0o644); err != nil {
-		t.Fatalf("seed composite: %v", err)
-	}
-
-	// Realistic partial hashes: publishFile stores the scoped subtree/region
-	// hash for deep/composite entries, NOT the whole-file hash. (#2)
+	// Realistic partial hash: publishFile stores the scoped subtree hash for
+	// a deep entry, NOT the whole-file hash. (#2)
 	deepOurs, err := merge.ParseDoc([]byte(`{"mcpServers":{"foo":{"url":"http://foo"}}}`), false)
 	if err != nil {
 		t.Fatalf("ParseDoc: %v", err)
@@ -673,7 +615,6 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubtreeHash: %v", err)
 	}
-	compRegionHash := hash.HashBytes([]byte("<!-- ach:begin:p -->XXX<!-- ach:end:p -->\n"))
 
 	prev := &state.File{
 		SchemaVersion: "3",
@@ -685,7 +626,6 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 			ID: "claude-code",
 			Files: []state.FileEntry{
 				{Target: deepTarget, Hash: deepSubHash, Merge: "deep", Keys: []string{"mcpServers.foo"}},
-				{Target: compTarget, Hash: compRegionHash, Merge: "composite", Keys: []string{"p"}},
 			},
 		},
 	}
@@ -697,9 +637,9 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 		t.Fatalf("Sync(DryRun): %v", err)
 	}
 
-	// Stats reflect the would-prune outcome — all three classify as pruned.
-	if stats.Pruned != 3 {
-		t.Errorf("Pruned = %d; want 3 (dry-run must still classify)", stats.Pruned)
+	// Stats reflect the would-prune outcome — both classify as pruned.
+	if stats.Pruned != 2 {
+		t.Errorf("Pruned = %d; want 2 (dry-run must still classify)", stats.Pruned)
 	}
 	if stats.Preserved != 0 {
 		t.Errorf("Preserved = %d; want 0", stats.Preserved)
@@ -711,7 +651,6 @@ func TestSync_DryRun_ClassifiesButWritesNothing(t *testing.T) {
 	}{
 		{"replace", replaceTarget, replaceBody},
 		{"deep", deepTarget, deepBody},
-		{"composite", compTarget, compBody},
 	} {
 		got, rerr := os.ReadFile(tc.path)
 		if rerr != nil {
@@ -769,42 +708,6 @@ func TestSync_Deep_RemovesAchKeysDespiteUserContent(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"bar"`) {
 		t.Errorf("uninstall wrongly removed user key mcpServers.bar: %s", body)
-	}
-}
-
-// TestSync_Composite_RemovesAchBlockKeepsUserProse proves the per-plugin
-// composite block (PluginMarkerRE path, Keys=[id]) is removed on uninstall
-// while surrounding user prose survives, using the realistic block hash. (#2)
-func TestSync_Composite_RemovesAchBlockKeepsUserProse(t *testing.T) {
-	withCleanHome(t)
-	achDir := t.TempDir()
-	target := filepath.Join(achDir, "CLAUDE.md")
-
-	block := merge.CompositeBlock("pluginX", []byte("ACH plugin guidance\n"))
-	blockHash := hash.HashBytes(block) // == what publishFile stores
-	onDisk := "# My notes\n\n" + string(block) + "\nmore user prose\n"
-	if err := os.WriteFile(target, []byte(onDisk), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	prev := &state.File{
-		SchemaVersion: "3", Environment: "demo",
-		Adapter: state.AdapterSection{ID: "claude-code", Files: []state.FileEntry{{
-			Target: target, Hash: blockHash, Merge: "composite", Keys: []string{"pluginX"},
-		}}},
-	}
-	newFile := &state.File{SchemaVersion: "3", Environment: "demo"}
-
-	var stderr bytes.Buffer
-	if _, err := hydrate.Sync(prev, newFile, achDir, achDir, hydrate.SyncOptions{Stderr: &stderr}); err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
-	body, _ := os.ReadFile(target)
-	if strings.Contains(string(body), "ACH plugin guidance") {
-		t.Errorf("uninstall left the ACH composite block: %s", body)
-	}
-	if !strings.Contains(string(body), "My notes") || !strings.Contains(string(body), "more user prose") {
-		t.Errorf("uninstall damaged user prose: %s", body)
 	}
 }
 
@@ -990,42 +893,6 @@ func TestRender_NonEmptyRuntime_WritesMcpJson(t *testing.T) {
 	}
 	if len(res.WrittenFiles) != 1 {
 		t.Fatalf("env with 1 mcp must write 1 runtime file, got %d", len(res.WrittenFiles))
-	}
-}
-
-// TestSync_SharedTargetRemovesOnlyDroppedRow is the `hydrate --sync` /
-// `uninstall --only` shape on a SHARED file: two plugins own one composite
-// block each in CLAUDE.md; the next state keeps only b's row. a's block must
-// be removed (the Target is still recorded for b, so a Target-only keep set
-// wrongly skipped a) and b's block must stay.
-func TestSync_SharedTargetRemovesOnlyDroppedRow(t *testing.T) {
-	withCleanHome(t)
-	achDir := t.TempDir()
-	target := filepath.Join(achDir, "CLAUDE.md")
-
-	blockA := merge.CompositeBlock("a", []byte("guidance A\n"))
-	blockB := merge.CompositeBlock("b", []byte("guidance B\n"))
-	if err := os.WriteFile(target, []byte("# notes\n"+string(blockA)+string(blockB)), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	rowA := state.FileEntry{Target: target, Hash: hash.HashBytes(blockA), Merge: "composite", Keys: []string{"a"}, Source: "a"}
-	rowB := state.FileEntry{Target: target, Hash: hash.HashBytes(blockB), Merge: "composite", Keys: []string{"b"}, Source: "b"}
-	prev := &state.File{SchemaVersion: "3", Environment: "demo", Plugins: []state.FileEntry{rowA, rowB}}
-	next := &state.File{SchemaVersion: "3", Environment: "demo", Plugins: []state.FileEntry{rowB}}
-
-	stats, err := hydrate.Sync(prev, next, achDir, achDir, hydrate.SyncOptions{})
-	if err != nil {
-		t.Fatalf("Sync: %v", err)
-	}
-	body, _ := os.ReadFile(target)
-	if strings.Contains(string(body), "guidance A") {
-		t.Errorf("a's marker block left behind: %s", body)
-	}
-	if !strings.Contains(string(body), "guidance B") || !strings.Contains(string(body), "# notes") {
-		t.Errorf("b's block or user prose lost: %s", body)
-	}
-	if stats.Pruned != 1 {
-		t.Errorf("Pruned = %d; want 1", stats.Pruned)
 	}
 }
 

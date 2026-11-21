@@ -263,13 +263,12 @@ func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target stri
 		if !ok {
 			continue
 		}
-		// Only a MergeReplace collision is a genuine last-wins clobber. Composite
-		// (marker-bounded block) and Deep (keyed JSON/TOML) merges are ADDITIVE —
-		// the prior install's content is preserved alongside this one — so they
-		// must not raise a false "overwrote" alarm (the .claude/settings.json MCP
-		// accretion, and the AGENTS.md→CLAUDE.md composite back when it was
-		// projected). FileRec.Merge: ""=replace (back-compat), "composite", "deep".
-		if r.Merge == "composite" || r.Merge == "deep" {
+		// Only a MergeReplace collision is a genuine last-wins clobber. A Deep
+		// (keyed JSON/TOML) merge is ADDITIVE — the prior install's content is
+		// preserved alongside this one — so it must not raise a false
+		// "overwrote" alarm (the .claude/settings.json MCP accretion).
+		// FileRec.Merge: ""=replace (back-compat), "deep".
+		if r.Merge == "deep" {
 			continue
 		}
 		_, _ = fmt.Fprintf(w,
@@ -327,7 +326,7 @@ func installMatches(e store.InstalledEntry, ref, target string, kind pkgKind) bo
 
 // reportDryRunWrites prints the planned writes for one ref→target without
 // touching disk: "write" for file-owned (MergeReplace) resources, "merge" for
-// the co-owned deep/composite configs (.mcp.json, settings, …).
+// the co-owned deep configs (.mcp.json, settings, …).
 func reportDryRunWrites(w io.Writer, ref, target string, writes []manager.PlannedWrite) {
 	_, _ = fmt.Fprintf(w, "[dry-run] %s → %s (%d files):\n", ref, target, len(writes))
 	for _, pw := range writes {
@@ -534,7 +533,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				for _, pl := range plans {
 					targetID, resolved, actions := pl.targetID, pl.resolved, pl.actions
 
-					recs, err := manager.Commit(root, flagGlobal, name, resolved)
+					recs, err := manager.Commit(root, flagGlobal, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,
@@ -973,7 +972,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						return !slices.Contains(skipped, f.RelPath)
 					})
 
-					recs, err := manager.Commit(root, flagGlobal, name, resolved)
+					recs, err := manager.Commit(root, flagGlobal, resolved)
 					if err != nil {
 						return &exit.CodedError{
 							Code: exit.General,

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Containment + command-format scoping for the local installer's projection.
-// These assert two local-installer policies enforced in manager.Project,
-// independent of the shared adapter rules used by governed `environment hydrate`:
+// These assert two properties of the shared adapter rules as the local
+// installer sees them through manager.Project:
 //
-//   - Containment: write NOTHING outside the target adapter's dot-dir. The
-//     AGENTS.md→CLAUDE.md / →GEMINI.md composites are the only rules that land a
-//     loose file in the PROJECT ROOT; the local installer must not touch the
-//     user's own root files, so any project-root destination is dropped.
+//   - Containment: write NOTHING outside the target adapter's dot-dir, the
+//     project-root .mcp.json aside. A plugin's root AGENTS.md has no route, so
+//     the user's own root files (CLAUDE.md, README.md) are never touched.
 //   - .md command scoping: a multi-tool plugin may ship gemini-format
 //     commands/*.toml alongside commands/*.md; the .toml must not leak into
 //     .claude/ or .opencode/ command dirs (claude/opencode commands are markdown).
@@ -77,8 +76,8 @@ func TestProject_RootMcpJson_Routed(t *testing.T) {
 	}
 }
 
-// stageMixedTree builds a staged plugin tree carrying: a root AGENTS.md (the
-// only root-escaping source), a command in BOTH markdown and gemini-toml form,
+// stageMixedTree builds a staged plugin tree carrying: a root AGENTS.md (which
+// must not project), a command in BOTH markdown and gemini-toml form,
 // an agent, and a skill that contains its own README.md. Returns the stage dir.
 func stageMixedTree(t *testing.T) string {
 	t.Helper()

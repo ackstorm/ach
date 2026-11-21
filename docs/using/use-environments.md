@@ -116,7 +116,7 @@ ach-cli environment uninstall <environment>             # this folder; -g for th
 ```
 
 Only what hydrate wrote is removed. In files it shares with you (`.mcp.json`,
-`.codex/config.toml`, `.opencode/opencode.json`, `CLAUDE.md`) only its own
+`.codex/config.toml`, `.opencode/opencode.json`) only its own
 entries go. `--only plugin/<name>` removes one item; `--only-runtime` removes
 just the MCP entries.
 

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -98,19 +99,18 @@ var conformanceTables = []adapterConformance{
 	{
 		id:             "claude-code",
 		mappingSection: "the adapter table §claude-code (drops = NONE at field level; FMT-03 CUT)",
-		rowCount:       7,
+		rowCount:       6,
 		rules: map[string]wantRule{
 			"rules/**/*":       {to: ".claude/rules/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"commands/**/*.md": {to: ".claude/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
 			"agents/**/*":      {to: ".claude/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"skills/**/*":      {to: ".claude/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"AGENTS.md":        {to: "CLAUDE.md", merge: adapter.MergeComposite, hasXform: false},
 			"mcp/**/*":         {to: ".mcp.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":        {to: ".mcp.json", merge: adapter.MergeDeep, hasXform: true},
 		},
-		// claude routes rules/commands/agents/skills/AGENTS.md/mcp; only
-		// prompts/ + hooks/ have no rule → dropped.
-		wantDropped: []string{"hooks", "prompts"},
+		// claude routes rules/commands/agents/skills/mcp; prompts/, AGENTS.md
+		// and hooks/ have no rule → dropped.
+		wantDropped: []string{"AGENTS.md", "hooks", "prompts"},
 	},
 	{
 		id:             "codex",
@@ -129,8 +129,8 @@ var conformanceTables = []adapterConformance{
 	},
 	{
 		id:             "gemini-cli",
-		mappingSection: "the adapter table §gemini-cli (ACH-original; drop hooks; AGENTS.md→GEMINI.md)",
-		rowCount:       8,
+		mappingSection: "the adapter table §gemini-cli (ACH-original; drop hooks)",
+		rowCount:       7,
 		rules: map[string]wantRule{
 			"agents/**/*":  {to: ".gemini/agents/**/*", merge: adapter.MergeReplace, hasXform: false},
 			"prompts/**/*": {to: ".gemini/prompts/**/*", merge: adapter.MergeReplace, hasXform: false},
@@ -139,13 +139,12 @@ var conformanceTables = []adapterConformance{
 			"commands/**/*.md":   {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: true},
 			"commands/**/*.toml": {to: ".gemini/commands/**/*.toml", merge: adapter.MergeReplace, hasXform: false},
 			"skills/**/*":        {to: ".gemini/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"AGENTS.md":          {to: "GEMINI.md", merge: adapter.MergeComposite, hasXform: false},
 			"mcp/**/*":           {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
 			".mcp.json":          {to: ".gemini/settings.json", merge: adapter.MergeDeep, hasXform: true},
 		},
-		// gemini routes agents/prompts/commands/skills/AGENTS.md/mcp; only
-		// rules/ + hooks/ have no rule → dropped.
-		wantDropped: []string{"hooks", "rules"},
+		// gemini routes agents/prompts/commands/skills/mcp; rules/, AGENTS.md
+		// and hooks/ have no rule → dropped.
+		wantDropped: []string{"AGENTS.md", "hooks", "rules"},
 	},
 	{
 		id:             "opencode",
@@ -244,6 +243,21 @@ func TestProjectionRules_Conformance(t *testing.T) {
 				t.Errorf("%s: drop set = %v, want %v (per %s)", want.id, gotDropped, want.wantDropped, want.mappingSection)
 			}
 		})
+	}
+}
+
+// TestProjectionRules_StayInsideToolConfig pins that no adapter routes plugin
+// content to a file the user owns: every destination is the tool's own
+// dot-prefixed config dir or file (first path segment, so "./x" and "../x"
+// do not pass), never a root CLAUDE.md / AGENTS.md / GEMINI.md.
+func TestProjectionRules_StayInsideToolConfig(t *testing.T) {
+	for id, rp := range adapters() {
+		for _, r := range rp.ProjectionRules() {
+			top, _, _ := strings.Cut(r.ToGlob, "/")
+			if !strings.HasPrefix(top, ".") || top == "." || top == ".." {
+				t.Errorf("%s: route %q writes %q, outside the tool's config", id, r.FromGlob, r.ToGlob)
+			}
+		}
 	}
 }
 

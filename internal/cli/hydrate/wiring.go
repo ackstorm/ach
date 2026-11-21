@@ -32,8 +32,7 @@
 //     for each target compare its on-disk xxh3 to prev's recorded
 //     hash; mismatch → preserve with stderr warning (drift wins
 //     unless --force); match (or --force) → delete OR inverse-merge
-//     (for Merge=deep with Keys[]; for Merge=composite via
-//     <!-- ach:begin -->...<!-- ach:end --> regex replacement). After
+//     (for Merge=deep with Keys[]). After
 //     per-file work, walk parent dirs deepest-first calling os.Remove
 //     which honors ENOTEMPTY silently — empty dirs prune, non-empty
 //     preserved. CLI NEVER recursively deletes a directory.
@@ -81,9 +80,8 @@ const (
 // value is single-sourced across mergeKindToString, the syncDeep dispatch, and
 // tests (goconst).
 const (
-	mergeStrDeep      = "deep"
-	mergeStrComposite = "composite"
-	mergeStrReplace   = "replace"
+	mergeStrDeep    = "deep"
+	mergeStrReplace = "replace"
 )
 
 // extractorImpl satisfies the hydrate.Extractor interface declared in
@@ -504,15 +502,6 @@ func runtimeKindForKey(k string) string {
 // the runtime loop does. Dropped kinds are de-duplicated across all plugin
 // trees and appended (sorted) to result.DroppedComponents.
 //
-// Composite targets are EXEMPT from the CR-01 claimed[] collision fail-fast
-// (D-07): multiple plugins legally co-own the host memory file (CLAUDE.md /
-// GEMINI.md) via per-id <!-- ach:begin:<plugin> --> blocks, so a second
-// composite contributor is not a collision. File-owned MergeReplace keeps the
-// check. For each composite FileWrite the dispatcher threads fw.Keys =
-// [ent.Name()] before publishFile so (i) the per-id marker carries the plugin
-// name and (ii) the state.Plugins[] row records Keys=[plugin-name] for the
-// Phase-4 single-block subtract.
-//
 // Runtime-wins MCP drop (D-10): a projected MergeDeep mcpServers.<id> that a
 // runtime RenderRuntime file (result.WrittenFiles, same Target) already owns is
 // DROPPED — the runtime-owned (bearer/command-exec) server is never shadowed.
@@ -625,8 +614,8 @@ func installedClaims(all []projectedWrite, s *state.File, root string) []project
 
 // resolvePluginCollisions detects every cross-plugin Target collision among
 // the collected writes and applies d.conflict, mutating all in place. Only
-// file-owned MergeReplace writes are collision-eligible; MergeComposite +
-// MergeDeep are co-owned by multiple plugins via per-id blocks and are EXEMPT
+// file-owned MergeReplace writes are collision-eligible; MergeDeep targets are
+// co-owned by multiple plugins by key and are EXEMPT
 // (same principle as the pre-Phase-1 claimed[] check). A collision is >=2
 // DISTINCT owning plugins at one Target. conflict.Refuse reproduces the
 // pre-Phase-1 CR-01 fail-fast; conflict.Namespace (default) leaf-prefixes every
@@ -849,14 +838,6 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 					d.platformID, owner, plugin, fw.Path, d.conflict)
 			}
 			finalClaimed[fw.Path] = plugin
-		}
-
-		// Plugin-name threading (D-07): composite FileWrites carry
-		// Keys=[plugin-name] (NOT dotted JSON keys) — supplies the per-id
-		// marker in publishFile's composite arm + the composite state row's
-		// Keys for the Phase-4 single-block subtract.
-		if fw.Merge == adapter.MergeComposite {
-			fw.Keys = []string{plugin}
 		}
 
 		// Runtime-wins MCP drop (D-10): exclude any projected mcpServers.<id>
@@ -1108,7 +1089,7 @@ func mcpServersPrefixFor(keys []string) string {
 //
 // Returns (publish, drops, err): publish=false means every contributed key
 // collided, so the caller skips publishing this FileWrite entirely (still
-// recording the drops). Non-MergeDeep writes (composite/replace) pass through
+// recording the drops). Non-MergeDeep writes pass through
 // untouched (publish=true, no drops). fw is mutated IN PLACE via the pointer so
 // the caller publishes the de-conflicted content.
 func dropRuntimeOwnedMCP(fw *adapter.FileWrite, runtime []FileWrite) (bool, []string, error) {
@@ -1300,24 +1281,13 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	}
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
 
-	// Composite pre-staging (D-06): build the per-plugin marked block ONCE so
-	// the drift hash (marked-region bytes) and the forward write (insert or
-	// replace) operate on identical bytes.
-	compositeID, compositeBlock := buildCompositeBlock(fw)
-
 	var freshHash, onDiskHash string
-	switch {
-	case fw.Merge == adapter.MergeComposite:
-		var herr error
-		if freshHash, onDiskHash, herr = compositeHashes(finalAbs, compositeID, compositeBlock); herr != nil {
-			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, herr)
-		}
-	case fw.Merge == adapter.MergeDeep:
+	if fw.Merge == adapter.MergeDeep {
 		var herr error
 		if freshHash, onDiskHash, herr = deepHashes(fw, finalAbs, isTOML); herr != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s %w", d.platformID, herr)
 		}
-	default:
+	} else {
 		// File-owned replace (incl. opaque passthrough projection —
 		// markdown/skill files that are NOT structured JSON/TOML): we own
 		// the WHOLE file, so the hash is the raw content hash and on-disk
@@ -1370,10 +1340,6 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 			if _, err := merge.MergeForward(finalAbs, fw.Content, 0o600); err != nil {
 				return FileWrite{}, fmt.Errorf("adapter %s merge %s: %w", d.platformID, finalAbs, err)
 			}
-		case adapter.MergeComposite:
-			if err := merge.WriteComposite(finalAbs, compositeID, compositeBlock, 0o644); err != nil {
-				return FileWrite{}, fmt.Errorf("adapter %s write composite %s: %w", d.platformID, finalAbs, err)
-			}
 		default:
 			// MergeReplace (file-owned) covers ONLY the Phase-3 projected
 			// plugin resource files — .codex/agents/*.toml, .codex/prompts/*.md,
@@ -1395,9 +1361,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		// mode. Re-assert the per-MergeKind mode unconditionally — cheap, and
 		// closes the no-op regression net the CR-01 audit flagged. The mode is
 		// MergeKind-dependent: only MergeDeep runtime configs carry a bearer
-		// credential, so ONLY they get owner-only 0o600. MergeComposite host
-		// memory files (CLAUDE.md/GEMINI.md) and MergeReplace projected plugin
-		// resources (WR-04 — .codex/agents/*.toml, .opencode/commands/*, …)
+		// credential, so ONLY they get owner-only 0o600. MergeReplace projected
+		// plugin resources (WR-04 — .codex/agents/*.toml, .opencode/commands/*, …)
 		// hold no secret and use 0o644; a fixed 0o600 here would silently
 		// DOWNGRADE them on every idempotent re-hydrate.
 		mode := os.FileMode(0o644)
@@ -1436,8 +1401,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 // --force. With a state row: a user edit to OUR content (drift), exit 2.
 // With none: a whole-file target that already exists with other content is
 // not this Environment's file (the user's own, another tool's, a sibling
-// Environment's older copy), exit 7. Deep and composite writes share the
-// file by key or marker and are never refused for lack of a row.
+// Environment's older copy), exit 7. Deep writes share the file by key and
+// are never refused for lack of a row.
 func (d *adapterDispatcherImpl) refusal(
 	fw adapter.FileWrite, prior *state.FileEntry, outcome DriftOutcome, onDiskHash, freshHash, finalAbs string,
 ) error {
@@ -1447,8 +1412,7 @@ func (d *adapterDispatcherImpl) refusal(
 	if prior != nil {
 		return WrapDriftError(outcome, finalAbs)
 	}
-	wholeFile := fw.Merge != adapter.MergeDeep && fw.Merge != adapter.MergeComposite
-	if !wholeFile || onDiskHash == "" || onDiskHash == freshHash {
+	if fw.Merge == adapter.MergeDeep || onDiskHash == "" || onDiskHash == freshHash {
 		return nil
 	}
 	return &exit.CodedError{
@@ -1457,43 +1421,6 @@ func (d *adapterDispatcherImpl) refusal(
 			"hint: move it away, or re-run with --force to replace it "+
 			"(if another Environment in this folder installed it, hydrate that one first)", relToWd(finalAbs)),
 	}
-}
-
-// buildCompositeBlock builds the per-plugin marked block for a MergeComposite
-// FileWrite (D-06/D-07). compositeID is fw.Keys[0] (the dispatcher-threaded
-// plugin name; empty for a degenerate write). fw.Content is inserted VERBATIM
-// (D-05: no canonical markdown re-encode); a trailing newline on the content
-// is trimmed so the block ends with exactly one newline — deterministic for
-// FMT-05 re-hydrate idempotence. Returns ("", nil) for non-composite writes.
-func buildCompositeBlock(fw adapter.FileWrite) (id string, block []byte) {
-	if fw.Merge != adapter.MergeComposite {
-		return "", nil
-	}
-	if len(fw.Keys) > 0 {
-		id = fw.Keys[0]
-	}
-	block = merge.CompositeBlock(id, fw.Content)
-	return id, block
-}
-
-// compositeHashes computes the composite drift hashes (D-06): freshHash over
-// the block we WOULD write, onDiskHash over the on-disk per-plugin marked
-// region only (extracted via merge.PluginMarkerRE; "" when absent). Hashing only the
-// marked region means a user editing prose OUTSIDE this plugin's block is NOT
-// flagged as drift.
-func compositeHashes(finalAbs, id string, block []byte) (freshHash, onDiskHash string, err error) {
-	freshHash = hash.HashBytes(block)
-	body, rerr := os.ReadFile(finalAbs)
-	if rerr != nil {
-		if os.IsNotExist(rerr) {
-			return freshHash, "", nil
-		}
-		return "", "", rerr
-	}
-	if region := merge.PluginMarkerRE(id).Find(body); region != nil {
-		onDiskHash = hash.HashBytes(region)
-	}
-	return freshHash, onDiskHash, nil
 }
 
 // findEntry locates the prior state.FileEntry for target in one state
@@ -1519,8 +1446,6 @@ func mergeKindToString(k adapter.MergeKind) string {
 	switch k {
 	case adapter.MergeDeep:
 		return mergeStrDeep
-	case adapter.MergeComposite:
-		return mergeStrComposite
 	case adapter.MergeReplace:
 		return mergeStrReplace
 	}
@@ -1563,9 +1488,6 @@ type SyncStats struct {
 //   - Merge=="deep" + Keys[] → JSON/TOML inverse-merge: read the
 //     file, delete the listed top-level keys (or dotted paths),
 //     re-write atomically.
-//   - Merge=="composite" → regex-replace the
-//     "<!-- ach:begin -->...<!-- ach:end -->" block with empty.
-//     No marker found → preserve with warning.
 //
 // Sort the to-delete set deepest-first by path-depth (more slashes
 // first) so child files are removed before parent dirs.
@@ -1655,13 +1577,12 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 }
 
 // syncKeep is what a next state still claims, per Target: the whole file
-// (a replace row), composite marker blocks by id, and deep keys.
+// (a replace row) and deep keys.
 type syncKeep map[string]*targetClaims
 
 type targetClaims struct {
-	file      bool
-	composite map[string]bool // marker id ("" = generic region)
-	deep      map[string]bool // dotted key
+	file bool
+	deep map[string]bool // dotted key
 }
 
 func newSyncKeep(f *state.File) syncKeep {
@@ -1672,17 +1593,14 @@ func newSyncKeep(f *state.File) syncKeep {
 	for _, e := range state.WalkEntries(f) {
 		c := k[e.Target]
 		if c == nil {
-			c = &targetClaims{composite: map[string]bool{}, deep: map[string]bool{}}
+			c = &targetClaims{deep: map[string]bool{}}
 			k[e.Target] = c
 		}
-		switch e.Merge {
-		case mergeStrComposite:
-			c.composite[compositeID(e)] = true
-		case mergeStrDeep:
+		if e.Merge == mergeStrDeep {
 			for _, key := range e.Keys {
 				c.deep[key] = true
 			}
-		default:
+		} else {
 			c.file = true
 		}
 	}
@@ -1691,10 +1609,9 @@ func newSyncKeep(f *state.File) syncKeep {
 
 // uncovered reports whether prev row e must be (partly) removed. A row
 // survives when the next state still records its contribution: any row on
-// its Target for a whole-file (replace) row, the same marker block for a
-// composite row, every key for a deep row. Keying on Target alone skipped a
-// row dropped from a SHARED file (two plugins' blocks in one CLAUDE.md or
-// .mcp.json). For a deep row the uncovered keys are returned: a key the
+// its Target for a whole-file (replace) row, every key for a deep row. Keying
+// on Target alone skipped a row dropped from a SHARED file (two plugins' keys
+// in one .mcp.json). For a deep row the uncovered keys are returned: a key the
 // next state still claims (e.g. a runtime key set that grew) must never be
 // pruned, since Render has just written it.
 func (k syncKeep) uncovered(e state.FileEntry) (keys []string, drop bool) {
@@ -1705,28 +1622,15 @@ func (k syncKeep) uncovered(e state.FileEntry) (keys []string, drop bool) {
 	if c.file {
 		return nil, false
 	}
-	switch e.Merge {
-	case mergeStrComposite:
-		return nil, !c.composite[compositeID(e)]
-	case mergeStrDeep:
-		for _, key := range e.Keys {
-			if !c.deep[key] {
-				keys = append(keys, key)
-			}
-		}
-		return keys, len(keys) > 0
-	default:
+	if e.Merge != mergeStrDeep {
 		return nil, false
 	}
-}
-
-// compositeID is the marker id of a composite row: its plugin name, or ""
-// when the row names none.
-func compositeID(e state.FileEntry) string {
-	if len(e.Keys) > 0 {
-		return e.Keys[0]
+	for _, key := range e.Keys {
+		if !c.deep[key] {
+			keys = append(keys, key)
+		}
 	}
-	return ""
+	return keys, len(keys) > 0
 }
 
 // currentScopedHash recomputes, from the on-disk file, the hash of ONLY
@@ -1754,19 +1658,6 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 			return "", false, herr
 		}
 		return h, true, nil
-	case mergeStrComposite:
-		if len(e.Keys) == 0 {
-			return "", false, nil
-		}
-		body, rerr := os.ReadFile(abs)
-		if rerr != nil {
-			return "", false, rerr
-		}
-		region := merge.PluginMarkerRE(e.Keys[0]).Find(body)
-		if region == nil {
-			return "", false, nil
-		}
-		return hash.HashBytes(region), true, nil
 	default: // "" / mergeStrReplace — whole-file hash, unchanged behavior.
 		h, herr := hash.HashFile(abs)
 		if herr != nil {
@@ -1825,8 +1716,6 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 
 	// Classify by Merge kind.
 	switch e.Merge {
-	case mergeStrComposite:
-		return syncComposite(e, abs, opts)
 	case mergeStrDeep:
 		if pruneKeys != nil {
 			e.Keys = pruneKeys
@@ -1848,46 +1737,6 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 			fmt.Sprintf("unknown merge kind %q; refusing to inverse-merge", e.Merge))
 		return true, nil
 	}
-}
-
-// syncComposite handles MergeComposite by regex-replacing the
-// per-plugin "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->"
-// block with empty (D-07: Phase-4 sync subtracts exactly ONE plugin's
-// block — the one named in e.Keys[0]). If the marker is absent the file
-// is preserved with a warning (the user must have authored the file
-// outside the engine's contract). A row without its plugin id in Keys has
-// no block to target and is preserved the same way.
-func syncComposite(e state.FileEntry, abs string, opts SyncOptions) (bool, error) {
-	if len(e.Keys) == 0 {
-		warnPreserved(opts.Stderr, abs, "composite row names no plugin block; refusing to inverse-merge")
-		return true, nil
-	}
-	markerRE := merge.PluginMarkerRE(e.Keys[0])
-	preserved := false
-	// 0o644 — composite host memory files (CLAUDE.md/GEMINI.md) carry NO
-	// credential; the forward merge.WriteComposite path writes 0o644, so the
-	// inverse-merge MUST match or it silently downgrades the file mode on
-	// every plugin-block removal.
-	err := state.RewriteFile(abs, 0o644, func(body []byte) ([]byte, bool, error) {
-		if body == nil {
-			return nil, false, fmt.Errorf("sync read composite %s: %w", abs, os.ErrNotExist)
-		}
-		preserved = !markerRE.Match(body)
-		// Marker confirmed present → this entry would-prune. Preview: stop
-		// before the rewrite.
-		if preserved || opts.DryRun {
-			return nil, false, nil
-		}
-		return markerRE.ReplaceAll(body, nil), true, nil
-	})
-	if err != nil {
-		return false, fmt.Errorf("sync composite %s: %w", abs, err)
-	}
-	if preserved {
-		warnPreserved(opts.Stderr, abs,
-			"composite marker not found; refusing to inverse-merge")
-	}
-	return preserved, nil
 }
 
 // syncDeep handles MergeDeep by removing the listed Keys[] paths

@@ -743,9 +743,9 @@ Scope (mirrors hydrate):
                       Remove just one plugin or skill (plugin/<name> or
                       skill/<name>) installed from this environment.
 
-Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json,
-CLAUDE.md / GEMINI.md) are inverse-merged: only the engine's keys/marker
-blocks are removed; other contributors' and the user's keys survive.
+Co-owned files (.mcp.json, .codex/config.toml, .opencode/opencode.json)
+are inverse-merged: only the engine's keys are removed; other
+contributors' and the user's keys survive.
 User-edited projected files are preserved unless --force (drift-wins).
 
 Example:

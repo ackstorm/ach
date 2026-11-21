@@ -37,7 +37,7 @@ func TestCommit_RefusesSymlinkedDir(t *testing.T) {
 	root, outside := linkedClaude(t)
 	target := filepath.Join(outside, "skills", "a.md")
 
-	_, err := Commit(root, false, "p", []PlannedWrite{
+	_, err := Commit(root, false, []PlannedWrite{
 		{Path: ".claude/skills/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})
 	if !errors.Is(err, state.ErrNotContained) {
@@ -57,7 +57,7 @@ func TestCommit_RefusesOverwriteThroughSymlink(t *testing.T) {
 	if err := os.WriteFile(target, []byte("precious"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Commit(root, false, "p", []PlannedWrite{
+	_, err := Commit(root, false, []PlannedWrite{
 		{Path: ".claude/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})
 	if !errors.Is(err, state.ErrNotContained) {
@@ -75,7 +75,7 @@ func TestCommit_RefusesSymlinkedMergeTarget(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(root, ".mcp.json")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Commit(root, false, "p", []PlannedWrite{{
+	_, err := Commit(root, false, []PlannedWrite{{
 		Path: ".mcp.json", Content: []byte(`{"mcpServers":{"x":{}}}`),
 		Merge: adapter.MergeDeep, Keys: []string{"mcpServers.x"},
 	}})
@@ -108,7 +108,7 @@ func TestUninstall_RefusesSymlinkedDir(t *testing.T) {
 
 func TestCommitUninstall_GlobalAllowsLinkedRoot(t *testing.T) {
 	root, outside := linkedClaude(t)
-	recs, err := Commit(root, true, "p", []PlannedWrite{
+	recs, err := Commit(root, true, []PlannedWrite{
 		{Path: ".claude/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func linkedAndSafe(t *testing.T) (root, outside string) {
 
 func TestCommit_RefusalWritesNothing(t *testing.T) {
 	root, _ := linkedAndSafe(t)
-	_, err := Commit(root, false, "p", []PlannedWrite{
+	_, err := Commit(root, false, []PlannedWrite{
 		{Path: "safe/a.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 		{Path: "linked/b.md", Content: []byte("x"), Merge: adapter.MergeReplace},
 	})

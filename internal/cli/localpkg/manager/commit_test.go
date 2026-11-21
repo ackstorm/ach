@@ -52,7 +52,7 @@ func TestCommit_MergeReplace(t *testing.T) {
 		{Path: "subdir/file.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, false, "test-plugin", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCommit_MergeDeep(t *testing.T) {
 		},
 	}
 
-	recs, err := Commit(root, false, "test-plugin", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -147,82 +147,6 @@ func TestCommit_MergeDeep(t *testing.T) {
 	}
 }
 
-// ---------- Commit: MergeComposite -------------------------------------------
-
-func TestCommit_MergeComposite(t *testing.T) {
-	root := t.TempDir()
-	// Commit receives RAW (unwrapped) content — Commit must wrap it in the
-	// per-id composite markers itself (Bug I-a: it previously passed raw
-	// content straight to WriteComposite, so no markers were written).
-	content := []byte("some content")
-	writes := []PlannedWrite{
-		{Path: "CLAUDE.md", Content: content, Merge: adapter.MergeComposite, Keys: []string{"myplugin"}},
-	}
-
-	recs, err := Commit(root, false, "myplugin", writes)
-	if err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	if len(recs) != 1 {
-		t.Fatalf("expected 1 FileRec, got %d", len(recs))
-	}
-
-	finalBytes, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-
-	if !strings.Contains(string(finalBytes), "<!-- ach:begin:myplugin -->") {
-		t.Errorf("begin marker not found in CLAUDE.md: %s", finalBytes)
-	}
-	if !strings.Contains(string(finalBytes), "<!-- ach:end:myplugin -->") {
-		t.Errorf("end marker not found in CLAUDE.md: %s", finalBytes)
-	}
-	// The raw content must be inside the markers exactly once (no double-wrap).
-	if c := strings.Count(string(finalBytes), "<!-- ach:begin:myplugin -->"); c != 1 {
-		t.Errorf("begin marker count = %d; want 1 (no double-wrap): %s", c, finalBytes)
-	}
-	if !strings.Contains(string(finalBytes), "\nsome content\n") {
-		t.Errorf("raw content not wrapped verbatim: %s", finalBytes)
-	}
-
-	wantHash := hash.HashBytes(finalBytes)
-	if recs[0].Hash != wantHash {
-		t.Errorf("FileRec.Hash = %q; want %q", recs[0].Hash, wantHash)
-	}
-	// Merge metadata must be recorded for inverse-merge on uninstall.
-	if recs[0].Merge != "composite" {
-		t.Errorf("FileRec.Merge = %q; want composite", recs[0].Merge)
-	}
-	if len(recs[0].Keys) != 1 || recs[0].Keys[0] != "myplugin" {
-		t.Errorf("FileRec.Keys = %v; want [myplugin]", recs[0].Keys)
-	}
-}
-
-// TestCommit_MergeComposite_CompositeIDFallback asserts that when the rule
-// carries no Keys, Commit falls back to the caller's compositeID for the
-// marker id and records it.
-func TestCommit_MergeComposite_CompositeIDFallback(t *testing.T) {
-	root := t.TempDir()
-	writes := []PlannedWrite{
-		{Path: "CLAUDE.md", Content: []byte("body"), Merge: adapter.MergeComposite},
-	}
-	recs, err := Commit(root, false, "fallback-id", writes)
-	if err != nil {
-		t.Fatalf("Commit: %v", err)
-	}
-	finalBytes, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
-	if err != nil {
-		t.Fatalf("read CLAUDE.md: %v", err)
-	}
-	if !strings.Contains(string(finalBytes), "<!-- ach:begin:fallback-id -->") {
-		t.Errorf("fallback compositeID marker not found: %s", finalBytes)
-	}
-	if len(recs[0].Keys) != 1 || recs[0].Keys[0] != "fallback-id" {
-		t.Errorf("FileRec.Keys = %v; want [fallback-id]", recs[0].Keys)
-	}
-}
-
 // TestCommit_MergeDeep_RecordsMergeMeta asserts the deep case records the
 // contributed dotted keys for inverse-merge.
 func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
@@ -235,7 +159,7 @@ func TestCommit_MergeDeep_RecordsMergeMeta(t *testing.T) {
 			Keys:    []string{"mcpServers.demo"},
 		},
 	}
-	recs, err := Commit(root, false, "demo", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -265,7 +189,7 @@ func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 		writes[i].Path = adapter.RemapGlobalPath("opencode", root, writes[i].Path)
 	}
 
-	recs, err := Commit(root, false, "myplugin", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -304,7 +228,7 @@ func TestUninstall_RemovesFiles(t *testing.T) {
 		{Path: "subdir/b.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, false, "myplugin", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -339,7 +263,7 @@ func TestUninstall_SkipsModifiedFiles(t *testing.T) {
 		{Path: "file.txt", Content: content, Merge: adapter.MergeReplace},
 	}
 
-	recs, err := Commit(root, false, "myplugin", writes)
+	recs, err := Commit(root, false, writes)
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
@@ -442,72 +366,6 @@ func TestUninstall_NonEmptyDirPreserved(t *testing.T) {
 	// userfile.txt must not be touched.
 	if _, err := os.Stat(userFile); err != nil {
 		t.Errorf("user file should still exist: %v", err)
-	}
-}
-
-// ---------- Uninstall: composite inverse-merge -------------------------------
-
-// TestUninstall_CompositeInverseMerge asserts uninstalling ONE plugin's
-// composite block strips only that block, preserving another plugin's block
-// AND interleaved user prose (Bug I-b: the old path deleted/skipped the whole
-// co-owned file).
-func TestUninstall_CompositeInverseMerge(t *testing.T) {
-	root := t.TempDir()
-	abs := filepath.Join(root, "CLAUDE.md")
-	body := "# user heading\n" +
-		"<!-- ach:begin:plugA -->\nA content\n<!-- ach:end:plugA -->\n" +
-		"user middle line\n" +
-		"<!-- ach:begin:plugB -->\nB content\n<!-- ach:end:plugB -->\n"
-	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	// Uninstall plugA only. Recorded hash is intentionally stale (the file was
-	// co-owned and has since changed) — composite must NOT hash-skip.
-	recs := []store.FileRec{
-		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"plugA"}},
-	}
-	skipped, err := Uninstall(root, false, recs)
-	if err != nil {
-		t.Fatalf("Uninstall: %v", err)
-	}
-	if len(skipped) != 0 {
-		t.Fatalf("unexpected skipped: %v", skipped)
-	}
-
-	out, err := os.ReadFile(abs)
-	if err != nil {
-		t.Fatalf("read CLAUDE.md after uninstall: %v", err)
-	}
-	got := string(out)
-	if strings.Contains(got, "plugA") || strings.Contains(got, "A content") {
-		t.Errorf("plugA block not stripped: %q", got)
-	}
-	if !strings.Contains(got, "<!-- ach:begin:plugB -->") || !strings.Contains(got, "B content") {
-		t.Errorf("plugB block lost: %q", got)
-	}
-	if !strings.Contains(got, "# user heading") || !strings.Contains(got, "user middle line") {
-		t.Errorf("user prose lost: %q", got)
-	}
-}
-
-// TestUninstall_CompositeEmptiesFileDeletes asserts that stripping the LAST
-// block (leaving only whitespace) deletes the file and prunes the dir.
-func TestUninstall_CompositeEmptiesFileDeletes(t *testing.T) {
-	root := t.TempDir()
-	abs := filepath.Join(root, "CLAUDE.md")
-	body := "<!-- ach:begin:only -->\ncontent\n<!-- ach:end:only -->\n"
-	if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	recs := []store.FileRec{
-		{RelPath: "CLAUDE.md", Hash: "xxh3:stale", Merge: "composite", Keys: []string{"only"}},
-	}
-	if _, err := Uninstall(root, false, recs); err != nil {
-		t.Fatalf("Uninstall: %v", err)
-	}
-	if _, err := os.Stat(abs); !os.IsNotExist(err) {
-		t.Errorf("CLAUDE.md should be deleted when last block stripped")
 	}
 }
 
@@ -645,7 +503,7 @@ func TestUninstall_DeepNonParseableSkips(t *testing.T) {
 // touching disk.
 func TestUninstallPlan_MatchesUninstall(t *testing.T) {
 	root := t.TempDir()
-	recs, err := Commit(root, false, "myplugin", []PlannedWrite{
+	recs, err := Commit(root, false, []PlannedWrite{
 		{Path: "keep/clean.txt", Content: []byte("clean"), Merge: adapter.MergeReplace},
 		{Path: "keep/edited.txt", Content: []byte("orig"), Merge: adapter.MergeReplace},
 	})

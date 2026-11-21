@@ -17,7 +17,7 @@ var ErrConcurrentEdit = errors.New("file kept changing while ach-cli was updatin
 const rewriteAttempts = 3
 
 // RewriteFile is the read-modify-write for a file the user may also edit
-// (tool config, CLAUDE.md, .gitignore). It reads path, passes the bytes to fn
+// (tool config, .gitignore). It reads path, passes the bytes to fn
 // (nil when the file is absent, a non-nil empty slice when it is empty) and
 // publishes fn's output with WriteAtomic. Just before publishing it reads the
 // file again: if another writer (an editor save) changed it since fn saw it,

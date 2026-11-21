@@ -1898,8 +1898,8 @@ func TestCommit_Only_MergesStateInsteadOfReplacing(t *testing.T) {
 }
 
 func TestCommit_Only_ReinstallReplacesOnlyThatItem(t *testing.T) {
-	rowB := state.FileEntry{Target: ".claude/rules/b.md", Hash: "xxh3:b", SourceHash: "xxh3:b",
-		Merge: "composite", Keys: []string{"b"}, Source: "b"}
+	rowB := state.FileEntry{Target: ".mcp.json", Hash: "xxh3:b", SourceHash: "xxh3:b",
+		Merge: "deep", Keys: []string{"mcpServers.b"}, Source: "b"}
 	prior := &state.File{SchemaVersion: "3", Environment: "demo",
 		Plugins: []state.FileEntry{row(".claude/rules/a.md", "xxh3:a-old", "a"), row(".claude/rules/a2.md", "xxh3:a2", "a"), rowB},
 	}

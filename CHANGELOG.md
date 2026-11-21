@@ -4,6 +4,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Security
+- `ach-cli environment hydrate` no longer writes a plugin's top-level
+  `AGENTS.md` into the folder's `CLAUDE.md` or `GEMINI.md` (`~/CLAUDE.md`,
+  `~/GEMINI.md` with `--global`). A plugin author could put text there that the
+  tool loads in every session, in a file you own and usually commit. Hydrate
+  reports `AGENTS.md` as dropped, as it already did for Codex, OpenCode and Pi.
+
 ### Added
 - Audit: `examples/litellm/ach_audit.py`, a LiteLLM callback that writes one
   audit event per model, MCP tool and A2A agent call (`litellm.model.call`,

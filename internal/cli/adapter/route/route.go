@@ -384,7 +384,7 @@ func project(rules []Rule, src, source, plugin string) (ProjectResult, error) {
 	// re-hydrate (the converted write flips UpstreamOnlyOverwrite, the verbatim
 	// one then reads as LocalEditPreserve → exit 2). The verbatim (nil
 	// Transform) write wins: the author already shipped the native format.
-	// MergeDeep/MergeComposite are exempt — N→1 collapse is their contract.
+	// MergeDeep is exempt — N→1 collapse is its contract.
 	claimed := map[string]int{}
 	converted := map[string]bool{} // dest → surviving write came through a Transform
 

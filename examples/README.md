@@ -199,7 +199,7 @@ ach-cli local plugin install feature-dev@ackstorm --target claude-code,opencode
 ach-cli local skill  install pdf@skills --target claude-code -g
 ach-cli local plugin list               # installed items (from installed.json)
 ach-cli local plugin update             # re-resolve all (or <name@repo>…)
-ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (settings.json / CLAUDE.md)
+ach-cli local skill  uninstall pdf@skills   # inverse-merges co-owned files (settings.json)
 ```
 
 Notes:

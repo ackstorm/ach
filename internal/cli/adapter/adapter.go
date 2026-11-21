@@ -26,13 +26,6 @@ const (
 	// path. Used for .claude/.mcp.json and .codex/config.toml.
 	MergeDeep MergeKind = iota + 1
 
-	// MergeComposite performs marker-bounded replacement inside a single
-	// file: the region between <!-- ach:begin --> and <!-- ach:end -->
-	// is replaced verbatim; content outside the markers is preserved.
-	// Used for markdown files where adapter contributions slot into a
-	// caller-controlled host file.
-	MergeComposite
-
 	// MergeReplace replaces the entire file unconditionally. Used for
 	// files the adapter exclusively owns (no caller-side content
 	// expected).
@@ -138,8 +131,7 @@ type FileWrite struct {
 	// Keys is the list of contributed top-level keys (for MergeDeep
 	// JSON/TOML files; recorded in state.adapter.files[*].keys[] per
 	// STATE-02 + ADAPT-05). Drives `--sync` inverse-merge per
-	// CLI spec §8.5. For MergeComposite, Keys may carry a single marker
-	// identifier (e.g. "ach:begin"); for MergeReplace, Keys is nil.
+	// CLI spec §8.5. For MergeReplace, Keys is nil.
 	Keys []string
 }
 

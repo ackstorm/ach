@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package merge provides pure document-merge, composite-write, and dotted-key
+// Package merge provides pure document-merge and dotted-key
 // helpers for JSON and TOML runtime-config files. It is intentionally k8s-free
 // so both the hydrate dispatcher and the localpkg installer can import it
 // without pulling in controller-runtime or k8s.io/* dependencies.
 //
 // Callers:
-//   - internal/cli/hydrate: forward-merge of adapter configs + composite
-//     host-memory files (CLAUDE.md / GEMINI.md) during hydrate.
+//   - internal/cli/hydrate: forward-merge of adapter configs during hydrate.
 //   - internal/cli/localpkg (future): reuse the same merge primitives for
 //     local package installation.
 package merge
@@ -19,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -297,55 +295,6 @@ func PruneDottedKeys(doc map[string]any, keys []string, isTOML bool) (out []byte
 func isEmptyMap(v any) bool {
 	m, ok := v.(map[string]any)
 	return ok && len(m) == 0
-}
-
-// WriteComposite performs the forward composite merge: a marker-bounded
-// insert (no prior block) or replace (existing per-plugin block) of block
-// into the host memory file at abs. block must already be wrapped in the
-// plugin's outer markers (produced by the caller via PluginMarkerRE or a
-// custom builder). Any forged inner markers in untrusted plugin prose are
-// inert text inside the outer boundary (T-02-03 marker-injection mitigation).
-//
-// mode is the file permission applied via state.RewriteFile (typically 0o644
-// for host memory files like CLAUDE.md which carry no credential).
-func WriteComposite(abs, id string, block []byte, mode os.FileMode) error {
-	re := PluginMarkerRE(id)
-	return state.RewriteFile(abs, mode, func(body []byte) ([]byte, bool, error) {
-		if re.Match(body) {
-			return re.ReplaceAll(body, block), true, nil
-		}
-		return append(append([]byte(nil), body...), block...), true, nil
-	})
-}
-
-// CompositeBlock wraps content in the per-id composite markers
-// ("<!-- ach:begin:<id> -->\n<body>\n<!-- ach:end:<id> -->\n") that
-// WriteComposite and PluginMarkerRE insert/replace/match. Trailing newlines on
-// content are trimmed before wrapping so the block ends with exactly one
-// newline — deterministic for idempotent re-writes. This is the single
-// marker-wrapper shared by the hydrate composite path and the localpkg
-// installer, keeping both byte-identical with the inverse PluginMarkerRE regex.
-func CompositeBlock(id string, content []byte) []byte {
-	body := bytes.TrimRight(content, "\n")
-	return []byte("<!-- ach:begin:" + id + " -->\n" +
-		string(body) + "\n<!-- ach:end:" + id + " -->\n")
-}
-
-// PluginMarkerRE builds the per-plugin composite marker regex:
-// "<!-- ach:begin:<plugin> -->...<!-- ach:end:<plugin> -->" with an
-// optional trailing newline. The plugin id is regexp-escaped via
-// QuoteMeta so a forged inner marker carried in untrusted plugin prose
-// (T-02-03) cannot widen or hijack another plugin's region — the per-id
-// boundary is the OUTER real markers only. (?s) lets . span newlines so
-// a multi-line block is captured.
-//
-// Both the forward composite arm (insert/replace) and the inverse path
-// (syncComposite deletion) build the regex from the same builder,
-// keeping the forward and inverse merges symmetric on the exact same
-// marked region.
-func PluginMarkerRE(pluginID string) *regexp.Regexp {
-	return regexp.MustCompile("(?s)<!-- ach:begin:" + regexp.QuoteMeta(pluginID) +
-		" -->.*?<!-- ach:end:" + regexp.QuoteMeta(pluginID) + " -->\\n?")
 }
 
 // parseRendered unmarshals the freshly-rendered ours bytes into a

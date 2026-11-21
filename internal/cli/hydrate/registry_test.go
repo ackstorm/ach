@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -31,20 +30,7 @@ func TestCoOwnedRegistry(t *testing.T) {
 
 	// --- Fixtures on disk -------------------------------------------------
 
-	// 1. composite host file (CLAUDE.md) — Merge=composite, Keys=[plugin].
-	//    Surrounding user prose must survive; only the per-plugin marker
-	//    block is removed.
-	claudeMD := filepath.Join(root, "CLAUDE.md")
-	const userPreamble = "# My project notes\nkeep this line\n\n"
-	const userTrailer = "\n# more user notes\nkeep this too\n"
-	claudeBody := userPreamble +
-		"<!-- ach:begin:demo-plugin -->\nach-managed content\n<!-- ach:end:demo-plugin -->\n" +
-		userTrailer
-	if err := os.WriteFile(claudeMD, []byte(claudeBody), 0o644); err != nil {
-		t.Fatalf("write CLAUDE.md: %v", err)
-	}
-
-	// 2. deep adapter doc (.mcp.json) — Merge=deep, dotted Keys. A co-owned
+	// 1. deep adapter doc (.mcp.json) — Merge=deep, dotted Keys. A co-owned
 	//    sibling key under the same parent must survive the inverse merge.
 	mcpJSON := filepath.Join(root, ".mcp.json")
 	mcpDoc := map[string]any{
@@ -56,7 +42,7 @@ func TestCoOwnedRegistry(t *testing.T) {
 	}
 	writeJSON(t, mcpJSON, mcpDoc)
 
-	// 3. deep TOML doc (.codex/config.toml) — Merge=deep, dotted Keys with
+	// 2. deep TOML doc (.codex/config.toml) — Merge=deep, dotted Keys with
 	//    the codex mcp_servers shape; sibling survives.
 	codexTOML := filepath.Join(root, ".codex", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(codexTOML), 0o755); err != nil {
@@ -70,7 +56,7 @@ func TestCoOwnedRegistry(t *testing.T) {
 	}
 	writeTOML(t, codexTOML, codexDoc)
 
-	// 4. file-owned replace target (.claude/commands/foo.md) — Merge=replace
+	// 3. file-owned replace target (.claude/commands/foo.md) — Merge=replace
 	//    → whole-file delete.
 	replaceFile := filepath.Join(root, ".claude", "commands", "foo.md")
 	if err := os.MkdirAll(filepath.Dir(replaceFile), 0o755); err != nil {
@@ -81,13 +67,12 @@ func TestCoOwnedRegistry(t *testing.T) {
 	}
 
 	// --- prev state: the recorded registry --------------------------------
-	// All four entries live in Plugins[] (content bucket → resolved against
+	// All three entries live in Plugins[] (content bucket → resolved against
 	// achDir=root). Hash:"" disables the drift gate so each branch runs.
 	prev := &state.File{
 		SchemaVersion: "3",
 		Environment:   "prod",
 		Plugins: []state.FileEntry{
-			{Target: "CLAUDE.md", Merge: mergeStrComposite, Keys: []string{"demo-plugin"}},
 			{Target: ".mcp.json", Merge: mergeStrDeep, Keys: []string{"mcpServers.ach-server"}},
 			{Target: ".codex/config.toml", Merge: mergeStrDeep, Keys: []string{"mcp_servers.ach-codex"}},
 			{Target: ".claude/commands/foo.md", Merge: mergeStrReplace},
@@ -104,19 +89,6 @@ func TestCoOwnedRegistry(t *testing.T) {
 	}
 	if stats.Preserved != 0 {
 		t.Fatalf("no entry should be preserved (Hash disabled), got Preserved=%d", stats.Preserved)
-	}
-
-	// --- composite: marker block removed, user text intact ----------------
-	gotClaude, err := os.ReadFile(claudeMD)
-	if err != nil {
-		t.Fatalf("read CLAUDE.md after sync: %v", err)
-	}
-	gc := string(gotClaude)
-	if strings.Contains(gc, "ach:begin:demo-plugin") || strings.Contains(gc, "ach-managed content") {
-		t.Fatalf("composite block must be removed, still present:\n%s", gc)
-	}
-	if !strings.Contains(gc, "keep this line") || !strings.Contains(gc, "keep this too") {
-		t.Fatalf("surrounding user text must survive composite removal:\n%s", gc)
 	}
 
 	// --- deep JSON: projected key gone, co-owned sibling survives ---------
