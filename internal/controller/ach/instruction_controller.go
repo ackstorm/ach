@@ -25,12 +25,13 @@ import (
 // fires on this same channel.
 const instructionsChannel = "ach_instructions_changed"
 
-// InstructionReconciler reconciles an Instruction object. Phase 2 implements the
-// §10.3 steady-state refresh via materializeExternalRef. Instructions have
-// NO size cap (Hub §13/§14) — the helper's SizeCapBytes is left at 0.
+// InstructionReconciler reconciles an Instruction object through the §10.3
+// steady-state refresh (materializeExternalRef). The 23,900-byte body limit is
+// applied at refresh by contentkit.StageInstructionBody, not by the helper's
+// SizeCapBytes (left at 0).
 //
-// CacheRoot mirrors PluginReconciler. Plan 02-09 injects DB and Fetchers
-// from cmd/operator/main.go at SetupWithManager time.
+// CacheRoot mirrors PluginReconciler. DB and Fetchers are injected from
+// cmd/operator/main.go at SetupWithManager time.
 type InstructionReconciler struct {
 	FetchedObjectReconciler
 }

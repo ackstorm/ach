@@ -240,3 +240,18 @@ func TestTidyInstructionLoader(t *testing.T) {
 		}
 	})
 }
+
+func TestTidyInstructionLoader_UntouchedJSONC(t *testing.T) {
+	root := t.TempDir()
+	const jsonc = "{\n  // user comment\n  \"theme\": \"x\",\n}\n"
+	cfg := writeFile(t, root, ".opencode/opencode.json", jsonc)
+	if err := os.MkdirAll(filepath.Join(root, ".opencode/ach"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := TidyInstructionLoader("opencode", root, false); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, cfg) != jsonc {
+		t.Fatal("file must stay byte-identical")
+	}
+}

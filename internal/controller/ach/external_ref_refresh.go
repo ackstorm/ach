@@ -257,8 +257,8 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	// pluginpack content filter before the size-cap copy. This means
 	// the existing io.LimitReader cap below operates on FILTERED bytes
 	// — the "size cap applies POST-filter" decision locked in
-	// CONTEXT.md. Instruction and Artifact paths are byte-identical to
-	// pre-issue-26 behavior.
+	// CONTEXT.md. The Instruction body is validated at Step 5.6b; Artifact
+	// bodies pass through unfiltered.
 	if deps.Kind == "plugin" {
 		// Defense in depth: bound the raw upstream read BEFORE the
 		// filter consumes it. The user-visible SizeCapBytes applies to

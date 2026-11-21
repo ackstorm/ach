@@ -150,3 +150,39 @@ func TestCommit_Instructions_OpencodeLoaderLifecycle(t *testing.T) {
 		t.Errorf("opencode.json should be deleted: %s", readFile(t, cfg))
 	}
 }
+
+// A sibling Environment of the same folder and target that still records an
+// Instruction keeps its file when this Environment drops it.
+func TestCommit_Instructions_SiblingFileKept(t *testing.T) {
+	root := t.TempDir()
+	for _, sync := range []bool{false, true} {
+		root := filepath.Join(root, map[bool]string{false: "plain", true: "sync"}[sync])
+		a, storeA := instructionCommit(t, "claude-code", root, map[string]string{"a": "A\n"})
+		a.achDir = filepath.Join(root, ".ach", "envA")
+		if _, err := a.run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := state.Save(filepath.Join(root, ".ach", "envA", "state-claude-code.json"), storeA.savedFile); err != nil {
+			t.Fatal(err)
+		}
+		b, storeB := instructionCommit(t, "claude-code", root, map[string]string{"a": "A\n"})
+		b.achDir = filepath.Join(root, ".ach", "envB")
+		if _, err := b.run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		saved := storeB.savedFile
+		b2, storeB2 := instructionCommit(t, "claude-code", root, map[string]string{})
+		b2.achDir = filepath.Join(root, ".ach", "envB")
+		b2.opts.Sync = sync
+		storeB2.loadFn = func(string) (*state.File, error) { return saved, nil }
+		if _, err := b2.run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if !exists(filepath.Join(root, ".claude/rules/ach-a.md")) {
+			t.Errorf("sync=%v: a sibling's file was deleted", sync)
+		}
+		if len(storeB2.savedFile.Instructions) != 0 {
+			t.Errorf("sync=%v: B state still lists %+v", sync, storeB2.savedFile.Instructions)
+		}
+	}
+}

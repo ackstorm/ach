@@ -12,10 +12,10 @@
 //     fresh / STALE(<age over>) / never.
 //   - bip / litellm-connection: projected (presence).
 //
-// false-green caveat (memory plugin-scoping-followups): only context.plugins
-// content-presence gates the Environment ExecutionResourcesResolved condition.
-// artifacts are name-only / pass-through — their last_successful_refresh
-// reflects "name resolved", not "content present + current". So the artifact
+// false-green caveat (memory plugin-scoping-followups): context plugins,
+// skills and instructions content-presence gates the Environment
+// ExecutionResourcesResolved condition. Only artifacts are name-only /
+// pass-through — their last_successful_refresh reflects "name resolved", not "content present + current". So the artifact
 // mapper renders a fresh state as "fresh*" (syncFreshFalseGreen); the
 // CLI renderer turns the asterisk into a footnote. STALE/never stay honest and
 // carry no asterisk. Marketplace plugins and external_refs ARE real

@@ -373,3 +373,20 @@ func TestUninstall_LabelsTargetsWhenOnlyOneRemoves(t *testing.T) {
 		t.Fatalf("want labelled rows\n%s\ngot\n%s", strings.Join(want, "\n"), stdout)
 	}
 }
+
+// A file a sibling Environment still records is not handed to Sync.
+func TestUninstall_KeepsSiblingInstructionFile(t *testing.T) {
+	ws := t.TempDir()
+	rows := []state.FileEntry{{Target: ".claude/rules/ach-a.md", Hash: "h", Source: "a"}}
+	writeState(t, ws, &state.File{SchemaVersion: "3", Environment: "a", Instructions: rows})
+	writeState(t, ws, &state.File{SchemaVersion: "3", Environment: "b", Instructions: rows})
+	var rec recordedSync
+	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{}, nil)
+
+	if _, _, code, err := executeUninstall(t, "--dir", ws, "b"); err != nil || code != exit.OK {
+		t.Fatalf("uninstall: code=%d err=%v", code, err)
+	}
+	if !rec.called || len(rec.prev.Instructions) != 0 {
+		t.Fatalf("called=%v prev instructions=%+v; want none", rec.called, rec.prev.Instructions)
+	}
+}

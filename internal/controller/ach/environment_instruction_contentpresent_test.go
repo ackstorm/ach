@@ -133,29 +133,3 @@ func TestEnvInstructionContentPresent_NotSynced(t *testing.T) {
 		t.Errorf("UnresolvedContextInstructions = %v; want []", final.Status.UnresolvedContextInstructions)
 	}
 }
-
-// TestEnvInstructionContentPresent_MarketplaceRef: instructions have no
-// marketplace, so name@marketplace never resolves, even when name is synced.
-func TestEnvInstructionContentPresent_MarketplaceRef(t *testing.T) {
-	pool, cleanup := setupPluginContentPresentDB(t)
-	defer cleanup()
-
-	now := time.Now().UTC()
-	if err := dbtest.UpsertInstruction(context.Background(), pool, achdb.InstructionRow{
-		Namespace:             WatchNamespace,
-		Name:                  "x",
-		LastSuccessfulRefresh: &now,
-		MaxStalenessSeconds:   86400,
-		ResourceVersion:       "1",
-	}); err != nil {
-		t.Fatalf("seed instructions row: %v", err)
-	}
-
-	final := reconcileInstructionEnv(t, pool, "test-env-instruction-mkt-ref", []string{"x@mkt"})
-	if cond := executionResolved(t, final); cond.Status != metav1.ConditionFalse {
-		t.Errorf("ExecutionResourcesResolved.Status = %q; want False", cond.Status)
-	}
-	if got := final.Status.UnresolvedContextInstructions; len(got) != 1 || got[0] != "x@mkt" {
-		t.Errorf("UnresolvedContextInstructions = %v; want [x@mkt]", got)
-	}
-}

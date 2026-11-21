@@ -18,7 +18,7 @@ func fullPrev() *state.File {
 		Environment:   "prod",
 		Profile:       "main",
 		Instructions: []state.FileEntry{
-			{Target: ".ach/prompts/a.md", Hash: "h1", SourceHash: "s1"},
+			{Target: ".claude/rules/ach-a.md", Hash: "h1", SourceHash: "s1"},
 		},
 		Plugins: []state.FileEntry{
 			{Target: ".claude/rules/foo.md", Hash: "h2", SourceHash: "s2"},
@@ -81,7 +81,7 @@ func TestBuildScopedEmpty(t *testing.T) {
 		prev := fullPrev()
 		got := BuildScopedEmpty(prev, false, true)
 		if len(got.Instructions) != 1 || len(got.Plugins) != 1 || len(got.Artifacts) != 1 {
-			t.Fatalf("context buckets must be retained, got prompts=%d plugins=%d artifacts=%d",
+			t.Fatalf("context buckets must be retained, got instructions=%d plugins=%d artifacts=%d",
 				len(got.Instructions), len(got.Plugins), len(got.Artifacts))
 		}
 		if len(got.RuntimeFiles) != 0 || len(got.Adapter.Files) != 0 {

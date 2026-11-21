@@ -3,7 +3,6 @@
 package opencode
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -25,8 +24,8 @@ func (a *Adapter) InstructionLoader(global bool) *adapter.InstructionLoader {
 	entry := projectInstructionsEntry
 	if global {
 		entry = "~/.config/opencode/ach/*.md"
-		if x := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
-			entry = filepath.Join(x, "opencode", "ach") + "/*.md"
+		if root := adapter.GlobalRoot("opencode", ""); root != "" {
+			entry = filepath.Join(root, "ach") + "/*.md"
 		}
 	}
 	return &adapter.InstructionLoader{Dir: ".opencode/ach", Path: configJSONPath, ArrayKey: "instructions", Entry: entry}

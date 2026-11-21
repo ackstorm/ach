@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # OVERSIZE instruction (negative-path fixture). The source is a third-party
-# Markdown file of 456,105 bytes (measured 2026-11-21), far above the
+# Markdown file of 456,105 bytes, far above the
 # 23,900-byte limit, so the fetch succeeds and the content gate rejects it:
 # Synced=False, reason UpstreamInvalid. SYNCED but EXCLUDED from the happy-state
 # gate; verify_all asserts the expected FAILURE state instead.

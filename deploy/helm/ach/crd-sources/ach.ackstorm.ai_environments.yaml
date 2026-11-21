@@ -121,9 +121,10 @@ spec:
                       filenames served by the Content Service, so the strict deny-pattern
                       forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,
                       control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).
+                      "@" is also forbidden: Instructions have no marketplace.
                     items:
                       maxLength: 253
-                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      pattern: ^[^/\\@?#%\s\x00-\x1f\x7f]+$
                       type: string
                     type: array
                   plugins:

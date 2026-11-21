@@ -98,6 +98,12 @@ the release notes ask for it; migrations are cumulative and run in order.
   `ach migrate` only moves forward, so apply
   `000028_drop_deletion_timestamp.down.sql` by hand with `psql`. The rows that
   migration purged do not come back.
+- Rolling back below the release that added the `Instruction` kind needs the
+  `000031` down migration first: older binaries select `prompts` and
+  `environments.context_prompts`, which 000031 renames, so every service errors
+  until `000031_instruction_kind.down.sql` is applied by hand with `psql`.
+  During the upgrade itself, old pods still running hit the same errors until
+  they are replaced, because the migration Job runs first.
 - Back up the ACH database before every upgrade (it is small). LiteLLM's
   database is separate and is not touched by ACH migrations.
 - To run migrations by hand (e.g. with `migrate.enabled: false` in a pipeline

@@ -77,11 +77,12 @@ changes: the cluster stays on the newer release. Set `migrate.enabled: false`
 together with the older version, and set it back to `true` with the next
 upgrade. `helm rollback` runs no migration Job and needs no such step.
 
-Three cases where a rollback needs more:
+Four cases where a rollback needs more:
 
 | Rolling back | Needs first |
 |---|---|
 | Below 1.1.4 | Apply `000028_drop_deletion_timestamp.down.sql` from the ACH repository with `psql`. The rows that version removed do not come back |
+| Below the release that added the `Instruction` kind | Apply `000031_instruction_kind.down.sql` from the ACH repository with `psql`. Older binaries select `prompts` and `environments.context_prompts`, which 000031 renames, so every service errors until it runs. During the upgrade the same errors hit any old pod still running until it is replaced, because the migration Job runs first |
 | Below the version that added key suspension and expiry | Resume every suspended environment key and clear every expiry. The tables refuse to go back while such a key exists |
 | Below the version that added token exchange | Revoke every environment key that was issued by token exchange |
 

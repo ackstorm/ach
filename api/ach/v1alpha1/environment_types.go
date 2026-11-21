@@ -154,10 +154,11 @@ type ContextBlock struct {
 	// filenames served by the Content Service, so the strict deny-pattern
 	// forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,
 	// control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).
+	// "@" is also forbidden: Instructions have no marketplace.
 	// +optional
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:items:MaxLength=253
-	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	// +kubebuilder:validation:items:Pattern=`^[^/\\@?#%\s\x00-\x1f\x7f]+$`
 	Instructions []string `json:"instructions,omitempty"`
 
 	// Plugins lists referenced plugin names. A bare name ("code-review")

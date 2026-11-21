@@ -2,7 +2,12 @@
 
 package opencode
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+
+	"github.com/ackstorm/ach/internal/cli/adapter"
+)
 
 func TestInstructionFiles(t *testing.T) {
 	a := &Adapter{}
@@ -23,5 +28,16 @@ func TestInstructionFiles(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	if got := a.InstructionLoader(true).Entry; got != dir+"/opencode/ach/*.md" {
 		t.Fatalf("global entry %q", got)
+	}
+}
+
+func TestInstructionLoader_GlobalEntryFollowsFilesRoot(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "  "+dir+"  ")
+	a := &Adapter{}
+	files := adapter.RemapGlobalPath("opencode", "/home/u", a.InstructionFiles("x", nil, true)[0].Path)
+	want := filepath.Dir(files) + "/*.md"
+	if got := a.InstructionLoader(true).Entry; got != want {
+		t.Fatalf("entry %q, files land in %q", got, want)
 	}
 }

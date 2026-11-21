@@ -186,6 +186,12 @@ func TestCELAdmission(t *testing.T) {
 			errMustContain: "instructions",
 		},
 		{
+			name:           "invalid_env_instruction_marketplace_ref",
+			fixturePath:    "../../../test/fixtures/invalid/environment_instruction_marketplace_ref.yaml",
+			shouldFail:     true,
+			errMustContain: "instructions",
+		},
+		{
 			name:           "invalid_env_runtime_query_injection",
 			fixturePath:    "../../../test/fixtures/invalid/environment_runtime_query_injection.yaml",
 			shouldFail:     true,

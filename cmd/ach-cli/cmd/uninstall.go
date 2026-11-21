@@ -266,6 +266,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		if prev == nil {
 			continue
 		}
+		prev = hydrate.WithoutSiblingInstructions(prev, achDir, platformOfState(sp))
 		var scopedEmpty *state.File
 		if in.only != nil {
 			// --only: survivor = prev minus the item's rows; a platform state

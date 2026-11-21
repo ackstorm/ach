@@ -425,8 +425,9 @@ const staleRequeueAfter = 15 * time.Second
 
 // pluginUnresolvedRequeueAfter is the requeue cadence when one or more
 // context plugins, skills or instructions are referenced but not yet
-// content-present. Plugin / skill / instruction / marketplace projection writes do not enqueue Environments, so this poll
-// is how the Environment converges to Available once content lands.
+// content-present. Plugin, skill, instruction and marketplace projection
+// writes do not enqueue Environments, so this poll is how the Environment
+// converges to Available once content lands.
 const pluginUnresolvedRequeueAfter = 30 * time.Second
 
 // contextRefsUnresolved returns the refs in refs that are not content-present:
@@ -500,17 +501,14 @@ func (r *EnvironmentReconciler) contextSkillsUnresolved(ctx context.Context, env
 }
 
 // contextInstructionsUnresolved returns the spec.context.instructions names
-// whose Instruction has no successful refresh. Instructions have no
-// marketplace, so a name@marketplace ref never resolves.
+// whose Instruction has no successful refresh. The CRD pattern rejects "@",
+// so no ref carries a marketplace.
 func (r *EnvironmentReconciler) contextInstructionsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
 	if r.DB == nil {
 		return nil, nil
 	}
 	return contextRefsUnresolved(ctx, r.Namespace, "instruction", env.Spec.Context.Instructions,
-		func(ctx context.Context, ns, name, mkt string) (*time.Time, error) {
-			if mkt != "" {
-				return nil, nil
-			}
+		func(ctx context.Context, ns, name, _ string) (*time.Time, error) {
 			row, err := achdb.GetInstructionByName(ctx, r.DB, ns, name)
 			if err != nil || row == nil {
 				return nil, err

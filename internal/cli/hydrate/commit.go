@@ -1031,7 +1031,7 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 		return nil
 	}
 	composed := c.composeNextState(existing, m, render, adapterRan, result.PlatformID, runtimeFiles)
-	prev := existing
+	prev := WithoutSiblingInstructions(existing, c.achDir, result.PlatformID)
 	if !c.opts.Sync {
 		if !adapterRan {
 			return nil
@@ -1048,7 +1048,7 @@ func (c *commit) step11Sync(existing *state.File, m *manifest.Manifest, render R
 			// Instruction files are ACH-generated like adapter keys: the whole
 			// bucket is pruned, so an Instruction that left the Environment
 			// does not stay on disk untracked and still loaded.
-			Instructions: existing.Instructions,
+			Instructions: prev.Instructions,
 		}
 		composed = &state.File{Adapter: composed.Adapter, Plugins: composed.Plugins, Skills: composed.Skills, Instructions: composed.Instructions}
 	}
@@ -1092,7 +1092,7 @@ func keptSourceRows(prev, next []state.FileEntry) []state.FileEntry {
 // (= state.WriteAtomic, STATE-07 four-step contract). The caller skips it
 // under opts.DryRun so a `hydrate --dry-run` is genuinely read-only.
 //
-// Content buckets (Plugins/Artifacts/RuntimeFiles) are carried
+// Content buckets (Plugins/Skills/Instructions/Artifacts/RuntimeFiles) are carried
 // forward from the prior state (their composition from ExtractResult is a
 // separate follow-up; see issue tracker / W6-01 notes). The ADAPTER section,
 // however, IS composed from the fresh render (W6-01): recording the adapter
@@ -1204,8 +1204,8 @@ var runtimeMirrorBuckets = []string{"mcp", "a2a", "model"}
 // tallies. Plugins extract to the ephemeral pluginStageRoot (swept, never a
 // final write) and are re-counted as renderResult.ProjectedFiles when
 // published — counting them here would double-count (observed 110 reported
-// vs 54 on disk), so only artifacts (final dest extractBase==achDir)
-// count. A re-hydrate no-op reports zero WrittenFiles + a Preserved count
+// vs 54 on disk), as would skills and instructions (staged the same way), so
+// only artifacts (final dest extractBase==achDir) count. A re-hydrate no-op reports zero WrittenFiles + a Preserved count
 // (the on-disk tree was left untouched) → "N preserved", not "N written".
 func addExtractCounts(result *Result, kind string, er ExtractResult) {
 	if isStagedKind(kind) {

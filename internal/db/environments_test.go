@@ -126,9 +126,10 @@ func TestGetEnvironmentByName_AbsenceReturnsNilNil(t *testing.T) {
 	}
 }
 
-// TestMigration000028_DropsDeletionTimestamp: rolled back (past 000031) to the
-// schema with the column, the migration removes the rows a drain marked, keeps the others,
-// and leaves no table with the column.
+// TestMigration000028_DropsDeletionTimestamp applies the 000031 down then the
+// 000028 down, so the schema has the deletion_timestamp column again. The
+// migration removes the rows a drain marked, keeps the others, and leaves no
+// table with the column.
 func TestMigration000028_DropsDeletionTimestamp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

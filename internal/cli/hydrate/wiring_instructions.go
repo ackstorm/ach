@@ -144,6 +144,24 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 	})
 }
 
+// WithoutSiblingInstructions returns f without the instruction rows a sibling
+// Environment of the same folder and platform also records, so pruning never
+// deletes a file the sibling still needs.
+func WithoutSiblingInstructions(f *state.File, achDir, platformID string) *state.File {
+	foreign := state.ForeignInstructionTargets(achDir, platformID)
+	if f == nil || len(foreign) == 0 {
+		return f
+	}
+	out := *f
+	out.Instructions = nil
+	for _, e := range f.Instructions {
+		if !foreign[e.Target] {
+			out.Instructions = append(out.Instructions, e)
+		}
+	}
+	return &out
+}
+
 // TidyInstructionLoader removes the target's loader when its instruction
 // folder holds no *.md. It runs after pruning, on hydrate and uninstall; a
 // sibling Environment's file keeps the loader in place.
@@ -173,8 +191,12 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		}
 		return nil
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(l.Entry))) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	empty := false
 	err = state.RewriteFile(path, 0o600, func(cur []byte) ([]byte, bool, error) {
@@ -193,5 +215,8 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 	if err == nil && empty {
 		err = os.Remove(path)
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
 }
