@@ -57,7 +57,7 @@ away, or `--force` on the user's say-so.
 ## Hydrate and start the tool in one step
 
 ```bash
-ach-cli launch claude --environment <environment>                  # or codex, opencode, pi
+ach-cli launch claude --environment <environment>                  # or codex, cursor, opencode, pi
 ach-cli launch opencode                                            # as the folder is, no hydrate
 ach-cli launch opencode --update-environments                      # update the folder's Environments first
 ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>

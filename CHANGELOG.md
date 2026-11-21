@@ -20,6 +20,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - Docs: an "Audit events" reference page lists every audit event ACH and the
   callback write, and "Collect audit events" shows how to query them in Grafana
   Loki and give them their own stream and retention.
+- ach-cli supports Cursor as a target (`--target cursor`, `launch cursor`): MCP servers in `.cursor/mcp.json`, skills in `.agents/skills`, commands and subagents in `.cursor/`.
 
 ### Changed
 - Audit: a caller refused on an admin route is recorded as

@@ -22,11 +22,12 @@ import (
 var launchTools = map[string]string{
 	"claude-code": "claude",
 	"codex":       "codex",
+	"cursor":      "cursor-agent",
 	"opencode":    "opencode",
 	"pi":          "pi",
 }
 
-const launchToolList = "claude, codex, opencode, pi"
+const launchToolList = "claude, codex, cursor, opencode, pi"
 
 // claudeCodeID is the target launch fronts with its proxy.
 const claudeCodeID = "claude-code"

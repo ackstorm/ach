@@ -166,7 +166,7 @@ func TestGlobalRoot(t *testing.T) {
 }
 
 func TestRemapGlobalPath_AgentsSkillsStaysUnderHome(t *testing.T) {
-	for _, id := range []string{"codex", "opencode", "pi"} {
+	for _, id := range []string{"codex", "opencode", "pi", "cursor"} {
 		got := RemapGlobalPath(id, "/home/u", ".agents/skills/x/SKILL.md")
 		if got != ".agents/skills/x/SKILL.md" {
 			t.Fatalf("%s: got %q", id, got)

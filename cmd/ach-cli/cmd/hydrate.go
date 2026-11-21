@@ -35,7 +35,7 @@
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
 // Adapter registration: the platform adapters
-// (claudecode/codex/opencode/pi) self-register via init() side
+// (claudecode/codex/cursor/opencode/pi) self-register via init() side
 // effects in their subpackages; the blank-imports live in
 // adapters_register.go in this package so this file stays focused on
 // cobra wiring + dispatch.
@@ -193,7 +193,7 @@ Exit codes:
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
 		"Override platform autodetection; "+
 			"comma-separated or repeated for several targets, e.g. codex,opencode "+
-			"(claude-code / codex / opencode / pi + case-folded aliases)")
+			"(claude-code / codex / cursor / opencode / pi + case-folded aliases)")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
 		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
 

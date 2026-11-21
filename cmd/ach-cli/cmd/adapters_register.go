@@ -20,6 +20,7 @@ package cmd
 import (
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
+	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 )

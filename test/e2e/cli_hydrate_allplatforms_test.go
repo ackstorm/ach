@@ -92,6 +92,17 @@ var allPlatformExpects = []allPlatformExpect{
 		agentExt:    ".toml",
 	},
 	{
+		// cursor: MCP deep-merges into .cursor/mcp.json (mcpServers.url);
+		// skills go to .agents/skills, agents are copied verbatim.
+		id:          "cursor",
+		runtimePath: ".cursor/mcp.json",
+		runtimeFmt:  "json",
+		skillsDir:   ".agents/skills",
+		skillSep:    "-",
+		agentsDir:   ".cursor/agents",
+		agentExt:    ".md",
+	},
+	{
 		id:          "opencode",
 		runtimePath: ".opencode/opencode.json",
 		runtimeFmt:  "json",

@@ -60,7 +60,7 @@ ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | 
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
 ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating. Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused
+ach-cli launch <claude|codex|cursor|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`cursor` starts `cursor-agent`). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
@@ -188,10 +188,10 @@ only): Claude Code registers the frontmatter name as an alias too, so
 renaming the dir alone still answered `/ladder`. The form per tool was
 measured, not guessed (2026-10-26):
 
-| | claude-code | opencode | codex | pi |
-|---|---|---|---|---|
-| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (`:` warns) |
-| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `bro-x.md` (no subdirs read) |
+| | claude-code | opencode | codex | pi | cursor |
+|---|---|---|---|---|---|
+| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (`:` warns) | `bro-ladder` |
+| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `bro-x.md` (no subdirs read) | `bro-x.md` |
 
 opencode ignores `disable-model-invocation` and has no slash invocation for
 skills, so its skill rule also emits each such user-only skill as a command
@@ -323,7 +323,7 @@ projected (self-heals on `<b>`'s next hydrate).
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in
 plaintext (project-root `.mcp.json`, `.codex/config.toml`,
-`.opencode/opencode.json`, `.pi/mcp.json`). mode `0600`
+`.opencode/opencode.json`, `.cursor/mcp.json`, `.pi/mcp.json`). mode `0600`
 guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
 in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
@@ -344,7 +344,7 @@ written path to its pattern (`.claude/agents/x.md` → `.claude/`; `.mcp.json` �
 removal would need cross-env reference counting). The hydrate engine guards
 `toolRoot == ""` so direct-struct unit tests never pollute cwd.
 
-## The 4 adapters + their transforms (`internal/cli/adapter/<id>/`)
+## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
 MCP runtime config: the Environment's MCP servers plus each A2A agent's MCP
@@ -354,15 +354,15 @@ face `a2a-<agent>` at `<endpoint>/mcp`, via `adapter.RuntimeMCPServers`),
 `x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
 merge) — don't conflate them.
 
-| input kind | claude-code | codex | opencode | pi |
-|---|---|---|---|---|
-| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` |
-| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop |
-| skills | →`.claude/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` |
-| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` |
-| rules | →`.claude/rules` | drop | drop | drop |
-| AGENTS.md | drop | drop | drop | drop |
-| hooks | drop | drop | drop | drop |
+| input kind | claude-code | codex | opencode | pi | cursor |
+|---|---|---|---|---|---|
+| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` | `.md`→`.cursor/commands` |
+| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop | `.md`→`.cursor/agents` |
+| skills | →`.claude/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` |
+| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` | →`.cursor/mcp.json` |
+| rules | →`.claude/rules` | drop | drop | drop | drop |
+| AGENTS.md | drop | drop | drop | drop | drop |
+| hooks | drop | drop | drop | drop | drop |
 
 (T) = has a content Transform. `hooks` is dropped everywhere (documented gap,
 asserted in e2e — not a bug).
@@ -395,6 +395,7 @@ that tool actually reads it. One table drives both write paths:
 | codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
 | opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
 | pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/prompts/` → `.pi/agent/…` | `.pi/mcp.json` |
+| cursor | none | — | — | everything (`~/.cursor`, `~/.agents/skills` are home-relative) |
 
 Hard-won details — do NOT re-derive:
 

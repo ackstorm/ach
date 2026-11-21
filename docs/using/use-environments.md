@@ -5,7 +5,7 @@ servers and A2A agents, plus plugins, skills, prompts and artifacts.
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
-`claude-code`, `codex`, `opencode` or `pi`.
+`claude-code`, `codex`, `cursor`, `opencode` or `pi`.
 
 ## Find an Environment
 
@@ -60,8 +60,9 @@ ach-cli environment hydrate <environment> --target <tool>
 folder that already holds one tool's configuration you may leave it out.
 
 Skills go to `.claude/skills` for Claude Code and to the shared `.agents/skills`
-for Codex, OpenCode and pi (`~/.agents/skills` with `-g`), so those three tools
-read one copy.
+for Codex, Cursor, OpenCode and pi (`~/.agents/skills` with `-g`), so those four
+tools read one copy. Cursor reads MCP servers from `.cursor/mcp.json`; its
+commands and subagents go to `.cursor/commands` and `.cursor/agents`.
 
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
 in that folder.
@@ -120,7 +121,7 @@ ach-cli environment uninstall <environment>             # this folder; -g for th
 ```
 
 Only what hydrate wrote is removed. In files it shares with you (`.mcp.json`,
-`.codex/config.toml`, `.opencode/opencode.json`) only its own
+`.codex/config.toml`, `.cursor/mcp.json`, `.opencode/opencode.json`) only its own
 entries go. `--only plugin/<name>` removes one item; `--only-runtime` removes
 just the MCP entries.
 

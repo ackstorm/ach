@@ -9,7 +9,7 @@
     {
       "name": "ach-cli",
       "source": "./plugins/ach-cli",
-      "description": "Use this organization's AI platform (ACH) from the command line: sign in, find and hydrate Environments into Claude Code, Codex, OpenCode or pi, MCP sign-in, environment keys (ek-) and ach-cli local."
+      "description": "Use this organization's AI platform (ACH) from the command line: sign in, find and hydrate Environments into Claude Code, Codex, Cursor, OpenCode or pi, MCP sign-in, environment keys (ek-) and ach-cli local."
     },
     {
       "name": "ach-gitops",
