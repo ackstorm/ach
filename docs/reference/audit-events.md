@@ -1,6 +1,6 @@
 # Audit events
 
-An audit event is one JSON line on stdout that carries `"audit": true`. Two
+An audit event is one JSON line on stdout that carries `"audit":true`. Two
 sources write them:
 
 - **ACH** (platform-api, content-service and the operator) records keys,
@@ -34,8 +34,9 @@ routes the audit lines wherever you keep them.
 }
 ```
 
-The line is written on one row; it is wrapped here to be read. Names with a dot
-(`key.id`, `target.kind`) are flat keys, not nested objects.
+The line is written on one row with no space after `:` or `,`, so the text
+`"audit":true` matches every audit event; it is wrapped here to be read. Names
+with a dot (`key.id`, `target.kind`) are flat keys, not nested objects.
 
 | Field | Value | Present |
 |---|---|---|

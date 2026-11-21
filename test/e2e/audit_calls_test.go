@@ -83,7 +83,7 @@ func auditLinesForKey(t *testing.T, keyID string) []map[string]any {
 	}
 	var lines []map[string]any
 	for _, raw := range strings.Split(string(out), "\n") {
-		if !strings.Contains(raw, `"audit": true`) || !strings.Contains(raw, keyID) {
+		if !strings.Contains(raw, `"audit":true`) || !strings.Contains(raw, keyID) {
 			continue
 		}
 		var line map[string]any
