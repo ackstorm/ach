@@ -31,6 +31,7 @@ import (
 	// Named-import all five adapters: instantiate each Adapter directly for the
 	// route-table assertions. The import also fires init() Register, but
 	// registration is asserted by each subpackage's own test, not here.
+	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
 	"github.com/ackstorm/ach/internal/cli/adapter/cursor"
@@ -43,6 +44,7 @@ import (
 // race the in-package registry_test.go introduces into this shared test binary.
 func adapters() map[string]route.RuleProvider {
 	return map[string]route.RuleProvider{
+		"antigravity": &antigravity.Adapter{},
 		"claude-code": &claudecode.Adapter{},
 		"codex":       &codex.Adapter{},
 		"cursor":      &cursor.Adapter{},
@@ -96,6 +98,20 @@ var fullTree = map[string]string{
 // the per-adapter §sections; a divergence here OR in an adapter's
 // ProjectionRules() breaks the gate.
 var conformanceTables = []adapterConformance{
+	{
+		id:             "antigravity",
+		mappingSection: "§antigravity: everything under .agents/ (skills, agents, mcp_config.json); no command directory",
+		rowCount:       4,
+		rules: map[string]wantRule{
+			"skills/**/*":    {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
+			"agents/**/*.md": {to: ".agents/agents/**/*.md", merge: adapter.MergeReplace, hasXform: true},
+			"mcp/**/*":       {to: ".agents/mcp_config.json", merge: adapter.MergeDeep, hasXform: true},
+			".mcp.json":      {to: ".agents/mcp_config.json", merge: adapter.MergeDeep, hasXform: true},
+		},
+		// antigravity routes skills/agents/mcp; commands/, rules/, prompts/,
+		// AGENTS.md, hooks/ have no rule → dropped.
+		wantDropped: []string{"AGENTS.md", "commands", "hooks", "prompts", "rules"},
+	},
 	{
 		id:             "claude-code",
 		mappingSection: "the adapter table §claude-code (drops = NONE at field level; FMT-03 CUT)",

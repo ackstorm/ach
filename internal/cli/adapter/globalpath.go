@@ -31,6 +31,8 @@ type globalScope struct {
 var globalScopes = map[string]globalScope{
 	"claude-code": {envVar: "CLAUDE_CONFIG_DIR", fromPrefix: ".claude/"},
 	"codex":       {envVar: "CODEX_HOME", fromPrefix: ".codex/"},
+	// Antigravity's user scope is ~/.gemini/config, for every .agents/ path.
+	"antigravity": {fromPrefix: ".agents/", fallback: ".gemini/config/"},
 	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"prompts/"}},
 	"opencode": {
 		envVar:     "XDG_CONFIG_HOME",

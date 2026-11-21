@@ -218,6 +218,37 @@ func TestCommit_OpencodeGlobalRemap(t *testing.T) {
 	}
 }
 
+// ---------- Commit: antigravity global remap ---------------------------------
+
+func TestCommit_AntigravityGlobalRemap(t *testing.T) {
+	root := t.TempDir()
+	writes := []PlannedWrite{
+		{Path: ".agents/skills/s/SKILL.md", Content: []byte("# s\n"), Merge: adapter.MergeReplace},
+		{Path: ".agents/mcp_config.json", Content: []byte(`{"mcpServers":{"a":{"serverUrl":"https://x"}}}`),
+			Merge: adapter.MergeDeep, Keys: []string{"mcpServers.a"}},
+	}
+	for i := range writes {
+		writes[i].Path = adapter.RemapGlobalPath("antigravity", root, writes[i].Path)
+	}
+
+	recs, err := Commit(root, true, writes)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	want := []string{".gemini/config/skills/s/SKILL.md", ".gemini/config/mcp_config.json"}
+	for i, rel := range want {
+		if recs[i].RelPath != rel {
+			t.Errorf("RelPath[%d] = %q; want %q", i, recs[i].RelPath, rel)
+		}
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Errorf("missing %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agents")); !os.IsNotExist(err) {
+		t.Errorf("nothing may be written under .agents: %v", err)
+	}
+}
+
 // ---------- Uninstall --------------------------------------------------------
 
 func TestUninstall_RemovesFiles(t *testing.T) {

@@ -197,7 +197,7 @@ ach-cli environment status                                 # what is installed h
 ach-cli environment uninstall <environment>                # remove what hydrate wrote`}
               />
               <Step
-                note="Hydrate and start the tool in one step (claude, codex, cursor, opencode or pi)."
+                note="Hydrate and start the tool in one step (agy, claude, codex, cursor, opencode or pi)."
                 code={`ach-cli launch claude --environment <environment>
 ach-cli launch opencode --update-environments   # update this folder's Environments first
 ach-cli launch claude      # any folder: your Claude login, model traffic through ACH`}

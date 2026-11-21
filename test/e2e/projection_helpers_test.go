@@ -108,7 +108,7 @@ type projectionDescriptor struct {
 	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude)
 	// "json-mcp-opencode" → {"mcp": {"servers": {"<userKey>": …}}} (opencode)
 	// "toml-mcp"  → [mcp_servers.<userKey>] (codex)
-	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json, cursor .cursor/mcp.json)
+	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json, cursor .cursor/mcp.json, antigravity .agents/mcp_config.json)
 	coOwnedKind string
 
 	// mustDrop are kind names that MUST appear in the WIRE-03 stderr warning
@@ -134,6 +134,18 @@ type projectionDescriptor struct {
 // co-owned file and we can prove the
 // user key survives the subtraction.
 var projectionDescriptors = []projectionDescriptor{
+	{
+		platformID: phase7PlatformAntigravity, // "antigravity"
+		// antigravity routes agents(*.md)→.agents/agents/ and skills→
+		// .agents/skills/; it has no command directory, so caveman's
+		// commands/ is dropped + warned.
+		nativeDirs:     []string{".agents/agents", ".agents/skills"},
+		mustNotProject: []string{"agents", "commands", "skills"},
+		coOwnedFile:    ".agents/mcp_config.json",
+		coOwnedKind:    "json-pi",
+		mustDrop:       []string{"commands"},
+		mustNotDrop:    []string{"agents", "skills"},
+	},
 	{
 		platformID:     phase7PlatformClaudeCode, // "claude-code"
 		nativeDirs:     []string{".claude/agents", ".claude/commands", ".claude/skills"},
@@ -196,6 +208,9 @@ var projectionDescriptors = []projectionDescriptor{
 		mustNotDrop: []string{"skills", ".claude-plugin", "README.md"},
 	},
 }
+
+// phase7PlatformAntigravity is the canonical antigravity id.
+const phase7PlatformAntigravity = "antigravity"
 
 // phase7PlatformCursor is the canonical cursor id.
 const phase7PlatformCursor = "cursor"

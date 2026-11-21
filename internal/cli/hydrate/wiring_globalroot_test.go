@@ -72,6 +72,42 @@ func TestPublishFile_NoRedirectStaysUnderHome(t *testing.T) {
 	}
 }
 
+// TestPublishFile_AntigravityGlobal proves --global writes every .agents/ path
+// of the antigravity adapter under ~/.gemini/config, records relative targets,
+// and that the recorded state passes ValidateState.
+func TestPublishFile_AntigravityGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	d := &adapterDispatcherImpl{platformID: "antigravity", global: true}
+	writes := []adapter.FileWrite{
+		{Path: ".agents/skills/demo/SKILL.md", Content: []byte("# demo\n"), Merge: adapter.MergeReplace},
+		{Path: ".agents/mcp_config.json", Content: []byte(`{"mcpServers":{"echo":{"serverUrl":"https://x"}}}`),
+			Merge: adapter.MergeDeep, Keys: []string{"mcpServers.echo"}},
+	}
+	f := &state.File{SchemaVersion: "3", Environment: "demo"}
+	for _, fw := range writes {
+		fw.Path = adapter.RemapGlobalPath(d.platformID, home, fw.Path)
+		entry, err := d.publishFile(fw, nil, home)
+		if err != nil {
+			t.Fatalf("publishFile %s: %v", fw.Path, err)
+		}
+		f.Plugins = append(f.Plugins, state.FileEntry{Target: entry.Target, Merge: "replace"})
+	}
+
+	for _, rel := range []string{".gemini/config/skills/demo/SKILL.md", ".gemini/config/mcp_config.json"} {
+		if _, err := os.Stat(filepath.Join(home, rel)); err != nil {
+			t.Errorf("expected %s under $HOME: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, ".agents")); err == nil {
+		t.Error("antigravity wrote under ~/.agents")
+	}
+	if err := ValidateState(f, "antigravity", home, true); err != nil {
+		t.Errorf("ValidateState: %v", err)
+	}
+}
+
 // TestPruneMissing_AbsoluteTarget proves pruneMissing resolves a redirected
 // absolute Target against itself, not against base — a present file must NOT
 // be pruned just because it lives outside toolRoot.

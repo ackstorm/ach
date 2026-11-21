@@ -28,6 +28,7 @@ import (
 	"time"
 
 	// Blank-import all five adapters so their init() registers them.
+	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
@@ -178,6 +179,18 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 		want      []string // paths that MUST be present
 		absent    []string // paths that MUST NOT be present
 	}{
+		{
+			adapterID: "antigravity",
+			// antigravity has no command directory: the command is dropped.
+			want: []string{
+				".agents/agents/agent-a.md",
+				".agents/mcp_config.json",
+			},
+			absent: []string{
+				".agents/commands/hello.md",
+				".agents/prompts/hello.md",
+			},
+		},
 		{
 			adapterID: "claude-code",
 			want: []string{

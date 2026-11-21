@@ -1,6 +1,6 @@
 ---
 name: ach-cli
-description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, launch a tool on, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, look up a contact or use an organization tool when its MCP server is missing locally, find and call MCP tools or A2A agents from the shell, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Claude Code, Codex, Cursor, OpenCode or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
+description: "Work with this organization's AI platform (ACH) through the ach-cli command line. Use whenever the user mentions ACH, ach-cli, an Environment, an environment key (ek-), or wants to sign in, list, search, describe, hydrate, clone, launch a tool on, update or uninstall Environments (globally or into a folder), lay out a workspace per Environment, share a setup with a teammate, look up a contact or use an organization tool when its MCP server is missing locally, find and call MCP tools or A2A agents from the shell, sign in to or troubleshoot an MCP server that came from ACH, create, list, suspend, cap or revoke a key for an agent, CI job or script, set up Antigravity, Claude Code, Codex, Cursor, OpenCode or pi against the platform, or install a plugin or skill straight from a git repo with ach-cli local. Also use for ach-cli errors and exit codes, even if the user does not name the tool."
 ---
 
 # ACH from the command line
@@ -70,7 +70,7 @@ A2A agents (runtime) plus plugins, skills, prompts and artifacts (context). Acce
 by team: `ach-cli environment list` shows only the Environments the user's teams may use.
 **Hydrating** writes an Environment into an agent tool's own config, either globally
 (`-g`, every project) or into a folder (that folder and everything under it). A
-**target** is the tool: `claude-code`, `codex`, `cursor`, `opencode`, `pi`. Hydrate
+**target** is the tool: `antigravity`, `claude-code`, `codex`, `cursor`, `opencode`, `pi`. Hydrate
 records what it wrote under `.ach/<env>/` (or `~/.ach/<env>/` with `-g`), so it can update
 or remove exactly that later without touching the user's own settings.
 

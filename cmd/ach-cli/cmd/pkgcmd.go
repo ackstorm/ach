@@ -594,7 +594,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		},
 	}
 	c.Flags().StringSliceVar(&flagTargets, "target", nil,
-		"Tool(s) to install for, comma-separated or repeated: claude-code, codex, cursor, opencode, pi")
+		"Tool(s) to install for, comma-separated or repeated: antigravity, claude-code, codex, cursor, opencode, pi")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Install to the tool's global config root")
 	c.Flags().StringVar(&flagDest, "dir", "", "Project root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",

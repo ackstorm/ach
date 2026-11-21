@@ -8,6 +8,7 @@ your `PATH`.
 
 | `launch` name | Tool |
 |---|---|
+| `agy` | Antigravity CLI |
 | `claude` | Claude Code |
 | `codex` | Codex |
 | `cursor` | Cursor (starts `cursor-agent`) |

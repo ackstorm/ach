@@ -181,7 +181,7 @@ The inventory reads the stored projection only — to force a re-sync use
 For direct, personal use you don't need an Environment, the operator, or
 Postgres. `ach-cli repo`/`plugin`/`skill` register an external marketplace (or a
 direct plugin/skill source) and install straight into per-tool adapter dirs
-(`.claude/`, `.codex/`, `.cursor/`, `.opencode/`, `.pi/`). State lives in a local
+(`.agents/`, `.claude/`, `.codex/`, `.cursor/`, `.opencode/`, `.pi/`). State lives in a local
 registry under `~/.config/ach/local/` (tokens in a separate `0600`
 `credentials.json`).
 

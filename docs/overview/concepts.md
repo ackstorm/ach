@@ -51,7 +51,7 @@ HTTP, and is refreshed on an interval.
 ## Delivery
 
 `ach-cli environment hydrate <environment>` writes an Environment's content and
-MCP configuration into Claude Code, Codex, Cursor, OpenCode or Pi. It
+MCP configuration into Antigravity, Claude Code, Codex, Cursor, OpenCode or Pi. It
 records what it wrote, keeps your local edits, and `environment uninstall`
 removes exactly what it installed.
 

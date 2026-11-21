@@ -5,7 +5,7 @@ servers and A2A agents, plus plugins, skills, prompts and artifacts.
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
-`claude-code`, `codex`, `cursor`, `opencode` or `pi`.
+`antigravity`, `claude-code`, `codex`, `cursor`, `opencode` or `pi`.
 
 ## Find an Environment
 
@@ -61,7 +61,10 @@ folder that already holds one tool's configuration you may leave it out.
 
 Skills go to `.claude/skills` for Claude Code and to the shared `.agents/skills`
 for Codex, Cursor, OpenCode and pi (`~/.agents/skills` with `-g`), so those four
-tools read one copy. Cursor reads MCP servers from `.cursor/mcp.json`; its
+tools read one copy. Antigravity reads everything from `.agents/` (MCP servers in
+`.agents/mcp_config.json`, skills in `.agents/skills`, subagents in
+`.agents/agents`) and from `~/.gemini/config/` with `-g`, its user directory.
+It has no command directory, so a plugin's commands are not installed for it. Cursor reads MCP servers from `.cursor/mcp.json`; its
 commands and subagents go to `.cursor/commands` and `.cursor/agents`.
 
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
@@ -121,7 +124,7 @@ ach-cli environment uninstall <environment>             # this folder; -g for th
 ```
 
 Only what hydrate wrote is removed. In files it shares with you (`.mcp.json`,
-`.codex/config.toml`, `.cursor/mcp.json`, `.opencode/opencode.json`) only its own
+`.agents/mcp_config.json`, `.codex/config.toml`, `.cursor/mcp.json`, `.opencode/opencode.json`) only its own
 entries go. `--only plugin/<name>` removes one item; `--only-runtime` removes
 just the MCP entries.
 

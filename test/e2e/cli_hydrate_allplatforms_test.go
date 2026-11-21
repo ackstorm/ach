@@ -71,6 +71,17 @@ type allPlatformExpect struct {
 // no command rule.
 var allPlatformExpects = []allPlatformExpect{
 	{
+		// antigravity: MCP deep-merges into .agents/mcp_config.json
+		// (mcpServers.serverUrl); no command directory, so commands are dropped.
+		id:          "antigravity",
+		runtimePath: ".agents/mcp_config.json",
+		runtimeFmt:  "json",
+		skillsDir:   ".agents/skills",
+		skillSep:    "-",
+		agentsDir:   ".agents/agents",
+		agentExt:    ".md",
+	},
+	{
 		id:          "claude-code",
 		runtimePath: ".mcp.json",
 		runtimeFmt:  "json",

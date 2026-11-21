@@ -13,6 +13,7 @@ func TestTopLevelEntry(t *testing.T) {
 		{".claude/agents/x.md", ".claude/"},
 		{".codex/config.toml", ".codex/"},
 		{".mcp.json", ".mcp.json"},
+		{".agents/mcp_config.json", ".agents/"},
 		{"./.claude/skills/s/SKILL.md", ".claude/"},
 		{".ach/", ".ach/"},
 		{"", ""},

@@ -89,7 +89,7 @@ Example:
 	cmd.Flags().BoolVar(&flagOnlyRuntime, "only-runtime", false,
 		"Install ONLY runtime entries (skip context)")
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
-		"Agent target(s), comma-separated or repeated: claude-code / codex / cursor / opencode / pi")
+		"Agent target(s), comma-separated or repeated: antigravity / claude-code / codex / cursor / opencode / pi")
 	cmd.Flags().BoolVar(&flagModels, "models", false,
 		"Route the tool's model traffic through ACH (apiKeyHelper / model provider wiring)")
 	return cmd

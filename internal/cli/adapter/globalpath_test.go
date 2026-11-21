@@ -173,3 +173,16 @@ func TestRemapGlobalPath_AgentsSkillsStaysUnderHome(t *testing.T) {
 		}
 	}
 }
+
+func TestRemapGlobalPath_Antigravity(t *testing.T) {
+	cases := map[string]string{
+		".agents/skills/x/SKILL.md": ".gemini/config/skills/x/SKILL.md",
+		".agents/agents/r.md":       ".gemini/config/agents/r.md",
+		".agents/mcp_config.json":   ".gemini/config/mcp_config.json",
+	}
+	for in, want := range cases {
+		if got := RemapGlobalPath("antigravity", "/home/u", in); got != want {
+			t.Fatalf("%s: got %q want %q", in, got, want)
+		}
+	}
+}
