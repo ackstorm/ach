@@ -30,7 +30,7 @@ var networkCommands = map[string][]string{
 	"keys list":            {"keys", "list"},
 	"keys revoke":          {"keys", "revoke", "ekid_abc", "--yes"},
 	"admin list":           {"admin", "list", "plugins"},
-	"environment fetch":    {"env", "fetch", "demo", "prompt", "p"},
+	"environment fetch":    {"env", "fetch", "demo", "instruction", "p"},
 }
 
 func runSynthRoot(t *testing.T, args ...string) (string, string, exit.Code, error) {

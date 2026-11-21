@@ -22,7 +22,7 @@ import (
 // hands it back in).
 type Lister interface {
 	Plugins(ctx context.Context) ([]db.PluginRow, error)
-	Prompts(ctx context.Context) ([]db.PromptRow, error)
+	Instructions(ctx context.Context) ([]db.InstructionRow, error)
 	Artifacts(ctx context.Context) ([]db.ArtifactRow, error)
 	Skills(ctx context.Context) ([]db.SkillRow, error)
 	Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
@@ -52,8 +52,8 @@ func NewLister(pool *pgxpool.Pool, ns string) Lister { return dbLister{pool: poo
 func (l dbLister) Plugins(ctx context.Context) ([]db.PluginRow, error) {
 	return db.ListPlugins(ctx, l.pool, l.ns)
 }
-func (l dbLister) Prompts(ctx context.Context) ([]db.PromptRow, error) {
-	return db.ListPrompts(ctx, l.pool, l.ns)
+func (l dbLister) Instructions(ctx context.Context) ([]db.InstructionRow, error) {
+	return db.ListInstructions(ctx, l.pool, l.ns)
 }
 func (l dbLister) Artifacts(ctx context.Context) ([]db.ArtifactRow, error) {
 	return db.ListArtifacts(ctx, l.pool, l.ns)
@@ -102,17 +102,17 @@ func PluginsHandler(deps Deps) http.HandlerFunc {
 	})
 }
 
-// PromptsHandler serves GET /platform/admin/prompts.
-func PromptsHandler(deps Deps) http.HandlerFunc {
+// InstructionsHandler serves GET /platform/admin/instructions.
+func InstructionsHandler(deps Deps) http.HandlerFunc {
 	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
-		rows, err := deps.Lister.Prompts(ctx)
+		rows, err := deps.Lister.Instructions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		now := time.Now()
 		out := make([]AdminObjectView, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, promptRowToView(r, now))
+			out = append(out, instructionRowToView(r, now))
 		}
 		return out, nil
 	})

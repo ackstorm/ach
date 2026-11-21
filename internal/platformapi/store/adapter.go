@@ -109,10 +109,10 @@ func RowToView(r db.EnvironmentRow) EnvironmentView {
 		Name:            r.Name,
 		AuthorizedTeams: dedupNonEmpty(r.AuthorizedTeams),
 		Context: achv1alpha1.ContextBlock{
-			Prompts:   r.ContextPrompts,
-			Plugins:   r.ContextPlugins,
-			Artifacts: r.ContextArtifacts,
-			Skills:    r.ContextSkills,
+			Instructions: r.ContextInstructions,
+			Plugins:      r.ContextPlugins,
+			Artifacts:    r.ContextArtifacts,
+			Skills:       r.ContextSkills,
 		},
 		Runtime: achv1alpha1.RuntimeBlock{
 			Models:     r.RuntimeModels,

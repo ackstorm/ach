@@ -40,6 +40,8 @@ func TestRemapGlobalPath_NoEnv(t *testing.T) {
 		{"pi", ".pi/skills/x/SKILL.md", ".pi/skills/x/SKILL.md"},
 		{"pi", ".pi/prompts/a.md", ".pi/agent/prompts/a.md"},
 		{"pi", ".pi/mcp.json", ".pi/mcp.json"},
+		{"pi", ".pi/ach/x.md", ".pi/agent/ach/x.md"},
+		{"pi", ".pi/extensions/ach-instructions.ts", ".pi/agent/extensions/ach-instructions.ts"},
 		{"unknown-adapter", ".claude/settings.json", ".claude/settings.json"},
 	}
 	for _, tc := range cases {

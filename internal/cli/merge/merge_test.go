@@ -338,3 +338,13 @@ func TestPruneDottedKeys(t *testing.T) {
 		t.Errorf("full prune: empty=%v err=%v, want empty=true", empty, err)
 	}
 }
+
+func TestParseDoc_JSONNull(t *testing.T) {
+	doc, err := merge.ParseDoc([]byte("null"), false)
+	if err != nil || doc == nil {
+		t.Fatalf("doc=%v err=%v", doc, err)
+	}
+	if _, err := merge.EnsureArrayEntry(doc, "instructions", "x"); err != nil {
+		t.Fatal(err)
+	}
+}

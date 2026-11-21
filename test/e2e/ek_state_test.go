@@ -55,11 +55,11 @@ const (
 	// fixture authorizes (test/e2e/cluster/05-environment/demo.yaml
 	// spec.authorizedTeams); the SSO mock user joins it at provision.
 	demoAuthorizedTeamAlias = "default"
-	// demoPromptName is the Prompt CR name the `demo` Environment's
-	// context.prompts references (test/e2e/cluster/04-objects/
-	// prompt-claude-code.yaml metadata.name), served at
-	// /content/prompt/{name}.
-	demoPromptName = "claude-code-system-prompt"
+	// demoInstructionName is the Instruction CR name the `demo` Environment's
+	// context.instructions references (test/e2e/cluster/04-objects/
+	// instruction-valid.yaml metadata.name), served at
+	// /content/instruction/{name}.
+	demoInstructionName = "instruction-valid"
 )
 
 // keysAPI is a thin client over /platform/keys as the OAuth user — every
@@ -218,12 +218,12 @@ func hydrateStatus(t *testing.T, base, key, env string) int {
 	return resp.StatusCode
 }
 
-// contentStatus GETs /content/prompt/{name} with the given key as
+// contentStatus GETs /content/instruction/{name} with the given key as
 // x-ach-key and env as x-ach-environment, through the gateway (which
 // routes /content/ to content-service — internal/gateway/routes.go).
 func contentStatus(t *testing.T, base, key, env, name string) int {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, base+"/content/prompt/"+name, nil)
+	req, err := http.NewRequest(http.MethodGet, base+"/content/instruction/"+name, nil)
 	if err != nil {
 		t.Fatalf("contentStatus: new request: %v", err)
 	}
@@ -603,7 +603,7 @@ func TestEkStateModel(t *testing.T) {
 		if got := hydrateStatus(t, base, key, "demo"); got != http.StatusForbidden {
 			t.Fatalf("hydrate must deny on access loss: status=%d want=403", got)
 		}
-		if got := contentStatus(t, base, key, "demo", demoPromptName); got != http.StatusForbidden {
+		if got := contentStatus(t, base, key, "demo", demoInstructionName); got != http.StatusForbidden {
 			t.Fatalf("content-service must deny on access loss: status=%d want=403", got)
 		}
 

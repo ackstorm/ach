@@ -1,0 +1,14 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Instruction
+metadata:
+  name: hello
+  namespace: ach
+spec:
+  type: github
+  github:
+    repo: octocat/Hello-World
+    ref: master
+    path: README
+  refresh:
+    interval: 6h
+    maxStaleness: 24h

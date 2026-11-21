@@ -90,7 +90,7 @@ func waitOperatorReady(t *testing.T, deadline time.Duration) error {
 }
 
 // seedPhase5Fixtures applies the four CR fixtures (Environment, Plugin,
-// Prompt, Artifact) and waits each one Ready via the blessed
+// Instruction, Artifact) and waits each one Ready via the blessed
 // make wait-cr-ready target. Returns the pk_/ek_/env tuple acquired
 // from Phase 4 helpers (themselves env-var-stubbed until SSO is wired).
 //
@@ -99,7 +99,7 @@ func waitOperatorReady(t *testing.T, deadline time.Duration) error {
 func seedPhase5Fixtures(t *testing.T, _ context.Context) (pk, ek, env string) {
 	t.Helper()
 	// The fixtures this helper used to apply (Environment prod + Plugin
-	// foo / Prompt bar / Artifact baz) are now part of the SYNCED set
+	// foo / Instruction bar / Artifact baz) are now part of the SYNCED set
 	// (test/e2e/cluster/{04-objects,05-environment}): scripts/cluster.sh
 	// applies them at bring-up and verify_all gates them healthy before
 	// any test runs. The suite asserts against that synced state rather

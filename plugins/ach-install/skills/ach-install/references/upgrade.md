@@ -6,6 +6,7 @@
 - Procedure
 - GitOps (Flux / Argo CD)
 - Migrations and rollback
+- Prompt to Instruction
 - Values that must never change
 - After the upgrade
 
@@ -97,12 +98,30 @@ the release notes ask for it; migrations are cumulative and run in order.
   `ach migrate` only moves forward, so apply
   `000028_drop_deletion_timestamp.down.sql` by hand with `psql`. The rows that
   migration purged do not come back.
+- Rolling back below the release that added the `Instruction` kind needs the
+  `000031` down migration first: older binaries select `prompts` and
+  `environments.context_prompts`, which 000031 renames, so every service errors
+  until `000031_instruction_kind.down.sql` is applied by hand with `psql`.
+  During the upgrade itself, old pods still running hit the same errors until
+  they are replaced, because the migration Job runs first.
 - Back up the ACH database before every upgrade (it is small). LiteLLM's
   database is separate and is not touched by ACH migrations.
 - To run migrations by hand (e.g. with `migrate.enabled: false` in a pipeline
   that migrates separately), run the same image with `args: [migrate]` and
   `ACH_DB_URL` set. `ACH_MIGRATIONS_PATH` defaults to the bundled
   `/db/migrations`.
+
+## Prompt to Instruction
+
+The `Prompt` kind and `spec.context.prompts` are gone; texts are `Instruction` objects listed in `spec.context.instructions`. Prompt data is not migrated.
+
+1. Before upgrading, delete every `Prompt` and remove `spec.context.prompts` from the Environments, so the running operator clears finalizers and cache.
+2. Upgrade.
+3. `kubectl delete crd prompts.ach.ackstorm.ai` (Helm keeps CRDs: `helm.sh/resource-policy: keep`).
+4. A `Prompt` stuck deleting: `kubectl patch prompt <name> -n <ns> --type=merge -p '{"metadata":{"finalizers":null}}'`.
+5. Recreate the texts as `Instruction` objects: plain UTF-8 Markdown, no frontmatter, at most 23,900 bytes.
+
+The operator cache keeps an unused `prompt/` folder. An `ach-cli` older than the release cannot hydrate an Environment that lists instructions: `ach-cli upgrade`.
 
 ## Values that must never change
 

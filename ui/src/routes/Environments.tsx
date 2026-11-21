@@ -32,7 +32,7 @@ import { useSessionStore } from '@/stores/session';
 
 const PAGE_TITLE = 'Environments';
 const PAGE_SUB =
-  'Environments your teams can use. Each one bundles models, MCP servers and agents with plugins, skills and prompts. Hydrate one into a folder, or create an ek- key scoped to it.';
+  'Environments your teams can use. Each one bundles models, MCP servers and agents with plugins, skills and instructions. Hydrate one into a folder, or create an ek- key scoped to it.';
 const EMPTY_HEADING = 'No environments yet';
 const EMPTY_BODY =
   'None of your teams has access to an Environment. Ask an admin to add one of your teams to an Environment.';
@@ -57,7 +57,7 @@ function groupsOf(env: EnvironmentRow): { label: string; unit: string; icon: Luc
     { label: 'Plugins', unit: 'plugin', icon: Puzzle, names: c.plugins ?? [] },
     { label: 'Skills', unit: 'skill', icon: Sparkles, names: c.skills ?? [] },
     { label: 'Guardrails', unit: 'guardrail', icon: ShieldCheck, names: r.guardrails ?? [] },
-    { label: 'Prompts', unit: 'prompt', icon: MessageSquareText, names: c.prompts ?? [] },
+    { label: 'Instructions', unit: 'instruction', icon: MessageSquareText, names: c.instructions ?? [] },
     { label: 'Artifacts', unit: 'artifact', icon: Package, names: c.artifacts ?? [] },
   ];
 }

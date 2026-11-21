@@ -431,7 +431,7 @@ func (r *SkillMarketplaceReconciler) materializeMarketplaceSkill(
 // sit at the repo root opt out explicitly with path: "." (normSubPath in
 // contentkit maps "." back to root). The default is SkillMarketplace-only — it
 // lives here rather than as a +kubebuilder:default on the shared GitHubSource.Path
-// field, which would wrongly fetch-narrow Plugin/Artifact/Prompt/Skill objects.
+// field, which would wrongly fetch-narrow Plugin/Artifact/Instruction/Skill objects.
 //
 // s3/gcs/http sources point directly at a pre-archived tarball and carry no
 // sub-path (and no convention default), so they always walk from the root.

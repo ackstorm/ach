@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Integration tests for the admin-inventory List helpers added alongside the
-// `ach admin list` object inventory feature: ListPlugins, ListPrompts,
+// `ach admin list` object inventory feature: ListPlugins, ListInstructions,
 // ListArtifacts, ListAllMarketplacePlugins.
 //
 // Each asserts: live rows returned in stable order, deleted rows excluded,
@@ -76,8 +76,8 @@ func TestListPlugins(t *testing.T) {
 	}
 }
 
-// TestListPrompts: live rows in ns ordered by name; deleted excluded.
-func TestListPrompts(t *testing.T) {
+// TestListInstructions: live rows in ns ordered by name; deleted excluded.
+func TestListInstructions(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
@@ -85,25 +85,25 @@ func TestListPrompts(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, n := range []string{"charlie", "alpha"} {
-		if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
+		if err := dbtest.UpsertInstruction(ctx, pool, db.InstructionRow{
 			Namespace: "ns1", Name: n, StorageLocation: "/p/" + n,
 			LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, ResourceVersion: "1",
 		}); err != nil {
 			t.Fatalf("seed %s: %v", n, err)
 		}
 	}
-	if err := dbtest.UpsertPrompt(ctx, pool, db.PromptRow{
+	if err := dbtest.UpsertInstruction(ctx, pool, db.InstructionRow{
 		Namespace: "ns1", Name: "gone", StorageLocation: "/p/gone", MaxStalenessSeconds: 60, ResourceVersion: "1",
 	}); err != nil {
 		t.Fatalf("seed gone: %v", err)
 	}
-	if err := dbtest.DeletePrompt(ctx, pool, "ns1", "gone"); err != nil {
+	if err := dbtest.DeleteInstruction(ctx, pool, "ns1", "gone"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	got, err := db.ListPrompts(ctx, pool, "ns1")
+	got, err := db.ListInstructions(ctx, pool, "ns1")
 	if err != nil {
-		t.Fatalf("ListPrompts: %v", err)
+		t.Fatalf("ListInstructions: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("got %d rows; want 2", len(got))

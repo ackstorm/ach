@@ -149,7 +149,7 @@ UI and API need their own host.
 
 ## `contentService`
 
-Serves plugin, skill, prompt and artifact archives.
+Serves plugin, skill, instruction and artifact archives.
 
 | Key | Default | Purpose |
 |---|---|---|

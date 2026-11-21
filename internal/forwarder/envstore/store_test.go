@@ -97,17 +97,17 @@ func upsertEnv(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name strin
 		return s
 	}
 	require.NoError(t, dbtest.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
-		Namespace:         testNS,
-		Name:              name,
-		AuthorizedTeams:   nz(teams),
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: nz(mcps),
-		RuntimeA2AAgents:  nz(a2as),
-		ResourceVersion:   "1",
+		Namespace:           testNS,
+		Name:                name,
+		AuthorizedTeams:     nz(teams),
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   nz(mcps),
+		RuntimeA2AAgents:    nz(a2as),
+		ResourceVersion:     "1",
 	}))
 }
 

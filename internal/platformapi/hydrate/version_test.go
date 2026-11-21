@@ -11,28 +11,28 @@ import (
 
 func TestVersionItems_RevsAndRuntime(t *testing.T) {
 	row := &db.EnvironmentRow{
-		ContextPlugins:    []string{"bro@ackstorm", "local-plugin"},
-		ContextSkills:     []string{"triage", "deck@skills"},
-		ContextPrompts:    []string{"p1"},
-		RuntimeMCPServers: []string{"mcp-x"},
-		RuntimeA2AAgents:  []string{"agent-x"},
-		RuntimeModels:     []string{"smart"},
+		ContextPlugins:      []string{"bro@ackstorm", "local-plugin"},
+		ContextSkills:       []string{"triage", "deck@skills"},
+		ContextInstructions: []string{"p1"},
+		RuntimeMCPServers:   []string{"mcp-x"},
+		RuntimeA2AAgents:    []string{"agent-x"},
+		RuntimeModels:       []string{"smart"},
 	}
 	revs := store.Revs{
 		Plugins:            map[string]string{"local-plugin": "aaa"},
 		PluginMarketplaces: map[string]string{"ackstorm": "mmm"},
 		Skills:             map[string]string{"triage": "sss"},
 		SkillMarketplaces:  map[string]string{"skills": "kkk"},
-		Prompts:            map[string]string{"p1": "ppp"},
+		Instructions:       map[string]string{"p1": "ppp"},
 	}
 	got := versionItems(row, revs)
 	want := []VersionItem{
 		{Kind: "a2a", Name: "agent-x"},
+		{Kind: "instruction", Name: "p1", Rev: "ppp"},
 		{Kind: "mcp", Name: "mcp-x"},
 		{Kind: "model", Name: "smart"},
 		{Kind: "plugin", Name: "bro@ackstorm", Rev: "mmm"},
 		{Kind: "plugin", Name: "local-plugin", Rev: "aaa"},
-		{Kind: "prompt", Name: "p1", Rev: "ppp"},
 		{Kind: "skill", Name: "deck@skills", Rev: "kkk"},
 		{Kind: "skill", Name: "triage", Rev: "sss"},
 	}

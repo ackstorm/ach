@@ -7,7 +7,7 @@
 //
 // All tests run with DB=nil so the suite stays Docker-free; the
 // reconciler's nil-DB branch skips Get/Upsert/Delete external_refs calls
-// and the Plugin/Prompt/Artifact reconcilers' steady-state paths still
+// and the Plugin/Instruction/Artifact reconcilers' steady-state paths still
 // exercise materializeExternalRef end-to-end via a fake fetcher.
 
 package ach
@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,7 @@ import (
 
 	achv1alpha1 "github.com/ackstorm/ach/api/ach/v1alpha1"
 	"github.com/ackstorm/ach/internal/cachefs"
+	"github.com/ackstorm/ach/internal/contentkit"
 	"github.com/ackstorm/ach/internal/sources"
 )
 
@@ -120,7 +122,7 @@ func minimalPluginTarGz(t *testing.T) []byte {
 
 // newCacheRoot allocates a per-test isolated cache root with the
 // canonical OP-10 layout so materializeExternalRef's CreateTemp finds
-// .tmp/ and computeFinalPath's plugin/, prompt/, artifact/ subdirs exist.
+// .tmp/ and computeFinalPath's plugin/, instruction/, artifact/ subdirs exist.
 func newCacheRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -139,7 +141,7 @@ func TestComputeFinalPath(t *testing.T) {
 		want              string
 	}{
 		{"plugin", "p1", "", "/cache/plugin/p1.tar.gz"},
-		{"prompt", "pr1", "", "/cache/prompt/pr1.tar.gz"},
+		{"instruction", "pr1", "", "/cache/instruction/pr1.tar.gz"},
 		{"artifact", "a1", "object", "/cache/artifact/a1.tar.gz"},
 		{"artifact", "a1", "directory", "/cache/artifact/a1.tar.gz"},
 		{"unknown", "x", "", ""},
@@ -244,18 +246,18 @@ func TestExtractAuthSecretRef(t *testing.T) {
 func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	root := newCacheRoot(t)
 	fake := &fakeFetcher{body: []byte("hello"), upstreamRev: "sha-abc"}
-	// Kind="prompt" so the body is taken verbatim — bypasses the
+	// Kind="instruction" so the body is taken verbatim — bypasses the
 	// Step 5.5 plugin content filter (issue #26) which only fires on
 	// Kind="plugin" and would reject the raw "hello" bytes as
 	// not-a-gzip. The test target here is the generic state machine
 	// (stage/rename/cleanup), not plugin-specific filtering.
-	finalPath := filepath.Join(root, "prompt", "mat-p1")
+	finalPath := filepath.Join(root, "instruction", "mat-p1")
 
 	deps := ExternalRefRefreshDeps{
 		Client:    k8sClient,
 		Namespace: WatchNamespace,
 		CacheRoot: root,
-		Kind:      "prompt",
+		Kind:      "instruction",
 		Name:      "mat-p1",
 		FinalPath: finalPath,
 		Fetchers:  fakeFactory(fake),
@@ -272,7 +274,7 @@ func TestMaterializeExternalRef_Success_StagesAndRenames(t *testing.T) {
 	if res.UpstreamRev != "sha-abc" {
 		t.Errorf("UpstreamRev = %q; want %q", res.UpstreamRev, "sha-abc")
 	}
-	// The published prompt is now a 1-entry gzip tar, NOT raw bytes.
+	// The published instruction is now a 1-entry gzip tar, NOT raw bytes.
 	published, err := os.ReadFile(finalPath)
 	if err != nil {
 		t.Fatalf("read finalPath: %v", err)
@@ -822,4 +824,45 @@ func TestPluginReconciler_MissingCacheFile_RefetchesWithinInterval(t *testing.T)
 // ctrlReq builds a controller-runtime reconcile.Request for an object.
 func ctrlReq(obj client.Object) ctrl.Request {
 	return ctrl.Request{NamespacedName: client.ObjectKeyFromObject(obj)}
+}
+
+func TestMaterializeExternalRef_InstructionGate(t *testing.T) {
+	cases := map[string]struct {
+		body    []byte
+		invalid bool
+	}{
+		"ok":          {[]byte("# ok\n"), false},
+		"oversize":    {bytes.Repeat([]byte("a"), contentkit.MaxInstructionBytes+1), true},
+		"frontmatter": {[]byte("---\nx: 1\n---\n"), true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := newCacheRoot(t)
+			deps := ExternalRefRefreshDeps{
+				Client:       k8sClient,
+				Namespace:    WatchNamespace,
+				CacheRoot:    root,
+				Kind:         "instruction",
+				Name:         "mat-instr-" + name,
+				FinalPath:    filepath.Join(root, "instruction", "mat-instr-"+name+".tar.gz"),
+				SizeCapBytes: 1 << 20,
+				Fetchers:     fakeFactory(&fakeFetcher{body: tc.body, upstreamRev: "sha-" + name}),
+				Refresh:      achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+				Log:          logr.Discard(),
+			}
+			res := materializeExternalRef(context.Background(), deps)
+			if !tc.invalid {
+				if res.Err != nil {
+					t.Fatalf("want ok, got %v", res.Err)
+				}
+				return
+			}
+			if !errors.Is(res.Err, sources.ErrUpstreamInvalid) {
+				t.Fatalf("want ErrUpstreamInvalid, got %v", res.Err)
+			}
+			if reason, _ := classifyFetchError(res.Err, deps.Refresh, time.Time{}); reason != ReasonUpstreamInvalid {
+				t.Errorf("reason = %q; want %q", reason, ReasonUpstreamInvalid)
+			}
+		})
+	}
 }

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# VALID instruction. A 13-byte plain-text file (`Hello World!`) that passes the
+# content gate (non-empty UTF-8, no frontmatter, <= 23,900 bytes). Part of the
+# SYNCED set (cluster.sh applies it; verify_all gates it Synced); the e2e suite
+# asserts against it, and `environment hydrate` writes it as a rules file.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Instruction
+metadata:
+  name: instruction-valid
+  namespace: ach-system
+spec:
+  type: github
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: octocat/Hello-World
+    ref: master
+    path: README

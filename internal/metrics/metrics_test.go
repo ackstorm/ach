@@ -237,9 +237,9 @@ func TestContentServiceCollectors_LabelKeys(t *testing.T) {
 		t.Fatal("NewContentServiceCollectors returned nil")
 	}
 
-	c.IncRequest("prompt", "ok")
-	c.ObserveRequestDuration("prompt", 0.02)
-	c.AddBytesServed("prompt", 1024)
+	c.IncRequest("instruction", "ok")
+	c.ObserveRequestDuration("instruction", 0.02)
+	c.AddBytesServed("instruction", 1024)
 
 	cases := []struct {
 		family string

@@ -1,10 +1,10 @@
 # FIXTURE: invalid. Expected rejection at admission.
-# Rule violated: Environment.spec.context.prompts element-level Pattern
+# Rule violated: Environment.spec.context.instructions element-level Pattern
 #   (S2 CRD validation — defense-in-depth above the runtime escaping in
 #   the platform-api/CLI; see api/ach/v1alpha1/environment_types.go).
-# Expected error substring: "prompts"
+# Expected error substring: "instructions"
 #
-# This manifest sets context.prompts to a path-traversal name ("../admin")
+# This manifest sets context.instructions to a path-traversal name ("../admin")
 # which violates the items:Pattern marker forbidding slash/backslash and
 # other URL/path-injection metacharacters on the content-name fields.
 apiVersion: ach.ackstorm.ai/v1alpha1
@@ -20,7 +20,7 @@ spec:
     mcpServers: []
     a2aAgents: []
   context:
-    prompts:
+    instructions:
       - "../admin"
     plugins: []
     artifacts: []

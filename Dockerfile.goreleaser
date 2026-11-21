@@ -1,7 +1,7 @@
 # Runtime image consumed by goreleaser's `dockers:` blocks.
 #
 # Base must ship `git` because internal/sources/git/Fetcher exec's the
-# git CLI to clone external upstreams referenced by Plugin / Prompt /
+# git CLI to clone external upstreams referenced by Plugin / Instruction /
 # Artifact / PluginMarketplace CRs. distroless/static lacks git, so we
 # use alpine + apk add git ca-certificates. CGO_ENABLED=0 in the build,
 # so musl is not exercised. nonroot uid 65532 matches the chart's

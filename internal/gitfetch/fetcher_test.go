@@ -150,7 +150,7 @@ func TestFetcher_Fetch_SubtreeNarrowsAndReRoots(t *testing.T) {
 }
 
 // TestFetcher_Fetch_SubtreeFileReturnsRaw asserts a Subtree pointing at a single
-// regular file (Prompt / Artifact scope=object name one file via spec.path)
+// regular file (Instruction / Artifact scope=object name one file via spec.path)
 // returns that file's RAW bytes — no tar wrapper (F1).
 func TestFetcher_Fetch_SubtreeFileReturnsRaw(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {

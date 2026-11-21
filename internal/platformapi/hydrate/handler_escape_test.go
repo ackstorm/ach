@@ -3,6 +3,8 @@
 package hydrate
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/db"
@@ -28,9 +30,24 @@ func TestToRuntimeBlock_EscapesNamesInEndpoints(t *testing.T) {
 // TestToContextBlock_EscapesNamesInDownloadURLs asserts that context resource
 // names are PathEscaped in the generated download URLs (security finding S2).
 func TestToContextBlock_EscapesNamesInDownloadURLs(t *testing.T) {
-	row := &db.EnvironmentRow{ContextPrompts: []string{"a?b"}}
+	row := &db.EnvironmentRow{ContextInstructions: []string{"a?b"}}
 	got := toContextBlockFromRow(row, "https://ach.example.com")
-	if u := got.Prompts[0].DownloadURL; u != "https://ach.example.com/content/prompt/a%3Fb" {
+	if u := got.Instructions[0].DownloadURL; u != "https://ach.example.com/content/instruction/a%3Fb" {
 		t.Errorf("download url not escaped: %q", u)
+	}
+}
+
+func TestContextBlock_OmitsEmptyInstructions(t *testing.T) {
+	for name, cb := range map[string]ContextBlock{
+		"empty context":            emptyContext(),
+		"row without instructions": toContextBlockFromRow(&db.EnvironmentRow{}, ""),
+	} {
+		b, err := json.Marshal(cb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), `"instructions"`) || strings.Contains(string(b), `"prompts"`) {
+			t.Fatalf("%s must omit instructions and prompts: %s", name, b)
+		}
 	}
 }

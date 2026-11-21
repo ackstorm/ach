@@ -26,6 +26,6 @@ spec:
     # guardrails:
     #   - credential-filter
   context:
-    prompts: []
+    instructions: []
     plugins: []
     artifacts: []

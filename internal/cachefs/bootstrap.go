@@ -28,7 +28,7 @@ var ErrCacheRootMissing = errors.New("cachefs: ACH_CACHE_ROOT directory does not
 // "skill" / "skill-marketplace" back the agent-skill content kind + its
 // marketplace; without "skill" pre-created a standalone Skill's §10.3 rename(2)
 // fails ("no such file or directory" on the publish parent).
-var SubDirs = []string{"prompt", "plugin", "marketplace", "artifact", "skill", "skill-marketplace", ".tmp"}
+var SubDirs = []string{"instruction", "plugin", "marketplace", "artifact", "skill", "skill-marketplace", ".tmp"}
 
 // EnsureLayout creates the OP-10 cache directory tree under root.
 //

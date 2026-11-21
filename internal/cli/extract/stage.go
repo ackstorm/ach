@@ -250,7 +250,7 @@ func StageAndPublish(
 
 // isGzip decides the dispatch. application/gzip OR a .tar.gz suffix
 // on finalRelPath triggers extraction; everything else is treated as
-// a verbatim opaque file (single-file prompt body, raw artifact).
+// a verbatim opaque file (single-file body, raw artifact).
 func isGzip(contentType, finalRelPath string) bool {
 	if strings.HasPrefix(strings.ToLower(contentType), gzipContentType) {
 		return true

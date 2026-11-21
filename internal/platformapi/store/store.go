@@ -73,15 +73,15 @@ func (s *Store) GetEnvironment(ctx context.Context, name string) (*db.Environmen
 // commit, object ETag or generation the operator recorded as upstream_rev.
 // An item referenced as name@marketplace resolves through its marketplace.
 type Revs struct {
-	Plugins, Skills, Prompts, Artifacts   map[string]string
-	PluginMarketplaces, SkillMarketplaces map[string]string
+	Plugins, Skills, Instructions, Artifacts map[string]string
+	PluginMarketplaces, SkillMarketplaces    map[string]string
 }
 
 // ContentRevs reads the served revision of every content object in s.ns.
 func (s *Store) ContentRevs(ctx context.Context) (Revs, error) {
 	r := Revs{
 		Plugins: map[string]string{}, Skills: map[string]string{},
-		Prompts: map[string]string{}, Artifacts: map[string]string{},
+		Instructions: map[string]string{}, Artifacts: map[string]string{},
 		PluginMarketplaces: map[string]string{}, SkillMarketplaces: map[string]string{},
 	}
 	plugins, err := db.ListPlugins(ctx, s.pool, s.ns)
@@ -98,12 +98,12 @@ func (s *Store) ContentRevs(ctx context.Context) (Revs, error) {
 	for _, p := range skills {
 		r.Skills[p.Name] = p.UpstreamRev
 	}
-	prompts, err := db.ListPrompts(ctx, s.pool, s.ns)
+	instructions, err := db.ListInstructions(ctx, s.pool, s.ns)
 	if err != nil {
 		return r, err
 	}
-	for _, p := range prompts {
-		r.Prompts[p.Name] = p.UpstreamRev
+	for _, p := range instructions {
+		r.Instructions[p.Name] = p.UpstreamRev
 	}
 	artifacts, err := db.ListArtifacts(ctx, s.pool, s.ns)
 	if err != nil {

@@ -20,18 +20,18 @@ func TestUpsertEnvironment_DescriptionRoundTrips(t *testing.T) {
 	defer cleanup()
 
 	row := db.EnvironmentRow{
-		Namespace:         "ach-system",
-		Name:              "desc-demo",
-		AuthorizedTeams:   []string{"default"},
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: []string{},
-		RuntimeA2AAgents:  []string{},
-		ResourceVersion:   "1",
-		Description:       "production env for the data team",
+		Namespace:           "ach-system",
+		Name:                "desc-demo",
+		AuthorizedTeams:     []string{"default"},
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   []string{},
+		RuntimeA2AAgents:    []string{},
+		ResourceVersion:     "1",
+		Description:         "production env for the data team",
 	}
 	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)

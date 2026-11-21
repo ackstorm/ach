@@ -177,7 +177,6 @@ func TestRun_SymlinkedWorkspacePathsRefused(t *testing.T) {
 		{"lock", filepath.Join(envDir, "lock")},
 		{"state file", filepath.Join(envDir, "state-"+containPlatform+".json")},
 		{"artifact cache", filepath.Join(envDir, "artifact")},
-		{"prompt cache", filepath.Join(envDir, "prompt")},
 		{"runtime mirror", filepath.Join(envDir, "runtime-"+containPlatform)},
 		{"gitignore", ".gitignore"},
 	}

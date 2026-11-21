@@ -48,3 +48,28 @@ func ForeignSkillNames(achDir, platform string) map[string]string {
 	}
 	return owners
 }
+
+// ForeignInstructionTargets reports the instruction file targets that OTHER
+// environments hydrated into the same workspace record for one platform. Such
+// a file stays on disk when the current environment drops its own copy.
+func ForeignInstructionTargets(achDir, platform string) map[string]bool {
+	entries, err := os.ReadDir(filepath.Dir(achDir))
+	if err != nil {
+		return nil
+	}
+	self := filepath.Base(achDir)
+	targets := map[string]bool{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == self {
+			continue
+		}
+		f, err := Load(filepath.Join(filepath.Dir(achDir), e.Name(), "state-"+platform+".json"))
+		if err != nil || f == nil {
+			continue
+		}
+		for _, in := range f.Instructions {
+			targets[in.Target] = true
+		}
+	}
+	return targets
+}

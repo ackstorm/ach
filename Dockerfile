@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Runtime image: alpine + git + ca-certificates.
 #
 # git is required at runtime by internal/sources/git/Fetcher, which the
-# operator invokes to clone Plugin/Prompt/Artifact/PluginMarketplace
+# operator invokes to clone Plugin/Instruction/Artifact/PluginMarketplace
 # upstreams. gcr.io/distroless/static:nonroot does NOT ship git, so any
 # external-ref reconcile fails with "exec: git: not found". alpine is
 # the smallest base that ships git + ca-certs via apk; the resulting

@@ -10,8 +10,8 @@ import (
 // resource name are PathEscaped in the generated content service path
 // (security finding S2).
 func TestContentPath_EscapesName(t *testing.T) {
-	got := contentPath(KindPrompt, "a?b#c")
-	if got != "/content/prompt/a%3Fb%23c" {
+	got := contentPath(KindInstruction, "a?b#c")
+	if got != "/content/instruction/a%3Fb%23c" {
 		t.Fatalf("contentPath = %q, want escaped", got)
 	}
 }

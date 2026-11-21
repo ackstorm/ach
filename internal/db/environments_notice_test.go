@@ -22,18 +22,18 @@ func TestUpsertEnvironment_NoticeRoundTrips(t *testing.T) {
 	// Array columns are NOT NULL in the schema, so populate them (any
 	// non-nil slice) — the assertion under test is the Notice round-trip.
 	row := db.EnvironmentRow{
-		Namespace:         "ach-system",
-		Name:              "notice-demo",
-		AuthorizedTeams:   []string{"default"},
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: []string{},
-		RuntimeA2AAgents:  []string{},
-		ResourceVersion:   "1",
-		Notice:            "remember to re-login after key rotation",
+		Namespace:           "ach-system",
+		Name:                "notice-demo",
+		AuthorizedTeams:     []string{"default"},
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   []string{},
+		RuntimeA2AAgents:    []string{},
+		ResourceVersion:     "1",
+		Notice:              "remember to re-login after key rotation",
 	}
 	if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {
 		t.Fatalf("UpsertEnvironment: %v", err)

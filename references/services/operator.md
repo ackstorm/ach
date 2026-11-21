@@ -9,8 +9,8 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
 ## Environment status (two axes)
 
 - **Environment two-axis status**: `ExecutionResourcesResolved`
-  (Plugin/Prompt/Artifact/**Skill** closed-set; `context.skills` is
-  content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
+  (Plugin/Instruction/Artifact/**Skill** closed-set; `context.skills` and
+  `context.instructions` are content-gated like plugins) + `AccessGroupSynced` (LiteLLM: names →
   IDs each reconcile, then `POST /v1/access_group`) — plus the per-Environment deny-all shell team (`ShellTeamFailed` when it cannot be provisioned/repaired). Composite `Available=True`
   rolls both up — that's what `ach-cli environment hydrate` / the demo gate on.
   `spec.runtime.{modelGroups,mcpServerGroups,agentGroups}` take LiteLLM
@@ -78,7 +78,7 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   `skillMarketplaceSubPath`) — the dominant `anthropics/skills`-style monorepo
   layout; skill dirs at the **repo root** opt out with `path: "."`. The default
   is NOT a `+kubebuilder:default` on the shared `GitHubSource.Path` (that would
-  wrongly fetch-narrow the OBJECT kinds Plugin/Artifact/Prompt/Skill).
+  wrongly fetch-narrow the OBJECT kinds Plugin/Artifact/Instruction/Skill).
   A `SkillMarketplace` is a **discovery** kind (like `PluginMarketplace`), NOT a
   narrow-at-fetch object: it strips `spec.<git>.path` before fetch (whole-repo
   tar, via `withoutGitPath`) and uses `path` only as the POST-FETCH skills-root
@@ -93,8 +93,8 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   per-provider fetchers honor `spec.path` — a **directory** narrows to that
   subtree's contents (git on-disk via `git.tarSubtree`; legacy REST via
   `sources.NarrowArchiveSubtree`), a single **file** returns its raw bytes
-  (Prompt, Artifact `scope=object`). Applies to the served/hydrated objects:
-  `Plugin`, `Skill`, `Artifact`, `Prompt`. The fetcher infers file-vs-dir from
+  (Instruction, Artifact `scope=object`). Applies to the served/hydrated objects:
+  `Plugin`, `Skill`, `Artifact`, `Instruction`. The fetcher infers file-vs-dir from
   the path shape (Artifact `scope` is orthogonal — it only drives cache-file
   naming; a CR's `scope` should match its path target). DISCOVERY kinds
   (`PluginMarketplace`, `SkillMarketplace`) opt OUT via `withoutGitPath` and
@@ -120,6 +120,6 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   `mp.Status.UpstreamRev`), so they are the same snapshot as `marketplace.json`.
   External entries keep their own `sha`/`ref`; their heads are not tracked.
 - Revisions reach the admin inventory through `external_refs` (standalone kinds,
-  read by scalar subquery in `db.List{Plugins,Skills,Prompts,Artifacts}`) and the
+  read by scalar subquery in `db.List{Plugins,Skills,Instructions,Artifacts}`) and the
   `marketplaces` / `skill_marketplaces` `upstream_rev` + `latest_upstream_rev`
   columns. Content-service, hydrate and Environments never see a revision.

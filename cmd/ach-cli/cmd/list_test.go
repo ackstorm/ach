@@ -64,7 +64,7 @@ func executeList(t *testing.T, workspaceCwd string, args ...string) (string, exi
 	return outBuf.String(), exit.General, err
 }
 
-// TestList_Table asserts a state.json with Plugins + Prompts entries
+// TestList_Table asserts a state.json with Plugins + Instructions entries
 // renders a table containing each Target and the correct derived KIND.
 // Uses --files to get the flat per-file view (the default is grouped).
 func TestList_Table(t *testing.T) {
@@ -72,8 +72,8 @@ func TestList_Table(t *testing.T) {
   "schemaVersion": "3",
   "environment": "prod",
   "profile": "default",
-  "prompts": [
-    {"target": ".claude/prompts/review.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
+  "instructions": [
+    {"target": ".claude/instructions/review.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
   ],
   "plugins": [
     {"target": ".claude/plugins/lint", "hash": "xxh3:2", "sourceHash": "xxh3:2"}
@@ -90,7 +90,7 @@ func TestList_Table(t *testing.T) {
 
 	for _, want := range []string{
 		"KIND", "TARGET", "ENVIRONMENT",
-		"prompt", ".claude/prompts/review.md",
+		"instruction", ".claude/instructions/review.md",
 		"plugin", ".claude/plugins/lint",
 		"prod",
 	} {
@@ -172,8 +172,8 @@ func TestList_OutToBuffer(t *testing.T) {
   "schemaVersion": "3",
   "environment": "prod",
   "profile": "default",
-  "prompts": [
-    {"target": ".claude/prompts/x.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
+  "instructions": [
+    {"target": ".claude/instructions/x.md", "hash": "xxh3:1", "sourceHash": "xxh3:1"}
   ]
 }`
 	dir := writeListState(t, body)
@@ -190,7 +190,7 @@ func TestList_OutToBuffer(t *testing.T) {
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), ".claude/prompts/x.md") {
+	if !strings.Contains(outBuf.String(), ".claude/instructions/x.md") {
 		t.Fatalf("output did not go to injected buffer; got:\n%s", outBuf.String())
 	}
 }

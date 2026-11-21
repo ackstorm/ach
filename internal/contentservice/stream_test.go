@@ -71,7 +71,7 @@ func TestStream_IgnoresRangeHeader(t *testing.T) {
 	body := []byte("0123456789ABCDEF") // 16 bytes
 	f := writeTempFile(t, body)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/content/prompt/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/content/instruction/x", nil)
 	req.Header.Set("Range", "bytes=0-3")
 
 	if _, err := stream(rec, req, f, "text/markdown", int64(len(body))); err != nil {
@@ -95,7 +95,7 @@ func TestStream_IgnoresIfNoneMatch(t *testing.T) {
 	body := []byte("hello")
 	f := writeTempFile(t, body)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/content/prompt/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/content/instruction/x", nil)
 	req.Header.Set("If-None-Match", `"deadbeef"`)
 
 	if _, err := stream(rec, req, f, "text/markdown", int64(len(body))); err != nil {
@@ -116,7 +116,7 @@ func TestStream_IgnoresIfModifiedSince(t *testing.T) {
 	body := []byte("hello world")
 	f := writeTempFile(t, body)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/content/prompt/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/content/instruction/x", nil)
 	// A far-future date so a Last-Modified-aware handler would have returned 304.
 	req.Header.Set("If-Modified-Since", "Fri, 31 Dec 2100 23:59:59 GMT")
 

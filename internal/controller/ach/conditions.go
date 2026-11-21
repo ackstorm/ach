@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Reason constants + shared condition-writer for the Plugin / Prompt /
+// Reason constants + shared condition-writer for the Plugin / Instruction /
 // Artifact reconcilers' SourceReachable condition (Hub §6.6 closed set).
 //
 // PluginMarketplace's Synced condition reason vocabulary
@@ -27,7 +27,7 @@ import (
 )
 
 // Hub §6.6 closed-set reason vocabulary for the SourceReachable
-// condition emitted by Plugin / Prompt / Artifact reconcilers.
+// condition emitted by Plugin / Instruction / Artifact reconcilers.
 const (
 	// ReasonSynced is the terminal positive outcome — the most recent
 	// reconcile fetched the upstream, staged via .tmp/<random>, fsync'd,
@@ -62,7 +62,7 @@ const (
 
 	// ReasonInvalidConfig is reserved for PluginMarketplace RE2 compile
 	// failure (Plan 02-06). Declared here so the closed-enum constants
-	// live in one file; the Plugin/Prompt/Artifact reconcilers do not
+	// live in one file; the Plugin/Instruction/Artifact reconcilers do not
 	// emit this reason in v1alpha1.
 	ReasonInvalidConfig = "InvalidConfig"
 
@@ -138,7 +138,7 @@ const (
 // conditions slice via apimeta.SetStatusCondition (which preserves
 // LastTransitionTime when the (Type, Status) tuple does not change).
 //
-// Used by Plugin / Prompt / Artifact reconcilers as the single condition-
+// Used by Plugin / Instruction / Artifact reconcilers as the single condition-
 // write callsite; the reconciler-side r.Status().Update issuing the API
 // PATCH is left to the caller so it can batch other status-field updates
 // (StorageLocation, UpstreamRev, LastSuccessfulRefresh, ObservedGeneration)
@@ -183,7 +183,7 @@ const ReasonNameConflict = "NameConflict"
 
 // setConflictWithUIRowCondition writes the canonical ConflictWithUIRow
 // Status=False condition into a status conditions slice. condType varies
-// per CR family — "Synced" (plugin/prompt/artifact/BIP),
+// per CR family — "Synced" (plugin/instruction/artifact/BIP),
 // "AccessGroupSynced" (environment), or "Ready" (litellmconnection) — so
 // the caller passes it explicitly; the Reason + Message are fixed.
 func setConflictWithUIRowCondition(conds *[]metav1.Condition, condType string, observedGen int64) {
@@ -198,7 +198,7 @@ func setConflictWithUIRowCondition(conds *[]metav1.Condition, condType string, o
 }
 
 // Condition type constants. Every external-ref-shaped resource
-// (Plugin, Prompt, Artifact, PluginMarketplace) surfaces the same
+// (Plugin, Instruction, Artifact, PluginMarketplace) surfaces the same
 // two-axis status model:
 //
 //   - SourceReachable: did we actually obtain the bytes we asked for?

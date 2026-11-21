@@ -17,11 +17,11 @@ func TestResolvePath_HappyPath(t *testing.T) {
 		wantPath string
 	}{
 		{
-			name:     "prompt resolves to .tar.gz under prompt/",
-			kind:     "prompt",
-			resource: "claude-code-system-prompt",
+			name:     "instruction resolves to .tar.gz under instruction/",
+			kind:     "instruction",
+			resource: "claude-code-system-instruction",
 			scope:    "",
-			wantPath: filepath.Join("/c", "prompt", "claude-code-system-prompt"+gzipSuffix),
+			wantPath: filepath.Join("/c", "instruction", "claude-code-system-instruction"+gzipSuffix),
 		},
 		{
 			name:     "plugin resolves to .tar.gz under plugin/",
@@ -177,7 +177,7 @@ func TestResolvePath_InvalidName(t *testing.T) {
 	}
 	for _, n := range bad {
 		t.Run("name="+n, func(t *testing.T) {
-			_, err := ResolvePath("/c", "prompt", n, "")
+			_, err := ResolvePath("/c", "instruction", n, "")
 			if !errors.Is(err, ErrInvalidName) {
 				t.Errorf("name=%q: want ErrInvalidName, got %v", n, err)
 			}

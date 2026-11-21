@@ -133,7 +133,7 @@ Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
 derives it from the state before/after (`FileEntry.Source` per
-plugin/skill/prompt/artifact; MCP/A2A from the adapter deep-merge keys, so an
+plugin/skill/instruction/artifact; MCP/A2A from the adapter deep-merge keys, so an
 MCP server is only ever `+`/`-`, never `~`). `--dry-run` extracts plugins/skills
 to the stage (swept on every dry-run exit, failures included, so a dry run
 leaves no `.ach/` behind) and renders through a no-write dispatcher (`withDryRun` →
@@ -276,8 +276,7 @@ keeps the bare name. Two properties worth not re-deriving:
 
 Only the per-platform `state-<platform>.json` is consulted — a claim for a
 different target writes a different tree. NOT covered: `Plugin` (same problem);
-prompts/artifacts extract
-to the per-env `<achDir>` so they cannot collide; adapter runtime files are
+artifacts extract to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
 cross-env reference counting, so `environment uninstall <a>` removes a file `<b>` also
 projected (self-heals on `<b>`'s next hydrate).
@@ -297,7 +296,8 @@ projected (self-heals on `<b>`'s next hydrate).
   `Adapter` bucket only, so keys the render stopped emitting (the `--models`
   helper after a run without `--models`, an MCP server dropped from the
   Environment) leave the file. They are ACH-generated, never user content.
-  `--sync` widens it to every bucket (plugins/skills/prompts files).
+  The `Instructions` bucket is pruned whole on every hydrate too (ACH-generated
+  files). `--sync` widens it to every bucket (plugins/skills/instructions files).
 - **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
   at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
   a row report a phantom edit on every re-hydrate/uninstall whenever the doc
@@ -307,8 +307,8 @@ projected (self-heals on `<b>`'s next hydrate).
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
   or `<env>-<name>` for a de-collided skill; plus any Source the fresh render
-  carries — the per-run stage holds only that item). Prompts/artifacts are refused:
-  they are never recorded in state, so they could not be removed again.
+  carries — the per-run stage holds only that item). Instructions/artifacts are refused:
+  they are delivered with the whole Environment, never one by one.
   `environment uninstall <env> --only …` feeds `BuildItemRemoved` (prev minus the
   item's rows) to the same `Sync`, skipping per-platform states without it.
   Under `--only`, other items' installed replace-files are collision claims
@@ -385,6 +385,31 @@ With `environment hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
 refresh) or, for a machine profile, its `key`.
+
+### Instruction delivery (`adapter.InstructionTarget`, `hydrate/wiring_instructions.go`)
+
+Each Instruction of the Environment is written as an always-loaded rules file; the
+target is the adapter's `InstructionFiles`, the global path goes through
+`RemapGlobalPath`.
+
+| tool | project file | frontmatter | global |
+|---|---|---|---|
+| claude-code | `.claude/rules/ach-<name>.md` | none | `~/.claude/rules/` |
+| opencode | `.opencode/ach/<name>.md` | none | `~/.config/opencode/ach/` |
+| cursor | `.cursor/rules/ach-<name>.mdc` | `alwaysApply: true` | none (warning) |
+| antigravity | `.agents/rules/ach-<name>.md` | `trigger: always_on` | `~/.gemini/config/rules/` |
+| pi | `.pi/ach/<name>.md` | none | `~/.pi/agent/ach/` |
+| codex | none (note on stderr) | | |
+
+- **Shared loader**: OpenCode needs the entry `.opencode/ach/*.md` (global
+  `~/.config/opencode/ach/*.md`) in `instructions` of `opencode.json`; Pi needs the
+  extension `.pi/extensions/ach-instructions.ts` (global `~/.pi/agent/extensions/`). Neither
+  is recorded in state: each exists exactly while its folder holds a `*.md`, created
+  after the files are written and removed after pruning (`tidyInstructionLoader`) on
+  hydrate and on uninstall. Both are shared by every Environment of the folder.
+- **State**: `state.Instructions` records the files. It is pruned whole on every
+  hydrate (an Instruction that left the Environment loses its file); a recorded file
+  missing on disk is rewritten.
 
 ### Global-scope root resolution (`--global`)
 
@@ -524,6 +549,21 @@ is not ground truth.**
   trusted workspace or not; the docs (antigravity.google/docs/mcp) name that file
   as the workspace configuration, and whether a signed-in session loads it is NOT
   verified. Skills and subagents cannot be listed without a login.
+
+- Instruction loading, checked by sending a request to a fake OpenAI-compatible
+  server and looking for the text in the request body. OpenCode 1.19.6 (npm
+  `opencode-ai`; no 2.x is published there): the entry `.opencode/ach/*.md` in a
+  project `opencode.json` loads (relative to the project root; `ach/*.md` does
+  not), and so does `~/.config/opencode/ach/*.md` or an absolute glob in the
+  global one; an entry that matches nothing is silent. `opencode debug config` does
+  not expand globs. Pi 1.6.0 (`@earendil-works/pi-coding-agent`): the extension
+  loads from `.pi/extensions/` only in a trusted project (`-a`; untrusted is
+  silently not loaded) and from `~/.pi/agent/extensions/`; the text reaches the
+  system prompt once per request over two turns; a missing or empty `.pi/ach/` is
+  silent; `import.meta.url` and `__dirname` both work. NOT verified: OpenCode 2.x,
+  Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`), Antigravity `.agents/rules/*.md`
+  (`trigger: always_on`) and Claude Code `.claude/rules/*.md` loading (no official
+  non-`curl | sh` install, or a login is needed).
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage

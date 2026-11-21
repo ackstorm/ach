@@ -14,12 +14,12 @@ func TestFormatAdminInventory_Empty(t *testing.T) {
 }
 
 // TestFormatAdminInventory_FootnoteOnFalseGreen: a fresh* row triggers the
-// prompts/artifacts footnote; the header + row render.
+// artifacts footnote; the header + row render.
 func TestFormatAdminInventory_FootnoteOnFalseGreen(t *testing.T) {
 	out := FormatAdminInventory(map[string][]AdminObjectView{
-		"prompts": {{Kind: "prompt", Name: "greet", Namespace: "ach", Version: "1", Sync: "fresh*"}},
+		"artifacts": {{Kind: "artifact", Name: "greet", Namespace: "ach", Version: "1", Sync: "fresh*"}},
 	})
-	for _, want := range []string{"PROMPTS (1)", "greet", "fresh*", "content presence is not gated"} {
+	for _, want := range []string{"ARTIFACTS (1)", "greet", "fresh*", "content presence is not gated"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
@@ -142,7 +142,7 @@ func TestFormatAdminInventory_AvailableColumn(t *testing.T) {
 			{Kind: "plugin", Name: "current", Sync: "fresh", UpstreamRev: a, LatestUpstreamRev: a},
 		},
 		"marketplaces": {{Kind: "marketplace", Name: "mkt", Sync: "Synced", UpstreamRev: a, LatestUpstreamRev: b}},
-		"prompts":      {{Kind: "prompt", Name: "p", Sync: "fresh"}},
+		"instructions": {{Kind: "instruction", Name: "p", Sync: "fresh"}},
 	})
 	if !strings.Contains(out, "AVAILABLE") {
 		t.Fatalf("no AVAILABLE column:\n%s", out)

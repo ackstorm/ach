@@ -209,7 +209,7 @@ spec:
 		if got := hydrateStatus(t, base, first, "demo"); got != http.StatusOK {
 			t.Errorf("platform-api hydrate: %d", got)
 		}
-		if got := contentStatus(t, base, first, "demo", demoPromptName); got != http.StatusOK {
+		if got := contentStatus(t, base, first, "demo", demoInstructionName); got != http.StatusOK {
 			t.Errorf("content-service: %d", got)
 		}
 	})
