@@ -156,6 +156,9 @@ LiteLLM's stdout. The line holds no prompt, response or tool argument.
 A file mounted with `subPath` does not change when the ConfigMap does: restart
 LiteLLM after you replace the callback.
 
+[Collect audit events](collect-audit-events.md) shows how to query the lines in
+Loki and give them their own stream and retention.
+
 ## Verify
 
 ```bash

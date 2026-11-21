@@ -18,6 +18,7 @@ nav:
           - platform/install-the-chart.md
           - platform/configure-sso.md
           - platform/connect-litellm.md
+          - platform/collect-audit-events.md
           - platform/choose-a-topology.md
           - platform/upgrade.md
           - platform/enable-enterprise.md

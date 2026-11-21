@@ -185,9 +185,5 @@ kubectl -n ach logs deploy/ach-platform-api | jq -cR 'fromjson? | select(.audit 
 kubectl -n litellm logs deploy/litellm | jq -cR 'fromjson? | select(.audit == true)'
 ```
 
-In a collector (Fluent Bit, Grafana Alloy, the OpenTelemetry Collector), parse
-the line as JSON and route on the same field. Field names are ACH's own; map
-them to your SIEM's schema in the collector.
-
-Delivery is as reliable as your log collection: a line the collector never read
-before the node rotated the log is lost.
+[Collect audit events](../platform/collect-audit-events.md) has the queries and
+the collector rule for Grafana Loki, and what to do in other collectors.
