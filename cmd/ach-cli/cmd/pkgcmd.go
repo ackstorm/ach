@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -124,6 +125,33 @@ func resolveRoot(global bool, dest string) (string, error) {
 	return cwd, nil
 }
 
+// location is where an install lives: the tool's global root (-g) or one
+// project directory, stored absolute.
+type location struct {
+	global bool
+	dir    string
+}
+
+func newLocation(global bool, root string) location {
+	if global {
+		return location{global: true}
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	return location{dir: root}
+}
+
+// holds reports whether e was installed at l. A record with neither a
+// directory nor -g (an installed.json written by an older ach-cli) matches
+// every location, so it can still be updated and uninstalled.
+func (l location) holds(e store.InstalledEntry) bool {
+	if !e.Global && e.Dir == "" {
+		return true
+	}
+	return e.Global == l.global && e.Dir == l.dir
+}
+
 // remapGlobalWrites resolves adapter-owned --global destinations before local
 // conflict detection and commit. Project-scope paths remain rule-relative.
 func remapGlobalWrites(global bool, root, adapterID string, writes []manager.PlannedWrite) {
@@ -223,14 +251,14 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 // Call AFTER Commit and BEFORE recording the new entry, so the just-installed
 // ref is not yet present in installed and cannot collide with itself.
 // ownersAt maps each target-relative path owned by a DIFFERENT installed entry
-// at the given target to its owning ref. Shared by the pre-commit conflict
+// at the given target and location to its owning ref. Shared by the pre-commit conflict
 // resolver (manager.ResolveConflicts) and the post-commit collisionWarn so both
 // agree on what counts as "already owned". The installing ref is excluded so a
 // re-install never collides with itself.
-func ownersAt(installed *store.InstalledFile, ref, target string) map[string]string {
+func ownersAt(installed *store.InstalledFile, l location, ref, target string) map[string]string {
 	owners := make(map[string]string)
 	for _, e := range installed.Installed {
-		if e.Ref == ref || e.Target != target {
+		if e.Ref == ref || e.Target != target || !l.holds(e) {
 			continue
 		}
 		for _, f := range e.Files {
@@ -241,17 +269,18 @@ func ownersAt(installed *store.InstalledFile, ref, target string) map[string]str
 }
 
 // refuseUnowned stops an install or update (exit 7) that would replace a file
-// no installed package at target records: the user's own, or another tool's.
+// no installed package at target and location records: the user's own, or another tool's.
 // --force replaces it.
 func refuseUnowned(
-	force bool, verb, root, ref, target string, writes []manager.PlannedWrite, installed *store.InstalledFile,
+	force bool, verb, root, ref, target string, writes []manager.PlannedWrite,
+	installed *store.InstalledFile, l location,
 ) error {
 	if force {
 		return nil
 	}
 	owned := map[string]bool{}
 	for _, e := range installed.Installed {
-		if e.Target != target {
+		if e.Target != target || !l.holds(e) {
 			continue
 		}
 		for _, f := range e.Files {
@@ -284,8 +313,10 @@ func reportConflictActions(w io.Writer, ref, target string, actions []manager.Co
 	}
 }
 
-func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target string, recs []store.FileRec) {
-	owners := ownersAt(installed, ref, target)
+func collisionWarn(
+	w io.Writer, installed *store.InstalledFile, l location, ref, target string, recs []store.FileRec,
+) {
+	owners := ownersAt(installed, l, ref, target)
 	for _, r := range recs {
 		other, ok := owners[r.RelPath]
 		if !ok {
@@ -305,12 +336,14 @@ func collisionWarn(w io.Writer, installed *store.InstalledFile, ref, target stri
 	}
 }
 
-// upsertInstalled replaces any existing InstalledEntry with the same Ref+Target+Kind,
-// or appends a new one. Kind is included to prevent a plugin and a skill that share
-// the same name@repo+target from colliding.
+// upsertInstalled replaces any existing InstalledEntry with the same
+// Ref+Target+Kind at the entry's location, or appends a new one. Kind is
+// included to prevent a plugin and a skill that share the same
+// name@repo+target from colliding.
 func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
 	for i, e := range f.Installed {
-		if e.Ref == entry.Ref && e.Target == entry.Target && e.Kind == entry.Kind {
+		if e.Ref == entry.Ref && e.Target == entry.Target && e.Kind == entry.Kind &&
+			(location{global: entry.Global, dir: entry.Dir}).holds(e) {
 			f.Installed[i] = entry
 			return
 		}
@@ -318,13 +351,13 @@ func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
 	f.Installed = append(f.Installed, entry)
 }
 
-// removeInstalled removes all entries matching ref and (if non-empty) target
-// and kind from the file, returning the removed entries.
-func removeInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) []store.InstalledEntry {
+// removeInstalled removes all entries at l matching ref, kind and (if
+// non-empty) target from the file, returning the removed entries.
+func removeInstalled(f *store.InstalledFile, l location, ref, target string, kind pkgKind) []store.InstalledEntry {
 	var removed []store.InstalledEntry
 	kept := f.Installed[:0]
 	for _, e := range f.Installed {
-		if installMatches(e, ref, target, kind) {
+		if installMatches(e, l, ref, target, kind) {
 			removed = append(removed, e)
 		} else {
 			kept = append(kept, e)
@@ -336,20 +369,20 @@ func removeInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) [
 
 // findInstalled returns the matching entries WITHOUT mutating the store — the
 // non-destructive twin of removeInstalled used by the `--dry-run` preview.
-func findInstalled(f *store.InstalledFile, ref, target string, kind pkgKind) []store.InstalledEntry {
+func findInstalled(f *store.InstalledFile, l location, ref, target string, kind pkgKind) []store.InstalledEntry {
 	var found []store.InstalledEntry
 	for _, e := range f.Installed {
-		if installMatches(e, ref, target, kind) {
+		if installMatches(e, l, ref, target, kind) {
 			found = append(found, e)
 		}
 	}
 	return found
 }
 
-// installMatches reports whether entry e is the requested ref+kind, optionally
-// narrowed to a single target ("" = any target).
-func installMatches(e store.InstalledEntry, ref, target string, kind pkgKind) bool {
-	return e.Ref == ref && e.Kind == string(kind) && (target == "" || e.Target == target)
+// installMatches reports whether entry e is the requested ref+kind at l,
+// optionally narrowed to a single target ("" = any target).
+func installMatches(e store.InstalledEntry, l location, ref, target string, kind pkgKind) bool {
+	return e.Ref == ref && e.Kind == string(kind) && (target == "" || e.Target == target) && l.holds(e)
 }
 
 // reportDryRunWrites prints the planned writes for one ref→target without
@@ -440,6 +473,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			here := newLocation(flagGlobal, root)
 
 			policy, err := conflict.Parse(flagConflict)
 			if err != nil {
@@ -524,7 +558,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					// Conflict resolution (pre-commit): de-collide against files
 					// owned by OTHER installed refs at this target per --conflict.
 					// Only MergeReplace writes clash; additive merges pass through.
-					owners := ownersAt(installed, ref, targetID)
+					owners := ownersAt(installed, here, ref, targetID)
 					namespaceRoot := conflictRoot(flagGlobal, root, targetID)
 					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, namespaceRoot)
 					if err != nil {
@@ -555,7 +589,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("install: %s → %s: %v", ref, pl.targetID, err),
 						}
 					}
-					if err := refuseUnowned(flagForce, "install", root, ref, pl.targetID, pl.resolved, installed); err != nil {
+					if err := refuseUnowned(flagForce, "install", root, ref, pl.targetID, pl.resolved, installed, here); err != nil {
 						return err
 					}
 				}
@@ -589,7 +623,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						continue
 					}
 
-					collisionWarn(cmd.ErrOrStderr(), installed, ref, targetID, recs)
+					collisionWarn(cmd.ErrOrStderr(), installed, here, ref, targetID, recs)
 
 					entry := store.InstalledEntry{
 						Ref:         ref,
@@ -597,6 +631,8 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						Name:        name,
 						Kind:        kindStr,
 						Target:      targetID,
+						Dir:         here.dir,
+						Global:      here.global,
 						ResolvedSHA: rr.ResolvedSHA,
 						Files:       recs,
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
@@ -665,7 +701,7 @@ func saveInstalledOnError(retErr *error, dirty *bool, installed *store.Installed
 // resolves conflicts, touching nothing on disk.
 func planUpdate(
 	stageDir, root string, global bool, kind pkgKind, name, ref string,
-	e store.InstalledEntry, installed *store.InstalledFile, policy conflict.Policy,
+	e store.InstalledEntry, installed *store.InstalledFile, l location, policy conflict.Policy,
 ) (updatePlan, error) {
 	writes, err := manager.Project(stageDir, e.Target, pluginPrefix(kind, name))
 	if err != nil {
@@ -675,7 +711,7 @@ func planUpdate(
 		}
 	}
 	remapGlobalWrites(global, root, e.Target, writes)
-	owners := ownersAt(installed, ref, e.Target)
+	owners := ownersAt(installed, l, ref, e.Target)
 	resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, conflictRoot(global, root, e.Target))
 	if err != nil {
 		return updatePlan{}, &exit.CodedError{
@@ -690,7 +726,7 @@ func planUpdate(
 // project through a link, or whose new writes would replace a file no
 // installed package records (unless force), before anything is removed.
 func checkUpdatePlans(
-	root string, global, force bool, ref string, plans []updatePlan, installed *store.InstalledFile,
+	root string, global, force bool, ref string, plans []updatePlan, installed *store.InstalledFile, l location,
 ) error {
 	for _, pl := range plans {
 		err := func() error {
@@ -705,7 +741,7 @@ func checkUpdatePlans(
 				Msg:  fmt.Sprintf("update: %s → %s: %v", ref, pl.entry.Target, err),
 			}
 		}
-		if err := refuseUnowned(force, "update", root, ref, pl.entry.Target, pl.resolved, installed); err != nil {
+		if err := refuseUnowned(force, "update", root, ref, pl.entry.Target, pl.resolved, installed, l); err != nil {
 			return err
 		}
 	}
@@ -732,6 +768,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			here := newLocation(flagGlobal, root)
 
 			// Parse optional target filter(s).
 			var targets []string
@@ -799,7 +836,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					scopes = targets
 				}
 				for _, tid := range scopes {
-					entries := lookup(installed, ref, tid, kind)
+					entries := lookup(installed, here, ref, tid, kind)
 					if len(entries) == 0 {
 						if tid == "" {
 							_, _ = fmt.Fprintf(cmd.OutOrStdout(),
@@ -861,6 +898,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			here := newLocation(flagGlobal, root)
 
 			policy, err := conflict.Parse(flagConflict)
 			if err != nil {
@@ -892,10 +930,10 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			// Determine which refs to update.
 			var targets []string
 			if len(args) == 0 {
-				// Collect all distinct refs of this kind.
+				// Collect all distinct refs of this kind at this location.
 				seen := map[string]struct{}{}
 				for _, e := range installed.Installed {
-					if e.Kind == kindStr {
+					if e.Kind == kindStr && here.holds(e) {
 						if _, ok := seen[e.Ref]; !ok {
 							seen[e.Ref] = struct{}{}
 							targets = append(targets, e.Ref)
@@ -948,13 +986,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				defer func() { _ = os.RemoveAll(rr.StageDir) }() //nolint:gocritic
 				vlogf(cmd.ErrOrStderr(), flagVerbose, "  resolved %s @ %s\n", ref, shortSHA(rr.ResolvedSHA))
 
-				// Find all installed entries for this ref+kind.
-				var entries []store.InstalledEntry
-				for _, e := range installed.Installed {
-					if e.Ref == ref && e.Kind == kindStr {
-						entries = append(entries, e)
-					}
-				}
+				entries := findInstalled(installed, here, ref, "", kind)
 				if len(entries) == 0 {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s %q not installed, skipping\n", kindStr, ref)
 					continue
@@ -970,7 +1002,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 
 					// Conflict resolution runs against OTHER refs' files at the
 					// target (ownersAt excludes the same ref).
-					pl, err := planUpdate(rr.StageDir, root, flagGlobal, kind, name, ref, e, installed, policy)
+					pl, err := planUpdate(rr.StageDir, root, flagGlobal, kind, name, ref, e, installed, here, policy)
 					if err != nil {
 						return err
 					}
@@ -980,7 +1012,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				// Containment (old files and new writes) and unowned files
 				// are decided for every target before anything is removed,
 				// so a refusal keeps the old install and its record.
-				if err := checkUpdatePlans(root, flagGlobal, flagForce, ref, plans, installed); err != nil {
+				if err := checkUpdatePlans(root, flagGlobal, flagForce, ref, plans, installed, here); err != nil {
 					return err
 				}
 
@@ -1030,7 +1062,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							ref, e.Target, e.Target)
 					}
 
-					collisionWarn(cmd.ErrOrStderr(), installed, ref, e.Target, recs)
+					collisionWarn(cmd.ErrOrStderr(), installed, here, ref, e.Target, recs)
 
 					newEntry := store.InstalledEntry{
 						Ref:         ref,
@@ -1038,6 +1070,8 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 						Name:        name,
 						Kind:        kindStr,
 						Target:      e.Target,
+						Dir:         here.dir,
+						Global:      here.global,
 						ResolvedSHA: rr.ResolvedSHA,
 						Files:       append(recs, kept...),
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
@@ -1116,7 +1150,7 @@ func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
 
 			fetchCache := manager.NewFetchCache()
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "REF\tTARGET\tCURRENT\tLATEST\tSTATUS")
+			_, _ = fmt.Fprintln(tw, "REF\tTARGET\tLOCATION\tCURRENT\tLATEST\tSTATUS")
 
 			for _, ref := range refs {
 				atIdx := strings.LastIndex(ref, "@")
@@ -1151,8 +1185,8 @@ func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
 					if rr.ResolvedSHA != e.ResolvedSHA {
 						status = "outdated"
 					}
-					_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-						ref, e.Target, shortSHA(e.ResolvedSHA), shortSHA(rr.ResolvedSHA), status)
+					_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+						ref, e.Target, locationLabel(e), shortSHA(e.ResolvedSHA), shortSHA(rr.ResolvedSHA), status)
 				}
 			}
 			_ = tw.Flush()
@@ -1164,6 +1198,19 @@ func newPkgOutdatedCmd(kind pkgKind) *cobra.Command {
 }
 
 // ---- list -------------------------------------------------------------------
+
+// locationLabel is the LOCATION column of list and outdated: the project
+// directory, "global" for -g, or "-" when the record carries no location.
+func locationLabel(e store.InstalledEntry) string {
+	switch {
+	case e.Global:
+		return scopeGlobal
+	case e.Dir != "":
+		return e.Dir
+	default:
+		return "-"
+	}
+}
 
 // repoRegistered reports whether a local repo of that name is registered; an
 // unreadable repos.json counts as registered so it never masks real output.
@@ -1215,10 +1262,10 @@ the repo (not supported in v1 list — run 'ach-cli local repo update' to refres
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "REF\tTARGET\tSHA\tINSTALLED_AT")
+			_, _ = fmt.Fprintln(w, "REF\tTARGET\tLOCATION\tSHA\tINSTALLED_AT")
 			for _, e := range rows {
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					e.Ref, e.Target, shortSHA(e.ResolvedSHA), e.InstalledAt)
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					e.Ref, e.Target, locationLabel(e), shortSHA(e.ResolvedSHA), e.InstalledAt)
 			}
 			_ = w.Flush()
 			return nil

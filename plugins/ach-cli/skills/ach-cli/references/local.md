@@ -18,6 +18,9 @@ ach-cli local plugin update               # all, or name@repo
 ach-cli local plugin uninstall <plugin>@<repo>
 ```
 
+- Each folder, and `-g`, holds its own install: `update` and `uninstall` act on
+  the current folder's (`--dir` for another, `-g` for the global one); `list`
+  and `outdated` show every install with its LOCATION.
 - A source is `github:owner/repo[#ref]` or `git:https://host/path[.git][#ref]`; the
   default ref is `main`. Local paths are not supported.
 - `git` >= 2.31 must be on `PATH`; a private-repo token is handed to it through the

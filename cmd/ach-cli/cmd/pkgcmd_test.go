@@ -781,7 +781,7 @@ func TestCollisionWarn(t *testing.T) {
 
 	t.Run("collision warns with owner", func(t *testing.T) {
 		var buf bytes.Buffer
-		collisionWarn(&buf, installed, "plugB@r", "claude-code", recs)
+		collisionWarn(&buf, installed, location{dir: "/p"}, "plugB@r", "claude-code", recs)
 		out := buf.String()
 		if !strings.Contains(out, ".claude/commands/shared.md") || !strings.Contains(out, "plugA@r") {
 			t.Errorf("expected collision warning for shared.md owned by plugA@r, got: %q", out)
@@ -796,7 +796,7 @@ func TestCollisionWarn(t *testing.T) {
 
 	t.Run("same ref does not self-collide", func(t *testing.T) {
 		var buf bytes.Buffer
-		collisionWarn(&buf, installed, "plugA@r", "claude-code", recs)
+		collisionWarn(&buf, installed, location{dir: "/p"}, "plugA@r", "claude-code", recs)
 		if buf.Len() != 0 {
 			t.Errorf("same-ref reinstall must not warn (self), got: %q", buf.String())
 		}
@@ -804,7 +804,7 @@ func TestCollisionWarn(t *testing.T) {
 
 	t.Run("disjoint paths do not warn", func(t *testing.T) {
 		var buf bytes.Buffer
-		collisionWarn(&buf, installed, "plugB@r", "claude-code",
+		collisionWarn(&buf, installed, location{dir: "/p"}, "plugB@r", "claude-code",
 			[]store.FileRec{{RelPath: ".claude/commands/fresh.md"}})
 		if buf.Len() != 0 {
 			t.Errorf("disjoint paths must not warn, got: %q", buf.String())
@@ -820,7 +820,7 @@ func TestCollisionWarn(t *testing.T) {
 			mk("plugA@r", "claude-code", ".claude/settings.json"),
 		}}
 		var buf bytes.Buffer
-		collisionWarn(&buf, deepInstalled, "plugB@r", "claude-code",
+		collisionWarn(&buf, deepInstalled, location{dir: "/p"}, "plugB@r", "claude-code",
 			[]store.FileRec{{RelPath: ".claude/settings.json", Merge: "deep"}})
 		if buf.Len() != 0 {
 			t.Errorf("deep merge on shared path must not warn, got: %q", buf.String())
