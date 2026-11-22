@@ -16,6 +16,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -200,31 +201,52 @@ func ensureProjectGitignore(w io.Writer, root string, global bool, entries []str
 	}
 }
 
-// opencodeMCPKeyPrefix is the dotted-key prefix of the MCP servers a plugin
-// deep-merges into .opencode/opencode.json (recorded in FileRec.Keys).
-const opencodeMCPKeyPrefix = "mcp.servers."
+// serverHints records what a run's MCP server changes call for: an opencode
+// restart when its servers were added or removed (a server key is any `mcp.`
+// key: `mcp.servers.<id>`, or `mcp.<id>` in a record written before the
+// OpenCode 2 format), and enabling in Cursor when one was added.
+type serverHints struct{ restart, enable bool }
 
-// opencodeRestart records whether a run wrote or removed an MCP server entry
-// for opencode (an opencode record with `mcp.servers.*` keys).
-type opencodeRestart struct{ on bool }
-
-func (o *opencodeRestart) note(target string, recs ...[]store.FileRec) {
-	if target != opencodeTarget {
-		return
-	}
-	for _, rs := range recs {
-		for _, r := range rs {
-			for _, k := range r.Keys {
-				o.on = o.on || strings.HasPrefix(k, opencodeMCPKeyPrefix)
-			}
+func (o *serverHints) note(target string, before, after []store.FileRec) {
+	switch target {
+	case opencodeTarget:
+		o.restart = o.restart || !maps.Equal(serverKeys(before, "mcp."), serverKeys(after, "mcp."))
+	case cursorTarget:
+		old := serverKeys(before, "mcpServers.")
+		for k := range serverKeys(after, "mcpServers.") {
+			o.enable = o.enable || !old[k]
 		}
 	}
 }
 
-// flush prints the restart hint once, when a server entry changed.
-func (o *opencodeRestart) flush(w io.Writer) {
-	if o.on {
+// priorFiles returns the files an earlier install of ref for target at l
+// recorded, or nil.
+func priorFiles(f *store.InstalledFile, l location, ref, target string, kind pkgKind) []store.FileRec {
+	if prev := findInstalled(f, l, ref, target, kind); len(prev) > 0 {
+		return prev[0].Files
+	}
+	return nil
+}
+
+func serverKeys(recs []store.FileRec, prefix string) map[string]bool {
+	keys := map[string]bool{}
+	for _, r := range recs {
+		for _, k := range r.Keys {
+			if strings.HasPrefix(k, prefix) {
+				keys[k] = true
+			}
+		}
+	}
+	return keys
+}
+
+// flush prints each due hint once.
+func (o *serverHints) flush(w io.Writer) {
+	if o.restart {
 		_, _ = fmt.Fprintln(w, "hint: "+opencodeRestartHint)
+	}
+	if o.enable {
+		_, _ = fmt.Fprintln(w, "hint: "+cursorEnableHint)
 	}
 }
 
@@ -555,7 +577,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			// target so the project .gitignore can exclude the credential-bearing
 			// config after the install completes.
 			var ignoreEntries []string
-			var restart opencodeRestart
+			var hints serverHints
 
 			for _, arg := range args {
 				atIdx := strings.LastIndex(arg, "@")
@@ -689,10 +711,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						Files:       recs,
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
+					before := priorFiles(installed, here, ref, targetID, kind)
 					upsertInstalled(installed, entry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(targetID, recs)
+					hints.note(targetID, before, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ %s → %s (%d files)\n", ref, targetID, len(recs))
@@ -708,7 +731,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: save installed: %v", err)}
 			}
 			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -845,7 +868,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 
 			// processEntry uninstalls one matched entry, or — in --dry-run —
 			// prints the read-only plan (per-file remove/modify/skip/absent).
-			var restart opencodeRestart
+			var hints serverHints
 			processEntry := func(e store.InstalledEntry, held map[string]bool) error {
 				files := slices.DeleteFunc(slices.Clone(e.Files), func(f store.FileRec) bool { return held[f.RelPath] })
 				if flagDryRun {
@@ -870,7 +893,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ uninstalled %s ← %s\n", e.Ref, e.Target)
-				restart.note(e.Target, e.Files)
+				hints.note(e.Target, e.Files, nil)
 				return nil
 			}
 
@@ -916,7 +939,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("uninstall: save installed: %v", err)}
 			}
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -979,7 +1002,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			// Accumulate ignore entries for re-projected files (an update may
 			// introduce a new adapter dir/file the original install lacked).
 			var ignoreEntries []string
-			var restart opencodeRestart
+			var hints serverHints
 
 			// Determine which refs to update.
 			var targets []string
@@ -1133,7 +1156,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					upsertInstalled(installed, newEntry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(e.Target, recs, e.Files)
+					hints.note(e.Target, e.Files, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ updated %s → %s (%s → %s, %d files)\n",
@@ -1145,7 +1168,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("update: save installed: %v", err)}
 			}
 			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}

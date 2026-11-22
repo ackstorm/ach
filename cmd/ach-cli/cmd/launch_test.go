@@ -9,7 +9,26 @@ import (
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/exit"
+	"github.com/ackstorm/ach/internal/cli/hydrate"
 )
+
+// TestLaunch_ToolNames: every tool name in the help starts the right binary,
+// including the two whose name, target id and binary all differ.
+func TestLaunch_ToolNames(t *testing.T) {
+	want := map[string]string{
+		"agy": "agy", "claude": "claude", "codex": "codex",
+		"cursor": "cursor-agent", "opencode": "opencode", "pi": "pi",
+	}
+	for name, bin := range want {
+		id, err := hydrate.ResolvePlatform(name)
+		if err != nil || launchTools[id] != bin {
+			t.Errorf("launch %s: target %q (err %v) starts %q, want %q", name, id, err, launchTools[id], bin)
+		}
+	}
+	if got := strings.Split(launchToolList, ", "); len(got) != len(want) {
+		t.Errorf("launchToolList = %q, want the %d names above", launchToolList, len(want))
+	}
+}
 
 // fakeTool puts an executable `claude` alone on PATH that records its cwd and
 // args into the returned file, and its ANTHROPIC_* environment into

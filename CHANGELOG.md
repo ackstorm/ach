@@ -4,7 +4,18 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- `ach-cli environment uninstall` reminds you to run `opencode service restart` when it removes an MCP server for OpenCode, as hydrate does: until then the running service keeps the server and the key in its headers.
+- `ach-cli environment hydrate` and `ach-cli local plugin install|update` remind you to run `cursor-agent mcp enable <name>` when they add an MCP server for Cursor, which does not load a server until it is enabled.
+- Correction to 1.2.0: Codex already wrote skills to `.agents/skills`; the ones that moved there are OpenCode's (from `.opencode/skills`) and pi's (from `.pi/skills`, `~/.pi/agent/skills` with `-g`).
+- Correction to 1.2.0: a folder hydrated for Gemini CLI, or with a `state-pimono.json`, keeps those files, and `.gemini/settings.json` holds your key in plain text. Remove them with `ach-cli environment uninstall <env>` (it also removes the Environment's other targets: hydrate them again afterwards), and a local install for `gemini-cli` with `ach-cli local plugin|skill uninstall <ref>` (without `--target`, it removes the item for every tool: install it again for the others).
+
+### Removed
+- The undocumented target aliases `cursor-cli` and `antigravity-cli`: use `cursor` (or `cursor-agent`) and `antigravity` (or `agy`).
+
 ### Fixed
+- `ach-cli local plugin update` prints the `opencode service restart` hint only when the plugin's MCP servers change, and `local plugin uninstall` of a plugin installed for OpenCode before 1.2.0 prints it too.
+- `ach-cli environment hydrate` without `--target` picks the folder's own tool again when `~/.cursor/mcp.json`, `~/.gemini/config/mcp_config.json` or `~/.pi/mcp.json` exists. Those files counted as a Cursor, Antigravity or pi signal in every folder, so the hydrate stopped with "multiple agent targets detected" or chose that tool. They now count only with `-g`.
 - `ach-cli local plugin|skill`: the same item installed for the same tool in
   two folders, or in a folder and with `-g`, is two installs. Before, the second
   install replaced the first one's record, so `uninstall` and `update` missed

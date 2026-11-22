@@ -826,6 +826,50 @@ func seedPluginRepo(t *testing.T, name, url string) {
 	})
 }
 
+// TestServerHints_Note: the opencode restart hint is due when the set of opencode server
+// keys changes, including a record from before the OpenCode 2 format, and not
+// for an update that keeps the same servers or for another tool.
+func TestServerHints_Note(t *testing.T) {
+	rec := func(keys ...string) []store.FileRec {
+		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
+	}
+	for name, tc := range map[string]struct {
+		target        string
+		before, after []store.FileRec
+		want          bool
+	}{
+		"install adds":       {"opencode", nil, rec("mcp.servers.a"), true},
+		"update same":        {"opencode", rec("mcp.servers.a"), rec("mcp.servers.a"), false},
+		"update adds":        {"opencode", rec("mcp.servers.a"), rec("mcp.servers.a", "mcp.servers.b"), true},
+		"uninstall legacy":   {"opencode", rec("mcp.a"), nil, true},
+		"other tool":         {"claude-code", nil, rec("mcpServers.a"), false},
+		"no server in files": {"opencode", rec(), rec(), false},
+	} {
+		var o serverHints
+		o.note(tc.target, tc.before, tc.after)
+		if o.restart != tc.want {
+			t.Errorf("%s: hint due = %v, want %v", name, o.restart, tc.want)
+		}
+	}
+}
+
+// TestServerHints_CursorEnable: a Cursor install or update that adds a server
+// calls for enabling it; one that keeps the same servers does not.
+func TestServerHints_CursorEnable(t *testing.T) {
+	rec := func(keys ...string) []store.FileRec {
+		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
+	}
+	var o serverHints
+	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a"))
+	if o.enable {
+		t.Error("same servers: enable hint due")
+	}
+	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a", "mcpServers.b"))
+	if !o.enable {
+		t.Error("added server: no enable hint")
+	}
+}
+
 // TestPluginCmd_OpencodeServiceRestartHint: the restart hint appears once when
 // a plugin install or uninstall writes or removes an MCP server entry for
 // opencode, and never otherwise.

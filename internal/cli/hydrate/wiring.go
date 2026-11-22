@@ -529,7 +529,7 @@ func hasDirectRuntime(m *manifest.Manifest) bool {
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary
 // component kind, or "" when the key is not a runtime component. MCP keys are
-// "mcpServers." (claude/pi), "mcp_servers." (codex) or "mcp.servers."
+// "mcpServers." (claude, pi, cursor, antigravity), "mcp_servers." (codex) or "mcp.servers."
 // (opencode); a server named "a2a-<agent>" is an A2A agent's MCP face.
 func runtimeKindForKey(k string) string {
 	name, ok := mcpServerNameFromKey(k)
@@ -1110,18 +1110,18 @@ func skillNameFromPath(path, root string) string {
 // MCP server-key prefixes per adapter config format (D-17). The projected
 // plugin MCP FileWrite contributes a dotted key of the form
 // "<prefix><id>" from its mcpDeepKeys Transform:
-//   - claude .mcp.json / pi mcp.json → "mcpServers.<id>"
+//   - claude .mcp.json / pi, cursor, antigravity mcp json → "mcpServers.<id>"
 //   - codex .codex/config.toml      → "mcp_servers.<id>"
 //   - opencode .opencode/opencode.json → "mcp.servers.<id>"
 const (
-	mcpServersPrefix     = "mcpServers."  // claude / pi (JSON)
+	mcpServersPrefix     = "mcpServers."  // claude / pi / cursor / antigravity (JSON)
 	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
-	mcpOpencodePrefix    = "mcp.servers." // opencode (JSON)
+	mcpOpencodePrefix    = adapter.OpencodeMCPKeyPrefix
 )
 
 // mcpContainerKeyFor returns the dotted-key prefix the contributed MCP keys of
 // fw use, derived from fw.Keys. Codex uses "mcp_servers.", opencode
-// "mcp.servers.", claude/pi "mcpServers.". When no contributed key matches a
+// "mcp.servers.", the others "mcpServers.". When no contributed key matches a
 // known prefix (no MCP keys), the default "mcpServers." is returned harmlessly
 // — the collision loop will then never match.
 func mcpServersPrefixFor(keys []string) string {
@@ -1150,7 +1150,7 @@ func mcpServersPrefixFor(keys []string) string {
 // Format- and prefix-aware (D-17): the config format is detected from the
 // target extension (.toml → TOML for codex, JSON otherwise), and the server-key
 // prefix is derived from the contributed keys ("mcp_servers." for codex,
-// "mcp.servers." for opencode, "mcpServers." for claude/pi).
+// "mcp.servers." for opencode, "mcpServers." otherwise).
 //
 // Returns (publish, drops, err): publish=false means every contributed key
 // collided, so the caller skips publishing this FileWrite entirely (still

@@ -41,7 +41,7 @@ func TestAntigravity_ID(t *testing.T) {
 }
 
 func TestAntigravity_Aliases(t *testing.T) {
-	want := []string{"agy", "antigravity-cli"}
+	want := []string{"agy"}
 	if got := (&Adapter{}).Aliases(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Aliases() = %v, want %v", got, want)
 	}
@@ -101,15 +101,24 @@ func TestAntigravity_Detect_TwoSignals_MediumConfidence(t *testing.T) {
 	}
 }
 
-func TestAntigravity_Detect_GlobalOnly(t *testing.T) {
+// The user config matches only when the scanned root is $HOME (--global), never
+// in a project folder.
+func TestAntigravity_Detect_UserConfig(t *testing.T) {
 	home := isolatedHome(t)
 	write(t, filepath.Join(home, ".gemini", "config", "mcp_config.json"))
 	got, err := (&Adapter{}).Detect(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got.ID != "" {
+		t.Errorf("project Detect with only a user config = %+v, want zero", got)
+	}
+	got, err = (&Adapter{}).Detect(home)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.ID != "antigravity" || got.Confidence != adapter.ConfidenceLow || len(got.Reasons) != 1 {
-		t.Errorf("global-only Detect = %+v", got)
+		t.Errorf("global Detect = %+v", got)
 	}
 }
 
@@ -175,7 +184,7 @@ func TestSubagentFrontmatter_NoFrontmatter_Passthrough(t *testing.T) {
 }
 
 func TestAntigravity_Registered(t *testing.T) {
-	for _, id := range []string{"antigravity", "agy", "Antigravity-CLI"} {
+	for _, id := range []string{"antigravity", "AGY"} {
 		if a, ok := adapter.Lookup(id); !ok || a.ID() != "antigravity" {
 			t.Fatalf("lookup %q", id)
 		}

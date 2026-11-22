@@ -885,16 +885,20 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	}
 	first := false
 	var logins []string
-	restart := false
 	for _, r := range results {
 		first = first || r.FirstRun
 		if c, ok := mcpLoginCmd[r.PlatformID]; ok && addsMCP(r) {
 			logins = append(logins, c)
 		}
-		restart = restart || (!meta.dryRun && r.PlatformID == opencodeTarget && changesServers(r))
 	}
-	if restart {
+	if !meta.dryRun && opencodeServersChanged(results) {
 		hints = append(hints, opencodeRestartHint)
+	}
+	for _, r := range results {
+		if !meta.dryRun && r.PlatformID == cursorTarget && addsServer(r) {
+			hints = append(hints, cursorEnableHint)
+			break
+		}
 	}
 	if !first {
 		return hints
@@ -912,6 +916,16 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	return hints
 }
 
+// addsServer reports an MCP server or A2A agent (written as an MCP server) added.
+func addsServer(r hydrate.Result) bool {
+	for _, c := range r.Changes {
+		if c.Op == hydrate.OpAdd && (c.Kind == kindMCP || c.Kind == "a2a") {
+			return true
+		}
+	}
+	return false
+}
+
 func addsMCP(r hydrate.Result) bool {
 	for _, c := range r.Changes {
 		if c.Op == hydrate.OpAdd && c.Kind == kindMCP {
@@ -924,11 +938,28 @@ func addsMCP(r hydrate.Result) bool {
 const (
 	kindMCP        = "mcp"
 	opencodeTarget = "opencode"
+	cursorTarget   = "cursor"
 )
 
+// cursorEnableHint is printed when hydrate or a local plugin install or update
+// adds an MCP server (or A2A agent) for Cursor, which reports a project server
+// as "needs approval" until it is enabled.
+const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
+
 // opencodeRestartHint is printed when ach-cli adds or removes an MCP server
-// for OpenCode (hydrate and local plugin commands).
+// for OpenCode (hydrate, environment uninstall and local plugin commands).
 const opencodeRestartHint = "opencode service restart  — OpenCode loads MCP servers when its service starts"
+
+// opencodeServersChanged reports an OpenCode result that added or removed a
+// server.
+func opencodeServersChanged(results []hydrate.Result) bool {
+	for _, r := range results {
+		if r.PlatformID == opencodeTarget && changesServers(r) {
+			return true
+		}
+	}
+	return false
+}
 
 // changesServers reports an MCP server or A2A agent (written as an MCP server)
 // added or removed.

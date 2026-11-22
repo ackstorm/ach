@@ -11,7 +11,6 @@ package antigravity
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
@@ -35,7 +34,7 @@ func init() {
 
 func (a *Adapter) ID() string { return canonicalID }
 
-func (a *Adapter) Aliases() []string { return []string{"agy", "antigravity-cli"} }
+func (a *Adapter) Aliases() []string { return []string{"agy"} }
 
 // Detect ignores .agents/skills and AGENTS.md: other tools read them too.
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
@@ -43,12 +42,8 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 		{Path: filepath.Join(root, ".agents", "mcp_config.json"), Reason: "found .agents/mcp_config.json"},
 		{Path: filepath.Join(root, ".agents", "agents"), Reason: "found .agents/agents/ directory"},
 		{Path: filepath.Join(root, ".agents", "rules"), Reason: "found .agents/rules/ directory"},
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		signals = append(signals, adapter.Signal{
-			Path:   filepath.Join(home, ".gemini", "config", "mcp_config.json"),
-			Reason: "found ~/.gemini/config/mcp_config.json (global mode)",
-		})
+		// Matches only when root is $HOME (--global).
+		{Path: filepath.Join(root, ".gemini", "config", "mcp_config.json"), Reason: "found .gemini/config/mcp_config.json"},
 	}
 	return adapter.DetectFromSignals(canonicalID, signals), nil
 }

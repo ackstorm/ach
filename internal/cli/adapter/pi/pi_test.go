@@ -26,10 +26,8 @@ func TestPi_ID(t *testing.T) {
 
 func TestPi_Aliases(t *testing.T) {
 	a := &Adapter{}
-	got := a.Aliases()
-	want := []string{}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Aliases() = %v, want %v", got, want)
+	if got := a.Aliases(); got != nil {
+		t.Fatalf("Aliases() = %v, want nil", got)
 	}
 }
 
@@ -128,16 +126,11 @@ func TestPi_Detect_HighConfidence_AllSignals(t *testing.T) {
 	}
 }
 
-// TestPi_Detect_GlobalOnly exercises the WR-03 path: the global hint
-// ($HOME/.pi/mcp.json) is present but the scanned root has zero local signals.
-// Contract: exactly 1 signal → ConfidenceLow, ID set, single reason naming the
-// global hint. This is the path most likely to cause a spurious autodetect
-// multi-match, so the weakest signal must rank only Low. The probe is the
-// specific mcp.json file (NOT the bare ~/.pi dir) so an unrelated scratch
-// directory no longer trips it.
-func TestPi_Detect_GlobalOnly(t *testing.T) {
+// TestPi_Detect_UserConfig: ~/.pi/mcp.json matches only when the scanned root
+// is $HOME (--global); in a project folder it would make every autodetect see
+// pi next to the folder's own tool.
+func TestPi_Detect_UserConfig(t *testing.T) {
 	a := &Adapter{}
-	tmp := t.TempDir() // empty root — zero local signals
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 
@@ -148,21 +141,19 @@ func TestPi_Detect_GlobalOnly(t *testing.T) {
 		t.Fatalf("WriteFile fakeHome: %v", err)
 	}
 
-	got, err := a.Detect(tmp)
+	got, err := a.Detect(t.TempDir())
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if got.ID != "" {
+		t.Errorf("project Detect with only ~/.pi/mcp.json = %+v, want zero", got)
+	}
+	got, err = a.Detect(fakeHome)
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
 	if got.ID != "pi" {
-		t.Errorf("global-only Detect ID = %q, want %q", got.ID, "pi")
-	}
-	if got.Confidence != adapter.ConfidenceLow {
-		t.Errorf("global-only Detect Confidence = %v, want ConfidenceLow", got.Confidence)
-	}
-	if len(got.Reasons) != 1 {
-		t.Fatalf("global-only Detect returned %d Reasons, want exactly 1: %v", len(got.Reasons), got.Reasons)
-	}
-	if got.Reasons[0] != "found ~/.pi/mcp.json (global mode)" {
-		t.Errorf("global-only Detect reason = %q, want global-hint reason", got.Reasons[0])
+		t.Errorf("global Detect ID = %q, want pi", got.ID)
 	}
 }
 

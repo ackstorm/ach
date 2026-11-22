@@ -1,7 +1,7 @@
 {
   "name": "ach-cli",
   "description": "Use this organization's AI platform (ACH) from the command line: sign in, find and hydrate Environments into Antigravity, Claude Code, Codex, Cursor, OpenCode or pi, shell access to MCP tools and A2A agents, MCP sign-in, environment keys (ek-) and ach-cli local.",
-  "version": "1.1.24",
+  "version": "1.1.25",
   "author": {
     "name": "ACKstorm",
     "url": "https://github.com/ackstorm/ach"

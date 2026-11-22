@@ -125,10 +125,16 @@ updated, `-` removed, `!` kept/edited, `✓` installed in status), collapsed to
 result + elapsed time; the Environment's notice, the engine's `note:`/`warning:`
 lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
 AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
-`opencode service restart`, printed on any run (not `--dry-run`) that adds or
-removes an MCP server or A2A agent for OpenCode. `local plugin
+`opencode service restart`, printed on any hydrate or `environment uninstall`
+(not `--dry-run`) that adds or removes an MCP server or A2A agent for OpenCode,
+and `cursor-agent mcp enable <name>`, printed on any hydrate (not `--dry-run`)
+that adds one for Cursor
+(`opencodeServersChanged`). `local plugin
 install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
-once per run, not `--dry-run`) when an opencode record holds `mcp.servers.*` keys.
+once per run, not `--dry-run`) when the opencode record's server keys change
+(`mcp.servers.<id>`, or `mcp.<id>` from before the OpenCode 2 format), and
+the Cursor enable hint when a cursor record gains an `mcpServers.*` key
+(`serverHints`).
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
@@ -190,7 +196,8 @@ prefixed, and `skill == plugin` is not special-cased (`/bro:bro`). A skill's
 directory is renamed AND its `SKILL.md` `name:` rewritten (that one line
 only): Claude Code registers the frontmatter name as an alias too, so
 renaming the dir alone still answered `/ladder`. The form per tool was
-measured, not guessed (2026-10-26):
+measured, not guessed (2026-10-26), except cursor and antigravity, taken from
+the tools' docs (skills and commands cannot be listed without a login):
 
 | | claude-code | opencode | codex | pi | cursor | antigravity |
 |---|---|---|---|---|---|---|
@@ -204,8 +211,7 @@ skills, so its skill rule also emits each such user-only skill as a command
 **Migration**: a plain hydrate (no `--sync`) prunes the rows of a plugin or
 standalone Skill STILL in the Environment that it no longer writes
 (`keptSourceRows` in `hydrate/commit.go` → `Sync`), so a path that moved
-(namespacing, `.opencode/skills` → `.agents/skills`) is removed, never
-orphaned; an edited file is kept with a warning. A plugin or Skill that LEFT
+is removed, never orphaned; an edited file is kept with a warning. A plugin or Skill that LEFT
 the Environment stays `--sync`'s call.
 
 `KnownComponentKinds`: `rules, commands, agents, skills, mcp, .mcp.json,
@@ -344,7 +350,8 @@ projected (self-heals on `<b>`'s next hydrate).
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in
 plaintext (project-root `.mcp.json`, `.codex/config.toml`,
-`.opencode/opencode.json`, `.cursor/mcp.json`, `.pi/mcp.json`). mode `0600`
+`.opencode/opencode.json`, `.cursor/mcp.json`, `.pi/mcp.json`,
+`.agents/mcp_config.json`). mode `0600`
 guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
 in PROJECT scope only (`--global` writes under the tool's global config dir, no repo):
@@ -454,9 +461,8 @@ Hard-won details — do NOT re-derive:
   So the rules write the project layout and `--global` maps just that subdir
   to `.pi/agent/` (`globalScope.subdirs`); `.pi/mcp.json` is outside it. Pi
   reads skills from the cross-tool `.agents/skills` (project and `~`), which
-  no adapter redirects. (Until 2026-10-26 project hydrates wrote
-  `.pi/agent/…`, which pi never loaded. `ackstorm/agent-profile` documents
-  `~/.pi` — off by one level.)
+  no adapter redirects. (`ackstorm/agent-profile` documents `~/.pi` — off by
+  one level.)
 - **Redirection is keyed on the PATH PREFIX, not the adapter.** `.agents/` is a
   cross-tool convention dir that `CODEX_HOME` does not own, so codex's skills
   stay under `$HOME/.agents/skills/`. One adapter can therefore write to two
@@ -525,7 +531,7 @@ surgery per the Codex config reference).
 
 **opencode MCP — OpenCode 2 format only, under `mcp.servers`; CONVERTS
 per-entry shape (`opencodeMCPConvert`), NOT a bare rename.** Contributed keys
-are `mcp.servers.<id>` (`opencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
+are `mcp.servers.<id>` (`adapter.OpencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
 parses them, and an item's name is `<id>`, never `servers.<id>`). Source of truth:
 `anomalyco/opencode` v2.3.2, `packages/schema/src/mcp.ts` (`RemoteConfig`:
 `type:"remote"`, `url`, optional `headers`, `oauth`, `disabled`, `timeout`;
@@ -560,14 +566,17 @@ is not ground truth.**
   login and reports each server as "not loaded (needs approval)" until
   `cursor-agent mcp enable <name>`; an entry carrying `"type": "http"` next to
   `url` and `headers` is accepted. Skills, commands and subagents cannot be
-  listed without a login.
+  listed without a login. GAP: a plugin MCP entry's `${VAR}` is merged
+  verbatim, while Cursor interpolates `${env:VAR}`; hydrate prints the
+  `cursor-agent mcp enable <name>` hint when it adds a server.
 - Antigravity CLI 1.5.14: `~/.gemini/config/mcp_config.json` loads, with
   `serverUrl` and also with `url` + `"type": "http"`; `agy mcp add` writes only
   that user file (`{"disabled": false, "serverUrl": …}`) and has no scope flag.
   `agy mcp list` does not show servers from a project `.agents/mcp_config.json`,
   trusted workspace or not; the docs (antigravity.google/docs/mcp) name that file
   as the workspace configuration, and whether a signed-in session loads it is NOT
-  verified. Skills and subagents cannot be listed without a login.
+  verified. Skills and subagents cannot be listed without a login. Whether
+  Antigravity interpolates a plugin MCP entry's `${VAR}` is not verified.
 
 - Instruction loading, checked by sending a request to a fake OpenAI-compatible
   server and looking for the text in the request body. OpenCode 1.19.6 (npm
