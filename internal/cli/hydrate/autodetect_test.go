@@ -50,11 +50,8 @@ func TestAutodetect_UserConfigsDoNotMatchProject(t *testing.T) {
 	}
 }
 
-// withCleanHome scrubs $HOME for the lifetime of t so global-mode
-// hints in adapters' Detect (e.g. codex checks $HOME/.codex/) do not
-// leak in cross-test signals. The codex adapter contributes a Low-
-// confidence signal when $HOME/.codex/ exists; without this scrub a
-// test seeding only .claude/ would see two matches.
+// withCleanHome points $HOME at an empty dir for the lifetime of t, so no
+// test reads or writes the user's real home (global config paths).
 func withCleanHome(t *testing.T) {
 	t.Helper()
 	// Point HOME at a fresh empty dir so the codex Detect's

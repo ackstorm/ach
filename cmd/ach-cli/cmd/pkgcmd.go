@@ -213,6 +213,15 @@ func (o *opencodeRestart) note(target string, before, after []store.FileRec) {
 	o.on = o.on || !maps.Equal(opencodeServerKeys(before), opencodeServerKeys(after))
 }
 
+// priorFiles returns the files an earlier install of ref for target at l
+// recorded, or nil.
+func priorFiles(f *store.InstalledFile, l location, ref, target string, kind pkgKind) []store.FileRec {
+	if prev := findInstalled(f, l, ref, target, kind); len(prev) > 0 {
+		return prev[0].Files
+	}
+	return nil
+}
+
 func opencodeServerKeys(recs []store.FileRec) map[string]bool {
 	keys := map[string]bool{}
 	for _, r := range recs {
@@ -641,10 +650,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						Files:       recs,
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
+					before := priorFiles(installed, here, ref, targetID, kind)
 					upsertInstalled(installed, entry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(targetID, nil, recs)
+					restart.note(targetID, before, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ %s → %s (%d files)\n", ref, targetID, len(recs))

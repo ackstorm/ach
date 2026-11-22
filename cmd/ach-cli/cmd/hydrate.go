@@ -895,7 +895,7 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 		hints = append(hints, opencodeRestartHint)
 	}
 	for _, r := range results {
-		if !meta.dryRun && r.PlatformID == cursorTarget && addsMCP(r) {
+		if !meta.dryRun && r.PlatformID == cursorTarget && addsServer(r) {
 			hints = append(hints, cursorEnableHint)
 			break
 		}
@@ -916,6 +916,16 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	return hints
 }
 
+// addsServer reports an MCP server or A2A agent (written as an MCP server) added.
+func addsServer(r hydrate.Result) bool {
+	for _, c := range r.Changes {
+		if c.Op == hydrate.OpAdd && (c.Kind == kindMCP || c.Kind == "a2a") {
+			return true
+		}
+	}
+	return false
+}
+
 func addsMCP(r hydrate.Result) bool {
 	for _, c := range r.Changes {
 		if c.Op == hydrate.OpAdd && c.Kind == kindMCP {
@@ -931,7 +941,7 @@ const (
 	cursorTarget   = "cursor"
 )
 
-// cursorEnableHint is printed when ach-cli adds an MCP server for Cursor, which
+// cursorEnableHint is printed when hydrate adds an MCP server or A2A agent for Cursor, which
 // reports a project server as "needs approval" until it is enabled.
 const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
 

@@ -1093,6 +1093,11 @@ func TestHydrateHints_CursorEnable(t *testing.T) {
 	if !has(hydrateHints(res(hydrate.OpAdd), summaryMeta{})) {
 		t.Error("mcp add: no enable hint")
 	}
+	a2a := []hydrate.Result{{PlatformID: "cursor",
+		Changes: []hydrate.ItemChange{{Op: hydrate.OpAdd, Kind: "a2a", Name: "y"}}}}
+	if !has(hydrateHints(a2a, summaryMeta{})) {
+		t.Error("a2a add: no enable hint")
+	}
 	if has(hydrateHints(res(hydrate.OpUpdate), summaryMeta{})) {
 		t.Error("mcp update: enable hint shown")
 	}

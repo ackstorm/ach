@@ -252,7 +252,7 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}, nil
 }
 
-// ProjectionRules returns the codex ROUTE-03 projection table satisfying
+// ProjectionRules returns the codex projection table satisfying
 // route.RuleProvider. It is a format-converting table, mirroring the claudecode.go
 // rule-list-literal shape (Transform only on the converting
 // rows):

@@ -135,12 +135,11 @@ type FileWrite struct {
 	Keys []string
 }
 
-// Adapter is the closed-set platform-adapter contract per CONTEXT.md
-// D-07 + ADAPT-01. Every adapter MUST implement all four methods.
+// Adapter is the closed-set platform-adapter contract. Every adapter MUST
+// implement all four methods.
 // Pass-through adapters (claudecode) return source bytes verbatim from
 // ResolveOutputContent; merge adapters
-// recompute the merged target bytes for the SAFE-04 cascade Tier 2 from
-// 07-W2-03.
+// recompute the merged target bytes for the extractor's cascade.
 //
 // Signatures match CONTEXT.md D-07 verbatim. Drift from this surface
 // (renamed method, changed return type, added required parameter)

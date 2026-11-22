@@ -35,7 +35,7 @@ const (
 	// canonicalID is the primary registry key per the Phase 5 plan.
 	canonicalID = "pi"
 
-	// mcpJSONPath is the Pi project-override MCP config target (D-33). This
+	// mcpJSONPath is the Pi project-override MCP config target. This
 	// is the ONLY .pi/-prefixed MCP path pi emits — the other three Pi
 	// MCP config locations are out of scope per the own-prefix rule.
 	mcpJSONPath = ".pi/mcp.json"
@@ -71,7 +71,7 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	return adapter.DetectFromSignals(canonicalID, signals), nil
 }
 
-// RenderRuntime emits the single .pi/mcp.json FileWrite (D-33). Merge=MergeDeep;
+// RenderRuntime emits the single .pi/mcp.json FileWrite. Merge=MergeDeep;
 // Keys carries the contributed top-level keys for STATE-02 + ADAPT-05
 // inverse-merge during `--sync`.
 //
@@ -117,12 +117,12 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 //
 //   - commands/**/*.md → .pi/prompts/**/* (MergeReplace verbatim)
 //   - skills/**/*      → .agents/skills/**/*  (MergeReplace verbatim)
-//   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys; D-33)
+//   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys)
 //
 // A root/**/* catch-all is OMITTED (D-36). No rules/agents/
 // AGENTS.md row — those top-level kinds fall to route.Project's accumulate-once
 // drop set (D-35), yielding Dropped = {rules, agents, AGENTS.md}; mcp is NOT
-// dropped because it has the mcp/**/* rule (D-33). This method is pure data —
+// dropped because it has the mcp/**/* rule. This method is pure data —
 // no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{
