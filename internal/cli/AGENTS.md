@@ -250,11 +250,17 @@ adopted. Deep writes share their file by key and never refuse.
   `--force`. Once both have a row, the "disk already equals what we write"
   rule keeps them in step.
 - `local plugin|skill install|update`: `refuseUnowned` (`pkgcmd.go`) →
-  `manager.CheckUnowned`, record = any `installed.json` entry at that target
-  and location.
-  Checked for every target before the first write or removal.
+  `manager.CheckUnowned`, record = any `installed.json` entry at that
+  location, whatever its target (`ownersAt` matches the same way): several
+  targets write `.agents/skills`. Checked for every target before the first
+  write or removal.
 - `local … update` never writes a path `manager.Uninstall` skipped as
-  user-modified: the write is dropped and the old `FileRec` kept.
+  user-modified: the write is dropped and the old `FileRec` kept. A skipped
+  file that already holds the new bytes is not an edit (`editedLocally`):
+  another target sharing the path wrote it first.
+- `local … uninstall` keeps a file another record at that location still
+  holds (`heldElsewhere`), so `--target codex` leaves opencode's copy of a
+  shared skill.
 
 ### Multi-Environment workspaces — cross-env skill de-collision
 
