@@ -24,9 +24,9 @@ type PromptSpec struct {
 	// +kubebuilder:validation:Required
 	Refresh RefreshBlock `json:"refresh"`
 
-	// ContentType is the media type of the prompt file. It is recorded and
-	// shown in `ach-cli admin list`, not sent on the wire: the Content Service
-	// serves every Prompt as a one-entry tar.gz (application/gzip). Optional.
+	// ContentType is the media type of the prompt file. It is recorded, not
+	// sent on the wire: the Content Service serves every Prompt as a one-entry
+	// tar.gz (application/gzip). Optional.
 	//
 	// +optional
 	ContentType string `json:"contentType,omitempty"`

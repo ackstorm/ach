@@ -1148,7 +1148,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `type` _string_ | Type names the upstream source kind. |  | Enum: [github gitlab bitbucket s3 gcs http] <br />Required: \{\} <br /> |
 | `refresh` _[RefreshBlock](#refreshblock)_ | Refresh declares poll cadence and staleness bound (CRD-04). |  | Required: \{\} <br /> |
-| `contentType` _string_ | ContentType is the media type of the prompt file. It is recorded and<br />shown in `ach-cli admin list`, not sent on the wire: the Content Service<br />serves every Prompt as a one-entry tar.gz (application/gzip). Optional. |  |  |
+| `contentType` _string_ | ContentType is the media type of the prompt file. It is recorded, not<br />sent on the wire: the Content Service serves every Prompt as a one-entry<br />tar.gz (application/gzip). Optional. |  |  |
 | `github` _[GitHubSource](#githubsource)_ | GitHub source. Required when spec.type == "github". |  |  |
 | `gitlab` _[GitLabSource](#gitlabsource)_ | GitLab source. Required when spec.type == "gitlab". |  |  |
 | `bitbucket` _[BitbucketSource](#bitbucketsource)_ | Bitbucket source. Required when spec.type == "bitbucket". |  |  |
