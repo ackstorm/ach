@@ -27,7 +27,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
@@ -59,8 +58,7 @@ func init() {
 // ID returns the canonical adapter ID.
 func (a *Adapter) ID() string { return canonicalID }
 
-// Aliases returns the case-folded alternate identifiers the user may type.
-func (a *Adapter) Aliases() []string { return []string{} }
+func (a *Adapter) Aliases() []string { return nil }
 
 // Detect scans root for Pi signals. Each present signal boosts confidence;
 // 3+ → High, 2 → Medium, 1 → Low. signals==0 → empty Match (no-match).
@@ -76,20 +74,6 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 		{Path: filepath.Join(root, ".pi", "agent"), Reason: "found .pi/agent/ directory"},
 		{Path: filepath.Join(root, ".pi", "mcp.json"), Reason: "found .pi/mcp.json"},
 	}
-
-	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`.
-	// A specific file — NOT the bare $HOME/.pi directory (WR-03): a populated
-	// global config is a far stronger signal than the mere existence of a
-	// scratch ~/.pi dir, so an unrelated cwd no longer trips a spurious
-	// global-only match that could turn a clean single-match into a multi-
-	// match (exit 1) for a totally different project.
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		signals = append(signals, adapter.Signal{
-			Path:   filepath.Join(home, ".pi", "mcp.json"),
-			Reason: "found ~/.pi/mcp.json (global mode)",
-		})
-	}
-
 	return adapter.DetectFromSignals(canonicalID, signals), nil
 }
 

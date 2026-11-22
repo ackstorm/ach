@@ -29,7 +29,7 @@ func TestCursor_ID(t *testing.T) {
 }
 
 func TestCursor_Aliases(t *testing.T) {
-	want := []string{"cursor-agent", "cursor-cli"}
+	want := []string{"cursor-agent"}
 	if got := (&Adapter{}).Aliases(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Aliases() = %v, want %v", got, want)
 	}
@@ -99,7 +99,9 @@ func TestCursor_Detect_HighConfidence_AllSignals(t *testing.T) {
 	}
 }
 
-func TestCursor_Detect_GlobalOnly(t *testing.T) {
+// ~/.cursor matches only when the scanned root is $HOME (--global), never in a
+// project folder.
+func TestCursor_Detect_UserConfig(t *testing.T) {
 	home := isolatedHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o755); err != nil {
 		t.Fatal(err)
@@ -111,8 +113,15 @@ func TestCursor_Detect_GlobalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != "cursor" || got.Confidence != adapter.ConfidenceLow || len(got.Reasons) != 1 {
-		t.Errorf("global-only Detect = %+v", got)
+	if got.ID != "" {
+		t.Errorf("project Detect with only ~/.cursor = %+v, want zero", got)
+	}
+	got, err = (&Adapter{}).Detect(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "cursor" {
+		t.Errorf("global Detect = %+v", got)
 	}
 }
 
@@ -163,7 +172,7 @@ func TestCursor_ProjectionRules(t *testing.T) {
 }
 
 func TestCursor_Registered(t *testing.T) {
-	for _, id := range []string{"cursor", "cursor-agent", "Cursor-CLI"} {
+	for _, id := range []string{"cursor", "Cursor-Agent"} {
 		if a, ok := adapter.Lookup(id); !ok || a.ID() != "cursor" {
 			t.Fatalf("lookup %q", id)
 		}

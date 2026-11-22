@@ -10,7 +10,6 @@ package cursor
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -32,19 +31,13 @@ func init() {
 
 func (a *Adapter) ID() string { return canonicalID }
 
-func (a *Adapter) Aliases() []string { return []string{"cursor-agent", "cursor-cli"} }
+func (a *Adapter) Aliases() []string { return []string{"cursor-agent"} }
 
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	signals := []adapter.Signal{
 		{Path: filepath.Join(root, ".cursor"), Reason: "found .cursor/ directory"},
 		{Path: filepath.Join(root, ".cursor", "mcp.json"), Reason: "found .cursor/mcp.json"},
 		{Path: filepath.Join(root, ".cursor", "rules"), Reason: "found .cursor/rules/ directory"},
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		signals = append(signals, adapter.Signal{
-			Path:   filepath.Join(home, ".cursor", "mcp.json"),
-			Reason: "found ~/.cursor/mcp.json (global mode)",
-		})
 	}
 	return adapter.DetectFromSignals(canonicalID, signals), nil
 }
