@@ -18,16 +18,40 @@ import (
 	// autodetect path consumes adapter.Iter() — without these imports,
 	// the registry is empty and every Autodetect call returns the
 	// zero-match arm regardless of on-disk state.
+	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
+	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
+	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
 
-// withCleanHome scrubs $HOME for the lifetime of t so global-mode
-// hints in adapters' Detect (e.g. codex checks $HOME/.codex/) do not
-// leak in cross-test signals. The codex adapter contributes a Low-
-// confidence signal when $HOME/.codex/ exists; without this scrub a
-// test seeding only .claude/ would see two matches.
+// TestAutodetect_UserConfigsDoNotMatchProject: a user who has Cursor,
+// Antigravity and pi configured in $HOME still gets the folder's own tool.
+func TestAutodetect_UserConfigsDoNotMatchProject(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, rel := range []string{".cursor/mcp.json", ".gemini/config/mcp_config.json", ".pi/mcp.json"} {
+		p := filepath.Join(home, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id, err := hydrate.Autodetect(root, &bytes.Buffer{})
+	if err != nil || id != "claude-code" {
+		t.Fatalf("Autodetect = %q, %v; want claude-code", id, err)
+	}
+}
+
+// withCleanHome points $HOME at an empty dir for the lifetime of t, so no
+// test reads or writes the user's real home (global config paths).
 func withCleanHome(t *testing.T) {
 	t.Helper()
 	// Point HOME at a fresh empty dir so the codex Detect's

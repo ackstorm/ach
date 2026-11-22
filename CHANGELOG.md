@@ -4,13 +4,27 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+- `ach-cli environment uninstall` reminds you to run `opencode service restart` when it removes an MCP server for OpenCode, as hydrate does: until then the running service keeps the server and the key in its headers.
+- `ach-cli environment hydrate` and `ach-cli local plugin install|update` remind you to run `cursor-agent mcp enable <name>` when they add an MCP server for Cursor, which does not load a server until it is enabled.
+- Correction to 1.2.0: Codex already wrote skills to `.agents/skills`; the ones that moved there are OpenCode's (from `.opencode/skills`) and pi's (from `.pi/skills`, `~/.pi/agent/skills` with `-g`).
+- Correction to 1.2.0: a folder hydrated for Gemini CLI, or with a `state-pimono.json`, keeps those files, and `.gemini/settings.json` holds your key in plain text. Remove them with `ach-cli environment uninstall <env>` (it also removes the Environment's other targets: hydrate them again afterwards), and a local install for `gemini-cli` with `ach-cli local plugin|skill uninstall <ref>` (without `--target`, it removes the item for every tool: install it again for the others).
+
+### Removed
+- The undocumented target aliases `cursor-cli` and `antigravity-cli`: use `cursor` (or `cursor-agent`) and `antigravity` (or `agy`).
+
 ### Fixed
 - The `Prompt` kind is back, unchanged from 1.1.x: `spec.context.prompts`, `context.prompts` in `POST /platform/hydrate`, `/content/prompt/<name>`, `/platform/admin/prompts` and the `prompt` kind in `ach-cli admin` and `environment fetch`. 1.2.0 removed it although agents use it for their system prompt; 1.2.0 is withdrawn, do not install it. Upgrading from 1.1.x: your Prompts keep working, and Instruction is added beside Prompt. `ach-cli environment hydrate` does not write Prompts into the folder (an older ach-cli put them in `.ach/<env>/prompt/` or `.ach/prompt/`); those files stay until you delete them, and a Prompt is loaded by whoever names it.
+- `ach-cli local plugin update` prints the `opencode service restart` hint only when the plugin's MCP servers change, and `local plugin uninstall` of a plugin installed for OpenCode before 1.2.0 prints it too.
+- `ach-cli environment hydrate` without `--target` picks the folder's own tool again when `~/.cursor/mcp.json`, `~/.gemini/config/mcp_config.json` or `~/.pi/mcp.json` exists. Those files counted as a Cursor, Antigravity or pi signal in every folder, so the hydrate stopped with "multiple agent targets detected" or chose that tool. They now count only with `-g`.
 - `ach-cli local plugin|skill`: the same item installed for the same tool in
   two folders, or in a folder and with `-g`, is two installs. Before, the second
   install replaced the first one's record, so `uninstall` and `update` missed
   the first folder's files. `update` and `uninstall` act on the current folder
   (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
+- `ach-cli environment hydrate` for a target added after another one (`--target cursor` in a folder hydrated for codex, or `ach-cli launch <tool> --environment`) no longer refuses a skill in `.agents/skills` that the other target wrote: it updates it, or keeps it when you edited it.
+- Two Environments hydrated into one folder for different targets that share `.agents/skills` (codex, cursor, opencode, pi, antigravity) no longer overwrite each other's same-named skill: the later one is prefixed with its Environment name, as with one target.
+- `ach-cli local plugin|skill` with targets that share `.agents/skills`: `update` no longer reports the shared skill as edited by you and leaves the second target's record behind; `install` for a second target no longer refuses a skill the first one installed; `uninstall --target <one>` keeps the skill the other target still uses.
 - OpenCode now loads an Environment's Instructions in projects inside an Environment folder (the layout `environment clone` creates). `ach-cli environment hydrate` writes the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json`, because OpenCode searches a relative entry only up to the project's git root.
 
 ### Added

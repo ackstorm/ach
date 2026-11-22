@@ -135,21 +135,19 @@ type FileWrite struct {
 	Keys []string
 }
 
-// Adapter is the closed-set platform-adapter contract per CONTEXT.md
-// D-07 + ADAPT-01. Every adapter MUST implement all four methods.
+// Adapter is the closed-set platform-adapter contract. Every adapter MUST
+// implement all four methods.
 // Pass-through adapters (claudecode) return source bytes verbatim from
-// ResolveOutputContent; merge adapters (codex/opencode/pi)
-// recompute the merged target bytes for the SAFE-04 cascade Tier 2 from
-// 07-W2-03.
+// ResolveOutputContent; merge adapters
+// recompute the merged target bytes for the extractor's cascade.
 //
 // Signatures match CONTEXT.md D-07 verbatim. Drift from this surface
 // (renamed method, changed return type, added required parameter)
 // would force a 4-adapter cascade rewrite — the interface is locked
 // for v1alpha1.
 type Adapter interface {
-	// ID returns the canonical platform identifier (e.g. "claude-code",
-	// "codex", "opencode", "pi"). Used as the primary registry
-	// key.
+	// ID returns the canonical platform identifier (e.g. "claude-code").
+	// Used as the primary registry key.
 	ID() string
 
 	// Aliases returns case-folded alternate identifiers the user may

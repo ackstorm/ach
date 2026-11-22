@@ -8,11 +8,9 @@
 // the only place pi reads them there), skills into the shared .agents/skills/, and
 // MCP definitions deep-merge into .pi/mcp.json (MergeDeep).
 //
-// D-33 (this phase) makes RenderRuntime NON-EMPTY (it emits Environment runtime
-// MCP servers into .pi/mcp.json, mirroring claude) and removes `mcp`
-// from the Dropped set — pi now supports MCP. The other top-level kinds
-// without a rule (rules/, agents/, AGENTS.md) fall to route.Project's
-// accumulate-once drop set, yielding Dropped = {rules, agents, AGENTS.md}.
+// RenderRuntime writes the Environment's MCP servers into .pi/mcp.json. The
+// top-level kinds without a rule (rules/, agents/, AGENTS.md) are reported as
+// dropped by route.Project.
 //
 // Own-prefix rule (ADAPT-06 analog): this adapter emits ONLY .pi/-prefixed
 // paths. Pi has four candidate MCP config locations; only the .pi/mcp.json
@@ -23,13 +21,9 @@
 package pi
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/adapter/route"
@@ -41,7 +35,7 @@ const (
 	// canonicalID is the primary registry key per the Phase 5 plan.
 	canonicalID = "pi"
 
-	// mcpJSONPath is the Pi project-override MCP config target (D-33). This
+	// mcpJSONPath is the Pi project-override MCP config target. This
 	// is the ONLY .pi/-prefixed MCP path pi emits — the other three Pi
 	// MCP config locations are out of scope per the own-prefix rule.
 	mcpJSONPath = ".pi/mcp.json"
@@ -59,8 +53,7 @@ func init() {
 // ID returns the canonical adapter ID.
 func (a *Adapter) ID() string { return canonicalID }
 
-// Aliases returns the case-folded alternate identifiers the user may type.
-func (a *Adapter) Aliases() []string { return []string{} }
+func (a *Adapter) Aliases() []string { return nil }
 
 // Detect scans root for Pi signals. Each present signal boosts confidence;
 // 3+ → High, 2 → Medium, 1 → Low. signals==0 → empty Match (no-match).
@@ -68,92 +61,17 @@ func (a *Adapter) Aliases() []string { return []string{} }
 // Signals checked:
 //   - .pi/ directory at root
 //   - .pi/agent/ directory
-//   - .pi/mcp.json file
-//   - $HOME/.pi/mcp.json (global-mode hint, checked independently of root)
+//   - .pi/mcp.json file (with -g the root is $HOME, so ~/.pi/mcp.json counts)
 func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	signals := []adapter.Signal{
 		{Path: filepath.Join(root, ".pi"), Reason: "found .pi/ directory"},
 		{Path: filepath.Join(root, ".pi", "agent"), Reason: "found .pi/agent/ directory"},
 		{Path: filepath.Join(root, ".pi", "mcp.json"), Reason: "found .pi/mcp.json"},
 	}
-
-	// Global-mode hint: $HOME/.pi/mcp.json. Checked independently of `root`.
-	// A specific file — NOT the bare $HOME/.pi directory (WR-03): a populated
-	// global config is a far stronger signal than the mere existence of a
-	// scratch ~/.pi dir, so an unrelated cwd no longer trips a spurious
-	// global-only match that could turn a clean single-match into a multi-
-	// match (exit 1) for a totally different project.
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		signals = append(signals, adapter.Signal{
-			Path:   filepath.Join(home, ".pi", "mcp.json"),
-			Reason: "found ~/.pi/mcp.json (global mode)",
-		})
-	}
-
 	return adapter.DetectFromSignals(canonicalID, signals), nil
 }
 
-// piMCPEntry is the per-server JSON shape Pi consumes under the
-// `mcpServers` key for an HTTP MCP server. Pi's schema is `url` (presence
-// ⇒ StreamableHTTP w/ SSE fallback) + `headers`, with NO `type` field (Pi
-// defines none for HTTP servers; stdio uses command/args/env/cwd). The
-// earlier shared {type:"http", url, headers} shape emitted a stray `type`
-// key Pi's schema does not define. Schema ref:
-// https://github.com/nicobailon/pi-mcp-adapter. ACH's x-ach-key is a
-// custom STATIC header → plain `headers` (not Pi's auth/bearerToken/oauth,
-// which are for Bearer/OAuth flows ACH does not use here).
-type piMCPEntry struct {
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-}
-
-// mcpShape is the .pi/mcp.json document Pi reads. Encoded with sorted keys
-// (encoding/json's lexicographic map-key sort) so the output is deterministic
-// — important for FMT-05 deterministic re-hydrate / drift no-op detection.
-//
-// Only top-level mcpServers is emitted — pi has NO a2aAgents surface.
-type mcpShape struct {
-	MCPServers map[string]piMCPEntry `json:"mcpServers"`
-}
-
-// renderMcpJSON builds the .pi/mcp.json bytes from a manifest + credential.
-// Returned bytes are deterministic: keys are emitted in sorted order. The
-// credential is embedded into each server's headers under "x-ach-key"
-// (matching the on-disk plaintext discipline CLI-04 / D-04).
-//
-// Empty-state handling: when there are no runtime MCP servers, the encoded
-// shape is a stable {"mcpServers":{}} so re-render is byte-identical and the
-// merge target is re-hydrate idempotent.
-func renderMcpJSON(m *manifest.Manifest, credential string) ([]byte, []string, error) {
-	shape := mcpShape{
-		MCPServers: map[string]piMCPEntry{},
-	}
-
-	servers := adapter.RuntimeMCPServers(m)
-	contributedKeys := make([]string, 0, len(servers))
-
-	for _, server := range servers {
-		shape.MCPServers[server.ID] = piMCPEntry{
-			URL:     server.Endpoint,
-			Headers: adapter.HeadersWithCredential(credential, m.Environment),
-		}
-		contributedKeys = append(contributedKeys, "mcpServers."+server.ID)
-	}
-
-	sort.Strings(contributedKeys)
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(shape); err != nil {
-		return nil, nil, fmt.Errorf("pi: encode mcp.json: %w", err)
-	}
-
-	return buf.Bytes(), contributedKeys, nil
-}
-
-// RenderRuntime emits the single .pi/mcp.json FileWrite (D-33). Merge=MergeDeep;
+// RenderRuntime emits the single .pi/mcp.json FileWrite. Merge=MergeDeep;
 // Keys carries the contributed top-level keys for STATE-02 + ADAPT-05
 // inverse-merge during `--sync`.
 //
@@ -165,7 +83,9 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 	}
 
 	cred := adapter.CredentialFromContext(ctx)
-	content, keys, err := renderMcpJSON(m, cred)
+	// Pi reads `url` (StreamableHTTP with SSE fallback) and `headers`; it
+	// defines no `type` for an HTTP server.
+	content, keys, err := adapter.RenderMCPServersJSON(m, cred, "url")
 	if err != nil {
 		return nil, err
 	}
@@ -197,12 +117,12 @@ func mcpDeepKeys(srcRel string, in []byte) ([]byte, []string, error) {
 //
 //   - commands/**/*.md → .pi/prompts/**/* (MergeReplace verbatim)
 //   - skills/**/*      → .agents/skills/**/*  (MergeReplace verbatim)
-//   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys; D-33)
+//   - mcp/**/*         → .pi/mcp.json (MergeDeep, Transform=mcpDeepKeys)
 //
 // A root/**/* catch-all is OMITTED (D-36). No rules/agents/
 // AGENTS.md row — those top-level kinds fall to route.Project's accumulate-once
 // drop set (D-35), yielding Dropped = {rules, agents, AGENTS.md}; mcp is NOT
-// dropped because it has the mcp/**/* rule (D-33). This method is pure data —
+// dropped because it has the mcp/**/* rule. This method is pure data —
 // no I/O.
 func (a *Adapter) ProjectionRules() []route.Rule {
 	return []route.Rule{

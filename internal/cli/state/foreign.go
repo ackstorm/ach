@@ -8,8 +8,8 @@ import (
 )
 
 // ForeignSkillNames reports the projected skill names that OTHER environments
-// hydrated into the same workspace already own for one platform, mapped to the
-// owning environment name.
+// hydrated into the same workspace already own for the given platforms, mapped
+// to the owning environment name.
 //
 // Two Environments hydrated into one project UNION in the same .claude/ (see
 // ResolvePath) — deliberate, and the reason specialist environments compose.
@@ -19,13 +19,14 @@ import (
 // the later skill instead, leaving the incumbent's name untouched.
 //
 // achDir is the CURRENT environment's <ach-dir> (…/.ach/<env>): its parent is
-// the shared .ach root and its base is the environment to exclude. Only the
-// per-platform state-<platform>.json is read — a name claimed for a different
-// target is not a collision here. A sibling state file that cannot be read or
-// parsed (corrupt, older schema) is SKIPPED rather than failing the hydrate;
-// it contributes no claims. Directory order is os.ReadDir's (sorted), so the
-// first claimant of a duplicated name wins deterministically.
-func ForeignSkillNames(achDir, platform string) map[string]string {
+// the shared .ach root and its base is the environment to exclude. platforms
+// are the targets whose skills land in the same directory as the current
+// one's; a claim for any other target writes a different tree. A sibling state
+// file that cannot be read or parsed (corrupt, older schema) is SKIPPED rather
+// than failing the hydrate; it contributes no claims. Directory order is
+// os.ReadDir's (sorted), so the first claimant of a duplicated name wins
+// deterministically.
+func ForeignSkillNames(achDir string, platforms []string) map[string]string {
 	entries, err := os.ReadDir(filepath.Dir(achDir))
 	if err != nil {
 		return nil
@@ -36,17 +37,38 @@ func ForeignSkillNames(achDir, platform string) map[string]string {
 		if !e.IsDir() || e.Name() == self {
 			continue
 		}
-		f, err := Load(filepath.Join(filepath.Dir(achDir), e.Name(), "state-"+platform+".json"))
-		if err != nil || f == nil {
-			continue
-		}
-		for _, sk := range f.Skills {
-			if _, taken := owners[sk.Source]; sk.Source != "" && !taken {
-				owners[sk.Source] = e.Name()
+		for _, platform := range platforms {
+			f, err := Load(filepath.Join(filepath.Dir(achDir), e.Name(), "state-"+platform+".json"))
+			if err != nil || f == nil {
+				continue
+			}
+			for _, sk := range f.Skills {
+				if _, taken := owners[sk.Source]; sk.Source != "" && !taken {
+					owners[sk.Source] = e.Name()
+				}
 			}
 		}
 	}
 	return owners
+}
+
+// OtherPlatformStates loads the state of every target of the environment at
+// achDir except platform. A file that cannot be read or parsed is skipped.
+func OtherPlatformStates(achDir, platform string) []*File {
+	paths, err := filepath.Glob(filepath.Join(achDir, "state-*.json"))
+	if err != nil {
+		return nil
+	}
+	var out []*File
+	for _, p := range paths {
+		if filepath.Base(p) == "state-"+platform+".json" {
+			continue
+		}
+		if f, err := Load(p); err == nil && f != nil {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // ForeignInstructionTargets reports the instruction file targets that OTHER

@@ -350,6 +350,9 @@ type adapterDispatcherImpl struct {
 	// dryRun (set per Render from withDryRun) renders + classifies every
 	// file but publishes nothing.
 	dryRun bool
+	// sharedRows (set per Render) holds the whole-file plugin and Skill rows
+	// the Environment's other targets recorded, by absolute destination.
+	sharedRows map[string]*state.FileEntry
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -389,11 +392,10 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 	}
 
-	if isDryRun(ctx) {
-		dd := *d
-		dd.dryRun = true
-		d = &dd
-	}
+	dd := *d
+	dd.dryRun = d.dryRun || isDryRun(ctx)
+	dd.sharedRows = sharedRows(achDir, toolRoot, d.platformID)
+	d = &dd
 
 	var result RenderResult
 
@@ -456,6 +458,60 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	return result, nil
 }
 
+// sharedRows indexes, by absolute destination, the whole-file plugin and Skill
+// rows the other targets of the Environment at achDir recorded. Several targets
+// write the same .agents/skills tree, so a target hydrated later finds those
+// files on disk; the other target's row makes them this Environment's files.
+func sharedRows(achDir, toolRoot, platform string) map[string]*state.FileEntry {
+	rows := map[string]*state.FileEntry{}
+	for _, f := range state.OtherPlatformStates(achDir, platform) {
+		for _, bucket := range [][]state.FileEntry{f.Plugins, f.Skills} {
+			for i := range bucket {
+				if bucket[i].Merge != mergeStrDeep {
+					rows[adapter.ResolveDest(toolRoot, bucket[i].Target)] = &bucket[i]
+				}
+			}
+		}
+	}
+	return rows
+}
+
+// skillPlatforms lists platform and every registered target whose skills land
+// in the same directory as ad's: a skill name claimed for any of them collides.
+func skillPlatforms(ad adapter.Adapter, platform, toolRoot string, global bool) []string {
+	out := []string{platform}
+	dir := skillsDir(ad, platform, toolRoot, global)
+	if dir == "" {
+		return out
+	}
+	for _, other := range adapter.Iter() {
+		if other.ID() != platform && skillsDir(other, other.ID(), toolRoot, global) == dir {
+			out = append(out, other.ID())
+		}
+	}
+	return out
+}
+
+// skillsDir is the absolute directory ad projects skills into, or "" when it
+// has no skills rule.
+func skillsDir(ad adapter.Adapter, platform, toolRoot string, global bool) string {
+	rp, ok := ad.(route.RuleProvider)
+	if !ok {
+		return ""
+	}
+	for _, r := range rp.ProjectionRules() {
+		if !strings.HasPrefix(r.FromGlob, "skills/") {
+			continue
+		}
+		p := strings.TrimSuffix(r.ToGlob, "**/*") + "x"
+		if global {
+			p = adapter.RemapGlobalPath(platform, toolRoot, p)
+		}
+		return filepath.Dir(adapter.ResolveDest(toolRoot, p))
+	}
+	return ""
+}
+
 // hasDirectRuntime reports whether the manifest carries a direct runtime
 // endpoint the adapter can actually wire (an MCP server or an A2A agent).
 // Models are excluded: no adapter's RenderRuntime projects a model (access is
@@ -473,7 +529,7 @@ func hasDirectRuntime(m *manifest.Manifest) bool {
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary
 // component kind, or "" when the key is not a runtime component. MCP keys are
-// "mcpServers." (claude/pi), "mcp_servers." (codex) or "mcp.servers."
+// "mcpServers." (claude, pi, cursor, antigravity), "mcp_servers." (codex) or "mcp.servers."
 // (opencode); a server named "a2a-<agent>" is an A2A agent's MCP face.
 func runtimeKindForKey(k string) string {
 	name, ok := mcpServerNameFromKey(k)
@@ -942,7 +998,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	if verr := validatePluginName(envName); verr != nil {
 		return fmt.Errorf("adapter %s environment directory %q: %w", d.platformID, envName, verr)
 	}
-	foreign := state.ForeignSkillNames(achDir, d.platformID)
+	foreign := state.ForeignSkillNames(achDir, skillPlatforms(ad, d.platformID, toolRoot, d.global))
 	ownPrefixed := map[string]bool{}
 	if s != nil {
 		for _, e := range s.Skills {
@@ -1054,18 +1110,18 @@ func skillNameFromPath(path, root string) string {
 // MCP server-key prefixes per adapter config format (D-17). The projected
 // plugin MCP FileWrite contributes a dotted key of the form
 // "<prefix><id>" from its mcpDeepKeys Transform:
-//   - claude .mcp.json / pi mcp.json → "mcpServers.<id>"
+//   - claude .mcp.json / pi, cursor, antigravity mcp json → "mcpServers.<id>"
 //   - codex .codex/config.toml      → "mcp_servers.<id>"
 //   - opencode .opencode/opencode.json → "mcp.servers.<id>"
 const (
-	mcpServersPrefix     = "mcpServers."  // claude / pi (JSON)
+	mcpServersPrefix     = "mcpServers."  // claude / pi / cursor / antigravity (JSON)
 	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
-	mcpOpencodePrefix    = "mcp.servers." // opencode (JSON)
+	mcpOpencodePrefix    = adapter.OpencodeMCPKeyPrefix
 )
 
 // mcpContainerKeyFor returns the dotted-key prefix the contributed MCP keys of
 // fw use, derived from fw.Keys. Codex uses "mcp_servers.", opencode
-// "mcp.servers.", claude/pi "mcpServers.". When no contributed key matches a
+// "mcp.servers.", the others "mcpServers.". When no contributed key matches a
 // known prefix (no MCP keys), the default "mcpServers." is returned harmlessly
 // — the collision loop will then never match.
 func mcpServersPrefixFor(keys []string) string {
@@ -1094,7 +1150,7 @@ func mcpServersPrefixFor(keys []string) string {
 // Format- and prefix-aware (D-17): the config format is detected from the
 // target extension (.toml → TOML for codex, JSON otherwise), and the server-key
 // prefix is derived from the contributed keys ("mcp_servers." for codex,
-// "mcp.servers." for opencode, "mcpServers." for claude/pi).
+// "mcp.servers." for opencode, "mcpServers." otherwise).
 //
 // Returns (publish, drops, err): publish=false means every contributed key
 // collided, so the caller skips publishing this FileWrite entirely (still
@@ -1289,6 +1345,9 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		}
 	}
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
+	if prior == nil && fw.Merge != adapter.MergeDeep {
+		prior = d.sharedRows[finalAbs]
+	}
 
 	var freshHash, onDiskHash string
 	if fw.Merge == adapter.MergeDeep {

@@ -16,6 +16,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -200,31 +201,52 @@ func ensureProjectGitignore(w io.Writer, root string, global bool, entries []str
 	}
 }
 
-// opencodeMCPKeyPrefix is the dotted-key prefix of the MCP servers a plugin
-// deep-merges into .opencode/opencode.json (recorded in FileRec.Keys).
-const opencodeMCPKeyPrefix = "mcp.servers."
+// serverHints records what a run's MCP server changes call for: an opencode
+// restart when its servers were added or removed (a server key is any `mcp.`
+// key: `mcp.servers.<id>`, or `mcp.<id>` in a record written before the
+// OpenCode 2 format), and enabling in Cursor when one was added.
+type serverHints struct{ restart, enable bool }
 
-// opencodeRestart records whether a run wrote or removed an MCP server entry
-// for opencode (an opencode record with `mcp.servers.*` keys).
-type opencodeRestart struct{ on bool }
-
-func (o *opencodeRestart) note(target string, recs ...[]store.FileRec) {
-	if target != opencodeTarget {
-		return
-	}
-	for _, rs := range recs {
-		for _, r := range rs {
-			for _, k := range r.Keys {
-				o.on = o.on || strings.HasPrefix(k, opencodeMCPKeyPrefix)
-			}
+func (o *serverHints) note(target string, before, after []store.FileRec) {
+	switch target {
+	case opencodeTarget:
+		o.restart = o.restart || !maps.Equal(serverKeys(before, "mcp."), serverKeys(after, "mcp."))
+	case cursorTarget:
+		old := serverKeys(before, "mcpServers.")
+		for k := range serverKeys(after, "mcpServers.") {
+			o.enable = o.enable || !old[k]
 		}
 	}
 }
 
-// flush prints the restart hint once, when a server entry changed.
-func (o *opencodeRestart) flush(w io.Writer) {
-	if o.on {
+// priorFiles returns the files an earlier install of ref for target at l
+// recorded, or nil.
+func priorFiles(f *store.InstalledFile, l location, ref, target string, kind pkgKind) []store.FileRec {
+	if prev := findInstalled(f, l, ref, target, kind); len(prev) > 0 {
+		return prev[0].Files
+	}
+	return nil
+}
+
+func serverKeys(recs []store.FileRec, prefix string) map[string]bool {
+	keys := map[string]bool{}
+	for _, r := range recs {
+		for _, k := range r.Keys {
+			if strings.HasPrefix(k, prefix) {
+				keys[k] = true
+			}
+		}
+	}
+	return keys
+}
+
+// flush prints each due hint once.
+func (o *serverHints) flush(w io.Writer) {
+	if o.restart {
 		_, _ = fmt.Fprintln(w, "hint: "+opencodeRestartHint)
+	}
+	if o.enable {
+		_, _ = fmt.Fprintln(w, "hint: "+cursorEnableHint)
 	}
 }
 
@@ -250,15 +272,16 @@ func findRepo(name string, repos *store.ReposFile) (store.RepoEntry, error) {
 //
 // Call AFTER Commit and BEFORE recording the new entry, so the just-installed
 // ref is not yet present in installed and cannot collide with itself.
-// ownersAt maps each target-relative path owned by a DIFFERENT installed entry
-// at the given target and location to its owning ref. Shared by the pre-commit conflict
-// resolver (manager.ResolveConflicts) and the post-commit collisionWarn so both
-// agree on what counts as "already owned". The installing ref is excluded so a
+// ownersAt maps each path a DIFFERENT installed entry at the given location
+// records to its owning ref, whatever its target: several tools write the same
+// .agents/skills tree. Shared by the pre-commit conflict resolver
+// (manager.ResolveConflicts) and the post-commit collisionWarn so both agree on
+// what counts as "already owned". The installing ref is excluded so a
 // re-install never collides with itself.
-func ownersAt(installed *store.InstalledFile, l location, ref, target string) map[string]string {
+func ownersAt(installed *store.InstalledFile, l location, ref string) map[string]string {
 	owners := make(map[string]string)
 	for _, e := range installed.Installed {
-		if e.Ref == ref || e.Target != target || !l.holds(e) {
+		if e.Ref == ref || !l.holds(e) {
 			continue
 		}
 		for _, f := range e.Files {
@@ -268,9 +291,34 @@ func ownersAt(installed *store.InstalledFile, l location, ref, target string) ma
 	return owners
 }
 
+// mergeDeep is FileRec.Merge for a key-merged file (JSON/TOML), shared by key
+// with other installs; any other value is a whole file.
+const mergeDeep = "deep"
+
+// heldElsewhere reports the whole files that records at l other than the ones
+// being removed (skip) still hold: uninstalling one tool keeps a file another
+// tool sharing its path still uses. A key-merged file is never held: each
+// install removes only its own keys from it.
+func heldElsewhere(installed *store.InstalledFile, l location, skip []store.InstalledEntry) map[string]bool {
+	held := map[string]bool{}
+	for _, e := range installed.Installed {
+		if !l.holds(e) || slices.ContainsFunc(skip, func(s store.InstalledEntry) bool {
+			return s.Ref == e.Ref && s.Target == e.Target && s.Global == e.Global && s.Dir == e.Dir
+		}) {
+			continue
+		}
+		for _, f := range e.Files {
+			if f.Merge != mergeDeep {
+				held[f.RelPath] = true
+			}
+		}
+	}
+	return held
+}
+
 // refuseUnowned stops an install or update (exit 7) that would replace a file
-// no installed package at target and location records: the user's own, or another tool's.
-// --force replaces it.
+// no installed package at location records, for any target: the user's own, or
+// another tool's. --force replaces it.
 func refuseUnowned(
 	force bool, verb, root, ref, target string, writes []manager.PlannedWrite,
 	installed *store.InstalledFile, l location,
@@ -280,7 +328,7 @@ func refuseUnowned(
 	}
 	owned := map[string]bool{}
 	for _, e := range installed.Installed {
-		if e.Target != target || !l.holds(e) {
+		if !l.holds(e) {
 			continue
 		}
 		for _, f := range e.Files {
@@ -316,7 +364,7 @@ func reportConflictActions(w io.Writer, ref, target string, actions []manager.Co
 func collisionWarn(
 	w io.Writer, installed *store.InstalledFile, l location, ref, target string, recs []store.FileRec,
 ) {
-	owners := ownersAt(installed, l, ref, target)
+	owners := ownersAt(installed, l, ref)
 	for _, r := range recs {
 		other, ok := owners[r.RelPath]
 		if !ok {
@@ -327,7 +375,7 @@ func collisionWarn(
 		// preserved alongside this one — so it must not raise a false
 		// "overwrote" alarm (the .claude/settings.json MCP accretion).
 		// FileRec.Merge: ""=replace (back-compat), "deep".
-		if r.Merge == "deep" {
+		if r.Merge == mergeDeep {
 			continue
 		}
 		_, _ = fmt.Fprintf(w,
@@ -341,6 +389,7 @@ func collisionWarn(
 // included to prevent a plugin and a skill that share the same
 // name@repo+target from colliding.
 func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
+	refreshSharedRecs(f, entry)
 	for i, e := range f.Installed {
 		if e.Ref == entry.Ref && e.Target == entry.Target && e.Kind == entry.Kind &&
 			(location{global: entry.Global, dir: entry.Dir}).holds(e) {
@@ -349,6 +398,31 @@ func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
 		}
 	}
 	f.Installed = append(f.Installed, entry)
+}
+
+// refreshSharedRecs copies the hash of every whole-file record of entry into
+// the records the same item holds for another target at the same location and
+// path. Several targets write one .agents/skills tree; with one hash per file,
+// the next update or uninstall of the other target does not take this write
+// for a local edit.
+func refreshSharedRecs(f *store.InstalledFile, entry store.InstalledEntry) {
+	written := map[string]string{}
+	for _, r := range entry.Files {
+		if r.Merge != mergeDeep {
+			written[r.RelPath] = r.Hash
+		}
+	}
+	at := location{global: entry.Global, dir: entry.Dir}
+	for i, e := range f.Installed {
+		if e.Ref != entry.Ref || e.Target == entry.Target || !at.holds(e) {
+			continue
+		}
+		for j, r := range e.Files {
+			if h, ok := written[r.RelPath]; ok && r.Merge != mergeDeep {
+				f.Installed[i].Files[j].Hash = h
+			}
+		}
+	}
 }
 
 // removeInstalled removes all entries at l matching ref, kind and (if
@@ -503,7 +577,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 			// target so the project .gitignore can exclude the credential-bearing
 			// config after the install completes.
 			var ignoreEntries []string
-			var restart opencodeRestart
+			var hints serverHints
 
 			for _, arg := range args {
 				atIdx := strings.LastIndex(arg, "@")
@@ -558,7 +632,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					// Conflict resolution (pre-commit): de-collide against files
 					// owned by OTHER installed refs at this target per --conflict.
 					// Only MergeReplace writes clash; additive merges pass through.
-					owners := ownersAt(installed, here, ref, targetID)
+					owners := ownersAt(installed, here, ref)
 					namespaceRoot := conflictRoot(flagGlobal, root, targetID)
 					resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, namespaceRoot)
 					if err != nil {
@@ -637,10 +711,11 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 						Files:       recs,
 						InstalledAt: nowFn().UTC().Format(time.RFC3339),
 					}
+					before := priorFiles(installed, here, ref, targetID, kind)
 					upsertInstalled(installed, entry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(targetID, recs)
+					hints.note(targetID, before, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ %s → %s (%d files)\n", ref, targetID, len(recs))
@@ -656,7 +731,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("install: save installed: %v", err)}
 			}
 			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -711,7 +786,7 @@ func planUpdate(
 		}
 	}
 	remapGlobalWrites(global, root, e.Target, writes)
-	owners := ownersAt(installed, l, ref, e.Target)
+	owners := ownersAt(installed, l, ref)
 	resolved, actions, err := manager.ResolveConflicts(writes, owners, policy, name, conflictRoot(global, root, e.Target))
 	if err != nil {
 		return updatePlan{}, &exit.CodedError{
@@ -793,10 +868,11 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 
 			// processEntry uninstalls one matched entry, or — in --dry-run —
 			// prints the read-only plan (per-file remove/modify/skip/absent).
-			var restart opencodeRestart
-			processEntry := func(e store.InstalledEntry) error {
+			var hints serverHints
+			processEntry := func(e store.InstalledEntry, held map[string]bool) error {
+				files := slices.DeleteFunc(slices.Clone(e.Files), func(f store.FileRec) bool { return held[f.RelPath] })
 				if flagDryRun {
-					plan, perr := manager.UninstallPlan(root, flagGlobal, e.Files)
+					plan, perr := manager.UninstallPlan(root, flagGlobal, files)
 					if perr != nil {
 						return &exit.CodedError{Code: exit.General,
 							Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, perr)}
@@ -808,7 +884,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					}
 					return nil
 				}
-				skipped, unErr := manager.Uninstall(root, flagGlobal, e.Files)
+				skipped, unErr := manager.Uninstall(root, flagGlobal, files)
 				if unErr != nil {
 					return &exit.CodedError{Code: exit.General,
 						Msg: fmt.Sprintf("uninstall: %s ← %s: %v", e.Ref, e.Target, unErr)}
@@ -817,7 +893,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ uninstalled %s ← %s\n", e.Ref, e.Target)
-				restart.note(e.Target, e.Files)
+				hints.note(e.Target, e.Files, nil)
 				return nil
 			}
 
@@ -847,8 +923,9 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 						}
 						continue
 					}
+					held := heldElsewhere(installed, here, entries)
 					for _, e := range entries {
-						if err := processEntry(e); err != nil {
+						if err := processEntry(e, held); err != nil {
 							return err
 						}
 					}
@@ -862,7 +939,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 			if err := store.SaveInstalled(installed); err != nil {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("uninstall: save installed: %v", err)}
 			}
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}
@@ -925,7 +1002,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 			// Accumulate ignore entries for re-projected files (an update may
 			// introduce a new adapter dir/file the original install lacked).
 			var ignoreEntries []string
-			var restart opencodeRestart
+			var hints serverHints
 
 			// Determine which refs to update.
 			var targets []string
@@ -1079,7 +1156,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					upsertInstalled(installed, newEntry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(e.Target, recs, e.Files)
+					hints.note(e.Target, e.Files, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ updated %s → %s (%s → %s, %d files)\n",
@@ -1091,7 +1168,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 				return &exit.CodedError{Code: exit.ConfigFile, Msg: fmt.Sprintf("update: save installed: %v", err)}
 			}
 			ensureProjectGitignore(cmd.ErrOrStderr(), root, flagGlobal, ignoreEntries)
-			restart.flush(cmd.ErrOrStderr())
+			hints.flush(cmd.ErrOrStderr())
 			return nil
 		},
 	}

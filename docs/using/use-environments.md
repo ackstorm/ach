@@ -92,12 +92,13 @@ A Prompt is a different thing: it is served to whoever names it, for example an
 agent whose system prompt is that Prompt, and `ach-cli` does not write it into a
 tool.
 
-OpenCode loads MCP servers when its service starts. After a hydrate (or a
-`local plugin` install, update or uninstall) that adds or removes one, run
-`opencode service restart`.
+OpenCode loads MCP servers when its service starts. After a hydrate, an
+`environment uninstall` (or a `local plugin` install, update or uninstall) that
+adds or removes one, run `opencode service restart`.
 
-Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
-in that folder.
+Hydrate adds the folders it writes (`.ach/`, `.claude/`, `.agents/`, …) to a
+`.gitignore` in that folder, whole: they can hold your key. Skills your team
+commits under `.agents/skills` then need `git add -f`.
 
 ## Update
 

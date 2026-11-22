@@ -11,6 +11,10 @@ import (
 	"github.com/ackstorm/ach/internal/cli/manifest"
 )
 
+// OpencodeMCPKeyPrefix is the dotted-key prefix of every MCP server ACH
+// contributes to OpenCode's opencode.json (`mcp.servers.<id>`).
+const OpencodeMCPKeyPrefix = "mcp.servers."
+
 // RenderMCPServersJSON encodes the Environment's runtime MCP servers as
 // {"mcpServers": {"<id>": {"<urlField>": <endpoint>, "headers": {…}}}} and
 // returns the contributed dotted keys, sorted. urlField is the tool's name

@@ -31,9 +31,8 @@ type Opts struct {
 	// credentials (D-12 / spec §5.7); OPTIONAL for ek_.
 	Environment string
 
-	// Platform is the adapter id (ADAPT-01: claude-code / codex /
-	// opencode / pi). Empty → autodetect via the adapter
-	// registry's Detect() (ADAPT-02 / D-06). Multi-match autodetect
+	// Platform is the adapter id. Empty → autodetect via the adapter
+	// registry's Detect(). Multi-match autodetect
 	// exits 1 with the candidate list.
 	Platform string
 

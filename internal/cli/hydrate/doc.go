@@ -12,11 +12,9 @@
 // stages 1-6 (lock → tmp sweep → state read+guard → reconcile vs disk →
 // manifest fetch → scope-aware diff) plus the §8.4 drift four-outcome
 // truth table. Stages 7-11 (content fetch / safe extract / hash classify
-// / adapter dispatch / sync inverse-merge) are interface-shaped STUBS
-// in W1; concrete implementations land in:
-//
-//   - 07-W2-01/02 — Extractor (safe tar policy + auto-claim cascade)
-//   - 07-W3-01..05 — AdapterDispatcher (4 platform adapters + registry)
+// / adapter dispatch / sync inverse-merge) go through interfaces: the
+// Extractor (safe tar policy + auto-claim cascade) and the
+// AdapterDispatcher (platform adapters + registry).
 //
 // Stage 12 (atomic state write) reuses state.WriteAtomic verbatim;
 // stage 13 (cleanup tmp) reuses state.SweepTmp. Stage 14 is the
