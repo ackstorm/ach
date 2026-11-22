@@ -240,7 +240,10 @@ refused with `exit.CollisionRefuse` (7) unless `--force`. Identical content is
 adopted. Deep writes share their file by key and never refuse.
 
 - `environment hydrate`: `publishFile` (`hydrate/wiring.go`), record = the
-  prior state row of that Environment and target. `--dry-run` refuses too.
+  prior state row of that Environment and target, else a row another target
+  of the same Environment recorded for the same destination (`sharedRows`:
+  `.agents/skills` is written by five targets, so a target added later finds
+  their files). `--dry-run` refuses too.
   A sibling Environment's row does not count, so the FIRST hydrate of an
   Environment into a folder (or `-g`) where a sibling installed the same
   plugin at an older revision stops here: hydrate the sibling first, or
@@ -275,8 +278,10 @@ keeps the bare name. Two properties worth not re-deriving:
   project prefixed stays prefixed after the other env drops its copy, so the
   name a user types does not flap between hydrates.
 
-Only the per-platform `state-<platform>.json` is consulted — a claim for a
-different target writes a different tree. NOT covered: `Plugin` (same problem);
+The claim set reads the sibling states of every target whose skills rule
+lands in the same directory (`skillPlatforms`, from `ProjectionRules`, after
+the `--global` remap): codex, cursor, opencode, pi and antigravity share
+`.agents/skills`; claude-code's `.claude/skills` is its own. NOT covered: `Plugin` (same problem);
 artifacts extract to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
 cross-env reference counting, so `environment uninstall <a>` removes a file `<b>` also

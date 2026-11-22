@@ -10,6 +10,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
   install replaced the first one's record, so `uninstall` and `update` missed
   the first folder's files. `update` and `uninstall` act on the current folder
   (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
+- `ach-cli environment hydrate` for a target added after another one (`--target cursor` in a folder hydrated for codex, or `ach-cli launch <tool> --environment`) no longer refuses a skill in `.agents/skills` that the other target wrote: it updates it, or keeps it when you edited it.
+- Two Environments hydrated into one folder for different targets that share `.agents/skills` (codex, cursor, opencode, pi, antigravity) no longer overwrite each other's same-named skill: the later one is prefixed with its Environment name, as with one target.
 
 ## [1.2.0] - 2026-11-21
 
