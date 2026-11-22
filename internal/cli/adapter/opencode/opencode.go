@@ -106,10 +106,6 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 	}), nil
 }
 
-// opencodeMCPKeyPrefix is the dotted-key prefix of every MCP server ACH
-// contributes to `.opencode/opencode.json`.
-const opencodeMCPKeyPrefix = "mcp.servers."
-
 // configJSONShape is the `.opencode/opencode.json` document OpenCode
 // reads. MCP server registrations live under `mcp.servers`. A2A agents are
 // not written: OpenCode reads no A2A key.
@@ -158,7 +154,7 @@ func renderConfigJSON(m *manifest.Manifest, credential string) ([]byte, []string
 			Headers: adapter.HeadersWithCredential(credential, m.Environment),
 		}
 		shape.MCP.Servers[server.ID] = entry
-		contributedKeys = append(contributedKeys, opencodeMCPKeyPrefix+server.ID)
+		contributedKeys = append(contributedKeys, adapter.OpencodeMCPKeyPrefix+server.ID)
 	}
 
 	sort.Strings(contributedKeys)
@@ -371,7 +367,7 @@ func opencodeAgentTools(srcRel string, in []byte) (out []byte, keys []string, er
 // secret value.
 //
 // keys returns the contributed dotted paths `["mcp.servers.<id>", …]` (sorted)
-// matching the runtime encoder prefix (opencodeMCPKeyPrefix), so the
+// matching the runtime encoder prefix (adapter.OpencodeMCPKeyPrefix), so the
 // prefix-aware dropRuntimeOwnedMCP dedups a projected server against an
 // identically-named runtime server.
 func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, err error) {
@@ -404,7 +400,7 @@ func opencodeMCPConvert(srcRel string, in []byte) (out []byte, keys []string, er
 			continue
 		}
 		converted[id] = convertOpencodeMCPEntry(em)
-		keys = append(keys, opencodeMCPKeyPrefix+id)
+		keys = append(keys, adapter.OpencodeMCPKeyPrefix+id)
 	}
 	sort.Strings(keys)
 

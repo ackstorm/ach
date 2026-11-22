@@ -507,7 +507,7 @@ surgery per the Codex config reference).
 
 **opencode MCP — OpenCode 2 format only, under `mcp.servers`; CONVERTS
 per-entry shape (`opencodeMCPConvert`), NOT a bare rename.** Contributed keys
-are `mcp.servers.<id>` (`opencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
+are `mcp.servers.<id>` (`adapter.OpencodeMCPKeyPrefix`; hydrate's `mcpOpencodePrefix`
 parses them, and an item's name is `<id>`, never `servers.<id>`). Source of truth:
 `anomalyco/opencode` v2.3.2, `packages/schema/src/mcp.ts` (`RemoteConfig`:
 `type:"remote"`, `url`, optional `headers`, `oauth`, `disabled`, `timeout`;

@@ -1060,7 +1060,7 @@ func skillNameFromPath(path, root string) string {
 const (
 	mcpServersPrefix     = "mcpServers."  // claude / pi (JSON)
 	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
-	mcpOpencodePrefix    = "mcp.servers." // opencode (JSON)
+	mcpOpencodePrefix    = adapter.OpencodeMCPKeyPrefix
 )
 
 // mcpContainerKeyFor returns the dotted-key prefix the contributed MCP keys of
