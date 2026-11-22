@@ -387,8 +387,11 @@ A release is confirmed OK when `gh release list -L 1` shows the new version
 as `Latest` AND `gh run list --branch main -L 3` shows its `Release` run
 `success`. Only then, always:
 
-1. `git worktree remove` + `git branch -D` the merged feature worktrees;
-   delete the merged remote branch (`git push origin --delete <branch>`).
+1. `git worktree remove` + `git branch -D` the merged feature worktrees.
+   GitHub deletes the remote branch on merge (`delete_branch_on_merge`), so
+   there is no `git push origin --delete`; the agent permission classifier
+   refuses that command as destructive. `.gocache/` is owned by the host user
+   (`dev.sh` keeps UID:GID), so `git worktree remove` needs no sudo.
 2. `make clean-docker` (safe with kind up).
 3. `git pull --ff-only` on `main` to pick up the merged release commit.
 
