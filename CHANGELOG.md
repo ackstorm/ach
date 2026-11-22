@@ -15,6 +15,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Fixed
 - `ach-cli environment hydrate` without `--target` picks the folder's own tool again when `~/.cursor/mcp.json`, `~/.gemini/config/mcp_config.json` or `~/.pi/mcp.json` exists. Those files counted as a Cursor, Antigravity or pi signal in every folder, so the hydrate stopped with "multiple agent targets detected" or chose that tool. They now count only with `-g`.
+- `ach-cli local plugin|skill`: the same item installed for the same tool in
+  two folders, or in a folder and with `-g`, is two installs. Before, the second
+  install replaced the first one's record, so `uninstall` and `update` missed
+  the first folder's files. `update` and `uninstall` act on the current folder
+  (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
 
 ## [1.2.0] - 2026-11-21
 
