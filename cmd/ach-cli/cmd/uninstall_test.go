@@ -349,6 +349,37 @@ func TestUninstall_ListsItemsPerTarget(t *testing.T) {
 	}
 }
 
+// Removing an OpenCode MCP server prints the service restart hint, as hydrate
+// does when it adds or removes one; a dry run does not.
+func TestUninstall_OpencodeServiceRestartHint(t *testing.T) {
+	for _, dry := range []bool{false, true} {
+		ws := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(ws, ".ach", "prod"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := state.Save(filepath.Join(ws, ".ach", "prod", "state-opencode.json"), &state.File{
+			SchemaVersion: "3", Environment: "prod",
+			Adapter: state.AdapterSection{Files: []state.FileEntry{{
+				Target: ".opencode/opencode.json", Hash: "h", Merge: "deep", Keys: []string{"mcp.servers.echo"},
+			}}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		swapUninstallSyncFn(t, &recordedSync{}, hydrate.SyncStats{Pruned: 1}, nil)
+		args := []string{"--dir", ws, "prod"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		stdout, _, code, err := executeUninstall(t, args...)
+		if err != nil || code != exit.OK {
+			t.Fatalf("uninstall dry=%v: code=%d err=%v", dry, code, err)
+		}
+		if got := strings.Contains(stdout, opencodeRestartHint); got == dry {
+			t.Errorf("dry=%v: restart hint shown=%v\n%s", dry, got, stdout)
+		}
+	}
+}
+
 // A target that removes nothing still gets its own row, so the list of the
 // one that did is labelled with its target name.
 func TestUninstall_LabelsTargetsWhenOnlyOneRemoves(t *testing.T) {

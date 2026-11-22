@@ -324,6 +324,9 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		result = fmt.Sprintf("nothing removed (dry run); would remove %d", totalPruned)
 	}
 	u.verb("Finished", "%s in %s", result, elapsed(time.Since(start)))
+	if !in.dryRun && opencodeServersChanged(removed) {
+		u.verb("hint", "%s", opencodeRestartHint)
+	}
 	return nil
 }
 

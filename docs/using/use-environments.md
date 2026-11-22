@@ -86,9 +86,9 @@ only in a project it trusts. An Instruction the Environment drops is removed on
 the next hydrate. Antigravity caps all always-on rules together at about
 20,000 tokens.
 
-OpenCode loads MCP servers when its service starts. After a hydrate (or a
-`local plugin` install, update or uninstall) that adds or removes one, run
-`opencode service restart`.
+OpenCode loads MCP servers when its service starts. After a hydrate, an
+`environment uninstall` (or a `local plugin` install, update or uninstall) that
+adds or removes one, run `opencode service restart`.
 
 Hydrate adds the folders it writes (`.ach/`, `.claude/`, …) to a `.gitignore`
 in that folder.
