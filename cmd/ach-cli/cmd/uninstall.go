@@ -324,10 +324,16 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		result = fmt.Sprintf("nothing removed (dry run); would remove %d", totalPruned)
 	}
 	u.verb("Finished", "%s in %s", result, elapsed(time.Since(start)))
-	if !in.dryRun && opencodeServersChanged(removed) {
+	restartHint(u, in.dryRun, removed)
+	return nil
+}
+
+// restartHint prints the OpenCode restart hint after a real run that removed a
+// server.
+func restartHint(u *ui, dryRun bool, removed []hydrate.Result) {
+	if !dryRun && opencodeServersChanged(removed) {
 		u.verb("hint", "%s", opencodeRestartHint)
 	}
-	return nil
 }
 
 // platformOfState returns the platform of a state-<platform>.json path.
