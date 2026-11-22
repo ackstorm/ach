@@ -18,8 +18,8 @@ import (
 	achmetrics "github.com/ackstorm/ach/internal/metrics"
 )
 
-// FetchedObjectReconciler is the field set shared by the four fetched-object
-// reconcilers (Plugin, Skill, Instruction, Artifact). CacheRoot is the PVC mount
+// FetchedObjectReconciler is the field set shared by the five fetched-object
+// reconcilers (Plugin, Skill, Prompt, Instruction, Artifact). CacheRoot is the PVC mount
 // root from ACH_CACHE_ROOT (default /var/cache/ach).
 type FetchedObjectReconciler struct {
 	client.Client

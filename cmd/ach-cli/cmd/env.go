@@ -132,7 +132,7 @@ func newEnvSearchCmd() *cobra.Command {
 		Long: `Find what your environments offer by name.
 
 Matches <text>, case-insensitively, against each environment's name and
-description and the name of every plugin, skill, instruction, artifact, MCP
+description and the name of every plugin, skill, instruction, prompt, artifact, MCP
 server, model and A2A agent it serves. Several words must all match.
 Only names are searched, not what is written inside a skill or plugin.
 `,
@@ -256,6 +256,7 @@ type runtimeView struct {
 
 type contextView struct {
 	Instructions []render.ContextItem `json:"instructions"`
+	Prompts      []render.ContextItem `json:"prompts"`
 	Plugins      []render.ContextItem `json:"plugins"`
 	Artifacts    []render.ContextItem `json:"artifacts"`
 	Skills       []render.ContextItem `json:"skills"`
@@ -280,8 +281,9 @@ func newEnvDescribeView(env render.EnvView, h *render.HydrateView) envDescribeVi
 			A2AAgents: orEmpty(h.Runtime.A2AAgents), Guardrails: orEmpty(h.Runtime.Guardrails),
 		}
 		v.Context = &contextView{
-			Instructions: orEmpty(h.Context.Instructions), Plugins: orEmpty(h.Context.Plugins),
-			Artifacts: orEmpty(h.Context.Artifacts), Skills: orEmpty(h.Context.Skills),
+			Instructions: orEmpty(h.Context.Instructions), Prompts: orEmpty(h.Context.Prompts),
+			Plugins: orEmpty(h.Context.Plugins), Artifacts: orEmpty(h.Context.Artifacts),
+			Skills: orEmpty(h.Context.Skills),
 		}
 	}
 	return v

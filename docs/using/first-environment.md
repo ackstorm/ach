@@ -68,7 +68,7 @@ ach-cli environment describe quickstart
 ```
 
 `describe` prints the Environment's runtime (models, MCP servers, A2A agents)
-and its context (plugins, skills, instructions, artifacts).
+and its context (plugins, skills, prompts, instructions, artifacts).
 
 ## 4. Put it in a folder
 

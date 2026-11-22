@@ -393,6 +393,7 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 			},
 			"context": map[string]any{
 				"instructions": []map[string]any{},
+				"prompts":      []map[string]any{{"name": "persona", "id": "persona", "downloadUrl": "/content/prompt/persona"}},
 				"plugins":      []map[string]any{},
 				"artifacts":    []map[string]any{},
 			},
@@ -422,6 +423,9 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "https://hub.example/v1") {
 		t.Errorf("stdout missing runtime endpoint; got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "prompt") || !strings.Contains(stdout, "/content/prompt/persona") {
+		t.Errorf("stdout missing the prompt row; got: %s", stdout)
 	}
 }
 

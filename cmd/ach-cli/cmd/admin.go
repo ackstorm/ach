@@ -18,7 +18,7 @@
 // event Target / appearing in shell history).
 //
 // D-CONTEXT W3b / spec §15.5: `refresh` validates `kind` against the
-// closed set {plugin, instruction, artifact, marketplace}. Other kinds
+// closed set {plugin, instruction, prompt, artifact, marketplace}. Other kinds
 // the server-side handler supports (`environment`,
 // `backendidentitypolicy`, future) are rejected client-side with
 // exit 1 — the user-facing CLI deliberately does NOT surface them in
@@ -128,11 +128,12 @@ var adminHTTPClient *http.Client
 // allowedRefreshKinds is the closed-set client-side allow-list per
 // D-CONTEXT W3b. The user-facing names `marketplace` / `skill-marketplace`
 // map to the server kinds `pluginmarketplace` / `skillmarketplace` in
-// runAdminRefresh via refreshKindToServer; `plugin`/`instruction`/`artifact`/
+// runAdminRefresh via refreshKindToServer; `plugin`/`instruction`/`prompt`/`artifact`/
 // `skill` pass through unchanged.
 var allowedRefreshKinds = map[string]struct{}{
 	"plugin":            {},
 	"instruction":       {},
+	"prompt":            {},
 	"artifact":          {},
 	"skill":             {},
 	"marketplace":       {},
@@ -141,7 +142,7 @@ var allowedRefreshKinds = map[string]struct{}{
 
 // refreshKindToServer maps a user-facing refresh kind to the canonical
 // server kind db.SetForceRefresh expects. Entries absent from the map pass
-// through verbatim (plugin/instruction/artifact/skill). The two marketplace
+// through verbatim (plugin/instruction/prompt/artifact/skill). The two marketplace
 // aliases MUST be mapped — sending `marketplace`/`skill-marketplace`
 // verbatim would 400 server-side (G8 fix).
 var refreshKindToServer = map[string]string{
@@ -206,7 +207,7 @@ callers receive ` + "`403 not_admin`" + ` and the CLI exits 3.
 // they only added noise to the inventory. The server-side routes were
 // removed 2026-07-15 (audit).
 var adminListKinds = []string{
-	"environments", "plugins", "instructions", "artifacts", "skills",
+	"environments", "plugins", "instructions", "prompts", "artifacts", "skills",
 	"marketplaces", "skill-marketplaces", "bips",
 }
 
@@ -287,7 +288,7 @@ func newAdminListCmd() *cobra.Command {
 		Long: `Read-only inventory. Admin-only.
 
 ACH objects (from the Postgres projections, version + sync status):
-  environments, plugins, instructions, artifacts, skills, marketplaces,
+  environments, plugins, instructions, prompts, artifacts, skills, marketplaces,
   skill-marketplaces, bips
 LiteLLM runtime catalog (KIND NAME STATUS):
   models, mcp, a2a, teams, guardrails
@@ -309,8 +310,8 @@ AVAILABLE column (content kinds): a newer commit on the watched ref of a
 source pinned to spec.<git>.commit; promote it in GitOps. '-' when none.
 
 Note: artifacts show 'fresh*' — their refresh tracks name resolution, not
-content presence. plugins, skills and instructions are truly content-gated
-(bare 'fresh').
+content presence. plugins, skills, prompts and instructions are truly
+content-gated (bare 'fresh').
 Guardrails add MODE and DEFAULT-ON columns.`,
 		Example: `  ach-cli admin list plugins
   ach-cli admin list models -o json
@@ -834,7 +835,7 @@ func newAdminRefreshCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "refresh <kind> <name>",
 		Short: "Force-refresh an external content resource",
-		Long: "kind must be one of {plugin, instruction, artifact, skill, marketplace, " +
+		Long: "kind must be one of {plugin, instruction, prompt, artifact, skill, marketplace, " +
 			"skill-marketplace}. No interactive confirmation (idempotent operation).",
 		Args:          cobra.ExactArgs(2),
 		SilenceUsage:  true,
@@ -862,7 +863,7 @@ func runAdminRefresh(cmd *cobra.Command, kind, name string, f *adminCredFlags) e
 		return &exit.CodedError{
 			Code: exit.General,
 			Msg: fmt.Sprintf(
-				"kind must be one of: plugin, instruction, artifact, skill, marketplace, skill-marketplace; got: %s",
+				"kind must be one of: plugin, instruction, prompt, artifact, skill, marketplace, skill-marketplace; got: %s",
 				kind),
 		}
 	}

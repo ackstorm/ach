@@ -57,7 +57,7 @@ import (
 //   - Scope: artifact scope ("object" | "directory") — drives the path
 //     suffix (.tar.gz vs bare) and the response Content-Type.
 //   - Source: §12.3 resolution arm ("plugin" | "marketplace") for
-//     plugin kind; empty for instruction/artifact.
+//     plugin kind; empty for instruction/prompt/artifact.
 type contentRow struct {
 	StorageLocation       string
 	LastSuccessfulRefresh *time.Time
@@ -199,6 +199,8 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 	switch kind {
 	case kindInstruction:
 		list = envRow.ContextInstructions
+	case kindPrompt:
+		list = envRow.ContextPrompts
 	case kindPlugin:
 		list = envRow.ContextPlugins
 	case kindArtifact:
@@ -238,6 +240,19 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 	switch kind {
 	case kindInstruction:
 		row, err := db.GetInstructionByName(ctx, d.Pool, d.Namespace, name)
+		if err != nil {
+			return nil, errInternal
+		}
+		if row == nil {
+			return nil, errContentNotFound
+		}
+		return &contentRow{
+			StorageLocation:       row.StorageLocation,
+			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
+			MaxStalenessSeconds:   row.MaxStalenessSeconds,
+		}, nil
+	case kindPrompt:
+		row, err := db.GetPromptByName(ctx, d.Pool, d.Namespace, name)
 		if err != nil {
 			return nil, errInternal
 		}

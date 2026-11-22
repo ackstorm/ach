@@ -21,7 +21,7 @@ const schemaV1Alpha1 = "v1alpha1"
 
 // ContentRef is the shared shape for every runtime AND context entry
 // in the hydrate response. Runtime entries (models, mcpServers,
-// a2aAgents) populate Endpoint; context entries (instructions, plugins,
+// a2aAgents) populate Endpoint; context entries (instructions, prompts, plugins,
 // artifacts) populate DownloadURL. The `omitempty` tags keep encoded
 // output minimal — a context entry round-trips with no Endpoint field
 // and vice-versa. Limits appears on models only, and no adapter projects it:
@@ -57,10 +57,9 @@ type RuntimeBlock struct {
 // ContextBlock carries the context arms of the manifest.
 type ContextBlock struct {
 	Instructions []ContentRef `json:"instructions,omitempty"`
-	// Prompts is accepted so this CLI decodes a server that predates
-	// Instructions; nothing reads it.
-	// ponytail: drop once every supported server sends no prompts key.
-	Prompts   []ContentRef `json:"prompts,omitempty"`
+	// Prompts are loaded by whoever names them (`environment fetch`); hydrate
+	// does not read them.
+	Prompts   []ContentRef `json:"prompts"`
 	Plugins   []ContentRef `json:"plugins"`
 	Artifacts []ContentRef `json:"artifacts"`
 	Skills    []ContentRef `json:"skills"`

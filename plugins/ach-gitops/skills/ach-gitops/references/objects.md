@@ -1,4 +1,4 @@
-# Standalone Plugin, Skill, Instruction and Artifact
+# Standalone Plugin, Skill, Prompt, Instruction and Artifact
 
 Each of these kinds is one item fetched from one upstream. An Environment references it
 by its bare `metadata.name`. All take the shared source block (`content-sources.md`):
@@ -78,6 +78,33 @@ spec:
   layout a marketplace cannot walk.
 - Same 50 MiB default size cap as plugins.
 
+## Prompt
+
+A single file (usually Markdown) served as a one-entry tar.gz to whoever names it, for example an
+ach-agent Agent whose `prompt.system` is `{type: ach, ach: <name>}`. Unlike an
+Instruction, `ach-cli environment hydrate` does not write it into a tool.
+
+```yaml
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: backend-system-prompt
+spec:
+  type: github
+  contentType: text/markdown
+  github:
+    repo: my-org/agent-prompts
+    ref: main
+    path: backend/system.md      # a file, not a directory
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+```
+
+- On git types, `path` must name a file.
+- `contentType` is optional; the content route answers `application/gzip` whatever it says.
+- No content checks: a Prompt may be of any size or format.
+
 ## Instruction
 
 A governed Markdown text that `ach-cli environment hydrate` writes as an always-loaded
@@ -147,11 +174,11 @@ spec:
 - `type: http` only allows `scope: object` (admission rejects `directory`).
 - Make `path` match the scope: a file for `object`, a directory for `directory`.
 
-## Artifact vs Plugin, Skill and Instruction in an Environment
+## Artifact vs Plugin, Skill, Prompt and Instruction in an Environment
 
-Plugins, skills and instructions gate the Environment: until their content is fetched,
+Plugins, skills, prompts and instructions gate the Environment: until their content is fetched,
 the Environment reports `ExecutionResourcesResolved=False` and is not Available (see
-`status.unresolvedContextPlugins`, `unresolvedContextSkills` and
+`status.unresolvedContextPlugins`, `unresolvedContextSkills`, `unresolvedContextPrompts` and
 `unresolvedContextInstructions`). Artifacts are only checked by name, so an Artifact that
 fails to fetch does not show up on the Environment; check the Artifact itself
 (`kubectl get artifacts`, or `ach-cli admin list artifacts`, whose `fresh*` marks that

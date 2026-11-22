@@ -11,6 +11,7 @@
 //
 //	GET /healthz
 //	GET /content/instruction/{name}
+//	GET /content/prompt/{name}
 //	GET /content/plugin/{name}
 //	GET /content/artifact/{name}
 //	GET /content/skill/{name}
@@ -100,6 +101,7 @@ func RegisterRoutes(r chi.Router, d Deps) {
 		w.WriteHeader(http.StatusOK)
 	})
 	r.Get("/content/instruction/{name}", d.serve(kindInstruction))
+	r.Get("/content/prompt/{name}", d.serve(kindPrompt))
 	r.Get("/content/plugin/{name}", d.serve(kindPlugin))
 	r.Get("/content/artifact/{name}", d.serve(kindArtifact))
 	r.Get("/content/skill/{name}", d.serve(kindSkill))

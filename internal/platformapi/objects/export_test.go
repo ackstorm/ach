@@ -25,6 +25,7 @@ func TestExportEnvironmentYAML_Canonical(t *testing.T) {
 		AuthorizedTeams:     []string{"team-a"},
 		RuntimeModels:       []string{"gpt-4"},
 		ContextInstructions: []string{"welcome"},
+		ContextPrompts:      []string{"persona"},
 		Notice:              "re-login after rotation",
 		Description:         "developer sandbox",
 		ResourceVersion:     "12345",
@@ -37,7 +38,7 @@ func TestExportEnvironmentYAML_Canonical(t *testing.T) {
 	}
 	s := string(out)
 
-	for _, want := range []string{"apiVersion", "kind", "metadata", "spec", "dev", "team-a", "gpt-4"} {
+	for _, want := range []string{"apiVersion", "kind", "metadata", "spec", "dev", "team-a", "gpt-4", "welcome", "persona"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("export missing %q\n---\n%s", want, s)
 		}

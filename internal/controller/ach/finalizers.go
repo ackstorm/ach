@@ -19,6 +19,7 @@ const (
 	pluginFinalizer                = "plugins.ach.ackstorm.ai/finalizer"
 	pluginMarketplaceFinalizer     = "pluginmarketplaces.ach.ackstorm.ai/finalizer"
 	artifactFinalizer              = "artifacts.ach.ackstorm.ai/finalizer"
+	promptFinalizer                = "prompts.ach.ackstorm.ai/finalizer"
 	instructionFinalizer           = "instructions.ach.ackstorm.ai/finalizer"
 	skillFinalizer                 = "skills.ach.ackstorm.ai/finalizer"
 	skillMarketplaceFinalizer      = "skillmarketplaces.ach.ackstorm.ai/finalizer"

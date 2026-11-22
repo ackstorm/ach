@@ -34,6 +34,7 @@ const refreshInterval = 5 * time.Minute
 type EnvRow struct {
 	AuthorizedTeams     []string
 	ContextInstructions []string
+	ContextPrompts      []string
 	ContextPlugins      []string
 	ContextArtifacts    []string
 	ContextSkills       []string
@@ -97,6 +98,7 @@ func (c *Cache) Refresh(ctx context.Context) error {
 		next[r.Name] = EnvRow{
 			AuthorizedTeams:     r.AuthorizedTeams,
 			ContextInstructions: r.ContextInstructions,
+			ContextPrompts:      r.ContextPrompts,
 			ContextPlugins:      r.ContextPlugins,
 			ContextArtifacts:    r.ContextArtifacts,
 			ContextSkills:       r.ContextSkills,

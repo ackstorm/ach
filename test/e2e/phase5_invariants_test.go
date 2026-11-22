@@ -63,7 +63,7 @@ func TestPhase5Invariants(t *testing.T) {
 }
 
 // testPhase5SC6InvalidSyncedFixtures asserts the negative-path half of the
-// synced content-service matrix: plugin-invalid / instruction-invalid /
+// synced content-service matrix: plugin-invalid / prompt-invalid / instruction-invalid /
 // artifact-invalid each settle at SourceReachable=False (their git source
 // is a nonexistent repo). They are pre-synced by cluster.sh and gated to
 // this failure state by verify_all, so the live condition is already
@@ -75,6 +75,7 @@ func testPhase5SC6InvalidSyncedFixtures(t *testing.T) {
 
 	invalid := []struct{ kind, name, table string }{
 		{"plugin", "plugin-invalid", "plugins"},
+		{"prompt", "prompt-invalid", "prompts"},
 		{"instruction", "instruction-invalid", "instructions"},
 		{"artifact", "artifact-invalid", "artifacts"},
 	}

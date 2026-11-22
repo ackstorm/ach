@@ -121,11 +121,15 @@ off the hourly path.
 `POST /platform/hydrate/version` takes the hydrate body (`{"environment": …}`)
 and the same caller rules (a `pk_` names the Environment, an `ek_` is bound to
 one, a non-admin needs a shared team). It answers
-`{environment, version, items[{kind, name, rev}]}`: every item a hydrate writes
-(`instruction|plugin|artifact|skill|model|mcp|a2a`, sorted by kind then name), `rev`
+`{environment, version, items[{kind, name, rev}]}`: every item the environment lists
+(`prompt|instruction|plugin|artifact|skill|model|mcp|a2a`, sorted by kind then name), `rev`
 the revision it serves (the content row's `upstream_rev`; a `name@marketplace`
 item takes its marketplace's; empty for model/mcp/a2a), and `version` the
 sha256 of the sorted items. A full `ach-cli environment hydrate` records it and
 `environment status` compares it. A marketplace item reads as updated whenever
 its marketplace moves, even if its own files did not change. The hydrate
 manifest itself is unchanged (the CLI decodes it strictly).
+The manifest's `context.prompts` (`[{name, id, downloadUrl}]`) is always present,
+`[]` when empty; `ach-cli environment hydrate` decodes it and writes nothing for it,
+because a Prompt is loaded only by whoever names it (an ach-agent Agent's
+`prompt.system`). `context.instructions` is omitted when empty.

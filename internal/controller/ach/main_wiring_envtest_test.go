@@ -212,7 +212,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 		t.Errorf("PluginMarketplaceReconciler.PluginMaxSizeMiB = %d; want 50", pmr.PluginMaxSizeMiB)
 	}
 
-	// Artifact + Instruction reconcilers — no size cap.
+	// Artifact + Prompt + Instruction reconcilers — no size cap.
 	ar := &ArtifactReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    k8sClient,
@@ -226,7 +226,18 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 	if ar.CacheRoot != testCacheRoot {
 		t.Errorf("ArtifactReconciler.CacheRoot wrong")
 	}
-	prm := &InstructionReconciler{
+	prm := &PromptReconciler{
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    k8sClient,
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+		},
+	}
+	if prm.CacheRoot != testCacheRoot {
+		t.Errorf("PromptReconciler.CacheRoot wrong")
+	}
+	ir := &InstructionReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    k8sClient,
 			Namespace: WatchNamespace,
@@ -236,7 +247,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 			Fetchers:  nil,
 		},
 	}
-	if prm.CacheRoot != testCacheRoot {
+	if ir.CacheRoot != testCacheRoot {
 		t.Errorf("InstructionReconciler.CacheRoot wrong")
 	}
 

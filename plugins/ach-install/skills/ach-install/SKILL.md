@@ -6,7 +6,7 @@ description: "Install, configure, upgrade and troubleshoot an ACH (Agent Capabil
 # Installing and operating ACH with Helm
 
 ACH (Agent Capability Hub) is a Kubernetes control plane for agent
-configuration: models, MCP servers, A2A agents, plugins, skills and instructions,
+configuration: models, MCP servers, A2A agents, plugins, skills, prompts and instructions,
 handed to users and agents through Environments. It sits in front of a LiteLLM
 proxy and signs people in through Dex. This skill covers putting it on a
 cluster and keeping it there.
@@ -197,7 +197,7 @@ the schema back. Full procedure: `references/upgrade.md`.
   audit log (on EKS, check the control-plane audit policy). The chart also ships the
   `<release>-keygrant-editor` ClusterRole bound to nobody: bind it to platform admins only,
   since writing a `KeyGrant` is acting as its identity.
-- Writing a content CR (`Plugin`, `Skill`, `Instruction`, `Artifact`, the marketplaces) or a
+- Writing a content CR (`Plugin`, `Skill`, `Prompt`, `Instruction`, `Artifact`, the marketplaces) or a
   `LiteLLMConnection` is equivalent to reading every Secret in the ACH namespace: the
   operator resolves `authSecretRef` with its own identity. Give anyone who can write those
   kinds admin-tier trust, and grant that RBAC only to platform admins.

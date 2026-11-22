@@ -143,6 +143,7 @@ func TestFormatAdminInventory_AvailableColumn(t *testing.T) {
 		},
 		"marketplaces": {{Kind: "marketplace", Name: "mkt", Sync: "Synced", UpstreamRev: a, LatestUpstreamRev: b}},
 		"instructions": {{Kind: "instruction", Name: "p", Sync: "fresh"}},
+		"prompts":      {{Kind: "prompt", Name: "q", Sync: "fresh"}},
 	})
 	if !strings.Contains(out, "AVAILABLE") {
 		t.Fatalf("no AVAILABLE column:\n%s", out)

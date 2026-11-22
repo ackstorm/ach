@@ -16,7 +16,7 @@ func catalog(t *testing.T) []CatalogView {
 	var envs []CatalogView
 	err := json.Unmarshal([]byte(`[
 	  {"name":"finops","description":"Cloud cost reports",
-	   "context":{"plugins":["cloud-costs"],"skills":["budget-alerts"],"instructions":["finops-review"]},
+	   "context":{"plugins":["cloud-costs"],"skills":["budget-alerts"],"instructions":["finops-review"],"prompts":["finops-persona"]},
 	   "runtime":{"mcpServers":["aws-billing"],"models":["ackstorm.smart"]}},
 	  {"name":"design","description":"Web and 3D work",
 	   "context":{"skills":["threejs-animation","web-design"],"artifacts":["brand-kit"]},
@@ -37,6 +37,7 @@ func TestSearch(t *testing.T) {
 		{"FinOps", []SearchHit{
 			{"environment", "finops", "finops"},
 			{"instruction", "finops-review", "finops"},
+			{"prompt", "finops-persona", "finops"},
 		}},
 		{"cost", []SearchHit{
 			{"environment", "finops", "finops"}, // description

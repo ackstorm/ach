@@ -253,10 +253,11 @@ func testSC5RBACMatrix(t *testing.T) {
 		{"platform-api cannot create environments", "create", "environments.ach.ackstorm.ai", "ach-platform-api", "no"},
 		{"platform-api cannot patch environments", "patch", "environments.ach.ackstorm.ai", "ach-platform-api", "no"},
 		// Postgres-as-SoT (#34): the legacy MULTI-02 patch carve-out (platform-api
-		// patching plugins / instructions / artifacts / pluginmarketplaces for refresh)
+		// patching plugins / prompts / instructions / artifacts / pluginmarketplaces for refresh)
 		// was REMOVED. platform-api reads projected rows from Postgres and triggers
 		// refresh through the operator, never by patching CRDs — so these are DENIED.
 		{"platform-api cannot patch plugins", "patch", "plugins.ach.ackstorm.ai", "ach-platform-api", "no"},
+		{"platform-api cannot patch prompts", "patch", "prompts.ach.ackstorm.ai", "ach-platform-api", "no"},
 		{"platform-api cannot patch instructions", "patch", "instructions.ach.ackstorm.ai", "ach-platform-api", "no"},
 		// Forwarder SA: NO CRD access under Postgres-as-SoT (#34). It reads
 		// Environments + BackendIdentityPolicies from Postgres (LISTEN/NOTIFY +

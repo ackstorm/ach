@@ -5,12 +5,14 @@
 // serves three authenticated routes plus health:
 //
 // Every context kind is served as a gzip tarball (uniform context
-// format) — instruction + artifact-object are wrapped into a 1-entry
+// format) — instruction + prompt + artifact-object are wrapped into a 1-entry
 // gzip-tar at ingestion; plugin/skill/artifact-directory are already
 // gzip tars:
 //
 //	GET /healthz
 //	GET /content/instruction/{name}     -> .tar.gz (1-entry), Content-Type:
+//	                                  application/gzip
+//	GET /content/prompt/{name}     -> .tar.gz (1-entry), Content-Type:
 //	                                  application/gzip
 //	GET /content/plugin/{name}     -> .tar.gz, application/gzip
 //	GET /content/artifact/{name}   -> .tar.gz (object: 1-entry; directory:

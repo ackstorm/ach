@@ -141,7 +141,7 @@ var operatorCmd = &cobra.Command{
 	Short: "Run the ACH Kubernetes operator (controller-runtime manager)",
 	Long: `Boot the controller-runtime manager that reconciles every ACH CRD
 (Environment, Plugin, PluginMarketplace, Skill, SkillMarketplace, Artifact,
-Instruction, BackendIdentityPolicy, LiteLLMConnection) within the namespace named by
+Prompt, Instruction, BackendIdentityPolicy, LiteLLMConnection) within the namespace named by
 ACH_NAMESPACE. Health probes at :8081; metrics at the configured address.`,
 	RunE: runOperator,
 }
@@ -390,6 +390,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	//
 	// Capacity 64 (resyncSourceChanCap) bounds per-Kind backpressure.
 	envCh := make(chan event.GenericEvent, resyncSourceChanCap)
+	promptCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	instructionCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	artifactCh := make(chan event.GenericEvent, resyncSourceChanCap)
 	skillCh := make(chan event.GenericEvent, resyncSourceChanCap)
@@ -496,6 +497,21 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller Artifact: %w", err)
 	}
+	if err = (&achcontroller.PromptReconciler{
+		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
+			Client:       mgr.GetClient(),
+			Scheme:       mgr.GetScheme(),
+			Namespace:    watchNS,
+			Log:          ctrl.Log.WithName("controller").WithName("Prompt"),
+			CacheRoot:    cacheRoot,
+			DB:           dbPool,
+			Fetchers:     nil,
+			ResyncSource: promptCh,
+			Metrics:      opMetrics,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create controller Prompt: %w", err)
+	}
 	if err = (&achcontroller.InstructionReconciler{
 		FetchedObjectReconciler: achcontroller.FetchedObjectReconciler{
 			Client:       mgr.GetClient(),
@@ -571,6 +587,7 @@ func runOperator(_ *cobra.Command, _ []string) error {
 		Channels: resync.Channels{
 			Environment:       envCh,
 			Plugin:            pluginCh,
+			Prompt:            promptCh,
 			Instruction:       instructionCh,
 			Artifact:          artifactCh,
 			Skill:             skillCh,
@@ -592,14 +609,14 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// GenericEvent for the named CR into the matching per-Kind
 	// source.Channel. Replaces the pre-issue-34 annotation-patching
 	// path on the platform-api side. Only the "external-ref" Kinds —
-	// plugin, instruction, artifact, skill, pluginmarketplace, skillmarketplace —
+	// plugin, prompt, instruction, artifact, skill, pluginmarketplace, skillmarketplace —
 	// receive signals; the listener silently drops payloads for any other kind.
 	refreshListener := &refreshsignal.Listener{
 		Pool:      dbPool,
 		Namespace: watchNS,
 		Log:       ctrl.Log.WithName("refresh-signal"),
 		Client:    mgr.GetClient(),
-		Channels:  refreshChannels(pluginCh, instructionCh, artifactCh, skillCh, mpCh, smpCh),
+		Channels:  refreshChannels(pluginCh, promptCh, instructionCh, artifactCh, skillCh, mpCh, smpCh),
 	}
 	if err := mgr.Add(refreshListener); err != nil {
 		return fmt.Errorf("unable to add refresh-signal Runnable: %w", err)
@@ -627,9 +644,10 @@ func runOperator(_ *cobra.Command, _ []string) error {
 }
 
 // refreshChannels builds the refresh-signal kind→channel map.
-func refreshChannels(pluginCh, instructionCh, artifactCh, skillCh, mpCh, smpCh chan event.GenericEvent) map[string]chan<- event.GenericEvent {
+func refreshChannels(pluginCh, promptCh, instructionCh, artifactCh, skillCh, mpCh, smpCh chan event.GenericEvent) map[string]chan<- event.GenericEvent {
 	return map[string]chan<- event.GenericEvent{
 		"plugin":            pluginCh,
+		"prompt":            promptCh,
 		"instruction":       instructionCh,
 		"artifact":          artifactCh,
 		"skill":             skillCh,

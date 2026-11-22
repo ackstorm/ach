@@ -66,7 +66,7 @@ announcing a next step: run it in the same reply, or end with a question.
 ## The model in one paragraph
 
 An **Environment** is a named bundle the platform team publishes: models, MCP servers,
-A2A agents (runtime) plus plugins, skills, instructions and artifacts (context). Access is
+A2A agents (runtime) plus plugins, skills, prompts, instructions and artifacts (context). Access is
 by team: `ach-cli environment list` shows only the Environments the user's teams may use.
 **Hydrating** writes an Environment into an agent tool's own config, either globally
 (`-g`, every project) or into a folder (that folder and everything under it). A

@@ -186,3 +186,42 @@ func TestCommit_Instructions_SiblingFileKept(t *testing.T) {
 		}
 	}
 }
+
+type recordingExtractor struct{ calls []string }
+
+func (e *recordingExtractor) ExtractContent(_ context.Context, ref manifest.ContentRef, _ string, _ *state.File) (ExtractResult, error) {
+	e.calls = append(e.calls, ref.Name)
+	return ExtractResult{}, nil
+}
+
+func TestCommit_Prompts_NotDownloadedNorRecorded(t *testing.T) {
+	root := t.TempDir()
+	c, store := instructionCommit(t, "claude-code", root, map[string]string{})
+	rec := &recordingExtractor{}
+	c.extractor = rec
+	c.fetcher = func(context.Context, string) (*manifest.Manifest, error) {
+		return &manifest.Manifest{SchemaVersion: "v1alpha1", Environment: "demo", Runtime: &manifest.RuntimeBlock{},
+			Context: &manifest.ContextBlock{Prompts: []manifest.ContentRef{
+				{Name: "persona", DownloadURL: "http://local/content/prompt/persona"}}}}, nil
+	}
+	if _, err := c.run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(rec.calls) != 0 {
+		t.Errorf("a Prompt was downloaded: %v", rec.calls)
+	}
+	f := store.savedFile
+	if f != nil && len(f.Instructions)+len(f.Plugins)+len(f.Artifacts)+len(f.Skills) != 0 {
+		t.Errorf("state recorded content for a Prompt: %+v", f)
+	}
+	var files []string
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, _ error) error {
+		if !d.IsDir() && d.Name() != ".gitignore" {
+			files = append(files, p)
+		}
+		return nil
+	})
+	if len(files) != 0 {
+		t.Errorf("hydrate wrote files for a Prompt: %v", files)
+	}
+}

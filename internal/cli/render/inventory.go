@@ -51,7 +51,7 @@ func sectionHeader(kind string) string {
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tPLUGINS\tAGE"
 	case "skill-marketplaces":
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tSKILLS\tAGE"
-	case "instructions", "artifacts":
+	case "instructions", "prompts", "artifacts":
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSYNC\tAGE\tORIGIN"
 	default:
 		return "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN"
@@ -74,7 +74,7 @@ func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), dash(r.Extra["skillsCount"]), ageOf(r.UpdatedAt, now))
-	case "instructions", "artifacts":
+	case "instructions", "prompts", "artifacts":
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))

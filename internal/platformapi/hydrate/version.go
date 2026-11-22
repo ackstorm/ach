@@ -86,6 +86,7 @@ func versionItems(row *db.EnvironmentRow, revs store.Revs) []VersionItem {
 		}
 	}
 	add("instruction", row.ContextInstructions, func(n string) string { return revs.Instructions[n] })
+	add("prompt", row.ContextPrompts, func(n string) string { return revs.Prompts[n] })
 	add("artifact", row.ContextArtifacts, func(n string) string { return revs.Artifacts[n] })
 	add("plugin", row.ContextPlugins, scoped(revs.Plugins, revs.PluginMarketplaces))
 	add("skill", row.ContextSkills, scoped(revs.Skills, revs.SkillMarketplaces))

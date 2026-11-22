@@ -21,7 +21,7 @@ first, then walk the matrix.
 
 | Archetype | Kinds | One-line shape |
 |-----------|-------|----------------|
-| **object** | `Plugin`, `Skill`, `Artifact`, `Instruction` | Fetched, validated, cached, served, hydrated. Path **narrows at fetch** (F1). |
+| **object** | `Plugin`, `Skill`, `Artifact`, `Prompt`, `Instruction` | Fetched, validated, cached, served, hydrated. Path **narrows at fetch** (F1). |
 | **discovery** | `PluginMarketplace`, `SkillMarketplace` | Fetches the **whole repo**, tree-walks it, slices each discovered item into its own tarball + inventory entry. Opts OUT of fetch-narrowing (`withoutGitPath`). |
 | **governance** | `Environment`, `BackendIdentityPolicy`, `KeyGrant` | No content of its own; resolves/gates references and drives downstream state (LiteLLM access-groups, forwarder RBAC/JWT mint). |
 | **config singleton** | `LiteLLMConnection` | Cluster-level configuration the operator reads; not served, not hydrated, not inventoried. |

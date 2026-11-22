@@ -210,7 +210,7 @@ func setupIntegration(t *testing.T) *testFixtures {
 	auditLog := slog.New(slog.NewJSONHandler(auditBuf, nil))
 
 	cacheRoot := t.TempDir()
-	for _, sub := range []string{"instruction", "plugin", "artifact", "skill", "skill-marketplace"} {
+	for _, sub := range []string{"prompt", "instruction", "plugin", "artifact", "skill", "skill-marketplace"} {
 		if err := os.MkdirAll(filepath.Join(cacheRoot, sub), 0o755); err != nil {
 			t.Fatalf("mkdir cache root: %v", err)
 		}
@@ -251,6 +251,12 @@ func setupIntegration(t *testing.T) *testFixtures {
 // untouched — it populates context.skills exactly like the others.
 func (f *testFixtures) seedEnvironment(name string, authorizedTeams, instructions, plugins, artifacts []string, skills ...string) {
 	f.t.Helper()
+	f.seedEnvironmentWithPrompts(name, authorizedTeams, nil, instructions, plugins, artifacts, skills...)
+}
+
+// seedEnvironmentWithPrompts is seedEnvironment plus the context.prompts allowlist.
+func (f *testFixtures) seedEnvironmentWithPrompts(name string, authorizedTeams, prompts, instructions, plugins, artifacts []string, skills ...string) {
+	f.t.Helper()
 	ctx := context.Background()
 	// Postgres NOT NULL applies to every text[] column in the
 	// environments projection. Default any nil slice to an empty
@@ -265,6 +271,7 @@ func (f *testFixtures) seedEnvironment(name string, authorizedTeams, instruction
 		Namespace:           "default",
 		Name:                name,
 		AuthorizedTeams:     defaultSlice(authorizedTeams),
+		ContextPrompts:      defaultSlice(prompts),
 		ContextInstructions: defaultSlice(instructions),
 		ContextPlugins:      defaultSlice(plugins),
 		ContextArtifacts:    defaultSlice(artifacts),
@@ -303,6 +310,25 @@ func tarGzFixture(t *testing.T, content []byte) []byte {
 	_ = tw.Close()
 	_ = gz.Close()
 	return buf.Bytes()
+}
+
+func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int64, body []byte) {
+	f.t.Helper()
+	path := filepath.Join(f.cacheRoot, "prompt", name+".tar.gz")
+	if err := os.WriteFile(path, tarGzFixture(f.t, body), 0o600); err != nil {
+		f.t.Fatalf("write prompt file: %v", err)
+	}
+	row := db.PromptRow{
+		Namespace:             "default",
+		Name:                  name,
+		StorageLocation:       path,
+		LastSuccessfulRefresh: lsr,
+		MaxStalenessSeconds:   maxStaleness,
+		ResourceVersion:       "1",
+	}
+	if err := dbtest.UpsertPrompt(context.Background(), f.pool, row); err != nil {
+		f.t.Fatalf("UpsertPrompt: %v", err)
+	}
 }
 
 func (f *testFixtures) seedInstruction(name string, lsr *time.Time, maxStaleness int64, body []byte) {
@@ -581,8 +607,9 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	//
 	// The content kind here is Skill: it exercises the same gates, the same
 	// staleness logic and the same scoped-ref resolution as Plugin.
-	fx.seedEnvironment("prod",
+	fx.seedEnvironmentWithPrompts("prod",
 		[]string{"team-a"},
+		[]string{"pr1"},
 		[]string{"p1", "p2"},
 		[]string{},
 		[]string{"a1", "a2"},
@@ -590,6 +617,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	)
 	now := time.Now().UTC()
 	fx.seedInstruction("p1", &now, 600, []byte("hello instruction"))
+	fx.seedPrompt("pr1", &now, 600, []byte("hello prompt"))
 	fx.seedSkill("sk1", &now, 600, []byte{0x1f, 0x8b, 0x08, 0x00, 0xAA, 0xBB, 0xCC})
 	fx.seedArtifact("a1", "object", &now, 600, []byte("artifact-bytes"))
 	// Seed the scoped marketplace skill: (marketplace_name="smkt-b", name="shared").
@@ -640,6 +668,20 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("status=%d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("200 success ek_ prompt is gzip", func(t *testing.T) {
+		rec := fx.doRequest("GET", "/content/prompt/pr1", map[string]string{
+			"x-ach-key": "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		})
+		resp := rec.Result()
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d, want 200", resp.StatusCode)
+		}
+		if got := resp.Header.Get("Content-Type"); got != "application/gzip" {
+			t.Errorf("Content-Type=%q, want application/gzip", got)
 		}
 	})
 

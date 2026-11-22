@@ -79,7 +79,7 @@ ach/
 │       │      ach-gateway pod; it is NOT the primary router anymore)
 │       ├── 04-objects/      SYNCED FIXTURES — all non-Environment ACH CRs
 │       │                    (incl. the phase5 CS-exercise valid/invalid
-│       │                    matrix: {plugin,instruction,artifact}-{valid,invalid})
+│       │                    matrix: {plugin,prompt,instruction,artifact}-{valid,invalid})
 │       └── 05-environment/  SYNCED FIXTURES — demo + demo-unresolved + env-valid
 │                            + env-team-denied (SC2 unauthorized_team negative)
 │                            + guardrail-unresolved (P0-A provisioning barrier)
@@ -112,7 +112,7 @@ applies as bring-up stages, gated healthy by `06-verify` (the `verify_all`
 step). The e2e suite **asserts** against this synced state; tests do NOT apply
 their own copies of these objects. The set includes a **valid/invalid matrix**
 for the content-service exercise (`plugin-valid`/`plugin-invalid`,
-`instruction-valid`/`instruction-invalid` (plus `instruction-oversize`, `Synced=False` `UpstreamInvalid`), `artifact-valid`/`artifact-invalid`,
+`prompt-valid`/`prompt-invalid`, `instruction-valid`/`instruction-invalid` (plus `instruction-oversize`, `Synced=False` `UpstreamInvalid`), `artifact-valid`/`artifact-invalid`,
 `env-valid`): `verify_all` gates the valid half to its healthy condition
 (`SourceReachable`/`Available`) and the invalid half to its **expected failure
 state** (`SourceReachable=False`, nonexistent upstream), so "everything is in

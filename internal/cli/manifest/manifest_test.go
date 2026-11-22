@@ -359,11 +359,16 @@ func TestDecode_Instructions(t *testing.T) {
 	}
 }
 
-func TestDecode_IgnoresPrompts(t *testing.T) {
+func TestDecode_Prompts(t *testing.T) {
 	body := `{"schemaVersion":"v1alpha1","environment":"e","runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},
 	"context":{"prompts":[{"name":"p","id":"p","downloadUrl":"https://hub/content/prompt/p"}],
 	"plugins":[],"artifacts":[],"skills":[]}}`
-	if _, err := manifest.Decode(strings.NewReader(body)); err != nil {
-		t.Fatalf("a server that still sends prompts must decode: %v", err)
+	m, err := manifest.Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Context.Prompts) != 1 || m.Context.Prompts[0].Name != "p" ||
+		m.Context.Prompts[0].DownloadURL != "https://hub/content/prompt/p" {
+		t.Fatalf("prompts not decoded: %+v", m.Context.Prompts)
 	}
 }

@@ -1,6 +1,6 @@
 # Content sources (shared by every content kind)
 
-`Plugin`, `Skill`, `Instruction`, `Artifact`, `PluginMarketplace` and `SkillMarketplace` all
+`Plugin`, `Skill`, `Prompt`, `Instruction`, `Artifact`, `PluginMarketplace` and `SkillMarketplace` all
 point at an upstream with the same block: a `type`, the one matching sub-object, and a
 `refresh` block. The operator polls the upstream, validates the result, and caches it
 for hydrate.
@@ -82,7 +82,7 @@ On git types, `path` means two different things depending on the kind:
 | Kind | `path` does |
 |------|-------------|
 | `Plugin`, `Skill`, `Artifact` (directory) | Narrows the fetch to that subdirectory; it becomes the root of the content |
-| `Instruction`, `Artifact` with `scope: object` | Points at one file; that file's bytes are the content |
+| `Prompt`, `Instruction`, `Artifact` with `scope: object` | Points at one file; that file's bytes are the content |
 | `PluginMarketplace` | Ignored. The whole repo is fetched and `.claude-plugin/marketplace.json` is found by convention |
 | `SkillMarketplace` | The whole repo is fetched; `path` is the directory whose children are skill folders. Unset means `skills`; use `"."` for skills at the repo root |
 

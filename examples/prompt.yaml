@@ -1,0 +1,15 @@
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: code-reviewer
+  namespace: ach
+spec:
+  type: github
+  contentType: text/markdown
+  github:
+    repo: ackstorm/ach-prompts
+    ref: main
+    path: prompts/code-reviewer.md
+  refresh:
+    interval: 6h
+    maxStaleness: 24h

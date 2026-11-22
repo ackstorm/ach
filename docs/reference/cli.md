@@ -203,7 +203,7 @@ Flags:
 Read-only inventory. Admin-only.
 
 ACH objects (from the Postgres projections, version + sync status):
-  environments, plugins, instructions, artifacts, skills, marketplaces,
+  environments, plugins, instructions, prompts, artifacts, skills, marketplaces,
   skill-marketplaces, bips
 LiteLLM runtime catalog (KIND NAME STATUS):
   models, mcp, a2a, teams, guardrails
@@ -225,8 +225,8 @@ AVAILABLE column (content kinds): a newer commit on the watched ref of a
 source pinned to spec.<git>.commit; promote it in GitOps. '-' when none.
 
 Note: artifacts show 'fresh*' — their refresh tracks name resolution, not
-content presence. plugins, skills and instructions are truly content-gated
-(bare 'fresh').
+content presence. plugins, skills, prompts and instructions are truly
+content-gated (bare 'fresh').
 Guardrails add MODE and DEFAULT-ON columns.
 
 Usage:
@@ -248,7 +248,7 @@ Flags:
 ### ach-cli admin refresh
 
 ```text
-kind must be one of {plugin, instruction, artifact, skill, marketplace, skill-marketplace}. No interactive confirmation (idempotent operation).
+kind must be one of {plugin, instruction, prompt, artifact, skill, marketplace, skill-marketplace}. No interactive confirmation (idempotent operation).
 
 Usage:
   ach-cli admin refresh <kind> <name> [flags]
@@ -540,7 +540,7 @@ Flags:
 ```text
 Stream a single artifact from the Content Service verbatim (a debug tool).
 
-kind ∈ {instruction, plugin, artifact, skill}. No extraction, no adapter
+kind ∈ {instruction, prompt, plugin, artifact, skill}. No extraction, no adapter
 projection — the response body is written as-is to stdout (or --file).
 For normal workspace setup use 'ach-cli environment hydrate'.
 
@@ -669,7 +669,7 @@ Flags:
 Find what your environments offer by name.
 
 Matches <text>, case-insensitively, against each environment's name and
-description and the name of every plugin, skill, instruction, artifact, MCP
+description and the name of every plugin, skill, instruction, prompt, artifact, MCP
 server, model and A2A agent it serves. Several words must all match.
 Only names are searched, not what is written inside a skill or plugin.
 

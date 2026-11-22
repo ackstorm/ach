@@ -256,12 +256,13 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if totalUnresolved > 0 {
 		condStatus = metav1.ConditionFalse
 		reason = reasonResourceUnresolved
-		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, guardrails=%d, context_plugins=%d, context_skills=%d, context_instructions=%d)",
+		message = fmt.Sprintf("%d unresolved (models=%d, mcp=%d, a2a=%d, guardrails=%d, context_prompts=%d, context_plugins=%d, context_skills=%d, context_instructions=%d)",
 			totalUnresolved,
 			len(unresolved.Models),
 			len(unresolved.MCPServers),
 			len(unresolved.A2AAgents),
 			len(unresolved.Guardrails),
+			len(unresolvedContent.prompts),
 			len(unresolvedContent.plugins),
 			len(unresolvedContent.skills),
 			len(unresolvedContent.instructions),
@@ -300,6 +301,7 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	//     False iff any required sub-condition is False; Unknown if
 	//     any required sub-condition is Unknown or missing.
 	env.Status.UnresolvedRuntime = &unresolved
+	env.Status.UnresolvedContextPrompts = unresolvedContent.prompts
 	env.Status.UnresolvedContextPlugins = unresolvedContent.plugins
 	env.Status.UnresolvedContextSkills = unresolvedContent.skills
 	env.Status.UnresolvedContextInstructions = unresolvedContent.instructions
@@ -379,10 +381,10 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
 	if unresolvedContent.total() > 0 {
-		// Plugin / skill / instruction / marketplace content writes NOTIFY their
-		// own controllers, not Environment, so no event re-enqueues this
-		// Environment when a referenced plugin's / skill's / instruction's
-		// content lands.
+		// Plugin / skill / prompt / instruction / marketplace content writes NOTIFY
+		// their own controllers, not Environment, so no event re-enqueues this
+		// Environment when a referenced plugin's / skill's / prompt's /
+		// instruction's content lands.
 		// Without a shorter requeue the Environment would sit
 		// ExecutionResourcesResolved=False until the 5-min steady-state tick.
 		// Converge on a content-wait cadence.
@@ -424,8 +426,8 @@ func runtimeUnresolved(rt achv1alpha1.RuntimeBlock, snap snapshot.LiteLLMSnapsho
 const staleRequeueAfter = 15 * time.Second
 
 // pluginUnresolvedRequeueAfter is the requeue cadence when one or more
-// context plugins, skills or instructions are referenced but not yet
-// content-present. Plugin, skill, instruction and marketplace projection
+// context plugins, skills, prompts or instructions are referenced but not yet
+// content-present. Plugin, skill, prompt, instruction and marketplace projection
 // writes do not enqueue Environments, so this poll is how the Environment
 // converges to Available once content lands.
 const pluginUnresolvedRequeueAfter = 30 * time.Second
@@ -517,21 +519,44 @@ func (r *EnvironmentReconciler) contextInstructionsUnresolved(ctx context.Contex
 		})
 }
 
+// contextPromptsUnresolved returns the spec.context.prompts names whose Prompt
+// has no successful refresh. A Prompt has no marketplace, so a "name@mkt" ref
+// is unresolved.
+func (r *EnvironmentReconciler) contextPromptsUnresolved(ctx context.Context, env *achv1alpha1.Environment) ([]string, error) {
+	if r.DB == nil {
+		return nil, nil
+	}
+	return contextRefsUnresolved(ctx, r.Namespace, "prompt", env.Spec.Context.Prompts,
+		func(ctx context.Context, ns, name, mkt string) (*time.Time, error) {
+			if mkt != "" {
+				return nil, nil
+			}
+			row, err := achdb.GetPromptByName(ctx, r.DB, ns, name)
+			if err != nil || row == nil {
+				return nil, err
+			}
+			return row.LastSuccessfulRefresh, nil
+		})
+}
+
 // contentUnresolved holds the context refs that resolve by name but are not
 // content-synced yet.
 type contentUnresolved struct {
-	plugins, skills, instructions []string
+	prompts, plugins, skills, instructions []string
 }
 
 func (u contentUnresolved) total() int {
-	return len(u.plugins) + len(u.skills) + len(u.instructions)
+	return len(u.prompts) + len(u.plugins) + len(u.skills) + len(u.instructions)
 }
 
-// contextContentUnresolved bundles the plugin, skill and instruction
+// contextContentUnresolved bundles the plugin, skill, prompt and instruction
 // content-present checks so Reconcile carries a single error branch.
 func (r *EnvironmentReconciler) contextContentUnresolved(ctx context.Context, env *achv1alpha1.Environment) (contentUnresolved, error) {
 	var u contentUnresolved
 	var err error
+	if u.prompts, err = r.contextPromptsUnresolved(ctx, env); err != nil {
+		return u, err
+	}
 	if u.plugins, err = r.contextPluginsUnresolved(ctx, env); err != nil {
 		return u, err
 	}
@@ -550,7 +575,7 @@ func appendContentUnresolvedMsg(message string, u contentUnresolved) string {
 	for _, b := range []struct {
 		kind string
 		refs []string
-	}{{"plugins", u.plugins}, {"skills", u.skills}, {"instructions", u.instructions}} {
+	}{{"prompts", u.prompts}, {"plugins", u.plugins}, {"skills", u.skills}, {"instructions", u.instructions}} {
 		if len(b.refs) > 0 {
 			message += fmt.Sprintf("; %s not content-present: %v", b.kind, b.refs)
 		}
@@ -688,6 +713,7 @@ func (r *EnvironmentReconciler) writeEnvironmentProjection(
 		Namespace:                           env.Namespace,
 		Name:                                env.Name,
 		AuthorizedTeams:                     env.Spec.AuthorizedTeams,
+		ContextPrompts:                      env.Spec.Context.Prompts,
 		ContextInstructions:                 env.Spec.Context.Instructions,
 		ContextPlugins:                      env.Spec.Context.Plugins,
 		ContextArtifacts:                    env.Spec.Context.Artifacts,

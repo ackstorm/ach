@@ -17,6 +17,7 @@ type CatalogView struct {
 	Description string `json:"description,omitempty"`
 	Context     struct {
 		Instructions []string `json:"instructions,omitempty"`
+		Prompts      []string `json:"prompts,omitempty"`
 		Plugins      []string `json:"plugins,omitempty"`
 		Artifacts    []string `json:"artifacts,omitempty"`
 		Skills       []string `json:"skills,omitempty"`
@@ -64,6 +65,7 @@ func Search(envs []CatalogView, query string) []SearchHit {
 			{"plugin", e.Context.Plugins},
 			{"skill", e.Context.Skills},
 			{"instruction", e.Context.Instructions},
+			{"prompt", e.Context.Prompts},
 			{"artifact", e.Context.Artifacts},
 			{"mcp", e.Runtime.MCPServers},
 			{"model", e.Runtime.Models},

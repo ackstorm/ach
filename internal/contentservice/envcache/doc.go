@@ -3,7 +3,7 @@
 // Package envcache is the Phase 5 D-07 Redis-backed read-through cache
 // for the `environments` projection row (Plan 05-02 / D-13). The
 // Content Service pipeline (Plan 05-05) consumes this on every request
-// to look up `authorized_teams[]` + `context_<instructions|plugins|artifacts>[]`
+// to look up `authorized_teams[]` + `context_<instructions|prompts|plugins|artifacts>[]`
 // without hitting Postgres per call.
 //
 // # Why a dedicated cache package

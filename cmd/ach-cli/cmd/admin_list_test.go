@@ -110,8 +110,8 @@ func TestAdminList_SingleKind_Table(t *testing.T) {
 	}
 }
 
-// TestAdminList_PromptFalseGreenFootnote: a fresh* prompt surfaces the footnote.
-func TestAdminList_PromptFalseGreenFootnote(t *testing.T) {
+// TestAdminList_ArtifactFalseGreenFootnote: a fresh* artifact surfaces the footnote.
+func TestAdminList_ArtifactFalseGreenFootnote(t *testing.T) {
 	adminTestEnv(t)
 	srv := newInventoryTestServer(t, map[string]any{
 		"/platform/admin/artifacts": envelope(map[string]any{
@@ -130,6 +130,28 @@ func TestAdminList_PromptFalseGreenFootnote(t *testing.T) {
 	}
 }
 
+// TestAdminList_Prompts: a prompt row renders under PROMPTS.
+func TestAdminList_Prompts(t *testing.T) {
+	adminTestEnv(t)
+	srv := newInventoryTestServer(t, map[string]any{
+		"/platform/admin/prompts": envelope(map[string]any{
+			"kind": "prompt", "name": "persona", "namespace": "ach",
+			"version": "2", "sync": "fresh",
+		}),
+	})
+	seedAdminConfig(t, srv.URL)
+
+	stdout, _, code, err := executeAdmin(t, "", "list", "prompts")
+	if err != nil || code != exit.OK {
+		t.Fatalf("err=%v code=%d", err, code)
+	}
+	for _, want := range []string{"PROMPTS (1)", "persona", "fresh"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
 // TestAdminList_All_JSON: `list all -o json` fans out to every kind and emits a
 // kind-keyed JSON object. environments maps from EnvironmentView.
 func TestAdminList_All_JSON(t *testing.T) {
@@ -144,7 +166,7 @@ func TestAdminList_All_JSON(t *testing.T) {
 	}
 	// Empty envelopes for the remaining admin kinds so every fan-out GET resolves.
 	for _, k := range []string{
-		"instructions", "artifacts", "skills", "marketplaces", "skill-marketplaces",
+		"instructions", "prompts", "artifacts", "skills", "marketplaces", "skill-marketplaces",
 		"bips", "litellm-connections", "external-refs",
 	} {
 		bodies["/platform/admin/"+k] = envelope()

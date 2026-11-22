@@ -82,24 +82,15 @@ Four cases where a rollback needs more:
 | Rolling back | Needs first |
 |---|---|
 | Below 1.1.4 | Apply `000028_drop_deletion_timestamp.down.sql` from the ACH repository with `psql`. The rows that version removed do not come back |
-| Below the release that added the `Instruction` kind | Apply `000031_instruction_kind.down.sql` from the ACH repository with `psql`. Older binaries select `prompts` and `environments.context_prompts`, which 000031 renames, so every service errors until it runs. During the upgrade the same errors hit any old pod still running until it is replaced, because the migration Job runs first |
+| Below the release that added the `Instruction` kind | Delete the Instruction CRs first (or patch out their `instructions.ach.ackstorm.ai/finalizer`), because the older operator cannot finalize them; older Environment CRDs also prune `context.instructions`. Older binaries ignore the `instructions` table and `environments.context_instructions`. To remove them, apply `000031_instruction_kind.down.sql` from the ACH repository with `psql`; it only drops those two, and the Instruction rows are lost. Prompts are not touched |
 | Below the version that added key suspension and expiry | Resume every suspended environment key and clear every expiry. The tables refuse to go back while such a key exists |
 | Below the version that added token exchange | Revoke every environment key that was issued by token exchange |
 
 To run the database update yourself, set `migrate.enabled: false` and run the
 ACH image with `args: [migrate]` and `ACH_DB_URL` set.
 
-## Prompt to Instruction
-
-The `Prompt` kind and `spec.context.prompts` are gone; texts are `Instruction` objects listed in `spec.context.instructions`. Prompt data is not migrated.
-
-1. Before upgrading, delete every `Prompt` and remove `spec.context.prompts` from the Environments, so the running operator clears finalizers and cache.
-2. Upgrade.
-3. `kubectl delete crd prompts.ach.ackstorm.ai` (Helm keeps CRDs: `helm.sh/resource-policy: keep`).
-4. A `Prompt` stuck deleting: `kubectl patch prompt <name> -n <ns> --type=merge -p '{"metadata":{"finalizers":null}}'`.
-5. Recreate the texts as `Instruction` objects: plain UTF-8 Markdown, no frontmatter, at most 23,900 bytes.
-
-The operator cache keeps an unused `prompt/` folder. An `ach-cli` older than the release cannot hydrate an Environment that lists instructions: run `ach-cli upgrade`.
+An `ach-cli` older than the release that added `Instruction` cannot hydrate an
+Environment that lists instructions: run `ach-cli upgrade`.
 
 ## Values that must not change
 

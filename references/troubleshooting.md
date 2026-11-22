@@ -26,7 +26,7 @@ Deployment (RWO PVC forces co-location); there is NO
 ```bash
 kubectl -n ach-system exec deploy/ach-operator \
   -c content-service -- ach content-service --help \
-  | grep -q "/content/{instruction,plugin,artifact}"
+  | grep -q "/content/{prompt,instruction,plugin,artifact}"
 ```
 WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 `/healthz`-only stub. The Service is healthy, the Pod is Ready, the
@@ -109,10 +109,10 @@ content-service did not.
 
 ### ❌ `/content/{kind}/…` 404s with the cache file missing (new cache volume, or a bare pre-`.tar.gz` file)
 ```bash
-curl .../content/instruction/foo   # HTTP 404 content_not_found
-ls $ACH_CACHE_ROOT/instruction/    # empty, or foo (bare, no .tar.gz)
+curl .../content/prompt/foo   # HTTP 404 content_not_found
+ls $ACH_CACHE_ROOT/prompt/    # empty, or foo (bare, no .tar.gz)
 ```
-✅ Nothing to patch: a Plugin, Skill, Instruction or Artifact whose
+✅ Nothing to patch: a Plugin, Skill, Prompt, Instruction or Artifact whose
 `<name>.tar.gz` is missing is fetched in full on its next reconcile
 (operator start or resync), whatever its refresh interval and stored
 revision — `lastRefreshForGate` (`external_ref_driver.go`) opens the
@@ -120,22 +120,21 @@ interval gate and `materializeExternalRef` sends no `PriorRev`, so the
 fetcher cannot answer `NotModified`. Verify on the PVC:
 ```bash
 kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
-  ls $ACH_CACHE_ROOT/instruction/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
+  ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
 ```
 WHY IT FAILS: `ResolvePath` looks for `<kind>/<name>.tar.gz` (every kind
-is published as a gzip tar; Instruction and Artifact `scope=object` as a
+is published as a gzip tar; Prompt, Instruction and Artifact `scope=object` as a
 1-entry one) and the cache holds nothing for it, or only an old **bare**
 file → 404 `content_not_found` until that reconcile. With the file
 present, a force-refresh annotation, an Admin-API refresh or a resync
 still sends the stored revision and gets `NotModified`; only a
 `metadata.generation` bump forces a full body.
-**Orphan bare files**: a live CR's old bare `instruction/<name>` /
-`artifact/<name>` is NOT auto-removed (the name changed) — the
-finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
+**Orphan bare files**: a live CR's old bare `prompt/<name>` /
+`artifact/<name>` is NOT auto-removed (the name changed). One-time
 housekeeping after all CRs re-fetch (optional; NOT scripted into the
 operator — YAGNI):
 ```bash
-find $ACH_CACHE_ROOT/{instruction,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
+find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
 ```
 
 ### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)
@@ -262,7 +261,7 @@ told apart by git/HTTPS — both surface as "please authenticate"). Either:
     (`kubectl -n ach-system logs deploy/ach-operator | grep -c "fetch:"`)
 
 The transport that served each fetch is surfaced on the `SourceReachable=True`
-(Plugin/Instruction/Artifact) and `Synced=True` (PluginMarketplace) condition
+(Plugin/Prompt/Instruction/Artifact) and `Synced=True` (PluginMarketplace) condition
 messages as `transport=<git|n/a>`.
 
 **Self-hosted GitLab (as of 2026-06-04)**: ACH authenticates GitLab
@@ -1000,7 +999,7 @@ other kinds keep the `origin='cr'` gate, but nothing writes a `ui` row for them.
 non-Environment kind was written by hand into Postgres (the control plane never
 does this) — remove that row.
 WHY (reserved-machinery background): every projection table (environments,
-plugins, instructions, artifacts, litellm_connections, backend_identity_policies,
+plugins, prompts, instructions, artifacts, litellm_connections, backend_identity_policies,
 external_refs, marketplace_plugins) carries an `origin TEXT CHECK IN ('cr','ui')`
 column. The operator's UPSERTs are guarded by
 `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; a filter miss

@@ -56,8 +56,8 @@ Only for users on the platform's admin allowlist; everyone else gets `403 not_ad
 (exit 3). They never work with an `ek-` key.
 
 ```bash
-ach-cli admin list <kind|all>              # environments, plugins, skills, marketplaces, bips, models, mcp, a2a, teams, guardrails…
-ach-cli admin refresh <kind> <name>        # re-fetch a plugin, skill, instruction, artifact or marketplace now
+ach-cli admin list <kind|all>              # environments, plugins, prompts, instructions, skills, marketplaces, bips, models, mcp, a2a, teams, guardrails…
+ach-cli admin refresh <kind> <name>        # re-fetch a plugin, skill, prompt, instruction, artifact or marketplace now
 ach-cli admin keys list --owner <email>    # every key, any owner
 ach-cli admin keys revoke <id> | --owner <email>
 ach-cli admin users budget <email> --max-budget <USD> --budget-duration 30d

@@ -16,7 +16,7 @@ import (
 // asserts the §10.3 contract from the OUTSIDE — a refactor that drops a
 // subdirectory from cachefs.SubDirs would silently break the contract if the
 // test only iterated the package's own variable.
-var expectedSubdirs = []string{"instruction", "plugin", "marketplace", "artifact", ".tmp"}
+var expectedSubdirs = []string{"prompt", "instruction", "plugin", "marketplace", "artifact", ".tmp"}
 
 // TestEnsureLayoutCreatesAllFiveSubdirs asserts the §10.3 contract: after a
 // single EnsureLayout call on an empty directory, every OP-10 subdirectory

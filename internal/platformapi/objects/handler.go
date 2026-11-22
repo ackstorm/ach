@@ -47,6 +47,7 @@ func specToRow(ns, name string, spec v1alpha1.EnvironmentSpec) db.EnvironmentRow
 		Name:                name,
 		AuthorizedTeams:     spec.AuthorizedTeams,
 		ContextInstructions: spec.Context.Instructions,
+		ContextPrompts:      spec.Context.Prompts,
 		ContextPlugins:      spec.Context.Plugins,
 		ContextArtifacts:    spec.Context.Artifacts,
 		ContextSkills:       spec.Context.Skills,
@@ -78,6 +79,7 @@ func rowToSpec(row db.EnvironmentRow) v1alpha1.EnvironmentSpec {
 		},
 		Context: v1alpha1.ContextBlock{
 			Instructions: row.ContextInstructions,
+			Prompts:      row.ContextPrompts,
 			Plugins:      row.ContextPlugins,
 			Artifacts:    row.ContextArtifacts,
 			Skills:       row.ContextSkills,

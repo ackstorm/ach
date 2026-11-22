@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package sources declares the source-type-agnostic upstream-fetch
-// contract consumed by the Plugin / Instruction / Artifact / PluginMarketplace
+// contract consumed by the Plugin / Prompt / Instruction / Artifact / PluginMarketplace
 // reconcilers (Hub §10, §11, §12).
 //
 // Each per-source-type subpackage (`github`, `gitlab`, `bitbucket`, `s3`,
@@ -29,7 +29,7 @@ import (
 )
 
 // SourceSpec is the discriminated union the [Registry] uses to dispatch.
-// The reconciler builds one from a Plugin / Instruction / Artifact /
+// The reconciler builds one from a Plugin / Prompt / Instruction / Artifact /
 // PluginMarketplace CR's spec block. Exactly one of the per-type
 // subobject pointers is non-nil per Type — the matching subobject MUST
 // be populated when Type == "<kind>". CRD admission (CEL XValidation

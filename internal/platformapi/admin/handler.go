@@ -523,7 +523,7 @@ func revokeEkInline(ctx context.Context, deps Deps, row *db.EkKeyInfo, actor, re
 // Issue #34: replaces the pre-issue-34 CR-annotation PATCH path. Platform-api
 // no longer holds a K8s client — every refresh signal goes through Postgres.
 //
-// Body shape: {"kind":"plugin|instruction|artifact|pluginmarketplace","name":"..."}.
+// Body shape: {"kind":"plugin|instruction|prompt|artifact|pluginmarketplace","name":"..."}.
 // Returns 202 Accepted on success — the actual refresh is async.
 //
 // Error codes:
@@ -700,7 +700,7 @@ func ListKeysHandler(deps Deps) http.HandlerFunc {
 // them to external_refs / skill_marketplace_skills respectively).
 func isRefreshableKind(kind string) bool {
 	switch kind {
-	case "plugin", "instruction", "artifact", "pluginmarketplace", "skill", "skillmarketplace":
+	case "plugin", "instruction", "prompt", "artifact", "pluginmarketplace", "skill", "skillmarketplace":
 		return true
 	}
 	return false

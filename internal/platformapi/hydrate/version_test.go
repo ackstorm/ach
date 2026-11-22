@@ -14,6 +14,7 @@ func TestVersionItems_RevsAndRuntime(t *testing.T) {
 		ContextPlugins:      []string{"bro@ackstorm", "local-plugin"},
 		ContextSkills:       []string{"triage", "deck@skills"},
 		ContextInstructions: []string{"p1"},
+		ContextPrompts:      []string{"pr1"},
 		RuntimeMCPServers:   []string{"mcp-x"},
 		RuntimeA2AAgents:    []string{"agent-x"},
 		RuntimeModels:       []string{"smart"},
@@ -24,6 +25,7 @@ func TestVersionItems_RevsAndRuntime(t *testing.T) {
 		Skills:             map[string]string{"triage": "sss"},
 		SkillMarketplaces:  map[string]string{"skills": "kkk"},
 		Instructions:       map[string]string{"p1": "ppp"},
+		Prompts:            map[string]string{"pr1": "rrr"},
 	}
 	got := versionItems(row, revs)
 	want := []VersionItem{
@@ -33,6 +35,7 @@ func TestVersionItems_RevsAndRuntime(t *testing.T) {
 		{Kind: "model", Name: "smart"},
 		{Kind: "plugin", Name: "bro@ackstorm", Rev: "mmm"},
 		{Kind: "plugin", Name: "local-plugin", Rev: "aaa"},
+		{Kind: "prompt", Name: "pr1", Rev: "rrr"},
 		{Kind: "skill", Name: "deck@skills", Rev: "kkk"},
 		{Kind: "skill", Name: "triage", Rev: "sss"},
 	}

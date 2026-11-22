@@ -20,9 +20,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// TestMigration000031_DropsPromptData migrates to version 30, seeds Prompt
-// rows, then applies 000031 and asserts nothing of the old kind survives.
-func TestMigration000031_DropsPromptData(t *testing.T) {
+// TestMigration000031_AddsInstruction migrates to version 30, seeds Prompt
+// rows, then applies 000031 up, down and up again, asserting Prompt data is
+// untouched and the instructions table exists only while applied.
+func TestMigration000031_AddsInstruction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test requires Docker; -short specified")
 	}
@@ -71,36 +72,48 @@ func TestMigration000031_DropsPromptData(t *testing.T) {
 		`INSERT INTO prompts (namespace, name, content_type, locked) VALUES ('ns', 'p', 'text/plain', TRUE)`,
 		`INSERT INTO environments (namespace, name, resource_version, locked, context_prompts, spec)
 		   VALUES ('ns', 'e', '1', TRUE, '{p}', '{"context":{"prompts":["p"]}}')`,
-		`INSERT INTO external_refs (kind, name, storage_location, max_staleness_seconds, locked)
-		   VALUES ('prompt', 'p', '/x', 60, TRUE)`,
 	} {
 		if _, err := pool.Exec(ctx, q); err != nil {
 			t.Fatalf("seed %q: %v", q, err)
 		}
 	}
 
+	assertState := func(step string) {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM prompts`).Scan(&n); err != nil || n != 1 {
+			t.Errorf("%s: prompts rows = %d, err %v; want 1", step, n, err)
+		}
+		var prompts []string
+		if err := pool.QueryRow(ctx, `SELECT context_prompts FROM environments WHERE name = 'e'`).Scan(&prompts); err != nil ||
+			len(prompts) != 1 || prompts[0] != "p" {
+			t.Errorf("%s: context_prompts = %v, err %v; want [p]", step, prompts, err)
+		}
+	}
+
 	if err := m.Migrate(31); err != nil {
 		t.Fatalf("migrate to 31: %v", err)
 	}
-
+	assertState("up")
 	var n int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM instructions`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("instructions rows = %d, err %v; want 0", n, err)
+		t.Errorf("instructions rows = %d, err %v; want 0", n, err)
 	}
 	var ctxInstr []string
-	var hasPrompts bool
-	if err := pool.QueryRow(ctx,
-		`SELECT context_instructions, spec->'context' ? 'prompts' FROM environments WHERE name = 'e'`,
-	).Scan(&ctxInstr, &hasPrompts); err != nil {
-		t.Fatalf("read environment: %v", err)
+	if err := pool.QueryRow(ctx, `SELECT context_instructions FROM environments WHERE name = 'e'`).Scan(&ctxInstr); err != nil || len(ctxInstr) != 0 {
+		t.Errorf("context_instructions = %v, err %v; want empty", ctxInstr, err)
 	}
-	if len(ctxInstr) != 0 {
-		t.Errorf("context_instructions = %v, want empty", ctxInstr)
+
+	if err := m.Migrate(30); err != nil {
+		t.Fatalf("migrate down to 30: %v", err)
 	}
-	if hasPrompts {
-		t.Error("spec.context still has a prompts key")
+	assertState("down")
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM instructions`).Scan(&n); err == nil {
+		t.Error("instructions table still exists after down")
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM external_refs WHERE kind = 'prompt'`).Scan(&n); err != nil || n != 0 {
-		t.Errorf("prompt external_refs rows = %d, err %v; want 0", n, err)
+
+	if err := m.Migrate(31); err != nil {
+		t.Fatalf("migrate up again: %v", err)
 	}
+	assertState("up again")
 }

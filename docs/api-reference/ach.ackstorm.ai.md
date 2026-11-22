@@ -25,6 +25,8 @@ Package v1alpha1 contains API Schema definitions for the ach v1alpha1 API group.
 - [PluginList](#pluginlist)
 - [PluginMarketplace](#pluginmarketplace)
 - [PluginMarketplaceList](#pluginmarketplacelist)
+- [Prompt](#prompt)
+- [PromptList](#promptlist)
 - [Skill](#skill)
 - [SkillList](#skilllist)
 - [SkillMarketplace](#skillmarketplace)
@@ -255,6 +257,7 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
@@ -293,7 +296,7 @@ _Appears in:_
 
 
 ContextBlock is the content-resource half of an Environment (Hub §6, §6.1).
-Names reference ACH-owned content objects (Instruction, Plugin, Artifact CRDs
+Names reference ACH-owned content objects (Prompt, Instruction, Plugin, Artifact CRDs
 or marketplace_plugins rows) and are served by the ACH Content Service.
 
 
@@ -303,6 +306,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `prompts` _string array_ | Prompts lists Prompt names. A Prompt is served to whoever names it<br />(an agent's system prompt); ach-cli does not write it into a tool.<br />Context names map to content filenames served by the Content Service,<br />so the strict deny-pattern forbids "/" and "\" (path-traversal) in<br />addition to ? # % whitespace, control chars (U+0000-U+001F), and DEL<br />(U+007F) (S2 defense-in-depth). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `instructions` _string array_ | Instructions lists Instruction names. ach-cli writes each one as an<br />always-loaded rules file for the hydrated tool. Order has no meaning.<br />Context names map to content<br />filenames served by the Content Service, so the strict deny-pattern<br />forbids "/" and "\" (path-traversal) in addition to ? # % whitespace,<br />control chars (U+0000-U+001F), and DEL (U+007F) (S2 defense-in-depth).<br />"@" is also forbidden: Instructions have no marketplace. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\@?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `plugins` _string array_ | Plugins lists referenced plugin names. A bare name ("code-review")<br />resolves to an internal Plugin CRD; a scoped name<br />("code-review@anthropics-official") resolves to that<br />PluginMarketplace's plugin by exact (marketplace, name). Same strict<br />deny-pattern as Instructions (no "/" "\" ? # % whitespace, control chars<br />or DEL); "@" is permitted as the marketplace separator. | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
 | `artifacts` _string array_ | Artifacts lists referenced Artifact names.<br />Same strict deny-pattern as Instructions (no "/" "\" ? # % whitespace<br />control chars or DEL). | \{  \} | items:MaxLength: 253 <br />items:Pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$ <br /> |
@@ -316,7 +320,7 @@ _Appears in:_
 Environment is the Schema for the environments API (Hub §6).
 
 An Environment is the ACH product boundary: a bundle of runtime
-(models, mcpServers, a2aAgents, guardrails) and context (instructions, plugins,
+(models, mcpServers, a2aAgents, guardrails) and context (prompts, instructions, plugins,
 artifacts) capabilities exposed to authorized Teams. The ACH
 Operator reconciles spec.runtime into a LiteLLM access group of
 the same name (§6.2). The CEL XValidation rules above enforce
@@ -398,6 +402,7 @@ _Appears in:_
 | `expandedRuntime` _[ExpandedRuntime](#expandedruntime)_ | ExpandedRuntime lists the MCP servers and A2A agents granted ONLY via<br />spec.runtime.mcpServerGroups / agentGroups (names also listed<br />explicitly are omitted). Nil when the groups grant nothing extra. |  |  |
 | `unresolvedContextPlugins` _string array_ | UnresolvedContextPlugins lists context.plugins entries whose content<br />has not yet been synced (last_successful_refresh IS NULL in the<br />plugins or marketplace_plugins projection row). A non-empty list<br />blocks ExecutionResourcesResolved from becoming True — prevents the<br />Available=True false-green that would otherwise let hydrate issue a<br />404 at runtime.<br />Bare entries (no @) resolve against the plugins (CRD) projection<br />table; scoped entries (name@marketplace) resolve against<br />marketplace_plugins. Both arms require last_successful_refresh to<br />be non-null before the plugin is considered content-present. | \{  \} |  |
 | `unresolvedContextSkills` _string array_ | UnresolvedContextSkills lists context.skills entries whose content has<br />not yet been synced (last_successful_refresh IS NULL in the skills<br />projection row). A non-empty list blocks ExecutionResourcesResolved<br />from becoming True — same content-gating as UnresolvedContextPlugins. | \{  \} |  |
+| `unresolvedContextPrompts` _string array_ | UnresolvedContextPrompts lists spec.context.prompts names whose<br />Prompt has no successful refresh yet. | \{  \} |  |
 | `unresolvedContextInstructions` _string array_ | UnresolvedContextInstructions lists spec.context.instructions names whose<br />Instruction has no successful refresh yet. | \{  \} |  |
 | `litellmAccessGroup` _string_ | LitellmAccessGroup is the synced LiteLLM access group name (§6.4).<br />Echoed for operator visibility; equals metadata.name when set. |  |  |
 
@@ -426,7 +431,7 @@ _Appears in:_
 
 
 ExternalRefStatus is the shared status surface for external-reference
-resources (Plugin, Instruction, Artifact, PluginMarketplace) per Hub §6.6.
+resources (Plugin, Prompt, Instruction, Artifact, PluginMarketplace) per Hub §6.6.
 
 
 
@@ -435,6 +440,7 @@ _Appears in:_
 - [InstructionStatus](#instructionstatus)
 - [PluginMarketplaceStatus](#pluginmarketplacestatus)
 - [PluginStatus](#pluginstatus)
+- [PromptStatus](#promptstatus)
 - [SkillMarketplaceStatus](#skillmarketplacestatus)
 - [SkillStatus](#skillstatus)
 
@@ -463,6 +469,7 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
@@ -486,13 +493,14 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `repo` _string_ | Repo is the "<owner>/<name>" GitHub identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
-| `path` _string_ | Path within the repo, honored at fetch time (F1): a directory narrows the<br />fetched content to that subtree; a single file (Instruction, Artifact<br />scope=object) returns that file's raw bytes. Empty → whole repo.<br />PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this<br />as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path<br />only as the post-fetch skills-root walk hint; PluginMarketplace discovers<br />.claude-plugin/marketplace.json conventionally). |  |  |
+| `path` _string_ | Path within the repo, honored at fetch time (F1): a directory narrows the<br />fetched content to that subtree; a single file (Prompt, Instruction, Artifact<br />scope=object) returns that file's raw bytes. Empty → whole repo.<br />PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this<br />as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path<br />only as the post-fetch skills-root walk hint; PluginMarketplace discovers<br />.claude-plugin/marketplace.json conventionally). |  |  |
 | `ref` _string_ | Ref is the branch or tag to fetch, or to watch when Commit is set. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `commit` _string_ | Commit pins the served content to this commit (40 hex characters).<br />Ref keeps being watched: status.latestUpstreamRev and the<br />UpdateAvailable condition report when it moves past the pin. Empty<br />serves the head of Ref. |  | Pattern: `^[0-9a-f]\{40\}$` <br /> |
 | `authSecretRef` _[SourceAuthSecretRef](#sourceauthsecretref)_ | AuthSecretRef is optional. When set, the Secret named here MUST<br />exist in the CR's namespace at reconcile time and the operator<br />reads the bearer token from the named key (see SourceAuthSecretRef.Key).<br />When nil, the upstream fetch is anonymous — supported only for<br />public repositories. |  |  |
@@ -511,12 +519,13 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `host` _string_ | Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Instruction /<br />PluginMarketplace). Defaults to gitlab.com when empty. |  |  |
+| `host` _string_ | Host of the GitLab instance. Accepts a bare host ("git.example.com")<br />or a full "https://git.example.com" form — the scheme is stripped and<br />the clone/REST URL is always built as https://<host>. Behaves<br />identically for every consumer (Artifact / Plugin / Prompt / Instruction /<br />PluginMarketplace). Defaults to gitlab.com when empty. |  |  |
 | `project` _string_ | Project is the "<namespace>/<project>" GitLab identifier. |  | MinLength: 1 <br />Required: \{\} <br /> |
 | `path` _string_ | Path within the project repo, honored at fetch time (F1; see<br />GitHubSource.Path for the directory-vs-file + marketplace semantics). |  |  |
 | `ref` _string_ | Ref is the branch or tag to fetch, or to watch when Commit is set. |  | MinLength: 1 <br />Required: \{\} <br /> |
@@ -544,6 +553,7 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
@@ -1076,6 +1086,98 @@ _Appears in:_
 | `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
 
 
+#### Prompt
+
+
+
+Prompt is the Schema for the prompts API (Hub §14).
+
+
+
+_Appears in:_
+- [PromptList](#promptlist)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `Prompt` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[PromptSpec](#promptspec)_ |  |  |  |
+| `status` _[PromptStatus](#promptstatus)_ |  |  |  |
+
+
+#### PromptList
+
+
+
+PromptList contains a list of Prompt.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `ach.ackstorm.ai/v1alpha1` | | |
+| `kind` _string_ | `PromptList` | | |
+| `kind` _string_ | Kind is a string value representing the REST resource this object represents.<br />Servers may infer this from the endpoint the client submits requests to.<br />Cannot be updated.<br />In CamelCase.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds |  |  |
+| `apiVersion` _string_ | APIVersion defines the versioned schema of this representation of an object.<br />Servers should convert recognized schemas to the latest internal value, and<br />may reject unrecognized values.<br />More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources |  |  |
+| `metadata` _[ListMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#listmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `items` _[Prompt](#prompt) array_ |  |  |  |
+
+
+#### PromptSpec
+
+
+
+PromptSpec defines the desired state of Prompt: one upstream file served
+by the ACH Content Service, loaded by whoever names it (an agent's system
+prompt). The Content Service serves it as a gzip archive holding the file;
+there is no size or format check.
+CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
+CRD-04: spec.refresh.maxStaleness is REQUIRED.
+
+
+
+_Appears in:_
+- [Prompt](#prompt)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | Type names the upstream source kind. |  | Enum: [github gitlab bitbucket s3 gcs http] <br />Required: \{\} <br /> |
+| `refresh` _[RefreshBlock](#refreshblock)_ | Refresh declares poll cadence and staleness bound (CRD-04). |  | Required: \{\} <br /> |
+| `contentType` _string_ | ContentType is the media type of the prompt file. It is recorded, not<br />sent on the wire: the Content Service serves every Prompt as a one-entry<br />tar.gz (application/gzip). Optional. |  |  |
+| `github` _[GitHubSource](#githubsource)_ | GitHub source. Required when spec.type == "github". |  |  |
+| `gitlab` _[GitLabSource](#gitlabsource)_ | GitLab source. Required when spec.type == "gitlab". |  |  |
+| `bitbucket` _[BitbucketSource](#bitbucketsource)_ | Bitbucket source. Required when spec.type == "bitbucket". |  |  |
+| `s3` _[S3Source](#s3source)_ | S3 source. Required when spec.type == "s3". |  |  |
+| `gcs` _[GCSSource](#gcssource)_ | GCS source. Required when spec.type == "gcs". |  |  |
+| `http` _[HTTPSource](#httpsource)_ | HTTP source. Required when spec.type == "http". |  |  |
+
+
+#### PromptStatus
+
+
+
+PromptStatus defines the observed state of Prompt.
+
+
+
+_Appears in:_
+- [Prompt](#prompt)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the metadata.generation of the CR the<br />reconciler most recently processed. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#condition-v1-meta) array_ | Conditions exposes SourceReachable (and, for PluginMarketplace,<br />Synced) per §6.6. |  |  |
+| `storageLocation` _string_ | StorageLocation is the cached filesystem path the Content Service<br />serves from after the last successful refresh (§10.3). Empty until<br />the first successful refresh. |  |  |
+| `lastSuccessfulRefresh` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#time-v1-meta)_ | LastSuccessfulRefresh is the wall-clock time of the most recent<br />successful upstream fetch + atomic publish (§10.3 step 5). |  |  |
+| `upstreamRev` _string_ | UpstreamRev is the per-source revision identifier the most recent<br />successful refresh recorded — for git sources this is the resolved<br />commit SHA; for S3 it is the object ETag; for GCS the object<br />generation; for HTTP a composite of ETag and Last-Modified<br />separated by a literal pipe. The Phase 2 reconciler reads this<br />value to pass as PriorRev on the next fetch for conditional-GET /<br />not-modified detection. Empty before the first successful refresh. |  |  |
+| `latestUpstreamRev` _string_ | LatestUpstreamRev is the commit the source's ref pointed at on the<br />most recent refresh (git sources only). It differs from UpstreamRev<br />when the source is pinned to an older commit. |  |  |
+
+
 #### RefreshBlock
 
 
@@ -1085,7 +1187,7 @@ upstream and how stale a cached snapshot may be before content delivery
 is refused (Hub §10).
 
 CRD-04: maxStaleness is REQUIRED on every Plugin/PluginMarketplace/
-Instruction/Artifact. CRD-03: interval, when set, MUST NOT exceed maxStaleness;
+Prompt/Instruction/Artifact. CRD-03: interval, when set, MUST NOT exceed maxStaleness;
 a resource with interval > maxStaleness would always be stale between
 refresh attempts.
 
@@ -1096,6 +1198,7 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 
@@ -1148,6 +1251,7 @@ _Appears in:_
 - [InstructionSpec](#instructionspec)
 - [PluginMarketplaceSpec](#pluginmarketplacespec)
 - [PluginSpec](#pluginspec)
+- [PromptSpec](#promptspec)
 - [SkillMarketplaceSpec](#skillmarketplacespec)
 - [SkillSpec](#skillspec)
 

@@ -8,7 +8,7 @@ import "testing"
 // skill + skillmarketplace joined plugin/instruction/artifact/pluginmarketplace in
 // G8; non-content kinds (team/environment/backendidentitypolicy) stay rejected.
 func TestIsRefreshableKind(t *testing.T) {
-	accepted := []string{"plugin", "instruction", "artifact", "pluginmarketplace", "skill", "skillmarketplace"}
+	accepted := []string{"plugin", "instruction", "prompt", "artifact", "pluginmarketplace", "skill", "skillmarketplace"}
 	for _, k := range accepted {
 		if !isRefreshableKind(k) {
 			t.Errorf("isRefreshableKind(%q) = false; want true", k)

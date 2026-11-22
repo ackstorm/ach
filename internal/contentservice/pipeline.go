@@ -197,7 +197,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 // MIME via its extension INSIDE the tar.
 func contentTypeFor(kind string) string {
 	switch kind {
-	case kindInstruction, kindPlugin, kindSkill, kindArtifact:
+	case kindInstruction, kindPrompt, kindPlugin, kindSkill, kindArtifact:
 		return contentTypeGzip
 	}
 	return contentTypeOctet

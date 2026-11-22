@@ -1,7 +1,7 @@
 # Find, install and update Environments
 
 An Environment is a named set your platform team publishes: models, MCP
-servers and A2A agents, plus plugins, skills, instructions and artifacts.
+servers and A2A agents, plus plugins, skills, prompts, instructions and artifacts.
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
@@ -87,6 +87,10 @@ OpenCode load the Instructions in every project below it; Pi only when started
 in that folder. An Instruction the Environment drops is removed on
 the next hydrate. Antigravity caps all always-on rules together at about
 20,000 tokens.
+
+A Prompt is a different thing: it is served to whoever names it, for example an
+agent whose system prompt is that Prompt, and `ach-cli` does not write it into a
+tool.
 
 OpenCode loads MCP servers when its service starts. After a hydrate, an
 `environment uninstall` (or a `local plugin` install, update or uninstall) that
