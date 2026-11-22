@@ -867,3 +867,35 @@ func TestMaterializeExternalRef_InstructionGate(t *testing.T) {
 		})
 	}
 }
+
+// A Prompt is served as fetched: the bodies the Instruction gate rejects are
+// published.
+func TestMaterializeExternalRef_PromptHasNoContentGate(t *testing.T) {
+	cases := map[string][]byte{
+		"oversize":    bytes.Repeat([]byte("a"), contentkit.MaxInstructionBytes+1),
+		"frontmatter": []byte("---\nx: 1\n---\n"),
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := newCacheRoot(t)
+			finalPath := filepath.Join(root, "prompt", "mat-prompt-"+name+".tar.gz")
+			res := materializeExternalRef(context.Background(), ExternalRefRefreshDeps{
+				Client:    k8sClient,
+				Namespace: WatchNamespace,
+				CacheRoot: root,
+				Kind:      "prompt",
+				Name:      "mat-prompt-" + name,
+				FinalPath: finalPath,
+				Fetchers:  fakeFactory(&fakeFetcher{body: body, upstreamRev: "sha-" + name}),
+				Refresh:   achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+				Log:       logr.Discard(),
+			})
+			if res.Err != nil {
+				t.Fatalf("want published, got %v", res.Err)
+			}
+			if _, err := os.Stat(finalPath); err != nil {
+				t.Fatalf("not published: %v", err)
+			}
+		})
+	}
+}

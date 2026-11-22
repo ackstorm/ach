@@ -2,7 +2,7 @@
 
 // envtest coverage for the prompt content-present gate on
 // ExecutionResourcesResolved: an Environment whose spec.context.prompts
-// references an Prompt with last_successful_refresh IS NULL holds
+// references a Prompt with last_successful_refresh IS NULL holds
 // ExecutionResourcesResolved=False until the content is synced.
 //
 // Reuses setupPluginContentPresentDB, buildPluginTestReconciler and
