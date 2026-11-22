@@ -16,13 +16,12 @@ import (
 type ResourceKind string
 
 // ResourceKind constants. Values are the spec §6.4 / §10 lowercase resource
-// identifiers ("plugin", "artifact", "instruction", "prompt") so they double as URL path
+// identifiers ("plugin", "artifact", "instruction") so they double as URL path
 // segments in the content service consumer (`GET /content/{kind}/{name}`).
 const (
 	KindPlugin      ResourceKind = "plugin"
 	KindArtifact    ResourceKind = "artifact"
 	KindInstruction ResourceKind = "instruction"
-	KindPrompt      ResourceKind = "prompt"
 	KindSkill       ResourceKind = "skill"
 )
 
@@ -77,7 +76,7 @@ func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 		return l.MaxExtractedArtifactBytes
 	case KindSkill:
 		return l.MaxExtractedSkillBytes
-	case KindInstruction, KindPrompt:
+	case KindInstruction:
 		return l.MaxExtractedSkillBytes
 	}
 	// Unknown kind — fall through to the plugin cap. NOTE: this is not the

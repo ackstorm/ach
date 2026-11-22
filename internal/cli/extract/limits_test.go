@@ -124,14 +124,6 @@ func TestMaxBytesForKind_Artifact(t *testing.T) {
 	}
 }
 
-// TestMaxBytesForKind_Prompt asserts a prompt is capped like a skill.
-func TestMaxBytesForKind_Prompt(t *testing.T) {
-	l := extract.DefaultLimits()
-	if got := l.MaxBytesForKind(extract.KindPrompt); got != l.MaxExtractedSkillBytes || got == 0 {
-		t.Errorf("MaxBytesForKind(prompt) = %d, want the skill cap %d", got, l.MaxExtractedSkillBytes)
-	}
-}
-
 // TestMaxBytesForKind_Instruction asserts an instruction is capped like a skill.
 func TestMaxBytesForKind_Instruction(t *testing.T) {
 	l := extract.DefaultLimits()
