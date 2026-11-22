@@ -110,18 +110,18 @@ func TestAdminList_SingleKind_Table(t *testing.T) {
 	}
 }
 
-// TestAdminList_PromptFalseGreenFootnote: a fresh* prompt surfaces the footnote.
-func TestAdminList_PromptFalseGreenFootnote(t *testing.T) {
+// TestAdminList_ArtifactFalseGreenFootnote: a fresh* artifact surfaces the footnote.
+func TestAdminList_ArtifactFalseGreenFootnote(t *testing.T) {
 	adminTestEnv(t)
 	srv := newInventoryTestServer(t, map[string]any{
-		"/platform/admin/prompts": envelope(map[string]any{
-			"kind": "prompt", "name": "greeting", "namespace": "ach",
+		"/platform/admin/artifacts": envelope(map[string]any{
+			"kind": "artifact", "name": "greeting", "namespace": "ach",
 			"version": "3", "sync": "fresh*",
 		}),
 	})
 	seedAdminConfig(t, srv.URL)
 
-	stdout, _, code, err := executeAdmin(t, "", "list", "prompts")
+	stdout, _, code, err := executeAdmin(t, "", "list", "artifacts")
 	if err != nil || code != exit.OK {
 		t.Fatalf("err=%v code=%d", err, code)
 	}

@@ -108,8 +108,8 @@ func TestInstructionArtifactSync(t *testing.T) {
 		LastSuccessfulRefresh: freshAgo, MaxStalenessSeconds: 600,
 		ContentType: ptrStr("text/markdown"), UpdatedAt: now,
 	}, now)
-	if prv.Sync != syncFreshFalseGreen {
-		t.Errorf("prompt fresh sync: got %q, want fresh*", prv.Sync)
+	if prv.Sync != syncFresh {
+		t.Errorf("prompt fresh sync: got %q, want fresh (no asterisk)", prv.Sync)
 	}
 	if prv.Version != "7" {
 		t.Errorf("prompt version: got %q, want 7", prv.Version)

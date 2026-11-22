@@ -167,7 +167,7 @@ INSTRUCTIONS (1)
 NAME   NAMESPACE  VERSION  SYNC   AGE  ORIGIN
 hello  ach        844      fresh  2m   -
 
-* prompts/artifacts: name-resolved only; content presence is not gated
+* artifacts: name-resolved only; content presence is not gated
 ```
 
 ### SYNC column semantics

@@ -13,11 +13,11 @@
 //   - bip / litellm-connection: projected (presence).
 //
 // false-green caveat (memory plugin-scoping-followups): context plugins,
-// skills and instructions content-presence gates the Environment
-// ExecutionResourcesResolved condition. Prompts and artifacts are name-only /
-// pass-through — their last_successful_refresh reflects "name resolved", not
-// "content present + current". So the prompt and artifact
-// mappers render a fresh state as "fresh*" (syncFreshFalseGreen); the
+// skills, prompts and instructions content-presence gates the Environment
+// ExecutionResourcesResolved condition. Artifacts are pass-through — their
+// last_successful_refresh reflects "name resolved", not "content present +
+// current". So the artifact mapper renders a fresh state as "fresh*"
+// (syncFreshFalseGreen); the
 // CLI renderer turns the asterisk into a footnote. STALE/never stay honest and
 // carry no asterisk. Marketplace plugins and external_refs ARE real
 // upstream-fetch tracking, so they keep a bare "fresh".
@@ -31,7 +31,7 @@ import (
 )
 
 // SYNC state vocabulary. The asterisk on syncFreshFalseGreen is data the CLI
-// renderer keys on to emit the prompts/artifacts footnote — see package doc.
+// renderer keys on to emit the artifacts footnote — see package doc.
 const (
 	syncFresh           = "fresh"
 	syncFreshFalseGreen = "fresh*"
@@ -82,7 +82,7 @@ func contentSync(last *time.Time, maxStalenessSeconds int64, now time.Time) (sta
 }
 
 // markFalseGreen upgrades a bare "fresh" to "fresh*" for kinds whose
-// content-presence is NOT actually gated (prompts/artifacts). STALE/never are
+// content-presence is NOT actually gated (artifacts). STALE/never are
 // already honest and pass through unchanged.
 func markFalseGreen(state string) string {
 	if state == syncFresh {
@@ -222,7 +222,7 @@ func promptRowToView(r db.PromptRow, now time.Time) AdminObjectView {
 		Version:           r.ResourceVersion,
 		UpstreamRev:       r.UpstreamRev,
 		LatestUpstreamRev: r.LatestUpstreamRev,
-		Sync:              markFalseGreen(sync), // prompts are name-only / not content-gated
+		Sync:              sync,
 		SyncReason:        reason,
 		UpdatedAt:         rfc3339OrEmpty(r.UpdatedAt),
 	}

@@ -309,8 +309,8 @@ SYNC column:
 AVAILABLE column (content kinds): a newer commit on the watched ref of a
 source pinned to spec.<git>.commit; promote it in GitOps. '-' when none.
 
-Note: prompts and artifacts show 'fresh*' — their refresh tracks name
-resolution, not content presence. plugins, skills and instructions are truly
+Note: artifacts show 'fresh*' — their refresh tracks name resolution, not
+content presence. plugins, skills, prompts and instructions are truly
 content-gated (bare 'fresh').
 Guardrails add MODE and DEFAULT-ON columns.`,
 		Example: `  ach-cli admin list plugins
