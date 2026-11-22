@@ -200,10 +200,6 @@ func ensureProjectGitignore(w io.Writer, root string, global bool, entries []str
 	}
 }
 
-// opencodeMCPKeyPrefix is the dotted-key prefix of the MCP servers a plugin
-// deep-merges into .opencode/opencode.json (recorded in FileRec.Keys).
-const opencodeMCPKeyPrefix = "mcp.servers."
-
 // opencodeRestart records whether a run wrote or removed an MCP server entry
 // for opencode (an opencode record with `mcp.servers.*` keys).
 type opencodeRestart struct{ on bool }
@@ -215,7 +211,7 @@ func (o *opencodeRestart) note(target string, recs ...[]store.FileRec) {
 	for _, rs := range recs {
 		for _, r := range rs {
 			for _, k := range r.Keys {
-				o.on = o.on || strings.HasPrefix(k, opencodeMCPKeyPrefix)
+				o.on = o.on || strings.HasPrefix(k, adapter.OpencodeMCPKeyPrefix)
 			}
 		}
 	}
