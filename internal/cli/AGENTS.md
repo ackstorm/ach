@@ -418,8 +418,10 @@ target is the adapter's `InstructionFiles`, the global path goes through
 | pi | `.pi/ach/<name>.md` | none | `~/.pi/agent/ach/` |
 | codex | none (note on stderr) | | |
 
-- **Shared loader**: OpenCode needs the entry `.opencode/ach/*.md` (global
-  `~/.config/opencode/ach/*.md`) in `instructions` of `opencode.json`; Pi needs the
+- **Shared loader**: OpenCode needs the absolute glob `<folder>/.opencode/ach/*.md`
+  (global `<XDG_CONFIG_HOME>/opencode/ach/*.md`) in `instructions` of `opencode.json`:
+  a relative entry is searched only up to the git root, so a project inside an
+  Environment folder misses it. Pi needs the
   extension `.pi/extensions/ach-instructions.ts` (global `~/.pi/agent/extensions/`). Neither
   is recorded in state: each exists exactly while its folder holds a `*.md`, created
   after the files are written and removed after pruning (`tidyInstructionLoader`) on
@@ -577,10 +579,16 @@ is not ground truth.**
   loads from `.pi/extensions/` only in a trusted project (`-a`; untrusted is
   silently not loaded) and from `~/.pi/agent/extensions/`; the text reaches the
   system prompt once per request over two turns; a missing or empty `.pi/ach/` is
-  silent; `import.meta.url` and `__dirname` both work. NOT verified: OpenCode 2.x,
-  Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`), Antigravity `.agents/rules/*.md`
-  (`trigger: always_on`) and Claude Code `.claude/rules/*.md` loading (no official
-  non-`curl | sh` install, or a login is needed).
+  silent; `import.meta.url` and `__dirname` both work.
+- Instruction loading in a folder per Environment (`env/` hydrated, tool started in
+  `env/proj`), checked 2026-11-22 the same way. OpenCode 2.3.2 (GitHub release
+  binary): every case above behaves as on 1.19.6; a relative entry in `env/` is
+  missed when `proj` is a git repo or no git exists (1.19.6: missed only with git),
+  an absolute one always loads. Claude Code 2.1.330 (npm, `ANTHROPIC_BASE_URL` at a
+  fake server, no login): loads `.claude/rules/*.md` from the folder and from every
+  parent folder. Pi 1.6.0 loads `.pi/extensions/` only from the folder it starts in.
+  NOT verified: Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`) and Antigravity
+  `.agents/rules/*.md` (`trigger: always_on`) loading (a login is needed).
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage
