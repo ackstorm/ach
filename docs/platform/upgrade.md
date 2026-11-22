@@ -82,7 +82,7 @@ Four cases where a rollback needs more:
 | Rolling back | Needs first |
 |---|---|
 | Below 1.1.4 | Apply `000028_drop_deletion_timestamp.down.sql` from the ACH repository with `psql`. The rows that version removed do not come back |
-| Below the release that added the `Instruction` kind | Nothing: older binaries ignore the `instructions` table and `environments.context_instructions`. To remove them, apply `000031_instruction_kind.down.sql` from the ACH repository with `psql`; it only drops those two, and the Instruction rows are lost. Prompts are not touched |
+| Below the release that added the `Instruction` kind | Delete the Instruction CRs first (or patch out their `instructions.ach.ackstorm.ai/finalizer`), because the older operator cannot finalize them; older Environment CRDs also prune `context.instructions`. Older binaries ignore the `instructions` table and `environments.context_instructions`. To remove them, apply `000031_instruction_kind.down.sql` from the ACH repository with `psql`; it only drops those two, and the Instruction rows are lost. Prompts are not touched |
 | Below the version that added key suspension and expiry | Resume every suspended environment key and clear every expiry. The tables refuse to go back while such a key exists |
 | Below the version that added token exchange | Revoke every environment key that was issued by token exchange |
 

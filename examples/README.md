@@ -159,13 +159,13 @@ PLUGINS (1)
 NAME     NAMESPACE  VERSION  SYNC   AGE  ORIGIN
 caveman  ach        842      fresh  2m   -
 
-PROMPTS (1)
-NAME      NAMESPACE  VERSION  SYNC    AGE  ORIGIN
-greeting  ach        843      fresh*  2m   -
-
 INSTRUCTIONS (1)
 NAME   NAMESPACE  VERSION  SYNC   AGE  ORIGIN
 hello  ach        844      fresh  2m   -
+
+PROMPTS (1)
+NAME      NAMESPACE  VERSION  SYNC    AGE  ORIGIN
+greeting  ach        843      fresh   2m   -
 
 * artifacts: name-resolved only; content presence is not gated
 ```
@@ -175,8 +175,8 @@ hello  ach        844      fresh  2m   -
 | Value | Kinds | Meaning |
 |-------|-------|---------|
 | `Available` / `Degraded(<reason>)` / `Pending` | environments | the `Available` composite condition (rolls up `ExecutionResourcesResolved` + `AccessGroupSynced`) |
-| `fresh` / `STALE(<age> over)` / `never` | plugins, instructions, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
-| `fresh*` | prompts, artifacts | **false-green** — their refresh tracks *name resolution*, not content presence. `plugins`, `skills` and `instructions` are content-gated, so the asterisk warns the inventory cannot promise the content is present + current. |
+| `fresh` / `STALE(<age> over)` / `never` | plugins, skills, prompts, instructions, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
+| `fresh*` | artifacts | **false-green** — their refresh tracks *name resolution*, not content presence. `plugins`, `skills`, `prompts` and `instructions` are content-gated, so the asterisk warns the inventory cannot promise the content is present + current. |
 | `projected` | bips, litellm-connections | row is projected from its CR (presence only) |
 
 The inventory reads the stored projection only — to force a re-sync use

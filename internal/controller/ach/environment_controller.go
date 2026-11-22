@@ -381,10 +381,10 @@ func (r *EnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: staleRequeueAfter}, nil
 	}
 	if unresolvedContent.total() > 0 {
-		// Plugin / skill / instruction / marketplace content writes NOTIFY their
-		// own controllers, not Environment, so no event re-enqueues this
-		// Environment when a referenced plugin's / skill's / instruction's
-		// content lands.
+		// Plugin / skill / prompt / instruction / marketplace content writes NOTIFY
+		// their own controllers, not Environment, so no event re-enqueues this
+		// Environment when a referenced plugin's / skill's / prompt's /
+		// instruction's content lands.
 		// Without a shorter requeue the Environment would sit
 		// ExecutionResourcesResolved=False until the 5-min steady-state tick.
 		// Converge on a content-wait cadence.
@@ -426,8 +426,8 @@ func runtimeUnresolved(rt achv1alpha1.RuntimeBlock, snap snapshot.LiteLLMSnapsho
 const staleRequeueAfter = 15 * time.Second
 
 // pluginUnresolvedRequeueAfter is the requeue cadence when one or more
-// context plugins, skills or instructions are referenced but not yet
-// content-present. Plugin, skill, instruction and marketplace projection
+// context plugins, skills, prompts or instructions are referenced but not yet
+// content-present. Plugin, skill, prompt, instruction and marketplace projection
 // writes do not enqueue Environments, so this poll is how the Environment
 // converges to Available once content lands.
 const pluginUnresolvedRequeueAfter = 30 * time.Second
@@ -549,7 +549,7 @@ func (u contentUnresolved) total() int {
 	return len(u.prompts) + len(u.plugins) + len(u.skills) + len(u.instructions)
 }
 
-// contextContentUnresolved bundles the plugin, skill and instruction
+// contextContentUnresolved bundles the plugin, skill, prompt and instruction
 // content-present checks so Reconcile carries a single error branch.
 func (r *EnvironmentReconciler) contextContentUnresolved(ctx context.Context, env *achv1alpha1.Environment) (contentUnresolved, error) {
 	var u contentUnresolved

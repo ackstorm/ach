@@ -98,8 +98,8 @@ func (r *PromptReconciler) handleDeletion(ctx context.Context, cr *achv1alpha1.P
 }
 
 // writePromptProjection projects the prompts row + NOTIFY atomically.
-// ContentType is optional (the content service falls back to
-// application/octet-stream when NULL); only populated when spec.contentType is set. Returns
+// ContentType is optional and recorded only (the content service serves every
+// Prompt as application/gzip); populated when spec.contentType is set. Returns
 // achdb.ErrOriginConflict raw on UI-row conflict.
 func (r *PromptReconciler) writePromptProjection(
 	ctx context.Context,

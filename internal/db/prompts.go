@@ -2,8 +2,8 @@
 
 // Package db helpers for the prompts projection table. Mirrors
 // environments.go and plugins.go shape; the kind-specific column is
-// content_type (the Prompt.spec.contentType override: NULL means the caller
-// falls back to application/octet-stream).
+// content_type (the Prompt.spec.contentType value, recorded only: the
+// Content Service serves every Prompt as application/gzip).
 //
 // Written by the Operator's Prompt reconciler; read by the Content Service
 // authz pipeline on every GET /content/prompt/{name}.
@@ -27,8 +27,8 @@ import (
 // PromptRow mirrors the prompts projection row schema. (Namespace, Name) form
 // the PRIMARY KEY.
 //
-// ContentType is the spec.contentType override; nil → SQL NULL → the caller
-// falls back to application/octet-stream. LastSuccessfulRefresh is nullable
+// ContentType is the spec.contentType value, recorded only; nil → SQL NULL.
+// LastSuccessfulRefresh is nullable
 // (PVC-loss recovery / first-reconcile); the Content Service answers 503
 // stale_cache_expired when nil (CS-10).
 type PromptRow struct {

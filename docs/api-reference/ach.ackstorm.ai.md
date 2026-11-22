@@ -1134,7 +1134,8 @@ PromptList contains a list of Prompt.
 
 PromptSpec defines the desired state of Prompt: one upstream file served
 by the ACH Content Service, loaded by whoever names it (an agent's system
-prompt). The content is served as is; there is no size or format check.
+prompt). The Content Service serves it as a gzip archive holding the file;
+there is no size or format check.
 CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
 CRD-04: spec.refresh.maxStaleness is REQUIRED.
 
@@ -1147,7 +1148,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `type` _string_ | Type names the upstream source kind. |  | Enum: [github gitlab bitbucket s3 gcs http] <br />Required: \{\} <br /> |
 | `refresh` _[RefreshBlock](#refreshblock)_ | Refresh declares poll cadence and staleness bound (CRD-04). |  | Required: \{\} <br /> |
-| `contentType` _string_ | ContentType is the HTTP Content-Type the Content Service returns for<br />this prompt. Optional; when empty, Content Service falls back to the<br />upstream response's Content-Type or application/octet-stream. |  |  |
+| `contentType` _string_ | ContentType is the media type of the prompt file. It is recorded and<br />shown in `ach-cli admin list`, not sent on the wire: the Content Service<br />serves every Prompt as a one-entry tar.gz (application/gzip). Optional. |  |  |
 | `github` _[GitHubSource](#githubsource)_ | GitHub source. Required when spec.type == "github". |  |  |
 | `gitlab` _[GitLabSource](#gitlabsource)_ | GitLab source. Required when spec.type == "gitlab". |  |  |
 | `bitbucket` _[BitbucketSource](#bitbucketsource)_ | Bitbucket source. Required when spec.type == "bitbucket". |  |  |

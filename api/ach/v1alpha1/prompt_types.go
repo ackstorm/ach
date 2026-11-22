@@ -8,7 +8,8 @@ import (
 
 // PromptSpec defines the desired state of Prompt: one upstream file served
 // by the ACH Content Service, loaded by whoever names it (an agent's system
-// prompt). The content is served as is; there is no size or format check.
+// prompt). The Content Service serves it as a gzip archive holding the file;
+// there is no size or format check.
 // CRD-03: spec.type's matching subobject MUST be present (CEL-enforced).
 // CRD-04: spec.refresh.maxStaleness is REQUIRED.
 type PromptSpec struct {
@@ -23,9 +24,9 @@ type PromptSpec struct {
 	// +kubebuilder:validation:Required
 	Refresh RefreshBlock `json:"refresh"`
 
-	// ContentType is the HTTP Content-Type the Content Service returns for
-	// this prompt. Optional; when empty, Content Service falls back to the
-	// upstream response's Content-Type or application/octet-stream.
+	// ContentType is the media type of the prompt file. It is recorded and
+	// shown in `ach-cli admin list`, not sent on the wire: the Content Service
+	// serves every Prompt as a one-entry tar.gz (application/gzip). Optional.
 	//
 	// +optional
 	ContentType string `json:"contentType,omitempty"`

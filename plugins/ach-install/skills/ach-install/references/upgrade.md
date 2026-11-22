@@ -97,8 +97,10 @@ the release notes ask for it; migrations are cumulative and run in order.
   `ach migrate` only moves forward, so apply
   `000028_drop_deletion_timestamp.down.sql` by hand with `psql`. The rows that
   migration purged do not come back.
-- Rolling back below the release that added the `Instruction` kind needs nothing:
-  older binaries ignore the `instructions` table and
+- Rolling back below the release that added the `Instruction` kind needs the Instruction CRs
+  deleted first (or their `instructions.ach.ackstorm.ai/finalizer` patched out),
+  because the older operator cannot finalize them; older Environment CRDs also
+  prune `context.instructions`. Older binaries ignore the `instructions` table and
   `environments.context_instructions`. To remove them, apply
   `000031_instruction_kind.down.sql` by hand with `psql`; it only drops those
   two, and the Instruction rows are lost. Prompts are not touched.

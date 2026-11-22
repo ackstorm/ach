@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package sources declares the source-type-agnostic upstream-fetch
-// contract consumed by the Plugin / Prompt / Prompt / Instruction / Artifact / PluginMarketplace
+// contract consumed by the Plugin / Prompt / Instruction / Artifact / PluginMarketplace
 // reconcilers (Hub §10, §11, §12).
 //
 // Each per-source-type subpackage (`github`, `gitlab`, `bitbucket`, `s3`,

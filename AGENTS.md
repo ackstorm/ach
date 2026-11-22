@@ -135,7 +135,7 @@ scope and the base Reader the Enterprise readers wrap, and
                                     └──── READ ROWS + LISTEN ach_*_changed ──┘
 ```
 **Source of truth**: the operator writes Postgres
-(13 projection tables incl. `key_grants`, `environments`, `plugins`, `skills`,
+(14 projection tables incl. `key_grants`, `environments`, `plugins`, `skills`,
 `backend_identity_policies`, `external_refs`, `marketplace_plugins`,
 `marketplaces`, `skill_marketplaces`, `skill_marketplace_skills`); platform-api, forwarder,
 and content-service READ from Postgres and LISTEN on the `ach_*_changed` channels

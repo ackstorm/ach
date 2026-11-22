@@ -5,7 +5,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Fixed
-- The `Prompt` kind is back, unchanged from 1.1.x: `spec.context.prompts`, `context.prompts` in `POST /platform/hydrate`, `/content/prompt/<name>`, `/platform/admin/prompts` and the `prompt` kind in `ach-cli admin` and `environment fetch`. 1.2.0 removed it although agents use it for their system prompt; 1.2.0 is withdrawn, do not install it. Upgrading from 1.1.x needs no step: your Prompts and Environments keep working, and Instruction is added beside Prompt.
+- The `Prompt` kind is back, unchanged from 1.1.x: `spec.context.prompts`, `context.prompts` in `POST /platform/hydrate`, `/content/prompt/<name>`, `/platform/admin/prompts` and the `prompt` kind in `ach-cli admin` and `environment fetch`. 1.2.0 removed it although agents use it for their system prompt; 1.2.0 is withdrawn, do not install it. Upgrading from 1.1.x: your Prompts keep working, and Instruction is added beside Prompt. `ach-cli environment hydrate` does not write Prompts into the folder (an older ach-cli put them in `.ach/<env>/prompt/` or `.ach/prompt/`); those files stay until you delete them, and a Prompt is loaded by whoever names it.
 - `ach-cli local plugin|skill`: the same item installed for the same tool in
   two folders, or in a folder and with `-g`, is two installs. Before, the second
   install replaced the first one's record, so `uninstall` and `update` missed
@@ -14,7 +14,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - OpenCode now loads an Environment's Instructions in projects inside an Environment folder (the layout `environment clone` creates). `ach-cli environment hydrate` writes the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json`, because OpenCode searches a relative entry only up to the project's git root.
 
 ### Added
-- An Environment is not ready until each of its Prompts has been fetched once (`status.unresolvedContextPrompts`).
+- An Environment is not ready until each of its Prompts has been fetched once (`status.unresolvedContextPrompts`). After the upgrade, an Environment that lists a Prompt that does not exist or was never fetched is not ready.
 
 ## [1.2.0] - 2026-11-21
 

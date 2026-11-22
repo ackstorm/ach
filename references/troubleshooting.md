@@ -109,8 +109,8 @@ content-service did not.
 
 ### ❌ `/content/{kind}/…` 404s with the cache file missing (new cache volume, or a bare pre-`.tar.gz` file)
 ```bash
-curl .../content/instruction/foo   # HTTP 404 content_not_found
-ls $ACH_CACHE_ROOT/instruction/    # empty, or foo (bare, no .tar.gz)
+curl .../content/prompt/foo   # HTTP 404 content_not_found
+ls $ACH_CACHE_ROOT/prompt/    # empty, or foo (bare, no .tar.gz)
 ```
 ✅ Nothing to patch: a Plugin, Skill, Prompt, Instruction or Artifact whose
 `<name>.tar.gz` is missing is fetched in full on its next reconcile
@@ -120,7 +120,7 @@ interval gate and `materializeExternalRef` sends no `PriorRev`, so the
 fetcher cannot answer `NotModified`. Verify on the PVC:
 ```bash
 kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
-  ls $ACH_CACHE_ROOT/instruction/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
+  ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
 ```
 WHY IT FAILS: `ResolvePath` looks for `<kind>/<name>.tar.gz` (every kind
 is published as a gzip tar; Prompt, Instruction and Artifact `scope=object` as a
@@ -129,13 +129,12 @@ file → 404 `content_not_found` until that reconcile. With the file
 present, a force-refresh annotation, an Admin-API refresh or a resync
 still sends the stored revision and gets `NotModified`; only a
 `metadata.generation` bump forces a full body.
-**Orphan bare files**: a live CR's old bare `instruction/<name>` /
-`artifact/<name>` is NOT auto-removed (the name changed) — the
-finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
+**Orphan bare files**: a live CR's old bare `prompt/<name>` /
+`artifact/<name>` is NOT auto-removed (the name changed). One-time
 housekeeping after all CRs re-fetch (optional; NOT scripted into the
 operator — YAGNI):
 ```bash
-find $ACH_CACHE_ROOT/{instruction,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
+find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
 ```
 
 ### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)

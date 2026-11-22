@@ -80,7 +80,7 @@ spec:
 
 ## Prompt
 
-A single file (usually Markdown) served verbatim to whoever names it, for example an
+A single file (usually Markdown) served as a one-entry tar.gz to whoever names it, for example an
 ach-agent Agent whose `prompt.system` is `{type: ach, ach: <name>}`. Unlike an
 Instruction, `ach-cli environment hydrate` does not write it into a tool.
 
