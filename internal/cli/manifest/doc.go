@@ -15,7 +15,7 @@
 // entries from the Hub response (see examples/hydrate.json):
 //
 //   - runtime.{models,mcpServers,a2aAgents}[*] populate Endpoint
-//   - context.{instructions,plugins,artifacts}[*] populate DownloadURL
+//   - context.{instructions,prompts,plugins,artifacts}[*] populate DownloadURL
 //
 // Both shares ID + Name. The `omitempty` tags on Endpoint and
 // DownloadURL keep encoded output minimal and round-trip clean against

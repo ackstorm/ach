@@ -114,19 +114,41 @@ func TestAdminList_SingleKind_Table(t *testing.T) {
 func TestAdminList_PromptFalseGreenFootnote(t *testing.T) {
 	adminTestEnv(t)
 	srv := newInventoryTestServer(t, map[string]any{
-		"/platform/admin/artifacts": envelope(map[string]any{
-			"kind": "artifact", "name": "greeting", "namespace": "ach",
+		"/platform/admin/prompts": envelope(map[string]any{
+			"kind": "prompt", "name": "greeting", "namespace": "ach",
 			"version": "3", "sync": "fresh*",
 		}),
 	})
 	seedAdminConfig(t, srv.URL)
 
-	stdout, _, code, err := executeAdmin(t, "", "list", "artifacts")
+	stdout, _, code, err := executeAdmin(t, "", "list", "prompts")
 	if err != nil || code != exit.OK {
 		t.Fatalf("err=%v code=%d", err, code)
 	}
 	if !strings.Contains(stdout, "content presence is not gated") {
 		t.Errorf("missing false-green footnote:\n%s", stdout)
+	}
+}
+
+// TestAdminList_Prompts: a prompt row renders under PROMPTS.
+func TestAdminList_Prompts(t *testing.T) {
+	adminTestEnv(t)
+	srv := newInventoryTestServer(t, map[string]any{
+		"/platform/admin/prompts": envelope(map[string]any{
+			"kind": "prompt", "name": "persona", "namespace": "ach",
+			"version": "2", "sync": "fresh",
+		}),
+	})
+	seedAdminConfig(t, srv.URL)
+
+	stdout, _, code, err := executeAdmin(t, "", "list", "prompts")
+	if err != nil || code != exit.OK {
+		t.Fatalf("err=%v code=%d", err, code)
+	}
+	for _, want := range []string{"PROMPTS (1)", "persona", "fresh"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout missing %q:\n%s", want, stdout)
+		}
 	}
 }
 
@@ -144,7 +166,7 @@ func TestAdminList_All_JSON(t *testing.T) {
 	}
 	// Empty envelopes for the remaining admin kinds so every fan-out GET resolves.
 	for _, k := range []string{
-		"instructions", "artifacts", "skills", "marketplaces", "skill-marketplaces",
+		"instructions", "prompts", "artifacts", "skills", "marketplaces", "skill-marketplaces",
 		"bips", "litellm-connections", "external-refs",
 	} {
 		bodies["/platform/admin/"+k] = envelope()

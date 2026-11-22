@@ -590,7 +590,7 @@ func TestAdminRefresh_InvalidKind_Rejected(t *testing.T) {
 			}
 			msg := err.Error() + stderr
 			// Closed-set error should name the valid kinds.
-			for _, valid := range []string{"plugin", "instruction", "artifact", "marketplace"} {
+			for _, valid := range []string{"plugin", "instruction", "prompt", "artifact", "marketplace"} {
 				if !strings.Contains(msg, valid) {
 					t.Errorf("kind=%s: error msg missing %q; got: %q", kind, valid, msg)
 				}
@@ -712,7 +712,7 @@ func TestAdminListKinds_ExcludesOperatorInternalKinds(t *testing.T) {
 		}
 	}
 	want := []string{
-		"environments", "plugins", "instructions", "artifacts", "skills",
+		"environments", "plugins", "instructions", "prompts", "artifacts", "skills",
 		"marketplaces", "skill-marketplaces", "bips",
 	}
 	if len(adminListKinds) != len(want) {

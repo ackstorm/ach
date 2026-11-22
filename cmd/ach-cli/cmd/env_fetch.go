@@ -23,6 +23,7 @@ import (
 // serves on /content/<kind>/<name> (Hub §15.2 content block).
 var contentFetchKinds = map[string]struct{}{
 	"instruction": {},
+	"prompt":      {},
 	"plugin":      {},
 	"artifact":    {},
 	"skill":       {},
@@ -39,7 +40,7 @@ func newEnvFetchCmd() *cobra.Command {
 		Short: "Fetch one content artifact and write its raw bytes to stdout",
 		Long: `Stream a single artifact from the Content Service verbatim (a debug tool).
 
-kind ∈ {instruction, plugin, artifact, skill}. No extraction, no adapter
+kind ∈ {instruction, prompt, plugin, artifact, skill}. No extraction, no adapter
 projection — the response body is written as-is to stdout (or --file).
 For normal workspace setup use 'ach-cli environment hydrate'.
 
@@ -66,7 +67,7 @@ func runEnvFetch(cmd *cobra.Command, env, kind, name string, f credFlags, file s
 	if _, ok := contentFetchKinds[kind]; !ok {
 		return &exit.CodedError{
 			Code: exit.General,
-			Msg:  fmt.Sprintf("kind must be one of: instruction, plugin, artifact, skill; got: %s", kind),
+			Msg:  fmt.Sprintf("kind must be one of: instruction, prompt, plugin, artifact, skill; got: %s", kind),
 		}
 	}
 	if name == "" {

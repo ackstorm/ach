@@ -92,6 +92,23 @@ func TestEnvFetch_SessionWritesBytesAndHeaders(t *testing.T) {
 	}
 }
 
+// TestEnvFetch_Prompt streams /content/prompt/<name> verbatim.
+func TestEnvFetch_Prompt(t *testing.T) {
+	srv := newContentTestServer(t)
+	sessionEnv(t, srv.URL)
+
+	stdout, _, code, err := executeCommand(t, newEnvCmd(), "fetch", "prod", "prompt", "persona")
+	if err != nil || code != exit.OK {
+		t.Fatalf("fetch err=%v code=%d", err, code)
+	}
+	if stdout != "RAW-PROMPT-BYTES" {
+		t.Errorf("stdout = %q; want raw body", stdout)
+	}
+	if srv.lastPath != "/content/prompt/persona" {
+		t.Errorf("path = %q; want /content/prompt/persona", srv.lastPath)
+	}
+}
+
 // TestEnvFetch_FileFlag_EkSendsEnvironment — `environment fetch demo plugin foo --file x`
 // writes the body to x and sends x-ach-environment: demo even for an ek- key.
 func TestEnvFetch_FileFlag_EkSendsEnvironment(t *testing.T) {

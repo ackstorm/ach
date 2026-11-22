@@ -160,7 +160,7 @@ export ACH_KEY=ek-...`}
             id="environments"
             icon={Layers}
             title="Environments"
-            sub="An Environment is what a tool may use: models, MCP servers and agents, plus plugins, skills, instructions and artifacts. Hydrating one writes it into your tool's config."
+            sub="An Environment is what a tool may use: models, MCP servers and agents, plus plugins, skills, instructions, prompts and artifacts. Hydrating one writes it into your tool's config."
           >
             <div className="flex flex-col gap-5">
               <Step
