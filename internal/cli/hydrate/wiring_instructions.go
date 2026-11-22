@@ -112,8 +112,19 @@ func resolveLoader(platformID, toolRoot string, global bool, l adapter.Instructi
 	return dir, path, nil
 }
 
+// loaderEntry is the array entry for dir. It is absolute because OpenCode
+// searches a relative one only up to the git root, missing an Environment
+// folder above the project.
+func loaderEntry(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(filepath.Join(abs, "*.md")), nil
+}
+
 func ensureLoader(platformID, toolRoot string, global bool, l adapter.InstructionLoader) error {
-	_, path, err := resolveLoader(platformID, toolRoot, global, l)
+	dir, path, err := resolveLoader(platformID, toolRoot, global, l)
 	if err != nil {
 		return err
 	}
@@ -127,12 +138,16 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 		}
 		return state.WriteAtomic(path, l.Content, 0o644)
 	}
+	entry, err := loaderEntry(dir)
+	if err != nil {
+		return err
+	}
 	return state.RewriteFile(path, 0o600, func(cur []byte) ([]byte, bool, error) {
 		doc, err := merge.ParseDoc(cur, false)
 		if err != nil {
 			return nil, false, err
 		}
-		changed, err := merge.EnsureArrayEntry(doc, l.ArrayKey, l.Entry)
+		changed, err := merge.EnsureArrayEntry(doc, l.ArrayKey, entry)
 		if err != nil {
 			return nil, false, fmt.Errorf("%s: %w", path, err)
 		}
@@ -191,8 +206,12 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		}
 		return nil
 	}
+	entry, err := loaderEntry(dir)
+	if err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
-	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(l.Entry))) {
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(entry))) {
 		return nil
 	}
 	if err != nil {
@@ -204,7 +223,7 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		if err != nil {
 			return nil, false, err
 		}
-		changed, err := merge.RemoveArrayEntry(doc, l.ArrayKey, l.Entry)
+		changed, err := merge.RemoveArrayEntry(doc, l.ArrayKey, entry)
 		if err != nil || !changed {
 			return nil, false, err
 		}

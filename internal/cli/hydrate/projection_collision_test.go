@@ -5,12 +5,14 @@ package hydrate_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/conflict"
+	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
 	"github.com/ackstorm/ach/internal/cli/manifest"
@@ -276,6 +278,106 @@ func TestProjection_SharedSkillsDir_TwoTargets(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(abs)); !os.IsNotExist(err) {
 		t.Errorf("shared skill dir must be gone after uninstall; stat err=%v", err)
+	}
+}
+
+// TestProjection_SharedSkillsDir_TargetAddedLater: a target hydrated after
+// another one of the same Environment finds the shared skill file already on
+// disk. The other target's row makes it this Environment's file: an unedited
+// copy is updated, an edited one is kept as a local edit (exit 2), never
+// refused as someone else's file (exit 7).
+func TestProjection_SharedSkillsDir_TargetAddedLater(t *testing.T) {
+	const rel = ".agents/skills/plug-sk/SKILL.md"
+	setup := func(t *testing.T) (achDir, toolRoot, abs string) {
+		withCleanHome(t)
+		achDir = filepath.Join(t.TempDir(), "demo")
+		toolRoot = t.TempDir()
+		abs = filepath.Join(toolRoot, filepath.FromSlash(rel))
+		stagePluginTree(t, achDir, "plug", map[string]string{"skills/sk/SKILL.md": "v1\n"})
+		_, disp := hydrate.NewWiring(nil, "codex", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+		res, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+		if err != nil {
+			t.Fatalf("codex: %v", err)
+		}
+		f := &state.File{SchemaVersion: "3", Environment: "demo"}
+		for _, pf := range res.ProjectedFiles {
+			f.Plugins = append(f.Plugins, state.FileEntry{
+				Target: pf.Target, Hash: pf.Hash, SourceHash: pf.SourceHash, Merge: pf.Merge, Source: pf.Source,
+			})
+		}
+		if err := state.Save(filepath.Join(achDir, "state-codex.json"), f); err != nil {
+			t.Fatalf("save codex state: %v", err)
+		}
+		stagePluginTree(t, achDir, "plug", map[string]string{"skills/sk/SKILL.md": "v2\n"})
+		return achDir, toolRoot, abs
+	}
+	renderOpencode := func(achDir, toolRoot string) error {
+		_, disp := hydrate.NewWiring(nil, "opencode", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+		_, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true)
+		return err
+	}
+
+	t.Run("unedited copy is updated", func(t *testing.T) {
+		achDir, toolRoot, abs := setup(t)
+		if err := renderOpencode(achDir, toolRoot); err != nil {
+			t.Fatalf("opencode: %v", err)
+		}
+		if got, _ := os.ReadFile(abs); !strings.HasSuffix(string(got), "v2\n") {
+			t.Errorf("shared skill = %q, want v2", got)
+		}
+	})
+
+	t.Run("edited copy is a local edit", func(t *testing.T) {
+		achDir, toolRoot, abs := setup(t)
+		if err := os.WriteFile(abs, []byte("mine\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err := renderOpencode(achDir, toolRoot)
+		var ce *exit.CodedError
+		if !errors.As(err, &ce) || ce.Code == exit.CollisionRefuse {
+			t.Fatalf("err = %v; want a local-edit error, not a collision refusal", err)
+		}
+		if got, _ := os.ReadFile(abs); string(got) != "mine\n" {
+			t.Errorf("edited skill = %q, want it kept", got)
+		}
+	})
+}
+
+// TestProjection_ForeignSkill_SameDirOtherPlatform: Environment "slides"
+// hydrated for opencode owns .agents/skills/pdf; Environment "images" hydrated
+// for codex writes into the same directory, so its pdf skill is prefixed.
+func TestProjection_ForeignSkill_SameDirOtherPlatform(t *testing.T) {
+	withCleanHome(t)
+	achRoot := t.TempDir()
+	toolRoot := t.TempDir()
+	slides := filepath.Join(achRoot, "slides")
+	if err := os.MkdirAll(slides, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	claim := &state.File{SchemaVersion: "3", Environment: "slides", Skills: []state.FileEntry{{
+		Target: ".agents/skills/pdf/SKILL.md", Source: "pdf",
+	}}}
+	if err := state.Save(filepath.Join(slides, "state-opencode.json"), claim); err != nil {
+		t.Fatal(err)
+	}
+	achDir := filepath.Join(achRoot, "images")
+	skill := filepath.Join(achDir, "skill", "pdf", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("---\nname: pdf\ndescription: y\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, disp := hydrate.NewWiring(nil, "codex", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+	if _, err := disp.Render(context.Background(), newProjectionManifest(), nil, achDir, toolRoot, true, true); err != nil {
+		t.Fatalf("codex: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(toolRoot, ".agents", "skills", "images-pdf", "SKILL.md")); err != nil {
+		t.Errorf("want prefixed images-pdf; err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(toolRoot, ".agents", "skills", "pdf")); err == nil {
+		t.Errorf("bare pdf written; Environment slides owns it")
 	}
 }
 

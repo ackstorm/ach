@@ -1193,6 +1193,57 @@ func (c *commit) step12WriteState(next *state.File) error {
 			Wrapped: err,
 		}
 	}
+	if err := c.refreshSharedRows(next); err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("write state.json: %v", err), Wrapped: err}
+	}
+	return nil
+}
+
+// refreshSharedRows copies the hash of every whole-file plugin and Skill row
+// this target recorded into the rows the Environment's other targets hold for
+// the same destination. Several targets write one .agents/skills tree; with one
+// hash per file in every state, no target mistakes another's write for a local
+// edit on its next hydrate or uninstall.
+func (c *commit) refreshSharedRows(next *state.File) error {
+	written := map[string]state.FileEntry{}
+	for _, bucket := range [][]state.FileEntry{next.Plugins, next.Skills} {
+		for _, e := range bucket {
+			if e.Merge != mergeStrDeep {
+				written[adapter.ResolveDest(c.toolRoot, e.Target)] = e
+			}
+		}
+	}
+	if len(written) == 0 {
+		return nil
+	}
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(c.statePath), "state-*.json"))
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if p == c.statePath {
+			continue
+		}
+		f, err := c.stateStore.Load(p)
+		if err != nil || f == nil {
+			continue
+		}
+		changed := false
+		for _, bucket := range [][]state.FileEntry{f.Plugins, f.Skills} {
+			for i := range bucket {
+				w, ok := written[adapter.ResolveDest(c.toolRoot, bucket[i].Target)]
+				if ok && bucket[i].Merge != mergeStrDeep && bucket[i].Hash != w.Hash {
+					bucket[i].Hash, bucket[i].SourceHash = w.Hash, w.SourceHash
+					changed = true
+				}
+			}
+		}
+		if changed {
+			if err := c.stateStore.Save(p, f); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
