@@ -4,6 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- OpenCode now loads an Environment's Instructions in projects inside an Environment folder (the layout `environment clone` creates). `ach-cli environment hydrate` writes the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json`, because OpenCode searches a relative entry only up to the project's git root.
+
 ## [1.2.0] - 2026-11-21
 
 ### Breaking
