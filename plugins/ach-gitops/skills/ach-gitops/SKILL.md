@@ -1,6 +1,6 @@
 ---
 name: ach-gitops
-description: "Write, review and fix ACH (Agent Capability Hub) custom resources in a GitOps repo: Environment, PluginMarketplace, Plugin, SkillMarketplace, Skill, Instruction, Artifact, BackendIdentityPolicy, KeyGrant and LiteLLMConnection (apiVersion ach.ackstorm.ai/v1alpha1). Use whenever you edit or review YAML of these kinds, grant models, MCP servers, A2A agents, guardrails, plugins or skills to LiteLLM teams through an Environment, set an Environment budget, add a plugin or skill marketplace from GitHub or GitLab, wire authSecretRef for a private repo, turn on the ACH identity JWT for an MCP or A2A backend, let a pod ServiceAccount exchange its token for an Environment credential with a KeyGrant, or debug an ACH resource that is not Synced, SourceReachable or Available (UnresolvedReferences, UpstreamInvalid, ResourceUnresolved, ShellTeamFailed, IdentityUnknown, EnvironmentMissing). Not for day-to-day ach-cli use or for installing the Helm chart."
+description: "Write, review and fix ACH (Agent Capability Hub) custom resources in a GitOps repo: Environment, PluginMarketplace, Plugin, SkillMarketplace, Skill, Prompt, Instruction, Artifact, BackendIdentityPolicy, KeyGrant and LiteLLMConnection (apiVersion ach.ackstorm.ai/v1alpha1). Use whenever you edit or review YAML of these kinds, grant models, MCP servers, A2A agents, guardrails, plugins or skills to LiteLLM teams through an Environment, set an Environment budget, add a plugin or skill marketplace from GitHub or GitLab, wire authSecretRef for a private repo, turn on the ACH identity JWT for an MCP or A2A backend, let a pod ServiceAccount exchange its token for an Environment credential with a KeyGrant, or debug an ACH resource that is not Synced, SourceReachable or Available (UnresolvedReferences, UpstreamInvalid, ResourceUnresolved, ShellTeamFailed, IdentityUnknown, EnvironmentMissing). Not for day-to-day ach-cli use or for installing the Helm chart."
 ---
 
 # Writing ACH custom resources
@@ -24,7 +24,7 @@ Git (YAML) --GitOps--> CRs --ACH operator--> Postgres projection --> platform-ap
                                      +--> LiteLLM: access group, shell team, budget tag
                                      +--> fetches upstream content (git/S3/GCS/HTTP) into a cache
 
-user/agent: ach-cli environment hydrate <env>  -> manifest + plugins/skills/instructions/artifacts
+user/agent: ach-cli environment hydrate <env>  -> manifest + plugins/skills/prompts/instructions/artifacts
             ek-/pk- key or OAuth token  -> forwarder -> LiteLLM (models, /mcp, /a2a)
 ```
 
@@ -33,14 +33,14 @@ The kinds fall into five groups:
 | Family | Kinds | What the operator does |
 |--------|-------|------------------------|
 | Grant | `Environment` | Resolves names against LiteLLM and writes one LiteLLM access group per Environment, bound to the `authorizedTeams` |
-| Content | `Plugin`, `Skill`, `Instruction`, `Artifact`, `PluginMarketplace`, `SkillMarketplace` | Polls an upstream source on `spec.refresh`, validates it, caches it; hydrate serves it |
+| Content | `Plugin`, `Skill`, `Prompt`, `Instruction`, `Artifact`, `PluginMarketplace`, `SkillMarketplace` | Polls an upstream source on `spec.refresh`, validates it, caches it; hydrate serves it |
 | Identity | `BackendIdentityPolicy` | Tells the forwarder to sign a JWT for one `/mcp/<name>` or `/a2a/<name>` route |
 | Exchange | `KeyGrant` | Projects the grant to Postgres; platform-api lets a named pod ServiceAccount exchange its token for a JWT of one identity's key in one Environment; the operator revokes keys no grant allows any more |
 | Connection | `LiteLLMConnection` | The single `default` link to LiteLLM, normally created by the operator from Helm values |
 
 An Environment is the unit people see (`ach-cli environment list`), hydrate, and mint `ek-`
 keys for. The runtime half (models, MCP servers, agents, guardrails) is enforced by
-LiteLLM; the context half (plugins, skills, instructions, artifacts) is installed into the
+LiteLLM; the context half (plugins, skills, prompts, instructions, artifacts) is installed into the
 user's agent tool by `ach-cli environment hydrate`.
 
 ## Read the reference for the kind you are touching
@@ -50,7 +50,7 @@ user's agent tool by `ach-cli environment hydrate`.
 | An Environment: runtime grants, groups/tags, guardrails, context, teams, budget, conditions | `references/environment.md` |
 | The source block shared by every content kind: `type`, `github`/`gitlab`/`bitbucket`/`s3`/`gcs`/`http`, `ref`, `commit` (pinning), `path`, `authSecretRef`, `refresh` | `references/content-sources.md` |
 | A PluginMarketplace or SkillMarketplace, `name@marketplace` refs, filters, what a valid plugin or skill directory needs | `references/marketplaces.md` |
-| A standalone Plugin, Skill, Instruction or Artifact | `references/objects.md` |
+| A standalone Plugin, Skill, Prompt, Instruction or Artifact | `references/objects.md` |
 | A BackendIdentityPolicy (JWT to an MCP/A2A backend, consent broker) or the LiteLLMConnection | `references/identity.md` |
 | A KeyGrant (ServiceAccount token exchange): fields, Ready reasons, who may write one | `references/keygrant.md` |
 | A resource that is not Ready: condition, reason, cause, fix | `references/troubleshooting.md` |
@@ -111,7 +111,7 @@ user's agent tool by `ach-cli environment hydrate`.
 5. **Check the result.**
 
    ```bash
-   kubectl get environments,plugins,skills,instructions,artifacts -n <ns>
+   kubectl get environments,plugins,skills,prompts,instructions,artifacts -n <ns>
    kubectl get pluginmarketplaces,skillmarketplaces,backendidentitypolicies -n <ns>
    kubectl get environment <name> -n <ns> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
    ach-cli admin list environments       # Available / Degraded(<reason>) / Pending
@@ -119,7 +119,7 @@ user's agent tool by `ach-cli environment hydrate`.
    ach-cli admin refresh <kind> <name>   # re-fetch now instead of waiting for refresh.interval
    ```
 
-   `admin refresh` kinds: `plugin`, `instruction`, `artifact`, `skill`, `marketplace`,
+   `admin refresh` kinds: `plugin`, `prompt`, `instruction`, `artifact`, `skill`, `marketplace`,
    `skill-marketplace`. Short names: `env`, `bip`, `llmconn`.
 
    What "healthy" looks like:
@@ -153,7 +153,7 @@ user's agent tool by `ach-cli environment hydrate`.
   name only matches a standalone Plugin or Skill CR; anything that comes from a
   marketplace must be written `name@<marketplace metadata.name>`.
 - **Content-CR write access is admin-tier.** Writing a content CR (`Plugin`, `Skill`,
-  `Instruction`, `Artifact`, the marketplaces) or a `LiteLLMConnection` is equivalent to reading
+  `Prompt`, `Instruction`, `Artifact`, the marketplaces) or a `LiteLLMConnection` is equivalent to reading
   every Secret in the ACH namespace: `authSecretRef` is resolved with the operator's
   identity. Whoever can write those kinds gets admin-tier trust; do not delegate them
   to a team as self-service.

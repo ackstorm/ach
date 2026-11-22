@@ -5,7 +5,7 @@ Start with the conditions; the message usually names the exact entry.
 ```bash
 kubectl get <kind> <name> -n <ns> -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{"\n"}{end}'
 kubectl describe <kind> <name> -n <ns>
-ach-cli admin list <kind>     # environments, plugins, instructions, artifacts, skills, marketplaces, skill-marketplaces, bips
+ach-cli admin list <kind>     # environments, plugins, prompts, instructions, artifacts, skills, marketplaces, skill-marketplaces, bips
 ```
 
 Check `status.observedGeneration` against `metadata.generation`: if it lags, the operator
@@ -57,7 +57,7 @@ After fixing a Secret or the upstream, `ach-cli admin refresh <kind> <name>` ret
 
 | Condition / reason | Cause | Fix |
 |--------------------|-------|-----|
-| `ExecutionResourcesResolved=False` `ResourceUnresolved` | A runtime name is not in LiteLLM (see `status.unresolvedRuntime`), or a plugin/skill/instruction has never been fetched (see `status.unresolvedContextPlugins` / `unresolvedContextSkills` / `unresolvedContextInstructions`) | Correct the name with `ach-cli admin list models|mcp|a2a|guardrails`; register it in LiteLLM; fix the Plugin/Skill/Instruction/marketplace first; use `name@marketplace` for marketplace items |
+| `ExecutionResourcesResolved=False` `ResourceUnresolved` | A runtime name is not in LiteLLM (see `status.unresolvedRuntime`), or a plugin/skill/prompt/instruction has never been fetched (see `status.unresolvedContextPlugins` / `unresolvedContextSkills` / `unresolvedContextPrompts` / `unresolvedContextInstructions`) | Correct the name with `ach-cli admin list models|mcp|a2a|guardrails`; register it in LiteLLM; fix the Plugin/Skill/Prompt/Instruction/marketplace first; use `name@marketplace` for marketplace items |
 | same, for a model that works for inference | The name is a LiteLLM `model_group_alias`, which is not in LiteLLM's model catalog | List the underlying model name |
 | same, message starts `snapshot stale (LiteLLM unreachable)` | The operator cannot read LiteLLM | Check `kubectl get llmconn default` |
 | `AccessGroupSynced=False` `UnresolvedReferences` | An MCP server, A2A agent, team alias or guardrail is not in LiteLLM; the message lists which | Fix the name or create it in LiteLLM (ACH never creates teams or guardrails). While unresolved, access can shrink (a team with an unknown alias loses the Environment; nothing is added) |

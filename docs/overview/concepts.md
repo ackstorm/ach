@@ -11,7 +11,7 @@ one pull request:
 
 - **Runtime**: the models, MCP servers, A2A agents and guardrails its users
   may call, resolved against LiteLLM.
-- **Context**: the plugins, skills, instructions and artifacts written into a
+- **Context**: the plugins, skills, prompts, instructions and artifacts written into a
   user's workspace.
 - **Access**: the LiteLLM teams (`authorizedTeams`) whose members may use it,
   and an optional spend ceiling (`budget`).
@@ -42,6 +42,7 @@ GitLab, Microsoft, GitHub and others); with SAML, an admin revokes the keys.
 | PluginMarketplace | A repository of plugins, listed by its `marketplace.json`. |
 | Skill | One agent skill: a directory with a `SKILL.md`. |
 | SkillMarketplace | A repository of skills, discovered by its directory layout. |
+| Prompt | One prompt file, served to whoever names it (an agent's system prompt). |
 | Instruction | One Markdown text the tool always loads. |
 | Artifact | Any other file or directory delivered to the workspace. |
 

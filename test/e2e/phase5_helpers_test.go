@@ -90,7 +90,7 @@ func waitOperatorReady(t *testing.T, deadline time.Duration) error {
 }
 
 // seedPhase5Fixtures applies the four CR fixtures (Environment, Plugin,
-// Instruction, Artifact) and waits each one Ready via the blessed
+// Prompt, Instruction, Artifact) and waits each one Ready via the blessed
 // make wait-cr-ready target. Returns the pk_/ek_/env tuple acquired
 // from Phase 4 helpers (themselves env-var-stubbed until SSO is wired).
 //

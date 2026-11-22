@@ -1,7 +1,7 @@
 # User Guide
 
 Writing ACH's custom resources (`Environment`, `Plugin`, `PluginMarketplace`,
-`Skill`, `SkillMarketplace`, `Instruction`, `Artifact`, `BackendIdentityPolicy`) is
+`Skill`, `SkillMarketplace`, `Prompt`, `Instruction`, `Artifact`, `BackendIdentityPolicy`) is
 covered by the `ach-gitops` agent skill
 ([`plugins/ach-gitops/skills/ach-gitops/`](https://github.com/ackstorm/ach/tree/main/plugins/ach-gitops/skills/ach-gitops));
 field-by-field detail is in the [API reference](../api-reference/ach.ackstorm.ai.md).

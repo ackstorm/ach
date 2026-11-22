@@ -1,0 +1,24 @@
+# Prompt pointing at a third-party repo (public, no GitHub PAT) and a nested
+# file path. It has no content gate: the file is far above the Instruction limit.
+#
+# The Content Service serves it at /content/prompt/claude-code-system-prompt
+# as a one-entry tar.gz (application/gzip).
+#
+# The source is a third-party repo on a mutable `main` ref, so the path can
+# change upstream; the tests only need a fetchable file, the content is not
+# asserted.
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Prompt
+metadata:
+  name: claude-code-system-prompt
+  namespace: ach-system
+spec:
+  type: github
+  contentType: text/markdown
+  refresh:
+    interval: 6h
+    maxStaleness: 24h
+  github:
+    repo: asgeirtj/system_prompts_leaks
+    ref: main
+    path: Anthropic/claude-opus-4.8.md

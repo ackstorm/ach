@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Phase 5 content-service SC2 error-matrix exercise — the unauthorized_team
-# negative fixture. Identical context to env-valid (plugin-valid / instruction-valid
+# negative fixture. Identical context to env-valid (plugin-valid / prompt-valid / instruction-valid
 # / artifact-valid resolve, so ExecutionResourcesResolved=True and the
 # projection row lands), but authorizedTeams names a SENTINEL team that exists
 # neither in LiteLLM nor on the SSO-provisioned e2e user (who joins `default`).
@@ -36,6 +36,8 @@ spec:
   context:
     plugins:
       - plugin-valid
+    prompts:
+      - prompt-valid
     instructions:
       - instruction-valid
     artifacts:

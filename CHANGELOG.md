@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- The `Prompt` kind is back, unchanged from 1.1.x: `spec.context.prompts`, `context.prompts` in `POST /platform/hydrate`, `/content/prompt/<name>`, `/platform/admin/prompts` and the `prompt` kind in `ach-cli admin` and `environment fetch`. 1.2.0 removed it although agents use it for their system prompt; 1.2.0 is withdrawn, do not install it. Upgrading from 1.1.x needs no step: your Prompts and Environments keep working, and Instruction is added beside Prompt.
+
+### Added
+- An Environment is not ready until each of its Prompts has been fetched once (`status.unresolvedContextPrompts`).
+
 ## [1.2.0] - 2026-11-21
 
 ### Breaking

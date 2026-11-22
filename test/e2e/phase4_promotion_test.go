@@ -114,7 +114,7 @@ func testSC11gGitOpsWinsTakeover(t *testing.T) {
 func testSC11aForceRefreshCycle(t *testing.T) {
 	t.Helper()
 
-	// The LiteLLMConnection + plugin/instruction/artifact are pre-synced by
+	// The LiteLLMConnection + plugin/prompt/instruction/artifact are pre-synced by
 	// cluster.sh (stage 04-objects) and verified healthy by the 06-verify gate.
 	// This subtest asserts against that synced state — it does NOT apply its own
 	// copies (that would mutate shared cluster state other specs depend on).
@@ -128,6 +128,7 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 	// provision a GitHub PAT Secret (see TODO entry "examples/* need
 	// optional auth refs" filed by this suite's PR).
 	skipIfRateLimited(t, "plugin", "caveman", 120*time.Second)
+	skipIfRateLimited(t, "prompt", "claude-code-system-prompt", 120*time.Second)
 	skipIfRateLimited(t, "instruction", "instruction-valid", 120*time.Second)
 	skipIfRateLimited(t, "artifact", "openclaw-templates", 120*time.Second)
 
@@ -136,6 +137,7 @@ func testSC11aForceRefreshCycle(t *testing.T) {
 		kind, name string
 	}{
 		{"plugin", "caveman"},
+		{"prompt", "claude-code-system-prompt"},
 		{"instruction", "instruction-valid"},
 		{"artifact", "openclaw-templates"},
 	}

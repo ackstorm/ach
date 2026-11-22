@@ -125,7 +125,7 @@ scope and the base Reader the Enterprise readers wrap, and
                            │ └─────────────┘ └────┬────┘ │             └─────┬──────┘
                            └─────────┬────────────┼──────┘                   │
                                      │            │                          │
-                                     ▼            ▼ /content/{instruction,…}      │
+                                     ▼            ▼ /content/{prompt,instruction,…}│
                           ┌────────────────────┐  ┌───────────────────┐      │
                           │ ach platform-api   │  │ ach forwarder     │      │
                           │ (REST + OAuth AS + │◀▶│ (JWT trust path,  │      │
@@ -162,7 +162,7 @@ In dev/e2e
 the nginx `ach-local-gateway` is reduced to a shim adding `/dex` + `/metrics/<svc>`
 in front of `ach-gateway` (preserving the single `ach.e2e.local:8080` origin). Owned
 CRDs (`ach.ackstorm.ai/v1alpha1`): `Environment`, `Plugin`, `PluginMarketplace`,
-`Skill`, `SkillMarketplace`, `Instruction`, `Artifact`, `LiteLLMConnection`,
+`Skill`, `SkillMarketplace`, `Prompt`, `Instruction`, `Artifact`, `LiteLLMConnection`,
 `BackendIdentityPolicy`, `KeyGrant` (`api/` is authoritative —
 NO `EnvKey`/`Team`/`ContentRef`/`AgentDefinition`/`AgentSession` kinds exist;
 `ek_`/`pk_` keys and teams are platform-api/DB objects). Agents run under the separate

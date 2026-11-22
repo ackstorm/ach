@@ -111,7 +111,7 @@ The API server refuses the resource and prints one of these:
 
 ### `SourceReachable=False`
 
-A Plugin, Skill, Instruction or Artifact could not be fetched. The reason says why:
+A Plugin, Skill, Prompt, Instruction or Artifact could not be fetched. The reason says why:
 
 | Reason | Cause | Do |
 |---|---|---|
@@ -141,7 +141,7 @@ An Environment is `Available` when `ExecutionResourcesResolved` and
 
 | Condition and reason | Cause | Do |
 |---|---|---|
-| `ExecutionResourcesResolved=False`, `ResourceUnresolved` | A model, MCP server or agent is not in LiteLLM, or a plugin or skill was never fetched. `status.unresolvedRuntime` and `status.unresolvedContextPlugins` name them | Compare with `ach-cli admin list models` (or `mcp`, `a2a`). Write a marketplace item as `name@marketplace` |
+| `ExecutionResourcesResolved=False`, `ResourceUnresolved` | A model, MCP server or agent is not in LiteLLM, or a plugin, skill, prompt or instruction was never fetched. `status.unresolvedRuntime`, `status.unresolvedContextPlugins` and `status.unresolvedContextPrompts` name them | Compare with `ach-cli admin list models` (or `mcp`, `a2a`). Write a marketplace item as `name@marketplace` |
 | The same, for a model that answers requests | The name is a LiteLLM model alias | List the model the alias points to |
 | The same, with `snapshot stale (LiteLLM unreachable)` | The operator cannot read LiteLLM | Check `kubectl -n ach get litellmconnection default` |
 | `AccessGroupSynced=False`, `UnresolvedReferences` | An MCP server, agent, team or guardrail is not in LiteLLM; the message lists them | Correct the name, or create it in LiteLLM |

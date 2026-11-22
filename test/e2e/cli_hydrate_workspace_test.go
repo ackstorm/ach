@@ -32,8 +32,8 @@ import (
 
 // workspaceEnvs are the two fixture Environments the workspace hydrates.
 // Both authorize team "default" (the SSO-minted pk's team), so both resolve
-// for the seeded credential. demo carries skills+instructions+artifacts; env-valid
-// carries instructions+artifacts — each writes the per-platform state file the
+// for the seeded credential. demo carries skills+prompts+instructions+artifacts; env-valid
+// carries prompts+instructions+artifacts — each writes the per-platform state file the
 // bare hydrate discovers.
 var workspaceEnvs = []string{"demo", "env-valid"}
 
