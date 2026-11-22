@@ -101,9 +101,60 @@ func TestPluginCmd_SharedSkill_TargetAddedLater(t *testing.T) {
 
 	setSkill("v2\n")
 	mustPlugin(t, "install", "dr@dr", "--target", "opencode", "--dir", dir)
+	setSkill("v3\n")
 	out, err := runPluginCmd("update", "dr@dr", "--dir", dir)
 	if err != nil || strings.Contains(out, "user-modified") {
 		t.Fatalf("update: err=%v\n%s", err, out)
+	}
+	skill := filepath.Join(dir, ".agents", "skills", "dr-s", "SKILL.md")
+	if got, _ := os.ReadFile(skill); !strings.HasSuffix(string(got), "v3\n") {
+		t.Errorf("skill = %q, want v3", got)
+	}
+}
+
+// mcpPluginRepo seeds a repo named name whose plugin contributes one MCP server
+// called name through .mcp.json.
+func mcpPluginRepo(t *testing.T, name string) {
+	t.Helper()
+	work, bare := t.TempDir(), t.TempDir()
+	runPkgGit(t, work, "init", "-b", "main", ".")
+	runPkgGit(t, work, "config", "user.email", "t@t")
+	runPkgGit(t, work, "config", "user.name", "t")
+	body := `{"mcpServers": {"` + name + `": {"type": "http", "url": "https://example.test/` + name + `"}}}`
+	if err := os.WriteFile(filepath.Join(work, ".mcp.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runPkgGit(t, work, "add", "-A")
+	runPkgGit(t, work, "commit", "-m", "init")
+	runPkgGit(t, work, "clone", "-q", "--bare", ".", bare)
+	seedRepo(t, store.RepoEntry{
+		Name: name, Source: "git:file://" + bare, Kind: "git", CloneURL: "file://" + bare, GitRef: "main",
+		Provides: []store.Capability{{Lens: "plugin", Count: 1}}, AddedAt: "2026-01-01T00:00:00Z",
+	})
+}
+
+// TestPluginCmd_SharedMCPFile_Uninstall: two plugins merge their servers into
+// one .mcp.json; uninstalling one removes its server and keeps the other's.
+func TestPluginCmd_SharedMCPFile_Uninstall(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	mcpPluginRepo(t, "aa")
+	mcpPluginRepo(t, "bb")
+	dir := t.TempDir()
+	mustPlugin(t, "install", "aa@aa", "--target", "claude", "--dir", dir)
+	mustPlugin(t, "install", "bb@bb", "--target", "claude", "--dir", dir)
+
+	mustPlugin(t, "uninstall", "aa@aa", "--dir", dir)
+	got, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), `"aa"`) || !strings.Contains(string(got), `"bb"`) {
+		t.Errorf(".mcp.json after uninstalling aa:\n%s", got)
 	}
 }
 

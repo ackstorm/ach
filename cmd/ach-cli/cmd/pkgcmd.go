@@ -14,7 +14,6 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -270,24 +269,14 @@ func ownersAt(installed *store.InstalledFile, l location, ref string) map[string
 	return owners
 }
 
-// editedLocally drops from skipped (files whose content differs from their
-// record) the ones that already hold exactly what this update writes: another
-// tool sharing the path, such as .agents/skills, wrote them first.
-func editedLocally(root string, skipped []string, writes []manager.PlannedWrite) []string {
-	return slices.DeleteFunc(slices.Clone(skipped), func(p string) bool {
-		for _, w := range writes {
-			if w.Path == p && w.Merge != adapter.MergeDeep {
-				body, err := os.ReadFile(adapter.ResolveDest(root, p))
-				return err == nil && bytes.Equal(body, w.Content)
-			}
-		}
-		return false
-	})
-}
+// mergeDeep is FileRec.Merge for a key-merged file (JSON/TOML), shared by key
+// with other installs; any other value is a whole file.
+const mergeDeep = "deep"
 
-// heldElsewhere reports the paths that records at l other than the ones being
-// removed (skip) still hold: uninstalling one tool keeps a file another tool
-// sharing its path still uses.
+// heldElsewhere reports the whole files that records at l other than the ones
+// being removed (skip) still hold: uninstalling one tool keeps a file another
+// tool sharing its path still uses. A key-merged file is never held: each
+// install removes only its own keys from it.
 func heldElsewhere(installed *store.InstalledFile, l location, skip []store.InstalledEntry) map[string]bool {
 	held := map[string]bool{}
 	for _, e := range installed.Installed {
@@ -297,7 +286,9 @@ func heldElsewhere(installed *store.InstalledFile, l location, skip []store.Inst
 			continue
 		}
 		for _, f := range e.Files {
-			held[f.RelPath] = true
+			if f.Merge != mergeDeep {
+				held[f.RelPath] = true
+			}
 		}
 	}
 	return held
@@ -362,7 +353,7 @@ func collisionWarn(
 		// preserved alongside this one — so it must not raise a false
 		// "overwrote" alarm (the .claude/settings.json MCP accretion).
 		// FileRec.Merge: ""=replace (back-compat), "deep".
-		if r.Merge == "deep" {
+		if r.Merge == mergeDeep {
 			continue
 		}
 		_, _ = fmt.Fprintf(w,
@@ -376,6 +367,7 @@ func collisionWarn(
 // included to prevent a plugin and a skill that share the same
 // name@repo+target from colliding.
 func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
+	refreshSharedRecs(f, entry)
 	for i, e := range f.Installed {
 		if e.Ref == entry.Ref && e.Target == entry.Target && e.Kind == entry.Kind &&
 			(location{global: entry.Global, dir: entry.Dir}).holds(e) {
@@ -384,6 +376,31 @@ func upsertInstalled(f *store.InstalledFile, entry store.InstalledEntry) {
 		}
 	}
 	f.Installed = append(f.Installed, entry)
+}
+
+// refreshSharedRecs copies the hash of every whole-file record of entry into
+// the records the same item holds for another target at the same location and
+// path. Several targets write one .agents/skills tree; with one hash per file,
+// the next update or uninstall of the other target does not take this write
+// for a local edit.
+func refreshSharedRecs(f *store.InstalledFile, entry store.InstalledEntry) {
+	written := map[string]string{}
+	for _, r := range entry.Files {
+		if r.Merge != mergeDeep {
+			written[r.RelPath] = r.Hash
+		}
+	}
+	at := location{global: entry.Global, dir: entry.Dir}
+	for i, e := range f.Installed {
+		if e.Ref != entry.Ref || e.Target == entry.Target || !at.holds(e) {
+			continue
+		}
+		for j, r := range e.Files {
+			if h, ok := written[r.RelPath]; ok && r.Merge != mergeDeep {
+				f.Installed[i].Files[j].Hash = h
+			}
+		}
+	}
 }
 
 // removeInstalled removes all entries at l matching ref, kind and (if
@@ -1064,7 +1081,6 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 							Msg:  fmt.Sprintf("update: uninstall old %s %s: %v", ref, e.Target, err),
 						}
 					}
-					skipped = editedLocally(root, skipped, resolved)
 					for _, s := range skipped {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 					}

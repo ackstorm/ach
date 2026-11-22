@@ -243,7 +243,10 @@ adopted. Deep writes share their file by key and never refuse.
   prior state row of that Environment and target, else a row another target
   of the same Environment recorded for the same destination (`sharedRows`:
   `.agents/skills` is written by five targets, so a target added later finds
-  their files). `--dry-run` refuses too.
+  their files). After writing its state, a target copies each whole-file hash
+  into the other targets' rows for the same destination
+  (`commit.refreshSharedRows`), so their next hydrate or uninstall sees no
+  local edit. `--dry-run` refuses too.
   A sibling Environment's row does not count, so the FIRST hydrate of an
   Environment into a folder (or `-g`) where a sibling installed the same
   plugin at an older revision stops here: hydrate the sibling first, or
@@ -255,12 +258,14 @@ adopted. Deep writes share their file by key and never refuse.
   targets write `.agents/skills`. Checked for every target before the first
   write or removal.
 - `local … update` never writes a path `manager.Uninstall` skipped as
-  user-modified: the write is dropped and the old `FileRec` kept. A skipped
-  file that already holds the new bytes is not an edit (`editedLocally`):
-  another target sharing the path wrote it first.
-- `local … uninstall` keeps a file another record at that location still
-  holds (`heldElsewhere`), so `--target codex` leaves opencode's copy of a
-  shared skill.
+  user-modified: the write is dropped and the old `FileRec` kept. A write
+  copies its hash into the same item's records for other targets at that
+  location and path (`refreshSharedRecs`), so a shared skill is never taken
+  for a local edit.
+- `local … uninstall` keeps a whole file another record at that location
+  still holds (`heldElsewhere`), so `--target codex` leaves opencode's copy of
+  a shared skill. Key-merged files are never held: each install prunes its own
+  keys.
 
 ### Multi-Environment workspaces — cross-env skill de-collision
 
