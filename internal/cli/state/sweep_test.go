@@ -83,12 +83,12 @@ func TestSweepTmp_PreservesNonTmpSiblings(t *testing.T) {
 		[]byte(""), 0o644); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(achDir, "prompts", "code-rev"), 0o755); err != nil {
-		t.Fatalf("MkdirAll prompts: %v", err)
+	if err := os.MkdirAll(filepath.Join(achDir, "artifact", "code-rev"), 0o755); err != nil {
+		t.Fatalf("MkdirAll artifact: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(achDir, "prompts", "code-rev", "p.md"),
+	if err := os.WriteFile(filepath.Join(achDir, "artifact", "code-rev", "p.md"),
 		[]byte("md"), 0o644); err != nil {
-		t.Fatalf("seed prompt: %v", err)
+		t.Fatalf("seed artifact: %v", err)
 	}
 
 	// Seed tmp/ with a single subentry that SHOULD be swept.
@@ -105,7 +105,7 @@ func TestSweepTmp_PreservesNonTmpSiblings(t *testing.T) {
 	for _, p := range []string{
 		filepath.Join(achDir, "state.json"),
 		filepath.Join(achDir, "lock"),
-		filepath.Join(achDir, "prompts", "code-rev", "p.md"),
+		filepath.Join(achDir, "artifact", "code-rev", "p.md"),
 	} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("sibling %s did not survive sweep: %v", p, err)

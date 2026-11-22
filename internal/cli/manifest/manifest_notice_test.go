@@ -12,7 +12,7 @@ import (
 func TestDecode_NoticeAccepted(t *testing.T) {
 	body := `{"schemaVersion":"v1alpha1","environment":"demo",` +
 		`"runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},` +
-		`"context":{"prompts":[],"plugins":[],"artifacts":[],"skills":[]},` +
+		`"context":{"instructions":[],"plugins":[],"artifacts":[],"skills":[]},` +
 		`"notice":"re-login after rotation"}`
 	m, err := Decode(strings.NewReader(body))
 	if err != nil {

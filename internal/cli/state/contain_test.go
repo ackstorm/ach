@@ -181,7 +181,7 @@ func TestValidateTargets(t *testing.T) {
 		},
 		{
 			name: "every bucket is walked",
-			f:    &state.File{Prompts: []state.FileEntry{{Target: "/x"}}},
+			f:    &state.File{Instructions: []state.FileEntry{{Target: "/x"}}},
 			want: state.ErrNotContained,
 		},
 		{

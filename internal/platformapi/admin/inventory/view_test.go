@@ -85,25 +85,22 @@ func TestRFC3339OrEmpty(t *testing.T) {
 	}
 }
 
-// TestPromptArtifactFalseGreen: fresh prompts/artifacts render fresh*, STALE
-// stays bare.
-func TestPromptArtifactFalseGreen(t *testing.T) {
+// TestInstructionArtifactSync: a fresh instruction is content-gated, so it renders
+// a bare fresh; a stale artifact stays STALE.
+func TestInstructionArtifactSync(t *testing.T) {
 	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
 	freshAgo := ptrTime(now.Add(-1 * time.Minute))
 
-	pv := promptRowToView(db.PromptRow{
+	pv := instructionRowToView(db.InstructionRow{
 		Namespace: "ach", Name: "greeting", ResourceVersion: "7",
 		LastSuccessfulRefresh: freshAgo, MaxStalenessSeconds: 600,
-		ContentType: ptrStr("text/markdown"), UpdatedAt: now,
+		UpdatedAt: now,
 	}, now)
-	if pv.Sync != syncFreshFalseGreen {
-		t.Errorf("prompt fresh sync: got %q, want fresh*", pv.Sync)
+	if pv.Sync != syncFresh {
+		t.Errorf("instruction fresh sync: got %q, want fresh (no asterisk)", pv.Sync)
 	}
 	if pv.Version != "7" {
-		t.Errorf("prompt version: got %q, want 7", pv.Version)
-	}
-	if pv.Extra["contentType"] != "text/markdown" {
-		t.Errorf("prompt contentType extra: got %q", pv.Extra["contentType"])
+		t.Errorf("instruction version: got %q, want 7", pv.Version)
 	}
 
 	av := artifactRowToView(db.ArtifactRow{
@@ -278,7 +275,7 @@ func TestViewsCarryRevisions(t *testing.T) {
 	for name, v := range map[string]AdminObjectView{
 		"plugin":            pluginRowToView(db.PluginRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"skill":             skillRowToView(db.SkillRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
-		"prompt":            promptRowToView(db.PromptRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"instruction":       instructionRowToView(db.InstructionRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"artifact":          artifactRowToView(db.ArtifactRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"marketplace":       marketplaceRowToView(db.MarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),
 		"skill-marketplace": skillMarketplaceRowToView(db.SkillMarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),

@@ -55,7 +55,7 @@ type HydrateView struct {
 
 // BlockView unifies the runtime + context sub-blocks. The wire shape
 // puts {models, mcpServers, a2aAgents} under "runtime" and
-// {prompts, plugins, artifacts} under "context"; a single struct
+// {instructions, plugins, artifacts} under "context"; a single struct
 // holds both axes because BlockView's zero-value omits the irrelevant
 // slices via omitempty.
 type BlockView struct {
@@ -64,11 +64,11 @@ type BlockView struct {
 	A2AAgents  []RuntimeItem `json:"a2aAgents,omitempty"`
 	// Guardrails are plain names: LiteLLM applies them server-side, so unlike
 	// the other runtime axes there is no endpoint to surface.
-	Guardrails []string      `json:"guardrails,omitempty"`
-	Prompts    []ContextItem `json:"prompts,omitempty"`
-	Plugins    []ContextItem `json:"plugins,omitempty"`
-	Artifacts  []ContextItem `json:"artifacts,omitempty"`
-	Skills     []ContextItem `json:"skills,omitempty"`
+	Guardrails   []string      `json:"guardrails,omitempty"`
+	Instructions []ContextItem `json:"instructions,omitempty"`
+	Plugins      []ContextItem `json:"plugins,omitempty"`
+	Artifacts    []ContextItem `json:"artifacts,omitempty"`
+	Skills       []ContextItem `json:"skills,omitempty"`
 }
 
 // RuntimeItem is one entry under runtime.{models,mcpServers,a2aAgents}.
@@ -84,7 +84,7 @@ type RuntimeItem struct {
 	Endpoint string `json:"endpoint"`
 }
 
-// ContextItem is one entry under context.{prompts,plugins,artifacts}.
+// ContextItem is one entry under context.{instructions,plugins,artifacts}.
 // DownloadURL surfaces the per-context-entry `downloadUrl` JSON key
 // emitted by the server's hydrate handler — the W3 contract anchors
 // here: every rendered context row exposes this string verbatim so
@@ -258,13 +258,13 @@ func FormatEnvDescribe(env EnvView, h *HydrateView, hydrateAvailable bool) strin
 	// `downloadUrl` per W3 phase-goal sentence).
 	_, _ = fmt.Fprintln(&sb, "Context:")
 	cx := h.Context
-	if len(cx.Prompts)+len(cx.Plugins)+len(cx.Artifacts)+len(cx.Skills) == 0 {
+	if len(cx.Instructions)+len(cx.Plugins)+len(cx.Artifacts)+len(cx.Skills) == 0 {
 		_, _ = fmt.Fprintln(&sb, "  (none)")
 	} else {
 		tw := tabwriter.NewWriter(&sb, 2, 0, 2, ' ', 0)
 		_, _ = fmt.Fprintln(tw, "  KIND\tNAME\tDOWNLOADURL")
-		for _, p := range cx.Prompts {
-			_, _ = fmt.Fprintf(tw, "  prompt\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
+		for _, p := range cx.Instructions {
+			_, _ = fmt.Fprintf(tw, "  instruction\t%s\t%s\n", p.Name, orEM(p.DownloadURL))
 		}
 		for _, pl := range cx.Plugins {
 			_, _ = fmt.Fprintf(tw, "  plugin\t%s\t%s\n", pl.Name, orEM(pl.DownloadURL))

@@ -27,7 +27,7 @@ import (
 //   - includeContext := onlyRuntime          (context survives only when removing runtime)
 //   - removeRuntime  := onlyRuntime || includeRuntime
 //
-// where context buckets are Prompts/Plugins/Artifacts and runtime is
+// where context buckets are Instructions/Plugins/Artifacts and runtime is
 // RuntimeFiles + Adapter.Files. A bucket being REMOVED is left empty in
 // the returned File; a bucket being RETAINED is copied through verbatim.
 // The three flag combinations therefore map to:
@@ -37,7 +37,7 @@ import (
 //   - default (both false, context-only): context removed, runtime
 //     retained → returned File carries RuntimeFiles + Adapter.Files.
 //   - onlyRuntime=true: runtime removed, context retained → returned
-//     File carries Prompts/Plugins/Artifacts.
+//     File carries Instructions/Plugins/Artifacts.
 //
 // The returned File always carries SchemaVersion "3" and prev's
 // Environment/Profile so a subsequent state.Save round-trips a valid
@@ -60,7 +60,7 @@ func BuildScopedEmpty(prev *state.File, includeRuntime, onlyRuntime bool) *state
 	removeRuntime := onlyRuntime || includeRuntime
 
 	if includeContext {
-		out.Prompts = slices.Clone(prev.Prompts)
+		out.Instructions = slices.Clone(prev.Instructions)
 		out.Plugins = slices.Clone(prev.Plugins)
 		out.Artifacts = slices.Clone(prev.Artifacts)
 		out.Skills = slices.Clone(prev.Skills)

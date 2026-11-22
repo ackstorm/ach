@@ -35,7 +35,7 @@ import (
 // §8.3 environment guard still protects any shared <ach-dir>.
 //
 // Both branches keep <ach-dir>'s sibling artifacts (lock, tmp/, runtime/,
-// prompt/, plugin/, artifact/) at the same parent — the §8.7 atomic-rename
+// plugin/, artifact/) at the same parent — the §8.7 atomic-rename
 // invariant assumes state.json and its tmp-staged sibling live on the same
 // filesystem. Callers should not separately resolve the parent directory;
 // <ach-dir> is filepath.Dir(returned path).
@@ -70,7 +70,7 @@ func ResolvePath(workspaceCwd, environment string, global bool) (string, error) 
 // overwrite another's projection bucket (step12WriteState replaces buckets
 // wholesale). <ach-dir> stays the per-environment dir (filepath.Dir of the
 // returned path == filepath.Dir(ResolvePath(...))), so the platform-independent
-// content cache (prompt/, artifact/, plugin/) is shared across targets.
+// content cache (artifact/, plugin/) is shared across targets.
 //
 // platform MUST be a single non-empty path segment (no separators, not "."/"..");
 // callers pass a canonical adapter id from hydrate.ResolvePlatform.

@@ -68,7 +68,7 @@ func authzTestDeps(t *testing.T) (Deps, *prometheus.Registry) {
 }
 
 func makeReq(headers map[string]string) *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "/content/prompt/foo", nil)
+	r := httptest.NewRequest(http.MethodGet, "/content/instruction/foo", nil)
 	for k, v := range headers {
 		r.Header.Set(k, v)
 	}
@@ -300,9 +300,9 @@ func TestEnforceTeams_PK(t *testing.T) {
 
 func TestEnforceAllowlist(t *testing.T) {
 	row := &envcache.EnvRow{
-		ContextPrompts:   []string{"p1", "p2"},
-		ContextPlugins:   []string{"pl1"},
-		ContextArtifacts: []string{"a1"},
+		ContextInstructions: []string{"p1", "p2"},
+		ContextPlugins:      []string{"pl1"},
+		ContextArtifacts:    []string{"a1"},
 	}
 	cases := []struct {
 		name    string
@@ -310,8 +310,8 @@ func TestEnforceAllowlist(t *testing.T) {
 		input   string
 		wantErr string
 	}{
-		{"prompt in-list", "prompt", "p2", ""},
-		{"prompt not-in-list", "prompt", "p99", "unauthorized_content"},
+		{"instruction in-list", "instruction", "p2", ""},
+		{"instruction not-in-list", "instruction", "p99", "unauthorized_content"},
 		{"plugin in-list", "plugin", "pl1", ""},
 		{"plugin not-in-list", "plugin", "pl99", "unauthorized_content"},
 		{"artifact in-list", "artifact", "a1", ""},

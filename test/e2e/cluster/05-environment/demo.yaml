@@ -57,8 +57,8 @@ spec:
     a2aAgents:
       - demo-agent
   context:
-    prompts:
-      - claude-code-system-prompt
+    instructions:
+      - instruction-valid
     plugins:
       - caveman
       - feature-dev@conflict-mkt-a

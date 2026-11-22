@@ -18,6 +18,6 @@ spec:
     mcpServers: []
     a2aAgents: []
   context:
-    prompts: []
+    instructions: []
     plugins: []
     artifacts: []

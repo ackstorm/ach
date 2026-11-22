@@ -372,10 +372,10 @@ func TestExtract_SymlinkAllowed_Escape_Rejected(t *testing.T) {
 	}
 }
 
-// TestExtract_PromptKind_UsesSkillCap asserts KindPrompt is bound by the skill
+// TestExtract_InstructionKind_UsesSkillCap asserts KindInstruction is bound by the skill
 // cap, not by the plugin/artifact caps: 1 MiB passes the tiny plugin and
 // artifact caps and trips a tiny skill cap.
-func TestExtract_PromptKind_UsesSkillCap(t *testing.T) {
+func TestExtract_InstructionKind_UsesSkillCap(t *testing.T) {
 	const oneMiB = 1 << 20
 	body := bytes.Repeat([]byte("Z"), oneMiB)
 	hdr := &tar.Header{
@@ -388,7 +388,7 @@ func TestExtract_PromptKind_UsesSkillCap(t *testing.T) {
 
 	dst := t.TempDir()
 	limits := generousLimits()
-	limits.MaxExtractedPluginBytes = 1 // 1 byte cap — irrelevant for KindPrompt
+	limits.MaxExtractedPluginBytes = 1 // 1 byte cap — irrelevant for KindInstruction
 	limits.MaxExtractedArtifactBytes = 1
 	limits.MaxExtractedSkillBytes = 2 * oneMiB
 
@@ -396,12 +396,12 @@ func TestExtract_PromptKind_UsesSkillCap(t *testing.T) {
 		context.Background(),
 		bytes.NewReader(data),
 		dst,
-		extract.KindPrompt,
+		extract.KindInstruction,
 		limits,
 		false,
 	)
 	if err != nil {
-		t.Fatalf("Extract(KindPrompt, 1MiB body): %v", err)
+		t.Fatalf("Extract(KindInstruction, 1MiB body): %v", err)
 	}
 	if res.BytesWritten != int64(oneMiB) {
 		t.Errorf("BytesWritten = %d, want %d", res.BytesWritten, oneMiB)
@@ -409,7 +409,7 @@ func TestExtract_PromptKind_UsesSkillCap(t *testing.T) {
 
 	limits.MaxExtractedSkillBytes = oneMiB / 2
 	if _, err := extract.Extract(context.Background(), bytes.NewReader(data), t.TempDir(),
-		extract.KindPrompt, limits, false); !errors.Is(err, extract.ErrBombCapExceeded) {
+		extract.KindInstruction, limits, false); !errors.Is(err, extract.ErrBombCapExceeded) {
 		t.Fatalf("over the skill cap: want ErrBombCapExceeded, got %v", err)
 	}
 }

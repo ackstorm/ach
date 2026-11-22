@@ -261,7 +261,7 @@ func setupAndRun(m *testing.M) int {
 		return 1
 	}
 
-	// Per-suite cache root for external-ref reconcilers (Plugin, Prompt,
+	// Per-suite cache root for external-ref reconcilers (Plugin, Instruction,
 	// Artifact, PluginMarketplace). Per-test t.TempDir() would not work
 	// here because suite_test.go has no *testing.T — use os.MkdirTemp and
 	// clean up after m.Run().
@@ -388,7 +388,7 @@ func setupAndRun(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Artifact): %v\n", err)
 		return 1
 	}
-	if err := (&PromptReconciler{
+	if err := (&InstructionReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    mgr.GetClient(),
 			Scheme:    mgr.GetScheme(),
@@ -397,7 +397,7 @@ func setupAndRun(m *testing.M) int {
 			CacheRoot: testCacheRoot,
 		},
 	}).SetupWithManager(mgr); err != nil {
-		fmt.Fprintf(os.Stderr, "SetupWithManager(Prompt): %v\n", err)
+		fmt.Fprintf(os.Stderr, "SetupWithManager(Instruction): %v\n", err)
 		return 1
 	}
 	if err := (&BackendIdentityPolicyReconciler{

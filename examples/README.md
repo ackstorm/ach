@@ -14,7 +14,7 @@ There are two distinct CR collections in this repo; do not conflate them:
 | **Curated examples** | `examples/` (this dir) | Hand-picked, documentation-oriented samples + the golden `hydrate.json`. | Nobody automatically — copy/adapt by hand. |
 
 Tests **assert against the synced cluster**; they do not apply fixtures. The
-canonical demo CRs (LiteLLMConnection, plugins, prompts, artifacts, BIPs,
+canonical demo CRs (LiteLLMConnection, plugins, instructions, artifacts, BIPs,
 marketplaces, the `demo` + `demo-unresolved` Environments) now live under
 `test/e2e/cluster/{04-objects,05-environment}/`, not here. If you are looking
 for the object the operator reconciles in e2e, look there.
@@ -26,6 +26,7 @@ for the object the operator reconciles in e2e, look there.
 | `prometheus-servicemonitor.yaml`      | `ServiceMonitor`                           | Example Prometheus scrape config for the ach metrics endpoints. |
 | `prometheus-alertrules.yaml`          | `PrometheusRule`                           | Recommended ACH alert rules (LiteLLM unreachable, stale content cache, pk_ on runtime route, external-ref refresh failures, Environment unavailable). |
 | `ach-cli-initcontainer.yaml`          | `Pod`                                      | Headless-agent bootstrap: an `initContainer` runs `ghcr.io/ackstorm/ach-cli environment hydrate` into a shared `emptyDir` so the main agent container starts on a fully-hydrated `/workspace` (creds = an `ek_` via `secretKeyRef`, no SSO). |
+| `instruction.yaml`                    | `Instruction`                              | One Markdown text (the `octocat/Hello-World` README) that `ach-cli environment hydrate` writes as an always-loaded rules file; list it in an Environment's `spec.context.instructions`. |
 | `keygrant.yaml`                       | `KeyGrant`                                 | Lets the `ach-agent/ach-agent-control` ServiceAccount exchange its pod token for `ai.run@ackstorm.com`'s `agent-k8s-doctor` credential (see `docs/integrate/exchange-a-serviceaccount-token.md`). |
 | `test-mcp-jwt.sh`                     | script                                     | Helper to exercise the `/mcp` JWT trust path by hand. |
 | `ach-memory/`                         | `BackendIdentityPolicy`                    | Wiring the [ach-memory](https://github.com/ackstorm/ach-memory) MCP backend into the ACH JWT trust path — LiteLLM `extra_headers` registration, the BIP, Environment authorization, and the `MEMORY_AUTH_JWT_*` config. See `ach-memory/README.md`. |
@@ -137,7 +138,7 @@ ach-cli admin list all                 # fan out across every kind (concurrent)
 ach-cli admin list all -o json         # machine-readable (also: -o yaml)
 ```
 
-Kinds: `environments`, `plugins`, `prompts`, `artifacts`, `skills`,
+Kinds: `environments`, `plugins`, `instructions`, `artifacts`, `skills`,
 `marketplaces`, `skill-marketplaces`, `bips`, `models`, `mcp`, `a2a`, `teams`,
 `guardrails`, or `all`.
 
@@ -157,11 +158,9 @@ PLUGINS (1)
 NAME     NAMESPACE  VERSION  SYNC   AGE  ORIGIN
 caveman  ach        842      fresh  2m   -
 
-PROMPTS (1)
-NAME      NAMESPACE  VERSION  SYNC    AGE  ORIGIN
-greeting  ach        844      fresh*  2m   -
-
-* prompts/artifacts: name-resolved only; content presence is not gated
+INSTRUCTIONS (1)
+NAME   NAMESPACE  VERSION  SYNC   AGE  ORIGIN
+hello  ach        844      fresh  2m   -
 ```
 
 ### SYNC column semantics
@@ -169,8 +168,8 @@ greeting  ach        844      fresh*  2m   -
 | Value | Kinds | Meaning |
 |-------|-------|---------|
 | `Available` / `Degraded(<reason>)` / `Pending` | environments | the `Available` composite condition (rolls up `ExecutionResourcesResolved` + `AccessGroupSynced`) |
-| `fresh` / `STALE(<age> over)` / `never` | plugins, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
-| `fresh*` | prompts, artifacts | **false-green** — their refresh tracks *name resolution*, not content presence. Only `plugins` is truly content-gated, so the asterisk warns the inventory cannot promise the content is present + current. |
+| `fresh` / `STALE(<age> over)` / `never` | plugins, instructions, marketplaces, external-refs | refresh staleness (`last_successful_refresh` + `maxStaleness`) |
+| `fresh*` | artifacts | **false-green** — their refresh tracks *name resolution*, not content presence, so the asterisk warns the inventory cannot promise the content is present + current. |
 | `projected` | bips, litellm-connections | row is projected from its CR (presence only) |
 
 The inventory reads the stored projection only — to force a re-sync use
@@ -219,7 +218,7 @@ Notes:
 
 (The `demo` Environment now lives at `test/e2e/cluster/05-environment/demo.yaml`.)
 
-- **It does NOT use any GitHub PAT.** The Prompt + Plugin reference public
+- **It does NOT use any GitHub PAT.** The Instruction + Plugin reference public
   upstream repos, so no `authSecretRef` is needed. Replace `spec.github.repo`
   with your own private repo + add a Secret per the API doc to test the authed
   path.

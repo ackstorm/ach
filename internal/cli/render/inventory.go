@@ -33,7 +33,7 @@ type AdminObjectView struct {
 	Extra             map[string]string `json:"extra,omitempty"`
 }
 
-// syncFalseGreen is the marker the server attaches to a fresh prompt/artifact
+// syncFalseGreen is the marker the server attaches to a fresh artifact
 // (content-presence not actually gated). Its presence in any row triggers the
 // table footnote.
 const syncFalseGreen = "fresh*"
@@ -51,7 +51,7 @@ func sectionHeader(kind string) string {
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tPLUGINS\tAGE"
 	case "skill-marketplaces":
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSTATUS\tSKILLS\tAGE"
-	case "prompts", "artifacts":
+	case "instructions", "artifacts":
 		return "NAME\tNAMESPACE\tVERSION\tAVAILABLE\tSYNC\tAGE\tORIGIN"
 	default:
 		return "NAME\tNAMESPACE\tVERSION\tSYNC\tAGE\tORIGIN"
@@ -74,7 +74,7 @@ func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), dash(r.Extra["skillsCount"]), ageOf(r.UpdatedAt, now))
-	case "prompts", "artifacts":
+	case "instructions", "artifacts":
 		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			dash(r.Name), dash(r.Namespace), dash(r.Version), dash(available(r)),
 			syncCell(r), ageOf(r.UpdatedAt, now), dash(r.Origin))
@@ -89,7 +89,7 @@ func sectionRow(kind string, r AdminObjectView, now time.Time) string {
 // tables. Groups print in stable (alphabetical) kind order; rows within a group
 // sort by (namespace, name) for reproducible output regardless of server
 // pagination ordering. A footnote is appended when any row carries the
-// prompts/artifacts false-green marker.
+// artifacts false-green marker.
 func FormatAdminInventory(grouped map[string][]AdminObjectView) string {
 	if len(grouped) == 0 {
 		return "No objects found\n"
@@ -132,7 +132,7 @@ func FormatAdminInventory(grouped map[string][]AdminObjectView) string {
 		_ = tw.Flush()
 	}
 	if falseGreen {
-		sb.WriteString("\n* prompts/artifacts: name-resolved only; content presence is not gated\n")
+		sb.WriteString("\n* artifacts: name-resolved only; content presence is not gated\n")
 	}
 	return sb.String()
 }

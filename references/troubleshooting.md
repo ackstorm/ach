@@ -13,7 +13,7 @@
 
 ### ❌ `downloadUrl` from /platform/hydrate returns 404
 ```bash
-curl https://ach.local.test/content/prompt/foo
+curl https://ach.local.test/content/instruction/foo
 # HTTP 404 (or no handler registered at all → chi 404)
 ```
 ✅ Confirm the content-service sidecar in the operator Pod is on a
@@ -26,7 +26,7 @@ Deployment (RWO PVC forces co-location); there is NO
 ```bash
 kubectl -n ach-system exec deploy/ach-operator \
   -c content-service -- ach content-service --help \
-  | grep -q "/content/{prompt,plugin,artifact}"
+  | grep -q "/content/{instruction,plugin,artifact}"
 ```
 WHY IT FAILS: Pre-`feat/content-service-routes` builds shipped a
 `/healthz`-only stub. The Service is healthy, the Pod is Ready, the
@@ -71,7 +71,7 @@ WHY: registration is anonymous and Dex signs a logged-in user in silently, so
 any `https` redirect host could collect a victim's authorization code (review
 #1, 2026-10-09). Only list hosts you trust with your users' codes.
 
-### ❌ `ach-cli environment hydrate` from an OAuth profile: `extract content prompt/...: 400 invalid_key_format: malformed bearer key`
+### ❌ `ach-cli environment hydrate` from an OAuth profile: `extract content instruction/...: 400 invalid_key_format: malformed bearer key`
 ```bash
 ach-cli environment hydrate demo          # profile logged in via `ach-cli login` (OAuth)
 # /platform/hydrate succeeds, then the first /content/<kind>/<name> GET 400s
@@ -109,10 +109,10 @@ content-service did not.
 
 ### ❌ `/content/{kind}/…` 404s with the cache file missing (new cache volume, or a bare pre-`.tar.gz` file)
 ```bash
-curl .../content/prompt/foo   # HTTP 404 content_not_found
-ls $ACH_CACHE_ROOT/prompt/    # empty, or foo (bare, no .tar.gz)
+curl .../content/instruction/foo   # HTTP 404 content_not_found
+ls $ACH_CACHE_ROOT/instruction/    # empty, or foo (bare, no .tar.gz)
 ```
-✅ Nothing to patch: a Plugin, Skill, Prompt or Artifact whose
+✅ Nothing to patch: a Plugin, Skill, Instruction or Artifact whose
 `<name>.tar.gz` is missing is fetched in full on its next reconcile
 (operator start or resync), whatever its refresh interval and stored
 revision — `lastRefreshForGate` (`external_ref_driver.go`) opens the
@@ -120,22 +120,22 @@ interval gate and `materializeExternalRef` sends no `PriorRev`, so the
 fetcher cannot answer `NotModified`. Verify on the PVC:
 ```bash
 kubectl -n ach-system exec deploy/ach-operator -c content-service -- \
-  ls $ACH_CACHE_ROOT/prompt/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
+  ls $ACH_CACHE_ROOT/instruction/ $ACH_CACHE_ROOT/artifact/   # expect *.tar.gz
 ```
 WHY IT FAILS: `ResolvePath` looks for `<kind>/<name>.tar.gz` (every kind
-is published as a gzip tar; Prompt and Artifact `scope=object` as a
+is published as a gzip tar; Instruction and Artifact `scope=object` as a
 1-entry one) and the cache holds nothing for it, or only an old **bare**
 file → 404 `content_not_found` until that reconcile. With the file
 present, a force-refresh annotation, an Admin-API refresh or a resync
 still sends the stored revision and gets `NotModified`; only a
 `metadata.generation` bump forces a full body.
-**Orphan bare files**: a live CR's old bare `prompt/<name>` /
+**Orphan bare files**: a live CR's old bare `instruction/<name>` /
 `artifact/<name>` is NOT auto-removed (the name changed) — the
 finalizer's legacy-bare cleanup only fires on CR *delete*. One-time
 housekeeping after all CRs re-fetch (optional; NOT scripted into the
 operator — YAGNI):
 ```bash
-find $ACH_CACHE_ROOT/{prompt,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
+find $ACH_CACHE_ROOT/{instruction,artifact} -maxdepth 1 -type f ! -name '*.tar.gz' -delete
 ```
 
 ### ❌ UI edit to an Environment returns 403 `immutable_via_ui` (or my draft "vanished" after `kubectl apply`)
@@ -262,7 +262,7 @@ told apart by git/HTTPS — both surface as "please authenticate"). Either:
     (`kubectl -n ach-system logs deploy/ach-operator | grep -c "fetch:"`)
 
 The transport that served each fetch is surfaced on the `SourceReachable=True`
-(Plugin/Prompt/Artifact) and `Synced=True` (PluginMarketplace) condition
+(Plugin/Instruction/Artifact) and `Synced=True` (PluginMarketplace) condition
 messages as `transport=<git|n/a>`.
 
 **Self-hosted GitLab (as of 2026-06-04)**: ACH authenticates GitLab
@@ -508,8 +508,8 @@ revoke the old one (`ach-cli keys revoke <pkid_…>` or an admin force-revoke).
 diff -u /tmp/hydrate-test.json examples/hydrate.json
 # --- /tmp/hydrate-test.json
 # +++ examples/hydrate.json
-# -        "downloadUrl": "https://kind.cluster.local/content/prompt/..."
-# +        "downloadUrl": "http://localhost:8080/content/prompt/..."
+# -        "downloadUrl": "https://kind.cluster.local/content/instruction/..."
+# +        "downloadUrl": "http://localhost:8080/content/instruction/..."
 ```
 ✅ The golden at `examples/hydrate.json` is stored against the literal base
 URL the standard kind+Helm fixture emits — `http://localhost:8080`, the
@@ -1000,7 +1000,7 @@ other kinds keep the `origin='cr'` gate, but nothing writes a `ui` row for them.
 non-Environment kind was written by hand into Postgres (the control plane never
 does this) — remove that row.
 WHY (reserved-machinery background): every projection table (environments,
-plugins, prompts, artifacts, litellm_connections, backend_identity_policies,
+plugins, instructions, artifacts, litellm_connections, backend_identity_policies,
 external_refs, marketplace_plugins) carries an `origin TEXT CHECK IN ('cr','ui')`
 column. The operator's UPSERTs are guarded by
 `ON CONFLICT (...) DO UPDATE ... WHERE existing.origin = 'cr'`; a filter miss

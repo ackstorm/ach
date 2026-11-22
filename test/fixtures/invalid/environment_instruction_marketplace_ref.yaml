@@ -1,0 +1,21 @@
+# FIXTURE: invalid. Expected rejection at admission.
+# Rule violated: Environment.spec.context.instructions element-level Pattern
+#   forbids "@": Instructions have no marketplace.
+# Expected error substring: "instructions"
+apiVersion: ach.ackstorm.ai/v1alpha1
+kind: Environment
+metadata:
+  name: invalid-instruction-marketplace-ref
+  namespace: ach-system
+spec:
+  authorizedTeams:
+    - default
+  runtime:
+    models: []
+    mcpServers: []
+    a2aAgents: []
+  context:
+    instructions:
+      - "x@y"
+    plugins: []
+    artifacts: []

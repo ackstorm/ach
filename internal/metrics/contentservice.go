@@ -86,7 +86,7 @@ func (c *ContentServiceCollectors) PreInitZeroSeries() {
 // IncRequest increments ach_content_service_requests_total{kind, outcome}
 // per Hub §18.5 normative label-value enums:
 //
-//	kind    ∈ {prompt, plugin, artifact}
+//	kind    ∈ {instruction, plugin, artifact}
 //	outcome ∈ §15.6 outcome enum (D-03 table in 05-CONTEXT):
 //	          {ok, missing_environment, invalid_key_format,
 //	           expired_or_revoked, unauthorized_team, wrong_environment,
@@ -104,7 +104,7 @@ func (c *ContentServiceCollectors) IncRequest(kind, outcome string) {
 // ObserveRequestDuration observes ach_content_service_request_duration_seconds
 // {kind} per Hub §18.5:
 //
-//	kind ∈ {prompt, plugin, artifact}
+//	kind ∈ {instruction, plugin, artifact}
 //
 // Bucket layout is ContentServiceDurationBuckets (extends DefBuckets
 // with 30s and 60s bins per D-11 — artifact tarballs can drive
@@ -116,7 +116,7 @@ func (c *ContentServiceCollectors) ObserveRequestDuration(kind string, seconds f
 // AddBytesServed adds n bytes to ach_content_service_bytes_served_total
 // {kind} per Hub §18.5:
 //
-//	kind ∈ {prompt, plugin, artifact}
+//	kind ∈ {instruction, plugin, artifact}
 //
 // Accepts int64 (the io.Copy return type and *os.File.Stat().Size()
 // type) and converts to float64 for the underlying Counter.Add. n

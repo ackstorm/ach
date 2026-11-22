@@ -2,7 +2,7 @@
 
 // Package db helpers for the external_refs table (Hub §16 / §10.3).
 //
-// The Plan 02-05 Plugin / Prompt / Artifact reconcilers call:
+// The Plan 02-05 Plugin / Instruction / Artifact reconcilers call:
 //
 //   - UpsertExternalRef after a successful rename(2) (Hub §10.3 step 5) — also
 //     clears force_refresh_requested_at in the same UPDATE per D-07 so the
@@ -41,10 +41,10 @@ import (
 // ExternalRef mirrors the external_refs row schema after migration 000002
 // (Hub §16 + Plan 02-03 Task 1 additions).
 //
-// The Kind ∈ {"plugin", "prompt", "artifact"} and Name uniquely identify a
+// The Kind ∈ {"plugin", "instruction", "artifact"} and Name uniquely identify a
 // row; together they form the PRIMARY KEY (kind, name).
 type ExternalRef struct {
-	Kind                    string    // "plugin" / "prompt" / "artifact"
+	Kind                    string    // "plugin" / "instruction" / "artifact"
 	Name                    string    // CR metadata.name
 	StorageLocation         string    // absolute path the rename(2) published to
 	UpstreamRev             string    // FetchResult.UpstreamRev (commit SHA / ETag / generation)

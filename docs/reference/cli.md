@@ -203,7 +203,7 @@ Flags:
 Read-only inventory. Admin-only.
 
 ACH objects (from the Postgres projections, version + sync status):
-  environments, plugins, prompts, artifacts, skills, marketplaces,
+  environments, plugins, instructions, artifacts, skills, marketplaces,
   skill-marketplaces, bips
 LiteLLM runtime catalog (KIND NAME STATUS):
   models, mcp, a2a, teams, guardrails
@@ -224,8 +224,9 @@ SYNC column:
 AVAILABLE column (content kinds): a newer commit on the watched ref of a
 source pinned to spec.<git>.commit; promote it in GitOps. '-' when none.
 
-Note: prompts/artifacts show 'fresh*' — their refresh tracks name resolution,
-not content presence. plugins and skills are truly content-gated (bare 'fresh').
+Note: artifacts show 'fresh*' — their refresh tracks name resolution, not
+content presence. plugins, skills and instructions are truly content-gated
+(bare 'fresh').
 Guardrails add MODE and DEFAULT-ON columns.
 
 Usage:
@@ -247,7 +248,7 @@ Flags:
 ### ach-cli admin refresh
 
 ```text
-kind must be one of {plugin, prompt, artifact, skill, marketplace, skill-marketplace}. No interactive confirmation (idempotent operation).
+kind must be one of {plugin, instruction, artifact, skill, marketplace, skill-marketplace}. No interactive confirmation (idempotent operation).
 
 Usage:
   ach-cli admin refresh <kind> <name> [flags]
@@ -539,7 +540,7 @@ Flags:
 ```text
 Stream a single artifact from the Content Service verbatim (a debug tool).
 
-kind ∈ {prompt, plugin, artifact, skill}. No extraction, no adapter
+kind ∈ {instruction, plugin, artifact, skill}. No extraction, no adapter
 projection — the response body is written as-is to stdout (or --file).
 For normal workspace setup use 'ach-cli environment hydrate'.
 
@@ -563,12 +564,12 @@ Flags:
 ### ach-cli environment hydrate
 
 ```text
-Download an environment's content (prompts, skills, artifacts) into your
+Download an environment's content (instructions, skills, artifacts) into your
 agent tool's config directory, and wire up its runtime (MCP / A2A; models
 only with --models).
 
 Scope:
-  (default)           Project context (prompts / plugins / artifacts /
+  (default)           Project context (instructions / plugins / artifacts /
                       skills) AND runtime (MCP servers / A2A agents).
   --only-runtime      Project ONLY runtime entries (excludes context).
   --only <kind>/<name>
@@ -668,7 +669,7 @@ Flags:
 Find what your environments offer by name.
 
 Matches <text>, case-insensitively, against each environment's name and
-description and the name of every plugin, skill, prompt, artifact, MCP
+description and the name of every plugin, skill, instruction, artifact, MCP
 server, model and A2A agent it serves. Several words must all match.
 Only names are searched, not what is written inside a skill or plugin.
 
@@ -736,7 +737,7 @@ The positional <name> is the target Environment — REQUIRED, it namespaces
 the <ach-dir> in project and --global scope.
 
 Scope (mirrors hydrate):
-  (default)           Remove EVERYTHING hydrate wrote: context (prompts /
+  (default)           Remove EVERYTHING hydrate wrote: context (instructions /
                       plugins / artifacts / skills) AND runtime config.
   --only-runtime      Strip ONLY runtime config (MCP servers / A2A agents).
   --only <kind>/<name>

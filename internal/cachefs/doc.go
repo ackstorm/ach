@@ -6,7 +6,7 @@
 // Contract:
 //
 //   - EnsureLayout(root) creates the five OP-10 cache subdirectories
-//     (prompt/, plugin/, marketplace/, artifact/, .tmp/) under root. The
+//     (instruction/, plugin/, marketplace/, artifact/, .tmp/) under root. The
 //     call is idempotent — re-running on an already-initialized root is a
 //     no-op.
 //   - The four publish subdirs and .tmp/ live under the SAME root by

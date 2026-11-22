@@ -165,7 +165,7 @@ func TestOAuthFrontDoor(t *testing.T) {
 
 	// 6b. The content-service accepts the JWT too (hydrate from an OAuth
 	//     profile fetches every object with it in x-ach-key).
-	if code, _, body := getJSON(t, "/content/prompt/claude-code-system-prompt",
+	if code, _, body := getJSON(t, "/content/instruction/instruction-valid",
 		map[string]string{"x-ach-key": access, "x-ach-environment": "demo"}); code != 200 {
 		t.Fatalf("/content with OAuth JWT: %d %v", code, body)
 	}

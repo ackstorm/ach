@@ -89,7 +89,7 @@ The positional <name> is the target Environment — REQUIRED, it namespaces
 the <ach-dir> in project and --global scope.
 
 Scope (mirrors hydrate):
-  (default)           Remove EVERYTHING hydrate wrote: context (prompts /
+  (default)           Remove EVERYTHING hydrate wrote: context (instructions /
                       plugins / artifacts / skills) AND runtime config.
   --only-runtime      Strip ONLY runtime config (MCP servers / A2A agents).
   --only <kind>/<name>
@@ -245,8 +245,8 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	}
 
 	// (e-g) Tear down each platform's state in turn: scope-filtered survivor set
-	// → inverse-merge teardown → state cleanup. Shared workspace content (prompts/
-	// artifacts) removed by the first state is a graceful no-op for the rest.
+	// → inverse-merge teardown → state cleanup. Shared workspace content
+	// (artifacts) removed by the first state is a graceful no-op for the rest.
 	u := newUI(cmd.OutOrStdout(), false)
 	scope := scopeProject
 	if in.global {
@@ -266,6 +266,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 		if prev == nil {
 			continue
 		}
+		prev = hydrate.WithoutSiblingInstructions(prev, achDir, platformOfState(sp))
 		var scopedEmpty *state.File
 		if in.only != nil {
 			// --only: survivor = prev minus the item's rows; a platform state
@@ -296,6 +297,9 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 			}
 		}
 		if !in.dryRun {
+			if terr := hydrate.TidyInstructionLoader(platformOfState(sp), toolRoot, in.global); terr != nil {
+				return &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("uninstall: %v", terr), Wrapped: terr}
+			}
 			if cerr := cleanupState(sp, scopedEmpty); cerr != nil {
 				return cerr
 			}

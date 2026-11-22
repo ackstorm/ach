@@ -156,7 +156,7 @@ export interface EnvironmentRow {
   context?: {
     plugins?: string[];
     skills?: string[];
-    prompts?: string[];
+    instructions?: string[];
     artifacts?: string[];
   };
 }

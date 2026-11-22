@@ -23,7 +23,7 @@ rules:
   - litellmconnections
   - pluginmarketplaces
   - plugins
-  - prompts
+  - instructions
   - skills
   - skillmarketplaces
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
@@ -44,7 +44,7 @@ rules:
   - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
-  - prompts/finalizers
+  - instructions/finalizers
   - skills/finalizers
   - skillmarketplaces/finalizers
   verbs: ["update"]
@@ -57,7 +57,7 @@ rules:
   - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
-  - prompts/status
+  - instructions/status
   - skills/status
   - skillmarketplaces/status
   verbs: ["get", "patch", "update"]

@@ -9,7 +9,7 @@
 // safely SELECT and will see the projection mutation.
 //
 // Every controller projection-mutation path (UpsertEnvironment, UpsertPlugin,
-// UpsertPrompt, UpsertArtifact, UpsertMarketplacePlugin, UpsertBIP,
+// UpsertInstruction, UpsertArtifact, UpsertMarketplacePlugin, UpsertBIP,
 // UpsertLiteLLMConnection, plus the symmetric DeleteX paths) runs
 // through this helper from its reconciler. The bare db.Emit is retained for
 // one-off operational paths and tests.

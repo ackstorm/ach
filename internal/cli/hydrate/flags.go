@@ -157,9 +157,9 @@ type Opts struct {
 // Item names one context item of an Environment: --only <kind>/<name>.
 type Item struct{ Kind, Name string } // Kind: kindPlugin | kindSkill
 
-// ParseItem parses --only: "plugin/<name>" or "skill/<name>". Prompts and
-// artifacts are refused: they are never recorded in state, so an --only
-// install of one could not be removed again.
+// ParseItem parses --only: "plugin/<name>" or "skill/<name>". Instructions and
+// artifacts are refused: they are delivered with the whole Environment, never
+// one by one.
 func ParseItem(s string) (*Item, error) {
 	kind, name, ok := strings.Cut(s, "/")
 	if !ok || (kind != kindPlugin && kind != kindSkill) || name == "" || strings.Contains(name, "/") {

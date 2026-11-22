@@ -126,6 +126,9 @@ func ParseDoc(content []byte, isTOML bool) (map[string]any, error) {
 	if err := json.Unmarshal(content, &out); err != nil {
 		return nil, err
 	}
+	if out == nil { // JSON null
+		out = map[string]any{}
+	}
 	return out, nil
 }
 

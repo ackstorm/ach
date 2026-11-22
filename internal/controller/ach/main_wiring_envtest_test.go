@@ -212,7 +212,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 		t.Errorf("PluginMarketplaceReconciler.PluginMaxSizeMiB = %d; want 50", pmr.PluginMaxSizeMiB)
 	}
 
-	// Artifact + Prompt reconcilers — no size cap.
+	// Artifact + Instruction reconcilers — no size cap.
 	ar := &ArtifactReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    k8sClient,
@@ -226,7 +226,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 	if ar.CacheRoot != testCacheRoot {
 		t.Errorf("ArtifactReconciler.CacheRoot wrong")
 	}
-	prm := &PromptReconciler{
+	prm := &InstructionReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    k8sClient,
 			Namespace: WatchNamespace,
@@ -237,7 +237,7 @@ func TestMainWiring_AllReconcilersInjectable(t *testing.T) {
 		},
 	}
 	if prm.CacheRoot != testCacheRoot {
-		t.Errorf("PromptReconciler.CacheRoot wrong")
+		t.Errorf("InstructionReconciler.CacheRoot wrong")
 	}
 
 	// Environment reconciler: LiteLLM + Snapshotter both wired.

@@ -1,4 +1,4 @@
-# Standalone Plugin, Skill, Prompt and Artifact
+# Standalone Plugin, Skill, Instruction and Artifact
 
 Each of these kinds is one item fetched from one upstream. An Environment references it
 by its bare `metadata.name`. All take the shared source block (`content-sources.md`):
@@ -78,30 +78,34 @@ spec:
   layout a marketplace cannot walk.
 - Same 50 MiB default size cap as plugins.
 
-## Prompt
+## Instruction
 
-A single file (usually Markdown) served verbatim and extracted by hydrate into the
-workspace's ACH state directory.
+A governed Markdown text that `ach-cli environment hydrate` writes as an always-loaded
+rules file for Claude Code, OpenCode, Cursor, Antigravity and Pi. Codex is not supported.
 
 ```yaml
 apiVersion: ach.ackstorm.ai/v1alpha1
-kind: Prompt
+kind: Instruction
 metadata:
-  name: backend-system-prompt
+  name: backend-conventions
 spec:
   type: github
-  contentType: text/markdown
   github:
-    repo: my-org/agent-prompts
+    repo: my-org/agent-instructions
     ref: main
-    path: backend/system.md      # a file, not a directory
+    path: backend/conventions.md   # a file, not a directory
+    commit: 3f2a…                  # optional, 40 hex; serve this commit
   refresh:
     interval: 6h
     maxStaleness: 24h
 ```
 
-- On git types, `path` must name a file.
-- `contentType` is optional; empty falls back to the upstream's Content-Type.
+- On git types, `path` must name a file. There is no `contentType`.
+- The content must be non-empty UTF-8 Markdown, at most 23,900 bytes, and must not start
+  with frontmatter (`---`). Otherwise the Instruction is `Synced=False` with reason
+  `UpstreamInvalid` and the Environment that lists it is not Available.
+- Antigravity also caps all always-on rules together at about 20,000 tokens, so keep the
+  list of instructions short.
 
 ## Artifact
 
@@ -143,10 +147,12 @@ spec:
 - `type: http` only allows `scope: object` (admission rejects `directory`).
 - Make `path` match the scope: a file for `object`, a directory for `directory`.
 
-## Prompt and Artifact vs Plugin and Skill in an Environment
+## Artifact vs Plugin, Skill and Instruction in an Environment
 
-Plugins and skills gate the Environment: until their content is fetched, the Environment
-reports `ExecutionResourcesResolved=False` and is not Available. Prompts and artifacts
-are only checked by name, so a Prompt that fails to fetch does not show up on the
-Environment; check the Prompt or Artifact itself (`kubectl get prompts,artifacts`, or
-`ach-cli admin list prompts`, whose `fresh*` marks that only the name is tracked).
+Plugins, skills and instructions gate the Environment: until their content is fetched,
+the Environment reports `ExecutionResourcesResolved=False` and is not Available (see
+`status.unresolvedContextPlugins`, `unresolvedContextSkills` and
+`unresolvedContextInstructions`). Artifacts are only checked by name, so an Artifact that
+fails to fetch does not show up on the Environment; check the Artifact itself
+(`kubectl get artifacts`, or `ach-cli admin list artifacts`, whose `fresh*` marks that
+only the name is tracked).

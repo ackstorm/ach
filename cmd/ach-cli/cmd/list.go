@@ -4,7 +4,7 @@
 // (LIFE-03 / D-31). It is a STATIC read of <ach-dir>/state.json v2 — NO
 // network, NO re-derivation, NO drift column. It loads the state file for
 // the active workspace+environment scope, walks the projection buckets
-// (Prompts / Plugins / Artifacts / RuntimeFiles / Adapter.Files), derives
+// (Instructions / Plugins / Artifacts / RuntimeFiles / Adapter.Files), derives
 // each entry's Kind from its owning bucket (state.FileEntry carries no
 // kind field) and Environment from File.Environment, then renders a
 // KIND / TARGET / ENVIRONMENT table by default or machine JSON under
@@ -302,7 +302,7 @@ func loadAllWorkspaceStates(cwd string) ([]*state.File, error) {
 // rows, deriving Kind from the owning bucket and Environment from
 // f.Environment. A nil File (missing/fresh state) yields nil → the
 // renderers emit their stable empty-state output. The bucket order
-// mirrors state.WalkEntries (Prompts → Plugins → Artifacts →
+// mirrors state.WalkEntries (Instructions → Plugins → Artifacts →
 // RuntimeFiles → Adapter.Files); the plugin inventory is a flat list over
 // f.Plugins (D-25, no per-plugin grouping).
 func buildStateEntryViews(f *state.File) []render.StateEntryView {
@@ -321,7 +321,7 @@ func buildStateEntryViews(f *state.File) []render.StateEntryView {
 			})
 		}
 	}
-	appendBucket("prompt", f.Prompts)
+	appendBucket("instruction", f.Instructions)
 	appendBucket("plugin", f.Plugins)
 	appendBucket("artifact", f.Artifacts)
 	appendBucket("skill", f.Skills)
@@ -343,8 +343,8 @@ func renderStatus(u *ui, files []*state.File, cwd string, global bool) error {
 		}
 		toolRoot, scope = home, scopeGlobal
 	}
-	// Prompts/artifacts resolve against <achDir>/.. = <root>/.ach, as in
-	// the engine's reconcile-vs-disk step.
+	// Artifacts resolve against <achDir>/.. = <root>/.ach, as in the engine's
+	// reconcile-vs-disk step.
 	wsRoot := filepath.Join(toolRoot, ".ach")
 
 	byEnv := map[string][]*state.File{}
@@ -380,7 +380,7 @@ func renderStatus(u *ui, files []*state.File, cwd string, global bool) error {
 			}
 			edited = append(edited, editedFiles(f.Plugins, toolRoot)...)
 			edited = append(edited, editedFiles(f.Skills, toolRoot)...)
-			edited = append(edited, editedFiles(f.Prompts, wsRoot)...)
+			edited = append(edited, editedFiles(f.Instructions, toolRoot)...)
 			edited = append(edited, editedFiles(f.Artifacts, wsRoot)...)
 		}
 		sort.Strings(targets)

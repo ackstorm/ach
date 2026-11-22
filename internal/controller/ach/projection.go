@@ -19,7 +19,7 @@ import (
 )
 
 // FetchedObjectReconciler is the field set shared by the four fetched-object
-// reconcilers (Plugin, Skill, Prompt, Artifact). CacheRoot is the PVC mount
+// reconcilers (Plugin, Skill, Instruction, Artifact). CacheRoot is the PVC mount
 // root from ACH_CACHE_ROOT (default /var/cache/ach).
 type FetchedObjectReconciler struct {
 	client.Client

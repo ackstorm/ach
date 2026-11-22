@@ -76,12 +76,12 @@ func TestCELAdmission(t *testing.T) {
 			resourceName: "example-artifact",
 		},
 		{
-			name:         "valid_prompt",
-			fixturePath:  "../../../config/samples/ach_v1alpha1_prompt.yaml",
+			name:         "valid_instruction",
+			fixturePath:  "../../../config/samples/ach_v1alpha1_instruction.yaml",
 			shouldFail:   false,
 			apiVersion:   "ach.ackstorm.ai/v1alpha1",
-			kind:         "Prompt",
-			resourceName: "example-prompt",
+			kind:         "Instruction",
+			resourceName: "example-instruction",
 		},
 		{
 			name:         "valid_bip",
@@ -176,14 +176,20 @@ func TestCELAdmission(t *testing.T) {
 		//     names; forbids ? # % whitespace control-chars DEL.
 		//   • MCPServers, A2AAgents (strict): forbids "/" too — names are chi
 		//     route params (/mcp/{name}, /a2a/{name}); slash always 403s.
-		//   • Prompts, Plugins, Artifacts (strict): same, plus "\" (path-traversal).
-		// Path-traversal prompts name → rejected; query-injection models name →
+		//   • Instructions, Plugins, Artifacts (strict): same, plus "\" (path-traversal).
+		// Path-traversal instructions name → rejected; query-injection models name →
 		// rejected; slash-containing mcpServers name → rejected (S2 review fix).
 		{
 			name:           "invalid_env_context_path_traversal",
 			fixturePath:    "../../../test/fixtures/invalid/environment_context_path_traversal.yaml",
 			shouldFail:     true,
-			errMustContain: "prompts",
+			errMustContain: "instructions",
+		},
+		{
+			name:           "invalid_env_instruction_marketplace_ref",
+			fixturePath:    "../../../test/fixtures/invalid/environment_instruction_marketplace_ref.yaml",
+			shouldFail:     true,
+			errMustContain: "instructions",
 		},
 		{
 			name:           "invalid_env_runtime_query_injection",

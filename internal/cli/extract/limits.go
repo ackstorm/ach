@@ -10,21 +10,19 @@ import (
 )
 
 // ResourceKind enumerates the per-resource categories the bomb-defense caps
-// route on. Prompts have no archive (single opaque file) and therefore no
-// cap; they remain in the enum so callers can pass a `ResourceKind` to
-// every helper without a separate code path for prompts. The enum is
-// exhaustive — callers using `switch k` on `ResourceKind` should cover all
-// three constants.
+// route on. Instructions arrive as a 1-entry gzip-tar under the skill cap.
+// The enum is exhaustive — callers using `switch k` on `ResourceKind` should
+// cover every constant.
 type ResourceKind string
 
 // ResourceKind constants. Values are the spec §6.4 / §10 lowercase resource
-// identifiers ("plugin", "artifact", "prompt") so they double as URL path
+// identifiers ("plugin", "artifact", "instruction") so they double as URL path
 // segments in the content service consumer (`GET /content/{kind}/{name}`).
 const (
-	KindPlugin   ResourceKind = "plugin"
-	KindArtifact ResourceKind = "artifact"
-	KindPrompt   ResourceKind = "prompt"
-	KindSkill    ResourceKind = "skill"
+	KindPlugin      ResourceKind = "plugin"
+	KindArtifact    ResourceKind = "artifact"
+	KindInstruction ResourceKind = "instruction"
+	KindSkill       ResourceKind = "skill"
 )
 
 // Bomb-defense env-var names + default MiB caps + default entry count.
@@ -68,8 +66,8 @@ type Limits struct {
 }
 
 // MaxBytesForKind returns the per-kind uncompressed byte cap. A return
-// value of 0 means "no cap". A prompt body may arrive as a gzip archive, so
-// it shares the skill cap.
+// value of 0 means "no cap". An instruction is a 1-entry gzip-tar, so it
+// shares the skill cap.
 func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 	switch k {
 	case KindPlugin:
@@ -78,7 +76,7 @@ func (l Limits) MaxBytesForKind(k ResourceKind) int64 {
 		return l.MaxExtractedArtifactBytes
 	case KindSkill:
 		return l.MaxExtractedSkillBytes
-	case KindPrompt:
+	case KindInstruction:
 		return l.MaxExtractedSkillBytes
 	}
 	// Unknown kind — fall through to the plugin cap. NOTE: this is not the

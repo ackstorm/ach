@@ -11,7 +11,7 @@ import (
 // is refused (Hub §10).
 //
 // CRD-04: maxStaleness is REQUIRED on every Plugin/PluginMarketplace/
-// Prompt/Artifact. CRD-03: interval, when set, MUST NOT exceed maxStaleness;
+// Instruction/Artifact. CRD-03: interval, when set, MUST NOT exceed maxStaleness;
 // a resource with interval > maxStaleness would always be stale between
 // refresh attempts.
 type RefreshBlock struct {
@@ -96,7 +96,7 @@ type GitHubSource struct {
 	Repo string `json:"repo"`
 
 	// Path within the repo, honored at fetch time (F1): a directory narrows the
-	// fetched content to that subtree; a single file (Prompt, Artifact
+	// fetched content to that subtree; a single file (Instruction, Artifact
 	// scope=object) returns that file's raw bytes. Empty → whole repo.
 	// PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this
 	// as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path
@@ -136,7 +136,7 @@ type GitLabSource struct {
 	// Host of the GitLab instance. Accepts a bare host ("git.example.com")
 	// or a full "https://git.example.com" form — the scheme is stripped and
 	// the clone/REST URL is always built as https://<host>. Behaves
-	// identically for every consumer (Artifact / Plugin / Prompt /
+	// identically for every consumer (Artifact / Plugin / Instruction /
 	// PluginMarketplace). Defaults to gitlab.com when empty.
 	//
 	// +optional
@@ -307,7 +307,7 @@ type HTTPSource struct {
 }
 
 // ExternalRefStatus is the shared status surface for external-reference
-// resources (Plugin, Prompt, Artifact, PluginMarketplace) per Hub §6.6.
+// resources (Plugin, Instruction, Artifact, PluginMarketplace) per Hub §6.6.
 type ExternalRefStatus struct {
 	// ObservedGeneration is the metadata.generation of the CR the
 	// reconciler most recently processed.

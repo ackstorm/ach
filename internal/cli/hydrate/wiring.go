@@ -240,8 +240,6 @@ func priorContentSourceHash(prev *state.File, kind extract.ResourceKind, finalRe
 		bucket = prev.Plugins
 	case extract.KindArtifact:
 		bucket = prev.Artifacts
-	case extract.KindPrompt:
-		bucket = prev.Prompts
 	case extract.KindSkill:
 		bucket = prev.Skills
 	default:
@@ -327,7 +325,7 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 		if p == "content" && i+2 < len(parts) {
 			kind := extract.ResourceKind(parts[i+1])
 			switch kind {
-			case extract.KindPlugin, extract.KindArtifact, extract.KindPrompt, extract.KindSkill:
+			case extract.KindPlugin, extract.KindArtifact, extract.KindInstruction, extract.KindSkill:
 				return kind, parts[i+2]
 			}
 		}
@@ -448,6 +446,9 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		// Standalone Skills project on the same gate (context projection, like
 		// plugins). They land in result.ProjectedSkillFiles (→ state.Skills).
 		if err := d.projectSkills(ad, s, achDir, toolRoot, &result); err != nil {
+			return RenderResult{}, err
+		}
+		if err := d.projectInstructions(ad, s, achDir, toolRoot, &result); err != nil {
 			return RenderResult{}, err
 		}
 	}
@@ -1899,9 +1900,10 @@ func appendUniqueSorted(xs []string, name string) []string {
 // Both Adapter.Files AND Plugins resolve against toolRoot: projectPlugins
 // publishes each projected plugin FileWrite under toolRoot (the adapter-native
 // resource dirs — .claude/agents/…, .agents/skills/…, etc., see publishFile
-// call in projectPlugins), recording a toolRoot-RELATIVE Target. Prompts and
-// Artifacts are extracted into the achDir content cache (ExtractContent's base
+// call in projectPlugins), recording a toolRoot-RELATIVE Target. Artifacts
+// are extracted into the achDir content cache (ExtractContent's base
 // is achDir) and are NOT projected to toolRoot, so they resolve against achDir.
+// Instruction files are delivered under toolRoot like plugins and skills.
 // Resolving Plugins against achDir (the pre-fix behavior) made uninstall/--sync
 // compute <achDir>/<target> — a path that never exists — so os.Remove was a
 // silent no-op and the projected plugin files survived uninstall (VER-02).
@@ -1910,7 +1912,7 @@ type taggedEntry struct {
 	// ResolveAgainstToolRoot selects toolRoot (vs achDir) as the base when the
 	// FileEntry.Target is workspace-relative. True for Adapter.Files and
 	// Plugins (both published under toolRoot); false for the achDir-cached
-	// content buckets (Prompts / Artifacts / RuntimeFiles).
+	// content buckets (Artifacts / RuntimeFiles).
 	ResolveAgainstToolRoot bool
 }
 
@@ -1922,11 +1924,12 @@ func walkEntriesTagged(f *state.File) []taggedEntry {
 	if f == nil {
 		return nil
 	}
-	total := len(f.Prompts) + len(f.Plugins) + len(f.Artifacts) + len(f.Skills) +
+	total := len(f.Instructions) + len(f.Plugins) + len(f.Artifacts) + len(f.Skills) +
 		len(f.RuntimeFiles) + len(f.Adapter.Files)
 	out := make([]taggedEntry, 0, total)
-	for _, e := range f.Prompts {
-		out = append(out, taggedEntry{Entry: e})
+	for _, e := range f.Instructions {
+		// Instruction files are projected under toolRoot, like plugins.
+		out = append(out, taggedEntry{Entry: e, ResolveAgainstToolRoot: true})
 	}
 	for _, e := range f.Plugins {
 		// Projected plugin resources are published under toolRoot (native

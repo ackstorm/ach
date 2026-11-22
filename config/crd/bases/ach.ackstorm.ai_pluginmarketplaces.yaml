@@ -311,7 +311,7 @@ spec:
                   path:
                     description: |-
                       Path within the repo, honored at fetch time (F1): a directory narrows the
-                      fetched content to that subtree; a single file (Prompt, Artifact
+                      fetched content to that subtree; a single file (Instruction, Artifact
                       scope=object) returns that file's raw bytes. Empty → whole repo.
                       PluginMarketplace and SkillMarketplace are DISCOVERY kinds and ignore this
                       as a fetch narrow — they fetch the whole repo (SkillMarketplace uses path
@@ -400,7 +400,7 @@ spec:
                       Host of the GitLab instance. Accepts a bare host ("git.example.com")
                       or a full "https://git.example.com" form — the scheme is stripped and
                       the clone/REST URL is always built as https://<host>. Behaves
-                      identically for every consumer (Artifact / Plugin / Prompt /
+                      identically for every consumer (Artifact / Plugin / Instruction /
                       PluginMarketplace). Defaults to gitlab.com when empty.
                     type: string
                   path:

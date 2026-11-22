@@ -392,9 +392,9 @@ func TestEnv_Describe_HappyPath(t *testing.T) {
 				"a2aAgents":  []map[string]any{},
 			},
 			"context": map[string]any{
-				"prompts":   []map[string]any{},
-				"plugins":   []map[string]any{},
-				"artifacts": []map[string]any{},
+				"instructions": []map[string]any{},
+				"plugins":      []map[string]any{},
+				"artifacts":    []map[string]any{},
 			},
 		})
 	})

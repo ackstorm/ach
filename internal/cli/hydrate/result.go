@@ -26,7 +26,7 @@ type Result struct {
 	Notice string
 
 	// FilesWritten is the total count of files committed to disk
-	// across every category (prompts, plugins, artifacts, runtime,
+	// across every category (plugins, artifacts, runtime,
 	// adapter). Counted in step 8 (extract) and step 10 (adapter).
 	FilesWritten int
 
@@ -111,17 +111,17 @@ type RuntimeSummary struct {
 
 // ContextSummary is the context half of the hydrate success summary.
 type ContextSummary struct {
-	Plugins       int
-	Prompts       int
-	Artifacts     int
-	Skills        int // standalone Skill refs in spec.context.skills
-	PromptFiles   int
-	ArtifactFiles int
-	SkillFiles    int // files projected into .claude/skills/<name>/ this run
+	Plugins          int
+	Instructions     int
+	Artifacts        int
+	Skills           int // standalone Skill refs in spec.context.skills
+	InstructionFiles int // instruction files written this run
+	ArtifactFiles    int
+	SkillFiles       int // files projected into .claude/skills/<name>/ this run
 }
 
 // SourceSummary is one source-attributed line in the hydrate success summary.
-// Kind is a manifest/source kind ("plugin", "artifact", "prompt"); Name is the
+// Kind is a manifest/source kind ("plugin", "artifact", "instruction"); Name is the
 // manifest resource name or plugin directory name. Counts is used for plugin
 // component-kind tallies, while Files is used for direct extracted resources.
 type SourceSummary struct {
@@ -209,6 +209,14 @@ type RenderResult struct {
 	// skill files to the Skills[] bucket, not Plugins[]. Each entry already
 	// flowed through the SAME publishFile path as plugin projected files.
 	ProjectedSkillFiles []FileWrite
+
+	// ProjectedInstructionFiles flows into step 12 (state.File.Instructions).
+	ProjectedInstructionFiles []FileWrite
+
+	// InstructionNotes and InstructionWarnings report a target or scope that
+	// cannot load the Environment's instructions.
+	InstructionNotes    []string
+	InstructionWarnings []string
 
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types

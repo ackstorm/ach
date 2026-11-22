@@ -45,9 +45,9 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 
-	// The operator now publishes prompts as a 1-entry gzip tar (uniform
-	// context format), served as application/gzip — ach-cli untars it into
-	// a directory at <achDir>/prompt/<name>/<entry>.
+	// The server publishes an instruction as a 1-entry gzip tar, served as
+	// application/gzip — ach-cli untars it into a directory at
+	// <base>/instruction/<name>/<entry>.
 	const entryName = "demo.md"
 	const entryBody = "hello world"
 	var gzTar bytes.Buffer
@@ -73,9 +73,9 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	ext, _ := hydrate.NewWiring(hc, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
 
 	ref := manifest.ContentRef{
-		ID:          "demo-prompt",
-		Name:        "demo-prompt",
-		DownloadURL: ts.URL + "/content/prompt/demo-prompt",
+		ID:          "demo-instruction",
+		Name:        "demo-instruction",
+		DownloadURL: ts.URL + "/content/instruction/demo-instruction",
 	}
 	res, err := ext.ExtractContent(context.Background(), ref, achDir, nil)
 	if err != nil {
@@ -87,8 +87,8 @@ func TestExtractorImpl_DispatchesToStage(t *testing.T) {
 	if res.SourceHash == "" || !strings.HasPrefix(res.SourceHash, "xxh3:") {
 		t.Errorf("SourceHash = %q; want xxh3: prefix", res.SourceHash)
 	}
-	// The gzip tar untars into a directory: <achDir>/prompt/demo-prompt/demo.md.
-	final := filepath.Join(achDir, "prompt", "demo-prompt", entryName)
+	// The gzip tar untars into a directory: <base>/instruction/demo-instruction/demo.md.
+	final := filepath.Join(achDir, "instruction", "demo-instruction", entryName)
 	got, err := os.ReadFile(final)
 	if err != nil {
 		t.Errorf("final path %s missing: %v", final, err)

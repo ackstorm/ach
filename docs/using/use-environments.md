@@ -1,7 +1,7 @@
 # Find, install and update Environments
 
 An Environment is a named set your platform team publishes: models, MCP
-servers and A2A agents, plus plugins, skills, prompts and artifacts.
+servers and A2A agents, plus plugins, skills, instructions and artifacts.
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
@@ -67,6 +67,24 @@ tools read one copy. Antigravity reads everything from `.agents/` (MCP servers i
 It has no command directory, so a plugin's commands are not installed for it.
 Cursor reads MCP servers from `.cursor/mcp.json`; its commands and subagents go
 to `.cursor/commands` and `.cursor/agents`.
+
+An Instruction is a Markdown text the tool always loads. Hydrate writes each one
+as a rules file:
+
+| Tool | File (in a project) | With `-g` |
+|---|---|---|
+| Claude Code | `.claude/rules/ach-<name>.md` | `~/.claude/rules/` |
+| OpenCode | `.opencode/ach/<name>.md`, plus the entry `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json` | `~/.config/opencode/ach/` |
+| Cursor | `.cursor/rules/ach-<name>.mdc` (`alwaysApply: true`) | none: Cursor has no global rules file, so hydrate warns |
+| Antigravity | `.agents/rules/ach-<name>.md` (`trigger: always_on`) | `~/.gemini/config/rules/` |
+| Pi | `.pi/ach/<name>.md`, plus the extension `.pi/extensions/ach-instructions.ts` | `~/.pi/agent/ach/` and `~/.pi/agent/extensions/` |
+| Codex | none: hydrate prints a note | none |
+
+The OpenCode entry and the Pi extension exist while their folder holds an
+Instruction file and go when the last one goes. Pi loads a project extension
+only in a project it trusts. An Instruction the Environment drops is removed on
+the next hydrate. Antigravity caps all always-on rules together at about
+20,000 tokens.
 
 OpenCode loads MCP servers when its service starts. After a hydrate (or a
 `local plugin` install, update or uninstall) that adds or removes one, run

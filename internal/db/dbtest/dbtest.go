@@ -62,12 +62,12 @@ func DeletePlugin(ctx context.Context, pool *pgxpool.Pool, ns, name string) erro
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return db.DeletePluginTx(ctx, tx, ns, name) })
 }
 
-func UpsertPrompt(ctx context.Context, pool *pgxpool.Pool, row db.PromptRow) error {
-	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return db.UpsertPromptTx(ctx, tx, row) })
+func UpsertInstruction(ctx context.Context, pool *pgxpool.Pool, row db.InstructionRow) error {
+	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return db.UpsertInstructionTx(ctx, tx, row) })
 }
 
-func DeletePrompt(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
-	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return db.DeletePromptTx(ctx, tx, ns, name) })
+func DeleteInstruction(ctx context.Context, pool *pgxpool.Pool, ns, name string) error {
+	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return db.DeleteInstructionTx(ctx, tx, ns, name) })
 }
 
 func UpsertSkillMarketplaceSkill(ctx context.Context, pool *pgxpool.Pool, s db.SkillMarketplaceSkill) error {

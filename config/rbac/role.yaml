@@ -18,10 +18,10 @@ rules:
   - artifacts
   - backendidentitypolicies
   - environments
+  - instructions
   - litellmconnections
   - pluginmarketplaces
   - plugins
-  - prompts
   - skillmarketplaces
   - skills
   verbs:
@@ -38,11 +38,11 @@ rules:
   - artifacts/finalizers
   - backendidentitypolicies/finalizers
   - environments/finalizers
+  - instructions/finalizers
   - keygrants/finalizers
   - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
-  - prompts/finalizers
   - skillmarketplaces/finalizers
   - skills/finalizers
   verbs:
@@ -53,11 +53,11 @@ rules:
   - artifacts/status
   - backendidentitypolicies/status
   - environments/status
+  - instructions/status
   - keygrants/status
   - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
-  - prompts/status
   - skillmarketplaces/status
   - skills/status
   verbs:

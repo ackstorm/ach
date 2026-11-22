@@ -87,17 +87,17 @@ func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, func()) {
 func upsertEnv(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string) {
 	t.Helper()
 	require.NoError(t, dbtest.UpsertEnvironment(ctx, pool, db.EnvironmentRow{
-		Namespace:         testNS,
-		Name:              name,
-		AuthorizedTeams:   []string{"team-" + name},
-		ContextPrompts:    []string{},
-		ContextPlugins:    []string{},
-		ContextArtifacts:  []string{},
-		ContextSkills:     []string{},
-		RuntimeModels:     []string{},
-		RuntimeMCPServers: []string{},
-		RuntimeA2AAgents:  []string{},
-		ResourceVersion:   "1",
+		Namespace:           testNS,
+		Name:                name,
+		AuthorizedTeams:     []string{"team-" + name},
+		ContextInstructions: []string{},
+		ContextPlugins:      []string{},
+		ContextArtifacts:    []string{},
+		ContextSkills:       []string{},
+		RuntimeModels:       []string{},
+		RuntimeMCPServers:   []string{},
+		RuntimeA2AAgents:    []string{},
+		ResourceVersion:     "1",
 	}))
 }
 

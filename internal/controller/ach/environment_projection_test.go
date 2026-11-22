@@ -97,9 +97,9 @@ func TestEnvironmentReconciler_DBNilTolerance(t *testing.T) {
 				A2AAgents:  []string{},
 			},
 			Context: achv1alpha1.ContextBlock{
-				Prompts:   []string{},
-				Plugins:   []string{},
-				Artifacts: []string{},
+				Instructions: []string{},
+				Plugins:      []string{},
+				Artifacts:    []string{},
 			},
 		},
 	}

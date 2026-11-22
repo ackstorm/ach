@@ -113,7 +113,7 @@ func TestStageAndPublish_VerbatimWrite_HappyPath(t *testing.T) {
 		"text/plain",
 		finalPath,
 		achDir,
-		extract.KindPrompt,
+		extract.KindInstruction,
 		stageLimits(),
 		false,
 	)
@@ -264,7 +264,7 @@ func TestStageAndPublish_Sha256ShortCircuit_SkipsWrite(t *testing.T) {
 		"text/plain",
 		finalPath,
 		achDir,
-		extract.KindPrompt,
+		extract.KindInstruction,
 		stageLimits(),
 		false,
 	)
@@ -306,7 +306,7 @@ func TestStageAndPublish_DualHash_BothPopulated(t *testing.T) {
 		"text/plain",
 		finalPath,
 		achDir,
-		extract.KindPrompt,
+		extract.KindInstruction,
 		stageLimits(),
 		false,
 	)
@@ -339,7 +339,7 @@ func TestStageAndPublish_StagingDirCleaned(t *testing.T) {
 		"text/plain",
 		finalPath,
 		achDir,
-		extract.KindPrompt,
+		extract.KindInstruction,
 		stageLimits(),
 		false,
 	)

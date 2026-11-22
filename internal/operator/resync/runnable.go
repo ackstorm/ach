@@ -27,7 +27,7 @@ const defaultInterval = 5 * time.Minute
 type Channels struct {
 	Environment       chan<- event.GenericEvent
 	Plugin            chan<- event.GenericEvent
-	Prompt            chan<- event.GenericEvent
+	Instruction       chan<- event.GenericEvent
 	Artifact          chan<- event.GenericEvent
 	Skill             chan<- event.GenericEvent
 	Marketplace       chan<- event.GenericEvent
@@ -95,8 +95,8 @@ func (r *Resync) sweepAll(ctx context.Context) {
 		func(l *achv1alpha1.EnvironmentList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.Plugin, &achv1alpha1.PluginList{}, "plugins",
 		func(l *achv1alpha1.PluginList) []client.Object { return toObjects(l.Items) })
-	sweepKind(ctx, r, r.Channels.Prompt, &achv1alpha1.PromptList{}, "prompts",
-		func(l *achv1alpha1.PromptList) []client.Object { return toObjects(l.Items) })
+	sweepKind(ctx, r, r.Channels.Instruction, &achv1alpha1.InstructionList{}, "instructions",
+		func(l *achv1alpha1.InstructionList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.Artifact, &achv1alpha1.ArtifactList{}, "artifacts",
 		func(l *achv1alpha1.ArtifactList) []client.Object { return toObjects(l.Items) })
 	sweepKind(ctx, r, r.Channels.Skill, &achv1alpha1.SkillList{}, "skills",

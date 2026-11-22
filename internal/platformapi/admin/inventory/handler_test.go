@@ -29,8 +29,8 @@ type fakeLister struct {
 	err                    error
 }
 
-func (f fakeLister) Plugins(context.Context) ([]db.PluginRow, error) { return f.plugins, f.err }
-func (f fakeLister) Prompts(context.Context) ([]db.PromptRow, error) { return nil, f.err }
+func (f fakeLister) Plugins(context.Context) ([]db.PluginRow, error)           { return f.plugins, f.err }
+func (f fakeLister) Instructions(context.Context) ([]db.InstructionRow, error) { return nil, f.err }
 func (f fakeLister) Artifacts(context.Context) ([]db.ArtifactRow, error) {
 	return nil, f.err
 }

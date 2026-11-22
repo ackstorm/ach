@@ -15,7 +15,7 @@ rules:
   resources:
   - environments
   - plugins
-  - prompts
+  - instructions
   - artifacts
   - pluginmarketplaces
   verbs: ["get", "list", "watch"]

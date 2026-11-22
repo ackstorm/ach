@@ -23,6 +23,6 @@ spec:
       - "demo/server"
     a2aAgents: []
   context:
-    prompts: []
+    instructions: []
     plugins: []
     artifacts: []

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Integration tests for the G8 skill / skillmarketplace routing added to
-// db.SetForceRefresh. "skill" targets external_refs (like plugin/prompt/
+// db.SetForceRefresh. "skill" targets external_refs (like plugin/instruction/
 // artifact); "skillmarketplace" targets skill_marketplace_skills (like
 // pluginmarketplace targets marketplace_plugins).
 
