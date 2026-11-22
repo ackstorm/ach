@@ -826,6 +826,33 @@ func seedPluginRepo(t *testing.T, name, url string) {
 	})
 }
 
+// TestOpencodeRestart_Note: the hint is due when the set of opencode server
+// keys changes, including a record from before the OpenCode 2 format, and not
+// for an update that keeps the same servers or for another tool.
+func TestOpencodeRestart_Note(t *testing.T) {
+	rec := func(keys ...string) []store.FileRec {
+		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
+	}
+	for name, tc := range map[string]struct {
+		target        string
+		before, after []store.FileRec
+		want          bool
+	}{
+		"install adds":       {"opencode", nil, rec("mcp.servers.a"), true},
+		"update same":        {"opencode", rec("mcp.servers.a"), rec("mcp.servers.a"), false},
+		"update adds":        {"opencode", rec("mcp.servers.a"), rec("mcp.servers.a", "mcp.servers.b"), true},
+		"uninstall legacy":   {"opencode", rec("mcp.a"), nil, true},
+		"other tool":         {"claude-code", nil, rec("mcpServers.a"), false},
+		"no server in files": {"opencode", rec(), rec(), false},
+	} {
+		var o opencodeRestart
+		o.note(tc.target, tc.before, tc.after)
+		if o.on != tc.want {
+			t.Errorf("%s: hint due = %v, want %v", name, o.on, tc.want)
+		}
+	}
+}
+
 // TestPluginCmd_OpencodeServiceRestartHint: the restart hint appears once when
 // a plugin install or uninstall writes or removes an MCP server entry for
 // opencode, and never otherwise.

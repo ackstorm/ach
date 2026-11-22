@@ -14,6 +14,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 - The undocumented target aliases `cursor-cli` and `antigravity-cli`: use `cursor` (or `cursor-agent`) and `antigravity` (or `agy`).
 
 ### Fixed
+- `ach-cli local plugin update` prints the `opencode service restart` hint only when the plugin's MCP servers change, and `local plugin uninstall` of a plugin installed for OpenCode before 1.2.0 prints it too.
 - `ach-cli environment hydrate` without `--target` picks the folder's own tool again when `~/.cursor/mcp.json`, `~/.gemini/config/mcp_config.json` or `~/.pi/mcp.json` exists. Those files counted as a Cursor, Antigravity or pi signal in every folder, so the hydrate stopped with "multiple agent targets detected" or chose that tool. They now count only with `-g`.
 - `ach-cli local plugin|skill`: the same item installed for the same tool in
   two folders, or in a folder and with `-g`, is two installs. Before, the second

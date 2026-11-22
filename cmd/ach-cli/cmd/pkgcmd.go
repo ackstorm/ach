@@ -16,6 +16,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -200,21 +201,28 @@ func ensureProjectGitignore(w io.Writer, root string, global bool, entries []str
 	}
 }
 
-// opencodeRestart records whether a run wrote or removed an MCP server entry
-// for opencode (an opencode record with `mcp.servers.*` keys).
+// opencodeRestart records whether a run added or removed an MCP server for
+// opencode. A server key is any `mcp.` key: `mcp.servers.<id>`, or `mcp.<id>` in
+// a record written before the OpenCode 2 format.
 type opencodeRestart struct{ on bool }
 
-func (o *opencodeRestart) note(target string, recs ...[]store.FileRec) {
+func (o *opencodeRestart) note(target string, before, after []store.FileRec) {
 	if target != opencodeTarget {
 		return
 	}
-	for _, rs := range recs {
-		for _, r := range rs {
-			for _, k := range r.Keys {
-				o.on = o.on || strings.HasPrefix(k, adapter.OpencodeMCPKeyPrefix)
+	o.on = o.on || !maps.Equal(opencodeServerKeys(before), opencodeServerKeys(after))
+}
+
+func opencodeServerKeys(recs []store.FileRec) map[string]bool {
+	keys := map[string]bool{}
+	for _, r := range recs {
+		for _, k := range r.Keys {
+			if strings.HasPrefix(k, "mcp.") {
+				keys[k] = true
 			}
 		}
 	}
+	return keys
 }
 
 // flush prints the restart hint once, when a server entry changed.
@@ -636,7 +644,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 					upsertInstalled(installed, entry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(targetID, recs)
+					restart.note(targetID, nil, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ %s → %s (%d files)\n", ref, targetID, len(recs))
@@ -813,7 +821,7 @@ func newPkgUninstallCmd(kind pkgKind) *cobra.Command {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "! skipped user-modified file: %s\n", s)
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ uninstalled %s ← %s\n", e.Ref, e.Target)
-				restart.note(e.Target, e.Files)
+				restart.note(e.Target, e.Files, nil)
 				return nil
 			}
 
@@ -1075,7 +1083,7 @@ func newPkgUpdateCmd(kind pkgKind) *cobra.Command {
 					upsertInstalled(installed, newEntry)
 					dirty = true
 					ignoreEntries = collectIgnoreEntries(ignoreEntries, recs)
-					restart.note(e.Target, recs, e.Files)
+					restart.note(e.Target, e.Files, recs)
 
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"✓ updated %s → %s (%s → %s, %d files)\n",
