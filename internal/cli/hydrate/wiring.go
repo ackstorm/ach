@@ -350,6 +350,9 @@ type adapterDispatcherImpl struct {
 	// dryRun (set per Render from withDryRun) renders + classifies every
 	// file but publishes nothing.
 	dryRun bool
+	// sharedRows (set per Render) holds the whole-file plugin and Skill rows
+	// the Environment's other targets recorded, by absolute destination.
+	sharedRows map[string]*state.FileEntry
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -389,11 +392,10 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 	}
 
-	if isDryRun(ctx) {
-		dd := *d
-		dd.dryRun = true
-		d = &dd
-	}
+	dd := *d
+	dd.dryRun = d.dryRun || isDryRun(ctx)
+	dd.sharedRows = sharedRows(achDir, toolRoot, d.platformID)
+	d = &dd
 
 	var result RenderResult
 
@@ -454,6 +456,60 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	}
 
 	return result, nil
+}
+
+// sharedRows indexes, by absolute destination, the whole-file plugin and Skill
+// rows the other targets of the Environment at achDir recorded. Several targets
+// write the same .agents/skills tree, so a target hydrated later finds those
+// files on disk; the other target's row makes them this Environment's files.
+func sharedRows(achDir, toolRoot, platform string) map[string]*state.FileEntry {
+	rows := map[string]*state.FileEntry{}
+	for _, f := range state.OtherPlatformStates(achDir, platform) {
+		for _, bucket := range [][]state.FileEntry{f.Plugins, f.Skills} {
+			for i := range bucket {
+				if bucket[i].Merge != mergeStrDeep {
+					rows[adapter.ResolveDest(toolRoot, bucket[i].Target)] = &bucket[i]
+				}
+			}
+		}
+	}
+	return rows
+}
+
+// skillPlatforms lists platform and every registered target whose skills land
+// in the same directory as ad's: a skill name claimed for any of them collides.
+func skillPlatforms(ad adapter.Adapter, platform, toolRoot string, global bool) []string {
+	out := []string{platform}
+	dir := skillsDir(ad, platform, toolRoot, global)
+	if dir == "" {
+		return out
+	}
+	for _, other := range adapter.Iter() {
+		if other.ID() != platform && skillsDir(other, other.ID(), toolRoot, global) == dir {
+			out = append(out, other.ID())
+		}
+	}
+	return out
+}
+
+// skillsDir is the absolute directory ad projects skills into, or "" when it
+// has no skills rule.
+func skillsDir(ad adapter.Adapter, platform, toolRoot string, global bool) string {
+	rp, ok := ad.(route.RuleProvider)
+	if !ok {
+		return ""
+	}
+	for _, r := range rp.ProjectionRules() {
+		if !strings.HasPrefix(r.FromGlob, "skills/") {
+			continue
+		}
+		p := strings.TrimSuffix(r.ToGlob, "**/*") + "x"
+		if global {
+			p = adapter.RemapGlobalPath(platform, toolRoot, p)
+		}
+		return filepath.Dir(adapter.ResolveDest(toolRoot, p))
+	}
+	return ""
 }
 
 // hasDirectRuntime reports whether the manifest carries a direct runtime
@@ -942,7 +998,7 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	if verr := validatePluginName(envName); verr != nil {
 		return fmt.Errorf("adapter %s environment directory %q: %w", d.platformID, envName, verr)
 	}
-	foreign := state.ForeignSkillNames(achDir, d.platformID)
+	foreign := state.ForeignSkillNames(achDir, skillPlatforms(ad, d.platformID, toolRoot, d.global))
 	ownPrefixed := map[string]bool{}
 	if s != nil {
 		for _, e := range s.Skills {
@@ -1289,6 +1345,9 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		}
 	}
 	isTOML := strings.ToLower(filepath.Ext(finalAbs)) == extTOML
+	if prior == nil && fw.Merge != adapter.MergeDeep {
+		prior = d.sharedRows[finalAbs]
+	}
 
 	var freshHash, onDiskHash string
 	if fw.Merge == adapter.MergeDeep {
