@@ -826,10 +826,10 @@ func seedPluginRepo(t *testing.T, name, url string) {
 	})
 }
 
-// TestOpencodeRestart_Note: the hint is due when the set of opencode server
+// TestServerHints_Note: the opencode restart hint is due when the set of opencode server
 // keys changes, including a record from before the OpenCode 2 format, and not
 // for an update that keeps the same servers or for another tool.
-func TestOpencodeRestart_Note(t *testing.T) {
+func TestServerHints_Note(t *testing.T) {
 	rec := func(keys ...string) []store.FileRec {
 		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
 	}
@@ -845,11 +845,28 @@ func TestOpencodeRestart_Note(t *testing.T) {
 		"other tool":         {"claude-code", nil, rec("mcpServers.a"), false},
 		"no server in files": {"opencode", rec(), rec(), false},
 	} {
-		var o opencodeRestart
+		var o serverHints
 		o.note(tc.target, tc.before, tc.after)
-		if o.on != tc.want {
-			t.Errorf("%s: hint due = %v, want %v", name, o.on, tc.want)
+		if o.restart != tc.want {
+			t.Errorf("%s: hint due = %v, want %v", name, o.restart, tc.want)
 		}
+	}
+}
+
+// TestServerHints_CursorEnable: a Cursor install or update that adds a server
+// calls for enabling it; one that keeps the same servers does not.
+func TestServerHints_CursorEnable(t *testing.T) {
+	rec := func(keys ...string) []store.FileRec {
+		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
+	}
+	var o serverHints
+	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a"))
+	if o.enable {
+		t.Error("same servers: enable hint due")
+	}
+	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a", "mcpServers.b"))
+	if !o.enable {
+		t.Error("added server: no enable hint")
 	}
 }
 

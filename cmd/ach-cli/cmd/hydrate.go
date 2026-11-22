@@ -941,8 +941,9 @@ const (
 	cursorTarget   = "cursor"
 )
 
-// cursorEnableHint is printed when hydrate adds an MCP server or A2A agent for Cursor, which
-// reports a project server as "needs approval" until it is enabled.
+// cursorEnableHint is printed when hydrate or a local plugin install or update
+// adds an MCP server (or A2A agent) for Cursor, which reports a project server
+// as "needs approval" until it is enabled.
 const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
 
 // opencodeRestartHint is printed when ach-cli adds or removes an MCP server

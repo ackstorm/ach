@@ -132,7 +132,9 @@ that adds one for Cursor
 (`opencodeServersChanged`). `local plugin
 install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
 once per run, not `--dry-run`) when the opencode record's server keys change
-(`mcp.servers.<id>`, or `mcp.<id>` from before the OpenCode 2 format).
+(`mcp.servers.<id>`, or `mcp.<id>` from before the OpenCode 2 format), and
+the Cursor enable hint when a cursor record gains an `mcpServers.*` key
+(`serverHints`).
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
 The item list is not tracked by the engine: `hydrate.DiffItems(prev, next)`
