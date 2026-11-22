@@ -58,14 +58,12 @@ import (
 //     suffix (.tar.gz vs bare) and the response Content-Type.
 //   - Source: §12.3 resolution arm ("plugin" | "marketplace") for
 //     plugin kind; empty for instruction/prompt/artifact.
-//   - ContentType: prompt spec.contentType; empty for every other kind.
 type contentRow struct {
 	StorageLocation       string
 	LastSuccessfulRefresh *time.Time
 	MaxStalenessSeconds   int64
 	Scope                 string
 	Source                string
-	ContentType           string
 }
 
 // resolveAuthn (gate 1 per D-04). Reads x-ach-key from r.Header,
@@ -261,15 +259,11 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 		if row == nil {
 			return nil, errContentNotFound
 		}
-		cr := &contentRow{
+		return &contentRow{
 			StorageLocation:       row.StorageLocation,
 			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
 			MaxStalenessSeconds:   row.MaxStalenessSeconds,
-		}
-		if row.ContentType != nil {
-			cr.ContentType = *row.ContentType
-		}
-		return cr, nil
+		}, nil
 	case kindPlugin:
 		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
 		// of silently treating them as a bare CRD lookup — the grammar

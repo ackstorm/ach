@@ -177,7 +177,7 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 		return nil, &pipelineErr{errResp: errInternal, keyInfo: info}
 	}
 
-	contentType := contentTypeFor(kind, row.ContentType)
+	contentType := contentTypeFor(kind)
 	return &resolvedRow{
 		File:        f,
 		Size:        fi.Size(),
@@ -193,18 +193,11 @@ func pipeline(ctx context.Context, d Deps, kind string, r *http.Request) (*resol
 // Every context kind is now served as a gzip tarball (uniform context
 // format): instruction + artifact-object are wrapped into a 1-entry gzip-tar
 // at ingestion, plugin/skill/artifact-directory are already gzip tars.
-// So instruction, plugin, skill and artifact advertise application/gzip; the
-// file keeps its real MIME via its extension INSIDE the tar. A prompt
-// advertises its spec.contentType (specContentType), else
-// application/octet-stream.
-func contentTypeFor(kind, specContentType string) string {
+// So all known kinds advertise application/gzip; the file keeps its real
+// MIME via its extension INSIDE the tar.
+func contentTypeFor(kind string) string {
 	switch kind {
-	case kindPrompt:
-		if specContentType != "" {
-			return specContentType
-		}
-		return contentTypeOctet
-	case kindInstruction, kindPlugin, kindSkill, kindArtifact:
+	case kindInstruction, kindPrompt, kindPlugin, kindSkill, kindArtifact:
 		return contentTypeGzip
 	}
 	return contentTypeOctet

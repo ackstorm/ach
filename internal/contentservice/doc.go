@@ -13,8 +13,7 @@
 //	GET /content/instruction/{name}     -> .tar.gz (1-entry), Content-Type:
 //	                                  application/gzip
 //	GET /content/prompt/{name}     -> .tar.gz (1-entry), Content-Type:
-//	                                  spec.contentType, else
-//	                                  application/octet-stream
+//	                                  application/gzip
 //	GET /content/plugin/{name}     -> .tar.gz, application/gzip
 //	GET /content/artifact/{name}   -> .tar.gz (object: 1-entry; directory:
 //	                                  subtree), application/gzip

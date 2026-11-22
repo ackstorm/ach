@@ -312,7 +312,7 @@ func tarGzFixture(t *testing.T, content []byte) []byte {
 	return buf.Bytes()
 }
 
-func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int64, contentType *string, body []byte) {
+func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int64, body []byte) {
 	f.t.Helper()
 	path := filepath.Join(f.cacheRoot, "prompt", name+".tar.gz")
 	if err := os.WriteFile(path, tarGzFixture(f.t, body), 0o600); err != nil {
@@ -322,7 +322,6 @@ func (f *testFixtures) seedPrompt(name string, lsr *time.Time, maxStaleness int6
 		Namespace:             "default",
 		Name:                  name,
 		StorageLocation:       path,
-		ContentType:           contentType,
 		LastSuccessfulRefresh: lsr,
 		MaxStalenessSeconds:   maxStaleness,
 		ResourceVersion:       "1",
@@ -610,7 +609,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	// staleness logic and the same scoped-ref resolution as Plugin.
 	fx.seedEnvironmentWithPrompts("prod",
 		[]string{"team-a"},
-		[]string{"pr1", "pr-plain"},
+		[]string{"pr1"},
 		[]string{"p1", "p2"},
 		[]string{},
 		[]string{"a1", "a2"},
@@ -618,9 +617,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	)
 	now := time.Now().UTC()
 	fx.seedInstruction("p1", &now, 600, []byte("hello instruction"))
-	typed := "text/markdown"
-	fx.seedPrompt("pr1", &now, 600, &typed, []byte("hello prompt"))
-	fx.seedPrompt("pr-plain", &now, 600, nil, []byte("plain prompt"))
+	fx.seedPrompt("pr1", &now, 600, []byte("hello prompt"))
 	fx.seedSkill("sk1", &now, 600, []byte{0x1f, 0x8b, 0x08, 0x00, 0xAA, 0xBB, 0xCC})
 	fx.seedArtifact("a1", "object", &now, 600, []byte("artifact-bytes"))
 	// Seed the scoped marketplace skill: (marketplace_name="smkt-b", name="shared").
@@ -674,7 +671,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		}
 	})
 
-	t.Run("200 success ek_ prompt with spec.contentType", func(t *testing.T) {
+	t.Run("200 success ek_ prompt is gzip", func(t *testing.T) {
 		rec := fx.doRequest("GET", "/content/prompt/pr1", map[string]string{
 			"x-ach-key": "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		})
@@ -683,22 +680,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status=%d, want 200", resp.StatusCode)
 		}
-		if got := resp.Header.Get("Content-Type"); got != "text/markdown" {
-			t.Errorf("Content-Type=%q, want text/markdown", got)
-		}
-	})
-
-	t.Run("200 success ek_ prompt without contentType is octet-stream", func(t *testing.T) {
-		rec := fx.doRequest("GET", "/content/prompt/pr-plain", map[string]string{
-			"x-ach-key": "ek-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-		})
-		resp := rec.Result()
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d, want 200", resp.StatusCode)
-		}
-		if got := resp.Header.Get("Content-Type"); got != "application/octet-stream" {
-			t.Errorf("Content-Type=%q, want application/octet-stream", got)
+		if got := resp.Header.Get("Content-Type"); got != "application/gzip" {
+			t.Errorf("Content-Type=%q, want application/gzip", got)
 		}
 	})
 
