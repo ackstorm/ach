@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-22
+
 ### Changed
 - `ach-cli environment uninstall` reminds you to run `opencode service restart` when it removes an MCP server for OpenCode, as hydrate does: until then the running service keeps the server and the key in its headers.
 - `ach-cli environment hydrate` and `ach-cli local plugin install|update` remind you to run `cursor-agent mcp enable <name>` when they add an MCP server for Cursor, which does not load a server until it is enabled.
