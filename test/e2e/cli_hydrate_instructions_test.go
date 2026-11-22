@@ -25,7 +25,7 @@ type instructionExpect struct {
 	file    string
 	prefix  string
 	loader  string // loader file removed by uninstall ("" when none)
-	opencfg bool   // .opencode/opencode.json carries the `.opencode/ach/*.md` entry
+	opencfg bool   // .opencode/opencode.json carries the absolute `<dir>/.opencode/ach/*.md` entry
 }
 
 var instructionExpects = []instructionExpect{
@@ -35,8 +35,6 @@ var instructionExpects = []instructionExpect{
 	{id: "antigravity", file: ".agents/rules/ach-instruction-valid.md", prefix: "---\ntrigger: always_on"},
 	{id: "pi", file: ".pi/ach/instruction-valid.md", loader: ".pi/extensions/ach-instructions.ts"},
 }
-
-const opencodeInstructionEntry = ".opencode/ach/*.md"
 
 func TestPhase7InstructionDelivery(t *testing.T) {
 	phase7SuiteGuard(t)
@@ -61,6 +59,7 @@ func TestPhase7InstructionDelivery(t *testing.T) {
 			phase7SuiteGuard(t)
 			output := t.TempDir()
 			xdg := phase7SeedXdgConfig(t, baseURL, creds)
+			opencodeInstructionEntry := filepath.ToSlash(output) + "/.opencode/ach/*.md"
 
 			run(t, xdg, "env", "hydrate", phase7DemoEnvironment, "--target", ie.id, "--dir", output)
 

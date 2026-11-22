@@ -96,6 +96,8 @@ func TestProjectInstructions_PiLoaderNotRecorded(t *testing.T) {
 	}
 }
 
+// The entry is absolute: OpenCode searches a relative one only up to the git
+// root, so a project inside an Environment folder would miss it.
 func TestProjectInstructions_OpencodeLoader(t *testing.T) {
 	stage, root := t.TempDir(), t.TempDir()
 	stageInstruction(t, stage, "base", "x\n")
@@ -113,7 +115,27 @@ func TestProjectInstructions_OpencodeLoader(t *testing.T) {
 		}
 	}
 	got := readFile(t, cfg)
-	if strings.Count(got, ".opencode/ach/*.md") != 1 || !strings.Contains(got, "CONTRIBUTING.md") || !strings.Contains(got, `"mcp"`) {
+	want := `"` + filepath.ToSlash(root) + `/.opencode/ach/*.md"`
+	if strings.Count(got, want) != 1 || strings.Count(got, ".opencode/ach/*.md") != 1 ||
+		!strings.Contains(got, "CONTRIBUTING.md") || !strings.Contains(got, `"mcp"`) {
+		t.Fatalf("config %s", got)
+	}
+}
+
+func TestProjectInstructions_OpencodeGlobalEntryFollowsFiles(t *testing.T) {
+	stage, home, xdg := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	stageInstruction(t, stage, "base", "x\n")
+	d := &adapterDispatcherImpl{platformID: "opencode", global: true}
+	var res RenderResult
+	if err := d.projectInstructions(&opencode.Adapter{}, nil, stage, home, &res); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(xdg, "opencode/ach/base.md")) {
+		t.Fatalf("file not under XDG_CONFIG_HOME: %+v", res.ProjectedInstructionFiles)
+	}
+	got := readFile(t, filepath.Join(xdg, "opencode/opencode.json"))
+	if !strings.Contains(got, `"`+filepath.ToSlash(xdg)+`/opencode/ach/*.md"`) {
 		t.Fatalf("config %s", got)
 	}
 }
@@ -196,7 +218,7 @@ func TestProjectInstructions_DryRunWritesNothing(t *testing.T) {
 func TestTidyInstructionLoader(t *testing.T) {
 	t.Run("opencode keeps user entries", func(t *testing.T) {
 		root := t.TempDir()
-		cfg := writeFile(t, root, ".opencode/opencode.json", `{"instructions":["CONTRIBUTING.md",".opencode/ach/*.md"]}`)
+		cfg := writeFile(t, root, ".opencode/opencode.json", `{"instructions":["CONTRIBUTING.md","`+filepath.ToSlash(root)+`/.opencode/ach/*.md"]}`)
 		if err := os.MkdirAll(filepath.Join(root, ".opencode/ach"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -210,7 +232,7 @@ func TestTidyInstructionLoader(t *testing.T) {
 	})
 	t.Run("opencode deletes a file it emptied", func(t *testing.T) {
 		root := t.TempDir()
-		cfg := writeFile(t, root, ".opencode/opencode.json", `{"instructions":[".opencode/ach/*.md"]}`)
+		cfg := writeFile(t, root, ".opencode/opencode.json", `{"instructions":["`+filepath.ToSlash(root)+`/.opencode/ach/*.md"]}`)
 		if err := TidyInstructionLoader("opencode", root, false); err != nil {
 			t.Fatal(err)
 		}

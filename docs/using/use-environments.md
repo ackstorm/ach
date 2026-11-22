@@ -74,7 +74,7 @@ as a rules file:
 | Tool | File (in a project) | With `-g` |
 |---|---|---|
 | Claude Code | `.claude/rules/ach-<name>.md` | `~/.claude/rules/` |
-| OpenCode | `.opencode/ach/<name>.md`, plus the entry `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json` | `~/.config/opencode/ach/` |
+| OpenCode | `.opencode/ach/<name>.md`, plus the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json` | `~/.config/opencode/ach/` |
 | Cursor | `.cursor/rules/ach-<name>.mdc` (`alwaysApply: true`) | none: Cursor has no global rules file, so hydrate warns |
 | Antigravity | `.agents/rules/ach-<name>.md` (`trigger: always_on`) | `~/.gemini/config/rules/` |
 | Pi | `.pi/ach/<name>.md`, plus the extension `.pi/extensions/ach-instructions.ts` | `~/.pi/agent/ach/` and `~/.pi/agent/extensions/` |
@@ -82,7 +82,9 @@ as a rules file:
 
 The OpenCode entry and the Pi extension exist while their folder holds an
 Instruction file and go when the last one goes. Pi loads a project extension
-only in a project it trusts. An Instruction the Environment drops is removed on
+only in a project it trusts. In a folder per Environment, Claude Code and
+OpenCode load the Instructions in every project below it; Pi only when started
+in that folder. An Instruction the Environment drops is removed on
 the next hydrate. Antigravity caps all always-on rules together at about
 20,000 tokens.
 
