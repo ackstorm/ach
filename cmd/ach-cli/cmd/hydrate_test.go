@@ -1082,3 +1082,21 @@ func TestHydrateHints_OpencodeServiceRestart(t *testing.T) {
 		})
 	}
 }
+
+// A hydrate that adds an MCP server for Cursor says how to enable it, on any
+// run; an update or a dry run does not.
+func TestHydrateHints_CursorEnable(t *testing.T) {
+	res := func(op hydrate.Op) []hydrate.Result {
+		return []hydrate.Result{{PlatformID: "cursor", Changes: []hydrate.ItemChange{{Op: op, Kind: "mcp", Name: "x"}}}}
+	}
+	has := func(hints []string) bool { return slices.Contains(hints, cursorEnableHint) }
+	if !has(hydrateHints(res(hydrate.OpAdd), summaryMeta{})) {
+		t.Error("mcp add: no enable hint")
+	}
+	if has(hydrateHints(res(hydrate.OpUpdate), summaryMeta{})) {
+		t.Error("mcp update: enable hint shown")
+	}
+	if has(hydrateHints(res(hydrate.OpAdd), summaryMeta{dryRun: true})) {
+		t.Error("dry run: enable hint shown")
+	}
+}

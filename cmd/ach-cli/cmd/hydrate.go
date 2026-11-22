@@ -894,6 +894,12 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	if !meta.dryRun && opencodeServersChanged(results) {
 		hints = append(hints, opencodeRestartHint)
 	}
+	for _, r := range results {
+		if !meta.dryRun && r.PlatformID == cursorTarget && addsMCP(r) {
+			hints = append(hints, cursorEnableHint)
+			break
+		}
+	}
 	if !first {
 		return hints
 	}
@@ -922,7 +928,12 @@ func addsMCP(r hydrate.Result) bool {
 const (
 	kindMCP        = "mcp"
 	opencodeTarget = "opencode"
+	cursorTarget   = "cursor"
 )
+
+// cursorEnableHint is printed when ach-cli adds an MCP server for Cursor, which
+// reports a project server as "needs approval" until it is enabled.
+const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
 
 // opencodeRestartHint is printed when ach-cli adds or removes an MCP server
 // for OpenCode (hydrate, environment uninstall and local plugin commands).

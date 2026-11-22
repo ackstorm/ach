@@ -6,6 +6,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 - `ach-cli environment uninstall` reminds you to run `opencode service restart` when it removes an MCP server for OpenCode, as hydrate does: until then the running service keeps the server and the key in its headers.
+- `ach-cli environment hydrate` reminds you to run `cursor-agent mcp enable <name>` when it adds an MCP server for Cursor, which does not load a server until it is enabled.
+- Correction to 1.2.0: Codex already wrote skills to `.agents/skills`; the ones that moved there are OpenCode's (from `.opencode/skills`) and pi's (from `.pi/skills`, `~/.pi/agent/skills` with `-g`).
+- Correction to 1.2.0: a folder hydrated for Gemini CLI, or with a `state-pimono.json`, keeps those files, and `.gemini/settings.json` holds your key in plain text. Remove them with `ach-cli environment uninstall <env>` (it also removes the Environment's other targets: hydrate them again afterwards), and a local install for `gemini-cli` with `ach-cli local plugin|skill uninstall <ref>` (without `--target`, it removes the item for every tool: install it again for the others).
 
 ### Removed
 - The undocumented target aliases `cursor-cli` and `antigravity-cli`: use `cursor` (or `cursor-agent`) and `antigravity` (or `agy`).
