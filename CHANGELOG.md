@@ -6,6 +6,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Fixed
 - The `Prompt` kind is back, unchanged from 1.1.x: `spec.context.prompts`, `context.prompts` in `POST /platform/hydrate`, `/content/prompt/<name>`, `/platform/admin/prompts` and the `prompt` kind in `ach-cli admin` and `environment fetch`. 1.2.0 removed it although agents use it for their system prompt; 1.2.0 is withdrawn, do not install it. Upgrading from 1.1.x needs no step: your Prompts and Environments keep working, and Instruction is added beside Prompt.
+- `ach-cli local plugin|skill`: the same item installed for the same tool in
+  two folders, or in a folder and with `-g`, is two installs. Before, the second
+  install replaced the first one's record, so `uninstall` and `update` missed
+  the first folder's files. `update` and `uninstall` act on the current folder
+  (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
+- OpenCode now loads an Environment's Instructions in projects inside an Environment folder (the layout `environment clone` creates). `ach-cli environment hydrate` writes the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json`, because OpenCode searches a relative entry only up to the project's git root.
 
 ### Added
 - An Environment is not ready until each of its Prompts has been fetched once (`status.unresolvedContextPrompts`).

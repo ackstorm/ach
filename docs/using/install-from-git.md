@@ -69,6 +69,10 @@ ach-cli local plugin uninstall <plugin>@<repo>
 ach-cli local repo remove <repo>
 ```
 
+Each folder, and `-g`, holds its own install. `update` and `uninstall` act on
+the one in the current folder (`--dir` names another, `-g` the global one);
+`list` and `outdated` show every install with its location.
+
 `ach-cli local skill` has the same commands.
 
 `update` leaves a file you edited as it is and reports it as skipped; the
