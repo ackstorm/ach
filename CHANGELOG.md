@@ -5,6 +5,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Fixed
+- `ach-cli local plugin|skill`: the same item installed for the same tool in
+  two folders, or in a folder and with `-g`, is two installs. Before, the second
+  install replaced the first one's record, so `uninstall` and `update` missed
+  the first folder's files. `update` and `uninstall` act on the current folder
+  (`--dir`, or `-g`); `list` and `outdated` show a LOCATION column.
 - OpenCode now loads an Environment's Instructions in projects inside an Environment folder (the layout `environment clone` creates). `ach-cli environment hydrate` writes the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json`, because OpenCode searches a relative entry only up to the project's git root.
 
 ## [1.2.0] - 2026-11-21
