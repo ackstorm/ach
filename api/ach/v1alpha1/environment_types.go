@@ -145,9 +145,21 @@ type RuntimeBlock struct {
 }
 
 // ContextBlock is the content-resource half of an Environment (Hub §6, §6.1).
-// Names reference ACH-owned content objects (Instruction, Plugin, Artifact CRDs
+// Names reference ACH-owned content objects (Prompt, Instruction, Plugin, Artifact CRDs
 // or marketplace_plugins rows) and are served by the ACH Content Service.
 type ContextBlock struct {
+	// Prompts lists Prompt names. A Prompt is served to whoever names it
+	// (an agent's system prompt); ach-cli does not write it into a tool.
+	// Context names map to content filenames served by the Content Service,
+	// so the strict deny-pattern forbids "/" and "\" (path-traversal) in
+	// addition to ? # % whitespace, control chars (U+0000-U+001F), and DEL
+	// (U+007F) (S2 defense-in-depth).
+	// +optional
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^/\\?#%\s\x00-\x1f\x7f]+$`
+	Prompts []string `json:"prompts,omitempty"`
+
 	// Instructions lists Instruction names. ach-cli writes each one as an
 	// always-loaded rules file for the hydrated tool. Order has no meaning.
 	// Context names map to content
@@ -326,6 +338,13 @@ type EnvironmentStatus struct {
 	// +kubebuilder:default={}
 	UnresolvedContextSkills []string `json:"unresolvedContextSkills,omitempty"`
 
+	// UnresolvedContextPrompts lists spec.context.prompts names whose
+	// Prompt has no successful refresh yet.
+	//
+	// +optional
+	// +kubebuilder:default={}
+	UnresolvedContextPrompts []string `json:"unresolvedContextPrompts,omitempty"`
+
 	// UnresolvedContextInstructions lists spec.context.instructions names whose
 	// Instruction has no successful refresh yet.
 	//
@@ -386,7 +405,7 @@ type UnresolvedRuntime struct {
 // Environment is the Schema for the environments API (Hub §6).
 //
 // An Environment is the ACH product boundary: a bundle of runtime
-// (models, mcpServers, a2aAgents, guardrails) and context (instructions, plugins,
+// (models, mcpServers, a2aAgents, guardrails) and context (prompts, instructions, plugins,
 // artifacts) capabilities exposed to authorized Teams. The ACH
 // Operator reconciles spec.runtime into a LiteLLM access group of
 // the same name (§6.2). The CEL XValidation rules above enforce

@@ -15,6 +15,7 @@ rules:
   resources:
   - environments
   - plugins
+  - prompts
   - instructions
   - artifacts
   - pluginmarketplaces

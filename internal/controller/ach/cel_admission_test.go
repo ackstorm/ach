@@ -177,13 +177,19 @@ func TestCELAdmission(t *testing.T) {
 		//   • MCPServers, A2AAgents (strict): forbids "/" too — names are chi
 		//     route params (/mcp/{name}, /a2a/{name}); slash always 403s.
 		//   • Instructions, Plugins, Artifacts (strict): same, plus "\" (path-traversal).
-		// Path-traversal instructions name → rejected; query-injection models name →
+		// Path-traversal prompts/instructions name → rejected; query-injection models name →
 		// rejected; slash-containing mcpServers name → rejected (S2 review fix).
 		{
 			name:           "invalid_env_context_path_traversal",
 			fixturePath:    "../../../test/fixtures/invalid/environment_context_path_traversal.yaml",
 			shouldFail:     true,
 			errMustContain: "instructions",
+		},
+		{
+			name:           "invalid_env_prompt_path_traversal",
+			fixturePath:    "../../../test/fixtures/invalid/environment_prompt_path_traversal.yaml",
+			shouldFail:     true,
+			errMustContain: "prompts",
 		},
 		{
 			name:           "invalid_env_instruction_marketplace_ref",

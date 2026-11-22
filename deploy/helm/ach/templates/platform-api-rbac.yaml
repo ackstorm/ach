@@ -4,7 +4,7 @@
 #
 # Pre-issue-34 the platform-api held a controller-runtime informer cache for
 # Secret (Dex client-secret hot-reload) and six ACH CRD Kinds (environments,
-# plugins, instructions, artifacts, pluginmarketplaces, backendidentitypolicies),
+# plugins, prompts, instructions, artifacts, pluginmarketplaces, backendidentitypolicies),
 # plus a `patch` verb on the four external-reference kinds for the
 # ach.ackstorm.ai/force-refresh annotation write path.
 #

@@ -1,17 +1,18 @@
 -- SPDX-License-Identifier: Apache-2.0
--- Instruction replaces Prompt: same projection shape without content_type.
--- Prompt data does not carry over: it never passed the Instruction checks.
-ALTER TABLE prompts RENAME TO instructions;
-ALTER TABLE instructions RENAME CONSTRAINT prompts_pkey TO instructions_pkey;
-ALTER TABLE instructions RENAME CONSTRAINT prompts_origin_chk TO instructions_origin_chk;
-ALTER TABLE instructions RENAME CONSTRAINT prompts_cr_locked_chk TO instructions_cr_locked_chk;
-ALTER TABLE instructions DROP COLUMN content_type;
-DELETE FROM instructions;
+-- Instruction projection: the prompts table shape without content_type.
+CREATE TABLE instructions (
+    namespace                text        NOT NULL,
+    name                     text        NOT NULL,
+    storage_location         text        NOT NULL DEFAULT '',
+    last_successful_refresh  timestamptz NULL,
+    max_staleness_seconds    bigint      NOT NULL DEFAULT 0,
+    resource_version         text        NOT NULL DEFAULT '',
+    updated_at               timestamptz NOT NULL DEFAULT now(),
+    origin                   text        NOT NULL DEFAULT 'cr',
+    locked                   boolean     NOT NULL DEFAULT FALSE,
+    CONSTRAINT instructions_pkey PRIMARY KEY (namespace, name),
+    CONSTRAINT instructions_origin_chk CHECK (origin IN ('cr','ui')),
+    CONSTRAINT instructions_cr_locked_chk CHECK (origin <> 'cr' OR locked = TRUE)
+);
 
-ALTER TABLE environments RENAME COLUMN context_prompts TO context_instructions;
-UPDATE environments
-   SET context_instructions = '{}',
-       spec = CASE WHEN spec IS NULL THEN NULL ELSE spec #- '{context,prompts}' END
- WHERE context_instructions <> '{}' OR spec->'context' ? 'prompts';
-
-DELETE FROM external_refs WHERE kind = 'prompt';
+ALTER TABLE environments ADD COLUMN context_instructions text[] NOT NULL DEFAULT '{}';

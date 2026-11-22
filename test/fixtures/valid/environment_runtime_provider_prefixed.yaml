@@ -22,6 +22,8 @@ spec:
       - "demo-mcp-jwt"
     a2aAgents: []
   context:
+    prompts:
+      - "claude-code-system-prompt"
     instructions:
       - "claude-code-system-instruction"
     plugins: []

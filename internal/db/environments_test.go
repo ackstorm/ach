@@ -41,6 +41,7 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 		Namespace:           "default",
 		Name:                "env1",
 		AuthorizedTeams:     []string{"team-a", "team-b"},
+		ContextPrompts:      []string{"persona"},
 		ContextInstructions: []string{"welcome"},
 		ContextPlugins:      []string{"caveman"},
 		ContextArtifacts:    []string{"openclaw"},
@@ -65,6 +66,12 @@ func TestUpsertEnvironment_InsertThenUpdate(t *testing.T) {
 	}
 	if len(got.AuthorizedTeams) != 2 || got.AuthorizedTeams[0] != "team-a" {
 		t.Errorf("AuthorizedTeams: got %v, want [team-a team-b]", got.AuthorizedTeams)
+	}
+	if len(got.ContextPrompts) != 1 || got.ContextPrompts[0] != "persona" {
+		t.Errorf("ContextPrompts: got %v, want [persona]", got.ContextPrompts)
+	}
+	if len(got.ContextInstructions) != 1 || got.ContextInstructions[0] != "welcome" {
+		t.Errorf("ContextInstructions: got %v, want [welcome]", got.ContextInstructions)
 	}
 	if len(got.ContextPlugins) != 1 || got.ContextPlugins[0] != "caveman" {
 		t.Errorf("ContextPlugins: got %v, want [caveman]", got.ContextPlugins)

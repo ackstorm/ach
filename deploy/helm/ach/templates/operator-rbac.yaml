@@ -23,6 +23,7 @@ rules:
   - litellmconnections
   - pluginmarketplaces
   - plugins
+  - prompts
   - instructions
   - skills
   - skillmarketplaces
@@ -44,6 +45,7 @@ rules:
   - litellmconnections/finalizers
   - pluginmarketplaces/finalizers
   - plugins/finalizers
+  - prompts/finalizers
   - instructions/finalizers
   - skills/finalizers
   - skillmarketplaces/finalizers
@@ -57,6 +59,7 @@ rules:
   - litellmconnections/status
   - pluginmarketplaces/status
   - plugins/status
+  - prompts/status
   - instructions/status
   - skills/status
   - skillmarketplaces/status

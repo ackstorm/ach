@@ -81,7 +81,7 @@ processor:
         {{if eq .Group "ach.ackstorm.ai"}}
         The `ach.ackstorm.ai` group contains the resources reconciled
         by the ACH operator: environments, plugins, plugin marketplaces,
-        artifacts, instructions, and backend identity policies.
+        artifacts, prompts, instructions, and backend identity policies.
         {{end}}
 
   # Configuration for different sections

@@ -54,7 +54,7 @@ func orEmptyStrings(s []string) []string {
 }
 
 // uiEnvironmentArgs is the shared positional binding for the UI insert/update
-// SQL ($1..$13): the PK plus every spec-derived column. resource_version,
+// SQL ($1..$15): the PK plus every spec-derived column. resource_version,
 // origin, locked, and the operator-computed condition columns are NOT bound
 // here — the SQL pins them as literals (resource_version=”, origin='ui',
 // locked=FALSE) or leaves them NULL/default.
@@ -62,6 +62,7 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 	return []any{
 		row.Namespace, row.Name,
 		orEmptyStrings(row.AuthorizedTeams),
+		orEmptyStrings(row.ContextPrompts),
 		orEmptyStrings(row.ContextInstructions),
 		orEmptyStrings(row.ContextPlugins),
 		orEmptyStrings(row.ContextArtifacts),
@@ -79,14 +80,14 @@ func uiEnvironmentArgs(row EnvironmentRow) []any {
 const insertUIEnvironmentSQL = `
 	INSERT INTO environments
 	    (namespace, name,
-	     authorized_teams, context_instructions, context_plugins, context_artifacts,
+	     authorized_teams, context_prompts, context_instructions, context_plugins, context_artifacts,
 	     runtime_models, runtime_mcp_servers, runtime_a2a_agents,
 	     context_skills, notice, description, runtime_guardrails, spec,
 	     resource_version, updated_at, origin, locked)
 	VALUES ($1, $2,
-	        $3, $4, $5, $6,
-	        $7, $8, $9,
-	        $10, $11, $12, $13, $14,
+	        $3, $4, $5, $6, $7,
+	        $8, $9, $10,
+	        $11, $12, $13, $14, $15,
 	        '', now(), 'ui', FALSE)
 	ON CONFLICT (namespace, name) DO NOTHING
 	RETURNING namespace
@@ -125,17 +126,18 @@ func InsertUIEnvironment(ctx context.Context, pool *pgxpool.Pool, row Environmen
 const updateUIEnvironmentSQL = `
 	UPDATE environments SET
 	    authorized_teams    = $3,
-	    context_instructions     = $4,
-	    context_plugins     = $5,
-	    context_artifacts   = $6,
-	    runtime_models      = $7,
-	    runtime_mcp_servers = $8,
-	    runtime_a2a_agents  = $9,
-	    context_skills      = $10,
-	    notice              = $11,
-	    description         = $12,
-	    runtime_guardrails  = $13,
-	    spec                = $14,
+	    context_prompts     = $4,
+	    context_instructions = $5,
+	    context_plugins     = $6,
+	    context_artifacts   = $7,
+	    runtime_models      = $8,
+	    runtime_mcp_servers = $9,
+	    runtime_a2a_agents  = $10,
+	    context_skills      = $11,
+	    notice              = $12,
+	    description         = $13,
+	    runtime_guardrails  = $14,
+	    spec                = $15,
 	    updated_at          = now()
 	 WHERE namespace = $1 AND name = $2 AND origin = 'ui'
 	RETURNING namespace

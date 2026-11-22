@@ -28,6 +28,9 @@ resources:
 - ach_backendidentitypolicy_admin_role.yaml
 - ach_backendidentitypolicy_editor_role.yaml
 - ach_backendidentitypolicy_viewer_role.yaml
+- ach_prompt_admin_role.yaml
+- ach_prompt_editor_role.yaml
+- ach_prompt_viewer_role.yaml
 - ach_instruction_admin_role.yaml
 - ach_instruction_editor_role.yaml
 - ach_instruction_viewer_role.yaml

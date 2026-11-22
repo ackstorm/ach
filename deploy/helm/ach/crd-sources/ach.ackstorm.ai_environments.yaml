@@ -34,7 +34,7 @@ spec:
           Environment is the Schema for the environments API (Hub §6).
 
           An Environment is the ACH product boundary: a bundle of runtime
-          (models, mcpServers, a2aAgents, guardrails) and context (instructions, plugins,
+          (models, mcpServers, a2aAgents, guardrails) and context (prompts, instructions, plugins,
           artifacts) capabilities exposed to authorized Teams. The ACH
           Operator reconciles spec.runtime into a LiteLLM access group of
           the same name (§6.2). The CEL XValidation rules above enforce
@@ -136,6 +136,20 @@ spec:
                       PluginMarketplace's plugin by exact (marketplace, name). Same strict
                       deny-pattern as Instructions (no "/" "\" ? # % whitespace, control chars
                       or DEL); "@" is permitted as the marketplace separator.
+                    items:
+                      maxLength: 253
+                      pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
+                      type: string
+                    type: array
+                  prompts:
+                    default: []
+                    description: |-
+                      Prompts lists Prompt names. A Prompt is served to whoever names it
+                      (an agent's system prompt); ach-cli does not write it into a tool.
+                      Context names map to content filenames served by the Content Service,
+                      so the strict deny-pattern forbids "/" and "\" (path-traversal) in
+                      addition to ? # % whitespace, control chars (U+0000-U+001F), and DEL
+                      (U+007F) (S2 defense-in-depth).
                     items:
                       maxLength: 253
                       pattern: ^[^/\\?#%\s\x00-\x1f\x7f]+$
@@ -442,6 +456,14 @@ spec:
                   table; scoped entries (name@marketplace) resolve against
                   marketplace_plugins. Both arms require last_successful_refresh to
                   be non-null before the plugin is considered content-present.
+                items:
+                  type: string
+                type: array
+              unresolvedContextPrompts:
+                default: []
+                description: |-
+                  UnresolvedContextPrompts lists spec.context.prompts names whose
+                  Prompt has no successful refresh yet.
                 items:
                   type: string
                 type: array
