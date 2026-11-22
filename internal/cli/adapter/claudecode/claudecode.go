@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package claudecode is the pass-through reference Adapter
-// implementation per CONTEXT.md D-05 and CLI spec §7.4 (claude-code
-// adapter).
+// Package claudecode is the pass-through reference Adapter implementation.
 //
 // The claude-code adapter is the canonical reference because:
 //
@@ -56,8 +54,7 @@ const (
 	// `ach-cli token`. Never written for an ek_ (agents / CI).
 	settingsJSONPath = ".claude/settings.json"
 
-	// canonicalID + aliases match CLI spec §7.2 row 1 + the plan's
-	// alias contract (plan must_haves: ["claude", "cc"]).
+	// canonicalID is the registry key; the aliases are "claude" and "cc".
 	canonicalID = "claude-code"
 )
 
@@ -73,7 +70,7 @@ func init() {
 	adapter.Register(&Adapter{})
 }
 
-// ID returns the canonical adapter ID per CLI spec §7.2.
+// ID returns the canonical adapter ID.
 func (a *Adapter) ID() string { return canonicalID }
 
 // Aliases returns the case-folded alternate identifiers a user may
@@ -87,7 +84,7 @@ func (a *Adapter) Aliases() []string { return []string{"claude", "cc"} }
 // accumulate human-readable evidence the autodetection layer surfaces
 // on multi-match exit.
 //
-// Signals checked (subset of spec §7.2 + plan behavior):
+// Signals checked:
 //   - .claude/ directory at root
 //   - .claude/.mcp.json file
 //   - .claude/agents/ directory
@@ -250,8 +247,7 @@ func (a *Adapter) ProjectionRules() []route.Rule {
 		// commands are .md-scoped: Claude Code commands are markdown. A plugin
 		// authored for multiple tools may also ship commands in another tool's
 		// format (.toml) in the same dir; those are NOT Claude commands and must
-		// not leak into .claude/commands/ (the verbatim "commands/**/*" glob used
-		// to copy them).
+		// not leak into .claude/commands/.
 		{FromGlob: "commands/**/*.md", ToGlob: ".claude/commands/**/*.md", Merge: adapter.MergeReplace, Prefix: route.PrefixCommand, Sep: "/"},
 		{FromGlob: "agents/**/*", ToGlob: ".claude/agents/**/*", Merge: adapter.MergeReplace},
 		{FromGlob: "skills/**/*", ToGlob: ".claude/skills/**/*", Merge: adapter.MergeReplace, Prefix: route.PrefixSkill, Sep: route.SkillDirSep, NameSep: ":"},

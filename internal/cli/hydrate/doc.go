@@ -16,7 +16,7 @@
 // in W1; concrete implementations land in:
 //
 //   - 07-W2-01/02 — Extractor (safe tar policy + auto-claim cascade)
-//   - 07-W3-01..05 — AdapterDispatcher (4 platform adapters + registry)
+//   - 07-W3-01..05 — AdapterDispatcher (platform adapters + registry)
 //
 // Stage 12 (atomic state write) reuses state.WriteAtomic verbatim;
 // stage 13 (cleanup tmp) reuses state.SweepTmp. Stage 14 is the

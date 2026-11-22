@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package codex is the OpenAI Codex CLI platform adapter per CLI spec
-// §7.2 row 2 and §7.4 codex section. It is one of the adapters
-// in the v1alpha1 closed set
-// and the first NON-pass-through adapter — its runtime-config target is
+// Package codex is the OpenAI Codex CLI platform adapter. It is the
+// first NON-pass-through adapter — its runtime-config target is
 // TOML (not JSON) and its plugin transformation rewrites Claude-format
 // agent frontmatter into the Codex agent schema, with silent-drop
 // accounting for source-tree components Codex has no destination for.
 //
-// Per CONTEXT.md D-05 the adapter set must demonstrably translate
+// The adapter set translates
 // the same Hub manifest into distinct on-disk shapes; the codex
 // adapter is the first non-trivial transformation reference that the
 // opencode and pi siblings mirror.
@@ -80,7 +78,7 @@ import (
 const (
 	configTOMLPath = ".codex/config.toml"
 
-	// canonicalID matches CLI spec §7.2 row 2.
+	// canonicalID is the registry key.
 	canonicalID = "codex"
 )
 
@@ -96,7 +94,7 @@ func init() {
 	adapter.Register(&Adapter{})
 }
 
-// ID returns the canonical adapter ID per CLI spec §7.2 row 2.
+// ID returns the canonical adapter ID.
 func (a *Adapter) ID() string { return canonicalID }
 
 // Aliases returns the case-folded alternate identifiers a user may type
@@ -255,15 +253,14 @@ func (a *Adapter) RenderRuntime(ctx context.Context, m *manifest.Manifest, _ *st
 }
 
 // ProjectionRules returns the codex ROUTE-03 projection table satisfying
-// route.RuleProvider (the D-06 seam). It is the real Phase-3
-// format-converting table (D-13/D-14), mirroring the claudecode.go
+// route.RuleProvider. It is a format-converting table, mirroring the claudecode.go
 // rule-list-literal shape (Transform only on the converting
 // rows):
 //
 //   - commands/**/*.md → .codex/prompts/**/*.md (MergeReplace): codex calls
-//     them "prompts" (D-13). Dropped in the Phase-1 stub; now routed.
+//     them "prompts".
 //   - skills/**/*       → .agents/skills/**/* (MergeReplace): codex skills
-//     live under .agents/, NOT .codex/skills/ (the stub bug).
+//     live under .agents/, NOT .codex/skills/.
 //   - agents/**/*.md    → .codex/agents/**/*.toml (MergeReplace) via
 //     codexAgentTOML (transform.go).
 //   - mcp/**/*          → .codex/config.toml (MergeDeep) via codexMCPSurgery
