@@ -34,7 +34,7 @@
 //     before limits existed refuses it.
 //   - Each context item carries {name, id, downloadUrl}; downloadUrl is the
 //     §15.6 Content Service URL:
-//     ${BaseURL}/content/<kind>/<name>   (kind ∈ instruction|plugin|artifact)
+//     ${BaseURL}/content/<kind>/<name>   (kind ∈ instruction|prompt|plugin|artifact)
 //   - `id` is the resource name (NOT a CRD UID) — names are stable across
 //     reconciles; UIDs change on delete+recreate.
 //

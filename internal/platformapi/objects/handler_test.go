@@ -268,7 +268,8 @@ func TestUnknownKind_404(t *testing.T) {
 }
 
 // TestPatchObject_MergesSpec proves the JSON-merge semantics: an existing object
-// with runtime.models=[a] gets a patch setting context.instructions=[p]; the result
+// with runtime.models=[a] gets a patch setting context.instructions=[p] and
+// context.prompts=[q]; the result
 // must carry BOTH (the patch did not erase the unmentioned runtime field).
 func TestPatchObject_MergesSpec(t *testing.T) {
 	s := newFakeStore()
@@ -282,7 +283,7 @@ func TestPatchObject_MergesSpec(t *testing.T) {
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodPatch, srv.URL+"/environments/dev",
-		strings.NewReader(`{"spec":{"context":{"instructions":["p"]}}}`))
+		strings.NewReader(`{"spec":{"context":{"instructions":["p"],"prompts":["q"]}}}`))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -298,6 +299,9 @@ func TestPatchObject_MergesSpec(t *testing.T) {
 	}
 	if len(got.ContextInstructions) != 1 || got.ContextInstructions[0] != "p" {
 		t.Fatalf("merge did not apply context.instructions: %v", got.ContextInstructions)
+	}
+	if len(got.ContextPrompts) != 1 || got.ContextPrompts[0] != "q" {
+		t.Fatalf("merge did not apply context.prompts: %v", got.ContextPrompts)
 	}
 }
 

@@ -57,13 +57,15 @@ import (
 //   - Scope: artifact scope ("object" | "directory") — drives the path
 //     suffix (.tar.gz vs bare) and the response Content-Type.
 //   - Source: §12.3 resolution arm ("plugin" | "marketplace") for
-//     plugin kind; empty for instruction/artifact.
+//     plugin kind; empty for instruction/prompt/artifact.
+//   - ContentType: prompt spec.contentType; empty for every other kind.
 type contentRow struct {
 	StorageLocation       string
 	LastSuccessfulRefresh *time.Time
 	MaxStalenessSeconds   int64
 	Scope                 string
 	Source                string
+	ContentType           string
 }
 
 // resolveAuthn (gate 1 per D-04). Reads x-ach-key from r.Header,
@@ -199,6 +201,8 @@ func enforceAllowlist(envRow *envcache.EnvRow, kind, name string) *errResp {
 	switch kind {
 	case kindInstruction:
 		list = envRow.ContextInstructions
+	case kindPrompt:
+		list = envRow.ContextPrompts
 	case kindPlugin:
 		list = envRow.ContextPlugins
 	case kindArtifact:
@@ -249,6 +253,23 @@ func resolveContent(ctx context.Context, d Deps, kind, name string) (*contentRow
 			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
 			MaxStalenessSeconds:   row.MaxStalenessSeconds,
 		}, nil
+	case kindPrompt:
+		row, err := db.GetPromptByName(ctx, d.Pool, d.Namespace, name)
+		if err != nil {
+			return nil, errInternal
+		}
+		if row == nil {
+			return nil, errContentNotFound
+		}
+		cr := &contentRow{
+			StorageLocation:       row.StorageLocation,
+			LastSuccessfulRefresh: row.LastSuccessfulRefresh,
+			MaxStalenessSeconds:   row.MaxStalenessSeconds,
+		}
+		if row.ContentType != nil {
+			cr.ContentType = *row.ContentType
+		}
+		return cr, nil
 	case kindPlugin:
 		// Reject malformed refs (e.g. "name@" → empty marketplace) instead
 		// of silently treating them as a bare CRD lookup — the grammar

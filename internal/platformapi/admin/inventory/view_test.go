@@ -103,6 +103,21 @@ func TestInstructionArtifactSync(t *testing.T) {
 		t.Errorf("instruction version: got %q, want 7", pv.Version)
 	}
 
+	prv := promptRowToView(db.PromptRow{
+		Namespace: "ach", Name: "greeting", ResourceVersion: "7",
+		LastSuccessfulRefresh: freshAgo, MaxStalenessSeconds: 600,
+		ContentType: ptrStr("text/markdown"), UpdatedAt: now,
+	}, now)
+	if prv.Sync != syncFreshFalseGreen {
+		t.Errorf("prompt fresh sync: got %q, want fresh*", prv.Sync)
+	}
+	if prv.Version != "7" {
+		t.Errorf("prompt version: got %q, want 7", prv.Version)
+	}
+	if prv.Extra["contentType"] != "text/markdown" {
+		t.Errorf("prompt contentType extra: got %q", prv.Extra["contentType"])
+	}
+
 	av := artifactRowToView(db.ArtifactRow{
 		Namespace: "ach", Name: "logo", ResourceVersion: "3", Scope: "object",
 		LastSuccessfulRefresh: ptrTime(now.Add(-10 * time.Hour)), MaxStalenessSeconds: 600,
@@ -276,6 +291,7 @@ func TestViewsCarryRevisions(t *testing.T) {
 		"plugin":            pluginRowToView(db.PluginRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"skill":             skillRowToView(db.SkillRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"instruction":       instructionRowToView(db.InstructionRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
+		"prompt":            promptRowToView(db.PromptRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"artifact":          artifactRowToView(db.ArtifactRow{UpstreamRev: a, LatestUpstreamRev: b}, now),
 		"marketplace":       marketplaceRowToView(db.MarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),
 		"skill-marketplace": skillMarketplaceRowToView(db.SkillMarketplaceRow{UpstreamRev: a, LatestUpstreamRev: b}),

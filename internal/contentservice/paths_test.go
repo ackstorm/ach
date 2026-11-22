@@ -24,6 +24,13 @@ func TestResolvePath_HappyPath(t *testing.T) {
 			wantPath: filepath.Join("/c", "instruction", "claude-code-system-instruction"+gzipSuffix),
 		},
 		{
+			name:     "prompt resolves to .tar.gz under prompt/",
+			kind:     "prompt",
+			resource: "claude-code-system-prompt",
+			scope:    "",
+			wantPath: filepath.Join("/c", "prompt", "claude-code-system-prompt"+gzipSuffix),
+		},
+		{
 			name:     "plugin resolves to .tar.gz under plugin/",
 			kind:     "plugin",
 			resource: "caveman",

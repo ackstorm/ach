@@ -23,7 +23,7 @@
 //     per live row.
 //
 //   - POST /refresh
-//     Body: {"kind":"plugin|instruction|artifact|pluginmarketplace","name":"..."}
+//     Body: {"kind":"plugin|instruction|prompt|artifact|pluginmarketplace","name":"..."}
 //     Patches `ach.ackstorm.ai/force-refresh: <RFC3339-now>` onto the
 //     target CR. This is Platform API's ONLY write surface to ACH CRDs
 //     (MULTI-02 carve-out from Phase 1 plan 01-09 RBAC: only the four

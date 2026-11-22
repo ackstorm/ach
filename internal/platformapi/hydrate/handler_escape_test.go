@@ -30,8 +30,11 @@ func TestToRuntimeBlock_EscapesNamesInEndpoints(t *testing.T) {
 // TestToContextBlock_EscapesNamesInDownloadURLs asserts that context resource
 // names are PathEscaped in the generated download URLs (security finding S2).
 func TestToContextBlock_EscapesNamesInDownloadURLs(t *testing.T) {
-	row := &db.EnvironmentRow{ContextInstructions: []string{"a?b"}}
+	row := &db.EnvironmentRow{ContextInstructions: []string{"a?b"}, ContextPrompts: []string{"c?d"}}
 	got := toContextBlockFromRow(row, "https://ach.example.com")
+	if u := got.Prompts[0].DownloadURL; u != "https://ach.example.com/content/prompt/c%3Fd" {
+		t.Errorf("prompt download url not escaped: %q", u)
+	}
 	if u := got.Instructions[0].DownloadURL; u != "https://ach.example.com/content/instruction/a%3Fb" {
 		t.Errorf("download url not escaped: %q", u)
 	}
@@ -46,8 +49,26 @@ func TestContextBlock_OmitsEmptyInstructions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(b), `"instructions"`) || strings.Contains(string(b), `"prompts"`) {
-			t.Fatalf("%s must omit instructions and prompts: %s", name, b)
+		if strings.Contains(string(b), `"instructions"`) {
+			t.Fatalf("%s must omit instructions: %s", name, b)
 		}
+		if !strings.Contains(string(b), `"prompts":[]`) {
+			t.Fatalf("%s must carry an empty prompts array: %s", name, b)
+		}
+	}
+}
+
+func TestContextBlock_PromptsOnly(t *testing.T) {
+	cb := toContextBlockFromRow(&db.EnvironmentRow{ContextPrompts: []string{"p"}}, "https://ach.example.com")
+	b, err := json.Marshal(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"prompts":[{"name":"p","id":"p","downloadUrl":"https://ach.example.com/content/prompt/p"}]`
+	if !strings.Contains(string(b), want) {
+		t.Fatalf("missing %s in %s", want, b)
+	}
+	if strings.Contains(string(b), `"instructions"`) {
+		t.Fatalf("instructions key must be absent: %s", b)
 	}
 }

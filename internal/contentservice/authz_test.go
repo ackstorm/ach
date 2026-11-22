@@ -301,6 +301,7 @@ func TestEnforceTeams_PK(t *testing.T) {
 func TestEnforceAllowlist(t *testing.T) {
 	row := &envcache.EnvRow{
 		ContextInstructions: []string{"p1", "p2"},
+		ContextPrompts:      []string{"pr1"},
 		ContextPlugins:      []string{"pl1"},
 		ContextArtifacts:    []string{"a1"},
 	}
@@ -312,6 +313,8 @@ func TestEnforceAllowlist(t *testing.T) {
 	}{
 		{"instruction in-list", "instruction", "p2", ""},
 		{"instruction not-in-list", "instruction", "p99", "unauthorized_content"},
+		{"prompt in-list", "prompt", "pr1", ""},
+		{"prompt not-in-list", "prompt", "pr99", "unauthorized_content"},
 		{"plugin in-list", "plugin", "pl1", ""},
 		{"plugin not-in-list", "plugin", "pl99", "unauthorized_content"},
 		{"artifact in-list", "artifact", "a1", ""},

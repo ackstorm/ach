@@ -23,6 +23,7 @@ import (
 type Lister interface {
 	Plugins(ctx context.Context) ([]db.PluginRow, error)
 	Instructions(ctx context.Context) ([]db.InstructionRow, error)
+	Prompts(ctx context.Context) ([]db.PromptRow, error)
 	Artifacts(ctx context.Context) ([]db.ArtifactRow, error)
 	Skills(ctx context.Context) ([]db.SkillRow, error)
 	Marketplaces(ctx context.Context) ([]db.MarketplaceRow, error)
@@ -54,6 +55,9 @@ func (l dbLister) Plugins(ctx context.Context) ([]db.PluginRow, error) {
 }
 func (l dbLister) Instructions(ctx context.Context) ([]db.InstructionRow, error) {
 	return db.ListInstructions(ctx, l.pool, l.ns)
+}
+func (l dbLister) Prompts(ctx context.Context) ([]db.PromptRow, error) {
+	return db.ListPrompts(ctx, l.pool, l.ns)
 }
 func (l dbLister) Artifacts(ctx context.Context) ([]db.ArtifactRow, error) {
 	return db.ListArtifacts(ctx, l.pool, l.ns)
@@ -97,6 +101,22 @@ func PluginsHandler(deps Deps) http.HandlerFunc {
 		}
 		for _, r := range mktPlugins {
 			out = append(out, marketplacePluginAsPluginView(r, now))
+		}
+		return out, nil
+	})
+}
+
+// PromptsHandler serves GET /platform/admin/prompts.
+func PromptsHandler(deps Deps) http.HandlerFunc {
+	return listHandler(func(ctx context.Context) ([]AdminObjectView, error) {
+		rows, err := deps.Lister.Prompts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		out := make([]AdminObjectView, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, promptRowToView(r, now))
 		}
 		return out, nil
 	})

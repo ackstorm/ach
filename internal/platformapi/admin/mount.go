@@ -22,7 +22,7 @@ import (
 //     - PATCH /users/{email}/limits      → UserLimitsHandler
 //     - POST /refresh                  → ForceRefreshHandler
 //  3. Registers read-only object inventory endpoints (GET):
-//     /plugins, /instructions, /artifacts, /skills, /marketplaces,
+//     /plugins, /instructions, /prompts, /artifacts, /skills, /marketplaces,
 //     /skill-marketplaces, /bips.
 //  4. Registers read-only runtime catalog endpoints (GET):
 //     /runtime/models, /runtime/mcp-servers, /runtime/a2a-agents,
@@ -58,6 +58,7 @@ func Mount(deps Deps) func(r chi.Router) {
 		inv := inventory.Deps{Lister: inventory.NewLister(deps.Pool, deps.Namespace)}
 		r.Get("/plugins", inventory.PluginsHandler(inv))
 		r.Get("/instructions", inventory.InstructionsHandler(inv))
+		r.Get("/prompts", inventory.PromptsHandler(inv))
 		r.Get("/artifacts", inventory.ArtifactsHandler(inv))
 		r.Get("/skills", inventory.SkillsHandler(inv))
 		r.Get("/marketplaces", inventory.MarketplacesHandler(inv))

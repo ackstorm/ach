@@ -3,10 +3,11 @@
 package contentservice
 
 const (
-	// kindInstruction / kindPlugin / kindArtifact are the routed kinds the
-	// handler accepts (Hub §15.2). Centralised so the router, the
+	// kindInstruction / kindPrompt / kindPlugin / kindArtifact are the routed
+	// kinds the handler accepts (Hub §15.2). Centralised so the router, the
 	// helpers, and the Content-Type policy stay in lockstep.
 	kindInstruction = "instruction"
+	kindPrompt      = "prompt"
 	kindPlugin      = "plugin"
 	kindArtifact    = "artifact"
 	kindSkill       = "skill"

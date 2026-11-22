@@ -104,7 +104,7 @@ func newEnvRouter(t *testing.T, isAdmin bool) (chi.Router, *fakeTeams) {
 		e := []string{}
 		row := db.EnvironmentRow{
 			Namespace: testNs, Name: name, AuthorizedTeams: []string{team},
-			ContextInstructions: e, ContextPlugins: e, ContextArtifacts: e, ContextSkills: e,
+			ContextInstructions: e, ContextPrompts: e, ContextPlugins: e, ContextArtifacts: e, ContextSkills: e,
 			RuntimeModels: e, RuntimeMCPServers: e, RuntimeA2AAgents: e, RuntimeGuardrails: e,
 		}
 		if err := dbtest.UpsertEnvironment(ctx, pool, row); err != nil {

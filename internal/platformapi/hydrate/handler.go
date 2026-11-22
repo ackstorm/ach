@@ -107,13 +107,14 @@ type RuntimeBlock struct {
 	Guardrails []string      `json:"guardrails,omitempty"`
 }
 
-// ContextBlock is the {instructions, plugins, artifacts, skills} envelope.
-// plugins, artifacts and skills are ALWAYS present and serialized as `[]` when
+// ContextBlock is the {instructions, prompts, plugins, artifacts, skills}
+// envelope. prompts, plugins, artifacts and skills are ALWAYS present and serialized as `[]` when
 // empty per API-04. Instructions is omitempty: internal/cli/manifest decodes
 // with DisallowUnknownFields, so emitting the key unconditionally would break
 // every ach-cli built before it existed.
 type ContextBlock struct {
 	Instructions []ContextItem `json:"instructions,omitempty"`
+	Prompts      []ContextItem `json:"prompts"`
 	Plugins      []ContextItem `json:"plugins"`
 	Artifacts    []ContextItem `json:"artifacts"`
 	Skills       []ContextItem `json:"skills"`
@@ -149,6 +150,7 @@ func emptyRuntime() RuntimeBlock {
 func emptyContext() ContextBlock {
 	return ContextBlock{
 		// Instructions is deliberately left nil — nil is the omitted case.
+		Prompts:   []ContextItem{},
 		Plugins:   []ContextItem{},
 		Artifacts: []ContextItem{},
 		Skills:    []ContextItem{},
@@ -422,10 +424,10 @@ func knownTokens(v *float64) *int {
 }
 
 // toContextBlockFromRow maps the projection row's flat context arrays
-// (context_instructions / context_plugins / context_artifacts) into the §15.2
+// (context_instructions / context_prompts / context_plugins / context_artifacts) into the §15.2
 // response shape (slice of {name, id, downloadUrl} per kind). The downloadUrl
 // is the §15.6 Content Service URL; kind in the path is the singular form
-// (instruction|plugin|artifact) — Phase 5 binds against this.
+// (instruction|prompt|plugin|artifact) — Phase 5 binds against this.
 //
 // Renamed from toContextBlock (issue #34): same reasoning as
 // toRuntimeBlockFromRow above.
@@ -440,6 +442,13 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 			Name:        name,
 			ID:          name,
 			DownloadURL: baseURL + contentPrefix + "instruction/" + url.PathEscape(name),
+		})
+	}
+	for _, name := range row.ContextPrompts {
+		out.Prompts = append(out.Prompts, ContextItem{
+			Name:        name,
+			ID:          name,
+			DownloadURL: baseURL + contentPrefix + "prompt/" + url.PathEscape(name),
 		})
 	}
 	for _, name := range row.ContextPlugins {
