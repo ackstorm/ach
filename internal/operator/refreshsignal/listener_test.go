@@ -34,6 +34,7 @@ func TestSplitPayload(t *testing.T) {
 		wantOK   bool
 	}{
 		{"plugin/foo", "plugin", "foo", true},
+		{"prompt/bar-baz", "prompt", "bar-baz", true},
 		{"instruction/bar-baz", "instruction", "bar-baz", true},
 		{"artifact/", "", "", false},
 		{"/foo", "", "", false},

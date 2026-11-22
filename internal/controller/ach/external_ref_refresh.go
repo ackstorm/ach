@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// External-reference refresh helper shared by the Plugin / Instruction /
+// External-reference refresh helper shared by the Plugin / Prompt / Instruction /
 // Artifact reconcilers. Implements §10.3 steps 1-7 (resolve auth Secret,
 // dispatch via sources.For, Fetch, conditional-GET shortcut, .tmp staging
 // + LimitReader cap + fsync + atomic rename(2), DB UpsertExternalRef)
@@ -45,13 +45,15 @@ import (
 
 // externalRefChannel returns the NOTIFY channel matching the external_ref
 // kind. Issue #34: external_refs is the fetcher-state side of the same
-// logical resource as plugins/instructions/artifacts, so it emits on the
+// logical resource as plugins/prompts/instructions/artifacts, so it emits on the
 // kind-specific channel (so a single consumer subscribing to one channel
 // catches both the projection-side UPSERT and the fetcher-side refresh).
 func externalRefChannel(kind string) string {
 	switch kind {
 	case "plugin":
 		return pluginsChannel
+	case "prompt":
+		return promptsChannel
 	case "instruction":
 		return instructionsChannel
 	case "artifact":
@@ -78,7 +80,7 @@ type FetcherFactory func(sources.SourceSpec) (sources.Fetcher, error)
 type OversizeError = contentkit.OversizeError
 
 // ExternalRefRefreshDeps bundles the per-reconciler dependencies the
-// shared [materializeExternalRef] needs. Plugin / Instruction / Artifact
+// shared [materializeExternalRef] needs. Plugin / Prompt / Instruction / Artifact
 // reconcilers build one per Reconcile call.
 type ExternalRefRefreshDeps struct {
 	// Client is the controller-runtime cached client used to Get the
@@ -97,11 +99,11 @@ type ExternalRefRefreshDeps struct {
 	DB *pgxpool.Pool
 
 	// CacheRoot is the PVC mount root. Staging files live under
-	// CacheRoot+/.tmp; final paths live under CacheRoot+/{plugin,instruction,
+	// CacheRoot+/.tmp; final paths live under CacheRoot+/{plugin,prompt,instruction,
 	// artifact}/<name>[.tar.gz].
 	CacheRoot string
 
-	// Kind is one of "plugin" / "instruction" / "artifact" — drives the
+	// Kind is one of "plugin" / "prompt" / "instruction" / "artifact" — drives the
 	// external_refs.kind column.
 	Kind string
 
@@ -128,7 +130,7 @@ type ExternalRefRefreshDeps struct {
 	PriorRev string
 
 	// SizeCapBytes enforces the Plugin size cap when > 0. 0 = no cap
-	// (Instruction / Artifact). Plugin reconciler passes
+	// (Prompt / Instruction / Artifact). Plugin reconciler passes
 	// int64(PluginMaxSizeMiB) << 20.
 	SizeCapBytes int64
 
@@ -184,7 +186,7 @@ type MaterializeResult struct {
 //  5. Stage at deps.CacheRoot/.tmp/stg-<random> via os.CreateTemp.
 //     (issue #26) When deps.Kind == "plugin", apply pluginpack.Filter
 //     to result.Body BEFORE the size-cap copy so the cap measures the
-//     filtered bytes. Instruction/Artifact paths are byte-identical to
+//     filtered bytes. Prompt/Instruction/Artifact paths are byte-identical to
 //     pre-issue-26 behavior.
 //  6. Wrap body in io.LimitReader when SizeCapBytes > 0; io.Copy; check
 //     overshoot (overshoot → delete staging file → OversizeError); fsync.
@@ -321,7 +323,7 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 	}
 
 	// Step 5.7: single-file → 1-entry gzip-tar (uniform context format).
-	// Instruction and Artifact scope=object arrive as RAW single-file bytes;
+	// Prompt, Instruction and Artifact scope=object arrive as RAW single-file bytes;
 	// skill / plugin / directory-artifact already arrive as gzip tarballs.
 	// wrapContextBody wraps the raw single file (and passes any already-gzip
 	// or non-wrapped kind through untouched) so every context kind is a gzip
@@ -353,8 +355,8 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 
 	// ─── Step 8: UPSERT external_refs (when DB available). ───
 	// Issue #34: project + NOTIFY atomically on the kind-specific channel
-	// (ach_plugins_changed / ach_instructions_changed / ach_artifacts_changed)
-	// with payload "<kind>/<name>". The Plugin/Instruction/Artifact projection
+	// (ach_plugins_changed / ach_prompts_changed / ach_instructions_changed / ach_artifacts_changed)
+	// with payload "<kind>/<name>". The Plugin/Prompt/Instruction/Artifact projection
 	// rows fire on the same channel — consumers wake once per logical
 	// resource change regardless of which side moved first.
 	if deps.DB != nil {
@@ -427,6 +429,7 @@ func classifyFetchError(err error, refresh achv1alpha1.RefreshBlock, lastRefresh
 // table in 02-CONTEXT.md:
 //
 //   - plugin   → CacheRoot/plugin/<name>.tar.gz
+//   - prompt   → CacheRoot/prompt/<name>.tar.gz
 //   - instruction → CacheRoot/instruction/<name>.tar.gz
 //   - artifact + scope=object    → CacheRoot/artifact/<name>
 //   - artifact + scope=directory → CacheRoot/artifact/<name>.tar.gz
@@ -438,6 +441,10 @@ func computeFinalPath(cacheRoot, kind, name, scope string) string {
 	switch kind {
 	case "plugin":
 		return filepath.Join(cacheRoot, "plugin", name+".tar.gz")
+	case "prompt":
+		// Single upstream file, wrapped into a 1-entry gzip-tar at ingestion
+		// (uniform context format).
+		return filepath.Join(cacheRoot, "prompt", name+".tar.gz")
 	case "instruction":
 		// Single upstream file, wrapped into a 1-entry gzip-tar at ingestion
 		// (uniform context format).

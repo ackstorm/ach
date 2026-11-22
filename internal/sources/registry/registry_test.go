@@ -13,7 +13,7 @@ import (
 )
 
 // TestRegistryCoversEnum asserts every spec.type enum value declared on
-// the Plugin / PluginMarketplace / Artifact / Instruction CRDs maps to a
+// the Plugin / PluginMarketplace / Artifact / Prompt / Instruction CRDs maps to a
 // usable Fetcher via [registry.For]. The set is the closed enum
 // {github, gitlab, bitbucket, s3, gcs, http} per Hub §10.1.
 //

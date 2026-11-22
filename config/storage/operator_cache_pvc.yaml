@@ -5,7 +5,7 @@
 # attaches. RWO (not RWX) is the canonical pattern for a single-writer cache.
 #
 # Mounted at /var/cache/ach by both containers in the Operator + Content
-# Service Pod (config/manager/manager.yaml). Sub-directories instruction/, plugin/,
+# Service Pod (config/manager/manager.yaml). Sub-directories prompt/, instruction/, plugin/,
 # marketplace/, artifact/, .tmp/ are created on operator startup by
 # internal/cachefs.EnsureLayout (D-13). The .tmp/ staging directory keeps
 # rename(2) atomic on the same filesystem (Hub §10.3, OP-10).

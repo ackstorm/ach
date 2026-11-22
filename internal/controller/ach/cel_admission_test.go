@@ -76,6 +76,14 @@ func TestCELAdmission(t *testing.T) {
 			resourceName: "example-artifact",
 		},
 		{
+			name:         "valid_prompt",
+			fixturePath:  "../../../config/samples/ach_v1alpha1_prompt.yaml",
+			shouldFail:   false,
+			apiVersion:   "ach.ackstorm.ai/v1alpha1",
+			kind:         "Prompt",
+			resourceName: "example-prompt",
+		},
+		{
 			name:         "valid_instruction",
 			fixturePath:  "../../../config/samples/ach_v1alpha1_instruction.yaml",
 			shouldFail:   false,

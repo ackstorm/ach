@@ -388,6 +388,18 @@ func setupAndRun(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "SetupWithManager(Artifact): %v\n", err)
 		return 1
 	}
+	if err := (&PromptReconciler{
+		FetchedObjectReconciler: FetchedObjectReconciler{
+			Client:    mgr.GetClient(),
+			Scheme:    mgr.GetScheme(),
+			Namespace: WatchNamespace,
+			Log:       logr.Discard(),
+			CacheRoot: testCacheRoot,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		fmt.Fprintf(os.Stderr, "SetupWithManager(Prompt): %v\n", err)
+		return 1
+	}
 	if err := (&InstructionReconciler{
 		FetchedObjectReconciler: FetchedObjectReconciler{
 			Client:    mgr.GetClient(),

@@ -20,20 +20,20 @@ import (
 const objectIngressCap = 512 << 20
 
 // wrapContextBody applies the uniform-context-format wrap to a
-// instruction/artifact body: a RAW single file becomes a 1-entry gzip-tar
+// prompt/instruction/artifact body: a RAW single file becomes a 1-entry gzip-tar
 // (entry name = the real source basename, or the CR name when the source
 // names no concrete file); an already-gzip body (a directory fetch, or a
-// mis-authored directory-path instruction) streams through untouched — the
+// mis-authored directory-path prompt) streams through untouched — the
 // magic-byte sniff prevents double-tarring. Wrapping at this single
 // ingestion chokepoint gives every context kind the same gzip-tar shape
 // on disk, so the harness/ach-cli untar uniformly and the real source
 // filename survives INSIDE the archive.
 //
-// Only kind ∈ {instruction, artifact} is wrapped; every other kind (skill /
+// Only kind ∈ {prompt, instruction, artifact} is wrapped; every other kind (skill /
 // plugin / directory-artifact, already gzip tarballs) is returned
 // untouched, so the caller can invoke this unconditionally.
 func wrapContextBody(kind, name string, spec sources.SourceSpec, body io.ReadCloser) (io.ReadCloser, error) {
-	if kind != "instruction" && kind != "artifact" {
+	if kind != "prompt" && kind != "instruction" && kind != "artifact" {
 		return body, nil
 	}
 	br := bufio.NewReader(body)
@@ -61,7 +61,7 @@ func wrapContextBody(kind, name string, spec sources.SourceSpec, body io.ReadClo
 
 // wrapSingleFileTarGz returns a gzip-compressed tar archive containing exactly
 // one regular-file entry named entryName with the given bytes. Used at
-// ingestion to give single-file context (Instruction, Artifact scope=object) the
+// ingestion to give single-file context (Prompt, Instruction, Artifact scope=object) the
 // same gzip-tar shape as skills/plugins/directory-artifacts, so every context
 // kind decompresses uniformly and the real source filename survives inside the
 // archive.
