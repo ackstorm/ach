@@ -37,9 +37,9 @@ The CRDs are `v1alpha1`, but a breaking CRD change still bumps the major
 version. A breaking change is listed under `### Breaking` in `CHANGELOG.md`,
 first in its release section, with the step an operator takes.
 
-`make release-cut` merges the release PR only after every check passes,
-the E2E suite included; a failed check leaves the PR open and nothing is
-published.
+`make release-cut` merges the release PR only after every check passes; a
+failed check leaves the PR open and nothing is published. `e2e.yml` skips a
+release PR: the commit it sits on ran E2E on its own PR.
 
 Cutting a release (stable example, `v0.1.0`):
 
@@ -70,7 +70,7 @@ make release-cut VERSION=0.1.0
 ```
 
 The PR only touches `CHANGELOG.md` and version lines, so `ci-ok` passes without
-running tests (`scripts/ci-changes.sh`). The GitHub release notes are that
+running tests and `e2e.yml` skips its job (`scripts/ci-changes.sh`). The GitHub release notes are that
 version's CHANGELOG section (`scripts/changelog.sh extract`), so upgrade and
 rollback warnings written there reach the release page. Do not set
 `changelog.disable` in the goreleaser configs: a disabled changelog pipe never

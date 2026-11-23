@@ -251,8 +251,9 @@ independent collections.)
 `push:` trigger. Release commits (`chore(release): v*`) → `release.yml`.
 **Soak, leak, and fuzz-long run NOWHERE in CI**: their `make` targets are
 **local-only, on demand**. `e2e.yml` runs `make e2e-full` on PRs touching the
-surfaces below as a **non-required** measurement of hosted runners. Until that
-decision lands, run `make e2e-full` locally before merging any change touching
+surfaces below or the CLI (`internal/cli/`, `cmd/ach-cli/`) as a **non-required**
+measurement of hosted runners, and skips a PR that only touches docs or version
+lines (a release PR). Until that decision lands, run `make e2e-full` locally before merging any change touching
 `internal/controller|platformapi|forwarder|contentservice/`, `api/ach/v1alpha1/`,
 `deploy/helm/ach/`, or `test/e2e/` — see "E2E debug loop" (presentation-only
 changes are exempt, see there). A failing `e2e.yml` does not block a merge. `main` is protected, admins included: every commit
