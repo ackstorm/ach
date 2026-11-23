@@ -1,7 +1,7 @@
 name: e2e
 
 # Not a required check: this measures whether e2e fits a hosted runner. Paths
-# are the surfaces AGENTS.md requires e2e for.
+# are the surfaces AGENTS.md requires e2e for, plus the CLI the suite drives.
 on:
   pull_request:
     branches: [main]
@@ -10,6 +10,8 @@ on:
       - 'internal/platformapi/**'
       - 'internal/forwarder/**'
       - 'internal/contentservice/**'
+      - 'internal/cli/**'
+      - 'cmd/ach-cli/**'
       - 'api/ach/v1alpha1/**'
       - 'deploy/helm/ach/**'
       - 'db/migrations/**'
@@ -26,8 +28,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: E2E changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Classify the diff
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/ci-changes.sh "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
   e2e:
     name: E2E
+    needs: changes
+    # A release PR matches deploy/helm/ach/** with version lines only; the
+    # commit it sits on ran e2e on its own PR.
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prints code=false when BASE...HEAD only touches docs or version lines, so
-# ci.yml can report ci-ok without running tests. Version lines are what
-# `make release-bump` writes.
+# ci.yml can report ci-ok without running tests and e2e.yml can skip its run.
+# Version lines are what `make release-bump` writes.
 # ponytail: any `tag: v…` counts, so a v-tagged dependency bump in values.yaml
 # skips tests too. Compare against Chart.yaml's version if that ever matters.
 set -euo pipefail
