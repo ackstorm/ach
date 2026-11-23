@@ -41,8 +41,11 @@ ach-cli environment clone <environment> --target <tool>
 again if that fails. It refuses a folder that exists and is not empty. A second
 argument names another folder.
 
-Everything under that folder gets the Environment, because Claude Code, Codex
-and OpenCode read the configuration of each parent folder:
+Everything under that folder gets the Environment, because Claude Code and
+OpenCode read the configuration of each parent folder. Codex and Antigravity read
+a parent folder's `.codex/` or `.agents/` only up to the git root: a project that is
+a git repository misses the Environment's Instructions (and, in Codex, its MCP
+servers), so for those two hydrate inside the project or use `-g`.
 
 ```
 ~/Projects/
@@ -78,13 +81,17 @@ as a rules file:
 | Cursor | `.cursor/rules/ach-<name>.mdc` (`alwaysApply: true`) | none: Cursor has no global rules file, so hydrate warns |
 | Antigravity | `.agents/rules/ach-<name>.md` (`trigger: always_on`) | `~/.gemini/config/rules/` |
 | Pi | `.pi/ach/<name>.md`, plus the extension `.pi/extensions/ach-instructions.ts` | `~/.pi/agent/ach/` and `~/.pi/agent/extensions/` |
-| Codex | none: hydrate prints a note | none |
+| Codex | `.codex/ach/<name>.md`, plus a `SessionStart` hook in `.codex/hooks.json` that prints `.codex/ach/*.md` | `~/.codex/ach/` and `~/.codex/hooks.json` |
 
-The OpenCode entry and the Pi extension exist while their folder holds an
-Instruction file and go when the last one goes. Pi loads a project extension
-only in a project it trusts. In a folder per Environment, Claude Code and
-OpenCode load the Instructions in every project below it; Pi only when started
-in that folder. An Instruction the Environment drops is removed on
+The OpenCode entry, the Pi extension and the Codex hook exist while their folder
+holds an Instruction file and go when the last one goes; other hooks in
+`hooks.json` stay. Pi loads a project extension only in a project it trusts.
+Codex runs a hook only after you approve it: Codex asks when it starts (or use
+`/hooks`), and `codex exec` skips a hook nobody approved. A project hook also
+needs a trusted project. Approval holds while the folder stays put, so a changed
+or added Instruction needs none. In a folder per Environment, Claude Code and
+OpenCode load the Instructions in every project below it; Codex and Antigravity
+in every folder below it up to the git root; Pi only when started in that folder. An Instruction the Environment drops is removed on
 the next hydrate. Antigravity caps all always-on rules together at about
 20,000 tokens.
 
@@ -105,7 +112,7 @@ commits under `.agents/skills` then need `git add -f`.
 An administrator can mark a plugin so that your tool's own plugin system loads
 it. The plugin then keeps everything it ships, hooks and local MCP servers
 included, instead of being split into files. Hydrate lists it like any plugin
-(`+ ach-memory`) and may print a note:
+(`+ plugin  ach-memory`) and may print a note:
 
 | Tool | What hydrate does | What you do |
 |---|---|---|

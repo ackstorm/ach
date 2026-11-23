@@ -155,24 +155,17 @@ func TestProjectInstructions_OpencodeNonArrayRefused(t *testing.T) {
 	}
 }
 
-func TestProjectInstructions_NotesAndWarnings(t *testing.T) {
+func TestProjectInstructions_Warnings(t *testing.T) {
 	stage, root := t.TempDir(), t.TempDir()
 	var res RenderResult
-	if err := (&adapterDispatcherImpl{platformID: "codex"}).projectInstructions(&codex.Adapter{}, nil, stage, root, &res); err != nil {
+	d := &adapterDispatcherImpl{platformID: "cursor", global: true}
+	if err := d.projectInstructions(&cursor.Adapter{}, nil, stage, root, &res); err != nil {
 		t.Fatal(err)
 	}
-	if len(res.InstructionNotes) != 0 || len(res.InstructionWarnings) != 0 {
+	if len(res.InstructionWarnings) != 0 {
 		t.Fatal("nothing staged must report nothing")
 	}
 	stageInstruction(t, stage, "base", "x\n")
-	if err := (&adapterDispatcherImpl{platformID: "codex"}).projectInstructions(&codex.Adapter{}, nil, stage, root, &res); err != nil {
-		t.Fatal(err)
-	}
-	if len(res.InstructionNotes) != 1 || !strings.Contains(res.InstructionNotes[0], "codex") || len(res.ProjectedInstructionFiles) != 0 {
-		t.Fatalf("notes %v", res.InstructionNotes)
-	}
-	res = RenderResult{}
-	d := &adapterDispatcherImpl{platformID: "cursor", global: true}
 	if err := d.projectInstructions(&cursor.Adapter{}, nil, stage, root, &res); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +174,56 @@ func TestProjectInstructions_NotesAndWarnings(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(root); len(entries) != 0 {
 		t.Fatalf("wrote %v", entries)
+	}
+}
+
+// The hook prints the folder by absolute path, so Codex started anywhere below
+// it reads the same files, and a hook the user wrote stays.
+func TestProjectInstructions_CodexHook(t *testing.T) {
+	stage, root := t.TempDir(), t.TempDir()
+	stageInstruction(t, stage, "base", "x\n")
+	cfg := writeFile(t, root, ".codex/hooks.json",
+		`{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"echo hi"}]}]}}`)
+	d := &adapterDispatcherImpl{platformID: "codex"}
+	for i, wantWritten := range []bool{true, false} {
+		var res RenderResult
+		if err := d.projectInstructions(&codex.Adapter{}, nil, stage, root, &res); err != nil {
+			t.Fatal(err)
+		}
+		if len(res.ProjectedInstructionFiles) != 1 || res.ProjectedInstructionFiles[0].Target != ".codex/ach/base.md" {
+			t.Fatalf("got %+v", res.ProjectedInstructionFiles)
+		}
+		if res.InstructionLoaderWritten != wantWritten {
+			t.Fatalf("run %d: loader written = %v", i, res.InstructionLoaderWritten)
+		}
+	}
+	got := readFile(t, cfg)
+	cmd := `"command": "cat '` + root + `/.codex/ach'/*.md"`
+	if strings.Count(got, cmd) != 1 || !strings.Contains(got, `"additionalContextLimit": 25000`) ||
+		!strings.Contains(got, `"echo hi"`) || strings.Count(got, `"matcher"`) != 1 {
+		t.Fatalf("hooks %s", got)
+	}
+}
+
+func TestProjectInstructions_CodexGlobalHookUnderCodexHome(t *testing.T) {
+	stage, home, codexHome := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	stageInstruction(t, stage, "base", "x\n")
+	d := &adapterDispatcherImpl{platformID: "codex", global: true}
+	if err := d.projectInstructions(&codex.Adapter{}, nil, stage, home, &RenderResult{}); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(codexHome, "ach/base.md")) {
+		t.Fatal("file not under CODEX_HOME")
+	}
+	if got := readFile(t, filepath.Join(codexHome, "hooks.json")); !strings.Contains(got, "cat '"+codexHome+"/ach'/*.md") {
+		t.Fatalf("hooks %s", got)
+	}
+}
+
+func TestHookCommand_QuotesPath(t *testing.T) {
+	if got := hookCommand("/a b/it's"); got != `cat '/a b/it'\''s'/*.md` {
+		t.Fatalf("got %s", got)
 	}
 }
 
@@ -248,6 +291,31 @@ func TestTidyInstructionLoader(t *testing.T) {
 		}
 		if exists(ext) {
 			t.Fatal("extension should be deleted")
+		}
+	})
+	t.Run("codex hook removed, user hook kept", func(t *testing.T) {
+		root := t.TempDir()
+		ours := `{"type":"command","command":"cat '` + root + `/.codex/ach'/*.md","additionalContextLimit":25000}`
+		cfg := writeFile(t, root, ".codex/hooks.json",
+			`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo hi"}]},{"hooks":[`+ours+`]}]}}`)
+		if err := TidyInstructionLoader("codex", root, false); err != nil {
+			t.Fatal(err)
+		}
+		got := readFile(t, cfg)
+		if strings.Contains(got, "ach'/*.md") || !strings.Contains(got, "echo hi") {
+			t.Fatalf("hooks %s", got)
+		}
+	})
+	t.Run("codex deletes a hooks file it emptied, quote in path", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "it's")
+		cfg := writeFile(t, root, ".codex/hooks.json",
+			`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"cat '`+
+				strings.ReplaceAll(root, "'", `'\\''`)+`/.codex/ach'/*.md"}]}]}}`)
+		if err := TidyInstructionLoader("codex", root, false); err != nil {
+			t.Fatal(err)
+		}
+		if exists(cfg) {
+			t.Fatal("hooks.json should be deleted")
 		}
 	})
 	t.Run("a sibling file keeps the loader", func(t *testing.T) {

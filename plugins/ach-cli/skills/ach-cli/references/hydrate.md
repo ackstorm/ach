@@ -27,8 +27,10 @@ cd ~/Projects && ach-cli environment clone <environment> --target claude-code   
 `environment clone` works like `git clone`: it creates the folder (default: the Environment
 name; a second argument picks another), refuses one that exists and is not empty,
 hydrates into it, and removes the folder again if that fails. Every project under that
-folder picks the Environment up, git repo or not: Claude Code, Codex and OpenCode read
-the config of each parent folder of the directory they start in. Hydrate also adds its
+folder picks the Environment up, git repo or not, in Claude Code and OpenCode: they read
+the config of each parent folder of the directory they start in. Codex and Antigravity read a parent
+`.codex/` or `.agents/` only up to the git root, so for those two hydrate inside the project
+or use `-g`. Hydrate also adds its
 own folders (`.ach/`, `.claude/`, …) to a `.gitignore` there.
 
 To hydrate into the folder the user is in now ("install finops here"), run
@@ -89,7 +91,7 @@ It takes over the terminal: tell the user to run it themselves, never run it you
 
 A plugin the administrator marked for native delivery is installed whole under
 `.ach/<env>/native/<tool>/plugins/<plugin>/` and registered with the tool's own plugin
-system (hooks and local MCP servers work). Hydrate lists it as `+ <plugin>`, then a note:
+system (hooks and local MCP servers work). Hydrate lists it as `+ plugin  <name>`, then a note:
 
 - Claude Code: `Claude Code loads <plugin> once you trust this folder`. `claude plugin list`
   does not show it; Claude Code reads it in place.

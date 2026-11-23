@@ -1105,3 +1105,21 @@ func TestHydrateHints_CursorEnable(t *testing.T) {
 		t.Error("dry run: enable hint shown")
 	}
 }
+
+// A hydrate that writes the Codex instructions hook says it needs approval;
+// one that leaves it as it was, or another tool's loader, does not.
+func TestHydrateHints_CodexHook(t *testing.T) {
+	res := func(platform string, written bool) []hydrate.Result {
+		return []hydrate.Result{{PlatformID: platform, InstructionLoaderWritten: written}}
+	}
+	has := func(hints []string) bool { return slices.Contains(hints, codexHookHint) }
+	if !has(hydrateHints(res("codex", true), summaryMeta{})) {
+		t.Error("hook written: no hint")
+	}
+	if has(hydrateHints(res("codex", false), summaryMeta{})) {
+		t.Error("hook unchanged: hint shown")
+	}
+	if has(hydrateHints(res("opencode", true), summaryMeta{})) {
+		t.Error("opencode: hint shown")
+	}
+}

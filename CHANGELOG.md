@@ -5,7 +5,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ## [Unreleased]
 
 ### Added
+- `ach-cli environment hydrate` delivers an Environment's Instructions to Codex: it writes `.codex/ach/<name>.md` and a `SessionStart` hook in `.codex/hooks.json` that prints them (`$CODEX_HOME/ach/` and `$CODEX_HOME/hooks.json` with `-g`). Codex runs the hook only once you approve it (it asks when it starts, or use `/hooks`), and a project hook also needs a trusted project; hydrate prints a reminder. Your own hooks in that file are kept, and uninstall removes only this one.
 - `ach-cli environment hydrate` installs a plugin the platform marks for native delivery as an intact folder that the tool's own plugin system loads, so its hooks, local MCP server and tool extensions work. Claude Code, pi and OpenCode get an entry in their settings, Antigravity a copy under `.agents/plugins/`, and Codex is installed with `codex plugin add`, for the whole user. A tool the plugin does not support gets a warning and nothing from that plugin. Cursor has no native delivery.
+
+### Changed
+- Correction to the docs: Codex and Antigravity read a parent folder's `.codex/` or `.agents/` only up to the git root, so in a folder per Environment a project that is a git repository gets neither the Environment's Instructions nor, in Codex, its MCP servers. Hydrate inside the project or use `-g`.
 
 ### Fixed
 - `ach-cli environment hydrate` for a second tool that also uses `.agents/skills` (Codex, Cursor, OpenCode, pi, Antigravity) no longer stops with "already exists with other content and this Environment did not install it" when a skill changed on the server; it updates the file the first tool installed. Until now `--force` was the only way past it. Also, a skill with the same name as one a sibling Environment in the folder installed is again installed as `<environment>-<skill>` instead of over the sibling's copy.
