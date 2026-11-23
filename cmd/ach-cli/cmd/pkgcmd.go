@@ -201,21 +201,15 @@ func ensureProjectGitignore(w io.Writer, root string, global bool, entries []str
 	}
 }
 
-// serverHints records what a run's MCP server changes call for: an opencode
-// restart when its servers were added or removed (a server key is any `mcp.`
-// key: `mcp.servers.<id>`, or `mcp.<id>` in a record written before the
-// OpenCode 2 format), and enabling in Cursor when one was added.
-type serverHints struct{ restart, enable bool }
+// serverHints records whether a run's MCP server changes call for an opencode
+// restart: its servers were added or removed (a server key is any `mcp.` key:
+// `mcp.servers.<id>`, or `mcp.<id>` in a record written before the OpenCode 2
+// format).
+type serverHints struct{ restart bool }
 
 func (o *serverHints) note(target string, before, after []store.FileRec) {
-	switch target {
-	case opencodeTarget:
+	if target == opencodeTarget {
 		o.restart = o.restart || !maps.Equal(serverKeys(before, "mcp."), serverKeys(after, "mcp."))
-	case cursorTarget:
-		old := serverKeys(before, "mcpServers.")
-		for k := range serverKeys(after, "mcpServers.") {
-			o.enable = o.enable || !old[k]
-		}
 	}
 }
 
@@ -240,13 +234,10 @@ func serverKeys(recs []store.FileRec, prefix string) map[string]bool {
 	return keys
 }
 
-// flush prints each due hint once.
+// flush prints the restart hint once when it is due.
 func (o *serverHints) flush(w io.Writer) {
 	if o.restart {
 		_, _ = fmt.Fprintln(w, "hint: "+opencodeRestartHint)
-	}
-	if o.enable {
-		_, _ = fmt.Fprintln(w, "hint: "+cursorEnableHint)
 	}
 }
 
@@ -736,7 +727,7 @@ func newPkgInstallCmd(kind pkgKind) *cobra.Command {
 		},
 	}
 	c.Flags().StringSliceVar(&flagTargets, "target", nil,
-		"Tool(s) to install for, comma-separated or repeated: antigravity, claude-code, codex, cursor, opencode, pi")
+		"Tool(s) to install for, comma-separated or repeated: antigravity, claude-code, codex, opencode, pi")
 	c.Flags().BoolVarP(&flagGlobal, "global", "g", false, "Install to the tool's global config root")
 	c.Flags().StringVar(&flagDest, "dir", "", "Project root directory (default: cwd)")
 	c.Flags().StringVar(&flagConflict, "conflict", "namespace",

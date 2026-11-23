@@ -467,7 +467,6 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// warnings, never errors. Skipped entirely when nothing was dropped.
 		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
 		c.warnConflicts(result.ConflictWarnings)
-		c.warnConflicts(renderResult.InstructionWarnings)
 		c.reportNative(renderResult)
 	}
 	c.maybeKill(10)

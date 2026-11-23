@@ -3,7 +3,7 @@
 ACH is identity and access for AI agents. An Environment binds what an agent
 may call (models, MCP servers, A2A agents, budgets) to what it is given
 (plugins, skills, instructions, artifacts) and to who may use it, and `ach-cli`
-delivers it into Antigravity, Claude Code, Codex, Cursor, OpenCode and Pi.
+delivers it into Antigravity, Claude Code, Codex, OpenCode and Pi.
 
 Work is grouped as **Now**, **Next** and **Later**. An item moves up when the
 one before it ships; dates are not promised. Shipped work is in
@@ -29,7 +29,7 @@ one before it ships; dates are not promised. Shipped work is in
 |------|-------------------|
 | Signed Enterprise licence key | Offline-verifiable activation instead of a Helm flag. |
 | Signature verification | Optional cosign check per marketplace before content is served. |
-| More hydrate targets | Cursor and VS Code Copilot. |
+| More hydrate targets | VS Code Copilot. |
 | MCP Enterprise-Managed Authorization | MCP clients that follow the standard sign in without ACH-specific login. |
 | Roles and delegated ownership | Platform admin, Environment owner and auditor roles; teams own Environments by name prefix. |
 

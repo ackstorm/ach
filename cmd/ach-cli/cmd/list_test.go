@@ -300,6 +300,31 @@ func runStatus(t *testing.T, dir string, args ...string) (string, error) {
 	return out.String(), err
 }
 
+// A folder Claude Code does not trust gets a warning naming the native
+// plugins it drops; a trusted one gets none.
+func TestStatus_ClaudeTrustWarning(t *testing.T) {
+	dir := writeListState(t, `{"schemaVersion":"3","environment":"prod","adapter":{"id":"claude-code"},
+  "plugins":[{"target":".ach/prod/native/claude-code/plugins/memory","hash":"h","merge":"native","source":"memory"}]}`)
+	cfg := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	trust := func(accepted bool) {
+		project := map[string]bool{"hasTrustDialogAccepted": accepted}
+		body, _ := json.Marshal(map[string]any{"projects": map[string]any{dir: project}})
+		if err := os.WriteFile(filepath.Join(cfg, ".claude.json"), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const want = "Claude Code does not trust this folder, so it does not load memory"
+	trust(false)
+	if out, err := runStatus(t, dir, "--offline"); err != nil || !strings.Contains(out, want) {
+		t.Fatalf("untrusted: err %v, out:\n%s", err, out)
+	}
+	trust(true)
+	if out, err := runStatus(t, dir, "--offline"); err != nil || strings.Contains(out, "trust") {
+		t.Fatalf("trusted: err %v, out:\n%s", err, out)
+	}
+}
+
 const recordedState = `{"schemaVersion":"3","environment":"prod","adapter":{"id":"claude-code"},
   "plugins":[{"target":"a.md","hash":"h","sourceHash":"h","source":"keep"}],
   "envVersion":{"version":"old","items":{"plugin/keep":"1","plugin/moved":"1","skill/gone":"x"}}}`

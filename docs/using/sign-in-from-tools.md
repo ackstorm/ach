@@ -37,8 +37,12 @@ Add `--models` when you hydrate:
 
 ```bash
 ach-cli environment hydrate <environment> --target claude-code --models
-ach-cli environment hydrate <environment> --target codex --models
+ach-cli environment hydrate <environment> --target codex --models --global
 ```
+
+Codex reads its model provider only from your user config, never from a
+project's `.codex/config.toml`, so for Codex `--models` needs `--global` and is
+refused without it.
 
 `environment clone` and `launch` take `--models` too, except `launch claude`,
 which routes claude through ACH on its own (see above).
@@ -61,7 +65,9 @@ Claude Code, `.claude/settings.json`:
 }
 ```
 
-Codex, `.codex/config.toml`:
+Codex, `$CODEX_HOME/config.toml` (`~/.codex/config.toml` by default). Codex
+runs `command` as a program, not through a shell, so the argument goes in
+`args`:
 
 ```toml
 model_provider = "ach"
@@ -72,9 +78,16 @@ base_url = "https://ach.example.com/v1"
 wire_api = "responses"
 
 [model_providers.ach.auth]
-command = "ach-cli token"
+command = "ach-cli"
+args = ["token"]
 refresh_interval_ms = 300000
 ```
+
+With a model served from Amazon Bedrock, Codex's built-in apps tools have
+names longer than Bedrock's 64-character limit and Bedrock rejects the request
+(`toolSpec.name ... length less than or equal to 64`). Turn the apps off for
+that session with `codex -c features.apps=false`, or set `apps = false` under
+`[features]` in your Codex config.
 
 ### `ach-cli token`
 

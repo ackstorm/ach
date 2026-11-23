@@ -11,7 +11,6 @@ your `PATH`.
 | `agy` | Antigravity CLI |
 | `claude` | Claude Code |
 | `codex` | Codex |
-| `cursor` | Cursor (starts `cursor-agent`) |
 | `opencode` | OpenCode |
 | `pi` | pi |
 
@@ -76,11 +75,6 @@ ach-cli environment status
 ```
 
 It shows the Environment, the tool as its target, and `up to date`.
-
-## Cursor asks to approve MCP servers
-
-Cursor's CLI asks you to approve a project MCP server before it uses it. Approve
-the Environment's servers with `cursor-agent mcp enable <name>`.
 
 ## Related
 

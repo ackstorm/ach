@@ -13,11 +13,11 @@ import (
 )
 
 // TestLaunch_ToolNames: every tool name in the help starts the right binary,
-// including the two whose name, target id and binary all differ.
+// including the ones whose name and target id differ.
 func TestLaunch_ToolNames(t *testing.T) {
 	want := map[string]string{
 		"agy": "agy", "claude": "claude", "codex": "codex",
-		"cursor": "cursor-agent", "opencode": "opencode", "pi": "pi",
+		"opencode": "opencode", "pi": "pi",
 	}
 	for name, bin := range want {
 		id, err := hydrate.ResolvePlatform(name)

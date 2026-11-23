@@ -5,7 +5,7 @@ servers and A2A agents, plus plugins, skills, prompts, instructions and artifact
 Installing one into an agent tool is called hydrating.
 
 You need to be [signed in](sign-in.md). `<tool>` below is one of
-`antigravity`, `claude-code`, `codex`, `cursor`, `opencode` or `pi`.
+`antigravity`, `claude-code`, `codex`, `opencode` or `pi`.
 
 ## Find an Environment
 
@@ -63,13 +63,11 @@ ach-cli environment hydrate <environment> --target <tool>
 folder that already holds one tool's configuration you may leave it out.
 
 Skills go to `.claude/skills` for Claude Code and to the shared `.agents/skills`
-for Codex, Cursor, OpenCode and pi (`~/.agents/skills` with `-g`), so those four
+for Codex, OpenCode and pi (`~/.agents/skills` with `-g`), so those three
 tools read one copy. Antigravity reads everything from `.agents/` (MCP servers in
 `.agents/mcp_config.json`, skills in `.agents/skills`, subagents in
 `.agents/agents`) and from `~/.gemini/config/` with `-g`, its user directory.
 It has no command directory, so a plugin's commands are not installed for it.
-Cursor reads MCP servers from `.cursor/mcp.json`; its commands and subagents go
-to `.cursor/commands` and `.cursor/agents`.
 
 An Instruction is a Markdown text the tool always loads. Hydrate writes each one
 as a rules file:
@@ -78,7 +76,6 @@ as a rules file:
 |---|---|---|
 | Claude Code | `.claude/rules/ach-<name>.md` | `~/.claude/rules/` |
 | OpenCode | `.opencode/ach/<name>.md`, plus the absolute path of `.opencode/ach/*.md` in `instructions` of `.opencode/opencode.json` | `~/.config/opencode/ach/` |
-| Cursor | `.cursor/rules/ach-<name>.mdc` (`alwaysApply: true`) | none: Cursor has no global rules file, so hydrate warns |
 | Antigravity | `.agents/rules/ach-<name>.md` (`trigger: always_on`) | `~/.gemini/config/rules/` |
 | Pi | `.pi/ach/<name>.md`, plus the extension `.pi/extensions/ach-instructions.ts` | `~/.pi/agent/ach/` and `~/.pi/agent/extensions/` |
 | Codex | `.codex/ach/<name>.md`, plus a `SessionStart` hook in `.codex/hooks.json` that prints `.codex/ach/*.md` | `~/.codex/ach/` and `~/.codex/hooks.json` |
@@ -125,11 +122,9 @@ included, instead of being split into files. Hydrate lists it like any plugin
 Codex installs for your whole user, whatever the hydrate scope. With `--global`,
 Antigravity's copy goes to `~/.gemini/config/plugins/<plugin>/`. Claude Code does
 not list the plugin in `claude plugin list`: it reads it from the folder under
-`.ach/`.
+`.ach/`. Claude Code trusts each folder on its own (trusting a parent folder does not count) and skips the plugin without a word in a folder it does not trust; `ach-cli environment status` and `ach-cli launch claude` warn when that is the case.
 
-A tool the plugin does not support gets a warning and nothing else. Cursor
-prints `plugin <name> uses native delivery, which ach-cli does not offer for
-cursor: not installed`; a tool the plugin ships no manifest for prints
+A tool the plugin ships no manifest for gets a warning and nothing else:
 `plugin <name> uses native delivery and carries no <tool> plugin manifest: not
 installed`. When a tool's own command is not installed (Codex without `codex`
 on your PATH), hydrate installs nothing for that tool and prints `plugin <name>
@@ -193,7 +188,7 @@ ach-cli environment uninstall <environment>             # this folder; -g for th
 ```
 
 Only what hydrate wrote is removed. In files it shares with you (`.mcp.json`,
-`.agents/mcp_config.json`, `.codex/config.toml`, `.cursor/mcp.json`, `.opencode/opencode.json`) only its own
+`.agents/mcp_config.json`, `.codex/config.toml`, `.opencode/opencode.json`) only its own
 entries go. `--only plugin/<name>` removes one item; `--only-runtime` removes
 just the MCP entries.
 

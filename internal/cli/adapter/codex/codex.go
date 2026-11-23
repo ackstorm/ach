@@ -167,9 +167,12 @@ type modelProviderTable struct {
 	Auth    modelProviderAuth `toml:"auth"`
 }
 
+// modelProviderAuth is `[model_providers.<id>.auth]`. Codex runs Command as a
+// program name, not through a shell, so its arguments go in Args.
 type modelProviderAuth struct {
-	Command           string `toml:"command"`
-	RefreshIntervalMS int    `toml:"refresh_interval_ms"`
+	Command           string   `toml:"command"`
+	Args              []string `toml:"args"`
+	RefreshIntervalMS int      `toml:"refresh_interval_ms"`
 }
 
 // modelProviderID is the `[model_providers.<id>]` key and `model_provider` value.
@@ -202,12 +205,13 @@ func renderConfigTOML(m *manifest.Manifest, credential, helperBaseURL string) ([
 	}
 
 	if helperBaseURL != "" {
+		helper := strings.Fields(adapter.HelperCommand)
 		shape.ModelProvider = modelProviderID
 		shape.ModelProviders = map[string]modelProviderTable{modelProviderID: {
 			Name:    "ACH",
 			BaseURL: strings.TrimRight(helperBaseURL, "/") + "/v1",
 			WireAPI: "responses",
-			Auth:    modelProviderAuth{Command: adapter.HelperCommand, RefreshIntervalMS: 300000},
+			Auth:    modelProviderAuth{Command: helper[0], Args: helper[1:], RefreshIntervalMS: 300000},
 		}}
 		contributedKeys = append(contributedKeys, "model_provider", "model_providers."+modelProviderID)
 	}

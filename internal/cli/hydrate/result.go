@@ -217,9 +217,6 @@ type RenderResult struct {
 	// ProjectedInstructionFiles flows into step 12 (state.File.Instructions).
 	ProjectedInstructionFiles []FileWrite
 
-	// InstructionWarnings report a scope where the target cannot load the
-	// Environment's instructions.
-	InstructionWarnings []string
 	// InstructionLoaderWritten is true when the tool's instruction loader was
 	// created or changed.
 	InstructionLoaderWritten bool

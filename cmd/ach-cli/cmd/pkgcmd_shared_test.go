@@ -12,7 +12,7 @@ import (
 	"github.com/ackstorm/ach/internal/cli/localpkg/store"
 )
 
-// sharedSkillRepo seeds repo "dr": a plugin whose one skill codex, cursor,
+// sharedSkillRepo seeds repo "dr": a plugin whose one skill codex,
 // opencode, pi and antigravity all write to .agents/skills/dr-s. setSkill
 // commits a new SKILL.md body upstream.
 func sharedSkillRepo(t *testing.T) (setSkill func(body string)) {

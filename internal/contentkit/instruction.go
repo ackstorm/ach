@@ -30,8 +30,7 @@ func StageInstructionBody(r io.Reader) ([]byte, error) {
 }
 
 // VerifyInstruction accepts plain UTF-8 Markdown without frontmatter. ach-cli
-// writes each tool's own frontmatter (Cursor alwaysApply, Antigravity
-// trigger), so a text that brings its own would end up with two.
+// writes each tool's own frontmatter (Antigravity trigger), so a text that brings its own would end up with two.
 func VerifyInstruction(b []byte) error {
 	switch {
 	case len(b) == 0:

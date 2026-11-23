@@ -4,6 +4,17 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Removed
+- Cursor support: `ach-cli environment hydrate|clone --target cursor`, `ach-cli local plugin|skill install --target cursor`, `ach-cli launch cursor`, the `cursor-agent mcp enable` hint, and the Cursor tab of the console's MCP client guide. Files an earlier `ach-cli` wrote for Cursor (`.cursor/mcp.json`, which holds your key, `.cursor/rules/ach-*.mdc`, `.cursor/commands/`, `.cursor/agents/`) stay until you delete them.
+
+### Changed
+- `ach-cli environment hydrate --target codex --models` needs `--global`: Codex reads its model provider only from your user config and ignores `model_provider` in a project's `.codex/config.toml`, so the project-scope run sent no model traffic through ACH. It now stops with a message saying so.
+- `ach-cli environment status` and `ach-cli launch claude` warn when the folder holds native Claude Code plugins and Claude Code does not trust it: Claude Code keeps trust per folder (a trusted parent does not count) and skips those plugins without a word.
+- `ach-cli environment uninstall` also removes `.ach/<env>/lock`, the empty `.ach/<env>/tmp/` and the `.ach/` folders it leaves empty.
+
+### Fixed
+- `ach-cli environment hydrate --models` for Codex writes the credential command as `command = "ach-cli"` and `args = ["token"]`. Codex runs `command` as a program name, so `command = "ach-cli token"` failed with "provider auth command `ach-cli token` failed to start: No such file or directory".
+
 ## [1.3.2] - 2026-11-23
 
 ### Added

@@ -5,8 +5,7 @@ package adapter
 // InstructionTarget is implemented by adapters whose tool loads an
 // Environment Instruction from a file ach-cli owns.
 type InstructionTarget interface {
-	// InstructionFiles returns the writes for one Instruction; nil means the
-	// tool has no place for it in that scope.
+	// InstructionFiles returns the writes for one Instruction.
 	InstructionFiles(name string, body []byte, global bool) []FileWrite
 	// InstructionLoader returns what the tool needs to read the files, or nil
 	// when it reads them on its own.

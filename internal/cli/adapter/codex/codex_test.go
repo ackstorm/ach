@@ -827,8 +827,9 @@ func TestRenderRuntime_HelperWiring(t *testing.T) {
 			BaseURL string `toml:"base_url"`
 			WireAPI string `toml:"wire_api"`
 			Auth    struct {
-				Command           string `toml:"command"`
-				RefreshIntervalMS int    `toml:"refresh_interval_ms"`
+				Command           string   `toml:"command"`
+				Args              []string `toml:"args"`
+				RefreshIntervalMS int      `toml:"refresh_interval_ms"`
 			} `toml:"auth"`
 		} `toml:"model_providers"`
 	}
@@ -837,7 +838,7 @@ func TestRenderRuntime_HelperWiring(t *testing.T) {
 	}
 	p := got.ModelProviders["ach"]
 	if got.ModelProvider != "ach" || p.BaseURL != "https://ach.example.com/v1" || p.WireAPI != "responses" ||
-		p.Auth.Command != "ach-cli token" || p.Auth.RefreshIntervalMS != 300000 {
+		p.Auth.Command != "ach-cli" || !slices.Equal(p.Auth.Args, []string{"token"}) || p.Auth.RefreshIntervalMS != 300000 {
 		t.Fatalf("provider: %+v\n%s", got, writes[0].Content)
 	}
 	for _, k := range []string{"model_provider", "model_providers.ach"} {

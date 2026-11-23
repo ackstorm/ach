@@ -35,7 +35,7 @@
 //   - D-15: --verbose dumps a redacted header set to stderr.
 //
 // Adapter registration: the platform adapters
-// (antigravity/claudecode/codex/cursor/opencode/pi) self-register via init() side
+// (antigravity/claudecode/codex/opencode/pi) self-register via init() side
 // effects in their subpackages; the blank-imports live in
 // adapters_register.go in this package so this file stays focused on
 // cobra wiring + dispatch.
@@ -126,8 +126,9 @@ Scope:
                       cannot be combined with --sync, --only-runtime.
   --models            Also route the tool's model traffic through ACH
                       (Claude Code apiKeyHelper + ANTHROPIC_BASE_URL, Codex
-                      model provider; needs ach-cli on PATH). Off by
-                      default: the tool keeps its own model login.
+                      model provider, Codex with --global only; needs
+                      ach-cli on PATH). Off by default: the tool keeps its
+                      own model login.
 
 Behavior:
   --sync              Remove files no longer in the environment.
@@ -145,7 +146,7 @@ Location:
   --dir <dir>         Workspace root (default: current directory).
   -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
   --target <id[,id…]> Agent target(s): antigravity / claude-code / codex /
-                      cursor / opencode / pi (comma-separated or repeated;
+                      opencode / pi (comma-separated or repeated;
                       ACH_TARGET is the same). Omitted: autodetected from
                       the workspace.
 
@@ -193,7 +194,7 @@ Exit codes:
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
 		"Override platform autodetection; "+
 			"comma-separated or repeated for several targets, e.g. codex,opencode "+
-			"(antigravity / claude-code / codex / cursor / opencode / pi + case-folded aliases)")
+			"(antigravity / claude-code / codex / opencode / pi + case-folded aliases)")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
 		"Install just one item, plugin/<name> or skill/<name>, merging it into the existing state")
 
@@ -489,6 +490,14 @@ func hydrateEnv(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effective
 	// Classify the bearer once: drives the pk- x-ach-environment header below.
 	// A classify error leaves the prefix zero — nothing acts on it.
 	bearerPrefix, _ := classifyBearer(bearer)
+
+	if in.models && !in.global && slices.Contains(platformIDs, codexTarget) {
+		return nil, &exit.CodedError{
+			Code: exit.General,
+			Msg: "--models for codex needs --global: Codex reads its model provider only from your user config, " +
+				"never from a project's .codex/config.toml",
+		}
+	}
 
 	limits, err := extract.LoadLimits()
 	if err != nil {
@@ -860,7 +869,7 @@ const (
 func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
 	person := meta.oauth || meta.keyPrefix == keys.PrefixPk
 	switch {
-	case !person || !helperTargets[res.PlatformID]:
+	case !person || !helperTargets[res.PlatformID], res.PlatformID == codexTarget && !meta.global:
 		return modelsServerSide
 	case meta.models:
 		return modelsWired
@@ -895,12 +904,6 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 		hints = append(hints, opencodeRestartHint)
 	}
 	for _, r := range results {
-		if !meta.dryRun && r.PlatformID == cursorTarget && addsServer(r) {
-			hints = append(hints, cursorEnableHint)
-			break
-		}
-	}
-	for _, r := range results {
 		if !meta.dryRun && r.PlatformID == codexTarget && r.InstructionLoaderWritten {
 			hints = append(hints, codexHookHint)
 			break
@@ -922,16 +925,6 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 	return hints
 }
 
-// addsServer reports an MCP server or A2A agent (written as an MCP server) added.
-func addsServer(r hydrate.Result) bool {
-	for _, c := range r.Changes {
-		if c.Op == hydrate.OpAdd && (c.Kind == kindMCP || c.Kind == "a2a") {
-			return true
-		}
-	}
-	return false
-}
-
 func addsMCP(r hydrate.Result) bool {
 	for _, c := range r.Changes {
 		if c.Op == hydrate.OpAdd && c.Kind == kindMCP {
@@ -944,14 +937,8 @@ func addsMCP(r hydrate.Result) bool {
 const (
 	kindMCP        = "mcp"
 	opencodeTarget = "opencode"
-	cursorTarget   = "cursor"
 	codexTarget    = "codex"
 )
-
-// cursorEnableHint is printed when hydrate or a local plugin install or update
-// adds an MCP server (or A2A agent) for Cursor, which reports a project server
-// as "needs approval" until it is enabled.
-const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
 
 // codexHookHint is printed when hydrate writes the Codex instructions hook,
 // which Codex runs only once the user approves it.

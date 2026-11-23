@@ -101,3 +101,21 @@ func TestEnvClone_RequiresTarget(t *testing.T) {
 		t.Fatalf("nothing should be created, stat err = %v", err)
 	}
 }
+
+// Codex reads its model provider only from user config, so --models for codex
+// is refused in a project and goes through with --global.
+func TestHydrate_CodexModelsNeedsGlobal(t *testing.T) {
+	cwd := setupClone(t, false)
+	_, _, _, err := executeCommand(t, newHydrateCmd(), "aws-rw", "--target", "codex", "--models")
+	if err == nil || !strings.Contains(err.Error(), "--models for codex needs --global") {
+		t.Fatalf("err = %v, want the codex --global refusal", err)
+	}
+	if envs, _ := hydratedEnvs(cwd); len(envs) != 0 {
+		t.Fatalf("hydrated %+v", envs)
+	}
+	t.Setenv("HOME", t.TempDir())
+	_, _, _, err = executeCommand(t, newHydrateCmd(), "aws-rw", "--target", "codex", "--models", "--global")
+	if err != nil {
+		t.Fatalf("--global: %v", err)
+	}
+}

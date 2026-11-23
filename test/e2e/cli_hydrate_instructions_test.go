@@ -31,7 +31,6 @@ type instructionExpect struct {
 var instructionExpects = []instructionExpect{
 	{id: "claude-code", file: ".claude/rules/ach-instruction-valid.md"},
 	{id: "opencode", file: ".opencode/ach/instruction-valid.md", opencfg: true},
-	{id: "cursor", file: ".cursor/rules/ach-instruction-valid.mdc", prefix: "---\nalwaysApply: true"},
 	{id: "antigravity", file: ".agents/rules/ach-instruction-valid.md", prefix: "---\ntrigger: always_on"},
 	{id: "pi", file: ".pi/ach/instruction-valid.md", loader: ".pi/extensions/ach-instructions.ts"},
 	{id: "codex", file: ".codex/ach/instruction-valid.md", loader: ".codex/hooks.json"},
