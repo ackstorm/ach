@@ -64,9 +64,14 @@ func (d *adapterDispatcherImpl) installNativePlugins(ctx context.Context, ad ada
 func (d *adapterDispatcherImpl) installNative(ctx context.Context, ad adapter.Adapter, s *state.File,
 	plugin, src, envDir, toolRoot string, result *RenderResult) error {
 	nt, ok := ad.(adapter.NativeTarget)
-	if !ok || !nt.NativeSupports(src) {
+	if !ok {
 		result.NativeWarnings = append(result.NativeWarnings,
-			fmt.Sprintf("plugin %s is delivered natively and carries no %s plugin: not installed for %s", plugin, d.platformID, d.platformID))
+			fmt.Sprintf("plugin %s uses native delivery, which ach-cli does not offer for %s: not installed", plugin, d.platformID))
+		return nil
+	}
+	if !nt.NativeSupports(src) {
+		result.NativeWarnings = append(result.NativeWarnings,
+			fmt.Sprintf("plugin %s uses native delivery and carries no %s plugin manifest: not installed", plugin, d.platformID))
 		return nil
 	}
 	// removeNative reads the same Environment name back from the path.

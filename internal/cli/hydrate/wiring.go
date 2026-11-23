@@ -49,7 +49,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -818,6 +817,8 @@ func (d *adapterDispatcherImpl) projectPlugins(ctx context.Context, ad adapter.A
 		}
 		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
 	}
+	// Sorted so conflict.Namespace yields stable, run-to-run identical
+	// prefixed paths for identical manifests.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
 	entries, err = d.installNativePlugins(ctx, ad, s, entries, pluginRoot, envDir, toolRoot, result)
@@ -845,11 +846,8 @@ func (d *adapterDispatcherImpl) projectPlugins(ctx context.Context, ad adapter.A
 	seen := map[string]bool{}
 	var dropped []string
 
-	// Pass A — collect every plugin's projected writes WITHOUT publishing.
-	// Plugin dirs are sorted so conflict.Namespace yields stable, run-to-run
-	// identical prefixed paths for identical manifests (Phase-1 determinism;
-	// no state migration needed). os.ReadDir is already name-sorted; the
-	// explicit sort makes the ordering contract local + obvious.
+	// Pass A — collect every plugin's projected writes WITHOUT publishing,
+	// in the name order established above.
 	var all []projectedWrite
 	for _, ent := range entries {
 		if !ent.IsDir() {
@@ -1759,12 +1757,6 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 			return "", false, herr
 		}
 		return h, true, nil
-	case mergeStrNative:
-		h, herr := treeHash(abs)
-		if errors.Is(herr, fs.ErrNotExist) {
-			return "", false, nil
-		}
-		return h, herr == nil, herr
 	default: // "" / mergeStrReplace — whole-file hash, unchanged behavior.
 		h, herr := hash.HashFile(abs)
 		if herr != nil {

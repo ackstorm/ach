@@ -138,8 +138,9 @@ func TestNative_NoManifestForTheToolMeansNothingAndAWarning(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws, ".agents")); !os.IsNotExist(err) {
 		t.Error("the plugin was split into files for a tool it does not support")
 	}
-	if len(rr.NativeWarnings) != 1 || !strings.Contains(rr.NativeWarnings[0], "memory") {
-		t.Errorf("NativeWarnings = %v; want one naming the plugin", rr.NativeWarnings)
+	if len(rr.NativeWarnings) != 1 || !strings.Contains(rr.NativeWarnings[0], "memory") ||
+		!strings.Contains(rr.NativeWarnings[0], "carries no pi plugin manifest") {
+		t.Errorf("NativeWarnings = %v; want one naming the plugin and the missing pi manifest", rr.NativeWarnings)
 	}
 }
 
@@ -152,6 +153,9 @@ func TestNative_CursorGetsAWarning(t *testing.T) {
 	}
 	if len(rr.ProjectedFiles) != 0 || len(rr.NativeWarnings) != 1 {
 		t.Fatalf("files = %v, warnings = %v; want no file and one warning", rr.ProjectedFiles, rr.NativeWarnings)
+	}
+	if !strings.Contains(rr.NativeWarnings[0], "does not offer for cursor") {
+		t.Errorf("NativeWarnings = %v; want the no-native-delivery wording", rr.NativeWarnings)
 	}
 }
 

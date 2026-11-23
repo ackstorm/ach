@@ -69,5 +69,12 @@ func (a *Adapter) NativeUnregister(_ context.Context, p adapter.NativePlugin) er
 	if err != nil || !placedByAch(dest) {
 		return err
 	}
-	return os.RemoveAll(dest)
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	// os.Remove refuses a folder that still holds something.
+	parent := filepath.Dir(dest)
+	_ = os.Remove(parent)
+	_ = os.Remove(filepath.Dir(parent))
+	return nil
 }

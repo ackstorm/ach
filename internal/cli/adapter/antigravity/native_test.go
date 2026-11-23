@@ -75,6 +75,36 @@ func TestNative_PlacesACopyWhereAntigravityScans(t *testing.T) {
 	if _, err := os.Stat(dest); !os.IsNotExist(err) {
 		t.Error("the copy was left behind")
 	}
+	if _, err := os.Stat(filepath.Join(p.ToolRoot, ".agents")); !os.IsNotExist(err) {
+		t.Error(".agents was left behind although it held only this plugin")
+	}
+}
+
+func TestNative_UnregisterKeepsWhatElseLivesUnderAgents(t *testing.T) {
+	a := &antigravity.Adapter{}
+	p := nativePlugin(t)
+	if err := os.WriteFile(filepath.Join(p.Dir(), "plugin.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(p.ToolRoot, ".agents", "skills", "x", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skill, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.NativeRegister(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.NativeUnregister(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(skill); err != nil {
+		t.Errorf("a sibling skill was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(p.ToolRoot, ".agents", "plugins")); !os.IsNotExist(err) {
+		t.Error("the empty .agents/plugins was left behind")
+	}
 }
 
 func TestNative_NeverTouchesAFolderItDidNotPlace(t *testing.T) {

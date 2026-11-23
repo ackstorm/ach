@@ -28,7 +28,7 @@ const DeliveryNative = "native"
 // a2aAgents) populate Endpoint; context entries (instructions, prompts, plugins,
 // artifacts) populate DownloadURL. The `omitempty` tags keep encoded
 // output minimal — a context entry round-trips with no Endpoint field
-// and vice-versa. Limits appears on models only, and no adapter projects it:
+// and vice-versa. Delivery is set on plugin entries only. Limits appears on models only, and no adapter projects it:
 // it is here because Decode refuses a field this struct does not name.
 type ContentRef struct {
 	ID          string       `json:"id"`
