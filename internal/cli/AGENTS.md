@@ -129,7 +129,7 @@ AFTER it. Hints only on a first hydrate of that Environment+target (or a clone),
 (not `--dry-run`) that adds or removes an MCP server or A2A agent for OpenCode,
 `cursor-agent mcp enable <name>`, printed on any hydrate (not `--dry-run`)
 that adds one for Cursor, and `codex, then /hooks`, printed on any hydrate (not
-`--dry-run`) that adds an Instruction for Codex
+`--dry-run`) that writes the Codex instructions hook (`InstructionLoaderWritten`)
 (`opencodeServersChanged`). `local plugin
 install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
 once per run, not `--dry-run`) when the opencode record's server keys change

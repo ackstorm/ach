@@ -5,7 +5,8 @@ package merge
 import "fmt"
 
 // EnsureHookCommand adds a matcher group holding handler to doc.hooks[event]
-// unless a handler with the same command is already there. Every other group
+// unless a handler with the same command is already there, whatever its
+// other fields: an edit the user made to it stays. Every other group
 // and handler stays. A non-object or non-array value on the path is an error,
 // never replaced.
 func EnsureHookCommand(doc map[string]any, event string, handler map[string]any) (bool, error) {

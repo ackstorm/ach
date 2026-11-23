@@ -444,6 +444,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// entry still flows to state composition either way.
 		addPublishedCounts(&result, renderResult)
 		result.DroppedComponents = append(result.DroppedComponents, renderResult.DroppedComponents...)
+		result.InstructionLoaderWritten = result.InstructionLoaderWritten || renderResult.InstructionLoaderWritten
 		if result.ProjectedByKind == nil {
 			result.ProjectedByKind = map[string]int{}
 		}

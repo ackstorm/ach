@@ -66,7 +66,9 @@ func (d *adapterDispatcherImpl) projectInstructions(ad adapter.Adapter, s *state
 		return nil
 	}
 	if l := it.InstructionLoader(d.global); l != nil && !d.dryRun {
-		return ensureLoader(d.platformID, toolRoot, d.global, *l)
+		written, err := ensureLoader(d.platformID, toolRoot, d.global, *l)
+		result.InstructionLoaderWritten = written
+		return err
 	}
 	return nil
 }
@@ -130,7 +132,9 @@ func hookCommand(abs string) string {
 }
 
 // loaderEdit returns the JSON edits that add and remove l's entry for dir,
-// and a text found in the file while that entry is there.
+// and a text found in the file while that entry is there; "" means the file
+// must be parsed to tell. A hook command is JSON-escaped in the file, so it
+// has no such text, and hooks.json is plain JSON that parses safely.
 func loaderEdit(l adapter.InstructionLoader, dir string) (ensure, remove func(map[string]any) (bool, error), marker string, err error) {
 	if l.HookEvent != "" {
 		abs, err := filepath.Abs(dir)
@@ -141,7 +145,7 @@ func loaderEdit(l adapter.InstructionLoader, dir string) (ensure, remove func(ma
 		handler := map[string]any{"type": "command", "command": cmd, "additionalContextLimit": l.HookContextLimit}
 		return func(doc map[string]any) (bool, error) { return merge.EnsureHookCommand(doc, l.HookEvent, handler) },
 			func(doc map[string]any) (bool, error) { return merge.RemoveHookCommand(doc, l.HookEvent, cmd) },
-			filepath.ToSlash(abs), nil
+			"", nil
 	}
 	entry, err := loaderEntry(dir)
 	if err != nil {
@@ -152,26 +156,28 @@ func loaderEdit(l adapter.InstructionLoader, dir string) (ensure, remove func(ma
 		entry, nil
 }
 
-func ensureLoader(platformID, toolRoot string, global bool, l adapter.InstructionLoader) error {
+// ensureLoader creates or completes the loader and reports whether it wrote.
+func ensureLoader(platformID, toolRoot string, global bool, l adapter.InstructionLoader) (bool, error) {
 	dir, path, err := resolveLoader(platformID, toolRoot, global, l)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return err
+		return false, err
 	}
 	if l.ArrayKey == "" && l.HookEvent == "" {
 		cur, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
 		if err == nil && bytes.Equal(cur, l.Content) {
-			return nil
+			return false, nil
 		}
-		return state.WriteAtomic(path, l.Content, 0o644)
+		return true, state.WriteAtomic(path, l.Content, 0o644)
 	}
 	ensure, _, _, err := loaderEdit(l, dir)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return state.RewriteFile(path, 0o600, func(cur []byte) ([]byte, bool, error) {
+	written := false
+	err = state.RewriteFile(path, 0o600, func(cur []byte) ([]byte, bool, error) {
 		doc, err := merge.ParseDoc(cur, false)
 		if err != nil {
 			return nil, false, err
@@ -183,9 +189,11 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 		if !changed {
 			return nil, false, nil
 		}
+		written = true
 		out, err := merge.EncodeDoc(doc, false)
 		return out, true, err
 	})
+	return written && err == nil, err
 }
 
 // WithoutSiblingInstructions returns f without the instruction rows a sibling
@@ -240,7 +248,7 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		return err
 	}
 	raw, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
-	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(marker))) {
+	if errors.Is(err, os.ErrNotExist) || (err == nil && marker != "" && !bytes.Contains(raw, []byte(marker))) {
 		return nil
 	}
 	if err != nil {

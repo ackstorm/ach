@@ -1106,24 +1106,20 @@ func TestHydrateHints_CursorEnable(t *testing.T) {
 	}
 }
 
-// A hydrate that adds an Instruction for Codex says the hook needs approval;
-// another tool, an update or a dry run does not.
+// A hydrate that writes the Codex instructions hook says it needs approval;
+// one that leaves it as it was, or another tool's loader, does not.
 func TestHydrateHints_CodexHook(t *testing.T) {
-	res := func(platform string, op hydrate.Op) []hydrate.Result {
-		return []hydrate.Result{{PlatformID: platform,
-			Changes: []hydrate.ItemChange{{Op: op, Kind: "instruction", Name: "x"}}}}
+	res := func(platform string, written bool) []hydrate.Result {
+		return []hydrate.Result{{PlatformID: platform, InstructionLoaderWritten: written}}
 	}
 	has := func(hints []string) bool { return slices.Contains(hints, codexHookHint) }
-	if !has(hydrateHints(res("codex", hydrate.OpAdd), summaryMeta{})) {
-		t.Error("instruction add: no hook hint")
+	if !has(hydrateHints(res("codex", true), summaryMeta{})) {
+		t.Error("hook written: no hint")
 	}
-	if has(hydrateHints(res("claude-code", hydrate.OpAdd), summaryMeta{})) {
-		t.Error("claude-code: hook hint shown")
+	if has(hydrateHints(res("codex", false), summaryMeta{})) {
+		t.Error("hook unchanged: hint shown")
 	}
-	if has(hydrateHints(res("codex", hydrate.OpUpdate), summaryMeta{})) {
-		t.Error("instruction update: hook hint shown")
-	}
-	if has(hydrateHints(res("codex", hydrate.OpAdd), summaryMeta{dryRun: true})) {
-		t.Error("dry run: hook hint shown")
+	if has(hydrateHints(res("opencode", true), summaryMeta{})) {
+		t.Error("opencode: hint shown")
 	}
 }
