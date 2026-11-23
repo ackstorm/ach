@@ -19,6 +19,10 @@ import (
 // ErrSchemaMismatch which callers map to exit.SchemaMismatch (5).
 const schemaV1Alpha1 = "v1alpha1"
 
+// DeliveryNative marks a plugin the tool loads whole through its own plugin
+// system. An empty Delivery is the file projection.
+const DeliveryNative = "native"
+
 // ContentRef is the shared shape for every runtime AND context entry
 // in the hydrate response. Runtime entries (models, mcpServers,
 // a2aAgents) populate Endpoint; context entries (instructions, prompts, plugins,
@@ -32,6 +36,7 @@ type ContentRef struct {
 	DownloadURL string       `json:"downloadUrl,omitempty"`
 	Endpoint    string       `json:"endpoint,omitempty"`
 	Limits      *ModelLimits `json:"limits,omitempty"`
+	Delivery    string       `json:"delivery,omitempty"`
 }
 
 // ModelLimits is a model's token ceilings; a key is absent when unknown.
