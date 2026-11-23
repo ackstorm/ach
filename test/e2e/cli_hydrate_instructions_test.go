@@ -34,6 +34,7 @@ var instructionExpects = []instructionExpect{
 	{id: "cursor", file: ".cursor/rules/ach-instruction-valid.mdc", prefix: "---\nalwaysApply: true"},
 	{id: "antigravity", file: ".agents/rules/ach-instruction-valid.md", prefix: "---\ntrigger: always_on"},
 	{id: "pi", file: ".pi/ach/instruction-valid.md", loader: ".pi/extensions/ach-instructions.ts"},
+	{id: "codex", file: ".codex/ach/instruction-valid.md", loader: ".codex/hooks.json"},
 }
 
 func TestPhase7InstructionDelivery(t *testing.T) {
@@ -104,21 +105,4 @@ func TestPhase7InstructionDelivery(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("codex", func(t *testing.T) {
-		phase7SuiteGuard(t)
-		output := t.TempDir()
-		xdg := phase7SeedXdgConfig(t, baseURL, creds)
-
-		_, stderr := run(t, xdg, "env", "hydrate", phase7DemoEnvironment, "--target", "codex", "--dir", output)
-
-		if !strings.Contains(stderr, "does not load Environment instructions") {
-			t.Errorf("codex: missing the instructions note on stderr:\n%s", stderr)
-		}
-		for _, p := range []string{".codex/rules", ".codex/instructions", ".agents/rules"} {
-			if _, err := os.Stat(filepath.Join(output, p)); !os.IsNotExist(err) {
-				t.Errorf("codex: %s must not exist (err %v)", p, err)
-			}
-		}
-	})
 }
