@@ -16,12 +16,17 @@ type InstructionTarget interface {
 // InstructionLoader is shared by every Environment in a folder and is not
 // recorded in state: it exists exactly while Dir holds at least one *.md.
 // With ArrayKey set, the absolute glob <Dir>/*.md is kept in the top-level
-// JSON array ArrayKey of Path; otherwise Path is a whole file holding Content.
+// JSON array ArrayKey of Path. With HookEvent set, Path is a hooks.json whose
+// hooks.<HookEvent> list holds one command printing <Dir>/*.md, with an
+// additionalContextLimit of HookContextLimit tokens. Otherwise Path is a
+// whole file holding Content.
 type InstructionLoader struct {
-	Dir      string
-	Path     string
-	ArrayKey string
-	Content  []byte
+	Dir              string
+	Path             string
+	ArrayKey         string
+	HookEvent        string
+	HookContextLimit int
+	Content          []byte
 }
 
 // WithFrontmatter prefixes body with a YAML frontmatter block holding header.

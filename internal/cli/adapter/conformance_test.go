@@ -305,6 +305,7 @@ func TestInstructionFiles_StayInsideToolConfig(t *testing.T) {
 	for id, a := range adapters() {
 		it, ok := a.(adapter.InstructionTarget)
 		if !ok {
+			t.Errorf("%s does not implement adapter.InstructionTarget", id)
 			continue
 		}
 		for _, global := range []bool{false, true} {

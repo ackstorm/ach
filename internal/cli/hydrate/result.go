@@ -52,6 +52,10 @@ type Result struct {
 	// (pass-through).
 	DroppedComponents []string
 
+	// InstructionLoaderWritten is true when the tool's instruction loader was
+	// created or changed (a Codex hook then needs approval).
+	InstructionLoaderWritten bool
+
 	// ProjectedByKind tallies projected regular files per source kind
 	// (e.g. {"commands":12,"agents":8}) rolled up from RenderResult.
 	// Feeds the hydrate success summary.
@@ -213,10 +217,12 @@ type RenderResult struct {
 	// ProjectedInstructionFiles flows into step 12 (state.File.Instructions).
 	ProjectedInstructionFiles []FileWrite
 
-	// InstructionNotes and InstructionWarnings report a target or scope that
-	// cannot load the Environment's instructions.
-	InstructionNotes    []string
+	// InstructionWarnings report a scope where the target cannot load the
+	// Environment's instructions.
 	InstructionWarnings []string
+	// InstructionLoaderWritten is true when the tool's instruction loader was
+	// created or changed.
+	InstructionLoaderWritten bool
 
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types
