@@ -89,6 +89,10 @@ type ContextItem struct {
 	Name        string `json:"name"`
 	ID          string `json:"id"`
 	DownloadURL string `json:"downloadUrl"`
+	// Delivery is "native" for a plugin the tool's own plugin system loads
+	// whole. It is omitted otherwise: ach-cli before 1.3.1 rejects unknown
+	// fields, and only an Environment holding such a plugin needs a newer one.
+	Delivery string `json:"delivery,omitempty"`
 }
 
 // RuntimeBlock is the runtime envelope. models/mcpServers/a2aAgents are ALWAYS
@@ -211,11 +215,22 @@ func HydrateHandler(deps Deps) http.HandlerFunc {
 		// These literals also appear in toRuntimeBlock / toContextBlock
 		// below; the comment serves as the locator for the WARN-02
 		// commit.
+		// A failed lookup fails the request: delivering a native plugin as a
+		// file split is the fallback native delivery rules out.
+		var native map[string]bool
+		if len(env.ContextPlugins) > 0 {
+			var err error
+			if native, err = deps.Store.NativePlugins(ctx); err != nil {
+				render.Error(w, http.StatusInternalServerError, audit.OutcomeInternalError,
+					"failed to read plugins", reqID)
+				return
+			}
+		}
 		resp := HydrateResponse{
 			SchemaVersion: SchemaVersion,
 			Environment:   envName,
 			Runtime:       toRuntimeBlockFromRow(env, deps.BaseURL),
-			Context:       toContextBlockFromRow(env, deps.BaseURL),
+			Context:       toContextBlockFromRow(env, deps.BaseURL, native),
 			Notice:        env.Notice,
 		}
 		addModelLimits(ctx, deps.Caps, resp.Runtime.Models)
@@ -431,7 +446,7 @@ func knownTokens(v *float64) *int {
 //
 // Renamed from toContextBlock (issue #34): same reasoning as
 // toRuntimeBlockFromRow above.
-func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock {
+func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string, native map[string]bool) ContextBlock {
 	out := emptyContext()
 	// Strict literal "/content/" + kind + "/" + name keeps the Phase 5
 	// Content Service URL construction grep-able from a single place and
@@ -452,11 +467,16 @@ func toContextBlockFromRow(row *db.EnvironmentRow, baseURL string) ContextBlock 
 		})
 	}
 	for _, name := range row.ContextPlugins {
-		out.Plugins = append(out.Plugins, ContextItem{
+		item := ContextItem{
 			Name:        name,
 			ID:          name,
 			DownloadURL: baseURL + contentPrefix + "plugin/" + url.PathEscape(name),
-		})
+		}
+		// A name@marketplace reference never equals a Plugin object's name.
+		if native[name] {
+			item.Delivery = "native"
+		}
+		out.Plugins = append(out.Plugins, item)
 	}
 	for _, name := range row.ContextArtifacts {
 		out.Artifacts = append(out.Artifacts, ContextItem{

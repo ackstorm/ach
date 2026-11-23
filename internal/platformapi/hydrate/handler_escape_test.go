@@ -31,7 +31,7 @@ func TestToRuntimeBlock_EscapesNamesInEndpoints(t *testing.T) {
 // names are PathEscaped in the generated download URLs (security finding S2).
 func TestToContextBlock_EscapesNamesInDownloadURLs(t *testing.T) {
 	row := &db.EnvironmentRow{ContextInstructions: []string{"a?b"}, ContextPrompts: []string{"c?d"}}
-	got := toContextBlockFromRow(row, "https://ach.example.com")
+	got := toContextBlockFromRow(row, "https://ach.example.com", nil)
 	if u := got.Prompts[0].DownloadURL; u != "https://ach.example.com/content/prompt/c%3Fd" {
 		t.Errorf("prompt download url not escaped: %q", u)
 	}
@@ -43,7 +43,7 @@ func TestToContextBlock_EscapesNamesInDownloadURLs(t *testing.T) {
 func TestContextBlock_OmitsEmptyInstructions(t *testing.T) {
 	for name, cb := range map[string]ContextBlock{
 		"empty context":            emptyContext(),
-		"row without instructions": toContextBlockFromRow(&db.EnvironmentRow{}, ""),
+		"row without instructions": toContextBlockFromRow(&db.EnvironmentRow{}, "", nil),
 	} {
 		b, err := json.Marshal(cb)
 		if err != nil {
@@ -59,7 +59,7 @@ func TestContextBlock_OmitsEmptyInstructions(t *testing.T) {
 }
 
 func TestContextBlock_PromptsOnly(t *testing.T) {
-	cb := toContextBlockFromRow(&db.EnvironmentRow{ContextPrompts: []string{"p"}}, "https://ach.example.com")
+	cb := toContextBlockFromRow(&db.EnvironmentRow{ContextPrompts: []string{"p"}}, "https://ach.example.com", nil)
 	b, err := json.Marshal(cb)
 	if err != nil {
 		t.Fatal(err)

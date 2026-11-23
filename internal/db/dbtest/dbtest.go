@@ -108,12 +108,12 @@ func GetPluginByName(ctx context.Context, pool *pgxpool.Pool, ns, name string) (
 	err := pool.QueryRow(ctx, `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at
+		       resource_version, updated_at, delivery
 		  FROM plugins
 		 WHERE namespace = $1 AND name = $2`, ns, name).Scan(
 		&r.Namespace, &r.Name, &r.StorageLocation,
 		&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-		&r.ResourceVersion, &r.UpdatedAt)
+		&r.ResourceVersion, &r.UpdatedAt, &r.Delivery)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

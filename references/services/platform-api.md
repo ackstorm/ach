@@ -127,8 +127,13 @@ the revision it serves (the content row's `upstream_rev`; a `name@marketplace`
 item takes its marketplace's; empty for model/mcp/a2a), and `version` the
 sha256 of the sorted items. A full `ach-cli environment hydrate` records it and
 `environment status` compares it. A marketplace item reads as updated whenever
-its marketplace moves, even if its own files did not change. The hydrate
-manifest itself is unchanged (the CLI decodes it strictly).
+its marketplace moves, even if its own files did not change. A plugin whose
+Plugin CR has `spec.delivery: native` reports `<upstream_rev>+native`, so a
+change of delivery reads as a change. In the hydrate manifest such a plugin's
+`context.plugins[]` entry carries `"delivery": "native"`; every other entry,
+`name@marketplace` ones included, omits the field, because ach-cli before 1.3.1
+decodes the manifest strictly and rejects it. A failed lookup of the native set
+answers 500.
 The manifest's `context.prompts` (`[{name, id, downloadUrl}]`) is always present,
 `[]` when empty; `ach-cli environment hydrate` decodes it and writes nothing for it,
 because a Prompt is loaded only by whoever names it (an ach-agent Agent's

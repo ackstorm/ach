@@ -67,6 +67,12 @@ Reconciles ACH CRDs; `Environment.spec.budget` → the `environment:<name>` tag 
   (`commands/`/`agents/`/`skills/`/`hooks/`/`output-styles/`/`themes/`/
   `monitors/`, or root `SKILL.md`/`.mcp.json`/`.lsp.json`). Only a tar with
   none of these fails `UpstreamInvalid`.
+- **Plugin CR filter and `spec.delivery`**: a Plugin CR's archive is reduced to
+  Claude Code's files by `pluginpack.Filter`. With `spec.delivery: native` it is
+  stored as fetched after the same Stage-2 gate (`VerifyPluginContents`), under
+  the same size cap, so other tools' manifests and the plugin's own sources
+  reach the workstation. The value is projected to `plugins.delivery`; changing
+  it bumps the generation, which forces a re-fetch.
 
 ## SkillMarketplace discovery
 

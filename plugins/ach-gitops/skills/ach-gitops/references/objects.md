@@ -26,13 +26,14 @@ spec:
   refresh:
     interval: 12h
     maxStaleness: 72h
+  # delivery: native   # the tool's own plugin system loads the plugin whole
 ```
 
 - Point `path` at the plugin root when the plugin sits in a subdirectory of a repo.
 - A standalone Plugin **requires** `.claude-plugin/plugin.json`; without it the fetch
   fails with `UpstreamInvalid`. (Plugins inside a marketplace are more lenient; see
   `marketplaces.md`.)
-- The operator keeps only what agents use: `plugin.json`, root `README.md` and
+- Unless `delivery: native`, the operator keeps only what agents use: `plugin.json`, root `README.md` and
   `LICENSE`, the convention directories (`commands/`, `agents/`, `skills/`, `hooks/`,
   `mcpServers/`) and any directory the manifest references. Tests, build files and
   other tools' mirrors are dropped.
@@ -41,6 +42,16 @@ spec:
 - A bare name in `context.plugins` resolves only to a Plugin CR. If a marketplace also
   has a plugin with that name, the two never collide: the marketplace one is
   `name@marketplace`.
+- `delivery: native` is for a plugin with hooks, a local MCP server or a tool
+  extension. The operator stores it unfiltered, so everything under the source
+  path reaches developer machines, and `ach-cli` hands it to each tool's own
+  plugin system. The repository must carry each tool's own manifest
+  (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, a `package.json`
+  with a `pi` block or OpenCode `exports`, Antigravity's `plugin.json`); a tool
+  without one gets nothing from the plugin, and Cursor is never served. Its hooks
+  run as the developer on their machine, and Codex installs it for the whole
+  user: mark only plugins you trust. Developers need `ach-cli` 1.3.1 or newer. A
+  plugin from a PluginMarketplace cannot be native.
 
 ## Skill
 

@@ -51,6 +51,7 @@ type PluginRow struct {
 	LastSuccessfulRefresh *time.Time // nil on first reconcile / OP-11 reset
 	MaxStalenessSeconds   int64      // spec.refresh.maxStaleness in seconds
 	ResourceVersion       string     // K8s metadata.resourceVersion at write
+	Delivery              string     // spec.delivery: "ach" or "native"
 	UpdatedAt             time.Time  // server-set on UPSERT
 	UpstreamRev           string     // external_refs.upstream_rev: the served revision
 	LatestUpstreamRev     string     // external_refs.latest_upstream_rev: head of the git ref
@@ -90,13 +91,14 @@ const upsertPluginSQL = `
 	INSERT INTO plugins
 	    (namespace, name, storage_location,
 	     last_successful_refresh, max_staleness_seconds,
-	     resource_version, updated_at, origin, locked)
-	VALUES ($1, $2, $3, $4, $5, $6, now(), 'cr', TRUE)
+	     resource_version, delivery, updated_at, origin, locked)
+	VALUES ($1, $2, $3, $4, $5, $6, COALESCE(NULLIF($7, ''), 'ach'), now(), 'cr', TRUE)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    storage_location        = EXCLUDED.storage_location,
 	    last_successful_refresh = EXCLUDED.last_successful_refresh,
 	    max_staleness_seconds   = EXCLUDED.max_staleness_seconds,
 	    resource_version        = EXCLUDED.resource_version,
+	    delivery                = EXCLUDED.delivery,
 	    updated_at              = now(),
 	    locked                  = TRUE
 	WHERE plugins.origin = 'cr'
@@ -108,7 +110,7 @@ func UpsertPluginTx(ctx context.Context, tx pgx.Tx, row PluginRow) error {
 	return upsertReturning(ctx, tx, upsertPluginSQL, "UpsertPlugin("+row.Namespace+"/"+row.Name+")",
 		row.Namespace, row.Name, row.StorageLocation,
 		row.LastSuccessfulRefresh, row.MaxStalenessSeconds,
-		row.ResourceVersion,
+		row.ResourceVersion, row.Delivery,
 	)
 }
 
@@ -118,7 +120,7 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 	const sql = `
 		SELECT namespace, name, storage_location,
 		       last_successful_refresh, max_staleness_seconds,
-		       resource_version, updated_at,
+		       resource_version, updated_at, delivery,
 		       COALESCE((SELECT e.upstream_rev FROM external_refs e
 		                  WHERE e.kind = 'plugin' AND e.name = plugins.name), ''),
 		       COALESCE((SELECT e.latest_upstream_rev FROM external_refs e
@@ -141,7 +143,7 @@ func ListPlugins(ctx context.Context, pool *pgxpool.Pool, ns string) ([]PluginRo
 		if err := rows.Scan(
 			&r.Namespace, &r.Name, &r.StorageLocation,
 			&r.LastSuccessfulRefresh, &r.MaxStalenessSeconds,
-			&r.ResourceVersion, &r.UpdatedAt, &r.UpstreamRev, &r.LatestUpstreamRev,
+			&r.ResourceVersion, &r.UpdatedAt, &r.Delivery, &r.UpstreamRev, &r.LatestUpstreamRev,
 		); err != nil {
 			return nil, fmt.Errorf("db: ListPlugins(%s) scan: %w", ns, err)
 		}

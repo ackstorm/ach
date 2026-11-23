@@ -89,7 +89,7 @@ func (s *Store) ContentRevs(ctx context.Context) (Revs, error) {
 		return r, err
 	}
 	for _, p := range plugins {
-		r.Plugins[p.Name] = p.UpstreamRev
+		r.Plugins[p.Name] = pluginRev(p)
 	}
 	skills, err := db.ListSkills(ctx, s.pool, s.ns)
 	if err != nil {
@@ -200,4 +200,30 @@ func (s *Store) ListAuthorizedEnvironments(ctx context.Context, callerTeams []st
 		}
 	}
 	return out, nil
+}
+
+// pluginRev is the revision the Environment version reports for p. A native
+// plugin's carries "+native": a delivery change keeps the upstream revision,
+// and environment status must still see it.
+func pluginRev(p db.PluginRow) string {
+	if p.Delivery == "native" {
+		return p.UpstreamRev + "+native"
+	}
+	return p.UpstreamRev
+}
+
+// NativePlugins names the Plugin objects of s.ns delivered through the tool's
+// own plugin system.
+func (s *Store) NativePlugins(ctx context.Context) (map[string]bool, error) {
+	plugins, err := db.ListPlugins(ctx, s.pool, s.ns)
+	if err != nil {
+		return nil, err
+	}
+	native := map[string]bool{}
+	for _, p := range plugins {
+		if p.Delivery == "native" {
+			native[p.Name] = true
+		}
+	}
+	return native, nil
 }

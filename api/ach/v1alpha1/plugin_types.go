@@ -6,6 +6,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// PluginDeliveryNative is the spec.delivery value for a plugin the tool's own
+// plugin system loads whole.
+const PluginDeliveryNative = "native"
+
 // PluginSpec defines the desired state of Plugin (Hub §11).
 //
 // A Plugin references an upstream location whose subtree contains a
@@ -58,6 +62,16 @@ type PluginSpec struct {
 	//
 	// +optional
 	HTTP *HTTPSource `json:"http,omitempty"`
+
+	// Delivery selects how ach-cli installs the plugin. "ach" splits its
+	// files into each tool's own folders. "native" keeps the plugin whole and
+	// has the tool's own plugin system load it, so its hooks, local MCP
+	// server and tool extensions work. A native plugin is stored unfiltered
+	// and must carry the manifest of every tool it is meant for.
+	// +optional
+	// +kubebuilder:default=ach
+	// +kubebuilder:validation:Enum=ach;native
+	Delivery string `json:"delivery,omitempty"`
 }
 
 // PluginStatus defines the observed state of Plugin.

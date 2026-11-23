@@ -78,6 +78,7 @@ func (r *PluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				Refresh:       s.Refresh,
 				Scope:         "",
 				SizeCapBytes:  int64(r.PluginMaxSizeMiB) << 20,
+				NativePlugin:  s.Delivery == achv1alpha1.PluginDeliveryNative,
 			}
 		},
 		handleDeletion:  r.reconcileDeletion,
@@ -132,6 +133,7 @@ func (r *PluginReconciler) writePluginProjection(
 		LastSuccessfulRefresh: &lastRefresh,
 		MaxStalenessSeconds:   int64(maxStaleness.Seconds()),
 		ResourceVersion:       cr.ResourceVersion,
+		Delivery:              cr.Spec.Delivery,
 	}
 	return projectRow(ctx, r.DB, pluginsChannel, cr.Namespace, cr.Name, "plugin", func(tx pgx.Tx) error {
 		return achdb.UpsertPluginTx(ctx, tx, row)
