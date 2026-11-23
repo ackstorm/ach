@@ -116,3 +116,56 @@ func TestRunHydrateWorkspace_NothingHydrated(t *testing.T) {
 		t.Fatalf("empty folder should point at environment clone, got %v", err)
 	}
 }
+
+// A named hydrate without --target updates the targets the Environment is
+// already hydrated for, in project scope and under --global; --target wins,
+// and an Environment not hydrated there falls back to autodetection.
+func TestResolvePlatforms_RecordedTargets(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	seedState(t, cwd, "proj", "opencode")
+	seedState(t, cwd, "proj", "claude-code")
+	seedState(t, cwd, "proj", "cursor") // no adapter: skipped
+	seedState(t, home, "glob", "codex")
+	seedState(t, home, "glob", "pi")
+
+	for _, tc := range []struct {
+		name string
+		in   hydrateInputs
+		env  string
+		want string
+	}{
+		{"project", hydrateInputs{output: cwd}, "proj", "claude-code,opencode"},
+		{"global", hydrateInputs{global: true}, "glob", "codex,pi"},
+		{"--target wins", hydrateInputs{output: cwd, platform: []string{"pi"}}, "proj", "pi"},
+		{"ACH_TARGET wins", hydrateInputs{output: cwd, envTarget: "codex"}, "proj", "codex"},
+	} {
+		got, err := resolvePlatformsOrAutodetect(tc.in, tc.env, &bytes.Buffer{})
+		if err != nil || strings.Join(got, ",") != tc.want {
+			t.Errorf("%s: got %v, %v; want %s", tc.name, got, err, tc.want)
+		}
+	}
+	// Not hydrated in this scope: autodetect, which finds nothing in an empty folder.
+	if got, err := resolvePlatformsOrAutodetect(hydrateInputs{output: cwd}, "glob", &bytes.Buffer{}); err == nil {
+		t.Errorf("unrecorded Environment: want the autodetect error, got %v", got)
+	}
+}
+
+// A bare `hydrate -g` updates the Environments recorded under ~/.ach, never
+// the ones of the folder it runs in.
+func TestRunHydrateWorkspace_Global(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	seedState(t, home, "glob", "codex")
+	seedState(t, cwd, "proj", "claude-code")
+	t.Cleanup(chdir(t, cwd))
+
+	var seen []hydrate.Opts
+	stubEngine(t, nil, &seen)
+	if err := runHydrateWorkspace(testCmd(t), hydrateInputs{global: true}, "https://hub.example", "pk_x"); err != nil {
+		t.Fatalf("runHydrateWorkspace -g: %v", err)
+	}
+	if len(seen) != 1 || seen[0].Environment != "glob" || seen[0].Platform != "codex" || !seen[0].Global {
+		t.Fatalf("want only glob/codex hydrated globally, got %+v", seen)
+	}
+}

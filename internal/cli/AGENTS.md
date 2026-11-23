@@ -757,9 +757,14 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   absent when unknown, no defaults) comes from `litellm.CapsCache`
   (`DeploymentCaps`, aliases resolved), the same view as the per-user OpenCode
   config; a LiteLLM failure omits it and hydrate stays 200.
-- **Target autodetection.** Without `--target`, `environment hydrate` detects
-  the workspace's agent and errors when it finds none or several;
-  `environment clone` requires `--target` (an empty folder has nothing to detect).
+- **Targets without `--target`** (`resolvePlatformsOrAutodetect`): `ACH_TARGET`,
+  else the targets the Environment is already hydrated for in that scope
+  (`recordedTargets`: `.ach/<env>/state-<target>.json`, `~/.ach/` under `-g`;
+  a state file of a target with no adapter is skipped), else the one agent
+  detected in the workspace (none or several is an error). The same for a named
+  hydrate and for the bare form, which reads the Environments from the same
+  `.ach/` (`stateRoot`). `environment clone` requires `--target` (an empty
+  folder has nothing to detect).
 - **State layout.** `.ach/<env>/state-<platform>.json` is the only workspace
   state layout; there is no `ach.yaml` and no state migration.
 

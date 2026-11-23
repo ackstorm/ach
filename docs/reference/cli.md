@@ -600,8 +600,9 @@ Location:
   -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
   --target <id[,id…]> Agent target(s): antigravity / claude-code / codex /
                       opencode / pi (comma-separated or repeated;
-                      ACH_TARGET is the same). Omitted: autodetected from
-                      the workspace.
+                      ACH_TARGET is the same). Omitted: the targets the
+                      Environment is already hydrated for, else
+                      autodetected from the workspace.
 
 Credentials:
   --key <name|ek-…>   A key saved in the profile, or a raw ek-… key
@@ -610,7 +611,8 @@ Credentials:
 
 The positional <name> is the environment; with a key it is optional (the
 key is already scoped to one environment). Without <name>, every environment
-already hydrated in this folder (.ach/) is updated with its recorded targets.
+already hydrated in this folder (.ach/, or ~/.ach/ with -g) is updated with
+its recorded targets.
 
 Example:
   ach-cli environment hydrate frontend-dev --only plugin/code-review -g --target claude-code
@@ -641,7 +643,7 @@ Flags:
       --only-runtime            Reconcile ONLY runtime entries (skip context)
       --profile string          Use this profile instead of the active one
       --sync                    Delete state entries no longer in the environment (deepest-first)
-      --target strings          Override platform autodetection; comma-separated or repeated for several targets, e.g. codex,opencode (antigravity / claude-code / codex / opencode / pi + case-folded aliases)
+      --target strings          Agent target(s) instead of the recorded or autodetected ones; comma-separated or repeated for several targets, e.g. codex,opencode (antigravity / claude-code / codex / opencode / pi + case-folded aliases)
       --verbose                 Dump request headers to stderr (credentials redacted)
       --wait                    Block indefinitely on workspace lock contention
 ```

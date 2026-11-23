@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+
+- `ach-cli environment hydrate <environment>` without `--target` updates the tools the Environment is already hydrated for, in a folder and with `-g`. It stopped with "multiple agent targets detected" as soon as the Environment was hydrated for more than one tool; only the form without a name reused them. Adding a tool still takes `--target` once.
+- `ach-cli environment hydrate -g` without a name updates every Environment installed globally. It read the list from the folder it ran in, so inside a hydrated project it installed that project's Environments into your home folder, and anywhere else it said "nothing hydrated in this folder yet".
+
 ## [1.3.3] - 2026-11-23
 
 ### Removed
