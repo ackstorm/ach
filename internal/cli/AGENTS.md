@@ -450,6 +450,63 @@ target is the adapter's `InstructionFiles`, the global path goes through
   hydrate (an Instruction that left the Environment loses its file); a recorded file
   missing on disk is rewritten.
 
+### Native plugin delivery (`adapter.NativeTarget`, `hydrate/native.go`)
+
+A plugin the hydrate manifest marks `delivery: "native"` (`ContentRef.Delivery`) is
+not projected into files. Its tree is copied unchanged to
+`.ach/<env>/native/<tool>/plugins/<plugin>/` (one copy per tool) and registered with
+the tool's own plugin system. It writes ONE state row per plugin and tool
+(`merge: "native"`, Target = the plugin folder, Hash = `treeHash` of the tree);
+`syncOne` routes that row to `removeNative`, which unregisters, deletes the tree and
+the folders it leaves empty. Native delivery is not a projection rule: nothing
+changes in the per-kind table.
+
+`adapter.NativeTarget` (`adapter/native.go`): `NativeSupports(dir)` (the tree carries
+the tool's own plugin manifest), `NativeRegister(ctx, NativePlugin)` (idempotent,
+returns the note to show), `NativeUnregister` (idempotent, runs before the tree goes).
+A tool without the interface (Cursor), or a plugin without that tool's manifest, gets a
+warning and nothing: the plugin is never split into files instead. A missing tool
+command (`ErrToolMissing`) warns, records no row, and the next hydrate tries again.
+
+| tool | registration | note |
+|---|---|---|
+| claude-code | `extraKnownMarketplaces["ach-<env>-<8 hex>"]` (directory source = `.ach/<env>/native/claude-code`) and `enabledPlugins["<plugin>@ach-<env>-<8 hex>"]` in `.claude/settings.json` | loads once the folder is trusted |
+| pi | absolute folder in `packages` of `.pi/settings.json` | loads only in a trusted project (`pi -a`) |
+| opencode | absolute folder in `plugins` of `.opencode/opencode.json` | loads when the service starts (`opencode service restart`) |
+| codex | `codex plugin marketplace add <abs>/.ach/<env>/native/codex`, then `codex plugin add <plugin>@ach-<env>-<8 hex>`; uninstall runs `plugin remove`, then `marketplace remove` | active for the user; Codex may ask to approve the plugin's hooks |
+| antigravity | copy at `.agents/plugins/<plugin>/` plus the marker `.ach-native` | none |
+| cursor | none | warning |
+
+Claude Code and Codex key a marketplace by name for the whole user, so the name carries
+a hash of the folder path: two folders hydrating one Environment otherwise read each
+other's plugin (Claude Code) or the second is refused (Codex).
+
+Checked 2026-11-23 against the real tools, each with one headless session against a
+fake model (the request shows what the tool loaded): Claude Code 2.1.330, Codex CLI
+0.163.0, OpenCode 2.3.2, pi 1.6.0, Antigravity CLI 1.5.15.
+
+| tool | measured |
+|---|---|
+| Claude Code | skill offered, SessionStart hook text reached the model, the plugin's local MCP server started. `claude plugin list` does NOT list the plugin ("No plugins installed"): Claude Code reads it in place. Uninstall removes both keys (the file when nothing else is in it) and the next session loads nothing |
+| pi | with `pi -a`: the extension's session-start hook ran and its MCP server started. Uninstall stops the hook; a server entry the extension wrote to `~/.pi/agent/mcp.json` stays |
+| opencode | `opencode run --standalone`: plugin loaded with no load error, skill offered, hook text reached the model, MCP server started. A plugin must be an OpenCode 2 module (default export with `id` and `setup`, `exports` in `package.json`) |
+| codex | `codex plugin list` shows it `installed, enabled`; config gains `[marketplaces.<name>]` and `[plugins."<plugin>@<name>"]`; skill offered and MCP server started; hooks did not run headless (approval needed). Uninstall removes both tables. `plugin remove` exits 0 for an unknown plugin, `marketplace add` of a registered path exits 0, `marketplace remove` of an unknown name exits 1; an unchanged re-hydrate runs no `codex` command |
+| antigravity | logged-in `agy -p`: the plugin's SessionStart hook ran; uninstall removes the copy and the `.agents/plugins/` and `.agents/` folders when empty |
+
+Also measured:
+
+- A plugin whose content changes between two hydrates shows as `~ plugin  <name>` and its tree is replaced. For Codex, `codex plugin marketplace add <root>` and `codex plugin add <plugin>@<marketplace>` run again, and that second `plugin add` refreshes the copy in Codex's own cache (`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`) even when the plugin's version is unchanged. Claude Code reads the new files in place.
+- With `--global` the tree is at `~/.ach/<env>/native/<tool>/plugins/<plugin>/` and the registration is in the tool's user-level file: `~/.claude/settings.json`, `~/.pi/agent/settings.json`, `~/.config/opencode/opencode.json`, Codex's user config (as in project scope), and for Antigravity a copy at `~/.gemini/config/plugins/<plugin>/`. Claude Code and pi load a user-level entry without the trust step, and ach-cli prints no trust note there. `environment uninstall --global` removes the entries and the tree.
+
+Limits:
+
+- Codex installs for the whole user, whatever the hydrate scope.
+- Antigravity's copy lives in `.agents/plugins/<plugin>/`, one folder per plugin name for the whole workspace: two Environments holding a native plugin of the same name share it.
+- Claude Code and pi load a project-scope plugin only in a trusted folder.
+- Two Environments holding the same native plugin in one workspace load it twice in Claude Code, pi and OpenCode.
+- What a plugin writes outside its folder (for example a server entry in pi's `mcp.json`) is not removed by uninstall.
+- `claude plugin list` does not show a plugin Claude Code reads in place.
+
 ### Global-scope root resolution (`--global`)
 
 `--global` does NOT mean "$HOME-relative". Each agent CLI exposes its own

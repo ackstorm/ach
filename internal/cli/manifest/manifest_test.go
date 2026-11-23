@@ -372,3 +372,19 @@ func TestDecode_Prompts(t *testing.T) {
 		t.Fatalf("prompts not decoded: %+v", m.Context.Prompts)
 	}
 }
+
+func TestDecode_PluginDelivery(t *testing.T) {
+	body := `{"schemaVersion":"v1alpha1","environment":"dev","runtime":{"models":[],"mcpServers":[],"a2aAgents":[]},"context":{"prompts":[],"artifacts":[],"skills":[],
+	  "plugins":[{"name":"a","id":"a","downloadUrl":"http://x/content/plugin/a","delivery":"native"},
+	             {"name":"b","id":"b","downloadUrl":"http://x/content/plugin/b"}]}}`
+	m, err := manifest.Decode(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got := m.Context.Plugins[0].Delivery; got != manifest.DeliveryNative {
+		t.Errorf("plugin a delivery = %q; want %q", got, manifest.DeliveryNative)
+	}
+	if got := m.Context.Plugins[1].Delivery; got != "" {
+		t.Errorf("plugin b delivery = %q; want empty", got)
+	}
+}

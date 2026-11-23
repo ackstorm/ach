@@ -33,7 +33,7 @@ var globalScopes = map[string]globalScope{
 	"codex":       {envVar: "CODEX_HOME", fromPrefix: ".codex/"},
 	// Antigravity's user scope is ~/.gemini/config, for every .agents/ path.
 	"antigravity": {fromPrefix: ".agents/", fallback: ".gemini/config/"},
-	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"prompts/", "ach/", "extensions/"}},
+	"pi":          {envVar: "PI_CODING_AGENT_DIR", fromPrefix: ".pi/", fallback: ".pi/agent/", subdirs: []string{"prompts/", "ach/", "extensions/", "settings.json"}},
 	"opencode": {
 		envVar:     "XDG_CONFIG_HOME",
 		fromPrefix: ".opencode/",

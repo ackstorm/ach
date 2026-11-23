@@ -77,7 +77,7 @@ func TestProjectPlugins_ReplaceCollision_StillFailsFast(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: conflict.Refuse}
 	var result RenderResult
-	err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, nil, false, &result)
+	err := d.projectPlugins(context.Background(), fakeReplaceAdapter{}, nil, achDir, achDir, toolRoot, nil, false, &result)
 	if err == nil {
 		t.Fatalf("two plugins colliding on a MergeReplace target: want CR-01 error, got nil")
 	}
@@ -99,7 +99,7 @@ func TestProjectPlugins_ReplaceCollision_NamespaceKeepsBoth(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: conflict.Namespace}
 	var result RenderResult
-	if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, nil, false, &result); err != nil {
+	if err := d.projectPlugins(context.Background(), fakeReplaceAdapter{}, nil, achDir, achDir, toolRoot, nil, false, &result); err != nil {
 		t.Fatalf("projectPlugins (namespace): %v", err)
 	}
 	mustExist := func(rel string) {
@@ -137,7 +137,7 @@ func TestProjectPlugins_ReplaceCollision_SkipAndOverwrite(t *testing.T) {
 
 			d := &adapterDispatcherImpl{platformID: "fakerepl", conflict: tc.policy}
 			var result RenderResult
-			if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, nil, false, &result); err != nil {
+			if err := d.projectPlugins(context.Background(), fakeReplaceAdapter{}, nil, achDir, achDir, toolRoot, nil, false, &result); err != nil {
 				t.Fatalf("projectPlugins: %v", err)
 			}
 			got, err := os.ReadFile(filepath.Join(toolRoot, ".claude", "rules", "foo.md"))
@@ -166,7 +166,7 @@ func TestProjectPlugins_ReplaceProjectedFileIs0o644(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakerepl"}
 	var result RenderResult
-	if err := d.projectPlugins(fakeReplaceAdapter{}, nil, achDir, toolRoot, nil, false, &result); err != nil {
+	if err := d.projectPlugins(context.Background(), fakeReplaceAdapter{}, nil, achDir, achDir, toolRoot, nil, false, &result); err != nil {
 		t.Fatalf("projectPlugins: %v", err)
 	}
 
@@ -222,7 +222,7 @@ func TestProjectPlugins_RuntimeWins_DropsPluginMCP(t *testing.T) {
 			{Target: ".claude/settings.json", Merge: mergeStrDeep, Keys: []string{"mcpServers.foo"}},
 		},
 	}
-	if err := d.projectPlugins(fakeProjAdapter{}, nil, achDir, toolRoot, result.WrittenFiles, false, &result); err != nil {
+	if err := d.projectPlugins(context.Background(), fakeProjAdapter{}, nil, achDir, achDir, toolRoot, result.WrittenFiles, false, &result); err != nil {
 		t.Fatalf("projectPlugins runtime-wins: %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestProjectPlugins_RuntimeWins_AllCollide_SkipsPublish(t *testing.T) {
 			{Target: ".claude/settings.json", Merge: mergeStrDeep, Keys: []string{"mcpServers.foo"}},
 		},
 	}
-	if err := d.projectPlugins(fakeProjAdapter{}, nil, achDir, toolRoot, result.WrittenFiles, false, &result); err != nil {
+	if err := d.projectPlugins(context.Background(), fakeProjAdapter{}, nil, achDir, achDir, toolRoot, result.WrittenFiles, false, &result); err != nil {
 		t.Fatalf("projectPlugins all-collide: %v", err)
 	}
 	// No projected MCP row (the only contributed key collided → skip publish).
@@ -327,7 +327,7 @@ func TestProjectPlugins_DroppedByKind_AndProjectedByKind(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectPlugins(fakeSkillsAdapter{}, nil, achDir, toolRoot, nil, false, &result); err != nil {
+	if err := d.projectPlugins(context.Background(), fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, nil, false, &result); err != nil {
 		t.Fatalf("projectPlugins: %v", err)
 	}
 

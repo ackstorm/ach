@@ -96,3 +96,32 @@ func TestCommit_SiblingEnvironmentSkillIsPrefixed(t *testing.T) {
 		t.Fatal("the sibling's bare skills/pdf was written over")
 	}
 }
+
+// piPluginExtractor stages a plugin that carries only a pi manifest.
+type piPluginExtractor struct{}
+
+func (piPluginExtractor) ExtractContent(_ context.Context, ref manifest.ContentRef, base string, _ *state.File) (ExtractResult, error) {
+	dir := filepath.Join(base, "plugin", ref.Name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ExtractResult{}, err
+	}
+	return ExtractResult{}, os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"name":"plug","pi":{"extensions":["./ext.js"]}}`), 0o644)
+}
+
+// A natively delivered plugin lands in the Environment's directory, not in
+// the stage the run sweeps.
+func TestCommit_NativePluginLandsInTheEnvironmentDir(t *testing.T) {
+	c, _, _ := newTestCommit(t)
+	c.toolRoot = t.TempDir()
+	c.achDir = filepath.Join(c.toolRoot, ".ach", "demo")
+	c.extractor = piPluginExtractor{}
+	plugins := &manifest.ContextBlock{Plugins: []manifest.ContentRef{
+		{Name: "plug", DownloadURL: "https://x/content/plugin/plug", Delivery: manifest.DeliveryNative}}}
+	if err := runTarget(t, c, "pi", plugins); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(c.achDir, "native", "pi", "plugins", "plug", "package.json")) {
+		t.Fatal("the native plugin is not in the Environment's directory")
+	}
+}

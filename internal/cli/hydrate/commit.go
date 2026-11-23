@@ -468,6 +468,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
 		c.warnConflicts(result.ConflictWarnings)
 		c.warnConflicts(renderResult.InstructionWarnings)
+		c.reportNative(renderResult)
 	}
 	c.maybeKill(10)
 
@@ -999,6 +1000,14 @@ func (c *commit) warnConflicts(lines []string) {
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(c.opts.Stderr, "warning: %s\n", line)
 	}
+}
+
+// reportNative prints the notes and warnings of natively delivered plugins.
+func (c *commit) reportNative(render RenderResult) {
+	for _, line := range render.NativeNotes {
+		_, _ = fmt.Fprintf(c.opts.Stderr, "note: %s\n", line)
+	}
+	c.warnConflicts(render.NativeWarnings)
 }
 
 // tidyInstructionLoader removes the target's instruction loader once pruning

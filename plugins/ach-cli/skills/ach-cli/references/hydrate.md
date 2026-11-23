@@ -87,6 +87,28 @@ for claude. If the ACH session ends while claude runs, claude shows `API Error: 
 Claude's `/remote-control` stays unavailable: Claude Code turns it off behind any gateway.
 It takes over the terminal: tell the user to run it themselves, never run it yourself.
 
+## Plugins the tool installs itself
+
+A plugin the administrator marked for native delivery is installed whole under
+`.ach/<env>/native/<tool>/plugins/<plugin>/` and registered with the tool's own plugin
+system (hooks and local MCP servers work). Hydrate lists it as `+ plugin  <name>`, then a note:
+
+- Claude Code: `Claude Code loads <plugin> once you trust this folder`. `claude plugin list`
+  does not show it; Claude Code reads it in place.
+- pi: `pi loads <plugin> only in a trusted project (pi -a)`.
+- OpenCode: `OpenCode loads <plugin> when its service starts (opencode service restart)`.
+- Codex: `Codex installs plugins for your user: <plugin> is active in every folder, and Codex may
+  ask you to approve its hooks`. It installs for the whole user, whatever the scope.
+- Antigravity: copied to `.agents/plugins/<plugin>/` (`~/.gemini/config/plugins/<plugin>/` with
+  `--global`), no note.
+
+A tool the plugin does not support gets a warning and nothing else: `plugin <name> uses native
+delivery, which ach-cli does not offer for cursor: not installed` (Cursor), or `plugin <name> uses
+native delivery and carries no <tool> plugin manifest: not installed`. `environment uninstall`
+removes the plugin; files the plugin wrote elsewhere (pi's `mcp.json`) stay. If the tool's own
+command is missing (Codex), hydrate installs nothing for it and warns `plugin <name> not installed
+for codex: codex: not found on PATH`.
+
 ## One plugin or skill only
 
 ```bash
