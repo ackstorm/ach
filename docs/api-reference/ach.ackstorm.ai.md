@@ -1063,6 +1063,7 @@ _Appears in:_
 | `s3` _[S3Source](#s3source)_ | S3 source. Required when spec.type == "s3". |  |  |
 | `gcs` _[GCSSource](#gcssource)_ | GCS source. Required when spec.type == "gcs". |  |  |
 | `http` _[HTTPSource](#httpsource)_ | HTTP source. Required when spec.type == "http". |  |  |
+| `delivery` _string_ | Delivery selects how ach-cli installs the plugin. "ach" splits its<br />files into each tool's own folders. "native" keeps the plugin whole and<br />has the tool's own plugin system load it, so its hooks, local MCP<br />server and tool extensions work. A native plugin is stored unfiltered<br />and must carry the manifest of every tool it is meant for. | ach | Enum: [ach native] <br /> |
 
 
 #### PluginStatus

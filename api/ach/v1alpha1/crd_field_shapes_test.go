@@ -49,3 +49,20 @@ func TestUnresolvedRuntimeGuardrailsAxis(t *testing.T) {
 		t.Fatalf("unresolvedRuntime.guardrails missing from %s", b)
 	}
 }
+
+func TestPluginSpecDelivery(t *testing.T) {
+	b, err := json.Marshal(PluginSpec{Type: "github", Delivery: PluginDeliveryNative})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"delivery":"native"`) {
+		t.Fatalf("delivery missing from %s", b)
+	}
+	b, err = json.Marshal(PluginSpec{Type: "github"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), "delivery") {
+		t.Fatalf("an unset delivery is serialised: %s", b)
+	}
+}

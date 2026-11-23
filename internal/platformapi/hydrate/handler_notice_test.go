@@ -32,7 +32,7 @@ func TestHydrateResponse_NoticePassThrough(t *testing.T) {
 		SchemaVersion: SchemaVersion,
 		Environment:   env.Name,
 		Runtime:       toRuntimeBlockFromRow(env, baseURL),
-		Context:       toContextBlockFromRow(env, baseURL),
+		Context:       toContextBlockFromRow(env, baseURL, nil),
 		Notice:        env.Notice,
 	}
 

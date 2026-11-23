@@ -42,7 +42,7 @@ func limitsResponse(src litellm.CapsSource, models ...string) HydrateResponse {
 		SchemaVersion: SchemaVersion,
 		Environment:   env.Name,
 		Runtime:       toRuntimeBlockFromRow(env, "https://ach.test"),
-		Context:       toContextBlockFromRow(env, "https://ach.test"),
+		Context:       toContextBlockFromRow(env, "https://ach.test", nil),
 	}
 	caps := litellm.NewCapsCache(src, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	addModelLimits(context.Background(), caps, resp.Runtime.Models)

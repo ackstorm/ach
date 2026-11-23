@@ -150,6 +150,18 @@ spec:
                 - repo
                 - workspace
                 type: object
+              delivery:
+                default: ach
+                description: |-
+                  Delivery selects how ach-cli installs the plugin. "ach" splits its
+                  files into each tool's own folders. "native" keeps the plugin whole and
+                  has the tool's own plugin system load it, so its hooks, local MCP
+                  server and tool extensions work. A native plugin is stored unfiltered
+                  and must carry the manifest of every tool it is meant for.
+                enum:
+                - ach
+                - native
+                type: string
               gcs:
                 description: GCS source. Required when spec.type == "gcs".
                 properties:

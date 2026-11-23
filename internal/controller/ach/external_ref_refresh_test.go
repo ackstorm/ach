@@ -899,3 +899,114 @@ func TestMaterializeExternalRef_PromptHasNoContentGate(t *testing.T) {
 		})
 	}
 }
+
+// nativePluginTarGz is a plugin whose proxy needs files the content filter drops.
+func nativePluginTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, f := range []struct{ name, body string }{
+		{".claude-plugin/plugin.json", `{"name":"memory"}`},
+		{"package.json", `{"name":"memory","pi":{"extensions":["./ext.js"]}}`},
+		{"pyproject.toml", "[project]\nname = \"memory\"\n"},
+		{"src/memory/proxy.py", "print('proxy')\n"},
+	} {
+		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0o644, Size: int64(len(f.body)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatalf("WriteHeader %q: %v", f.name, err)
+		}
+		if _, err := tw.Write([]byte(f.body)); err != nil {
+			t.Fatalf("Write %q: %v", f.name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func tarNames(t *testing.T, path string) map[string]bool {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gzip %s: %v", path, err)
+	}
+	names := map[string]bool{}
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return names
+		}
+		if err != nil {
+			t.Fatalf("tar %s: %v", path, err)
+		}
+		names[strings.TrimPrefix(hdr.Name, "./")] = true
+	}
+}
+
+func TestMaterializeExternalRef_PluginDelivery(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		unfiltered bool
+		wantSource bool
+	}{
+		{name: "ach", unfiltered: false, wantSource: false},
+		{name: "native", unfiltered: true, wantSource: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newCacheRoot(t)
+			finalPath := filepath.Join(root, "plugin", "mat-"+tc.name)
+			res := materializeExternalRef(context.Background(), ExternalRefRefreshDeps{
+				Client:       k8sClient,
+				Namespace:    WatchNamespace,
+				CacheRoot:    root,
+				Kind:         "plugin",
+				Name:         "mat-" + tc.name,
+				FinalPath:    finalPath,
+				NativePlugin: tc.unfiltered,
+				Fetchers:     fakeFactory(&fakeFetcher{body: nativePluginTarGz(t), upstreamRev: "sha-1"}),
+				Refresh:      achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+				Log:          logr.Discard(),
+			})
+			if res.Err != nil {
+				t.Fatalf("materializeExternalRef: %v", res.Err)
+			}
+			names := tarNames(t, finalPath)
+			if !names[".claude-plugin/plugin.json"] {
+				t.Errorf("the manifest is missing: %v", names)
+			}
+			for _, n := range []string{"package.json", "pyproject.toml", "src/memory/proxy.py"} {
+				if names[n] != tc.wantSource {
+					t.Errorf("%s present = %v; want %v", n, names[n], tc.wantSource)
+				}
+			}
+		})
+	}
+}
+
+func TestMaterializeExternalRef_NativePluginStillChecked(t *testing.T) {
+	root := newCacheRoot(t)
+	finalPath := filepath.Join(root, "plugin", "mat-junk")
+	res := materializeExternalRef(context.Background(), ExternalRefRefreshDeps{
+		Client: k8sClient, Namespace: WatchNamespace, CacheRoot: root,
+		Kind: "plugin", Name: "mat-junk", FinalPath: finalPath, NativePlugin: true,
+		Fetchers: fakeFactory(&fakeFetcher{body: []byte("not a gzip archive"), upstreamRev: "sha-1"}),
+		Refresh:  achv1alpha1.RefreshBlock{MaxStaleness: metav1.Duration{Duration: time.Hour}},
+		Log:      logr.Discard(),
+	})
+	if res.Err == nil {
+		t.Fatal("a native plugin that is not an archive was accepted")
+	}
+	if _, err := os.Stat(finalPath); err == nil {
+		t.Errorf("a rejected plugin was published at %s", finalPath)
+	}
+}

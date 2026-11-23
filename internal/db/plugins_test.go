@@ -352,3 +352,39 @@ func TestResolvePluginByName_NoMatch_NilNil(t *testing.T) {
 		t.Errorf("got %+v, want nil", got)
 	}
 }
+
+func TestUpsertPlugin_Delivery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	row := db.PluginRow{Namespace: "default", Name: "memory", StorageLocation: "/c/plugin/memory",
+		LastSuccessfulRefresh: &now, MaxStalenessSeconds: 600, ResourceVersion: "1"}
+	if err := dbtest.UpsertPlugin(ctx, pool, row); err != nil {
+		t.Fatalf("UpsertPlugin: %v", err)
+	}
+	delivery := func() string {
+		t.Helper()
+		rows, err := db.ListPlugins(ctx, pool, "default")
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("ListPlugins = %v, %v; want one row", rows, err)
+		}
+		return rows[0].Delivery
+	}
+	if got := delivery(); got != "ach" {
+		t.Errorf("delivery of a row written without one = %q; want ach", got)
+	}
+	row.Delivery, row.ResourceVersion = "native", "2"
+	if err := dbtest.UpsertPlugin(ctx, pool, row); err != nil {
+		t.Fatalf("UpsertPlugin native: %v", err)
+	}
+	if got := delivery(); got != "native" {
+		t.Errorf("delivery after the update = %q; want native", got)
+	}
+	got, err := dbtest.GetPluginByName(ctx, pool, "default", "memory")
+	if err != nil || got == nil || got.Delivery != "native" {
+		t.Errorf("GetPluginByName = %+v, %v; want delivery native", got, err)
+	}
+}

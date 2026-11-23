@@ -134,6 +134,11 @@ type ExternalRefRefreshDeps struct {
 	// int64(PluginMaxSizeMiB) << 20.
 	SizeCapBytes int64
 
+	// NativePlugin keeps a plugin as fetched: it gets the plugin contents
+	// check instead of pluginpack.Filter, so other tools' manifests and the
+	// plugin's own sources reach the workstation. Plugin kind only.
+	NativePlugin bool
+
 	// FinalPath is the absolute path the rename(2) targets. The per-kind
 	// reconciler computes it via [computeFinalPath] before calling — the
 	// helper does NOT know the per-kind suffix conventions.
@@ -186,7 +191,9 @@ type MaterializeResult struct {
 //  5. Stage at deps.CacheRoot/.tmp/stg-<random> via os.CreateTemp.
 //     (issue #26) When deps.Kind == "plugin", apply pluginpack.Filter
 //     to result.Body BEFORE the size-cap copy so the cap measures the
-//     filtered bytes. Prompt/Instruction/Artifact paths are byte-identical to
+//     filtered bytes. A native plugin (deps.NativePlugin) skips the filter:
+//     it passes contentkit.VerifyPluginContents and the cap measures the
+//     whole tree. Prompt/Instruction/Artifact paths are byte-identical to
 //     pre-issue-26 behavior.
 //  6. Wrap body in io.LimitReader when SizeCapBytes > 0; io.Copy; check
 //     overshoot (overshoot → delete staging file → OversizeError); fsync.
@@ -278,8 +285,13 @@ func materializeExternalRef(ctx context.Context, deps ExternalRefRefreshDeps) Ma
 		if int64(len(raw)) > pluginRawIngressCap {
 			return MaterializeResult{Err: &OversizeError{Bytes: int64(len(raw)), Cap: pluginRawIngressCap}}
 		}
-		filtered, err := pluginpack.Filter(raw)
-		if err != nil {
+		filtered := raw
+		if deps.NativePlugin {
+			// Wraps sources.ErrUpstreamInvalid on failure, like the filter.
+			if err := contentkit.VerifyPluginContents(bytes.NewReader(raw)); err != nil {
+				return MaterializeResult{Err: err}
+			}
+		} else if filtered, err = pluginpack.Filter(raw); err != nil {
 			// The error already wraps sources.ErrUpstreamInvalid via
 			// ErrManifestMissing or the traversal-rejection path;
 			// classifyFetchError below maps it to ReasonUpstreamInvalid.

@@ -41,6 +41,7 @@ type externalRefSpecView struct {
 	Refresh       achv1alpha1.RefreshBlock
 	Scope         string // "" for plugin/prompt/instruction; cr.Spec.Scope for artifact
 	SizeCapBytes  int64  // plugin: PluginMaxSizeMiB<<20; prompt/instruction/artifact: 0
+	NativePlugin  bool   // plugin: spec.delivery is native, stored unfiltered
 }
 
 // externalRefDriverConfig wires a per-kind reconciler into the generic
@@ -169,6 +170,7 @@ func reconcileExternalRefCR[T any, PT externalRefCR[T]](
 		Refresh:       view.Refresh,
 		PriorRev:      priorRev,
 		SizeCapBytes:  view.SizeCapBytes,
+		NativePlugin:  view.NativePlugin,
 		FinalPath:     finalPath,
 		Fetchers:      cfg.fetchers,
 		Log:           logger,
