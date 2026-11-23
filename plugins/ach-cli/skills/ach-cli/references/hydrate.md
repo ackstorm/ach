@@ -28,8 +28,9 @@ cd ~/Projects && ach-cli environment clone <environment> --target claude-code   
 name; a second argument picks another), refuses one that exists and is not empty,
 hydrates into it, and removes the folder again if that fails. Every project under that
 folder picks the Environment up, git repo or not, in Claude Code and OpenCode: they read
-the config of each parent folder of the directory they start in. Codex reads a parent
-`.codex/` only up to the git root, so for Codex hydrate inside the project or use `-g`. Hydrate also adds its
+the config of each parent folder of the directory they start in. Codex and Antigravity read a parent
+`.codex/` or `.agents/` only up to the git root, so for those two hydrate inside the project
+or use `-g`. Hydrate also adds its
 own folders (`.ach/`, `.claude/`, …) to a `.gitignore` there.
 
 To hydrate into the folder the user is in now ("install finops here"), run

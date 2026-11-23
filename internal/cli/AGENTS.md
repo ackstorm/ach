@@ -605,8 +605,13 @@ is not ground truth.**
   an absolute one always loads. Claude Code 2.1.330 (npm, `ANTHROPIC_BASE_URL` at a
   fake server, no login): loads `.claude/rules/*.md` from the folder and from every
   parent folder. Pi 1.6.0 loads `.pi/extensions/` only from the folder it starts in.
-  NOT verified: Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`) and Antigravity
-  `.agents/rules/*.md` (`trigger: always_on`) loading (a login is needed).
+  NOT verified: Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`) loading (a
+  login is needed).
+- Antigravity 1.5.15 (`agy -p`, signed in), checked 2026-11-23 with canary words:
+  `.agents/rules/*.md` with `trigger: always_on` loads in the folder and from parent
+  folders up to the git root (a project `env/proj` that is a git repo misses
+  `env/.agents/rules`); a rule file without the frontmatter is ignored. Global
+  `~/.gemini/config/rules/` not checked live.
 - Codex instruction hook, checked 2026-11-23 on codex-cli 0.163.0 and 0.171.0 with a
   ChatGPT login (`codex exec`): an approved `SessionStart` hook's plain stdout reaches
   the model; an unapproved one is skipped silently (`--dangerously-bypass-hook-trust`

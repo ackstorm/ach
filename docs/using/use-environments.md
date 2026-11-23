@@ -42,10 +42,10 @@ again if that fails. It refuses a folder that exists and is not empty. A second
 argument names another folder.
 
 Everything under that folder gets the Environment, because Claude Code and
-OpenCode read the configuration of each parent folder. Codex reads a parent
-folder's `.codex/` only up to the git root: a project that is a git repository
-misses the Environment's MCP servers and Instructions, so for Codex hydrate inside
-the project or use `-g`.
+OpenCode read the configuration of each parent folder. Codex and Antigravity read
+a parent folder's `.codex/` or `.agents/` only up to the git root: a project that is
+a git repository misses the Environment's Instructions (and, in Codex, its MCP
+servers), so for those two hydrate inside the project or use `-g`.
 
 ```
 ~/Projects/
@@ -90,8 +90,8 @@ Codex runs a hook only after you approve it: Codex asks when it starts (or use
 `/hooks`), and `codex exec` skips a hook nobody approved. A project hook also
 needs a trusted project. Approval holds while the folder stays put, so a changed
 or added Instruction needs none. In a folder per Environment, Claude Code and
-OpenCode load the Instructions in every project below it; Codex in every folder
-below it up to the git root; Pi only when started in that folder. An Instruction the Environment drops is removed on
+OpenCode load the Instructions in every project below it; Codex and Antigravity
+in every folder below it up to the git root; Pi only when started in that folder. An Instruction the Environment drops is removed on
 the next hydrate. Antigravity caps all always-on rules together at about
 20,000 tokens.
 
