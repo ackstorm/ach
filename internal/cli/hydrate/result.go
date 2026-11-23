@@ -64,6 +64,9 @@ type Result struct {
 	// RuntimeSummary tallies runtime resources included in this hydrate scope.
 	RuntimeSummary RuntimeSummary
 
+	// Models are the ids of the models RuntimeSummary counts, in manifest order.
+	Models []string
+
 	// ContextSummary tallies context resources included in this hydrate scope.
 	ContextSummary ContextSummary
 

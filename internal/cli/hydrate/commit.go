@@ -321,7 +321,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return result, err
 	}
-	result.RuntimeSummary = c.runtimeSummary(m)
+	result.RuntimeSummary, result.Models = c.runtimeSummary(m)
 	result.ContextSummary = c.contextSummary(m)
 	result.Notice = m.Notice
 	c.maybeKill(5)
@@ -519,17 +519,22 @@ func (c *commit) includeRuntime() bool {
 	return !c.opts.NoRuntime && c.opts.Only == nil
 }
 
-func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
+// runtimeSummary tallies the runtime block and lists its model ids.
+func (c *commit) runtimeSummary(m *manifest.Manifest) (RuntimeSummary, []string) {
 	includeRuntime := c.includeRuntime()
 	if !includeRuntime || m == nil || m.Runtime == nil {
-		return RuntimeSummary{}
+		return RuntimeSummary{}, nil
+	}
+	models := make([]string, 0, len(m.Runtime.Models))
+	for _, r := range m.Runtime.Models {
+		models = append(models, r.ID)
 	}
 	return RuntimeSummary{
 		Models:     len(m.Runtime.Models),
 		MCPServers: len(m.Runtime.MCPServers),
 		A2AAgents:  len(m.Runtime.A2AAgents),
 		Guardrails: len(m.Runtime.Guardrails),
-	}
+	}, models
 }
 
 func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {

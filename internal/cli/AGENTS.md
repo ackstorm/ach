@@ -419,7 +419,12 @@ program name, not through a shell), `refresh_interval_ms 300000`) to its
 keys"), so `--models` with a codex target is refused without `--global`
 (`hydrateEnv`), and the `Models … add --models` line is not shown for codex in
 project scope. Codex's built-in apps tools exceed Bedrock's 64-character tool
-name limit; that is documented (`-c features.apps=false`), not written. An `ek-` bearer
+name limit; that is documented (`-c features.apps=false`), not written.
+Hydrate never writes the tool's `model` either: it is the user's choice, so
+`renderHydrate` prints the Environment's models (`Result.Models`) and the flag
+to start each wired tool on one (`helperTargets`). Without a model Claude Code
+sends its own default name and Codex takes the first entry of `/v1/models`,
+which can be an A2A agent. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both

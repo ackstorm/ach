@@ -803,11 +803,25 @@ func renderHydrate(u, eu *ui, results []hydrate.Result, meta summaryMeta, took t
 	u.targetItems(results, "up to date")
 	u.verb("Finished", "%s in %s", finishedSummary(results, meta), elapsed(took))
 
+	notRouted, models, pick := 0, []string(nil), []string(nil)
 	for _, r := range results {
-		if r.RuntimeSummary.Models > 0 && modelsState(r, meta) == modelsNotWired {
-			u.verb("Models", "%d available, not routed — add --models", r.RuntimeSummary.Models)
-			break
+		if r.RuntimeSummary.Models == 0 {
+			continue
 		}
+		switch modelsState(r, meta) {
+		case modelsNotWired:
+			notRouted = r.RuntimeSummary.Models
+		case modelsWired:
+			models, pick = r.Models, append(pick, helperTargets[r.PlatformID])
+		}
+	}
+	switch {
+	case notRouted > 0:
+		u.verb("Models", "%d available, not routed — add --models", notRouted)
+	case len(pick) > 0 && !meta.dryRun:
+		// ACH wires the provider, never the tool's model: say how to choose one.
+		u.verb("Models", "routed through ACH; choose one with %s", strings.Join(pick, " / "))
+		u.verb("", "%s", strings.Join(models, ", "))
 	}
 	if notice := firstNotice(results); notice != "" {
 		lines := strings.Split(strings.TrimRight(notice, "\n"), "\n")
@@ -863,8 +877,12 @@ func targetSummary(r hydrate.Result) string {
 }
 
 // helperTargets are the adapters that render the --models helper wiring
-// (claudecode settings.json, codex model_provider).
-var helperTargets = map[string]bool{"claude-code": true, "codex": true}
+// (claudecode settings.json, codex model_provider), with how to start each
+// tool on a given model.
+var helperTargets = map[string]string{
+	"claude-code": "claude --model <model>",
+	"codex":       "codex -m <model>",
+}
 
 // modelsWiring is whether this target's model endpoint can be wired locally
 // (a person hydrate on a helper target) and, if so, whether --models did.
@@ -880,7 +898,7 @@ const (
 func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
 	person := meta.oauth || meta.keyPrefix == keys.PrefixPk
 	switch {
-	case !person || !helperTargets[res.PlatformID], res.PlatformID == codexTarget && !meta.global:
+	case !person || helperTargets[res.PlatformID] == "", res.PlatformID == codexTarget && !meta.global:
 		return modelsServerSide
 	case meta.models:
 		return modelsWired

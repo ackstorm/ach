@@ -1028,6 +1028,23 @@ func TestRenderHydrate(t *testing.T) {
 		t.Fatalf("first run:\n%s\nwant:\n%s", got, want)
 	}
 
+	// --models wires the provider and never the tool's model: the line says
+	// how to choose one, per wired tool. Codex is wired only with --global.
+	wired := summaryMeta{global: true, oauth: true, models: true, noWarnings: true}
+	cc := hydrate.Result{PlatformID: "claude-code", Models: []string{"a.fast", "a.smart"}}
+	cc.RuntimeSummary.Models = len(cc.Models)
+	cx, oc := cc, cc
+	cx.PlatformID, oc.PlatformID = "codex", "opencode"
+	if got := render(wired, cc, cx, oc); !strings.Contains(got, ""+
+		"      Models routed through ACH; choose one with claude --model <model> / codex -m <model>\n"+
+		"             a.fast, a.smart\n") {
+		t.Fatalf("--models:\n%s", got)
+	}
+	wired.dryRun = true
+	if got := render(wired, cc); strings.Contains(got, "Models") {
+		t.Fatalf("--models --dry-run wrote nothing, so no Models line:\n%s", got)
+	}
+
 	again := hydrate.Result{PlatformID: "claude-code", Unchanged: 7, Changes: []hydrate.ItemChange{
 		{Op: hydrate.OpUpdate, Kind: "plugin", Name: "superpowers", Files: 17}}}
 	if got := render(summaryMeta{global: true}, again); !strings.Contains(got,
