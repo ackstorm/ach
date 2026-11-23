@@ -4,6 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+- `ach-cli environment hydrate` for a second tool that also uses `.agents/skills` (Codex, Cursor, OpenCode, pi, Antigravity) no longer stops with "already exists with other content and this Environment did not install it" when a skill changed on the server; it updates the file the first tool installed. Until now `--force` was the only way past it. Also, a skill with the same name as one a sibling Environment in the folder installed is again installed as `<environment>-<skill>` instead of over the sibling's copy.
+
 ## [1.3.0] - 2026-11-22
 
 ### Changed

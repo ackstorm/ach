@@ -249,7 +249,11 @@ adopted. Deep writes share their file by key and never refuse.
   prior state row of that Environment and target, else a row another target
   of the same Environment recorded for the same destination (`sharedRows`:
   `.agents/skills` is written by five targets, so a target added later finds
-  their files). After writing its state, a target copies each whole-file hash
+  their files). `commit.run` hands Render the stage root (`.ach/<env>/tmp`), so
+  `sharedRows` and the cross-env skill claims read the Environment's directory
+  from the context (`withEnvDir`); a test calling Render directly does not
+  exercise that path, so cover them through `commit.run`
+  (`commit_envdir_test.go`). After writing its state, a target copies each whole-file hash
   into the other targets' rows for the same destination
   (`commit.refreshSharedRows`), so their next hydrate or uninstall sees no
   local edit. `--dry-run` refuses too.
