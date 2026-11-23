@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-23
+
 ### Removed
 - Cursor support: `ach-cli environment hydrate|clone --target cursor`, `ach-cli local plugin|skill install --target cursor`, `ach-cli launch cursor`, the `cursor-agent mcp enable` hint, and the Cursor tab of the console's MCP client guide. Files an earlier `ach-cli` wrote for Cursor (`.cursor/mcp.json`, which holds your key, `.cursor/rules/ach-*.mdc`, `.cursor/commands/`, `.cursor/agents/`) stay until you delete them.
 
