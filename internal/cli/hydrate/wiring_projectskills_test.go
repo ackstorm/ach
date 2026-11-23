@@ -42,7 +42,7 @@ func TestProjectSkills_StripsArchiveWrapper(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestProjectSkills_RootSKILLMD(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 	for _, rel := range []string{"SKILL.md", "references/a.md"} {
@@ -124,7 +124,7 @@ func TestProjectSkills_ForeignEnvCollisionPrefixes(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 	for _, rel := range []string{"SKILL.md", "references/a.md"} {
@@ -159,7 +159,7 @@ func TestProjectSkills_ForeignEnvNoCollisionKeepsBareName(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(toolRoot, ".claude", "skills", "pdf", "SKILL.md")); err != nil {
@@ -182,7 +182,7 @@ func TestProjectSkills_ForeignStateIgnoresOtherPlatform(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, nil, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(toolRoot, ".claude", "skills", "pdf", "SKILL.md")); err != nil {
@@ -209,7 +209,7 @@ func TestProjectSkills_PrefixIsSticky(t *testing.T) {
 
 	d := &adapterDispatcherImpl{platformID: "fakeskills"}
 	var result RenderResult
-	if err := d.projectSkills(fakeSkillsAdapter{}, prior, achDir, toolRoot, &result); err != nil {
+	if err := d.projectSkills(fakeSkillsAdapter{}, prior, achDir, achDir, toolRoot, &result); err != nil {
 		t.Fatalf("projectSkills: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(toolRoot, ".claude", "skills", "images-pdf", "SKILL.md")); err != nil {

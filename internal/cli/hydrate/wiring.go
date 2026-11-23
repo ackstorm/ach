@@ -394,7 +394,8 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 
 	dd := *d
 	dd.dryRun = d.dryRun || isDryRun(ctx)
-	dd.sharedRows = sharedRows(achDir, toolRoot, d.platformID)
+	envDir := envDirOf(ctx, achDir)
+	dd.sharedRows = sharedRows(envDir, toolRoot, d.platformID)
 	d = &dd
 
 	var result RenderResult
@@ -447,7 +448,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		}
 		// Standalone Skills project on the same gate (context projection, like
 		// plugins). They land in result.ProjectedSkillFiles (→ state.Skills).
-		if err := d.projectSkills(ad, s, achDir, toolRoot, &result); err != nil {
+		if err := d.projectSkills(ad, s, achDir, envDir, toolRoot, &result); err != nil {
 			return RenderResult{}, err
 		}
 		if err := d.projectInstructions(ad, s, achDir, toolRoot, &result); err != nil {
@@ -605,6 +606,24 @@ func withPartialRun(ctx context.Context) context.Context {
 func isPartialRun(ctx context.Context) bool {
 	v, _ := ctx.Value(partialRunKey{}).(bool)
 	return v
+}
+
+// envDirKey carries the Environment's directory (.ach/<env>), which holds
+// the state files of its targets and sits beside its sibling Environments'.
+// commit.run hands Render the per-run stage root (.ach/<env>/tmp) as achDir,
+// so state lookups read this instead; without it achDir is the directory
+// (direct Render calls in tests).
+type envDirKey struct{}
+
+func withEnvDir(ctx context.Context, dir string) context.Context {
+	return context.WithValue(ctx, envDirKey{}, dir)
+}
+
+func envDirOf(ctx context.Context, achDir string) string {
+	if v, _ := ctx.Value(envDirKey{}).(string); v != "" {
+		return v
+	}
+	return achDir
 }
 
 // dryRunKey marks a --dry-run Render: publishFile computes every verdict and
@@ -963,7 +982,9 @@ func cloneCounts(in map[string]int) map[string]int {
 // The adapter is type-asserted to route.RuleProvider (the D-06 seam); an
 // adapter without it projects nothing (no-op, forward compatible). The
 // synthetic source root lives under the swept tmp base so SweepTmp reclaims it.
-func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File, achDir, toolRoot string, result *RenderResult) error {
+// achDir is the stage root; envDir is the Environment's directory, read for
+// the sibling Environments' skill claims.
+func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File, achDir, envDir, toolRoot string, result *RenderResult) error {
 	rp, ok := ad.(route.RuleProvider)
 	if !ok {
 		return nil
@@ -994,11 +1015,11 @@ func (d *adapterDispatcherImpl) projectSkills(ad adapter.Adapter, s *state.File,
 	// we already project prefixed does not flap back when the other
 	// environment later drops its copy. Deliberately NOT unconditional: a
 	// single-environment workspace — the common case — keeps bare names.
-	envName := filepath.Base(achDir)
+	envName := filepath.Base(envDir)
 	if verr := validatePluginName(envName); verr != nil {
 		return fmt.Errorf("adapter %s environment directory %q: %w", d.platformID, envName, verr)
 	}
-	foreign := state.ForeignSkillNames(achDir, skillPlatforms(ad, d.platformID, toolRoot, d.global))
+	foreign := state.ForeignSkillNames(envDir, skillPlatforms(ad, d.platformID, toolRoot, d.global))
 	ownPrefixed := map[string]bool{}
 	if s != nil {
 		for _, e := range s.Skills {
