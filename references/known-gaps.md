@@ -7,7 +7,7 @@ to close it; `ROADMAP.md` says which ones are scheduled.
 
 | Gap | Effect | Notes |
 |-----|--------|-------|
-| E2E does not gate pull requests | A PR can merge with a red `e2e.yml` | `make release-cut` waits for E2E on the release PR; run `make e2e-full` locally before merging a change to the e2e surfaces. |
+| E2E does not gate pull requests | A PR can merge with a red `e2e.yml`, and the release PR does not run it again | `e2e.yml` runs on every PR that touches the e2e surfaces or the CLI: check that it is green before merging. Run `make e2e-full` locally before merging a change to the e2e surfaces. |
 | Environment authoring is admin-only | No per-object ACLs, no team self-service | Writing a content CR or a `LiteLLMConnection` is equivalent to reading every Secret in the ACH namespace (`authSecretRef` resolves with the operator's identity), so writers need admin-tier trust. |
 | UI write path is Environment-only | `/platform/objects` drafts Environments, no other kind; the console has no screen for it | GitOps wins: the operator takes a draft over on CR apply. |
 | Content service HA needs RWX | `contentService.standalone=true` needs a `ReadWriteMany` `operator.cache` | Default is the sidecar on an RWO volume. |

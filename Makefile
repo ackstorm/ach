@@ -381,7 +381,7 @@ release-bump: ## Internal: bump version across all manifests. Used by release-cu
 	@echo "Manifests bumped to v$(VERSION)."
 
 .PHONY: release-cut
-release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR, wait for every check (E2E included) and merge. Usage: make release-cut VERSION=X.Y.Z
+release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR, wait for every check and merge. Usage: make release-cut VERSION=X.Y.Z
 	@test -n "$(VERSION)" || (echo "ERROR: VERSION=X.Y.Z required (no leading 'v')" >&2; exit 1)
 	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$$' || \
 		(echo "ERROR: VERSION must be semver without leading 'v' (e.g. 0.0.3 or 0.1.0-rc1)" >&2; exit 1)
@@ -407,7 +407,7 @@ release-cut: ## Cut a release: open the `chore(release): vX.Y.Z` PR, wait for ev
 		[ -n "$$ci" ] && break; sleep 10; \
 	done; \
 	[ -n "$$ci" ] || { echo "ERROR: no ci run started for $$sha within 5 min" >&2; exit 1; }; \
-	echo "Waiting for every workflow run on $$sha (E2E included, up to 60 min)..."; \
+	echo "Waiting for every workflow run on $$sha (up to 60 min)..."; \
 	for run in $$(gh run list --commit $$sha --json databaseId -q '.[].databaseId'); do \
 		timeout 3600 gh run watch $$run --exit-status --interval 30 >/dev/null || \
 			{ echo "ERROR: run $$run failed or timed out on PR #$$pr; nothing was merged" >&2; exit 1; }; \
