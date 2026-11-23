@@ -218,6 +218,11 @@ type RenderResult struct {
 	InstructionNotes    []string
 	InstructionWarnings []string
 
+	// NativeNotes are what the user still has to do for a natively delivered
+	// plugin; NativeWarnings name the ones a tool did not get.
+	NativeNotes    []string
+	NativeWarnings []string
+
 	// DroppedComponents is the ADAPT-07 silent-drop list flowed into
 	// Result.DroppedComponents — names of upstream component types
 	// the active adapter cannot meaningfully translate (e.g.

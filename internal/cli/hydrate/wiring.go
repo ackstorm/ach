@@ -49,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -353,6 +354,9 @@ type adapterDispatcherImpl struct {
 	// sharedRows (set per Render) holds the whole-file plugin and Skill rows
 	// the Environment's other targets recorded, by absolute destination.
 	sharedRows map[string]*state.FileEntry
+	// native (set per Render) names the staged plugins delivered through the
+	// tool's own plugin system.
+	native map[string]bool
 }
 
 // Render implements hydrate.AdapterDispatcher. Flow:
@@ -396,6 +400,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	dd.dryRun = d.dryRun || isDryRun(ctx)
 	envDir := envDirOf(ctx, achDir)
 	dd.sharedRows = sharedRows(envDir, toolRoot, d.platformID)
+	dd.native = nativePlugins(m)
 	d = &dd
 
 	var result RenderResult
@@ -443,7 +448,7 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 		if !includeRuntime && s != nil {
 			runtimeOwned = fileWritesOf(s.Adapter.Files)
 		}
-		if err := d.projectPlugins(ad, s, achDir, toolRoot, runtimeOwned, isPartialRun(ctx), &result); err != nil {
+		if err := d.projectPlugins(ctx, ad, s, achDir, envDir, toolRoot, runtimeOwned, isPartialRun(ctx), &result); err != nil {
 			return RenderResult{}, err
 		}
 		// Standalone Skills project on the same gate (context projection, like
@@ -803,23 +808,28 @@ func phantomOwner(all []projectedWrite, idxs []int) (string, bool) {
 	return "", false
 }
 
-func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File, achDir, toolRoot string,
+func (d *adapterDispatcherImpl) projectPlugins(ctx context.Context, ad adapter.Adapter, s *state.File, achDir, envDir, toolRoot string,
 	runtimeOwned []FileWrite, partial bool, result *RenderResult) error {
+	pluginRoot := filepath.Join(achDir, "plugin")
+	entries, err := os.ReadDir(pluginRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+
+	entries, err = d.installNativePlugins(ctx, ad, s, entries, pluginRoot, envDir, toolRoot, result)
+	if err != nil {
+		return err
+	}
+
 	rp, ok := ad.(route.RuleProvider)
 	if !ok {
 		return nil
 	}
 	rules := rp.ProjectionRules()
-
-	pluginRoot := filepath.Join(achDir, "plugin")
-	entries, err := os.ReadDir(pluginRoot)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// No plugins extracted this hydrate — nothing to project.
-			return nil
-		}
-		return fmt.Errorf("adapter %s read plugin root %s: %w", d.platformID, pluginRoot, err)
-	}
 
 	if result.ProjectedByKind == nil {
 		result.ProjectedByKind = map[string]int{}
@@ -840,7 +850,6 @@ func (d *adapterDispatcherImpl) projectPlugins(ad adapter.Adapter, s *state.File
 	// identical prefixed paths for identical manifests (Phase-1 determinism;
 	// no state migration needed). os.ReadDir is already name-sorted; the
 	// explicit sort makes the ordering contract local + obvious.
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	var all []projectedWrite
 	for _, ent := range entries {
 		if !ent.IsDir() {
@@ -1558,6 +1567,8 @@ type SyncOptions struct {
 	// check: the root is the user's own home, there is no repository, and
 	// dotfile managers legitimately link ~/.claude and the like.
 	Global bool
+	// toolRoot is set by Sync for the rows whose removal needs it.
+	toolRoot string
 }
 
 // SyncStats reports the per-call Sync outcome. Pruned counts entries
@@ -1601,6 +1612,7 @@ func Sync(prev, newFile *state.File, achDir, toolRoot string, opts SyncOptions) 
 	if toolRoot == "" {
 		toolRoot = achDir
 	}
+	opts.toolRoot = toolRoot
 
 	// Build what newFile still claims, per Target, so we can compute the
 	// to-delete set as set-difference.
@@ -1747,6 +1759,12 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 			return "", false, herr
 		}
 		return h, true, nil
+	case mergeStrNative:
+		h, herr := treeHash(abs)
+		if errors.Is(herr, fs.ErrNotExist) {
+			return "", false, nil
+		}
+		return h, herr == nil, herr
 	default: // "" / mergeStrReplace — whole-file hash, unchanged behavior.
 		h, herr := hash.HashFile(abs)
 		if herr != nil {
@@ -1762,6 +1780,12 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 // the keys the next state no longer claims; the drift gate still hashes the
 // row's recorded key set, which is what e.Hash covers.
 func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions) (bool, error) {
+	if e.Merge == mergeStrNative {
+		if opts.DryRun {
+			return false, nil
+		}
+		return false, removeNative(abs, opts)
+	}
 	// Read the on-disk file; absence means already gone — count as
 	// pruned (the engine's bookkeeping treats the entry as removed).
 	info, statErr := os.Stat(abs)
