@@ -1545,7 +1545,7 @@ func (c *commit) renderContext(ctx context.Context) context.Context {
 	if c.opts.DryRun {
 		ctx = withDryRun(ctx)
 	}
-	return ctx
+	return withEnvDir(ctx, c.achDir)
 }
 
 // personBearer reports whether the bearer stands for a person at a keyboard
