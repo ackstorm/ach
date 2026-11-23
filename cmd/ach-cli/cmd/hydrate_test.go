@@ -1002,7 +1002,7 @@ func TestRenderHydrate(t *testing.T) {
 	person := summaryMeta{global: true, oauth: true}
 	r := hydrate.Result{
 		PlatformID: "claude-code", FirstRun: true, FilesWritten: 41, Notice: "read me",
-		RuntimeSummary: hydrate.RuntimeSummary{Models: 5},
+		RuntimeSummary: hydrate.RuntimeSummary{Models: 5, MCPServers: 1},
 		Changes: []hydrate.ItemChange{
 			{Op: hydrate.OpAdd, Kind: "mcp", Name: "github"},
 			{Op: hydrate.OpAdd, Kind: "plugin", Name: "superpowers", Files: 17},
@@ -1032,7 +1032,7 @@ func TestRenderHydrate(t *testing.T) {
 	// how to choose one, per wired tool. Codex is wired only with --global.
 	wired := summaryMeta{global: true, oauth: true, models: true, noWarnings: true}
 	cc := hydrate.Result{PlatformID: "claude-code", Models: []string{"a.fast", "a.smart"}}
-	cc.RuntimeSummary.Models = len(cc.Models)
+	cc.RuntimeSummary = hydrate.RuntimeSummary{Models: 2, MCPServers: 1}
 	cx, oc := cc, cc
 	cx.PlatformID, oc.PlatformID = "codex", "opencode"
 	if got := render(wired, cc, cx, oc); !strings.Contains(got, ""+
@@ -1040,9 +1040,17 @@ func TestRenderHydrate(t *testing.T) {
 		"             a.fast, a.smart\n") {
 		t.Fatalf("--models:\n%s", got)
 	}
-	wired.dryRun = true
-	if got := render(wired, cc); strings.Contains(got, "Models") {
-		t.Fatalf("--models --dry-run wrote nothing, so no Models line:\n%s", got)
+	// Nothing is wired for an Environment with no MCP server or agent, nor on
+	// a dry run: no Models line either way.
+	modelsOnly := cc
+	modelsOnly.RuntimeSummary.MCPServers = 0
+	dry := wired
+	dry.dryRun = true
+	for name, got := range map[string]string{"models only": render(wired, modelsOnly), "dry run": render(dry, cc),
+		"models only, no --models": render(person, modelsOnly)} {
+		if strings.Contains(got, "Models") {
+			t.Fatalf("%s: want no Models line:\n%s", name, got)
+		}
 	}
 
 	again := hydrate.Result{PlatformID: "claude-code", Unchanged: 7, Changes: []hydrate.ItemChange{

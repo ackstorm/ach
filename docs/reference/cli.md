@@ -928,7 +928,7 @@ Start the tool in --dir (default: the current directory). With --environment
 (or ACH_ENVIRONMENT), that Environment is hydrated for the tool first (same
 engine and flags as `ach-cli environment hydrate`);
 --update-environments (--update-envs) updates every Environment already
-hydrated in that folder (.ach/) for the tool. With neither, the tool starts
+hydrated in that folder (.ach/, or ~/.ach/ with -g) for the tool. With neither, the tool starts
 as the folder is. If hydrate fails, the tool is not started. ach-cli exits with the tool's exit code.
 
 claude keeps its own Claude login and sends its model traffic through ACH:
@@ -967,7 +967,7 @@ Flags:
       --only-runtime            Reconcile ONLY runtime entries (skip context)
       --profile string          Use this profile instead of the active one
       --sync                    Delete state entries no longer in the environment (deepest-first)
-      --update-environments     Update the Environments already hydrated in the folder (.ach/) before starting the tool (or --update-envs)
+      --update-environments     Update the Environments already hydrated in the folder (.ach/, or ~/.ach/ with -g) before starting the tool (or --update-envs)
       --verbose                 Dump request headers to stderr (credentials redacted)
       --wait                    Block indefinitely on workspace lock contention
 ```

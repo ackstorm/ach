@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -108,6 +109,28 @@ func DeepMergeInto(dst, src map[string]any) {
 		}
 		dst[k] = sv
 	}
+}
+
+// Holds reports whether DeepMergeInto(dst, src) would leave dst unchanged.
+func Holds(dst, src map[string]any) bool {
+	for k, sv := range src {
+		dv, ok := dst[k]
+		if !ok {
+			return false
+		}
+		svMap, sok := sv.(map[string]any)
+		dvMap, dok := dv.(map[string]any)
+		if sok && dok {
+			if !Holds(dvMap, svMap) {
+				return false
+			}
+			continue
+		}
+		if !reflect.DeepEqual(dv, sv) {
+			return false
+		}
+	}
+	return true
 }
 
 // ParseDoc unmarshals a JSON or TOML document into a generic map. An

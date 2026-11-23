@@ -647,19 +647,15 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 	return nil
 }
 
-// recordedTargets lists the targets env is hydrated for under root's .ach/
-// ($HOME/.ach/ when global), sorted; none when it is not hydrated there. A
-// state file of a target this ach-cli has no adapter for is skipped.
+// recordedTargets lists the targets env has a state file for under root's
+// .ach/ ($HOME/.ach/ when global), sorted. A state file of a target this
+// ach-cli has no adapter for is skipped.
 func recordedTargets(root, env string, global bool) []string {
 	paths, _ := state.ListStatePaths(root, env, global)
 	var ids []string
 	for _, p := range paths {
-		f, err := state.Load(p)
-		if err != nil || f == nil {
-			continue
-		}
-		if _, ok := adapter.Lookup(f.Adapter.ID); ok {
-			ids = append(ids, f.Adapter.ID)
+		if _, ok := adapter.Lookup(platformOfState(p)); ok {
+			ids = append(ids, platformOfState(p))
 		}
 	}
 	return ids
@@ -899,6 +895,11 @@ func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
 	person := meta.oauth || meta.keyPrefix == keys.PrefixPk
 	switch {
 	case !person || helperTargets[res.PlatformID] == "", res.PlatformID == codexTarget && !meta.global:
+		return modelsServerSide
+	case res.RuntimeSummary.MCPServers+res.RuntimeSummary.A2AAgents == 0:
+		// ponytail: the engine renders a target's runtime config, helper
+		// included, only for an Environment with an MCP server or agent
+		// (hydrate.hasDirectRuntime); lift this with that gate.
 		return modelsServerSide
 	case meta.models:
 		return modelsWired

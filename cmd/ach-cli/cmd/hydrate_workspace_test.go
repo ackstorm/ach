@@ -126,6 +126,11 @@ func TestResolvePlatforms_RecordedTargets(t *testing.T) {
 	seedState(t, cwd, "proj", "opencode")
 	seedState(t, cwd, "proj", "claude-code")
 	seedState(t, cwd, "proj", "cursor") // no adapter: skipped
+	// What `environment uninstall --only-runtime` leaves: no adapter section.
+	if err := os.WriteFile(filepath.Join(cwd, ".ach", "proj", "state-pi.json"),
+		[]byte(`{"schemaVersion":"3","environment":"proj"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	seedState(t, home, "glob", "codex")
 	seedState(t, home, "glob", "pi")
 
@@ -135,7 +140,7 @@ func TestResolvePlatforms_RecordedTargets(t *testing.T) {
 		env  string
 		want string
 	}{
-		{"project", hydrateInputs{output: cwd}, "proj", "claude-code,opencode"},
+		{"project", hydrateInputs{output: cwd}, "proj", "claude-code,opencode,pi"},
 		{"global", hydrateInputs{global: true}, "glob", "codex,pi"},
 		{"--target wins", hydrateInputs{output: cwd, platform: []string{"pi"}}, "proj", "pi"},
 		{"ACH_TARGET wins", hydrateInputs{output: cwd, envTarget: "codex"}, "proj", "codex"},

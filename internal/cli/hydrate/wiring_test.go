@@ -224,13 +224,14 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 // TestAdapterDispatcherImpl_OurKeysAreACHs: the keys ACH contributes to a
 // config file it shares with the user are ACH's, with no local-edit check.
 // A re-render without --force restores a field we write and keeps a field
-// the user added inside our entry; rendering again leaves the bytes alone;
+// the user added inside our entry; rendering again skips the write;
 // an Environment that replaces one server with another is not an edit; and
 // Sync prunes our entry whatever the user put in it.
 func TestAdapterDispatcherImpl_OurKeysAreACHs(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 	m := dispMiniManifest()
+	skipped := false
 	render := func(prior *state.File) *state.File {
 		t.Helper()
 		_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
@@ -238,6 +239,7 @@ func TestAdapterDispatcherImpl_OurKeysAreACHs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Render: %v", err)
 		}
+		skipped = res.WrittenFiles[0].Preserved
 		return dispPriorState("demo", res)
 	}
 	settingsPath := filepath.Join(achDir, ".mcp.json")
@@ -268,10 +270,11 @@ func TestAdapterDispatcherImpl_OurKeysAreACHs(t *testing.T) {
 	if got["url"] != "http://localhost:8080/mcp/demo-mcp" || got["disabled"] != true {
 		t.Fatalf("after re-render: want our url restored and the user's field kept, got %v", got)
 	}
-	before, _ := os.ReadFile(settingsPath)
-	prior = render(prior)
-	if after, _ := os.ReadFile(settingsPath); !bytes.Equal(before, after) {
-		t.Errorf("an unchanged re-render rewrote the file:\n%s\n%s", before, after)
+	if skipped {
+		t.Error("the re-render after the edit skipped the write")
+	}
+	if prior = render(prior); !skipped {
+		t.Error("an unchanged re-render rewrote the file")
 	}
 
 	m.Runtime.MCPServers[0] = manifest.ContentRef{ID: "other-mcp", Endpoint: "http://localhost:8080/mcp/other-mcp"}

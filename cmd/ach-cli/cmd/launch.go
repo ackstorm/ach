@@ -48,7 +48,7 @@ func newLaunchCmd() *cobra.Command {
 (or ACH_ENVIRONMENT), that Environment is hydrated for the tool first (same
 engine and flags as ` + "`ach-cli environment hydrate`" + `);
 --update-environments (--update-envs) updates every Environment already
-hydrated in that folder (.ach/) for the tool. With neither, the tool starts
+hydrated in that folder (.ach/, or ~/.ach/ with -g) for the tool. With neither, the tool starts
 as the folder is. If hydrate fails, the tool is not started. ach-cli exits with the tool's exit code.
 
 claude keeps its own Claude login and sends its model traffic through ACH:
@@ -155,7 +155,8 @@ Example:
 	cmd.Flags().StringVar(&flagEnv, "environment", "",
 		"Environment to hydrate before starting the tool (ACH_ENVIRONMENT is the same)")
 	cmd.Flags().BoolVar(&flagUpdate, "update-environments", false,
-		"Update the Environments already hydrated in the folder (.ach/) before starting the tool (or --update-envs)")
+		"Update the Environments already hydrated in the folder (.ach/, or ~/.ach/ with -g) "+
+			"before starting the tool (or --update-envs)")
 	cmd.Flags().BoolVar(&flagUpdate, "update-envs", false, "Same as --update-environments")
 	_ = cmd.Flags().MarkHidden("update-envs")
 	f.register(cmd)

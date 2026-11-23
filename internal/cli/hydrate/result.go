@@ -182,8 +182,7 @@ type FileWrite struct {
 	Source string
 
 	// Preserved is true when publishFile skipped the write because the
-	// on-disk file was already byte-identical to the rendered output (D-05
-	// no-op skip). The entry still flows to state composition (the file is
+	// on-disk file already held the rendered output (D-05 no-op skip). The entry still flows to state composition (the file is
 	// tracked either way); commit.go uses this to count it as FilesPreserved
 	// rather than FilesWritten. Always false on the Extractor path (a no-op
 	// extract reports preserved via ExtractResult.Preserved instead).
@@ -205,8 +204,8 @@ type RenderResult struct {
 	// Kept distinct from WrittenFiles so commit.go step12WriteState
 	// routes projected files to the Plugins[] bucket (D-07) rather than
 	// Adapter.Files. Each entry already flowed through the SAME
-	// publishRuntimeFile path (per-key drift + no-op skip + atomic
-	// publish) as the runtime files (D-05).
+	// publishRuntimeFile path (no-op skip + atomic publish) as the
+	// runtime files (D-05).
 	ProjectedFiles []FileWrite
 
 	// ProjectedSkillFiles flows into step 12 (state.File.Skills) — the

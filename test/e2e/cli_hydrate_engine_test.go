@@ -822,27 +822,6 @@ func testPhase7Sc3RuntimeConfigMerged(t *testing.T) {
 	}
 }
 
-// corruptHashes walks an arbitrary JSON-decoded structure and replaces
-// every leaf string with the prefix "xxh3:" by the same prefix +
-// "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".
-// Length matches the canonical xxh3:<32 lowercase hex> form.
-func corruptHashes(v any) {
-	switch t := v.(type) {
-	case map[string]any:
-		for k, child := range t {
-			if s, ok := child.(string); ok && strings.HasPrefix(s, "xxh3:") {
-				t[k] = "xxh3:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-				continue
-			}
-			corruptHashes(child)
-		}
-	case []any:
-		for _, child := range t {
-			corruptHashes(child)
-		}
-	}
-}
-
 // -----------------------------------------------------------------------
 // SC#4 — SAFE-01 malicious-archive + SAFE-03 bomb + SAFE-04 auto-claim.
 // -----------------------------------------------------------------------
@@ -1435,7 +1414,7 @@ func testPhase7Sc4AutoClaimRotatedCredentialOwnedByCurrent(t *testing.T) {
 	// The merge must keep the credential file at 0o600.
 	info, err := os.Stat(target)
 	if err != nil {
-		t.Fatalf("sc4 autoclaim rotate: stat after force: %v", err)
+		t.Fatalf("sc4 autoclaim rotate: stat after the second hydrate: %v", err)
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("sc4 autoclaim rotate: the merge left mode %o (want %o)", got, 0o600)

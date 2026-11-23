@@ -60,7 +60,7 @@ ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | 
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
 ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <agy|claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused; warns (`claudeTrustWarning`) when the folder holds native Claude Code plugins and Claude Code does not trust it
+ach-cli launch <agy|claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, or ~/.ach/ with -g, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused; warns (`claudeTrustWarning`) when the folder holds native Claude Code plugins and Claude Code does not trust it
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
@@ -326,7 +326,8 @@ projected (self-heals on `<b>`'s next hydrate).
 - **The keys ACH writes into a shared config are ACH's: a deep row has no
   local-edit check.** `publishFile` merges our fields in on every hydrate (a
   field we write is restored, a field the user added inside our entry stays)
-  and skips the rewrite when the merge would change nothing (`deepHash`);
+  and skips the rewrite when the merge would change nothing (`deepHash` →
+  `merge.Holds`, on the same document the write merges);
   `syncOne` prunes our keys whatever they hold. Exit 2 and `--force` apply to
   whole files only, as in the local package manager. A per-key drift hash was
   tried and refused hydrates nobody had edited: the recorded hash covered the
@@ -422,7 +423,10 @@ project scope. Codex's built-in apps tools exceed Bedrock's 64-character tool
 name limit; that is documented (`-c features.apps=false`), not written.
 Hydrate never writes the tool's `model` either: it is the user's choice, so
 `renderHydrate` prints the Environment's models (`Result.Models`) and the flag
-to start each wired tool on one (`helperTargets`). Without a model Claude Code
+to start each wired tool on one (`helperTargets`), for a named hydrate only.
+`Render` calls `RenderRuntime` only for an Environment with an MCP server or
+agent (`hasDirectRuntime`), so on a models-only Environment `--models` writes
+nothing and no `Models` line is printed (`modelsState`). Without a model Claude Code
 sends its own default name and Codex takes the first entry of `/v1/models`,
 which can be an A2A agent. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
