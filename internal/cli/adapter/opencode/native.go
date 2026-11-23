@@ -19,7 +19,8 @@ const nativeArrayKey = "plugins"
 // package.json `exports`, else a root `server` or `index` file. `main` alone
 // is not used for a folder.
 func (a *Adapter) NativeSupports(dir string) bool {
-	if raw, err := os.ReadFile(filepath.Join(dir, "package.json")); err == nil { // #nosec G304 — a file of the plugin ach-cli extracted
+	raw, err := os.ReadFile(filepath.Join(dir, "package.json")) // #nosec G304 — a file of the plugin ach-cli extracted
+	if err == nil {
 		var pkg struct {
 			Exports json.RawMessage `json:"exports"`
 		}
