@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-23
+
 ### Added
 - `Plugin` has `spec.delivery`: `ach` (the default) splits the plugin's files into each tool's folders, `native` keeps it whole so the tool's own plugin system loads its hooks, local MCP server and extensions. A native plugin is stored unfiltered and needs `ach-cli` 1.3.1 or newer on every machine that hydrates an Environment holding it; an older `ach-cli` stops with an unknown-field error. `ach-cli environment status` reports a plugin whose delivery changed as changed, so hydrating again installs it the new way.
 
