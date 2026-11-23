@@ -108,7 +108,8 @@ spec:
 ## Instruction
 
 A governed Markdown text that `ach-cli environment hydrate` writes as an always-loaded
-rules file for Claude Code, OpenCode, Cursor, Antigravity and Pi. Codex is not supported.
+rules file for Claude Code, OpenCode, Cursor, Antigravity and Pi, and loads through a
+session-start hook in Codex.
 
 ```yaml
 apiVersion: ach.ackstorm.ai/v1alpha1

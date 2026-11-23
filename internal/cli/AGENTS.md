@@ -127,8 +127,9 @@ lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
 AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
 `opencode service restart`, printed on any hydrate or `environment uninstall`
 (not `--dry-run`) that adds or removes an MCP server or A2A agent for OpenCode,
-and `cursor-agent mcp enable <name>`, printed on any hydrate (not `--dry-run`)
-that adds one for Cursor
+`cursor-agent mcp enable <name>`, printed on any hydrate (not `--dry-run`)
+that adds one for Cursor, and `codex, then /hooks`, printed on any hydrate (not
+`--dry-run`) that adds an Instruction for Codex
 (`opencodeServersChanged`). `local plugin
 install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
 once per run, not `--dry-run`) when the opencode record's server keys change
@@ -423,16 +424,24 @@ target is the adapter's `InstructionFiles`, the global path goes through
 | cursor | `.cursor/rules/ach-<name>.mdc` | `alwaysApply: true` | none (warning) |
 | antigravity | `.agents/rules/ach-<name>.md` | `trigger: always_on` | `~/.gemini/config/rules/` |
 | pi | `.pi/ach/<name>.md` | none | `~/.pi/agent/ach/` |
-| codex | none (note on stderr) | | |
+| codex | `.codex/ach/<name>.md` | none | `$CODEX_HOME/ach/` |
 
 - **Shared loader**: OpenCode needs the absolute glob `<folder>/.opencode/ach/*.md`
   (global `<XDG_CONFIG_HOME>/opencode/ach/*.md`) in `instructions` of `opencode.json`:
   a relative entry is searched only up to the git root, so a project inside an
   Environment folder misses it. Pi needs the
-  extension `.pi/extensions/ach-instructions.ts` (global `~/.pi/agent/extensions/`). Neither
+  extension `.pi/extensions/ach-instructions.ts` (global `~/.pi/agent/extensions/`).
+  Codex has no setting listing extra instruction files (`developer_instructions` is
+  one string a project value overrides, `rules/` is command policy), so it gets a
+  `SessionStart` command hook in `.codex/hooks.json` (global `$CODEX_HOME/hooks.json`):
+  `cat '<abs>/.codex/ach'/*.md`, no matcher (it also fires on compact, clear and
+  fork), `additionalContextLimit` 25000 (default 2,500 tokens). Codex runs a hook
+  only after the user approves a hash of its config (command, limit), so the command
+  and limit must stay fixed; hydrate prints `codexHookHint`. None of the three
   is recorded in state: each exists exactly while its folder holds a `*.md`, created
   after the files are written and removed after pruning (`tidyInstructionLoader`) on
-  hydrate and on uninstall. Both are shared by every Environment of the folder.
+  hydrate and on uninstall; other entries of the shared file stay. Each is shared by
+  every Environment of the folder.
 - **State**: `state.Instructions` records the files. It is pruned whole on every
   hydrate (an Instruction that left the Environment loses its file); a recorded file
   missing on disk is rewritten.
@@ -598,6 +607,15 @@ is not ground truth.**
   parent folder. Pi 1.6.0 loads `.pi/extensions/` only from the folder it starts in.
   NOT verified: Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`) and Antigravity
   `.agents/rules/*.md` (`trigger: always_on`) loading (a login is needed).
+- Codex instruction hook, checked 2026-11-23 on codex-cli 0.163.0 and 0.171.0 with a
+  ChatGPT login (`codex exec`): an approved `SessionStart` hook's plain stdout reaches
+  the model; an unapproved one is skipped silently (`--dangerously-bypass-hook-trust`
+  overrides, tests only). Project `.codex/` folders are read from the cwd up to the
+  git root only (`config/src/loader/mod.rs` `discover_project_layers`) and only in a
+  trusted project: with `env/.codex/hooks.json` and a git repo `env/proj`, Codex in
+  `env/proj` ran only the project's hook. `projects.<path>.trust_level` cannot be
+  set with `-c`; test with a scratch `CODEX_HOME` whose `config.toml` trusts the path
+  (`auth.json` symlinked).
 
 **Deliberate divergences (keep):**
 - codex `codexAgentTOML` drops `mcp_servers` from agent frontmatter (OpenPackage

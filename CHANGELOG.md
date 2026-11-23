@@ -4,6 +4,12 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli environment hydrate` delivers an Environment's Instructions to Codex: it writes `.codex/ach/<name>.md` and a `SessionStart` hook in `.codex/hooks.json` that prints them (`$CODEX_HOME/ach/` and `$CODEX_HOME/hooks.json` with `-g`). Codex runs the hook only once you approve it (it asks when it starts, or use `/hooks`), and a project hook also needs a trusted project; hydrate prints a reminder. Your own hooks in that file are kept, and uninstall removes only this one.
+
+### Changed
+- Correction to the docs: Codex reads a parent folder's `.codex/` only up to the git root, so in a folder per Environment a project that is a git repository gets neither the Environment's MCP servers nor its Instructions in Codex. Hydrate inside the project or use `-g`.
+
 ## [1.3.0] - 2026-11-22
 
 ### Changed

@@ -900,6 +900,12 @@ func hydrateHints(results []hydrate.Result, meta summaryMeta) []string {
 			break
 		}
 	}
+	for _, r := range results {
+		if !meta.dryRun && r.PlatformID == codexTarget && addsInstruction(r) {
+			hints = append(hints, codexHookHint)
+			break
+		}
+	}
 	if !first {
 		return hints
 	}
@@ -939,12 +945,28 @@ const (
 	kindMCP        = "mcp"
 	opencodeTarget = "opencode"
 	cursorTarget   = "cursor"
+	codexTarget    = "codex"
 )
 
 // cursorEnableHint is printed when hydrate or a local plugin install or update
 // adds an MCP server (or A2A agent) for Cursor, which reports a project server
 // as "needs approval" until it is enabled.
 const cursorEnableHint = "cursor-agent mcp enable <name>  — Cursor loads an MCP server once you enable it"
+
+// codexHookHint is printed when hydrate adds an Instruction for Codex, which
+// runs the hook that loads it only once the user approves it.
+const codexHookHint = "codex, then /hooks  — approve the ACH instructions hook; " +
+	"a project hook also needs a trusted project"
+
+// addsInstruction reports an Instruction added.
+func addsInstruction(r hydrate.Result) bool {
+	for _, c := range r.Changes {
+		if c.Kind == "instruction" && c.Op == hydrate.OpAdd {
+			return true
+		}
+	}
+	return false
+}
 
 // opencodeRestartHint is printed when ach-cli adds or removes an MCP server
 // for OpenCode (hydrate, environment uninstall and local plugin commands).

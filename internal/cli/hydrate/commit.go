@@ -466,7 +466,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 		// warnings, never errors. Skipped entirely when nothing was dropped.
 		c.warnDropped(result.DroppedByKind, result.DroppedComponents)
 		c.warnConflicts(result.ConflictWarnings)
-		c.reportInstructions(renderResult)
+		c.warnConflicts(renderResult.InstructionWarnings)
 	}
 	c.maybeKill(10)
 
@@ -998,14 +998,6 @@ func (c *commit) warnConflicts(lines []string) {
 	for _, line := range lines {
 		_, _ = fmt.Fprintf(c.opts.Stderr, "warning: %s\n", line)
 	}
-}
-
-// reportInstructions prints the instruction notes and warnings of a render.
-func (c *commit) reportInstructions(render RenderResult) {
-	for _, line := range render.InstructionNotes {
-		_, _ = fmt.Fprintf(c.opts.Stderr, "note: %s\n", line)
-	}
-	c.warnConflicts(render.InstructionWarnings)
 }
 
 // tidyInstructionLoader removes the target's instruction loader once pruning

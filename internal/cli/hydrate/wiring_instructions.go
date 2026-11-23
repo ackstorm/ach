@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/merge"
@@ -29,8 +30,6 @@ func (d *adapterDispatcherImpl) projectInstructions(ad adapter.Adapter, s *state
 	}
 	it, ok := ad.(adapter.InstructionTarget)
 	if !ok {
-		result.InstructionNotes = append(result.InstructionNotes,
-			fmt.Sprintf("%s does not load Environment instructions", d.platformID))
 		return nil
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -123,6 +122,36 @@ func loaderEntry(dir string) (string, error) {
 	return filepath.ToSlash(filepath.Join(abs, "*.md")), nil
 }
 
+// hookCommand prints every *.md of the absolute dir abs. Codex approves a
+// hook by a hash of its command, so the command must not change while the
+// folder stays put.
+func hookCommand(abs string) string {
+	return "cat '" + strings.ReplaceAll(abs, "'", `'\''`) + "'/*.md"
+}
+
+// loaderEdit returns the JSON edits that add and remove l's entry for dir,
+// and a text found in the file while that entry is there.
+func loaderEdit(l adapter.InstructionLoader, dir string) (ensure, remove func(map[string]any) (bool, error), marker string, err error) {
+	if l.HookEvent != "" {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		cmd := hookCommand(abs)
+		handler := map[string]any{"type": "command", "command": cmd, "additionalContextLimit": l.HookContextLimit}
+		return func(doc map[string]any) (bool, error) { return merge.EnsureHookCommand(doc, l.HookEvent, handler) },
+			func(doc map[string]any) (bool, error) { return merge.RemoveHookCommand(doc, l.HookEvent, cmd) },
+			filepath.ToSlash(abs), nil
+	}
+	entry, err := loaderEntry(dir)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return func(doc map[string]any) (bool, error) { return merge.EnsureArrayEntry(doc, l.ArrayKey, entry) },
+		func(doc map[string]any) (bool, error) { return merge.RemoveArrayEntry(doc, l.ArrayKey, entry) },
+		entry, nil
+}
+
 func ensureLoader(platformID, toolRoot string, global bool, l adapter.InstructionLoader) error {
 	dir, path, err := resolveLoader(platformID, toolRoot, global, l)
 	if err != nil {
@@ -131,14 +160,14 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	if l.ArrayKey == "" {
+	if l.ArrayKey == "" && l.HookEvent == "" {
 		cur, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
 		if err == nil && bytes.Equal(cur, l.Content) {
 			return nil
 		}
 		return state.WriteAtomic(path, l.Content, 0o644)
 	}
-	entry, err := loaderEntry(dir)
+	ensure, _, _, err := loaderEdit(l, dir)
 	if err != nil {
 		return err
 	}
@@ -147,7 +176,7 @@ func ensureLoader(platformID, toolRoot string, global bool, l adapter.Instructio
 		if err != nil {
 			return nil, false, err
 		}
-		changed, err := merge.EnsureArrayEntry(doc, l.ArrayKey, entry)
+		changed, err := ensure(doc)
 		if err != nil {
 			return nil, false, fmt.Errorf("%s: %w", path, err)
 		}
@@ -200,18 +229,18 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 	if names, _ := filepath.Glob(filepath.Join(dir, "*.md")); len(names) > 0 {
 		return nil
 	}
-	if l.ArrayKey == "" {
+	if l.ArrayKey == "" && l.HookEvent == "" {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
-	entry, err := loaderEntry(dir)
+	_, remove, marker, err := loaderEdit(*l, dir)
 	if err != nil {
 		return err
 	}
 	raw, err := os.ReadFile(path) // #nosec G304 — a tool config file ach-cli manages for the user
-	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(entry))) {
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !bytes.Contains(raw, []byte(marker))) {
 		return nil
 	}
 	if err != nil {
@@ -223,7 +252,7 @@ func TidyInstructionLoader(platformID, toolRoot string, global bool) error {
 		if err != nil {
 			return nil, false, err
 		}
-		changed, err := merge.RemoveArrayEntry(doc, l.ArrayKey, entry)
+		changed, err := remove(doc)
 		if err != nil || !changed {
 			return nil, false, err
 		}
