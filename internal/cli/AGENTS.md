@@ -312,8 +312,7 @@ projected (self-heals on `<b>`'s next hydrate).
 - **`hydrate.Sync`'s keep set is per CONTRIBUTION, not per Target**
   (`syncKeep` in `wiring.go`). A prev row survives when the next state still
   records it: any row on the Target for a whole-file row, EVERY key for a deep
-  row (else only the uncovered keys are pruned; the drift gate still hashes the
-  row's recorded key set). Keying on Target alone skips a row dropped from a
+  row (else only the uncovered keys are pruned). Keying on Target alone skips a row dropped from a
   SHARED file, so `hydrate --sync` leaves a removed plugin's `.mcp.json` keys
   behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
   GREW would then prune keys Render just wrote.
@@ -324,11 +323,15 @@ projected (self-heals on `<b>`'s next hydrate).
   Environment) leave the file. They are ACH-generated, never user content.
   The `Instructions` bucket is pruned whole on every hydrate too (ACH-generated
   files). `--sync` widens it to every bucket (plugins/skills/instructions files).
-- **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
-  at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
-  a row report a phantom edit on every re-hydrate/uninstall whenever the doc
-  carried tables outside the row's keys. A drift verdict is also dropped when disk already
-  equals what we write (heals rows recorded with an older hash scope).
+- **The keys ACH writes into a shared config are ACH's: a deep row has no
+  local-edit check.** `publishFile` merges our fields in on every hydrate (a
+  field we write is restored, a field the user added inside our entry stays)
+  and skips the rewrite when the merge would change nothing (`deepHash`);
+  `syncOne` prunes our keys whatever they hold. Exit 2 and `--force` apply to
+  whole files only, as in the local package manager. A per-key drift hash was
+  tried and refused hydrates nobody had edited: the recorded hash covered the
+  old key set, so a render that dropped and added keys together (one MCP
+  server replaced by another, `mcp.<id>` → `mcp.servers.<id>`) never matched.
 - **`environment hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,

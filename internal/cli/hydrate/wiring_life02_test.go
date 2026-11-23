@@ -274,13 +274,12 @@ func TestPublishFile_DeepHashScopedToKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := state.FileEntry{Target: got.Target, Hash: got.Hash, Merge: got.Merge, Keys: got.Keys}
-	disk, present, err := currentScopedHash(entry, filepath.Join(toolRoot, fw.Path))
-	if err != nil || !present || disk != got.Hash {
-		t.Fatalf("on-disk scoped hash %q (present=%v err=%v) != recorded %q", disk, present, err, got.Hash)
+	again, err := d.publishFile(fw, &entry, toolRoot)
+	if err != nil || !again.Preserved || again.Hash != got.Hash {
+		t.Fatalf("re-publish of the same keys: preserved=%v hash %q (want %q) err=%v", again.Preserved, again.Hash, got.Hash, err)
 	}
 
-	// A row recorded with an older, differently-scoped hash heals: disk equals
-	// what we write, so there is no edit to preserve.
+	// A row recorded with an older, differently-scoped hash changes nothing.
 	entry.Hash = "xxh3:stale"
 	if _, err := d.publishFile(fw, &entry, toolRoot); err != nil {
 		t.Fatalf("re-publish over stale-hash row: %v", err)

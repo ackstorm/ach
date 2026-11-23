@@ -156,6 +156,14 @@ Hydrate does not overwrite a file you edited: it stops, names the file and
 exits 2. Keep your edit, or pass `--force` to take the Environment's version.
 `environment status` marks such files with `! edited`.
 
+This covers the files hydrate installs whole (skills, agents, commands). The
+entries it adds to a tool's own configuration file (the MCP servers, the
+`--models` settings) are the Environment's: every hydrate writes them again
+and removes the ones the Environment dropped, without stopping. A field you
+add inside one of them, such as `disabled` on a server, stays; a field hydrate
+writes, such as the URL, goes back to the Environment's value. The rest of
+that file is yours and is never touched.
+
 Hydrate does not replace a file of your own either. When a plugin or skill
 would write a file that already exists with other content and that hydrate did
 not install, it stops, names the file and exits 7. Move your file away, or
