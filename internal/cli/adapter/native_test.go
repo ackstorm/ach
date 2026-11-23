@@ -26,6 +26,19 @@ func TestNativePlugin_MarketplaceIsUniquePerRoot(t *testing.T) {
 	}
 }
 
+func TestNativePlugin_OthersSkipsItself(t *testing.T) {
+	root := t.TempDir()
+	for _, n := range []string{"zeta", "alpha", "mid"} {
+		if err := os.MkdirAll(filepath.Join(root, "plugins", n), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := adapter.NativePlugin{Root: root, Name: "mid"}.Others()
+	if err != nil || strings.Join(got, ",") != "alpha,zeta" {
+		t.Fatalf("Others() = %v, %v; want [alpha zeta]", got, err)
+	}
+}
+
 func TestNativePlugin_NamesListsPluginFolders(t *testing.T) {
 	root := t.TempDir()
 	for _, n := range []string{"zeta", "alpha"} {

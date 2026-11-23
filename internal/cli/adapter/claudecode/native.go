@@ -63,15 +63,9 @@ func (a *Adapter) NativeRegister(_ context.Context, p adapter.NativePlugin) (str
 }
 
 func (a *Adapter) NativeUnregister(_ context.Context, p adapter.NativePlugin) error {
-	names, err := p.Names()
+	rest, err := p.Others()
 	if err != nil {
 		return err
-	}
-	rest := names[:0:0]
-	for _, n := range names {
-		if n != p.Name {
-			rest = append(rest, n)
-		}
 	}
 	mkt := p.Marketplace()
 	err = adapter.EditJSON(a.nativeSettings(p), func(doc map[string]any) (bool, error) {

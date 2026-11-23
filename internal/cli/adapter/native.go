@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -80,6 +81,15 @@ func (p NativePlugin) Names() ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// Others lists the plugins under Root other than this one, sorted.
+func (p NativePlugin) Others() ([]string, error) {
+	names, err := p.Names()
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(names, func(n string) bool { return n == p.Name }), nil
 }
 
 // EditJSON applies edit to the JSON object stored at path and removes the

@@ -46,15 +46,9 @@ func (a *Adapter) NativeRegister(ctx context.Context, p adapter.NativePlugin) (s
 }
 
 func (a *Adapter) NativeUnregister(ctx context.Context, p adapter.NativePlugin) error {
-	names, err := p.Names()
+	rest, err := p.Others()
 	if err != nil {
 		return err
-	}
-	rest := names[:0:0]
-	for _, n := range names {
-		if n != p.Name {
-			rest = append(rest, n)
-		}
 	}
 	mkt := p.Marketplace()
 	if err := adapter.RunTool(ctx, nativeBin, "plugin", "remove", p.Name+"@"+mkt); err != nil {

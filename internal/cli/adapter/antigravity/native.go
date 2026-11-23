@@ -58,10 +58,16 @@ func (a *Adapter) NativeRegister(_ context.Context, p adapter.NativePlugin) (str
 			return "", nil
 		}
 	}
+	// A copy without its marker would be refused as foreign on every later run.
 	if err := adapter.CopyTree(p.Dir(), dest); err != nil {
+		_ = os.RemoveAll(dest)
 		return "", err
 	}
-	return "", os.WriteFile(filepath.Join(dest, nativeMarker), []byte(p.Dir()+"\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(dest, nativeMarker), []byte(p.Dir()+"\n"), 0o600); err != nil {
+		_ = os.RemoveAll(dest)
+		return "", err
+	}
+	return "", nil
 }
 
 func (a *Adapter) NativeUnregister(_ context.Context, p adapter.NativePlugin) error {

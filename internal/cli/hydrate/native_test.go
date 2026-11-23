@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
+
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hydrate"
@@ -215,5 +218,54 @@ func TestNative_SyncRemovesTheTreeAndTheRegistration(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "never recursively deleted") {
 		t.Errorf("Sync treated the native row as a stray directory: %s", out.String())
+	}
+}
+
+func TestNative_SyncRefusesARowOutsideTheNativeLayout(t *testing.T) {
+	for _, target := range []string{".", "src"} {
+		ws := t.TempDir()
+		sentinel := filepath.Join(ws, "src", "keep.txt")
+		if err := os.MkdirAll(filepath.Dir(sentinel), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(sentinel, []byte("mine"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		prev := &state.File{SchemaVersion: "3", Environment: "dev", Plugins: []state.FileEntry{{
+			Target: target, Merge: "native", Source: "memory"}}}
+		next := &state.File{SchemaVersion: "3", Environment: "dev"}
+		var out bytes.Buffer
+		_, err := hydrate.Sync(prev, next, filepath.Join(ws, ".ach", "dev"), ws, hydrate.SyncOptions{Stderr: &out})
+		if err == nil || !strings.Contains(err.Error(), "nothing removed") {
+			t.Errorf("target %q: Sync error = %v; want a refusal", target, err)
+		}
+		if _, err := os.Stat(sentinel); err != nil {
+			t.Errorf("target %q: the workspace file was touched: %v", target, err)
+		}
+	}
+}
+
+func TestNative_ToolMissingInstallsNothing(t *testing.T) {
+	ws, stage, m := nativeWorkspace(t, manifest.DeliveryNative, map[string]string{
+		".codex-plugin/plugin.json": `{"name":"memory"}`,
+	})
+	orig := adapter.RunTool
+	adapter.RunTool = func(context.Context, string, ...string) error {
+		return fmt.Errorf("codex: %w", adapter.ErrToolMissing)
+	}
+	t.Cleanup(func() { adapter.RunTool = orig })
+	_, disp := hydrate.NewWiring(nil, "codex", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+	rr, err := disp.Render(context.Background(), m, nil, stage, ws, true, false)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if len(rr.ProjectedFiles) != 0 {
+		t.Errorf("ProjectedFiles = %v; want none", rr.ProjectedFiles)
+	}
+	if len(rr.NativeWarnings) != 1 || !strings.Contains(rr.NativeWarnings[0], "memory") {
+		t.Errorf("NativeWarnings = %v; want one naming the plugin", rr.NativeWarnings)
+	}
+	if _, err := os.Stat(filepath.Join(stage, "native", "codex", "plugins", "memory")); !os.IsNotExist(err) {
+		t.Errorf("the plugin folder was left behind: %v", err)
 	}
 }

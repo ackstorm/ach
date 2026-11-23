@@ -129,6 +129,9 @@ func (d *adapterDispatcherImpl) installNative(ctx context.Context, ad adapter.Ad
 // abs is <state dir>/native/<tool>/plugins/<plugin>.
 func removeNative(abs string, opts SyncOptions) error {
 	root := filepath.Dir(filepath.Dir(abs))
+	if filepath.Base(filepath.Dir(abs)) != "plugins" || filepath.Base(filepath.Dir(root)) != "native" {
+		return fmt.Errorf("native row %q is not <state dir>/native/<tool>/plugins/<plugin>: nothing removed", abs)
+	}
 	if ad, ok := adapter.Lookup(filepath.Base(root)); ok {
 		if nt, ok := ad.(adapter.NativeTarget); ok {
 			err := nt.NativeUnregister(context.Background(), adapter.NativePlugin{
