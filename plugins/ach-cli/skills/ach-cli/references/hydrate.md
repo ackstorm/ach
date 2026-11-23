@@ -97,12 +97,15 @@ system (hooks and local MCP servers work). Hydrate lists it as `+ <plugin>`, the
 - OpenCode: `OpenCode loads <plugin> when its service starts (opencode service restart)`.
 - Codex: `Codex installs plugins for your user: <plugin> is active in every folder, and Codex may
   ask you to approve its hooks`. It installs for the whole user, whatever the scope.
-- Antigravity: copied to `.agents/plugins/<plugin>/`, no note.
+- Antigravity: copied to `.agents/plugins/<plugin>/` (`~/.gemini/config/plugins/<plugin>/` with
+  `--global`), no note.
 
 A tool the plugin does not support gets a warning and nothing else: `plugin <name> uses native
 delivery, which ach-cli does not offer for cursor: not installed` (Cursor), or `plugin <name> uses
 native delivery and carries no <tool> plugin manifest: not installed`. `environment uninstall`
-removes the plugin; files the plugin wrote elsewhere (pi's `mcp.json`) stay.
+removes the plugin; files the plugin wrote elsewhere (pi's `mcp.json`) stay. If the tool's own
+command is missing (Codex), hydrate installs nothing for it and warns `plugin <name> not installed
+for codex: codex: not found on PATH`.
 
 ## One plugin or skill only
 

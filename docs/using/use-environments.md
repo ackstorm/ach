@@ -115,7 +115,8 @@ included, instead of being split into files. Hydrate lists it like any plugin
 | Codex | runs `codex plugin marketplace add` and `codex plugin add` | approve the plugin's hooks when Codex asks; the note reads `Codex installs plugins for your user: <plugin> is active in every folder, and Codex may ask you to approve its hooks` |
 | Antigravity | copies the plugin to `.agents/plugins/<plugin>/` | nothing |
 
-Codex installs for your whole user, whatever the hydrate scope. Claude Code does
+Codex installs for your whole user, whatever the hydrate scope. With `--global`,
+Antigravity's copy goes to `~/.gemini/config/plugins/<plugin>/`. Claude Code does
 not list the plugin in `claude plugin list`: it reads it from the folder under
 `.ach/`.
 
@@ -123,7 +124,9 @@ A tool the plugin does not support gets a warning and nothing else. Cursor
 prints `plugin <name> uses native delivery, which ach-cli does not offer for
 cursor: not installed`; a tool the plugin ships no manifest for prints
 `plugin <name> uses native delivery and carries no <tool> plugin manifest: not
-installed`.
+installed`. When a tool's own command is not installed (Codex without `codex`
+on your PATH), hydrate installs nothing for that tool and prints `plugin <name>
+not installed for codex: codex: not found on PATH`; the next hydrate tries again.
 
 `ach-cli environment uninstall <environment>` unregisters the plugin and removes
 its folder. What the plugin wrote on its own outside that folder, for example a

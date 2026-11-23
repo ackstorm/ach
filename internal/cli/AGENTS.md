@@ -484,6 +484,11 @@ fake model (the request shows what the tool loaded): Claude Code 2.1.330, Codex 
 | codex | `codex plugin list` shows it `installed, enabled`; config gains `[marketplaces.<name>]` and `[plugins."<plugin>@<name>"]`; skill offered and MCP server started; hooks did not run headless (approval needed). Uninstall removes both tables. `plugin remove` exits 0 for an unknown plugin, `marketplace add` of a registered path exits 0, `marketplace remove` of an unknown name exits 1; an unchanged re-hydrate runs no `codex` command |
 | antigravity | logged-in `agy -p`: the plugin's SessionStart hook ran; uninstall removes the copy and the `.agents/plugins/` and `.agents/` folders when empty |
 
+Also measured:
+
+- A plugin whose content changes between two hydrates shows as `~ plugin  <name>` and its tree is replaced. For Codex, `codex plugin marketplace add <root>` and `codex plugin add <plugin>@<marketplace>` run again, and that second `plugin add` refreshes the copy in Codex's own cache (`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`) even when the plugin's version is unchanged. Claude Code reads the new files in place.
+- With `--global` the tree is at `~/.ach/<env>/native/<tool>/plugins/<plugin>/` and the registration is in the tool's user-level file: `~/.claude/settings.json`, `~/.pi/agent/settings.json`, `~/.config/opencode/opencode.json`, Codex's user config (as in project scope), and for Antigravity a copy at `~/.gemini/config/plugins/<plugin>/`. Claude Code and pi load a user-level entry without the trust step, and ach-cli prints no trust note there. `environment uninstall --global` removes the entries and the tree.
+
 Limits:
 
 - Codex installs for the whole user, whatever the hydrate scope.
