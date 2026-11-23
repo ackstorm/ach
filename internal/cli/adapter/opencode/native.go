@@ -47,7 +47,10 @@ func (a *Adapter) NativeRegister(_ context.Context, p adapter.NativePlugin) (str
 	err := adapter.EditJSON(a.nativeConfig(p), func(doc map[string]any) (bool, error) {
 		return merge.EnsureArrayEntry(doc, nativeArrayKey, p.Dir())
 	})
-	return "opencode service restart  — OpenCode loads plugins when its service starts", err
+	if err != nil {
+		return "", err
+	}
+	return "OpenCode loads " + p.Name + " when its service starts (opencode service restart)", nil
 }
 
 func (a *Adapter) NativeUnregister(_ context.Context, p adapter.NativePlugin) error {
