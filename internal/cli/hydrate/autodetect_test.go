@@ -21,17 +21,16 @@ import (
 	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
 
-// TestAutodetect_UserConfigsDoNotMatchProject: a user who has Cursor,
-// Antigravity and pi configured in $HOME still gets the folder's own tool.
+// TestAutodetect_UserConfigsDoNotMatchProject: a user who has Antigravity
+// and pi configured in $HOME still gets the folder's own tool.
 func TestAutodetect_UserConfigsDoNotMatchProject(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	for _, rel := range []string{".cursor/mcp.json", ".gemini/config/mcp_config.json", ".pi/mcp.json"} {
+	for _, rel := range []string{".gemini/config/mcp_config.json", ".pi/mcp.json"} {
 		p := filepath.Join(home, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)

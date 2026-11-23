@@ -22,12 +22,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
+	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/hash"
@@ -402,10 +404,38 @@ func renderStatus(u *ui, files []*state.File, cwd string, global bool) error {
 		}
 		anyEdited = anyEdited || len(edited) > 0
 	}
+	if !global {
+		if w := claudeTrustWarning(toolRoot, files); w != "" {
+			u.verb("Warning", "%s", w)
+		}
+	}
 	if anyEdited {
 		u.verb("hint", "ach-cli environment hydrate --force  — discards local edits")
 	}
 	return nil
+}
+
+// claudeTrustWarning names the native Claude Code plugins hydrated into dir
+// when Claude Code does not trust dir, which drops them without a word; ""
+// otherwise.
+func claudeTrustWarning(dir string, files []*state.File) string {
+	var names []string
+	for _, f := range files {
+		if f.Adapter.ID != claudeCodeID {
+			continue
+		}
+		for _, e := range f.Plugins {
+			if e.Merge == hydrate.MergeNative {
+				names = append(names, e.Source)
+			}
+		}
+	}
+	if len(names) == 0 || !claudecode.FolderUntrusted(dir) {
+		return ""
+	}
+	sort.Strings(names)
+	return "Claude Code does not trust this folder, so it does not load " + strings.Join(slices.Compact(names), ", ") +
+		": start claude here and accept the trust prompt"
 }
 
 // editedFiles returns the plain (non-merged) projected files whose on-disk

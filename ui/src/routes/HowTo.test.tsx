@@ -119,7 +119,7 @@ describe('HowTo — OpenCode only', () => {
   it('shows only OpenCode tools, and its MCP commands', () => {
     setModels([]);
     const { container } = render(<HowTo />);
-    for (const hidden of ['Claude Code', 'Codex', 'Pi agent', 'Qwen Code', 'Cursor', 'Claude Desktop']) {
+    for (const hidden of ['Claude Code', 'Codex', 'Pi agent', 'Qwen Code', 'Claude Desktop']) {
       expect(screen.queryByRole('tab', { name: hidden })).toBeNull();
     }
     const text = container.textContent ?? '';

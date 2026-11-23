@@ -7,7 +7,7 @@
 //                    Claude Code, Codex, Qwen, Copilot) stay in TOOL_GROUPS
 //                    with `enabled: false`: kept in source, not rendered.
 //   §2 MCP servers — `opencode mcp add/auth` against /mcp/<server>. The
-//                    generic-client tabs (Cursor, Claude Desktop, VS Code, JSON,
+//                    generic-client tabs (Claude Desktop, VS Code, JSON,
 //                    x-mcp-servers) are kept but hidden.
 //   §3 API keys    — COLLAPSED by default (not every account may mint keys):
 //                    mint a key (link to the Keys tab) + curl/Python/TypeScript
@@ -684,7 +684,7 @@ qwen`,
             <Tabs value={mcpTab} onValueChange={setMcpTab}>
               <TabsList variant="line" className="flex-wrap">
                 <TabsTrigger value="opencode">OpenCode</TabsTrigger>
-                {/* Generic MCP clients (Cursor, Claude Desktop, VS Code, JSON) and
+                {/* Generic MCP clients (Claude Desktop, VS Code, JSON) and
                     x-mcp-servers scoping: kept, not shown (OpenCode only). */}
                 <TabsTrigger value="access" className="hidden">MCP Access</TabsTrigger>
                 <TabsTrigger value="group" className="hidden">MCP Group access</TabsTrigger>
@@ -719,15 +719,13 @@ qwen`,
                   </span>{' '}
                   (the same key as chat — no Bearer prefix).
                 </p>
-                <Tabs defaultValue="cursor">
+                <Tabs defaultValue="claude">
                   <TabsList className={TAB_PILL_LIST}>
-                    <TabsTrigger value="cursor" className={TAB_PILL}>Cursor</TabsTrigger>
                     <TabsTrigger value="claude" className={TAB_PILL}>Claude Desktop</TabsTrigger>
                     <TabsTrigger value="vscode" className={TAB_PILL}>VS Code</TabsTrigger>
                     <TabsTrigger value="generic" className={TAB_PILL}>Generic JSON</TabsTrigger>
                   </TabsList>
                   {[
-                    ['cursor', '~/.cursor/mcp.json'],
                     ['claude', '~/Library/Application Support/Claude/claude_desktop_config.json'],
                     ['vscode', '.vscode/mcp.json (workspace)'],
                     ['generic', "your client's MCP config"],

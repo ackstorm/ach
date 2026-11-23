@@ -161,6 +161,9 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 		RuntimeFiles:  []state.FileEntry{{Target: ".mcp.json", Hash: "h2", SourceHash: "s2"}},
 	}
 	statePath := writeState(t, ws, prev)
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(statePath), "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	var rec recordedSync
 	swapUninstallSyncFn(t, &rec, hydrate.SyncStats{Pruned: 2}, nil)
@@ -180,6 +183,10 @@ func TestUninstall_FullTeardownRemovesState(t *testing.T) {
 	// D-28: state.json removed after full teardown.
 	if _, statErr := os.Stat(statePath); !os.IsNotExist(statErr) {
 		t.Fatalf("state.json must be removed after full teardown, stat err=%v", statErr)
+	}
+	// With no state left, the lock, the stage and the empty folders go too.
+	if _, statErr := os.Stat(filepath.Join(ws, ".ach")); !os.IsNotExist(statErr) {
+		t.Fatalf(".ach must be removed when nothing is left in it, stat err=%v", statErr)
 	}
 }
 

@@ -18,9 +18,9 @@ import (
 	"github.com/ackstorm/ach/internal/cli/state"
 )
 
-// mergeStrNative marks the single state row of a plugin delivered whole: its
+// MergeNative marks the single state row of a plugin delivered whole: its
 // Target is the plugin's folder and its Hash covers the tree.
-const mergeStrNative = "native"
+const MergeNative = "native"
 
 // nativePlugins returns the stage directory names of the plugins the manifest
 // delivers through the tool's own plugin system.
@@ -92,7 +92,7 @@ func (d *adapterDispatcherImpl) installNative(ctx context.Context, ad adapter.Ad
 	if err != nil {
 		return fmt.Errorf("plugin %s: %w", plugin, err)
 	}
-	entry := FileWrite{Target: filepath.ToSlash(target), Hash: sum, Merge: mergeStrNative, Source: plugin}
+	entry := FileWrite{Target: filepath.ToSlash(target), Hash: sum, Merge: MergeNative, Source: plugin}
 	var prior *state.FileEntry
 	if s != nil {
 		prior = findEntry(s.Plugins, entry.Target)

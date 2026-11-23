@@ -31,7 +31,6 @@ import (
 	_ "github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/codex"
-	_ "github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	_ "github.com/ackstorm/ach/internal/cli/adapter/pi"
 
@@ -208,14 +207,7 @@ func TestProject_AllAdapters_DirectPlugin(t *testing.T) {
 				".codex/config.toml",
 			},
 		},
-		{
-			adapterID: "cursor",
-			want: []string{
-				".cursor/commands/hello.md",
-				".cursor/agents/agent-a.md",
-				".cursor/mcp.json",
-			},
-		},
+
 		{
 			adapterID: "opencode",
 			want: []string{

@@ -27,8 +27,6 @@
   server`): run `ach-cli upgrade` ([install](install.md)). Commands usually keep working
   until then. An `unknown field` error from hydrate has this same cause, and older CLIs
   print no warning, so upgrade on that error too.
-- **Cursor lists an MCP server from ACH as "needs approval" or does not load it**: Cursor
-  loads a project MCP server only once enabled: `cursor-agent mcp enable <name>`.
 - **An MCP server from ACH or from `local plugin install` is missing in OpenCode, or one
   you removed is still there**: OpenCode loads MCP servers when its service starts; run
   `opencode service restart`.

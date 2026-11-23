@@ -60,7 +60,7 @@ ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | 
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
 ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <agy|claude|codex|cursor|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity, `cursor` starts `cursor-agent`). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused
+ach-cli launch <agy|claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused; warns (`claudeTrustWarning`) when the folder holds native Claude Code plugins and Claude Code does not trust it
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
@@ -127,14 +127,12 @@ lines (buffered by the CLI, re-emitted as `Note`/`Warning`) and `hint`s come
 AFTER it. Hints only on a first hydrate of that Environment+target (or a clone), except
 `opencode service restart`, printed on any hydrate or `environment uninstall`
 (not `--dry-run`) that adds or removes an MCP server or A2A agent for OpenCode,
-`cursor-agent mcp enable <name>`, printed on any hydrate (not `--dry-run`)
-that adds one for Cursor, and `codex, then /hooks`, printed on any hydrate (not
+and `codex, then /hooks`, printed on any hydrate (not
 `--dry-run`) that writes the Codex instructions hook (`InstructionLoaderWritten`)
 (`opencodeServersChanged`). `local plugin
 install|update|uninstall` print the same hint (`opencodeRestartHint`, on stderr,
 once per run, not `--dry-run`) when the opencode record's server keys change
-(`mcp.servers.<id>`, or `mcp.<id>` from before the OpenCode 2 format), and
-the Cursor enable hint when a cursor record gains an `mcpServers.*` key
+(`mcp.servers.<id>`, or `mcp.<id>` from before the OpenCode 2 format)
 (`serverHints`).
 Color only on a TTY without `NO_COLOR`. Errors from every command are
 `error: <msg>` + `hint: …` (`exit.DispatchAndRender`).
@@ -197,13 +195,13 @@ prefixed, and `skill == plugin` is not special-cased (`/bro:bro`). A skill's
 directory is renamed AND its `SKILL.md` `name:` rewritten (that one line
 only): Claude Code registers the frontmatter name as an alias too, so
 renaming the dir alone still answered `/ladder`. The form per tool was
-measured, not guessed (2026-10-26), except cursor and antigravity, taken from
+measured, not guessed (2026-10-26), except antigravity, taken from
 the tools' docs (skills and commands cannot be listed without a login):
 
-| | claude-code | opencode | codex | pi | cursor | antigravity |
-|---|---|---|---|---|---|---|
-| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (`:` warns) | `bro-ladder` | `bro-ladder` |
-| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `bro-x.md` (no subdirs read) | `bro-x.md` | none (dropped) |
+| | claude-code | opencode | codex | pi | antigravity |
+|---|---|---|---|---|---|
+| skill dir + `name:` | `bro:ladder` (Windows: dir `bro-ladder`, name `bro:ladder`) | `bro-ladder` | `bro-ladder` | `bro-ladder` (`:` warns) | `bro-ladder` |
+| command | `commands/bro/x.md` → `/bro:x` | `bro-x.md` | `bro-x.md` (codex 0.163 has no prompts) | `bro-x.md` (no subdirs read) | none (dropped) |
 
 opencode ignores `disable-model-invocation` and has no slash invocation for
 skills, so its skill rule also emits each such user-only skill as a command
@@ -249,7 +247,7 @@ adopted. Deep writes share their file by key and never refuse.
 - `environment hydrate`: `publishFile` (`hydrate/wiring.go`), record = the
   prior state row of that Environment and target, else a row another target
   of the same Environment recorded for the same destination (`sharedRows`:
-  `.agents/skills` is written by five targets, so a target added later finds
+  `.agents/skills` is written by four targets, so a target added later finds
   their files). `commit.run` hands Render the stage root (`.ach/<env>/tmp`), so
   `sharedRows` and the cross-env skill claims read the Environment's directory
   from the context (`withEnvDir`); a test calling Render directly does not
@@ -302,7 +300,7 @@ keeps the bare name. Two properties worth not re-deriving:
 
 The claim set reads the sibling states of every target whose skills rule
 lands in the same directory (`skillPlatforms`, from `ProjectionRules`, after
-the `--global` remap): codex, cursor, opencode, pi and antigravity share
+the `--global` remap): codex, opencode, pi and antigravity share
 `.agents/skills`; claude-code's `.claude/skills` is its own. NOT covered: `Plugin` (same problem);
 artifacts extract to the per-env `<achDir>` so they cannot collide; adapter runtime files are
 key-owned deep merges, which co-own safely by design. There is still no
@@ -349,13 +347,15 @@ projected (self-heals on `<b>`'s next hydrate).
   clean it.
 - `environment uninstall` default removes EVERYTHING hydrate wrote
   (`BuildScopedEmpty(prev, !onlyRuntime, onlyRuntime)`); `--only-runtime` keeps
-  context.
+  context. Once no `state*.json` is left in `.ach/<env>/`, it also removes the
+  `lock`, the empty `tmp/`, `.ach/<env>/` and `.ach/` (each only when empty;
+  not on `--dry-run`).
 
 ### Credential safety — the `.gitignore` block (`internal/cli/gitignore`)
 
 The projected adapter config carries the forwarder bearer / LiteLLM key in
 plaintext (project-root `.mcp.json`, `.codex/config.toml`,
-`.opencode/opencode.json`, `.cursor/mcp.json`, `.pi/mcp.json`,
+`.opencode/opencode.json`, `.pi/mcp.json`,
 `.agents/mcp_config.json`). mode `0600`
 guards other local users; a `.gitignore` entry guards against an accidental
 `git add`/commit. BOTH write paths call `gitignore.Ensure(projectRoot, entries)`
@@ -377,7 +377,7 @@ written path to its pattern (`.claude/agents/x.md` → `.claude/`; `.mcp.json` �
 removal would need cross-env reference counting). The hydrate engine guards
 `toolRoot == ""` so direct-struct unit tests never pollute cwd.
 
-## The 6 adapters + their transforms (`internal/cli/adapter/<id>/`)
+## The 5 adapters + their transforms (`internal/cli/adapter/<id>/`)
 
 Each adapter: `ID()`, `Aliases()`, `Detect()`, `RenderRuntime()` (governed-env
 MCP runtime config: the Environment's MCP servers plus each A2A agent's MCP
@@ -387,12 +387,12 @@ face `a2a-<agent>` at `<endpoint>/mcp`, via `adapter.RuntimeMCPServers`),
 `x-ach-key` header) is **separate** from `ProjectionRules` (local plugin MCP
 merge) — don't conflate them.
 
-| input kind | claude-code | codex | opencode | pi | cursor | antigravity |
-|---|---|---|---|---|---|---|
-| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` | `.md`→`.cursor/commands` | drop |
-| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop | `.md`→`.cursor/agents` | `.md`→`.agents/agents` (T) |
+| input kind | claude-code | codex | opencode | pi | antigravity |
+|---|---|---|---|---|---|
+| commands | `.md`→`.claude/commands` | `.md`→`.codex/prompts` | `.md`→`.opencode/commands` (T) | `.md`→`.pi/prompts` | drop |
+| agents | →`.claude/agents` | `.md`→`.codex/agents/*.toml` (T) | `.md`→`.opencode/agents` (T) | drop | `.md`→`.agents/agents` (T) |
 | skills | →`.claude/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` | →`.agents/skills` |
-| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` | →`.cursor/mcp.json` | →`.agents/mcp_config.json` (T) |
+| mcp + `.mcp.json` | →`.mcp.json` project-root (T) | →`.codex/config.toml` (T) | →`.opencode/opencode.json` (T) | →`.pi/mcp.json` | →`.agents/mcp_config.json` (T) |
 | rules | →`.claude/rules` | drop | drop | drop | drop | drop |
 | AGENTS.md | drop | drop | drop | drop | drop | drop |
 | hooks | drop | drop | drop | drop | drop | drop |
@@ -408,8 +408,15 @@ With `environment hydrate --models` and a PERSON bearer (OAuth JWS or `pk-`;
 `.claude/settings.json` (`apiKeyHelper: "ach-cli token"` +
 `env.ANTHROPIC_BASE_URL: <hub>`) and codex adds `model_provider = "ach"` +
 `[model_providers.ach]` (`base_url <hub>/v1`, `wire_api responses`,
-`[auth] command = "ach-cli token"`, `refresh_interval_ms 300000`) to its
-`config.toml` — keys tracked, so `environment uninstall` prunes them. An `ek-` bearer
+`[auth] command = "ach-cli"` + `args = ["token"]` (Codex runs `command` as a
+program name, not through a shell), `refresh_interval_ms 300000`) to its
+`config.toml` — keys tracked, so `environment uninstall` prunes them. Codex
+0.171 ignores `model_provider`/`model_providers` in a project
+`.codex/config.toml` (it warns "Ignored unsupported project-local config
+keys"), so `--models` with a codex target is refused without `--global`
+(`hydrateEnv`), and the `Models … add --models` line is not shown for codex in
+project scope. Codex's built-in apps tools exceed Bedrock's 64-character tool
+name limit; that is documented (`-c features.apps=false`), not written. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
@@ -425,7 +432,6 @@ target is the adapter's `InstructionFiles`, the global path goes through
 |---|---|---|---|
 | claude-code | `.claude/rules/ach-<name>.md` | none | `~/.claude/rules/` |
 | opencode | `.opencode/ach/<name>.md` | none | `~/.config/opencode/ach/` |
-| cursor | `.cursor/rules/ach-<name>.mdc` | `alwaysApply: true` | none (warning) |
 | antigravity | `.agents/rules/ach-<name>.md` | `trigger: always_on` | `~/.gemini/config/rules/` |
 | pi | `.pi/ach/<name>.md` | none | `~/.pi/agent/ach/` |
 | codex | `.codex/ach/<name>.md` | none | `$CODEX_HOME/ach/` |
@@ -464,7 +470,7 @@ changes in the per-kind table.
 `adapter.NativeTarget` (`adapter/native.go`): `NativeSupports(dir)` (the tree carries
 the tool's own plugin manifest), `NativeRegister(ctx, NativePlugin)` (idempotent,
 returns the note to show), `NativeUnregister` (idempotent, runs before the tree goes).
-A tool without the interface (Cursor), or a plugin without that tool's manifest, gets a
+A plugin without that tool's manifest gets a
 warning and nothing: the plugin is never split into files instead. A missing tool
 command (`ErrToolMissing`) warns, records no row, and the next hydrate tries again.
 
@@ -475,7 +481,6 @@ command (`ErrToolMissing`) warns, records no row, and the next hydrate tries aga
 | opencode | absolute folder in `plugins` of `.opencode/opencode.json` | loads when the service starts (`opencode service restart`) |
 | codex | `codex plugin marketplace add <abs>/.ach/<env>/native/codex`, then `codex plugin add <plugin>@ach-<env>-<8 hex>`; uninstall runs `plugin remove`, then `marketplace remove` | active for the user; Codex may ask to approve the plugin's hooks |
 | antigravity | copy at `.agents/plugins/<plugin>/` plus the marker `.ach-native` | none |
-| cursor | none | warning |
 
 Claude Code and Codex key a marketplace by name for the whole user, so the name carries
 a hash of the folder path: two folders hydrating one Environment otherwise read each
@@ -502,7 +507,7 @@ Limits:
 
 - Codex installs for the whole user, whatever the hydrate scope.
 - Antigravity's copy lives in `.agents/plugins/<plugin>/`, one folder per plugin name for the whole workspace: two Environments holding a native plugin of the same name share it.
-- Claude Code and pi load a project-scope plugin only in a trusted folder.
+- Claude Code and pi load a project-scope plugin only in a trusted folder. Claude Code keeps trust per exact folder in `~/.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json`) `projects[<abs dir>].hasTrustDialogAccepted`; a trusted parent does not count, and an untrusted folder drops the plugin silently (`--debug`: "Skipping orphaned enabledPlugins entry"), measured 2026-11-23 on 2.1.330. `environment status` and `launch claude` warn (`claudeTrustWarning`, `claudecode.FolderUntrusted`) when a folder holding native Claude Code plugins is recorded as untrusted; a missing or unreadable config shows nothing.
 - Two Environments holding the same native plugin in one workspace load it twice in Claude Code, pi and OpenCode.
 - What a plugin writes outside its folder (for example a server entry in pi's `mcp.json`) is not removed by uninstall.
 - `claude plugin list` does not show a plugin Claude Code reads in place.
@@ -520,7 +525,6 @@ that tool actually reads it. One table drives both write paths:
 | codex | `CODEX_HOME` | dir itself | `.codex/` | `.agents/skills/**` |
 | opencode | `XDG_CONFIG_HOME` | **parent** (`$VAR/opencode/`) | `.opencode/` | — |
 | pi | `PI_CODING_AGENT_DIR` | dir itself | `.pi/prompts/` → `.pi/agent/…` | `.pi/mcp.json` |
-| cursor | none | — | — | everything (`~/.cursor`, `~/.agents/skills` are home-relative) |
 | antigravity | none | — | `.agents/` → `~/.gemini/config/` (skills, agents, `mcp_config.json`) | — |
 
 Hard-won details — do NOT re-derive:
@@ -537,7 +541,7 @@ Hard-won details — do NOT re-derive:
   cross-tool convention dir that `CODEX_HOME` does not own, so codex's skills
   stay under `$HOME/.agents/skills/`. One adapter can therefore write to two
   roots in a single run. The prefix is read per adapter: Antigravity owns its
-  `.agents/` paths, so they go to `~/.gemini/config/`, while codex, cursor,
+  `.agents/` paths, so they go to `~/.gemini/config/`, while codex,
   opencode and pi keep `.agents/skills` under `$HOME`.
 - **A relative env value is IGNORED** (falls back to `$HOME`). The real tools
   resolve it against their own cwd, which is not ach-cli's.
@@ -631,14 +635,6 @@ is not ground truth.**
   servers configured" in a container without a login even for a server written
   by `opencode mcp add`, so it is not a usable check there. OpenCode loads MCP
   servers when its service starts: `opencode service restart` after a change.
-- Cursor CLI 2026.11.19: the install provides `agent` and `cursor-agent` (same
-  binary). `cursor-agent mcp list` reads the project `.cursor/mcp.json` without a
-  login and reports each server as "not loaded (needs approval)" until
-  `cursor-agent mcp enable <name>`; an entry carrying `"type": "http"` next to
-  `url` and `headers` is accepted. Skills, commands and subagents cannot be
-  listed without a login. GAP: a plugin MCP entry's `${VAR}` is merged
-  verbatim, while Cursor interpolates `${env:VAR}`; hydrate prints the
-  `cursor-agent mcp enable <name>` hint when it adds a server.
 - Antigravity CLI 1.5.14: `~/.gemini/config/mcp_config.json` loads, with
   `serverUrl` and also with `url` + `"type": "http"`; `agy mcp add` writes only
   that user file (`{"disabled": false, "serverUrl": …}`) and has no scope flag.
@@ -666,8 +662,6 @@ is not ground truth.**
   an absolute one always loads. Claude Code 2.1.330 (npm, `ANTHROPIC_BASE_URL` at a
   fake server, no login): loads `.claude/rules/*.md` from the folder and from every
   parent folder. Pi 1.6.0 loads `.pi/extensions/` only from the folder it starts in.
-  NOT verified: Cursor `.cursor/rules/*.mdc` (`alwaysApply: true`) loading (a
-  login is needed).
 - Antigravity 1.5.15 (`agy -p`, signed in), checked 2026-11-23 with canary words:
   `.agents/rules/*.md` with `trigger: always_on` loads in the folder and from parent
   folders up to the git root (a project `env/proj` that is a git repo misses

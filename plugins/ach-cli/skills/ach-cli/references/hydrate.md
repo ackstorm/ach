@@ -59,7 +59,7 @@ away, or `--force` on the user's say-so.
 ## Hydrate and start the tool in one step
 
 ```bash
-ach-cli launch claude --environment <environment>                  # or agy, codex, cursor, opencode, pi
+ach-cli launch claude --environment <environment>                  # or agy, codex, opencode, pi
 ach-cli launch opencode                                            # as the folder is, no hydrate
 ach-cli launch opencode --update-environments                      # update the folder's Environments first
 ach-cli launch codex --environment <environment> --dir ~/work/infra -- --model <model>
@@ -94,7 +94,10 @@ A plugin the administrator marked for native delivery is installed whole under
 system (hooks and local MCP servers work). Hydrate lists it as `+ plugin  <name>`, then a note:
 
 - Claude Code: `Claude Code loads <plugin> once you trust this folder`. `claude plugin list`
-  does not show it; Claude Code reads it in place.
+  does not show it; Claude Code reads it in place. Claude Code trusts each folder on its
+  own (trusting a parent folder does not count) and skips the plugin without a word in a
+  folder it does not trust; `ach-cli environment status` and `ach-cli launch claude` warn
+  when that is the case.
 - pi: `pi loads <plugin> only in a trusted project (pi -a)`.
 - OpenCode: `OpenCode loads <plugin> when its service starts (opencode service restart)`.
 - Codex: `Codex installs plugins for your user: <plugin> is active in every folder, and Codex may
@@ -102,8 +105,7 @@ system (hooks and local MCP servers work). Hydrate lists it as `+ plugin  <name>
 - Antigravity: copied to `.agents/plugins/<plugin>/` (`~/.gemini/config/plugins/<plugin>/` with
   `--global`), no note.
 
-A tool the plugin does not support gets a warning and nothing else: `plugin <name> uses native
-delivery, which ach-cli does not offer for cursor: not installed` (Cursor), or `plugin <name> uses
+A tool the plugin ships no manifest for gets a warning and nothing else: `plugin <name> uses
 native delivery and carries no <tool> plugin manifest: not installed`. `environment uninstall`
 removes the plugin; files the plugin wrote elsewhere (pi's `mcp.json`) stay. If the tool's own
 command is missing (Codex), hydrate installs nothing for it and warns `plugin <name> not installed
@@ -160,9 +162,13 @@ hydrate finish, then edit.
 
 ```bash
 ach-cli environment hydrate <environment> --target claude-code --models
+ach-cli environment hydrate <environment> --target codex --models -g
 ```
 
 Wires Claude Code (an `apiKeyHelper` + base URL) or Codex (a model provider) to send its
-model requests through ACH, billed to the user's ACH budget. Needs `ach-cli` on the
+model requests through ACH, billed to the user's ACH budget. Codex reads its model provider
+only from the user config, so for Codex `--models` is refused without `-g`. With a model
+served from Amazon Bedrock, Codex's built-in apps tools have names over Bedrock's
+64-character limit and the request fails; run Codex with `-c features.apps=false`. Needs `ach-cli` on the
 `PATH`, because the tool calls it for a fresh token. Without `--models` the tool keeps
 its own login.

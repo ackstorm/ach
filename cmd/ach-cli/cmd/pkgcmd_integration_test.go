@@ -853,23 +853,6 @@ func TestServerHints_Note(t *testing.T) {
 	}
 }
 
-// TestServerHints_CursorEnable: a Cursor install or update that adds a server
-// calls for enabling it; one that keeps the same servers does not.
-func TestServerHints_CursorEnable(t *testing.T) {
-	rec := func(keys ...string) []store.FileRec {
-		return []store.FileRec{{RelPath: "x", Merge: "deep", Keys: keys}}
-	}
-	var o serverHints
-	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a"))
-	if o.enable {
-		t.Error("same servers: enable hint due")
-	}
-	o.note("cursor", rec("mcpServers.a"), rec("mcpServers.a", "mcpServers.b"))
-	if !o.enable {
-		t.Error("added server: no enable hint")
-	}
-}
-
 // TestPluginCmd_OpencodeServiceRestartHint: the restart hint appears once when
 // a plugin install or uninstall writes or removes an MCP server entry for
 // opencode, and never otherwise.

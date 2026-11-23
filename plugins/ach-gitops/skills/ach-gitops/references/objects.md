@@ -48,7 +48,7 @@ spec:
   plugin system. The repository must carry each tool's own manifest
   (`.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, a `package.json`
   with a `pi` block or OpenCode `exports`, Antigravity's `plugin.json`); a tool
-  without one gets nothing from the plugin, and Cursor is never served. Its hooks
+  without one gets nothing from the plugin. Its hooks
   run as the developer on their machine, and Codex installs it for the whole
   user: mark only plugins you trust. Developers need `ach-cli` 1.3.1 or newer. A
   plugin from a PluginMarketplace cannot be native.
@@ -119,7 +119,7 @@ spec:
 ## Instruction
 
 A governed Markdown text that `ach-cli environment hydrate` writes as an always-loaded
-rules file for Claude Code, OpenCode, Cursor, Antigravity and Pi, and loads through a
+rules file for Claude Code, OpenCode, Antigravity and Pi, and loads through a
 session-start hook in Codex.
 
 ```yaml

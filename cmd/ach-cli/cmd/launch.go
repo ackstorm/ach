@@ -23,12 +23,11 @@ var launchTools = map[string]string{
 	"antigravity": "agy",
 	"claude-code": "claude",
 	"codex":       "codex",
-	"cursor":      "cursor-agent",
 	"opencode":    "opencode",
 	"pi":          "pi",
 }
 
-const launchToolList = "agy, claude, codex, cursor, opencode, pi"
+const launchToolList = "agy, claude, codex, opencode, pi"
 
 // claudeCodeID is the target launch fronts with its proxy.
 const claudeCodeID = "claude-code"
@@ -128,6 +127,14 @@ Example:
 						Msg: file + " sets env.ANTHROPIC_BASE_URL, which overrides launch and bypasses ACH\n" +
 							`hint: remove "ANTHROPIC_BASE_URL" from the "env" block of ` + file +
 							` (or, if ` + "`ach-cli environment hydrate --models`" + ` wrote it, re-run that hydrate without --models)`}
+				}
+				dir := in.output
+				if dir == "" {
+					dir = "."
+				}
+				files, _ := loadAllWorkspaceStates(dir)
+				if w := claudeTrustWarning(dir, files); w != "" {
+					u.verb("Warning", "%s", w)
 				}
 				addr, stop, err := startLaunchProxy(src, c.BaseURL)
 				if err != nil {

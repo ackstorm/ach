@@ -33,7 +33,6 @@ func (d *adapterDispatcherImpl) projectInstructions(ad adapter.Adapter, s *state
 		return nil
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	wrote := false
 	for _, ent := range entries {
 		name := ent.Name()
 		if verr := validatePluginName(name); verr != nil {
@@ -57,13 +56,7 @@ func (d *adapterDispatcherImpl) projectInstructions(ad adapter.Adapter, s *state
 			}
 			entry.Source = name
 			result.ProjectedInstructionFiles = append(result.ProjectedInstructionFiles, entry)
-			wrote = true
 		}
-	}
-	if !wrote {
-		result.InstructionWarnings = append(result.InstructionWarnings,
-			fmt.Sprintf("%s has no global instructions file; instructions are delivered only in a project", d.platformID))
-		return nil
 	}
 	if l := it.InstructionLoader(d.global); l != nil && !d.dryRun {
 		written, err := ensureLoader(d.platformID, toolRoot, d.global, *l)

@@ -12,7 +12,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
-	"github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	"github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	"github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
@@ -152,28 +151,6 @@ func TestProjectInstructions_OpencodeNonArrayRefused(t *testing.T) {
 	}
 	if readFile(t, cfg) != body {
 		t.Fatal("file changed")
-	}
-}
-
-func TestProjectInstructions_Warnings(t *testing.T) {
-	stage, root := t.TempDir(), t.TempDir()
-	var res RenderResult
-	d := &adapterDispatcherImpl{platformID: "cursor", global: true}
-	if err := d.projectInstructions(&cursor.Adapter{}, nil, stage, root, &res); err != nil {
-		t.Fatal(err)
-	}
-	if len(res.InstructionWarnings) != 0 {
-		t.Fatal("nothing staged must report nothing")
-	}
-	stageInstruction(t, stage, "base", "x\n")
-	if err := d.projectInstructions(&cursor.Adapter{}, nil, stage, root, &res); err != nil {
-		t.Fatal(err)
-	}
-	if len(res.InstructionWarnings) != 1 || len(res.ProjectedInstructionFiles) != 0 {
-		t.Fatalf("warnings %v", res.InstructionWarnings)
-	}
-	if entries, _ := os.ReadDir(root); len(entries) != 0 {
-		t.Fatalf("wrote %v", entries)
 	}
 }
 

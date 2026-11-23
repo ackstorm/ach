@@ -147,21 +147,6 @@ func TestNative_NoManifestForTheToolMeansNothingAndAWarning(t *testing.T) {
 	}
 }
 
-func TestNative_CursorGetsAWarning(t *testing.T) {
-	ws, stage, m := nativeWorkspace(t, manifest.DeliveryNative, piPlugin)
-	_, disp := hydrate.NewWiring(nil, "cursor", extract.DefaultLimits(), false, false, false, conflict.Namespace)
-	rr, err := disp.Render(context.Background(), m, nil, stage, ws, true, false)
-	if err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-	if len(rr.ProjectedFiles) != 0 || len(rr.NativeWarnings) != 1 {
-		t.Fatalf("files = %v, warnings = %v; want no file and one warning", rr.ProjectedFiles, rr.NativeWarnings)
-	}
-	if !strings.Contains(rr.NativeWarnings[0], "does not offer for cursor") {
-		t.Errorf("NativeWarnings = %v; want the no-native-delivery wording", rr.NativeWarnings)
-	}
-}
-
 func TestNative_AnAchPluginIsStillSplit(t *testing.T) {
 	ws, stage, m := nativeWorkspace(t, "", piPlugin)
 	_, disp := hydrate.NewWiring(nil, "pi", extract.DefaultLimits(), false, false, false, conflict.Namespace)

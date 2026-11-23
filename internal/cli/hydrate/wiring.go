@@ -1142,7 +1142,7 @@ func skillNameFromPath(path, root string) string {
 //   - codex .codex/config.toml      → "mcp_servers.<id>"
 //   - opencode .opencode/opencode.json → "mcp.servers.<id>"
 const (
-	mcpServersPrefix     = "mcpServers."  // claude / pi / cursor / antigravity (JSON)
+	mcpServersPrefix     = "mcpServers."  // claude / pi / antigravity (JSON)
 	mcpServersTOMLPrefix = "mcp_servers." // codex (TOML)
 	mcpOpencodePrefix    = adapter.OpencodeMCPKeyPrefix
 )
@@ -1772,7 +1772,7 @@ func currentScopedHash(e state.FileEntry, abs string) (current string, present b
 // the keys the next state no longer claims; the drift gate still hashes the
 // row's recorded key set, which is what e.Hash covers.
 func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions) (bool, error) {
-	if e.Merge == mergeStrNative {
+	if e.Merge == MergeNative {
 		if opts.DryRun {
 			return false, nil
 		}

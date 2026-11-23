@@ -108,7 +108,7 @@ type projectionDescriptor struct {
 	// "json-mcp"  → {"mcpServers": {"<userKey>": …}} (claude)
 	// "json-mcp-opencode" → {"mcp": {"servers": {"<userKey>": …}}} (opencode)
 	// "toml-mcp"  → [mcp_servers.<userKey>] (codex)
-	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json, cursor .cursor/mcp.json, antigravity .agents/mcp_config.json)
+	// "json-pi"   → {"mcpServers": {"<userKey>": …}} (pi .pi/mcp.json, antigravity .agents/mcp_config.json)
 	coOwnedKind string
 
 	// mustDrop are kind names that MUST appear in the WIRE-03 stderr warning
@@ -170,17 +170,7 @@ var projectionDescriptors = []projectionDescriptor{
 		mustDrop:    nil,
 		mustNotDrop: []string{"agents", "skills"},
 	},
-	{
-		platformID: phase7PlatformCursor, // "cursor"
-		// cursor routes commands(*.md)→.cursor/commands/, agents(*.md)→
-		// .cursor/agents/ and skills→.agents/skills/.
-		nativeDirs:     []string{".cursor/commands", ".cursor/agents", ".agents/skills"},
-		mustNotProject: []string{"agents", "commands", "skills"},
-		coOwnedFile:    ".cursor/mcp.json",
-		coOwnedKind:    "json-pi",
-		mustDrop:       nil,
-		mustNotDrop:    []string{"agents", "commands", "skills"},
-	},
+
 	{
 		platformID:     phase7PlatformOpencode, // "opencode"
 		nativeDirs:     []string{".opencode/commands", ".opencode/agents", ".agents/skills"},
@@ -211,9 +201,6 @@ var projectionDescriptors = []projectionDescriptor{
 
 // phase7PlatformAntigravity is the canonical antigravity id.
 const phase7PlatformAntigravity = "antigravity"
-
-// phase7PlatformCursor is the canonical cursor id.
-const phase7PlatformCursor = "cursor"
 
 // phase7PlatformPi is the canonical pi id (the four other ids are
 // declared in cli_hydrate_engine_test.go; pi post-dates that file).

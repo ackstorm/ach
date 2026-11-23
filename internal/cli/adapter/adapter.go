@@ -211,9 +211,9 @@ func CredentialFromContext(ctx context.Context) string {
 type helperKey struct{}
 
 // HelperCommand is the command the tools exec to obtain a model credential
-// (Claude Code `apiKeyHelper`, Codex `[model_providers.*].auth.command`).
-// Bare name on purpose: the rendered files are shared with teammates and the
-// tools spawn it through the user's shell PATH.
+// (Claude Code `apiKeyHelper`, Codex `[model_providers.*].auth` command +
+// args). Bare name on purpose: the rendered files are shared with teammates
+// and the tools find it on the user's PATH.
 const HelperCommand = "ach-cli token"
 
 // WithHelperBaseURL marks the render as a PERSON hydrate (OAuth or pk_): the

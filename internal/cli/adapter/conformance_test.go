@@ -34,7 +34,6 @@ import (
 	"github.com/ackstorm/ach/internal/cli/adapter/antigravity"
 	"github.com/ackstorm/ach/internal/cli/adapter/claudecode"
 	"github.com/ackstorm/ach/internal/cli/adapter/codex"
-	"github.com/ackstorm/ach/internal/cli/adapter/cursor"
 	"github.com/ackstorm/ach/internal/cli/adapter/opencode"
 	"github.com/ackstorm/ach/internal/cli/adapter/pi"
 )
@@ -47,7 +46,6 @@ func adapters() map[string]route.RuleProvider {
 		"antigravity": &antigravity.Adapter{},
 		"claude-code": &claudecode.Adapter{},
 		"codex":       &codex.Adapter{},
-		"cursor":      &cursor.Adapter{},
 		"opencode":    &opencode.Adapter{},
 		"pi":          &pi.Adapter{},
 	}
@@ -143,21 +141,7 @@ var conformanceTables = []adapterConformance{
 		// hooks/ have no rule → dropped.
 		wantDropped: []string{"AGENTS.md", "hooks", "prompts", "rules"},
 	},
-	{
-		id:             "cursor",
-		mappingSection: "§cursor: commands/agents verbatim under .cursor/, skills in .agents/skills, MCP deep-merged into .cursor/mcp.json",
-		rowCount:       5,
-		rules: map[string]wantRule{
-			"commands/**/*.md": {to: ".cursor/commands/**/*.md", merge: adapter.MergeReplace, hasXform: false},
-			"skills/**/*":      {to: ".agents/skills/**/*", merge: adapter.MergeReplace, hasXform: false},
-			"agents/**/*.md":   {to: ".cursor/agents/**/*.md", merge: adapter.MergeReplace, hasXform: false},
-			"mcp/**/*":         {to: ".cursor/mcp.json", merge: adapter.MergeDeep, hasXform: true},
-			".mcp.json":        {to: ".cursor/mcp.json", merge: adapter.MergeDeep, hasXform: true},
-		},
-		// cursor routes commands/skills/agents/mcp; rules/, prompts/, AGENTS.md,
-		// hooks/ have no rule → dropped.
-		wantDropped: []string{"AGENTS.md", "hooks", "prompts", "rules"},
-	},
+
 	{
 		id:             "opencode",
 		mappingSection: "the adapter table §opencode (FMT-04 tools-object, D-21 mcp rename)",

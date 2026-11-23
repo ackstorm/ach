@@ -280,7 +280,7 @@ func TestPluginCmd_Install_UnknownTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown target, got nil")
 	}
-	for _, id := range []string{"antigravity", "claude-code", "codex", "cursor", "opencode", "pi"} {
+	for _, id := range []string{"antigravity", "claude-code", "codex", "opencode", "pi"} {
 		if !strings.Contains(err.Error(), id) {
 			t.Errorf("unknown-target error should list %q: %v", id, err)
 		}

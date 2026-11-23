@@ -224,6 +224,7 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 	if err != nil {
 		return err
 	}
+	defer removeEmptyAchDir(achDir, in.dryRun) // runs after the lease is released
 	defer func() { _ = lease.Release() }()
 
 	// Load every state before tearing any down, so one unsafe file stops the
@@ -333,6 +334,18 @@ func runUninstall(cmd *cobra.Command, in uninstallInputs) error {
 func restartHint(u *ui, dryRun bool, removed []hydrate.Result) {
 	if !dryRun && opencodeServersChanged(removed) {
 		u.verb("hint", "%s", opencodeRestartHint)
+	}
+}
+
+// removeEmptyAchDir removes the lock, the stage and the folders around them
+// once achDir holds no state file: nothing uses them then. A dry run removes
+// nothing. Every removal is non-recursive, so anything still in them stays.
+func removeEmptyAchDir(achDir string, dryRun bool) {
+	if left, _ := filepath.Glob(filepath.Join(achDir, "state*.json")); dryRun || len(left) > 0 {
+		return
+	}
+	for _, p := range []string{lock.Path(achDir), filepath.Join(achDir, "tmp"), achDir, filepath.Dir(achDir)} {
+		_ = os.Remove(p)
 	}
 }
 
