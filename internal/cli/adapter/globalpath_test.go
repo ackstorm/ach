@@ -188,3 +188,11 @@ func TestRemapGlobalPath_Antigravity(t *testing.T) {
 		}
 	}
 }
+
+func TestRemapGlobalPath_PiSettings(t *testing.T) {
+	t.Setenv("PI_CODING_AGENT_DIR", "")
+	home := t.TempDir()
+	if got := RemapGlobalPath("pi", home, ".pi/settings.json"); got != ".pi/agent/settings.json" {
+		t.Errorf("RemapGlobalPath(pi, .pi/settings.json) = %q; want .pi/agent/settings.json", got)
+	}
+}
