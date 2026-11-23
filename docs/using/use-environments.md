@@ -100,6 +100,35 @@ Hydrate adds the folders it writes (`.ach/`, `.claude/`, `.agents/`, …) to a
 `.gitignore` in that folder, whole: they can hold your key. Skills your team
 commits under `.agents/skills` then need `git add -f`.
 
+## Plugins your tool installs itself
+
+An administrator can mark a plugin so that your tool's own plugin system loads
+it. The plugin then keeps everything it ships, hooks and local MCP servers
+included, instead of being split into files. Hydrate lists it like any plugin
+(`+ ach-memory`) and may print a note:
+
+| Tool | What hydrate does | What you do |
+|---|---|---|
+| Claude Code | registers the folder `.ach/<env>/native/claude-code/` in `.claude/settings.json` | trust the folder; the note reads `Claude Code loads <plugin> once you trust this folder` |
+| pi | adds the plugin folder to `packages` in `.pi/settings.json` | start pi with `pi -a`; the note reads `pi loads <plugin> only in a trusted project (pi -a)` |
+| OpenCode | adds the plugin folder to `plugins` in `.opencode/opencode.json` | run `opencode service restart`; the note reads `OpenCode loads <plugin> when its service starts (opencode service restart)` |
+| Codex | runs `codex plugin marketplace add` and `codex plugin add` | approve the plugin's hooks when Codex asks; the note reads `Codex installs plugins for your user: <plugin> is active in every folder, and Codex may ask you to approve its hooks` |
+| Antigravity | copies the plugin to `.agents/plugins/<plugin>/` | nothing |
+
+Codex installs for your whole user, whatever the hydrate scope. Claude Code does
+not list the plugin in `claude plugin list`: it reads it from the folder under
+`.ach/`.
+
+A tool the plugin does not support gets a warning and nothing else. Cursor
+prints `plugin <name> uses native delivery, which ach-cli does not offer for
+cursor: not installed`; a tool the plugin ships no manifest for prints
+`plugin <name> uses native delivery and carries no <tool> plugin manifest: not
+installed`.
+
+`ach-cli environment uninstall <environment>` unregisters the plugin and removes
+its folder. What the plugin wrote on its own outside that folder, for example a
+server entry in pi's `mcp.json`, stays.
+
 ## Update
 
 ```bash

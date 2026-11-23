@@ -4,6 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+- `ach-cli environment hydrate` installs a plugin the platform marks for native delivery as an intact folder that the tool's own plugin system loads, so its hooks, local MCP server and tool extensions work. Claude Code, pi and OpenCode get an entry in their settings, Antigravity a copy under `.agents/plugins/`, and Codex is installed with `codex plugin add`, for the whole user. A tool the plugin does not support gets a warning and nothing from that plugin. Cursor has no native delivery.
+
 ### Fixed
 - `ach-cli environment hydrate` for a second tool that also uses `.agents/skills` (Codex, Cursor, OpenCode, pi, Antigravity) no longer stops with "already exists with other content and this Environment did not install it" when a skill changed on the server; it updates the file the first tool installed. Until now `--force` was the only way past it. Also, a skill with the same name as one a sibling Environment in the folder installed is again installed as `<environment>-<skill>` instead of over the sibling's copy.
 
