@@ -160,6 +160,23 @@ func TestLaunch_NoEnvironmentStartsTool(t *testing.T) {
 	}
 }
 
+// A tool killed by a signal ends launch with 128+signal and no message of
+// ach-cli's own, as a shell reports it.
+func TestLaunch_ToolKilledBySignal(t *testing.T) {
+	setupClone(t, false)
+	fakeNamedTool(t, "pi")
+	t.Setenv("ACH_ENVIRONMENT", "")
+	tool := filepath.Join(os.Getenv("PATH"), "pi")
+	if err := os.WriteFile(tool, []byte("#!/bin/sh\nkill -TERM $$\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code, err := executeCommand(t, newLaunchCmd(), "pi")
+	if code != exit.Code(128+15) || err.Error() != "" {
+		t.Fatalf("exit code = %d, error %q; want 143 and no message\n%s", code, err, stderr)
+	}
+}
+
 // claude starts behind the launch proxy: the shell's gateway variables are
 // replaced (with a warning) by the proxy's local address.
 func TestLaunch_ClaudeGoesThroughProxy(t *testing.T) {

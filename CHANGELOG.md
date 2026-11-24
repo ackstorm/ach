@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+
+- `ach-cli launch` starts the tool as the terminal's foreground job on Linux and macOS, as a shell does: the tool leads the foreground process group and `ach-cli` waits behind it. Terminal managers that find the agent from that process (Ovis showed a pane started with `ach-cli launch claude` as a plain terminal, with no Chat view) now see the tool. Ctrl-Z and `fg` work as before; Ctrl-C and Ctrl-\ reach the tool only, so a script that wraps `ach-cli launch` no longer receives them. Nothing changes when stdin is not a terminal, or on Windows.
+- `ach-cli launch` exits with 128 plus the signal number when a signal kills the tool (143 for SIGTERM), as a shell reports it. It exited 1 and printed `error: signal: terminated`.
+
 ## [1.3.4] - 2026-11-24
 
 ### Security
