@@ -9,7 +9,7 @@ import { EVIDENCE_LIMIT_NOTICE, sourceUnavailable, useEvidenceReport, useEvidenc
 import type { ClassificationCategory, WorkloadRuntime } from '@/lib/api-types';
 import { abbreviate, formatCurrency, formatInt, formatLocalDateTime, formatTokens, formatPercent, formatDecimal, formatUsdSmall, formatDuration } from '@/lib/format';
 import { targetStatus, traceOutcome } from '@/lib/status';
-import { cacheStatus, ratioStatus, runtimeLabel, type TargetStatus } from '@/lib/observability-targets';
+import { cacheStatus, inputStatus, ratioStatus, runtimeLabel, type TargetStatus } from '@/lib/observability-targets';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { usePersistedChoice } from '@/hooks/use-persisted-choice';
 import { Bars, Panel, Segmented, SkelRows, Swatch, TableDonut } from '@/components/analytics/ReportParts';
@@ -136,9 +136,10 @@ export function EvidenceHero({ range }: { range: { start: string; end: string } 
     {context && !tooLong && <Signals context={context} />}
     {tooLong ? <section className="panel report-gap"><p className="report-notice">{EVIDENCE_LIMIT_NOTICE}</p></section> : <section className="panel ratio-hero" aria-label="Input and output activity">
       <div className="ratio-main"><span className="label">Uncached input / output</span><strong className={ratioStatus(ratio) === 'over' ? 'red' : undefined}>{ratio == null ? '—' : `${formatDecimal(ratio, 1)} : 1`}</strong><p>{abbreviate(context?.token_ratio?.uncached_input_tokens)} uncached input / {abbreviate(context?.token_ratio?.output_tokens)} output · {formatInt(context?.token_ratio?.coverage ?? 0)} generations with both measured. With cache reads: {context?.token_ratio?.value == null ? '—' : `${formatDecimal(context.token_ratio.value, 1)} : 1`}.</p><p><Target status={ratioStatus(ratio)} ok="Within target · ≤ 10:1" over="Above target · > 10:1" /></p></div>
-      <div className="ratio-main ratio-score"><span className="label">Prompt cache-read share</span><strong className={cacheStatus(share) === 'over' ? 'red' : undefined}>{formatPercent(share)}</strong><p>{share == null ? 'Cache-read coverage is unavailable for this generation population.' : `${formatInt(context?.cache_read_share.coverage)} generations with matched input and cache telemetry; cached input is counted once.`} Target ≥ 80%, a dashboard choice, not a universal benchmark.</p><p><Target status={cacheStatus(share)} ok="Within target · ≥ 80%" over="Below target · < 80%" /></p></div>
-      <div className="ratio-main"><span className="label">Average generation input</span><strong>{abbreviate(summary?.mean)}</strong><p>{context ? `Over ${formatInt(context.input_coverage)} generations with input usage.` : 'Generation measurements unavailable.'}</p></div>
+      <div className="ratio-main ratio-score"><span className="label">Prompt cache-read share</span><strong className={cacheStatus(share) === 'over' ? 'red' : undefined}>{formatPercent(share)}</strong><p>{share == null ? 'Cache-read coverage is unavailable for this generation population.' : `${formatInt(context?.cache_read_share.coverage)} generations with matched input and cache telemetry; cached input is counted once.`}</p><p><Target status={cacheStatus(share)} ok="Within target · ≥ 95%" over="Below target · < 95%" /></p></div>
+      <div className="ratio-main"><span className="label">Average generation input</span><strong className={inputStatus(summary?.mean) === 'over' ? 'red' : undefined}>{abbreviate(summary?.mean)}</strong><p>{context ? `Over ${formatInt(context.input_coverage)} generations with input usage.` : 'Generation measurements unavailable.'}</p><p><Target status={inputStatus(summary?.mean)} ok="Within target · ≤ 150K" over="Above target · > 150K" /></p></div>
       <div className="ratio-meta"><div><span>Median input</span><b>{abbreviate(summary?.median)}</b></div><div><span>Maximum input</span><b>{abbreviate(summary?.max)}</b></div><div><span>Reasoning share of output</span><b>{formatPercent(reasoning)}</b></div><div><span>Reasoning measured on</span><b>{context ? `${formatInt(context.reasoning.coverage)} generations` : '—'}</b></div><div><span>Period</span><b>{range.start} – {range.end}</b></div></div>
+      <p className="ratio-note">Targets are dashboard choices, not universal benchmarks.</p>
     </section>}
   </>;
 }
