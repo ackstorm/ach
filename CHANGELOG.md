@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Security
+- Built with OpenTelemetry 1.47.0, which fixes GO-2026-6974 (a span attribute
+  could exceed its length limit).
+
 ### Fixed
 
 - `ach-cli environment hydrate <environment>` without `--target` updates the tools the Environment is already hydrated for, in a folder and with `-g`. It stopped with "multiple agent targets detected" as soon as the Environment was hydrated for more than one tool; only the form without a name reused them. Adding a tool still takes `--target` once.

@@ -31,6 +31,11 @@ _None._ The list is empty — the gate expects ZERO reachable advisories.
 
 ## History
 
+- 2026-11-24: Bumped `go.opentelemetry.io/otel` (+ `sdk`, `trace`, `metric`,
+  `sdk/metric`) 1.45.0 → **1.47.0**. Clears `GO-2026-6974`
+  (AttributeValueLengthLimit bypass via U+FFFD runes), which a govulncheck DB
+  refresh surfaced on PR #132's security job (not caused by it). Ack-list stays
+  empty; gate expects 0.
 - 2026-11-11: Bumped Go toolchain 1.26.10 → **1.26.11** (`go.mod` `toolchain` +
   `Dockerfile.devtools` pinned to `golang:1.26.11-bookworm`). Clears
   `GO-2026-6859` (net/http: HTTP/1 server crash from a MaxBytesReader header
