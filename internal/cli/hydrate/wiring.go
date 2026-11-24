@@ -1377,6 +1377,7 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	// drift is the raw file hash. Parsing as JSON/TOML would wrongly
 	// reject a markdown body (the WIRE-01 projection regression).
 	freshHash, onDiskHash := hash.HashBytes(fw.Content), ""
+	// #nosec G304 — the destination of a file hydrate installs under the tool root
 	if body, rerr := os.ReadFile(finalAbs); rerr == nil {
 		onDiskHash = hash.HashBytes(body)
 	} else if !os.IsNotExist(rerr) {
