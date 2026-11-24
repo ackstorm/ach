@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-24
+
 ### Security
 - Built with OpenTelemetry 1.47.0, which fixes GO-2026-6974 (a span attribute
   could exceed its length limit).
