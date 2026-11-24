@@ -87,7 +87,8 @@ describe('Overview v3', () => {
     state.context = context(40, 0.95);
     render(<MemoryRouter><Overview /></MemoryRouter>);
     expect(screen.getByText('Above target · > 10:1')).toHaveClass('pill', 'danger');
-    expect(screen.getByText('Within target · ≥ 80%')).toHaveClass('pill', 'ok');
+    expect(screen.getByText('Within target · ≥ 95%')).toHaveClass('pill', 'ok');
+    expect(screen.getByText('Within target · ≤ 150K')).toHaveClass('pill', 'ok');
     expect(screen.getByText('20.0%')).toBeInTheDocument(); // reasoning share
   });
 

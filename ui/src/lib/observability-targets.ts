@@ -11,10 +11,16 @@ export function ratioStatus(ratio: number | null | undefined): TargetStatus {
   return ratio > 10 ? 'over' : 'ok';
 }
 
-/** Cache-read share (0..1): acceptable at or above 80%, red below. */
+/** Cache-read share (0..1): acceptable at or above 95%, red below. */
 export function cacheStatus(share: number | null | undefined): TargetStatus {
   if (share == null || !Number.isFinite(share)) return null;
-  return share < 0.8 ? 'over' : 'ok';
+  return share < 0.95 ? 'over' : 'ok';
+}
+
+/** Mean generation input (tokens): acceptable at or below 150K, red above. */
+export function inputStatus(mean: number | null | undefined): TargetStatus {
+  if (mean == null || !Number.isFinite(mean)) return null;
+  return mean > 150_000 ? 'over' : 'ok';
 }
 
 /** Group a User-Agent runtime label by product (versions already stripped server-side). */
