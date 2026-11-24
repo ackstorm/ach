@@ -130,6 +130,10 @@ Antigravity's copy goes to `~/.gemini/config/plugins/<plugin>/`. Claude Code doe
 not list the plugin in `claude plugin list`: it reads it from the folder under
 `.ach/`. Claude Code trusts each folder on its own (trusting a parent folder does not count) and skips the plugin without a word in a folder it does not trust; `ach-cli environment status` and `ach-cli launch claude` warn when that is the case.
 
+If you already installed the same plugin yourself, from its own marketplace or
+in another scope, remove your copy: the tool runs only one of the two, and it
+can be yours instead of the Environment's.
+
 A tool the plugin ships no manifest for gets a warning and nothing else:
 `plugin <name> uses native delivery and carries no <tool> plugin manifest: not
 installed`. When a tool's own command is not installed (Codex without `codex`

@@ -20,6 +20,7 @@ spec:
   github:
     repo: JuliusBrussee/caveman
     ref: main
+    commit: 47c61be2d10a354f0c5cbe2b90959d24c06b16c6
   refresh:
     interval: 1h
     maxStaleness: 24h

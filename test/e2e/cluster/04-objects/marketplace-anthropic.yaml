@@ -22,6 +22,7 @@ spec:
   github:
     repo: anthropics/claude-plugins-official
     ref: main
+    commit: 5cec6716767283f4675a05f5f8855b5b49c81783
   refresh:
     interval: 1h
     maxStaleness: 24h

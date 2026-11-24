@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+
+- `ach-cli environment hydrate` reports `up to date` on a second run for an Environment that installs no MCP server, plugin, skill or other item, such as one with models only. It reported `0 items, 1 file` and repeated the first-run hints on every run.
+
 ## [1.3.4] - 2026-11-24
 
 ### Security

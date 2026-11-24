@@ -490,7 +490,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	}
 
 	// Step 12: atomic state write. next also feeds the per-item summary.
-	result.FirstRun = len(ItemsOf(existingState)) == 0
+	result.FirstRun = existingState == nil
 	next := c.composeNextState(existingState, m, renderResult, adapterRan, result.PlatformID, runtimeFiles)
 	result.Changes, result.Unchanged = DiffItems(existingState, next)
 	if !c.opts.DryRun {

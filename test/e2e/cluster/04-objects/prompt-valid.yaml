@@ -17,5 +17,6 @@ spec:
   github:
     repo: asgeirtj/system_prompts_leaks
     ref: main
-    # Mutable third-party main, content not asserted.
+    commit: 74761cc521a4ea73a603b54e7465e057de8ced19
+    # Third-party repo, content not asserted.
     path: Anthropic/claude-opus-4.8.md
