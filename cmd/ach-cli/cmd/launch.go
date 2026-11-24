@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -170,22 +171,42 @@ func runTool(cmd *cobra.Command, path string, args []string, dir string, env []s
 	c.Dir, c.Env = dir, env
 	c.Stdin, c.Stdout, c.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
 
-	// Ctrl-C reaches the whole foreground process group: the tool handles
-	// it, and ach-cli must outlive it to hand back the tool's exit code.
-	// Notify (not Ignore) so the child starts with the default disposition.
+	if ok, err := runJob(c); ok {
+		return err
+	}
+
+	// The tool shares ach-cli's process group: Ctrl-C reaches both, the tool
+	// handles it, and ach-cli must outlive it to hand back the tool's exit
+	// code. Notify (not Ignore) so the child starts with the default
+	// disposition.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	defer signal.Stop(sig)
 
 	err := c.Run()
 	var ee *exec.ExitError
-	if errors.As(err, &ee) && ee.ExitCode() > 0 {
-		return &exit.CodedError{Code: exit.Code(ee.ExitCode()), Wrapped: err}
+	if errors.As(err, &ee) {
+		if ws, ok := ee.Sys().(syscall.WaitStatus); ok {
+			return toolExit(ws)
+		}
 	}
 	if err != nil {
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 	return nil
+}
+
+// toolExit is the tool's exit status as ach-cli's own: silent, and 128+signal
+// for a tool killed by a signal, as a shell reports it.
+func toolExit(ws syscall.WaitStatus) error {
+	code := ws.ExitStatus()
+	if ws.Signaled() {
+		code = 128 + int(ws.Signal())
+	}
+	if code == 0 {
+		return nil
+	}
+	return &exit.CodedError{Code: exit.Code(code)}
 }
 
 // claudeSettingsBaseURL names the first Claude Code settings file whose env

@@ -7,6 +7,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ### Fixed
 
 - `ach-cli environment hydrate` reports `up to date` on a second run for an Environment that installs no MCP server, plugin, skill or other item, such as one with models only. It reported `0 items, 1 file` and repeated the first-run hints on every run.
+- `ach-cli launch` starts the tool as the terminal's foreground job on Linux and macOS, as a shell does: the tool leads the foreground process group and `ach-cli` waits behind it. Terminal managers that find the agent from that process (Ovis showed a pane started with `ach-cli launch claude` as a plain terminal, with no Chat view) now see the tool. Ctrl-Z and `fg` work as before; Ctrl-C and Ctrl-\ reach the tool only, so a script that wraps `ach-cli launch` no longer receives them. Nothing changes when stdin is not a terminal, or on Windows.
+- `ach-cli launch` exits with 128 plus the signal number when a signal kills the tool (143 for SIGTERM), as a shell reports it. It exited 1 and printed `error: signal: terminated`.
 
 ## [1.3.4] - 2026-11-24
 
