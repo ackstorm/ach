@@ -78,12 +78,18 @@ or remove exactly that later without touching the user's own settings.
 
 - Global first: the organization's baseline Environment usually goes in once with
   `ach-cli environment hydrate <env> -g --target <tool>`; project-specific ones go into folders.
-- `--target` is optional on `environment hydrate` inside a folder that already has one tool's
-  config (it is autodetected; it errors when it finds none or several). `environment clone` and
-  `-g` always need it, since there is nothing to detect. `ACH_TARGET` is the same.
+- `--target` is needed the first time an Environment goes somewhere (`environment clone`, a
+  first `environment hydrate`, with or without `-g`). After that leave it out: a hydrate updates
+  the tools the Environment is already hydrated for, and adding a tool takes `--target` once.
+  Without a name, `environment hydrate` updates every Environment of the folder and
+  `environment hydrate -g` every global one. In a folder with one tool's config and no
+  Environment yet the tool is autodetected (none or several is an error). `ACH_TARGET` is the same.
 - Models: by default a tool keeps its own model login. `--models` also sends that tool's
   model traffic through ACH (Claude Code and Codex; needs `ach-cli` on the `PATH`). For Codex
-  it needs `-g`: Codex reads its model provider only from the user config.
+  it needs `-g`: Codex reads its model provider only from the user config. It never sets
+  which model the tool uses: hydrate prints the Environment's models, and the tool is started
+  on one (`claude --model <model>`, `codex -m <model>`). Without that, Codex takes the first
+  entry of the platform's list, which may be an agent, so pick a model with the user.
   OpenCode signed in with ACH already gets its models from ACH and never needs it.
 - Plugin commands and skills land namespaced by the plugin name (`/bro:ladder` in
   Claude Code, `bro-ladder` elsewhere), so they never shadow a built-in.

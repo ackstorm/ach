@@ -52,6 +52,10 @@ Hydrate prints a per-item diff framed by `Hydrating …` / `Finished …`: `+` a
 `~` changed, `-` removed, `!` kept because the user edited it. A file the user edited is
 never overwritten silently: hydrate stops with exit code 2. Show the user which file,
 then either keep their edit (do nothing) or, only on their say-so, `--force`.
+That is for whole files (skills, agents, commands). The entries hydrate adds to a
+tool's own config file (MCP servers, the `--models` settings) are rewritten on every
+hydrate with no stop: a field the user added inside one (`disabled`) stays, a field
+hydrate writes (the URL) is restored, and the rest of the file is never touched.
 A file hydrate did not install (the user's own agent, command or skill of the same
 name) is not replaced either: hydrate stops with exit code 7 and names it. Move it
 away, or `--force` on the user's say-so.

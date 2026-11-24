@@ -24,15 +24,15 @@
 //     config dir — workspace root, or $HOME under --global; NOT achDir)
 //     via SURGICAL forward-merge: only ACH's keys are upserted into the
 //     user's existing JSON/TOML config, preserving the user's other
-//     servers/settings. A user edit to one of OUR keys is caught by the
-//     per-key §8.4 drift check → exit.Drift unless --force.
+//     servers/settings. Our keys are written again on every hydrate; the
+//     §8.4 drift check (exit.Drift unless --force) covers whole files only.
 //
 //   - Sync implements STATE-05 / D-16 verbatim: collect targets in
 //     `prev` but missing from `new`; sort deepest-first by path depth;
-//     for each target compare its on-disk xxh3 to prev's recorded
-//     hash; mismatch → preserve with stderr warning (drift wins
-//     unless --force); match (or --force) → delete OR inverse-merge
-//     (for Merge=deep with Keys[]). After
+//     a whole file whose on-disk xxh3 differs from prev's recorded
+//     hash is preserved with a stderr warning (drift wins unless
+//     --force), else deleted; a Merge=deep row has its Keys[]
+//     inverse-merged out whatever they hold. After
 //     per-file work, walk parent dirs deepest-first calling os.Remove
 //     which honors ENOTEMPTY silently — empty dirs prune, non-empty
 //     preserved. CLI NEVER recursively deletes a directory.
@@ -336,8 +336,7 @@ func classifyDownloadURL(downloadURL, fallbackName string) (extract.ResourceKind
 // adapterDispatcherImpl satisfies the hydrate.AdapterDispatcher
 // interface declared in result.go. platformID is bound at
 // construction (the cobra layer resolves it via ResolvePlatform or
-// Autodetect). force bypasses the per-key drift refusal (publishRuntimeFile)
-// so a user edit to OUR key is overwritten rather than preserved.
+// Autodetect). force bypasses the whole-file refusals of publishFile.
 type adapterDispatcherImpl struct {
 	platformID string
 	force      bool
@@ -365,14 +364,12 @@ type adapterDispatcherImpl struct {
 //  2. Call ad.RenderRuntime(ctx, m, s) — returns []adapter.FileWrite.
 //  3. For each FileWrite, publishRuntimeFile resolves the target under
 //     toolRoot (the tool's native config location, NOT achDir),
-//     surgically merges ONLY our keys into the user's existing config,
-//     and enforces the per-key §8.4 drift truth table (a user edit to
-//     OUR key → exit.Drift unless --force). The user's other keys are
-//     preserved untouched.
+//     and surgically merges ONLY our keys into the user's existing
+//     config. The user's other keys are preserved untouched.
 //
 // State records the canonical hash of OUR contribution (not the merged
-// file) so --sync inverse-merge and subsequent drift checks operate on
-// our keys only. DroppedComponents stays nil for the runtime path
+// file) and its Keys[], which is what the inverse-merge removes.
+// DroppedComponents stays nil for the runtime path
 // (route.Project is the source of drops via the projection leg).
 //
 // After the RenderRuntime loop, when projectPlugins is true (WIRE-04 /
@@ -380,7 +377,7 @@ type adapterDispatcherImpl struct {
 // the projection leg runs: route.Project decomposes the extracted plugin
 // tree(s) under <achDir>/plugin into the adapter's native layout and each
 // projected FileWrite is published through the SAME publishRuntimeFile
-// path (per-key drift + no-op skip + atomic publish — D-05). Projected
+// path (no-op skip + atomic publish — D-05). Projected
 // entries are returned tagged in RenderResult.ProjectedFiles so step 12
 // routes them to state.Plugins[] (D-07), distinct from the runtime
 // WrittenFiles bucket. Dropped top-level kinds are aggregated into
@@ -409,12 +406,15 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	// ONLY plugin-contributed mcps (via projectPlugins below), not the
 	// Environment's directly-attached runtime endpoints. RenderRuntime is the only consumer of m.Runtime here,
 	// so skipping it gates the whole direct-runtime projection.
-	if includeRuntime && hasDirectRuntime(m) {
+	if includeRuntime && (hasDirectRuntime(m) || wantsHelper(ctx, m)) {
 		fws, err := ad.RenderRuntime(ctx, m, s)
 		if err != nil {
 			return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
 		}
 		for _, fw := range fws {
+			if fw.Merge == adapter.MergeDeep && len(fw.Keys) == 0 {
+				continue // nothing of the Environment's to merge: no empty config file
+			}
 			if d.global {
 				fw.Path = adapter.RemapGlobalPath(d.platformID, toolRoot, fw.Path)
 			}
@@ -518,18 +518,19 @@ func skillsDir(ad adapter.Adapter, platform, toolRoot string, global bool) strin
 }
 
 // hasDirectRuntime reports whether the manifest carries a direct runtime
-// endpoint the adapter can actually wire (an MCP server or an A2A agent).
-// Models are excluded: no adapter's RenderRuntime projects a model (access is
-// server-side via the gateway), so a models-only Environment has nothing to
-// write. Gating RenderRuntime on this predicate keeps a content-only hydrate
-// from emitting an empty {"mcpServers":{}} adapter file (D5). Guardrails are
-// excluded for the same reason — LiteLLM applies them server-side and there
-// is nothing for an adapter to configure.
+// endpoint an adapter writes: an MCP server or an A2A agent. Models and
+// guardrails are served by the gateway and have no entry of their own.
 func hasDirectRuntime(m *manifest.Manifest) bool {
 	if m == nil || m.Runtime == nil {
 		return false
 	}
 	return len(m.Runtime.MCPServers) > 0 || len(m.Runtime.A2AAgents) > 0
+}
+
+// wantsHelper reports whether the render carries the model-endpoint helper
+// wiring, which a target writes whatever else the Environment holds.
+func wantsHelper(ctx context.Context, m *manifest.Manifest) bool {
+	return m != nil && m.Runtime != nil && adapter.HelperBaseURLFromContext(ctx) != ""
 }
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary
@@ -1297,21 +1298,17 @@ func validatePluginName(name string) error {
 	return nil
 }
 
-// publishRuntimeFile writes one adapter runtime-config FileWrite via
-// SURGICAL MERGE + PER-KEY DRIFT.
+// publishRuntimeFile writes one adapter runtime-config FileWrite by
+// merging our keys into the tool's config file.
 //
 // Target resolution: fw.Path joins toolRoot (workspace root in project
 // scope, $HOME in --global) — the tool's native config location — NOT
 // achDir. ACH's private state/cache stay under achDir.
 //
-// Per-key drift (§8.4 truth table, applied to OUR keys only): we compare
-// the hash of our contributed subtree as it currently sits on disk
-// (onDisk) against the prior state record (Hash/SourceHash) and the fresh
-// render (source). A user edit to OUR key surfaces as LocalEditPreserve /
-// ConflictPreserve → exit 2 (preserve), unless --force. The user's OTHER
-// keys are invisible to this comparison and are never claimed, refused, or
-// removed — only merged around. A no-op (disk + upstream both unchanged)
-// skips the rewrite so the file's bytes stay byte-identical (sc3 no-op).
+// The keys we contribute are ACH's: every hydrate merges them in, so a field
+// we write is restored and a field the user added inside one of our entries
+// stays. The user's other keys are never claimed, refused, or removed. A
+// file that already holds what we would merge is not rewritten.
 //
 // 0o600 — these files embed the plaintext x-ach-key bearer (CR-01).
 func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *state.File, toolRoot string) (FileWrite, error) {
@@ -1322,44 +1319,33 @@ func (d *adapterDispatcherImpl) publishRuntimeFile(fw adapter.FileWrite, s *stat
 	return d.publishFile(fw, prior, toolRoot)
 }
 
-// deepHashes hashes a co-owned deep-merge file: ONLY our contributed subtree
-// (parsed → map → deterministic re-encode) so it is directly comparable to
-// the on-disk subtree regardless of struct-vs-map field ordering, and the
-// user's other keys are invisible to the drift check. Both sides are scoped
-// to fw.Keys — the same scope currentScopedHash extracts at sync time: a
-// rendered doc may carry structure outside the keys (an empty table), and
-// hashing it made every re-hydrate/uninstall report a phantom local edit.
-func deepHashes(fw adapter.FileWrite, finalAbs string, isTOML bool) (fresh, onDisk string, err error) {
+// deepHash hashes our contribution to a co-owned deep-merge file (the
+// subtree under fw.Keys, deterministically re-encoded) and reports whether
+// the file on disk already holds what the write would merge in.
+func deepHash(fw adapter.FileWrite, finalAbs string, isTOML bool) (fresh string, current bool, err error) {
 	oursMap, err := merge.ParseDoc(fw.Content, isTOML)
 	if err != nil {
-		return "", "", fmt.Errorf("parse rendered %s: %w", finalAbs, err)
+		return "", false, fmt.Errorf("parse rendered %s: %w", finalAbs, err)
 	}
+	keyed := oursMap
 	if len(fw.Keys) > 0 {
-		oursMap, _ = merge.ExtractByKeys(oursMap, fw.Keys)
+		keyed, _ = merge.ExtractByKeys(oursMap, fw.Keys)
 	}
-	if fresh, err = merge.SubtreeHash(oursMap); err != nil {
-		return "", "", fmt.Errorf("hash rendered %s: %w", finalAbs, err)
+	if fresh, err = merge.SubtreeHash(keyed); err != nil {
+		return "", false, fmt.Errorf("hash rendered %s: %w", finalAbs, err)
 	}
 	diskMap, ok, err := merge.ReadParseDoc(finalAbs, isTOML)
 	if err != nil {
-		return "", "", fmt.Errorf("read existing %s: %w", finalAbs, err)
+		return "", false, fmt.Errorf("read existing %s: %w", finalAbs, err)
 	}
-	if !ok {
-		return fresh, "", nil
-	}
-	if sub, found := merge.ExtractByKeys(diskMap, fw.Keys); found {
-		if onDisk, err = merge.SubtreeHash(sub); err != nil {
-			return "", "", fmt.Errorf("hash on-disk %s: %w", finalAbs, err)
-		}
-	}
-	return fresh, onDisk, nil
+	return fresh, ok && merge.Holds(diskMap, oursMap), nil
 }
 
 // publishFile is the bucket-agnostic core of publishRuntimeFile: the
 // caller supplies the prior state.FileEntry it looked up from the correct
 // bucket (Adapter.Files for the runtime loop, Plugins[] for the projection
-// leg) so the §8.4 per-key drift truth table + no-op skip operate against
-// the right prior record. publishRuntimeFile is the Adapter.Files-bucket
+// leg) so the §8.4 drift truth table (whole files only) + no-op skip operate
+// against the right prior record. publishRuntimeFile is the Adapter.Files-bucket
 // convenience wrapper; the projection leg calls publishFile directly with
 // a Plugins-bucket prior so re-hydration of an unchanged projected file
 // hits the no-op skip path (FMT-05 byte no-op).
@@ -1377,24 +1363,25 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 		prior = d.sharedRows[finalAbs]
 	}
 
-	var freshHash, onDiskHash string
 	if fw.Merge == adapter.MergeDeep {
-		var herr error
-		if freshHash, onDiskHash, herr = deepHashes(fw, finalAbs, isTOML); herr != nil {
-			return FileWrite{}, fmt.Errorf("adapter %s %w", d.platformID, herr)
+		freshHash, current, err := deepHash(fw, finalAbs, isTOML)
+		if err != nil {
+			return FileWrite{}, fmt.Errorf("adapter %s %w", d.platformID, err)
 		}
-	} else {
-		// File-owned replace (incl. opaque passthrough projection —
-		// markdown/skill files that are NOT structured JSON/TOML): we own
-		// the WHOLE file, so the hash is the raw content hash and on-disk
-		// drift is the raw file hash. Parsing as JSON/TOML would wrongly
-		// reject a markdown body (the WIRE-01 projection regression).
-		freshHash = hash.HashBytes(fw.Content)
-		if body, rerr := os.ReadFile(finalAbs); rerr == nil {
-			onDiskHash = hash.HashBytes(body)
-		} else if !os.IsNotExist(rerr) {
-			return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, rerr)
-		}
+		return d.writeFile(fw, finalAbs, freshHash, prior != nil && current)
+	}
+
+	// File-owned replace (incl. opaque passthrough projection —
+	// markdown/skill files that are NOT structured JSON/TOML): we own
+	// the WHOLE file, so the hash is the raw content hash and on-disk
+	// drift is the raw file hash. Parsing as JSON/TOML would wrongly
+	// reject a markdown body (the WIRE-01 projection regression).
+	freshHash, onDiskHash := hash.HashBytes(fw.Content), ""
+	// #nosec G304 — the destination of a file hydrate installs under the tool root
+	if body, rerr := os.ReadFile(finalAbs); rerr == nil {
+		onDiskHash = hash.HashBytes(body)
+	} else if !os.IsNotExist(rerr) {
+		return FileWrite{}, fmt.Errorf("adapter %s read existing %s: %w", d.platformID, finalAbs, rerr)
 	}
 
 	// LIFE-02 / D-30: Compare's third argument is the FRESH SOURCE hash (the
@@ -1406,27 +1393,30 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	// (fw.SourceHash, falling back to freshHash when empty — passthrough
 	// invariant: Hash == SourceHash). Both publishFile callers (Adapter.Files
 	// runtime + Plugins projection lookups) thus evaluate the truth table
-	// correctly. onDiskHash (the user-drift axis) and the per-MergeKind freshHash
-	// (recorded as Hash, used for the no-op content identity) are unchanged.
+	// correctly. onDiskHash (the user-drift axis) and freshHash (recorded as
+	// Hash, used for the no-op content identity) are unchanged.
 	freshSourceHash := freshHash
 	if fw.SourceHash != "" {
 		freshSourceHash = fw.SourceHash
 	}
 	outcome := compareDrift(prior, onDiskHash, freshSourceHash)
 	// Disk already holds exactly what we are about to write: no user edit
-	// can be lost, whatever the recorded hash says (also heals a state row
-	// written with an older, differently-scoped hash).
+	// can be lost, whatever the recorded hash says.
 	if onDiskHash != "" && onDiskHash == freshHash && ShouldExit2(outcome) {
 		outcome = NoOp
 	}
 
-	if err := d.refusal(fw, prior, outcome, onDiskHash, freshHash, finalAbs); err != nil {
+	if err := d.refusal(prior, outcome, onDiskHash, freshHash, finalAbs); err != nil {
 		return FileWrite{}, err
 	}
 
-	// Skip the rewrite only on a true no-op (prior exists; disk + upstream
-	// unchanged) so byte-for-byte stability holds. Otherwise publish.
-	skip := prior != nil && outcome == NoOp
+	return d.writeFile(fw, finalAbs, freshHash, prior != nil && outcome == NoOp)
+}
+
+// writeFile publishes fw at finalAbs unless skip (a state row exists and the
+// file already holds what we would write, so its bytes stay untouched) or a
+// dry run, and returns the state record of our contribution.
+func (d *adapterDispatcherImpl) writeFile(fw adapter.FileWrite, finalAbs, freshHash string, skip bool) (FileWrite, error) {
 	if !skip && !d.dryRun {
 		if err := os.MkdirAll(filepath.Dir(finalAbs), 0o755); err != nil {
 			return FileWrite{}, fmt.Errorf("adapter %s mkdir parent %s: %w", d.platformID, finalAbs, err)
@@ -1471,8 +1461,8 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 	}
 
 	// State records the canonical hash of OUR contribution (not the merged
-	// file) so --sync inverse-merge (via Keys[]) and the next drift check
-	// operate on our keys only, never the user's other entries.
+	// file) so --sync inverse-merge (via Keys[]) operates on our keys
+	// only, never the user's other entries.
 	//
 	// SourceHash threading (D-23): a CONVERTED projected file carries the
 	// pre-transform source hash in fw.SourceHash (set by route.Project),
@@ -1495,12 +1485,12 @@ func (d *adapterDispatcherImpl) publishFile(fw adapter.FileWrite, prior *state.F
 
 // refusal reports why a publish must leave the file on disk alone, unless
 // --force. With a state row: a user edit to OUR content (drift), exit 2.
-// With none: a whole-file target that already exists with other content is
-// not this Environment's file (the user's own, another tool's, a sibling
-// Environment's older copy), exit 7. Deep writes share the file by key and
-// are never refused for lack of a row.
+// With none: a target that already exists with other content is not this
+// Environment's file (the user's own, another tool's, a sibling
+// Environment's older copy), exit 7. Whole files only: deep writes share
+// their file by key and never come here.
 func (d *adapterDispatcherImpl) refusal(
-	fw adapter.FileWrite, prior *state.FileEntry, outcome DriftOutcome, onDiskHash, freshHash, finalAbs string,
+	prior *state.FileEntry, outcome DriftOutcome, onDiskHash, freshHash, finalAbs string,
 ) error {
 	if d.force {
 		return nil
@@ -1508,7 +1498,7 @@ func (d *adapterDispatcherImpl) refusal(
 	if prior != nil {
 		return WrapDriftError(outcome, finalAbs)
 	}
-	if fw.Merge == adapter.MergeDeep || onDiskHash == "" || onDiskHash == freshHash {
+	if onDiskHash == "" || onDiskHash == freshHash {
 		return nil
 	}
 	return &exit.CodedError{
@@ -1580,9 +1570,9 @@ type SyncStats struct {
 // Sync implements STATE-05 / D-16. Walks prev's file entries; for
 // any entry whose Target is NOT in `new`, classify and act:
 //
-//   - On-disk hash differs from prev.Hash → preserve with stderr
+//   - Merge=="" / MergeReplace → os.Remove the file, unless its
+//     on-disk hash differs from prev.Hash: then preserve with a stderr
 //     warning (drift wins) UNLESS opts.Force.
-//   - Merge=="" / MergeReplace → os.Remove the file.
 //   - Merge=="deep" + Keys[] → JSON/TOML inverse-merge: read the
 //     file, delete the listed top-level keys (or dotted paths),
 //     re-write atomically.
@@ -1732,45 +1722,10 @@ func (k syncKeep) uncovered(e state.FileEntry) (keys []string, drop bool) {
 	return keys, len(keys) > 0
 }
 
-// currentScopedHash recomputes, from the on-disk file, the hash of ONLY
-// ACH's contributed region for this entry, matching the partial hash that
-// publishFile stored in e.Hash at hydrate time. present=false means ACH's
-// region is no longer in the file (already removed) — the caller then
-// skips the drift gate. (#2)
-func currentScopedHash(e state.FileEntry, abs string) (current string, present bool, err error) {
-	switch e.Merge {
-	case mergeStrDeep:
-		isTOML := strings.ToLower(filepath.Ext(abs)) == extTOML
-		diskMap, ok, derr := merge.ReadParseDoc(abs, isTOML)
-		if derr != nil {
-			return "", false, derr
-		}
-		if !ok {
-			return "", false, nil
-		}
-		sub, found := merge.ExtractByKeys(diskMap, e.Keys)
-		if !found {
-			return "", false, nil
-		}
-		h, herr := merge.SubtreeHash(sub)
-		if herr != nil {
-			return "", false, herr
-		}
-		return h, true, nil
-	default: // "" / mergeStrReplace — whole-file hash, unchanged behavior.
-		h, herr := hash.HashFile(abs)
-		if herr != nil {
-			return "", false, herr
-		}
-		return h, true, nil
-	}
-}
-
 // syncOne handles a single state entry's removal/inverse-merge.
 // Returns (preserved, err) — preserved=true when drift-wins skipped
 // the work. For a deep row, pruneKeys (when non-nil) narrows the removal to
-// the keys the next state no longer claims; the drift gate still hashes the
-// row's recorded key set, which is what e.Hash covers.
+// the keys the next state no longer claims.
 func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions) (bool, error) {
 	if e.Merge == MergeNative {
 		if opts.DryRun {
@@ -1793,8 +1748,7 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 		return true, nil
 	}
 
-	// The drift gate hashes the row's whole key set, so keys to prune that
-	// are already gone from disk would read as a local edit.
+	// Keys to prune that are already gone from disk: leave the file as it is.
 	if e.Merge == mergeStrDeep && pruneKeys != nil {
 		doc, ok, err := merge.ReadParseDoc(abs, strings.ToLower(filepath.Ext(abs)) == extTOML)
 		if err != nil {
@@ -1805,14 +1759,15 @@ func syncOne(e state.FileEntry, pruneKeys []string, abs string, opts SyncOptions
 		}
 	}
 
-	// Drift-wins gate: compare on-disk xxh3 to prev.Hash. Mismatch +
-	// !Force → preserve.
-	if !opts.Force && e.Hash != "" {
-		current, present, err := currentScopedHash(e, abs)
+	// Drift-wins gate for a whole file: compare on-disk xxh3 to prev.Hash.
+	// Mismatch + !Force → preserve. Our keys in a deep-merged file are ACH's
+	// and are pruned whatever they hold.
+	if !opts.Force && e.Hash != "" && e.Merge != mergeStrDeep {
+		current, err := hash.HashFile(abs)
 		if err != nil {
 			return false, fmt.Errorf("sync hash %s: %w", abs, err)
 		}
-		if present && current != e.Hash {
+		if current != e.Hash {
 			warnPreserved(opts.Stderr, abs,
 				"local edits detected; pass --force to remove")
 			return true, nil

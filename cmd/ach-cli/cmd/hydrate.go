@@ -56,6 +56,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/config"
 	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/exit"
@@ -147,8 +148,9 @@ Location:
   -g, --global        Hydrate under $HOME/.ach/<env> instead of ./.ach.
   --target <id[,id…]> Agent target(s): antigravity / claude-code / codex /
                       opencode / pi (comma-separated or repeated;
-                      ACH_TARGET is the same). Omitted: autodetected from
-                      the workspace.
+                      ACH_TARGET is the same). Omitted: the targets the
+                      Environment is already hydrated for, else
+                      autodetected from the workspace.
 
 Credentials:
   --key <name|ek-…>   A key saved in the profile, or a raw ek-… key
@@ -157,7 +159,8 @@ Credentials:
 
 The positional <name> is the environment; with a key it is optional (the
 key is already scoped to one environment). Without <name>, every environment
-already hydrated in this folder (.ach/) is updated with its recorded targets.
+already hydrated in this folder (.ach/, or ~/.ach/ with -g) is updated with
+its recorded targets.
 
 Example:
   ach-cli environment hydrate frontend-dev --only plugin/code-review -g --target claude-code
@@ -192,7 +195,7 @@ Exit codes:
 	cmd.Flags().BoolVar(&flagAllowSymlinks, "allow-symlinks", false,
 		"Permit symlinks in downloaded archives (unsafe)")
 	cmd.Flags().StringSliceVar(&flagTarget, "target", nil,
-		"Override platform autodetection; "+
+		"Agent target(s) instead of the recorded or autodetected ones; "+
 			"comma-separated or repeated for several targets, e.g. codex,opencode "+
 			"(antigravity / claude-code / codex / opencode / pi + case-folded aliases)")
 	cmd.Flags().StringVar(&flagOnly, "only", "",
@@ -440,11 +443,8 @@ func assertScopeFlags(in hydrateInputs) error {
 }
 
 // runHydrateEngine builds the hydrate.Opts struct and dispatches to
-// hydrateRunFn (= hydrate.Run by default). Platform resolution:
-//   - --target set → hydrate.ResolvePlatform(value) → canonical id.
-//   - ACH_TARGET set → hydrate.ResolvePlatform(value) → canonical id.
-//   - else → hydrate.Autodetect against cwd (workspace) OR
-//     os.UserHomeDir() (global).
+// hydrateRunFn (= hydrate.Run by default). Targets come from
+// resolvePlatformsOrAutodetect.
 //
 // The engine wiring (Extractor + AdapterDispatcher) is provided by
 // hydrate.NewWiring; commit.go's newCommit consumes them via interface
@@ -457,7 +457,7 @@ func assertScopeFlags(in hydrateInputs) error {
 // short-circuit behavior; both impls are passed regardless so a future
 // commit.go uplink does not need a cobra-layer change.
 func runHydrateEngine(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effectiveEnv string) error {
-	platformIDs, err := resolvePlatformsOrAutodetect(in, cmd.ErrOrStderr())
+	platformIDs, err := resolvePlatformsOrAutodetect(in, effectiveEnv, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
@@ -587,47 +587,42 @@ func hydrateEnv(cmd *cobra.Command, in hydrateInputs, baseURL, bearer, effective
 
 // runHydrateWorkspace drives the bare `environment hydrate` (no positional <name>, no
 // ACH_ENVIRONMENT): it re-hydrates every environment already recorded under
-// <root>/.ach/ (what `environment clone` or an earlier `environment hydrate` left behind), each
-// with its recorded targets, best-effort (a failing env is recorded and the
-// run continues), one row per env. Exits non-zero if any env failed.
+// <root>/.ach/ (what `environment clone` or an earlier `environment hydrate` left behind;
+// $HOME/.ach/ under --global), each with its recorded targets, best-effort (a
+// failing env is recorded and the run continues), one row per env. Exits
+// non-zero if any env failed.
 func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer string) error {
-	root := in.output
-	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
-		}
-		root = wd
+	root, err := stateRoot(in)
+	if err != nil {
+		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
 	envs, err := hydratedEnvs(root)
 	if err != nil {
 		return &exit.CodedError{Code: exit.General, Msg: err.Error(), Wrapped: err}
 	}
+	where, nothing := ".ach/", "nothing hydrated in this folder yet: name an Environment (or set "+
+		"ACH_ENVIRONMENT), or create the folder with `ach-cli environment clone <name>`"
+	if in.global {
+		where, nothing = "~/.ach/", "nothing hydrated globally yet: name an Environment (or set ACH_ENVIRONMENT)"
+	}
 	if len(envs) == 0 {
-		return &exit.CodedError{
-			Code: exit.General,
-			Msg: "nothing hydrated in this folder yet: name an Environment (or set " +
-				"ACH_ENVIRONMENT), or create the folder with `ach-cli environment clone <name>`",
-		}
+		return &exit.CodedError{Code: exit.General, Msg: nothing}
 	}
 
 	u := newUI(cmd.OutOrStdout(), in.verbose)
-	u.verb("Hydrating", "%s from .ach/", countNoun(len(envs), "environment", "environments"))
+	u.verb("Hydrating", "%s from %s", countNoun(len(envs), "environment", "environments"), where)
 	var notes bytes.Buffer
 	start := time.Now()
 	failed := 0
+	var all []hydrate.Result
 	for _, e := range envs {
 		perEnv := in
-		// Target precedence: --target flag and ACH_TARGET both override the
-		// recorded targets; those only fill in when neither is set.
-		if len(perEnv.platform) == 0 && perEnv.envTarget == "" && len(e.targets) > 0 {
-			perEnv.platform = e.targets
-		}
 		var results []hydrate.Result
-		platformIDs, runErr := resolvePlatformsOrAutodetect(perEnv, &notes)
+		platformIDs, runErr := resolvePlatformsOrAutodetect(perEnv, e.name, &notes)
 		if runErr == nil {
 			results, runErr = hydrateEnv(cmd, perEnv, baseURL, bearer, e.name, platformIDs, &notes)
 		}
+		all = append(all, results...)
 		changes := mergedChanges(results)
 		switch {
 		case runErr != nil:
@@ -644,6 +639,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 		}
 	}
 	u.verb("Finished", "%d of %d in %s", len(envs)-failed, len(envs), elapsed(time.Since(start)))
+	modelsLine(u, all, newSummaryMeta(in, bearer))
 	newUI(cmd.ErrOrStderr(), in.verbose).relay(&notes)
 	if failed > 0 {
 		return &exit.CodedError{
@@ -652,6 +648,20 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 		}
 	}
 	return nil
+}
+
+// recordedTargets lists the targets env has a state file for under root's
+// .ach/ ($HOME/.ach/ when global), sorted. A state file of a target this
+// ach-cli has no adapter for is skipped.
+func recordedTargets(root, env string, global bool) []string {
+	paths, _ := state.ListStatePaths(root, env, global)
+	var ids []string
+	for _, p := range paths {
+		if _, ok := adapter.Lookup(platformOfState(p)); ok {
+			ids = append(ids, platformOfState(p))
+		}
+	}
+	return ids
 }
 
 // mergedChanges concatenates every target's item changes, dropping repeats
@@ -792,12 +802,7 @@ func renderHydrate(u, eu *ui, results []hydrate.Result, meta summaryMeta, took t
 	u.targetItems(results, "up to date")
 	u.verb("Finished", "%s in %s", finishedSummary(results, meta), elapsed(took))
 
-	for _, r := range results {
-		if r.RuntimeSummary.Models > 0 && modelsState(r, meta) == modelsNotWired {
-			u.verb("Models", "%d available, not routed — add --models", r.RuntimeSummary.Models)
-			break
-		}
-	}
+	modelsLine(u, results, meta)
 	if notice := firstNotice(results); notice != "" {
 		lines := strings.Split(strings.TrimRight(notice, "\n"), "\n")
 		u.verb("Notice", "%s", lines[0])
@@ -852,8 +857,12 @@ func targetSummary(r hydrate.Result) string {
 }
 
 // helperTargets are the adapters that render the --models helper wiring
-// (claudecode settings.json, codex model_provider).
-var helperTargets = map[string]bool{"claude-code": true, "codex": true}
+// (claudecode settings.json, codex model_provider), with how to start each
+// tool on a given model.
+var helperTargets = map[string]string{
+	"claude-code": "claude --model <model>",
+	"codex":       "codex -m <model>",
+}
 
 // modelsWiring is whether this target's model endpoint can be wired locally
 // (a person hydrate on a helper target) and, if so, whether --models did.
@@ -869,12 +878,42 @@ const (
 func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
 	person := meta.oauth || meta.keyPrefix == keys.PrefixPk
 	switch {
-	case !person || !helperTargets[res.PlatformID], res.PlatformID == codexTarget && !meta.global:
+	case !person || helperTargets[res.PlatformID] == "", res.PlatformID == codexTarget && !meta.global:
 		return modelsServerSide
 	case meta.models:
 		return modelsWired
 	default:
 		return modelsNotWired
+	}
+}
+
+// modelsLine prints whether the hydrated Environments' models are routed
+// through ACH. ACH wires the provider, never the tool's model, so a wired run
+// says how to choose one.
+func modelsLine(u *ui, results []hydrate.Result, meta summaryMeta) {
+	var unrouted, models, pick []string
+	add := func(dst []string, vs ...string) []string {
+		for _, v := range vs {
+			if !slices.Contains(dst, v) {
+				dst = append(dst, v)
+			}
+		}
+		return dst
+	}
+	for _, r := range results {
+		switch modelsState(r, meta) {
+		case modelsNotWired:
+			unrouted = add(unrouted, r.Models...)
+		case modelsWired:
+			models, pick = add(models, r.Models...), add(pick, helperTargets[r.PlatformID])
+		}
+	}
+	switch {
+	case len(unrouted) > 0:
+		u.verb("Models", "%d available, not routed — add --models", len(unrouted))
+	case len(models) > 0 && !meta.dryRun:
+		u.verb("Models", "routed through ACH; choose one with %s", strings.Join(pick, " / "))
+		u.verb("", "%s", strings.Join(models, ", "))
 	}
 }
 
@@ -978,44 +1017,39 @@ func countNoun(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// resolvePlatformsOrAutodetect dispatches platform resolution per
-// D-06: explicit --target > ACH_TARGET env > autodetect cwd
-// (workspace) > autodetect $HOME (global). Explicit --target / ACH_TARGET
-// accept a comma-separated list (mirroring local `plugin install --target
-// a,b`), so this returns one-or-more canonical platform ids; autodetect
-// always yields exactly one. Returns a typed CodedError on autodetect
-// ambiguity / unknown id.
-func resolvePlatformsOrAutodetect(in hydrateInputs, stderr io.Writer) ([]string, error) {
+// stateRoot is the folder whose .ach/ holds this run's state: $HOME under
+// --global, else --dir or the working directory.
+func stateRoot(in hydrateInputs) (string, error) {
+	switch {
+	case in.global:
+		return os.UserHomeDir()
+	case in.output != "":
+		return in.output, nil
+	}
+	return os.Getwd()
+}
+
+// resolvePlatformsOrAutodetect picks the targets of one Environment's hydrate:
+// --target, else ACH_TARGET, else the targets env is already hydrated for in
+// this scope, else the one autodetected in the folder ($HOME under --global).
+// --target and ACH_TARGET accept a comma-separated list. Returns a typed
+// CodedError on autodetect ambiguity / unknown id.
+func resolvePlatformsOrAutodetect(in hydrateInputs, env string, stderr io.Writer) ([]string, error) {
 	if len(in.platform) > 0 {
 		return parseTargets(in.platform)
 	}
 	if in.envTarget != "" {
 		return parseTargets([]string{in.envTarget})
 	}
-
-	root := in.output
-	if root == "" {
-		if in.global {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return nil, &exit.CodedError{
-					Code:    exit.General,
-					Msg:     fmt.Sprintf("resolve $HOME for --global autodetect: %v", err),
-					Wrapped: err,
-				}
-			}
-			root = home
-		} else {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return nil, &exit.CodedError{
-					Code:    exit.General,
-					Msg:     fmt.Sprintf("resolve cwd for autodetect: %v", err),
-					Wrapped: err,
-				}
-			}
-			root = cwd
-		}
+	root, err := stateRoot(in)
+	if err != nil {
+		return nil, &exit.CodedError{Code: exit.General, Msg: fmt.Sprintf("resolve the state folder: %v", err), Wrapped: err}
+	}
+	if recorded := recordedTargets(root, env, in.global); len(recorded) > 0 {
+		return recorded, nil
+	}
+	if in.output != "" {
+		root = in.output
 	}
 	id, err := hydrate.Autodetect(root, stderr)
 	if err != nil {

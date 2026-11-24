@@ -30,6 +30,10 @@ ach-cli environment hydrate <environment> -g --target <tool>
 `-g` writes into the tool's own global configuration, so every project on the
 machine gets the Environment. This suits an organisation-wide baseline.
 
+To update it later, leave `--target` out: `ach-cli environment hydrate <environment> -g`
+updates the tools it is already installed for, and `ach-cli environment hydrate -g`
+updates every Environment installed globally.
+
 ## Install one into a folder
 
 ```bash
@@ -59,8 +63,10 @@ To hydrate into the folder you are in instead:
 ach-cli environment hydrate <environment> --target <tool>
 ```
 
-`--target` takes several tools (`--target claude-code,opencode`). Inside a
-folder that already holds one tool's configuration you may leave it out.
+`--target` takes several tools (`--target claude-code,opencode`). Leave it out
+to update an Environment the folder already holds: the tools it was hydrated
+for are updated, so adding a tool takes `--target` once. In a folder that holds
+one tool's configuration and no Environment yet, that tool is detected.
 
 Skills go to `.claude/skills` for Claude Code and to the shared `.agents/skills`
 for Codex, OpenCode and pi (`~/.agents/skills` with `-g`), so those three
@@ -149,6 +155,14 @@ Hydrate lists what it changed, one line per item: `+` added, `~` changed,
 Hydrate does not overwrite a file you edited: it stops, names the file and
 exits 2. Keep your edit, or pass `--force` to take the Environment's version.
 `environment status` marks such files with `! edited`.
+
+This covers the files hydrate installs whole (skills, agents, commands). The
+entries it adds to a tool's own configuration file (the MCP servers, the
+`--models` settings) are the Environment's: every hydrate writes them again
+and removes the ones the Environment dropped, without stopping. A field you
+add inside one of them, such as `disabled` on a server, stays; a field hydrate
+writes, such as the URL, goes back to the Environment's value. The rest of
+that file is yours and is never touched.
 
 Hydrate does not replace a file of your own either. When a plugin or skill
 would write a file that already exists with other content and that hydrate did

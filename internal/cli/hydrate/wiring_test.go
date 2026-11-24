@@ -13,11 +13,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/conflict"
-	"github.com/ackstorm/ach/internal/cli/exit"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hash"
 	"github.com/ackstorm/ach/internal/cli/httpclient"
@@ -222,60 +223,69 @@ func TestAdapterDispatcherImpl_SurgicalMerge_PreservesUserKeys(t *testing.T) {
 	}
 }
 
-// TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey renders
-// once (establishing prior state), then simulates a user hand-edit of OUR
-// key on disk. Re-rendering with that prior state and NO --force must
-// refuse with exit.Drift (§8.4 LocalEditPreserve, applied per-key). With
-// --force the edit is overwritten. The user's OTHER keys are never the
-// subject of this comparison.
-func TestAdapterDispatcherImpl_PerKeyDrift_RefusesUserEditOfOurKey(t *testing.T) {
+// TestAdapterDispatcherImpl_OurKeysAreACHs: the keys ACH contributes to a
+// config file it shares with the user are ACH's, with no local-edit check.
+// A re-render without --force restores a field we write and keeps a field
+// the user added inside our entry; rendering again skips the write;
+// an Environment that replaces one server with another is not an edit; and
+// Sync prunes our entry whatever the user put in it.
+func TestAdapterDispatcherImpl_OurKeysAreACHs(t *testing.T) {
 	withCleanHome(t)
 	achDir := t.TempDir()
 	m := dispMiniManifest()
-
-	_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
-	first, err := disp.Render(context.Background(), m, nil, achDir, achDir, false, true)
-	if err != nil {
-		t.Fatalf("first Render: %v", err)
-	}
-	prior := dispPriorState("demo", first)
-
-	settingsPath := filepath.Join(achDir, ".mcp.json")
-	body, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read after first: %v", err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	doc["mcpServers"].(map[string]any)["demo-mcp"].(map[string]any)["url"] = "https://EDITED"
-	edited, _ := json.Marshal(doc)
-	if err := os.WriteFile(settingsPath, edited, 0o644); err != nil {
-		t.Fatalf("write edit: %v", err)
-	}
-
-	// No --force → drift refuse (exit 2).
-	if _, err := disp.Render(context.Background(), m, prior, achDir, achDir, false, true); err == nil {
-		t.Fatal("re-render after user edit of our key: want drift error, got nil")
-	} else {
-		var ce *exit.CodedError
-		if !errors.As(err, &ce) || ce.Code != exit.Drift {
-			t.Fatalf("want exit.Drift, got %v (%T)", err, err)
+	skipped := false
+	render := func(prior *state.File) *state.File {
+		t.Helper()
+		_, disp := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, false, false, conflict.Namespace)
+		res, err := disp.Render(context.Background(), m, prior, achDir, achDir, false, true)
+		if err != nil {
+			t.Fatalf("Render: %v", err)
 		}
+		skipped = res.WrittenFiles[0].Preserved
+		return dispPriorState("demo", res)
+	}
+	settingsPath := filepath.Join(achDir, ".mcp.json")
+	servers := func() map[string]any {
+		t.Helper()
+		body, err := os.ReadFile(settingsPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(body, &doc); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return doc["mcpServers"].(map[string]any)
 	}
 
-	// --force → overwrite our key (edit gone).
-	_, dispF := hydrate.NewWiring(nil, "claude-code", extract.DefaultLimits(), false, true, false, conflict.Namespace)
-	if _, err := dispF.Render(context.Background(), m, prior, achDir, achDir, false, true); err != nil {
-		t.Fatalf("force re-render: %v", err)
+	prior := render(nil)
+	edited := servers()
+	edited["demo-mcp"].(map[string]any)["url"] = "https://EDITED"
+	edited["demo-mcp"].(map[string]any)["disabled"] = true
+	body, _ := json.Marshal(map[string]any{"mcpServers": edited})
+	if err := os.WriteFile(settingsPath, body, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	after, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("read after force: %v", err)
+
+	prior = render(prior)
+	got := servers()["demo-mcp"].(map[string]any)
+	if got["url"] != "http://localhost:8080/mcp/demo-mcp" || got["disabled"] != true {
+		t.Fatalf("after re-render: want our url restored and the user's field kept, got %v", got)
 	}
-	if bytes.Contains(after, []byte("EDITED")) {
-		t.Errorf("--force did not overwrite our edited key")
+	if skipped {
+		t.Error("the re-render after the edit skipped the write")
+	}
+	if prior = render(prior); !skipped {
+		t.Error("an unchanged re-render rewrote the file")
+	}
+
+	m.Runtime.MCPServers[0] = manifest.ContentRef{ID: "other-mcp", Endpoint: "http://localhost:8080/mcp/other-mcp"}
+	next := render(prior)
+	if _, err := hydrate.Sync(prior, next, achDir, achDir, hydrate.SyncOptions{}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if got := servers(); got["demo-mcp"] != nil || got["other-mcp"] == nil {
+		t.Errorf("after the server swap: want only other-mcp, got %v", got)
 	}
 }
 
@@ -334,6 +344,30 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 
 // dispMiniManifest is a minimal one-MCP-server manifest for the dispatcher
 // tests.
+// --models on an Environment with models and no MCP server writes the helper
+// wiring and no empty MCP file; a target without helper wiring writes nothing.
+func TestAdapterDispatcherImpl_ModelsOnly(t *testing.T) {
+	withCleanHome(t)
+	m := &manifest.Manifest{SchemaVersion: "v1alpha1", Environment: "demo", Context: &manifest.ContextBlock{},
+		Runtime: &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "a.fast"}}}}
+	ctx := adapter.WithHelperBaseURL(context.Background(), "https://hub.example")
+	for target, want := range map[string][]string{"claude-code": {".claude/settings.json"}, "opencode": nil} {
+		dir := t.TempDir()
+		_, disp := hydrate.NewWiring(nil, target, extract.DefaultLimits(), false, false, false, conflict.Namespace)
+		res, err := disp.Render(ctx, m, nil, dir, dir, false, true)
+		if err != nil {
+			t.Fatalf("%s: Render: %v", target, err)
+		}
+		var got []string
+		for _, w := range res.WrittenFiles {
+			got = append(got, w.Target)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: wrote %v, want %v", target, got, want)
+		}
+	}
+}
+
 func dispMiniManifest() *manifest.Manifest {
 	return &manifest.Manifest{
 		SchemaVersion: "v1alpha1",

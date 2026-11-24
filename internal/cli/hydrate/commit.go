@@ -321,7 +321,7 @@ func (c *commit) run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return result, err
 	}
-	result.RuntimeSummary = c.runtimeSummary(m)
+	result.RuntimeSummary, result.Models = c.runtimeSummary(m)
 	result.ContextSummary = c.contextSummary(m)
 	result.Notice = m.Notice
 	c.maybeKill(5)
@@ -519,17 +519,22 @@ func (c *commit) includeRuntime() bool {
 	return !c.opts.NoRuntime && c.opts.Only == nil
 }
 
-func (c *commit) runtimeSummary(m *manifest.Manifest) RuntimeSummary {
+// runtimeSummary tallies the runtime block and lists its model ids.
+func (c *commit) runtimeSummary(m *manifest.Manifest) (RuntimeSummary, []string) {
 	includeRuntime := c.includeRuntime()
 	if !includeRuntime || m == nil || m.Runtime == nil {
-		return RuntimeSummary{}
+		return RuntimeSummary{}, nil
+	}
+	models := make([]string, 0, len(m.Runtime.Models))
+	for _, r := range m.Runtime.Models {
+		models = append(models, r.ID)
 	}
 	return RuntimeSummary{
 		Models:     len(m.Runtime.Models),
 		MCPServers: len(m.Runtime.MCPServers),
 		A2AAgents:  len(m.Runtime.A2AAgents),
 		Guardrails: len(m.Runtime.Guardrails),
-	}
+	}, models
 }
 
 func (c *commit) contextSummary(m *manifest.Manifest) ContextSummary {
@@ -1097,9 +1102,9 @@ func keptSourceRows(prev, next []state.FileEntry) []state.FileEntry {
 // forward from the prior state (their composition from ExtractResult is a
 // separate follow-up; see issue tracker / W6-01 notes). The ADAPTER section,
 // however, IS composed from the fresh render (W6-01): recording the adapter
-// FileEntries is what gives the next hydrate a prior state for the §8.4
-// per-key drift truth table — without it the Adapter.Files lookup always misses and
-// drift / auto-claim (sc3 / sc4) cannot fire. The adapter section is replaced
+// FileEntries is what gives the next hydrate a prior state — without it the
+// Adapter.Files lookup always misses, so the no-op skip never fires and
+// keys the render dropped are never pruned. The adapter section is replaced
 // only when the adapter actually ran this hydrate; a context-only run leaves
 // the prior adapter section untouched (spec §8.2 field rules).
 // composeNextState builds the post-hydrate state.File in memory. PURE — no
@@ -1387,10 +1392,9 @@ func (c *commit) writeRuntimeMirror(m *manifest.Manifest) ([]state.FileEntry, er
 
 // adapterSectionFromRender projects a RenderResult into the
 // state.AdapterSection recorded at step 12 — the prior state the next
-// hydrate's §8.4 per-key drift check reads via findEntry(Adapter.Files). Each
-// FileWrite maps 1:1 to a state.FileEntry (Target/Hash/SourceHash carry the
-// canonical hash of OUR contributed subtree; Merge/Keys drive the inverse-
-// merge + per-key drift comparison).
+// hydrate reads via findEntry(Adapter.Files). Each FileWrite maps 1:1 to a
+// state.FileEntry (Target/Hash/SourceHash carry the canonical hash of OUR
+// contributed subtree; Merge/Keys drive the inverse-merge).
 func adapterSectionFromRender(platformID string, render RenderResult) state.AdapterSection {
 	sec := state.AdapterSection{ID: platformID}
 	for _, fw := range render.WrittenFiles {

@@ -83,6 +83,23 @@ args = ["token"]
 refresh_interval_ms = 300000
 ```
 
+### Choose the model
+
+`--models` sets where the tool sends its requests, never which model it asks
+for: that choice stays yours. Hydrate ends with the Environment's models and
+the flag to start each tool on one:
+
+```
+      Models routed through ACH; choose one with claude --model <model> / codex -m <model>
+             <model>, <model>, …
+```
+
+Start the tool with one of them, or set `model` in the tool's own
+configuration to keep it. Without one, Claude Code asks for its own default
+model, which your platform may not serve, and Codex takes the first entry of
+the platform's model list, which can be an agent rather than a model of the
+Environment.
+
 With a model served from Amazon Bedrock, Codex's built-in apps tools have
 names longer than Bedrock's 64-character limit and Bedrock rejects the request
 (`toolSpec.name ... length less than or equal to 64`). Turn the apps off for

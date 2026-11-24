@@ -31,6 +31,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ackstorm/ach/internal/cli/adapter"
@@ -257,32 +258,42 @@ func TestLife02_PassthroughInvariant(t *testing.T) {
 	}
 }
 
-// TestPublishFile_DeepHashScopedToKeys: a rendered deep doc carrying structure
-// outside fw.Keys (codex's empty [a2a_agents]) must record the same hash the
-// on-disk side computes, or every re-hydrate/uninstall reports a phantom edit.
-func TestPublishFile_DeepHashScopedToKeys(t *testing.T) {
+// TestPublishFile_DeepSkip: a deep row is skipped exactly when the file
+// already holds the document the write would merge, whatever fw.Keys can
+// address: a table outside the keys, a server id with a dot, and a user value
+// JSON cannot encode.
+func TestPublishFile_DeepSkip(t *testing.T) {
 	toolRoot := t.TempDir()
 	d := &adapterDispatcherImpl{platformID: "codex"}
-	fw := adapter.FileWrite{
-		Path:    ".codex/config.toml",
-		Content: []byte("[a2a_agents]\n\n[mcp_servers.x]\nurl = \"https://h/mcp/x\"\n"),
-		Merge:   adapter.MergeDeep,
-		Keys:    []string{"mcp_servers.x"},
-	}
-	got, err := d.publishFile(fw, nil, toolRoot)
-	if err != nil {
+	abs := filepath.Join(toolRoot, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	entry := state.FileEntry{Target: got.Target, Hash: got.Hash, Merge: got.Merge, Keys: got.Keys}
-	disk, present, err := currentScopedHash(entry, filepath.Join(toolRoot, fw.Path))
-	if err != nil || !present || disk != got.Hash {
-		t.Fatalf("on-disk scoped hash %q (present=%v err=%v) != recorded %q", disk, present, err, got.Hash)
+	if err := os.WriteFile(abs, []byte("big = inf\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	fw := adapter.FileWrite{
+		Path:    ".codex/config.toml",
+		Content: []byte("[a2a_agents]\n\n[mcp_servers.\"a.b\"]\nurl = \"https://h/1\"\n"),
+		Merge:   adapter.MergeDeep,
+		Keys:    []string{"mcp_servers.a.b"},
+	}
+	publish := func(wantSkip bool) state.FileEntry {
+		t.Helper()
+		got, err := d.publishFile(fw, &state.FileEntry{Target: fw.Path, Merge: mergeStrDeep, Keys: fw.Keys}, toolRoot)
+		if err != nil || got.Preserved != wantSkip {
+			t.Fatalf("publish: skipped=%v, want %v (err=%v)", got.Preserved, wantSkip, err)
+		}
+		return state.FileEntry{Hash: got.Hash}
+	}
+	publish(false)
+	publish(true)
 
-	// A row recorded with an older, differently-scoped hash heals: disk equals
-	// what we write, so there is no edit to preserve.
-	entry.Hash = "xxh3:stale"
-	if _, err := d.publishFile(fw, &entry, toolRoot); err != nil {
-		t.Fatalf("re-publish over stale-hash row: %v", err)
+	fw.Content = []byte("[a2a_agents]\n\n[mcp_servers.\"a.b\"]\nurl = \"https://h/2\"\n")
+	publish(false)
+	body, _ := os.ReadFile(abs)
+	if !strings.Contains(string(body), "https://h/2") || !strings.Contains(string(body), "big = inf") {
+		t.Errorf("want the new url and the user's value kept:\n%s", body)
 	}
+	publish(true)
 }

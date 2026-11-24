@@ -60,7 +60,7 @@ ach-cli environment list [-o] | search <text> [--admin] [-o] | describe <env> | 
 ach-cli environment hydrate [env] [--only plugin|skill/<name>] [--dir d] [-g] [--target a,b] [--only-runtime] [--sync] [--dry-run] [--models]
 ach-cli environment clone <env> [dir] --target a,b [--only-runtime] [--models]   # git-clone shape: mkdir ./<env>, refuse non-empty, hydrate; rm the dir it created on failure. Bare `environment hydrate` updates every env recorded under .ach/
 ach-cli environment status [env] [-g] [--dir d] [--files] [--offline] [-o] | uninstall <env> [--only kind/name] [--dir d] [-g] [--only-runtime]
-ach-cli launch <agy|claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused; warns (`claudeTrustWarning`) when the folder holds native Claude Code plugins and Claude Code does not trust it
+ach-cli launch <agy|claude|codex|opencode|pi> [--environment <env> | --update-environments] [hydrate flags] [-- tool args]   # runHydrate for that one target only when --environment/ACH_ENVIRONMENT (that env) or --update-environments/--update-envs (hidden alias, same var) (every env recorded under the folder's .ach/, or ~/.ach/ with -g, like bare environment hydrate); then exec.Command the tool in --dir with this terminal; exits with the tool's code (silent: empty CodedError Msg). Tool looked up on PATH BEFORE hydrating (`agy` starts Antigravity). Shares flags with environment hydrate via hydrateFlags (hydrate.go); no --dry-run/--only/--allow-symlinks/--target. Neither = no hydrate, the tool starts as the folder is (an alias claude='ach-cli launch claude --' must not rewrite the folder on every start). claude only: a loopback reverse proxy (launch_proxy.go) to the profile URL for the tool's lifetime, ANTHROPIC_BASE_URL → it; it sets x-ach-key from resolveCred (refresh under token.lock, JWT cached until 6 min before exp) and drops any other ek-/pk- header, Authorization (the Claude subscription) passes untouched; shell ANTHROPIC_BASE_URL/ANTHROPIC_CUSTOM_HEADERS warned + removed; a Claude settings env.ANTHROPIC_BASE_URL refuses (Claude Code applies it over the process env); --models refused; warns (`claudeTrustWarning`) when the folder holds native Claude Code plugins and Claude Code does not trust it
 ach-cli upgrade [--version X.Y.Z]   # GitHub release (latest by default), sha256 vs checksums.txt, renamed over os.Executable(); Windows renames the running .exe to .old first
 ach-cli keys create <env> --name n [--expires 90d] [--max-budget X] [-o] | list [--environment e] [--status …] [-o]
 ach-cli keys revoke|suspend|resume <name|id> | budget <name|id> --max-budget X
@@ -312,8 +312,7 @@ projected (self-heals on `<b>`'s next hydrate).
 - **`hydrate.Sync`'s keep set is per CONTRIBUTION, not per Target**
   (`syncKeep` in `wiring.go`). A prev row survives when the next state still
   records it: any row on the Target for a whole-file row, EVERY key for a deep
-  row (else only the uncovered keys are pruned; the drift gate still hashes the
-  row's recorded key set). Keying on Target alone skips a row dropped from a
+  row (else only the uncovered keys are pruned). Keying on Target alone skips a row dropped from a
   SHARED file, so `hydrate --sync` leaves a removed plugin's `.mcp.json` keys
   behind. Do NOT key on `Target+Keys` either: a runtime row whose key set
   GREW would then prune keys Render just wrote.
@@ -324,11 +323,16 @@ projected (self-heals on `<b>`'s next hydrate).
   Environment) leave the file. They are ACH-generated, never user content.
   The `Instructions` bucket is pruned whole on every hydrate too (ACH-generated
   files). `--sync` widens it to every bucket (plugins/skills/instructions files).
-- **Deep-row drift hashes are scoped to `Keys` on BOTH sides** (`deepHashes`
-  at write, `currentScopedHash` at sync). Hashing the whole rendered doc made
-  a row report a phantom edit on every re-hydrate/uninstall whenever the doc
-  carried tables outside the row's keys. A drift verdict is also dropped when disk already
-  equals what we write (heals rows recorded with an older hash scope).
+- **The keys ACH writes into a shared config are ACH's: a deep row has no
+  local-edit check.** `publishFile` merges our fields in on every hydrate (a
+  field we write is restored, a field the user added inside our entry stays)
+  and skips the rewrite when the merge would change nothing (`deepHash` →
+  `merge.Holds`, on the same document the write merges);
+  `syncOne` prunes our keys whatever they hold. Exit 2 and `--force` apply to
+  whole files only, as in the local package manager. A per-key drift hash was
+  tried and refused hydrates nobody had edited: the recorded hash covered the
+  old key set, so a render that dropped and added keys together (one MCP
+  server replaced by another, `mcp.<id>` → `mcp.servers.<id>`) never matched.
 - **`environment hydrate <env> --only plugin|skill/<name>`** (`Opts.Only`): runtime
   off, extracts just that item, and `composeNextState` MERGES — carries every
   bucket forward and swaps only the item's rows (`Item.owns`: `Source==name`,
@@ -416,7 +420,17 @@ program name, not through a shell), `refresh_interval_ms 300000`) to its
 keys"), so `--models` with a codex target is refused without `--global`
 (`hydrateEnv`), and the `Models … add --models` line is not shown for codex in
 project scope. Codex's built-in apps tools exceed Bedrock's 64-character tool
-name limit; that is documented (`-c features.apps=false`), not written. An `ek-` bearer
+name limit; that is documented (`-c features.apps=false`), not written.
+Hydrate never writes the tool's `model` either: it is the user's choice, so
+`modelsLine` prints the Environment's models (`Result.Models`) and the flag
+to start each wired tool on one (`helperTargets`), after a named hydrate and
+after the bare form alike.
+`Render` calls `RenderRuntime` for an Environment with an MCP server or agent
+(`hasDirectRuntime`) or when the helper wiring is on (`wantsHelper`), and
+drops a key-merged file with no key, so a models-only Environment gets the
+helper wiring and no empty MCP file. Without a model Claude Code
+sends its own default name and Codex takes the first entry of `/v1/models`,
+which can be an A2A agent. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli
 token` prints the OAuth access token (refresh under `<configDir>/token.lock`
 — the AS rotates refresh tokens, so two concurrent helpers must not both
@@ -757,9 +771,14 @@ arbitrary markdown) — mutates prose, edge-case-prone.
   absent when unknown, no defaults) comes from `litellm.CapsCache`
   (`DeploymentCaps`, aliases resolved), the same view as the per-user OpenCode
   config; a LiteLLM failure omits it and hydrate stays 200.
-- **Target autodetection.** Without `--target`, `environment hydrate` detects
-  the workspace's agent and errors when it finds none or several;
-  `environment clone` requires `--target` (an empty folder has nothing to detect).
+- **Targets without `--target`** (`resolvePlatformsOrAutodetect`): `ACH_TARGET`,
+  else the targets the Environment is already hydrated for in that scope
+  (`recordedTargets`: `.ach/<env>/state-<target>.json`, `~/.ach/` under `-g`;
+  a state file of a target with no adapter is skipped), else the one agent
+  detected in the workspace (none or several is an error). The same for a named
+  hydrate and for the bare form, which reads the Environments from the same
+  `.ach/` (`stateRoot`). `environment clone` requires `--target` (an empty
+  folder has nothing to detect).
 - **State layout.** `.ach/<env>/state-<platform>.json` is the only workspace
   state layout; there is no `ach.yaml` and no state migration.
 

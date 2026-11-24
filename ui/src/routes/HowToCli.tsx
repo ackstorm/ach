@@ -189,7 +189,7 @@ ach-cli a2a call <agent> '<message>'`}
 # ~/Projects/<environment>/<project>/ …`}
               />
               <Step
-                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it. A file of your own that a plugin or skill would replace stops it with exit code 7; --force replaces it."
+                note="Keep it up to date. A file you edited is never overwritten silently: hydrate stops with exit code 2, and --force overwrites it. The MCP servers it adds to a tool's own config file are written again on every hydrate; what you add around them stays. A file of your own that a plugin or skill would replace stops it with exit code 7; --force replaces it."
                 code={`cd ~/Projects/<environment> && ach-cli environment hydrate   # every Environment recorded here
 ach-cli environment hydrate <environment> --sync           # also remove what the Environment dropped
 ach-cli environment hydrate <environment> --dry-run        # preview the diff, write nothing

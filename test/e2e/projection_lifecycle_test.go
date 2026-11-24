@@ -78,10 +78,7 @@ func runProjectionLifecycle(t *testing.T, d projectionDescriptor) {
 
 	// (1b) Pre-seed a USER key into the adapter's co-owned deep-merge file
 	// BEFORE the (single) hydrate. The hydrate's runtime leg then deep-merges
-	// ACH's keys ALONGSIDE the user's into the same file — no drift, because
-	// the engine records the merged file's hash as its own. Seeding AFTER a
-	// hydrate would instead present a "local edit" on the next run
-	// (LocalEditPreserve, exit 2) — the wrong path to exercise here. The
+	// ACH's keys ALONGSIDE the user's into the same file. The
 	// post-uninstall assertion proves the inverse-merge subtracts only ACH's
 	// keys and leaves the user key intact.
 	userKey := seedCoOwnedUserKey(t, output, d)
