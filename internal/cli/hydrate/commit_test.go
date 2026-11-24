@@ -2193,6 +2193,38 @@ func TestCommit_ItemChanges(t *testing.T) {
 	}
 }
 
+// A re-run is not a first run even when the Environment installs no item
+// (models only: the helper wiring is not an item).
+func TestCommit_FirstRunWithoutItems(t *testing.T) {
+	c, store, _ := newTestCommit(t)
+	c.opts.Platform = "claude-code"
+	c.toolRoot = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(c.toolRoot, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(c.toolRoot, ".claude", "settings.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.adapter = fakeAdapterDispatcher{result: RenderResult{WrittenFiles: []FileWrite{{
+		Target: ".claude/settings.json", Hash: "h", SourceHash: "h", Merge: mergeStrDeep,
+		Keys: []string{"apiKeyHelper"},
+	}}}}
+
+	first, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	saved := store.savedFile
+	store.loadFn = func(string) (*state.File, error) { return saved, nil }
+	again, err := c.run(context.Background())
+	if err != nil {
+		t.Fatalf("re-run: %v", err)
+	}
+	if !first.FirstRun || again.FirstRun || len(again.Changes) != 0 {
+		t.Fatalf("FirstRun first=%v again=%v Changes=%+v", first.FirstRun, again.FirstRun, again.Changes)
+	}
+}
+
 func TestComposeNextState_RecordsEnvVersion(t *testing.T) {
 	v := &state.EnvVersion{Version: "sha256:new", Items: map[string]string{"plugin/a": "1"}}
 	old := &state.EnvVersion{Version: "sha256:old"}

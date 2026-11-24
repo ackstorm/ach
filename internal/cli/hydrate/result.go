@@ -97,7 +97,7 @@ type Result struct {
 	// Unchanged counts the items whose files this run left identical.
 	Unchanged int
 
-	// FirstRun is true when no item was recorded for this Environment+target
+	// FirstRun is true when no state was recorded for this Environment+target
 	// before the run (a first hydrate or clone).
 	FirstRun bool
 
