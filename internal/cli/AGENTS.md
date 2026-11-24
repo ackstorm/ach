@@ -422,11 +422,13 @@ keys"), so `--models` with a codex target is refused without `--global`
 project scope. Codex's built-in apps tools exceed Bedrock's 64-character tool
 name limit; that is documented (`-c features.apps=false`), not written.
 Hydrate never writes the tool's `model` either: it is the user's choice, so
-`renderHydrate` prints the Environment's models (`Result.Models`) and the flag
-to start each wired tool on one (`helperTargets`), for a named hydrate only.
-`Render` calls `RenderRuntime` only for an Environment with an MCP server or
-agent (`hasDirectRuntime`), so on a models-only Environment `--models` writes
-nothing and no `Models` line is printed (`modelsState`). Without a model Claude Code
+`modelsLine` prints the Environment's models (`Result.Models`) and the flag
+to start each wired tool on one (`helperTargets`), after a named hydrate and
+after the bare form alike.
+`Render` calls `RenderRuntime` for an Environment with an MCP server or agent
+(`hasDirectRuntime`) or when the helper wiring is on (`wantsHelper`), and
+drops a key-merged file with no key, so a models-only Environment gets the
+helper wiring and no empty MCP file. Without a model Claude Code
 sends its own default name and Codex takes the first entry of `/v1/models`,
 which can be an A2A agent. An `ek-` bearer
 (agents / CI) NEVER gets it: no interactive login to fall back on. `ach-cli

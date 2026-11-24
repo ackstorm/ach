@@ -1002,6 +1002,7 @@ func TestRenderHydrate(t *testing.T) {
 	person := summaryMeta{global: true, oauth: true}
 	r := hydrate.Result{
 		PlatformID: "claude-code", FirstRun: true, FilesWritten: 41, Notice: "read me",
+		Models:         []string{"a", "b", "c", "d", "e"},
 		RuntimeSummary: hydrate.RuntimeSummary{Models: 5, MCPServers: 1},
 		Changes: []hydrate.ItemChange{
 			{Op: hydrate.OpAdd, Kind: "mcp", Name: "github"},
@@ -1040,14 +1041,11 @@ func TestRenderHydrate(t *testing.T) {
 		"             a.fast, a.smart\n") {
 		t.Fatalf("--models:\n%s", got)
 	}
-	// Nothing is wired for an Environment with no MCP server or agent, nor on
-	// a dry run: no Models line either way.
-	modelsOnly := cc
-	modelsOnly.RuntimeSummary.MCPServers = 0
-	dry := wired
-	dry.dryRun = true
-	for name, got := range map[string]string{"models only": render(wired, modelsOnly), "dry run": render(dry, cc),
-		"models only, no --models": render(person, modelsOnly)} {
+	// A dry run wires nothing, and an Environment without models has none to
+	// choose: no Models line either way.
+	dry, none := wired, cc
+	dry.dryRun, none.Models = true, nil
+	for name, got := range map[string]string{"dry run": render(dry, cc), "no models": render(wired, none)} {
 		if strings.Contains(got, "Models") {
 			t.Fatalf("%s: want no Models line:\n%s", name, got)
 		}

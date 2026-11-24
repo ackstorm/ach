@@ -406,12 +406,15 @@ func (d *adapterDispatcherImpl) Render(ctx context.Context, m *manifest.Manifest
 	// ONLY plugin-contributed mcps (via projectPlugins below), not the
 	// Environment's directly-attached runtime endpoints. RenderRuntime is the only consumer of m.Runtime here,
 	// so skipping it gates the whole direct-runtime projection.
-	if includeRuntime && hasDirectRuntime(m) {
+	if includeRuntime && (hasDirectRuntime(m) || wantsHelper(ctx, m)) {
 		fws, err := ad.RenderRuntime(ctx, m, s)
 		if err != nil {
 			return RenderResult{}, fmt.Errorf("adapter %s RenderRuntime: %w", d.platformID, err)
 		}
 		for _, fw := range fws {
+			if fw.Merge == adapter.MergeDeep && len(fw.Keys) == 0 {
+				continue // nothing of the Environment's to merge: no empty config file
+			}
 			if d.global {
 				fw.Path = adapter.RemapGlobalPath(d.platformID, toolRoot, fw.Path)
 			}
@@ -515,18 +518,19 @@ func skillsDir(ad adapter.Adapter, platform, toolRoot string, global bool) strin
 }
 
 // hasDirectRuntime reports whether the manifest carries a direct runtime
-// endpoint the adapter can actually wire (an MCP server or an A2A agent).
-// Models are excluded: no adapter's RenderRuntime projects a model (access is
-// server-side via the gateway), so a models-only Environment has nothing to
-// write. Gating RenderRuntime on this predicate keeps a content-only hydrate
-// from emitting an empty {"mcpServers":{}} adapter file (D5). Guardrails are
-// excluded for the same reason — LiteLLM applies them server-side and there
-// is nothing for an adapter to configure.
+// endpoint an adapter writes: an MCP server or an A2A agent. Models and
+// guardrails are served by the gateway and have no entry of their own.
 func hasDirectRuntime(m *manifest.Manifest) bool {
 	if m == nil || m.Runtime == nil {
 		return false
 	}
 	return len(m.Runtime.MCPServers) > 0 || len(m.Runtime.A2AAgents) > 0
+}
+
+// wantsHelper reports whether the render carries the model-endpoint helper
+// wiring, which a target writes whatever else the Environment holds.
+func wantsHelper(ctx context.Context, m *manifest.Manifest) bool {
+	return m != nil && m.Runtime != nil && adapter.HelperBaseURLFromContext(ctx) != ""
 }
 
 // runtimeKindForKey maps a contributed settings key to the hydrate-summary

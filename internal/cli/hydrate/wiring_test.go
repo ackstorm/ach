@@ -13,9 +13,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/ackstorm/ach/internal/cli/adapter"
 	"github.com/ackstorm/ach/internal/cli/conflict"
 	"github.com/ackstorm/ach/internal/cli/extract"
 	"github.com/ackstorm/ach/internal/cli/hash"
@@ -342,6 +344,30 @@ func TestAdapterDispatcherImpl_NoOpSkip_CorrectsLeakedMode(t *testing.T) {
 
 // dispMiniManifest is a minimal one-MCP-server manifest for the dispatcher
 // tests.
+// --models on an Environment with models and no MCP server writes the helper
+// wiring and no empty MCP file; a target without helper wiring writes nothing.
+func TestAdapterDispatcherImpl_ModelsOnly(t *testing.T) {
+	withCleanHome(t)
+	m := &manifest.Manifest{SchemaVersion: "v1alpha1", Environment: "demo", Context: &manifest.ContextBlock{},
+		Runtime: &manifest.RuntimeBlock{Models: []manifest.ContentRef{{ID: "a.fast"}}}}
+	ctx := adapter.WithHelperBaseURL(context.Background(), "https://hub.example")
+	for target, want := range map[string][]string{"claude-code": {".claude/settings.json"}, "opencode": nil} {
+		dir := t.TempDir()
+		_, disp := hydrate.NewWiring(nil, target, extract.DefaultLimits(), false, false, false, conflict.Namespace)
+		res, err := disp.Render(ctx, m, nil, dir, dir, false, true)
+		if err != nil {
+			t.Fatalf("%s: Render: %v", target, err)
+		}
+		var got []string
+		for _, w := range res.WrittenFiles {
+			got = append(got, w.Target)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: wrote %v, want %v", target, got, want)
+		}
+	}
+}
+
 func dispMiniManifest() *manifest.Manifest {
 	return &manifest.Manifest{
 		SchemaVersion: "v1alpha1",

@@ -614,6 +614,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 	var notes bytes.Buffer
 	start := time.Now()
 	failed := 0
+	var all []hydrate.Result
 	for _, e := range envs {
 		perEnv := in
 		var results []hydrate.Result
@@ -621,6 +622,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 		if runErr == nil {
 			results, runErr = hydrateEnv(cmd, perEnv, baseURL, bearer, e.name, platformIDs, &notes)
 		}
+		all = append(all, results...)
 		changes := mergedChanges(results)
 		switch {
 		case runErr != nil:
@@ -637,6 +639,7 @@ func runHydrateWorkspace(cmd *cobra.Command, in hydrateInputs, baseURL, bearer s
 		}
 	}
 	u.verb("Finished", "%d of %d in %s", len(envs)-failed, len(envs), elapsed(time.Since(start)))
+	modelsLine(u, all, newSummaryMeta(in, bearer))
 	newUI(cmd.ErrOrStderr(), in.verbose).relay(&notes)
 	if failed > 0 {
 		return &exit.CodedError{
@@ -799,26 +802,7 @@ func renderHydrate(u, eu *ui, results []hydrate.Result, meta summaryMeta, took t
 	u.targetItems(results, "up to date")
 	u.verb("Finished", "%s in %s", finishedSummary(results, meta), elapsed(took))
 
-	notRouted, models, pick := 0, []string(nil), []string(nil)
-	for _, r := range results {
-		if r.RuntimeSummary.Models == 0 {
-			continue
-		}
-		switch modelsState(r, meta) {
-		case modelsNotWired:
-			notRouted = r.RuntimeSummary.Models
-		case modelsWired:
-			models, pick = r.Models, append(pick, helperTargets[r.PlatformID])
-		}
-	}
-	switch {
-	case notRouted > 0:
-		u.verb("Models", "%d available, not routed — add --models", notRouted)
-	case len(pick) > 0 && !meta.dryRun:
-		// ACH wires the provider, never the tool's model: say how to choose one.
-		u.verb("Models", "routed through ACH; choose one with %s", strings.Join(pick, " / "))
-		u.verb("", "%s", strings.Join(models, ", "))
-	}
+	modelsLine(u, results, meta)
 	if notice := firstNotice(results); notice != "" {
 		lines := strings.Split(strings.TrimRight(notice, "\n"), "\n")
 		u.verb("Notice", "%s", lines[0])
@@ -896,15 +880,40 @@ func modelsState(res hydrate.Result, meta summaryMeta) modelsWiring {
 	switch {
 	case !person || helperTargets[res.PlatformID] == "", res.PlatformID == codexTarget && !meta.global:
 		return modelsServerSide
-	case res.RuntimeSummary.MCPServers+res.RuntimeSummary.A2AAgents == 0:
-		// ponytail: the engine renders a target's runtime config, helper
-		// included, only for an Environment with an MCP server or agent
-		// (hydrate.hasDirectRuntime); lift this with that gate.
-		return modelsServerSide
 	case meta.models:
 		return modelsWired
 	default:
 		return modelsNotWired
+	}
+}
+
+// modelsLine prints whether the hydrated Environments' models are routed
+// through ACH. ACH wires the provider, never the tool's model, so a wired run
+// says how to choose one.
+func modelsLine(u *ui, results []hydrate.Result, meta summaryMeta) {
+	var unrouted, models, pick []string
+	add := func(dst []string, vs ...string) []string {
+		for _, v := range vs {
+			if !slices.Contains(dst, v) {
+				dst = append(dst, v)
+			}
+		}
+		return dst
+	}
+	for _, r := range results {
+		switch modelsState(r, meta) {
+		case modelsNotWired:
+			unrouted = add(unrouted, r.Models...)
+		case modelsWired:
+			models, pick = add(models, r.Models...), add(pick, helperTargets[r.PlatformID])
+		}
+	}
+	switch {
+	case len(unrouted) > 0:
+		u.verb("Models", "%d available, not routed — add --models", len(unrouted))
+	case len(models) > 0 && !meta.dryRun:
+		u.verb("Models", "routed through ACH; choose one with %s", strings.Join(pick, " / "))
+		u.verb("", "%s", strings.Join(models, ", "))
 	}
 }
 
