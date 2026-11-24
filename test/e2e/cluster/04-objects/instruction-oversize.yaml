@@ -18,4 +18,5 @@ spec:
   github:
     repo: asgeirtj/system_prompts_leaks
     ref: main
+    commit: 74761cc521a4ea73a603b54e7465e057de8ced19
     path: Anthropic/claude-opus-4.8.md

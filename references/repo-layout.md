@@ -129,6 +129,10 @@ so it is `Available=False` BY DESIGN and `verify_all` gates it on the
 `instruction-invalid` idiom — the unresolved name makes `reconcileAccessGroup` bail
 before the (premium-gated) shell-team guardrail write ever runs. Tests only create/delete throwaways for
 mutation-specific checks (e.g. the SC4 staleness patch, the §11f drains).
+A synced fixture whose source is a repository ACH does not own sets
+`spec.<git>.commit` (or a release tag as `ref`): the suite compares
+`status.upstreamRev` across a force-refresh, and an upstream commit landing
+mid-run fails it. Bump a pin deliberately, in its own change.
 `examples/` holds **curated, user-facing
 samples** (the ServiceMonitor, the alert rules, the ach-cli initContainer, the
 manual JWT helper) plus the golden `hydrate.json`. The two are independent —

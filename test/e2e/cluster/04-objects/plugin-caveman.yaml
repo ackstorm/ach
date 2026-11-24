@@ -18,3 +18,4 @@ spec:
   github:
     repo: JuliusBrussee/caveman
     ref: main
+    commit: 47c61be2d10a354f0c5cbe2b90959d24c06b16c6

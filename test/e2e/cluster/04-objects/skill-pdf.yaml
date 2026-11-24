@@ -18,6 +18,7 @@ spec:
   github:
     repo: anthropics/skills
     ref: main
+    commit: e4bb5d960d87126ff3b3a8af1a104b7db67560ba
     path: skills/pdf
   refresh:
     interval: 1h
