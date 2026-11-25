@@ -551,8 +551,9 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 	}
 	// TUI plugins /clients/opencode/config hands out (comma-separated), each an
 	// exact npm spec: every user's OpenCode installs them unreviewed.
-	var tuiPlugins []string
-	for _, p := range strings.Split(os.Getenv("ACH_OPENCODE_TUI_PLUGINS"), ",") {
+	tuiSpecs := strings.Split(os.Getenv("ACH_OPENCODE_TUI_PLUGINS"), ",")
+	tuiPlugins := make([]string, 0, len(tuiSpecs))
+	for _, p := range tuiSpecs {
 		if p = strings.TrimSpace(p); p == "" {
 			continue
 		}
