@@ -549,6 +549,18 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		}
 		extraProviders = append(extraProviders, p)
 	}
+	// TUI plugins /clients/opencode/config hands out (comma-separated), each an
+	// exact npm spec: every user's OpenCode installs them unreviewed.
+	var tuiPlugins []string
+	for _, p := range strings.Split(os.Getenv("ACH_OPENCODE_TUI_PLUGINS"), ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		if !opencode.TUIPluginSpec.MatchString(p) {
+			return out, fmt.Errorf("ACH_OPENCODE_TUI_PLUGINS %q: want an npm package at one exact version, e.g. name@1.2.3", p)
+		}
+		tuiPlugins = append(tuiPlugins, p)
+	}
 	extra, err := observabilityRoutes(cfg, liteLLM)
 	if err != nil {
 		return out, err
@@ -588,6 +600,7 @@ func buildPlatformAPIDeps(ctx context.Context, cfg *platformAPIConfig, logger *s
 		GenAIDefaultEnvironment: os.Getenv("ACH_GENAI_DEFAULT_ENVIRONMENT"),
 		OpenCodePluginSpec:      os.Getenv("ACH_OPENCODE_PLUGIN_SPEC"),
 		OpenCodeExtraProviders:  extraProviders,
+		OpenCodeTUIPlugins:      tuiPlugins,
 		// Same issuer/audience as the OAuth resolver above.
 		VerifyAccessToken:  func(tok string) (string, error) { return signer.Verify(tok, cfg.BaseURL, "ach") },
 		Pepper:             cfg.Pepper,

@@ -75,11 +75,12 @@ type fixture struct {
 	user  *fakeUser
 	admin *fakeAdmin
 	seen  string // key the handler asked AsUser for
+	store *auth.OAuthStore
 }
 
 func newFixture(t *testing.T) *fixture { return newFixtureWith(t, "", "", "") }
 
-func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
+func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string, tuiPlugins ...string) *fixture {
 	t.Helper()
 	sealed, err := keycrypt.Seal(kek, []byte(userKey))
 	if err != nil {
@@ -106,6 +107,7 @@ func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
 		},
 	}
 	mr := miniredis.RunT(t)
+	f.store = &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
 	f.h = ConfigHandler(ConfigDeps{
 		BaseURL: "https://ach.test/", Provider: "acme", DefaultModel: defModel, DefaultSmall: defSmall,
 		Verify: func(tok string) (string, error) {
@@ -117,9 +119,10 @@ func newFixtureWith(t *testing.T, defModel, defSmall, defEnv string) *fixture {
 		Resolver: f.res, KeyEncryptionKey: kek,
 		AsUser:     func(k string) UserCatalog { f.seen = k; return f.user },
 		Caps:       litellm.NewCapsCache(f.admin, slog.New(slog.NewTextHandler(io.Discard, nil))),
-		Store:      &auth.OAuthStore{RDB: redis.NewClient(&redis.Options{Addr: mr.Addr()})},
+		Store:      f.store,
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DefaultEnv: defEnv,
+		TUIPlugins: tuiPlugins,
 	})
 	return f
 }
@@ -323,6 +326,52 @@ func TestConfig_SkillDefaultEnvironment(t *testing.T) {
 		md := sk["files"].(map[string]any)["SKILL.md"].(string)
 		if sk["name"] != "acme-ach" || strings.Contains(md, "ach-cli environment hydrate ackstorm -g") != want || strings.Contains(md, "{{") {
 			t.Fatalf("%q: skill %v", env, sk)
+		}
+	}
+}
+
+func TestConfig_TUIPlugins(t *testing.T) {
+	_, none := newFixture(t).get(t, "Bearer "+goodTok)
+	if p, ok := none["tuiPlugins"].([]any); !ok || len(p) != 0 {
+		t.Fatalf("unset: %v", none["tuiPlugins"])
+	}
+	f := newFixtureWith(t, "", "", "", "oc-session-control@0.6.0")
+	_, m := f.get(t, "Bearer "+goodTok)
+	if p := m["tuiPlugins"].([]any); len(p) != 1 || p[0] != "oc-session-control@0.6.0" || m["version"] == none["version"] {
+		t.Fatalf("set: %v (version %v vs %v)", m["tuiPlugins"], m["version"], none["version"])
+	}
+	_, bad := f.get(t, "Bearer bad.bad.bad")
+	if p := bad["tuiPlugins"].([]any); len(p) != 0 {
+		t.Fatalf("invalid token: %v", p)
+	}
+}
+
+func TestConfig_TUIPluginsCurrentInStaleAnswer(t *testing.T) {
+	f := newFixtureWith(t, "", "", "", "oc-session-control@0.6.0")
+	_, fresh := f.get(t, "Bearer "+goodTok)
+	cached := map[string]any{}
+	for k, v := range fresh {
+		cached[k] = v
+	}
+	delete(cached, "tuiPlugins") // cached before the field existed
+	if err := f.store.Put(context.Background(), cacheKind, userEmail, cached, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	f.user.err = errors.New("litellm down")
+	_, m := f.get(t, "Bearer "+goodTok)
+	if p, _ := m["tuiPlugins"].([]any); m["stale"] != true || len(p) != 1 || p[0] != "oc-session-control@0.6.0" || m["version"] != fresh["version"] {
+		t.Fatalf("stale: %v %v (version %v vs %v)", m["stale"], m["tuiPlugins"], m["version"], fresh["version"])
+	}
+}
+
+func TestTUIPluginSpec(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"oc-session-control@0.6.0": true, "@scope/pkg@1.2.3": true, "pkg@1.0.0-rc.1": true,
+		"oc-session-control": false, "pkg@^1.2.3": false, "pkg@latest": false, "pkg@1.2": false,
+		"git+https://github.com/a/b.git": false, "../evil@1.0.0": false, "Pkg@1.0.0": false,
+	} {
+		if TUIPluginSpec.MatchString(spec) != want {
+			t.Errorf("%q: want %v", spec, want)
 		}
 	}
 }
