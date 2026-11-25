@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -63,7 +64,16 @@ type ConfigDeps struct {
 	// DefaultEnv (genai.defaultEnvironment) is the Environment the skill tells
 	// users to hydrate globally; empty cuts that step.
 	DefaultEnv string
+
+	// TUIPlugins (genai.opencodeTuiPlugins) are the OpenCode TUI plugins the
+	// plugin keeps in each user's cli.json, as exact npm specs (see TUIPluginSpec).
+	TUIPlugins []string
 }
+
+// TUIPluginSpec is an npm package pinned to one exact version: every user's
+// OpenCode installs it unreviewed, so ranges and dist-tags are refused. OpenCode
+// v2 loads a TUI-only package from cli.json, never from the server config.
+var TUIPluginSpec = regexp.MustCompile(`^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`)
 
 // ConfigHandler serves GET /clients/opencode/config.
 func ConfigHandler(d ConfigDeps) http.HandlerFunc {
@@ -88,17 +98,21 @@ func ConfigHandler(d ConfigDeps) http.HandlerFunc {
 			email, err = d.Verify(tok)
 		}
 		if email == "" || err != nil {
-			answer(body(nil, map[string]any{}, []any{}, "invalid", false)) // nothing about the org leaks
+			answer(body(nil, map[string]any{}, []any{}, nil, "invalid", false)) // nothing about the org leaks
 			return
 		}
 		fallback := func() {
 			var cached map[string]any
 			if ok, err := d.Store.Get(ctx, cacheKind, email, &cached); err == nil && ok {
+				// The TUI plugins are deployment config, not the user's view: a cached
+				// body (maybe from before they existed) must not roll them back.
+				tui := tuiOrEmpty(d.TUIPlugins)
+				cached["tuiPlugins"], cached["version"] = tui, version(cached["config"], cached["skills"], tui)
 				cached["stale"] = true
 				answer(cached)
 				return
 			}
-			answer(body(&email, map[string]any{}, []any{skill}, "ok", true))
+			answer(body(&email, map[string]any{}, []any{skill}, d.TUIPlugins, "ok", true))
 		}
 		info, err := d.Resolver.Resolve(ctx, tok)
 		if err != nil {
@@ -106,7 +120,7 @@ func ConfigHandler(d ConfigDeps) http.HandlerFunc {
 			return
 		}
 		if info == nil || info.LiteLLMKeyMaterial == nil {
-			answer(body(nil, map[string]any{}, []any{}, "invalid", false)) // session revoked
+			answer(body(nil, map[string]any{}, []any{}, nil, "invalid", false)) // session revoked
 			return
 		}
 		sk, err := keycrypt.Open(d.KeyEncryptionKey, *info.LiteLLMKeyMaterial)
@@ -132,7 +146,7 @@ func ConfigHandler(d ConfigDeps) http.HandlerFunc {
 			fallback()
 			return
 		}
-		b := body(&email, buildConfig(base, d.Provider, d.DefaultModel, d.DefaultSmall, groups, deps, aliases), []any{skill}, "ok", false)
+		b := body(&email, buildConfig(base, d.Provider, d.DefaultModel, d.DefaultSmall, groups, deps, aliases), []any{skill}, d.TUIPlugins, "ok", false)
 		if err := d.Store.Put(ctx, cacheKind, email, b, cacheTTL); err != nil {
 			d.Logger.Warn("opencode config: cache write failed", "user", email, "err", err)
 		}
@@ -263,6 +277,18 @@ func perMillion(v *float64) float64 {
 	return math.Round(*v*1e6*1e6) / 1e6
 }
 
+func tuiOrEmpty(p []string) []string {
+	if p == nil {
+		return []string{}
+	}
+	return p
+}
+
+func version(config, skills any, tuiPlugins []string) string {
+	raw, _ := json.Marshal(map[string]any{"config": config, "skills": skills, "tuiPlugins": tuiPlugins})
+	return sha(string(raw))
+}
+
 func sha(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:])
@@ -270,16 +296,16 @@ func sha(s string) string {
 
 // body is the response envelope. version hashes config+skills (encoding/json
 // sorts map keys, so the marshal is canonical); stable while inputs are.
-func body(user *string, config map[string]any, skills []any, authState string, stale bool) map[string]any {
-	raw, _ := json.Marshal(map[string]any{"config": config, "skills": skills})
+func body(user *string, config map[string]any, skills []any, tuiPlugins []string, authState string, stale bool) map[string]any {
+	tuiPlugins = tuiOrEmpty(tuiPlugins)
 	var u any
 	if user != nil {
 		u = *user
 	}
 	return map[string]any{
-		"schema": schemaID, "version": sha(string(raw)),
+		"schema": schemaID, "version": version(config, skills, tuiPlugins),
 		"user": u, "environment": nil, "auth": authState, "stale": stale,
 		"generatedAt": time.Now().UTC().Format(time.RFC3339),
-		"config":      config, "skills": skills,
+		"config":      config, "skills": skills, "tuiPlugins": tuiPlugins,
 	}
 }

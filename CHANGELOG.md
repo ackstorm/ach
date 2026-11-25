@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+
+- OpenCode TUI plugins for every signed-in user: list them in `genai.opencodeTuiPlugins` (Helm), each an npm package at one exact version (`name@1.2.3`). `/clients/opencode/config` serves them as `tuiPlugins`, and opencode-oidc-provider v0.5.0 keeps them in each user's `cli.json`, beside the user's own entries. platform-api refuses to start on a version range, dist-tag or git spec, because every user installs them unreviewed. The chart's default `genai.opencodePluginSpec` is opencode-oidc-provider v0.5.0.
+
 ### Changed
 
 - Enterprise console Overview: the prompt cache-read share target is 95% (it was 80%), and Average generation input has a target of 150K tokens, shown red with an `Above target` pill beyond it. The uncached input / output target stays at 10:1. One line under the three figures says the targets are dashboard choices.
