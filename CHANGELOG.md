@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.6] - 2026-11-25
+
 ### Added
 
 - OpenCode TUI plugins for every signed-in user: list them in `genai.opencodeTuiPlugins` (Helm), each an npm package at one exact version (`name@1.2.3`). `/clients/opencode/config` serves them as `tuiPlugins`, and opencode-oidc-provider v0.5.0 keeps them in each user's `cli.json`, beside the user's own entries. platform-api refuses to start on a version range, dist-tag or git spec, because every user installs them unreviewed. The chart's default `genai.opencodePluginSpec` is opencode-oidc-provider v0.5.0.
