@@ -52,7 +52,7 @@ func setupPostgres(t *testing.T) (*pgxpool.Pool, func()) {
 		),
 	)
 	if err != nil {
-		t.Skipf("docker required: %v", err)
+		t.Fatalf("docker required: %v", err)
 	}
 	conn, err := pgC.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {

@@ -101,7 +101,7 @@ func setupPostgresIntegration(t *testing.T, ctx context.Context) (*pgxpool.Pool,
 		),
 	)
 	if err != nil {
-		t.Skipf("docker required for integration tests: postgres container failed to start: %v", err)
+		t.Fatalf("docker required for integration tests: postgres container failed to start: %v", err)
 	}
 	connStr, err := pgC.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {

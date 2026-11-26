@@ -493,7 +493,9 @@ unchanged. ✅ Use absolute paths; verify with `pwd && git remote -v` (expect
 up** after the run — pass OR fail — so a red run can be diagnosed live; reclaim
 with `make cluster-down`. **`e2e.yml`
 is not a required check**, so the local run stays the gate. Run `make e2e-full` on the host before merging any
-change to the controller/services/CRDs/Helm/e2e surfaces.
+change to the controller/services/CRDs/Helm/e2e surfaces. On a host where
+devtools cannot reach Docker (a Coder pod), e2e cannot start: take it from
+`e2e.yml` or another machine.
 Iterate with the kept-cluster loop (full diagnosis recipe in
 `test/e2e/README.md`):
 
