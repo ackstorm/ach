@@ -744,3 +744,38 @@ func TestHandlerA2AMCP_PrecheckFail(t *testing.T) {
 		t.Errorf("upstream calls = %d; want 0", rec.Calls())
 	}
 }
+
+// forwardTeams on: "teams" is every team of the caller minus ACH's shell
+// teams. Off: no "teams". "groups" is the intersection either way.
+func TestHandlerMCP_TeamsClaimFollowsForwardTeams(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		upstream, rec := upstreamSpy()
+		env := makeEnvRow("demo", []string{"server-x"}, nil, []string{"team-a"})
+		bipRow := makeBIPRow("pol-a", "MCPServer", "server-x", true)
+		bipRow.ForwardTeams = on
+		signer := &mockSigner{returnToken: "ACH-TOKEN"}
+		deps := mkDeps(t, upstream, signer, precheck.Deps{
+			EnvProvider:   newEnvProvider(env),
+			TeamsResolver: &mockTeamsResolver{teams: []string{"team-q", "ach-user-u@e", "team-a"}},
+		}, newBIPResolver(bipRow))
+
+		kc := middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: "u@e"}
+		w := httptest.NewRecorder()
+		chiWithName(HandlerMCP(deps))(w, requestWithKC(t, http.MethodGet, "/mcp/server-x/tools", kc, ""))
+		upstream.Close()
+
+		if rec.Calls() != 1 {
+			t.Fatalf("forwardTeams=%v: upstream calls = %d; body=%s", on, rec.Calls(), w.Body.String())
+		}
+		var want []string
+		if on {
+			want = []string{"team-a", "team-q"}
+		}
+		if got := signer.lastClaims.Teams; !slices.Equal(got, want) {
+			t.Errorf("forwardTeams=%v: teams = %v; want %v", on, got, want)
+		}
+		if got := signer.lastClaims.Groups; !slices.Equal(got, []string{"team-a"}) {
+			t.Errorf("forwardTeams=%v: groups = %v; want [team-a]", on, got)
+		}
+	}
+}
