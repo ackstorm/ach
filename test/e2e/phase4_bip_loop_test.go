@@ -111,7 +111,8 @@ func TestPhase4BIPClosedLoop(t *testing.T) {
 			t.Fatalf("azp: agent=%q owner=%q, want ek:demo and empty", agent.JWTClaims.Azp, owner.JWTClaims.Azp)
 		}
 		if agent.JWTClaims.Sub != owner.JWTClaims.Sub ||
-			!slices.Equal(agent.JWTClaims.Groups, owner.JWTClaims.Groups) {
+			!slices.Equal(agent.JWTClaims.Groups, owner.JWTClaims.Groups) ||
+			!slices.Equal(agent.JWTClaims.Teams, owner.JWTClaims.Teams) {
 			t.Fatalf("agent claims %+v differ from owner claims %+v", agent.JWTClaims, owner.JWTClaims)
 		}
 	})
