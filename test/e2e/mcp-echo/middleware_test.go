@@ -40,6 +40,7 @@ func newSignedTokenFor(t *testing.T, iss, aud string) (jwksURL string, token str
 	tok := jwtv5.NewWithClaims(jwtv5.SigningMethodEdDSA, jwtv5.MapClaims{
 		"iss": iss, "aud": aud, "sub": "ns/alice@example.com",
 		"groups": []string{"team-a", "team-b"},
+		"teams":  []string{"team-a", "team-q"},
 		"iat":    now, "exp": now + 60,
 	})
 	tok.Header["kid"] = kid
@@ -260,5 +261,8 @@ func TestVerify_CapturesGroupsClaim(t *testing.T) {
 	}
 	if len(got.Groups) != 2 || got.Groups[0] != "team-a" || got.Groups[1] != "team-b" {
 		t.Fatalf("Groups = %v; want [team-a team-b]", got.Groups)
+	}
+	if len(got.Teams) != 2 || got.Teams[0] != "team-a" || got.Teams[1] != "team-q" {
+		t.Fatalf("Teams = %v; want [team-a team-q]", got.Teams)
 	}
 }

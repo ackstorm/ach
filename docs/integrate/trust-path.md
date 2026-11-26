@@ -77,7 +77,8 @@ granted that name.
 
 An agent key (`ek_`) acts as its owner: its JWT carries the key row's
 `owner_email` and the same `groups` the owner's `pk_` gets for that target, plus
-`azp` for audit. The JWT adds identity, never permission: `checkEk` and
+`azp` for audit. With `forwardTeams` on the policy the JWT also carries `teams`,
+every team of that owner. The JWT adds identity, never permission: `checkEk` and
 `EkOwnerGate` (§1.1) decide the request, and the backend decides what that
 identity may do. With no policy or an opt-out, an `ek_` gets no JWT and any
 client `Authorization` is stripped. A backend cannot identify a caller through
@@ -142,7 +143,9 @@ refresh once access returns, with no re-mint and no JWT-path change.
 
 The header fields and claims are listed in
 [Forwarder JWT](../reference/jwt.md); the `groups` claim is resolved as
-[The `groups` claim](../reference/jwt.md#the-groups-claim) describes.
+[The `groups` claim](../reference/jwt.md#the-groups-claim) describes, and the
+opt-in `teams` claim as [The `teams` claim](../reference/jwt.md#the-teams-claim)
+describes.
 
 `sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`
 claim mirrors it for backends that key their per-user token storage by email and
@@ -153,7 +156,7 @@ email is empty. The legacy `<namespace>/<email>` `sub` form is **gone**
 **`nbf` is intentionally omitted.** With a 120 s `exp` it would add only
 clock-skew risk for no security gain — `exp` is the sole time bound. The minted
 claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`,
-`groups` and `azp`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
+`groups`, `teams` and `azp`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
 `exp` only and MUST NOT require `nbf`.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;

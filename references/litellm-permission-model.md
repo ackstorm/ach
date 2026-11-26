@@ -322,6 +322,9 @@ empty) in its optional `groups` claim; ACH performs no UUID→alias
 translation of its own, so an `authorizedTeams` entry authored as a raw
 team UUID ships through unchanged. That's the only
 identifier ACH exports to a backend for group-owned-resource authorization.
+A target whose `BackendIdentityPolicy` sets `forwardTeams` also gets `teams`:
+every alias the caller belongs to, where `groups` holds only the ones that
+grant the target.
 `ach-env-<name>` and `ach-user-<email>` (§6, §10) are ACH's own permission
 plumbing and are filtered out before minting
 (`internal/forwarder/proxy/groups.go`) — they never leave the forwarder, so

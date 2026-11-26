@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Added
+
+- `BackendIdentityPolicy` has a new optional field, `spec.forwardTeams`. When it is `true`, the identity JWT ACH sends to that MCP server or A2A agent carries a `teams` claim listing every LiteLLM team of the caller. `groups` is unchanged: only the teams an Environment granting the backend authorizes. Off by default; turn it on for a backend that shares resources by team membership.
+
 ## [1.3.6] - 2026-11-25
 
 ### Added

@@ -12,5 +12,8 @@ spec:
     kind: MCPServer
     name: ach-memory
   forwardIdentityJWT: true
+  # Every team of the caller in the "teams" claim, so a project can be shared
+  # with any team the caller is in.
+  forwardTeams: true
   # consentBroker: https://backend.example.com/oauth
   # consentAudience: ach-memory
