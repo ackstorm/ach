@@ -93,6 +93,13 @@ spec:
                   REQUIRED per CRD-08. There is no default. Admission rejects a CR
                   that omits the field.
                 type: boolean
+              forwardTeams:
+                description: |-
+                  ForwardTeams, when true, adds the "teams" claim to the JWT minted for
+                  this target: every LiteLLM team alias of the caller, where "groups"
+                  holds only the teams that grant the target. It has no effect unless
+                  forwardIdentityJWT is true.
+                type: boolean
               target:
                 description: Target identifies the backend route this policy controls.
                 properties:
