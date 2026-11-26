@@ -60,3 +60,28 @@ func TestConsentBIP_AlphaFirstAndFields(t *testing.T) {
 		t.Fatalf("unknown target: got %+v err %v", got, err)
 	}
 }
+
+// forward_teams survives the insert and the ON CONFLICT update.
+func TestBIP_ForwardTeamsRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	pool, cleanup := setupPostgresForPhase2(t, ctx)
+	defer cleanup()
+
+	ns := "ns-" + t.Name()
+	row := db.BIPRow{
+		Namespace: ns, Name: "p", TargetKind: "MCPServer", TargetName: "svc",
+		ForwardIdentityJWT: true, ResourceVersion: "1",
+	}
+	for _, want := range []bool{true, false} {
+		row.ForwardTeams = want
+		if err := dbtest.UpsertBIP(ctx, pool, row); err != nil {
+			t.Fatal(err)
+		}
+		got, err := db.ListAllBIPs(ctx, pool, ns)
+		if err != nil || len(got) != 1 || got[0].ForwardTeams != want {
+			t.Fatalf("ForwardTeams: got %+v err %v, want %v", got, err, want)
+		}
+	}
+}
