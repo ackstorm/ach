@@ -210,14 +210,15 @@ func TestCheckMCP_PC15_EkReturnsOwnerPkTeams(t *testing.T) {
 		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
 	}
 
-	ekGroups, err := CheckMCP(context.Background(), ek, "foo", deps)
+	ekTeams, err := CheckMCP(context.Background(), ek, "foo", deps)
 	if err != nil {
 		t.Fatalf("ek_ err = %v; want nil", err)
 	}
-	pkGroups, err := CheckMCP(context.Background(), pk, "foo", deps)
+	pkTeams, err := CheckMCP(context.Background(), pk, "foo", deps)
 	if err != nil {
 		t.Fatalf("pk_ err = %v; want nil", err)
 	}
+	ekGroups, pkGroups := ekTeams.Granted, pkTeams.Granted
 	// EnvProvider.List iterates a map: membership matters, not order.
 	slices.Sort(ekGroups)
 	slices.Sort(pkGroups)
@@ -237,10 +238,11 @@ func TestCheckMCP_PC16_PkAccumulatesAcrossEnvs(t *testing.T) {
 		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
 	}
 
-	groups, err := CheckMCP(context.Background(), kc, "foo", deps)
+	teams, err := CheckMCP(context.Background(), kc, "foo", deps)
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
 	}
+	groups := teams.Granted
 	// EnvProvider.List iterates a map, so order is not deterministic here;
 	// membership is what matters. Task 3 sorts before the claim is minted.
 	got := map[string]bool{}
@@ -267,10 +269,11 @@ func TestCheckMCP_PC17_PkExcludesNonHostingEnvs(t *testing.T) {
 		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-b"}},
 	}
 
-	groups, err := CheckMCP(context.Background(), kc, "foo", deps)
+	teams, err := CheckMCP(context.Background(), kc, "foo", deps)
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
 	}
+	groups := teams.Granted
 	if len(groups) != 1 || groups[0] != "team-a" {
 		t.Errorf("groups = %v; want [team-a] only", groups)
 	}
@@ -319,11 +322,33 @@ func TestCheckMCP_PC19_ErrorPathsReturnNilGroups(t *testing.T) {
 		TeamsResolver: &mockTeamsResolver{teams: []string{"team-z"}},
 	}
 
-	groups, err := CheckMCP(context.Background(), kc, "foo", deps)
+	teams, err := CheckMCP(context.Background(), kc, "foo", deps)
 	if !errors.Is(err, ErrUnauthorizedTeam) {
 		t.Fatalf("err = %v; want ErrUnauthorizedTeam", err)
 	}
-	if groups != nil {
-		t.Errorf("groups = %v; want nil on the error path", groups)
+	if teams.Granted != nil || teams.Caller != nil {
+		t.Errorf("teams = %+v; want empty on the error path", teams)
+	}
+}
+
+// PC20: Caller is every team of the caller, including one no hosting
+// Environment authorizes, for a pk_ and for an ek_ acting as its owner.
+func TestCheckMCP_PC20_CallerTeams(t *testing.T) {
+	env := envRow("demo", []string{"foo"}, nil, []string{"team-a"})
+	deps := Deps{
+		EnvProvider:   newEnvProvider(env),
+		TeamsResolver: &mockTeamsResolver{teams: []string{"team-a", "team-q"}},
+	}
+	for _, kc := range []middleware.KeyContext{
+		{KeyType: keys.PrefixPk, OwnerEmail: "u@e"},
+		{KeyType: keys.PrefixEk, OwnerEmail: "u@e", Environment: "demo"},
+	} {
+		got, err := CheckMCP(context.Background(), kc, "foo", deps)
+		if err != nil {
+			t.Fatalf("%v: err = %v; want nil", kc.KeyType, err)
+		}
+		if !slices.Equal(got.Granted, []string{"team-a"}) || !slices.Equal(got.Caller, []string{"team-a", "team-q"}) {
+			t.Errorf("%v: got %+v; want Granted [team-a], Caller [team-a team-q]", kc.KeyType, got)
+		}
 	}
 }
