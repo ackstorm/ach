@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+
+- `ach-cli login`: the browser page shown after signing in is a styled card in the console's colours, light or dark as the system is set, instead of bare text. A failed sign-in shows the same card in red.
+
 ## [1.3.9] - 2026-11-27
 
 ### Breaking
