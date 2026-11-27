@@ -54,7 +54,7 @@ func startClickHouse(t *testing.T) string {
 		Started: true,
 	})
 	if err != nil {
-		t.Skipf("docker required: %v", err)
+		t.Fatalf("docker required: %v", err)
 	}
 	t.Cleanup(func() { _ = c.Terminate(ctx) })
 	ep, err := c.PortEndpoint(ctx, "8123/tcp", "http")
