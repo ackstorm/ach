@@ -68,6 +68,8 @@ removes exactly what it installed.
 ## Budgets
 
 Three ceilings apply independently: per person (covering their login and every
-Environment key they own), per Environment, and per Environment key. LiteLLM
-enforces them; the request that crosses a ceiling is served and the next one
-is refused.
+Environment key they own), per Environment, and per Environment key (set by
+the key's owner; a key from a ServiceAccount token exchange has none, so its
+Environment's budget caps it). LiteLLM enforces them; the request that crosses
+a ceiling is served and the next one is refused, with an error naming the
+crossed ceiling's tag: `user:<email>`, `environment:<name>` or `key:<id>`.

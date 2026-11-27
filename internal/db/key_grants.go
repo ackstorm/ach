@@ -15,33 +15,29 @@ import (
 )
 
 // KeyGrantRow is one projected KeyGrant. Identity is lower-case (the CRD
-// admits nothing else). MaxBudget is nil when the grant sets no budget.
+// admits nothing else).
 type KeyGrantRow struct {
 	Namespace       string
 	Name            string
 	Identity        string
 	Environments    []string
 	ServiceAccounts []string
-	MaxBudget       *float64
-	BudgetDuration  string
 }
 
 // UpsertKeyGrant writes the row of one KeyGrant CR.
 func UpsertKeyGrant(ctx context.Context, pool *pgxpool.Pool, row KeyGrantRow) error {
 	const sql = `
 		INSERT INTO key_grants
-		    (namespace, name, identity, environments, service_accounts, max_budget, budget_duration, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+		    (namespace, name, identity, environments, service_accounts, updated_at)
+		VALUES ($1, $2, $3, $4, $5, now())
 		ON CONFLICT (namespace, name) DO UPDATE SET
 		    identity         = EXCLUDED.identity,
 		    environments     = EXCLUDED.environments,
 		    service_accounts = EXCLUDED.service_accounts,
-		    max_budget       = EXCLUDED.max_budget,
-		    budget_duration  = EXCLUDED.budget_duration,
 		    updated_at       = now()
 	`
 	if _, err := pool.Exec(ctx, sql, row.Namespace, row.Name, row.Identity,
-		row.Environments, row.ServiceAccounts, row.MaxBudget, row.BudgetDuration); err != nil {
+		row.Environments, row.ServiceAccounts); err != nil {
 		if isTransientPgErr(err) {
 			return err
 		}
@@ -61,7 +57,7 @@ func DeleteKeyGrant(ctx context.Context, pool *pgxpool.Pool, ns, name string) er
 	return nil
 }
 
-const keyGrantColumns = `namespace, name, identity, environments, service_accounts, max_budget, budget_duration`
+const keyGrantColumns = `namespace, name, identity, environments, service_accounts`
 
 // ListKeyGrants returns every grant in ns, ordered by name.
 func ListKeyGrants(ctx context.Context, pool *pgxpool.Pool, ns string) ([]KeyGrantRow, error) {
@@ -85,7 +81,7 @@ func queryKeyGrants(ctx context.Context, pool *pgxpool.Pool, op, sql string, arg
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (KeyGrantRow, error) {
 		var g KeyGrantRow
-		err := r.Scan(&g.Namespace, &g.Name, &g.Identity, &g.Environments, &g.ServiceAccounts, &g.MaxBudget, &g.BudgetDuration)
+		err := r.Scan(&g.Namespace, &g.Name, &g.Identity, &g.Environments, &g.ServiceAccounts)
 		return g, err
 	})
 	if err != nil {

@@ -171,7 +171,7 @@ func TestPatchBudgetExchangeKeyIs409AndSuspendStillWorks(t *testing.T) {
 	deps := captureAuditDeps(fdb, flm, nil, &recordRedis{}, &bytes.Buffer{})
 
 	rec := patchBudget(deps, row.KeyID, `{"max_budget":50}`, row.OwnerEmail)
-	if rec.Code != http.StatusConflict || errorCode(t, rec) != codeBudgetManagedByGrant {
+	if rec.Code != http.StatusConflict || errorCode(t, rec) != codeBudgetManagedByEnvironment {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body)
 	}
 	if len(flm.upsertedTags) != 0 {

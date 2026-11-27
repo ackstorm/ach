@@ -106,7 +106,8 @@ func (s *keyGrantStoreFake) status(keyID string) string {
 	return s.keys[keyID].Status
 }
 
-// keyGrantLLMFake answers the identity lookup and records revokes and budgets.
+// keyGrantLLMFake answers the identity lookup, records revokes and holds the
+// key:<id> tag budgets a sweep reads and removes.
 type keyGrantLLMFake struct {
 	*litellmtest.NoopClient
 	mu      sync.Mutex
@@ -136,11 +137,27 @@ func (f *keyGrantLLMFake) RevokeKey(_ context.Context, token string) error {
 	return nil
 }
 
-func (f *keyGrantLLMFake) UpsertTagBudget(_ context.Context, name string, b litellm.TagBudget) error {
+func (f *keyGrantLLMFake) TagInfo(_ context.Context, name string) (*litellm.TagInfoEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.budgets[name] = b
+	b, ok := f.budgets[name]
+	if !ok {
+		return nil, nil
+	}
+	return &litellm.TagInfoEntry{Name: name, Budget: &b}, nil
+}
+
+func (f *keyGrantLLMFake) DeleteTagByName(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.budgets, name)
 	return nil
+}
+
+func (f *keyGrantLLMFake) setBudget(tag string, b litellm.TagBudget) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.budgets[tag] = b
 }
 
 func (f *keyGrantLLMFake) knowUser(email string) {
@@ -162,11 +179,11 @@ func (f *keyGrantLLMFake) wasRevoked(token string) bool {
 	return slices.Contains(f.revoked, token)
 }
 
-func newKeyGrant(name, identity string, envs, sas []string, budget *achv1alpha1.BudgetBlock) *achv1alpha1.KeyGrant {
+func newKeyGrant(name, identity string, envs, sas []string) *achv1alpha1.KeyGrant {
 	return &achv1alpha1.KeyGrant{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: WatchNamespace},
 		Spec: achv1alpha1.KeyGrantSpec{Identity: identity, Environments: envs,
-			Requesters: achv1alpha1.KeyGrantRequesters{ServiceAccounts: sas}, Budget: budget},
+			Requesters: achv1alpha1.KeyGrantRequesters{ServiceAccounts: sas}},
 	}
 }
 
@@ -190,7 +207,7 @@ func touchKeyGrant(t *testing.T, kg *achv1alpha1.KeyGrant) {
 func TestKeyGrantAdmission(t *testing.T) {
 	ctx := context.Background()
 	valid := func(name string) *achv1alpha1.KeyGrant {
-		return newKeyGrant(name, "ai.run@ackstorm.com", []string{"k8s-doctor"}, []string{"ach-agent/agent-k8s-doctor"}, nil)
+		return newKeyGrant(name, "ai.run@ackstorm.com", []string{"k8s-doctor"}, []string{"ach-agent/agent-k8s-doctor"})
 	}
 	ok := valid("kg-admission-ok")
 	if err := k8sClient.Create(ctx, ok); err != nil {
@@ -210,7 +227,6 @@ func TestKeyGrantAdmission(t *testing.T) {
 		{"bare service account", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"agent-k8s-doctor"} }},
 		{"glob service account", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"ach-agent/*"} }},
 		{"empty label in service account name", func(k *achv1alpha1.KeyGrant) { k.Spec.Requesters.ServiceAccounts = []string{"agents/a..b"} }},
-		{"negative budget", func(k *achv1alpha1.KeyGrant) { k.Spec.Budget = &achv1alpha1.BudgetBlock{MaxBudget: -1} }},
 	}
 	for i, tc := range cases {
 		kg := valid(fmt.Sprintf("kg-admission-bad-%d", i))
@@ -224,7 +240,7 @@ func TestKeyGrantAdmission(t *testing.T) {
 
 func TestKeyGrantReconciler_ProjectionStatusFinalizer(t *testing.T) {
 	ctx := context.Background()
-	kg := newKeyGrant("kg-status", "kg-status@ackstorm.com", []string{"kg-status-env"}, []string{"agents/kg-status"}, nil)
+	kg := newKeyGrant("kg-status", "kg-status@ackstorm.com", []string{"kg-status-env"}, []string{"agents/kg-status"})
 	if err := k8sClient.Create(ctx, kg); err != nil {
 		t.Fatal(err)
 	}
@@ -276,14 +292,12 @@ func TestKeyGrantReconciler_ProjectionStatusFinalizer(t *testing.T) {
 	}
 }
 
-func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testing.T) {
+func TestKeyGrantReconciler_RevokesUngrantedKeysAndRemovesKeyBudget(t *testing.T) {
 	ctx := context.Background()
 	const who = "sweep@ackstorm.com"
 	keyGrantLLM.knowUser(who)
-	g50 := newKeyGrant("kg-sweep-50", who, []string{"sweep-env"}, []string{"agents/sweep-a"},
-		&achv1alpha1.BudgetBlock{MaxBudget: 50, BudgetDuration: "30d"})
-	g20 := newKeyGrant("kg-sweep-20", who, []string{"sweep-env"}, []string{"agents/sweep-a"},
-		&achv1alpha1.BudgetBlock{MaxBudget: 20, BudgetDuration: "7d"})
+	g50 := newKeyGrant("kg-sweep-50", who, []string{"sweep-env"}, []string{"agents/sweep-a"})
+	g20 := newKeyGrant("kg-sweep-20", who, []string{"sweep-env"}, []string{"agents/sweep-a"})
 	for _, g := range []*achv1alpha1.KeyGrant{g50, g20} {
 		if err := k8sClient.Create(ctx, g); err != nil {
 			t.Fatal(err)
@@ -303,6 +317,7 @@ func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testin
 		Requester: "agents/sweep-a", LiteLLMToken: &tokA, Status: "active"})
 	keyGrantStore.addKey(achdb.EkKeyInfo{KeyID: "ekid_sweepb", OwnerEmail: who, Environment: "sweep-env",
 		Requester: "agents/sweep-b", LiteLLMToken: &tokB, Status: "active"})
+	keyGrantLLM.setBudget(litellm.KeyBudgetTag("ekid_sweepa"), litellm.TagBudget{MaxBudget: 50, BudgetDuration: "30d"})
 	touchKeyGrant(t, g50)
 
 	if !Eventually(func() bool {
@@ -311,10 +326,10 @@ func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testin
 		t.Fatal("the key no grant allows was not revoked (LiteLLM first, then the row)")
 	}
 	if !Eventually(func() bool {
-		b, ok := keyGrantLLM.budget(litellm.KeyBudgetTag("ekid_sweepa"))
-		return ok && b.MaxBudget == 20 && b.BudgetDuration == "7d"
+		_, ok := keyGrantLLM.budget(litellm.KeyBudgetTag("ekid_sweepa"))
+		return !ok
 	}, 30*time.Second, 250*time.Millisecond) {
-		t.Fatal("the covered key does not carry the lowest grant budget")
+		t.Fatal("the covered key kept a budget of its own")
 	}
 	if keyGrantStore.status("ekid_sweepa") != "active" || keyGrantLLM.wasRevoked(tokA) {
 		t.Fatal("a covered key was revoked")
@@ -324,10 +339,13 @@ func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testin
 		t.Fatal(err)
 	}
 	if !Eventually(func() bool {
-		b, ok := keyGrantLLM.budget(litellm.KeyBudgetTag("ekid_sweepa"))
-		return ok && b.MaxBudget == 50
+		_, ok := keyGrantStore.grant(WatchNamespace, "kg-sweep-20")
+		return !ok
 	}, 30*time.Second, 250*time.Millisecond) {
-		t.Fatal("removing the lower grant must fall back to the remaining grant's budget")
+		t.Fatal("deleted grant still projected")
+	}
+	if keyGrantStore.status("ekid_sweepa") != "active" {
+		t.Fatal("a key another grant still allows was revoked")
 	}
 	if err := k8sClient.Delete(ctx, g50); err != nil {
 		t.Fatal(err)
@@ -340,8 +358,8 @@ func TestKeyGrantReconciler_RevokesUngrantedKeysAndAppliesLowestBudget(t *testin
 func TestKeyGrantReconciler_ColdStartKeepsKeyOfUnprojectedGrant(t *testing.T) {
 	ctx := context.Background()
 	const who = "cold@ackstorm.com"
-	a := newKeyGrant("kg-cold-a", who, []string{"cold-env"}, []string{"agents/cold-a"}, nil)
-	b := newKeyGrant("kg-cold-b", who, []string{"cold-env"}, []string{"agents/cold-b"}, nil)
+	a := newKeyGrant("kg-cold-a", who, []string{"cold-env"}, []string{"agents/cold-a"})
+	b := newKeyGrant("kg-cold-b", who, []string{"cold-env"}, []string{"agents/cold-b"})
 	for _, g := range []*achv1alpha1.KeyGrant{a, b} {
 		if err := k8sClient.Create(ctx, g); err != nil {
 			t.Fatal(err)
@@ -408,7 +426,7 @@ func fakeKeyGrantClient(t *testing.T, objs ...client.Object) client.Client {
 }
 
 func liveKeyGrant(name, who, env, sa string) *achv1alpha1.KeyGrant {
-	kg := newKeyGrant(name, who, []string{env}, []string{sa}, nil)
+	kg := newKeyGrant(name, who, []string{env}, []string{sa})
 	kg.Namespace = WatchNamespace
 	kg.Finalizers = []string{keyGrantFinalizer}
 	return kg
@@ -483,16 +501,15 @@ func TestKeyGrantReconciler_DeleteFinalizerIgnoresUnrelatedKeyFailure(t *testing
 	}
 }
 
-func TestKeyGrantReconciler_WritesBudgetOnlyForKeysOfReconciledGrant(t *testing.T) {
+func TestKeyGrantReconciler_RemovesBudgetOnlyFromKeysOfReconciledGrant(t *testing.T) {
 	ctx := context.Background()
 	const who = "scope@ackstorm.com"
-	budget := &achv1alpha1.BudgetBlock{MaxBudget: 50, BudgetDuration: "30d"}
 	mine := liveKeyGrant("kg-mine", who, "scope-env", "agents/mine")
-	mine.Spec.Budget = budget
 	other := liveKeyGrant("kg-other", who, "scope-env", "agents/other")
-	other.Spec.Budget = budget
 	store, llm := newKeyGrantStoreFake(), newKeyGrantLLMFake()
 	llm.knowUser(who)
+	llm.setBudget(litellm.KeyBudgetTag("ekid_mine"), litellm.TagBudget{MaxBudget: 50})
+	llm.setBudget(litellm.KeyBudgetTag("ekid_other"), litellm.TagBudget{MaxBudget: 50})
 	tokMine, tokOther, tokNone := "lt-mine", "lt-other", "lt-none"
 	for id, k := range map[string]struct {
 		sa  string
@@ -507,11 +524,11 @@ func TestKeyGrantReconciler_WritesBudgetOnlyForKeysOfReconciledGrant(t *testing.
 	if _, err := r.Reconcile(ctx, ctrlRequest(mine)); err != nil {
 		t.Fatal(err)
 	}
-	if b, ok := llm.budget(litellm.KeyBudgetTag("ekid_mine")); !ok || b.MaxBudget != 50 {
-		t.Fatalf("the reconciled grant's key got no budget: %+v ok=%v", b, ok)
+	if _, ok := llm.budget(litellm.KeyBudgetTag("ekid_mine")); ok {
+		t.Fatal("the reconciled grant's key kept a budget of its own")
 	}
-	if _, ok := llm.budget(litellm.KeyBudgetTag("ekid_other")); ok {
-		t.Fatal("a key the reconciled grant does not cover had its budget written")
+	if _, ok := llm.budget(litellm.KeyBudgetTag("ekid_other")); !ok {
+		t.Fatal("a key the reconciled grant does not cover had its budget removed")
 	}
 	if store.status("ekid_none") != "revoked" || !llm.wasRevoked(tokNone) {
 		t.Fatal("a key no grant allows was not revoked")

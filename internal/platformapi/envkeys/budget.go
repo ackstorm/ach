@@ -21,7 +21,7 @@ type BudgetRequest struct {
 	BudgetDuration string   `json:"budget_duration,omitempty"`
 }
 
-const codeBudgetManagedByGrant = "budget_managed_by_grant"
+const codeBudgetManagedByEnvironment = "budget_managed_by_environment"
 
 // budgetInvalidMsg is the single 400 message for the single rule, shared by
 // the create path and PATCH so the two can never drift.
@@ -70,7 +70,8 @@ func decodeBudget(r *http.Request) (BudgetRequest, bool) {
 // its own — so the change takes effect within LiteLLM's tag cache (~10s),
 // not instantly. 400 invalid_argument on a negative or missing max_budget;
 // 404 on an unknown key; 409 on a revoked one (a revoked key has no tag) and
-// 409 budget_managed_by_grant on an exchange key (its KeyGrant owns the ceiling).
+// 409 budget_managed_by_environment on an exchange key (its Environment's
+// spec.budget is its ceiling).
 func BudgetHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		row, ok := deps.loadOwnedEk(w, r, audit.ActionEkBudget)
@@ -84,7 +85,7 @@ func BudgetHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 		if row.Requester != "" {
-			render.Error(w, http.StatusConflict, codeBudgetManagedByGrant, "an exchange key's budget is set by its KeyGrant", reqID)
+			render.Error(w, http.StatusConflict, codeBudgetManagedByEnvironment, "an exchange key has no budget of its own: its Environment's spec.budget caps it", reqID)
 			return
 		}
 		req, valid := BudgetFromRequest(w, r, reqID)
