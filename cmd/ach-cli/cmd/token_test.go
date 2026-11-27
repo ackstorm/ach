@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -185,5 +186,16 @@ func TestToken_SyntheticModeExit1(t *testing.T) {
 	t.Setenv("ACH_KEY", testEK)
 	if _, _, code, err := executeCommand(t, newTokenCmd()); err == nil || code != 1 {
 		t.Fatalf("code=%d err=%v; want exit 1", code, err)
+	}
+}
+
+func TestJWTSub(t *testing.T) {
+	enc := base64.RawURLEncoding.EncodeToString
+	tok := enc([]byte(`{"alg":"EdDSA"}`)) + "." + enc([]byte(`{"sub":"ai.run@x.com","exp":1}`)) + "." + enc([]byte("sig"))
+	if got := jwtSub(tok); got != "ai.run@x.com" {
+		t.Fatalf("jwtSub = %q", got)
+	}
+	if got := jwtSub("ek-abc"); got != "" {
+		t.Fatalf("non-JWT: %q", got)
 	}
 }

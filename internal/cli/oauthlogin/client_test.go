@@ -256,3 +256,49 @@ func TestDeviceLogin_TerminalErrorStopsPolling(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+// TestLoginHintAndRefusalReason: the hint rides /authorize and
+// /device_authorization, and ACH's error_description reaches the caller.
+func TestLoginHintAndRefusalReason(t *testing.T) {
+	const reason = "You are signed in as a@x.com, but this sign-in was started for b@x.com."
+	if _, err := callbackCode("http://127.0.0.1:1/callback?state=s&error=access_denied&error_description="+url.QueryEscape(reason),
+		"http://127.0.0.1:1/callback", "s"); err == nil || err.Error() != reason {
+		t.Fatalf("callback: %v", err)
+	}
+
+	as, _ := fakeAS(t)
+	client := Client{BaseURL: as.URL, LoginHint: "b@x.com"}
+	prompt := func(_ context.Context, raw string) (string, error) {
+		u, _ := url.Parse(raw)
+		if got := u.Query().Get("login_hint"); got != "b@x.com" {
+			t.Fatalf("authorize login_hint = %q", got)
+		}
+		return "", errors.New("stop")
+	}
+	if _, err := client.LoginForResource(t.Context(), "oc_test", "", prompt); err == nil || err.Error() != "stop" {
+		t.Fatalf("loopback: %v", err)
+	}
+
+	dev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server":
+			_ = json.NewEncoder(w).Encode(map[string]any{"authorization_endpoint": "http://" + r.Host + "/a", "token_endpoint": "http://" + r.Host + "/token",
+				"device_authorization_endpoint": "http://" + r.Host + "/device_authorization"})
+		case "/device_authorization":
+			if r.PostForm.Get("login_hint") != "b@x.com" {
+				http.Error(w, `{"error":"no_hint"}`, 400)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"device_code": "d", "user_code": "U", "verification_uri": "v", "expires_in": 60, "interval": 1})
+		case "/token":
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "access_denied", "error_description": reason})
+		}
+	}))
+	defer dev.Close()
+	client.BaseURL = dev.URL
+	if _, err := client.DeviceLogin(t.Context(), "oc_test", "", func(string, string, bool) {}); err == nil || !strings.Contains(err.Error(), reason) {
+		t.Fatalf("device: %v", err)
+	}
+}

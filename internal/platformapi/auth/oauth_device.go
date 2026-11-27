@@ -41,6 +41,11 @@ type oauthDevice struct {
 	UserCode string `json:"user_code"`
 	Status   string `json:"status"`
 	MCPKey   string `json:"mcp_key,omitempty"`
+	// LoginHint: see oauthPending.LoginHint.
+	LoginHint string `json:"login_hint,omitempty"`
+	// Reason says why a denied authorization was refused; /token returns
+	// it as error_description.
+	Reason string `json:"reason,omitempty"`
 	oauthUser
 }
 
@@ -95,7 +100,7 @@ func (d OAuthDeps) deviceAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := oauthDevice{ClientID: client.ClientID, UserCode: userCode, Status: deviceStatusPending,
-		MCPKey: mcpKeyFromResource(r.PostForm["resource"], d.Issuer)}
+		MCPKey: mcpKeyFromResource(r.PostForm["resource"], d.Issuer), LoginHint: normalizeEmail(r.PostForm.Get("login_hint"))}
 	if err := d.Store.Put(r.Context(), "device", deviceCode, rec, deviceTTL); err != nil {
 		oauthError(w, 500, "server_error", "")
 		return
@@ -171,7 +176,7 @@ func (d OAuthDeps) devicePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dexVerifier := oauth2.GenerateVerifier()
-	p := oauthPending{DeviceCode: deviceCode, ClientID: rec.ClientID, MCPKey: rec.MCPKey, DexVerifier: dexVerifier, Binding: bindingHash(binding)}
+	p := oauthPending{DeviceCode: deviceCode, ClientID: rec.ClientID, MCPKey: rec.MCPKey, LoginHint: rec.LoginHint, DexVerifier: dexVerifier, Binding: bindingHash(binding)}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
 		d.htmlError(w, 500, "store unavailable")
 		return
@@ -202,7 +207,7 @@ func sameOrigin(issuer string, r *http.Request) bool {
 }
 
 // deviceFinish records the decision for the polling client and completes the browser flow.
-func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, status string, u oauthUser) {
+func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, status string, u oauthUser, reason string) {
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
 	var rec oauthDevice
 	ok, err := d.Store.Get(r.Context(), "device", p.DeviceCode, &rec)
@@ -214,7 +219,7 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 		d.htmlError(w, 400, "this device code has expired — start again from your terminal")
 		return
 	}
-	rec.Status, rec.oauthUser = status, u
+	rec.Status, rec.oauthUser, rec.Reason = status, u, reason
 	ok, err = d.Store.PutIfExists(r.Context(), "device", p.DeviceCode, rec, redis.KeepTTL)
 	if err != nil {
 		d.htmlError(w, 500, "store unavailable")
@@ -228,6 +233,11 @@ func (d OAuthDeps) deviceFinish(w http.ResponseWriter, r *http.Request, p oauthP
 	if status == deviceStatusApproved {
 		d.renderPage(w, http.StatusOK, page{Label: "SIGNED IN",
 			Title: "Signed in to ACH", Sub: "Return to your terminal — you can close this tab.", Footer: "you can close this tab"})
+		return
+	}
+	if reason != "" {
+		d.renderPage(w, http.StatusForbidden, page{Label: "REFUSED",
+			Title: "Sign-in refused", Sub: reason, Error: true, Footer: "no credential was issued"})
 		return
 	}
 	d.renderPage(w, http.StatusOK, page{Label: "CANCELLED",
@@ -257,7 +267,7 @@ func (d OAuthDeps) deviceToken(w http.ResponseWriter, r *http.Request, clientID 
 		return
 	case deviceStatusDenied:
 		_ = d.Store.Del(r.Context(), "device", deviceCode)
-		oauthError(w, 400, "access_denied", "")
+		oauthError(w, 400, "access_denied", rec.Reason)
 		return
 	}
 	// approved: single redemption

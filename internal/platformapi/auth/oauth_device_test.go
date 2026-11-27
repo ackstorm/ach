@@ -301,3 +301,26 @@ func TestDeviceMCPConsentSetup(t *testing.T) {
 		})
 	}
 }
+
+func TestDeviceGrant_RefusesAnotherAccount(t *testing.T) {
+	f := withFakeDex(newAS(t), "u@x.com")
+	cid := registerClient(t, f)
+	form := url.Values{"client_id": {cid}, "login_hint": {"agent@x.com"}}
+	w := f.do(t, "POST", "/platform/oauth/device_authorization", form.Encode(), formHdr)
+	var device deviceAuthzBody
+	_ = json.Unmarshal(w.Body.Bytes(), &device)
+	state, cookie := confirmCode(t, f, device.UserCode)
+	w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, cookie)
+	const want = "You are signed in as u@x.com, but this sign-in was started for agent@x.com."
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), want) {
+		t.Fatalf("page: %d %s", w.Code, w.Body)
+	}
+	w = f.do(t, "POST", "/platform/oauth/token", deviceTokenForm(cid, device.DeviceCode), formHdr)
+	var body struct {
+		ErrorDescription string `json:"error_description"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), `"access_denied"`) || !strings.HasPrefix(body.ErrorDescription, want) {
+		t.Fatalf("poll: %d %s", w.Code, w.Body)
+	}
+}

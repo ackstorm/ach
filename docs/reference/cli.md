@@ -1320,7 +1320,9 @@ Interactive prompts (skipped when --profile / the URL are given):
   URL           https://hub.example.com (http:// needs --insecure / ACH_INSECURE)
 
 The URL is the positional argument, else ACH_URL, else the prompt.
-Saved keys (keys create) are kept when you log in again.
+Saved keys (keys create) are kept when you log in again. Logging in again
+to a profile keeps its account: a browser signed in as anyone else is
+refused. Run ach-cli logout first to switch the profile to another account.
 
 With ACH_URL and ACH_KEY both set (synthetic mode) login exits 1.
 

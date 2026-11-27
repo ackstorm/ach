@@ -4,6 +4,11 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+
+- `ach-cli mcp login` and `ach-cli login`: a browser signed in to ACH as another account no longer completes the sign-in silently. ACH refuses it and names both accounts, in the browser and in the terminal ("You are signed in as A, but this sign-in was started for B"). To sign in as an agent identity, open the link in a private window. `ach-cli login` on an existing profile keeps that profile's account: run `ach-cli logout` first to switch it. Needs both this ach-cli and this platform-api.
+- MCP sign-in: when the signed-in account has no access to the MCP server, ACH says so ("<account> has no access to the MCP server <name>") and issues no authorization code, for every client, instead of completing a sign-in that then fails with "provider sign-in required".
+
 ## [1.3.10] - 2026-11-27
 
 ### Added

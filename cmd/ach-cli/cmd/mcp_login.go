@@ -54,7 +54,7 @@ Use the exact server name shown by ach-cli mcp list for your active credential.`
 				return fmt.Errorf("MCP server %q is unavailable to the active credential", name)
 			}
 			resource := strings.TrimRight(c.BaseURL, "/") + "/mcp/" + url.PathEscape(name)
-			client := oauthlogin.Client{BaseURL: c.BaseURL}
+			client := oauthlogin.Client{BaseURL: c.BaseURL, LoginHint: jwtSub(c.Bearer)}
 			if device {
 				_, err = client.DeviceLogin(ctx, c.OAuthClientID, resource, deviceLoginPrompt(cmd.ErrOrStderr()))
 			} else {
