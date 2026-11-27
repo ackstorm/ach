@@ -28,6 +28,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 - Enterprise console Overview: the prompt cache-read share target is 95% (it was 80%), and Average generation input has a target of 150K tokens, shown red with an `Above target` pill beyond it. The uncached input / output target stays at 10:1. One line under the three figures says the targets are dashboard choices.
 
+### Fixed
+
+- `ach-cli environment hydrate -g` without `--target` detects Antigravity from `~/.gemini/antigravity-cli/`, which a fresh `agy` install creates. It looked only for `~/.gemini/config/mcp_config.json`, which exists once an MCP server is configured, so Antigravity was left out of the detected targets.
+
 ## [1.3.5] - 2026-11-24
 
 ### Fixed

@@ -122,6 +122,21 @@ func TestAntigravity_Detect_UserConfig(t *testing.T) {
 	}
 }
 
+// A fresh agy install has ~/.gemini/antigravity-cli/ and no mcp_config.json.
+func TestAntigravity_Detect_FreshInstall(t *testing.T) {
+	home := isolatedHome(t)
+	if err := os.MkdirAll(filepath.Join(home, ".gemini", "antigravity-cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (&Adapter{}).Detect(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "antigravity" {
+		t.Errorf("global Detect on a fresh install = %+v", got)
+	}
+}
+
 func TestAntigravity_RenderRuntime(t *testing.T) {
 	m := &manifest.Manifest{Environment: "dev", Runtime: &manifest.RuntimeBlock{
 		MCPServers: []manifest.ContentRef{{ID: "mcp-echo", Endpoint: "https://ach.example/mcp/mcp-echo"}}}}

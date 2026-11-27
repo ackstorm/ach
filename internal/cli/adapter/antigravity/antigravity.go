@@ -42,7 +42,9 @@ func (a *Adapter) Detect(root string) (adapter.Match, error) {
 		{Path: filepath.Join(root, ".agents", "mcp_config.json"), Reason: "found .agents/mcp_config.json"},
 		{Path: filepath.Join(root, ".agents", "agents"), Reason: "found .agents/agents/ directory"},
 		{Path: filepath.Join(root, ".agents", "rules"), Reason: "found .agents/rules/ directory"},
-		// Matches only when root is $HOME (--global).
+		// These two match only when root is $HOME (--global); a fresh agy install
+		// has the antigravity-cli directory but no mcp_config.json.
+		{Path: filepath.Join(root, ".gemini", "antigravity-cli"), Reason: "found .gemini/antigravity-cli/ directory"},
 		{Path: filepath.Join(root, ".gemini", "config", "mcp_config.json"), Reason: "found .gemini/config/mcp_config.json"},
 	}
 	return adapter.DetectFromSignals(canonicalID, signals), nil
