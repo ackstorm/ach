@@ -4,6 +4,8 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.10] - 2026-11-27
+
 ### Added
 
 - Forwarder: the identity JWT sent to an MCP backend can carry a `key_share` claim, a per-user, per-server value the backend mixes with its own secret to encrypt what it stores for that user (an OAuth grant), so that its store and its secret alone decrypt nothing. Off by default: set the Helm value `security.mcpKeyShare.secretRef.name` to a Secret holding at least 32 random bytes. The claim is on `/mcp/<name>` tokens only. Never change that Secret's content afterwards: every grant stored by every MCP server that uses the claim becomes unreadable and each user consents again. Formula and test vector: `docs/reference/jwt.md`.
