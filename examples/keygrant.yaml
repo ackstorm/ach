@@ -10,6 +10,3 @@ spec:
   requesters:
     serviceAccounts:
       - ach-agent/ach-agent-control
-  budget:
-    maxBudget: 50
-    budgetDuration: 30d

@@ -17,9 +17,6 @@ spec:
   requesters:
     serviceAccounts:                   # exact "<namespace>/<name>"
       - ach-agent/ach-agent-control
-  budget:                              # optional, per key this grant covers
-    maxBudget: 50
-    budgetDuration: 30d
 ```
 
 - No wildcards or patterns. A grant allows every combination of its `environments` and
@@ -32,9 +29,8 @@ spec:
   without their say-so, and do not widen an existing grant to make an error go away.
 - The identity must have logged in to ACH once, and its teams must intersect the
   Environment's `authorizedTeams`.
-- `spec.budget` caps each exchange key through its own `key:<id>` tag; with several
-  covering grants the lowest `maxBudget` applies. Removing `spec.budget` leaves the last
-  ceiling in place.
+- A grant has no budget: the Environment's `spec.budget` caps the exchange key, with the
+  identity's own budget. To give a workload its own ceiling, give it its own Environment.
 - Removing a grant entry cuts access within about 60 s and the operator then revokes the
   key; adding it back makes a new key with fresh spend history.
 

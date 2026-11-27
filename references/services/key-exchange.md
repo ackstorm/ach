@@ -25,7 +25,7 @@ Environment exists and is synced (404/503), the identity's teams ∩
 minted on first use by the create path's `mint`; the partial unique index
 `environment_keys_exchange_tuple_uniq` makes racing first exchanges converge;
 it never counts against `max_keys`; a suspended one is 409 `key_suspended`;
-its `key:<id>` budget is the lowest covering `spec.budget`) and a JWT
+it has no `key:<id>` budget: its Environment's `spec.budget` caps it) and a JWT
 `iss=ACH_BASE_URL aud=ach-ek sub=<ekid_> jti`, lifetime
 `platformApi.keyExchange.tokenTTL` → `ACH_KEY_EXCHANGE_TOKEN_TTL` (15m, 1m
 to 1h), answered as `{token, expires_in, key_id}`. The raw `ek_` never leaves
@@ -37,4 +37,4 @@ from the body check onwards, never a token; requests the earlier guards
 reject, and a global-limit 429 after a valid signature, are counted in
 `ach_key_exchange_rejected_total{reason}` and not audited. Only RS256/ES256
 ServiceAccount signing keys are supported.
-The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and writes the lowest covering `spec.budget` onto the `key:<id>` tag of each key the reconciled grant covers (a ceiling that rises because another grant was edited off the key lands on the next resync, within 5 minutes; every other change lands at once); dropping `spec.budget` keeps the last ceiling. Each sweep also deletes `key_grants` rows whose `KeyGrant` no longer exists; deleting a grant revokes only the keys it covered. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`. Writing a `KeyGrant` is acting as its identity: the chart ships ClusterRole `<release>-keygrant-editor` bound to nobody and aggregates no ACH role into `admin`/`edit` (`make helm-render-check` check 8; e2e `kubectl auth can-i`).
+The operator projects `KeyGrant` CRs into `key_grants` (no NOTIFY: readers query it per resolve) and, after every grant change and on the 5-minute resync, revokes (LiteLLM first) each exchange key no grant allows and removes any budget from the `key:<id>` tag of each key the reconciled grant covers (one `/tag/info` read per key; a bound budget is deleted with `DeleteKeyBudget`), so the Environment's `spec.budget` is the only ceiling on an exchange key. Each sweep also deletes `key_grants` rows whose `KeyGrant` no longer exists; deleting a grant revokes only the keys it covered. `Ready=False` reasons: `IdentityUnknown` (LiteLLM `/user/info` has no such user: the identity must log in to ACH once), `EnvironmentMissing`. Writing a `KeyGrant` is acting as its identity: the chart ships ClusterRole `<release>-keygrant-editor` bound to nobody and aggregates no ACH role into `admin`/`edit` (`make helm-render-check` check 8; e2e `kubectl auth can-i`).

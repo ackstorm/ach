@@ -31,10 +31,8 @@ func TestKeyGrants_UpsertListDelete(t *testing.T) {
 	pool, cleanup := setupPostgresForPhase2(t, ctx)
 	defer cleanup()
 
-	budget := 50.0
 	g := db.KeyGrantRow{Namespace: "ach", Name: "ai-run-doctor", Identity: exOwner,
-		Environments: []string{"k8s-doctor"}, ServiceAccounts: []string{"agents/agent-k8s-doctor"},
-		MaxBudget: &budget, BudgetDuration: "30d"}
+		Environments: []string{"k8s-doctor"}, ServiceAccounts: []string{"agents/agent-k8s-doctor"}}
 	if err := db.UpsertKeyGrant(ctx, pool, g); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +52,7 @@ func TestKeyGrants_UpsertListDelete(t *testing.T) {
 	if err != nil || len(mine) != 1 {
 		t.Fatalf("ListKeyGrantsForIdentity = %v, %v", mine, err)
 	}
-	if got := mine[0]; len(got.Environments) != 2 || got.MaxBudget == nil || *got.MaxBudget != 50 || got.BudgetDuration != "30d" {
+	if got := mine[0]; len(got.Environments) != 2 {
 		t.Fatalf("upsert did not replace the row: %+v", got)
 	}
 	if other, _ := db.ListKeyGrantsForIdentity(ctx, pool, "elsewhere", exOwner); len(other) != 0 {

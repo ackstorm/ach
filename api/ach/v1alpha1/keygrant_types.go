@@ -21,7 +21,8 @@ type KeyGrantRequesters struct {
 
 // KeyGrantSpec allows POST /platform/keys/exchange for one identity in every
 // combination of its Environments and Requesters — and nothing that would
-// only match by combining lists from different grants.
+// only match by combining lists from different grants. A grant sets who may
+// exchange, never how much: the Environment's spec.budget caps the key.
 type KeyGrantSpec struct {
 	// Identity is exactly one ACH identity: an email, lower-case. No patterns.
 	//
@@ -42,13 +43,6 @@ type KeyGrantSpec struct {
 	//
 	// +kubebuilder:validation:Required
 	Requesters KeyGrantRequesters `json:"requesters"`
-
-	// Budget caps EACH exchange key this grant covers, through that key's own
-	// "key:<id>" tag. When several grants cover one key the lowest maxBudget
-	// applies. Removing it leaves the last ceiling in place.
-	//
-	// +optional
-	Budget *BudgetBlock `json:"budget,omitempty"`
 }
 
 // KeyGrantStatus is the observed state of a KeyGrant.

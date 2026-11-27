@@ -21,9 +21,6 @@ spec:
   requesters:
     serviceAccounts:                   # exact "<namespace>/<name>"
       - ach-agent/ach-agent-control
-  budget:                              # optional, per key this grant covers
-    maxBudget: 50
-    budgetDuration: 30d
 ```
 
 - A grant naming a shared ServiceAccount is usable by every pod running it.
@@ -35,12 +32,13 @@ spec:
   to ACH once by hand before its first exchange; until then the grant reports
   `Ready=False` with reason `IdentityUnknown`. A missing Environment reports
   `EnvironmentMissing`.
-- `spec.budget` caps each exchange key the grant covers, through the key's own
-  `key:<id>` tag. When several grants cover one key the lowest `maxBudget`
-  applies. Removing `spec.budget` leaves the last ceiling in place.
+- A grant sets who may exchange, not how much. An exchange key has no budget of
+  its own: its Environment's `spec.budget` caps it, together with the
+  identity's own budget. To give a workload its own ceiling, give it its own
+  Environment.
 - Removing a grant entry cuts access within 60 seconds (the resolver cache) and
   the operator then revokes the key. Adding the entry back creates a new key:
-  its spend history and per-key budget start over.
+  its spend history starts over.
 - There is no admin API route for grants; read them with `kubectl get keygrants`.
 
 ## Who may write grants
@@ -155,8 +153,9 @@ they are counted in `ach_key_exchange_rejected_total{reason}` with reason
   LiteLLM key is revoked first, while hydrate and content reads can keep
   working for up to 60 seconds.
 - `PATCH /platform/keys/{id}/budget` on an exchange key answers 409
-  `budget_managed_by_grant`: the grant's ceiling is the only one, applied at
-  every exchange and by the operator sweep within 5 minutes. The identity's own
+  `budget_managed_by_environment`: the Environment's `spec.budget` is its
+  ceiling, and the operator sweep removes any `key:<id>` budget from an
+  exchange key within 5 minutes. The identity's own
   user can still suspend, resume and revoke the key; while it is suspended,
   `POST /platform/keys/exchange` answers 409 `key_suspended` until it is
   resumed.

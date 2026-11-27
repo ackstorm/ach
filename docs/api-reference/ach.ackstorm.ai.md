@@ -284,7 +284,6 @@ refuses a request once the tag's accumulated spend exceeds MaxBudget).
 
 _Appears in:_
 - [EnvironmentSpec](#environmentspec)
-- [KeyGrantSpec](#keygrantspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -725,7 +724,8 @@ _Appears in:_
 
 KeyGrantSpec allows POST /platform/keys/exchange for one identity in every
 combination of its Environments and Requesters — and nothing that would
-only match by combining lists from different grants.
+only match by combining lists from different grants. A grant sets who may
+exchange, never how much: the Environment's spec.budget caps the key.
 
 
 
@@ -737,7 +737,6 @@ _Appears in:_
 | `identity` _string_ | Identity is exactly one ACH identity: an email, lower-case. No patterns. |  | MaxLength: 254 <br />Pattern: `^[a-z0-9._%+-]+@[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$` <br />Required: \{\} <br /> |
 | `environments` _string array_ | Environments are exact Environment names in this namespace. |  | MinItems: 1 <br />items:MaxLength: 253 <br />items:Pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$ <br /> |
 | `requesters` _[KeyGrantRequesters](#keygrantrequesters)_ | Requesters name who may exchange. |  | Required: \{\} <br /> |
-| `budget` _[BudgetBlock](#budgetblock)_ | Budget caps EACH exchange key this grant covers, through that key's own<br />"key:<id>" tag. When several grants cover one key the lowest maxBudget<br />applies. Removing it leaves the last ceiling in place. |  |  |
 
 
 #### KeyGrantStatus

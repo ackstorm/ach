@@ -209,9 +209,6 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 			keyCtx: middleware.KeyContext{OwnerEmail: identity},
 			req:    CreateRequest{Environment: req.Environment, Name: "exchange:" + requester},
 		}
-		if b := keygrant.Budget(covering); b != nil {
-			cr.req.Budget = &BudgetRequest{MaxBudget: &b.MaxBudget, BudgetDuration: b.BudgetDuration}
-		}
 		env, handled := cr.validateAndLoadEnv()
 		if handled {
 			return
@@ -247,9 +244,7 @@ func ExchangeHandler(d ExchangeDeps) http.HandlerFunc {
 }
 
 // stableKey returns the tuple's live exchange key, minting it on first use.
-// The key's budget (lowest covering grant) is written by mint at creation
-// and re-written on every later exchange; the operator's KeyGrant sweep
-// keeps it current in between.
+// The key has no budget of its own: its Environment's caps it.
 func (cr *createReq) stableKey(env *db.EnvironmentRow) (string, bool) {
 	row, err := cr.xdb.FindExchangeKey(cr.ctx, cr.keyCtx.OwnerEmail, env.Name, cr.requester)
 	if err != nil {
@@ -261,17 +256,13 @@ func (cr *createReq) stableKey(env *db.EnvironmentRow) (string, bool) {
 			cr.refuseSuspended(row.KeyID)
 			return "", false
 		}
-		return row.KeyID, cr.applyBudget(row.KeyID)
+		return row.KeyID, true
 	}
 	userID, handled := cr.provisionUser()
 	if handled {
 		return "", false
 	}
-	keyID, plaintext, ok := cr.mint(env, userID)
-	if ok && plaintext == "" {
-		// Race loser: the winner's budget write may have failed.
-		ok = cr.applyBudget(keyID)
-	}
+	keyID, _, ok := cr.mint(env, userID)
 	return keyID, ok
 }
 
@@ -283,21 +274,6 @@ func (cr *createReq) refuseSuspended(keyID string) {
 		RequestID: cr.reqID, KeyID: keyID, Target: cr.target, Extra: cr.extra,
 	})
 	render.Error(cr.w, http.StatusConflict, audit.OutcomeKeySuspended, "the exchange key for this grant is suspended", cr.reqID)
-}
-
-// applyBudget re-writes the covering grants' ceiling onto an existing key's
-// tag, so a write refused at mint is never skipped by a later exchange: no JWT
-// is issued for a key that may be uncapped. It answers the request itself on
-// failure.
-func (cr *createReq) applyBudget(keyID string) bool {
-	if cr.req.Budget == nil {
-		return true
-	}
-	if err := cr.deps.LiteLLM.UpsertTagBudget(cr.ctx, litellm.KeyBudgetTag(keyID), cr.req.Budget.TagBudget()); err != nil {
-		cr.emitLitellmError(err, "envkeys.exchange: key budget tag")
-		return false
-	}
-	return true
 }
 
 // reviewedRequester turns a TokenReview answer into "<namespace>/<name>", or

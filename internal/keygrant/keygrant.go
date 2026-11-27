@@ -11,7 +11,6 @@ import (
 	"slices"
 
 	"github.com/ackstorm/ach/internal/db"
-	"github.com/ackstorm/ach/internal/litellm"
 )
 
 // Covering returns the grants that allow the tuple.
@@ -39,53 +38,12 @@ func Miss(grants []db.KeyGrantRow, env string) string {
 	return "environment_not_granted"
 }
 
-// Budget is the lowest maxBudget among covering grants; on a tie the lowest
-// namespace/name, then the lowest budgetDuration, wins whatever the input
-// order. nil when none sets one.
-func Budget(covering []db.KeyGrantRow) *litellm.TagBudget {
-	var best *db.KeyGrantRow
-	for i := range covering {
-		g := &covering[i]
-		if g.MaxBudget == nil {
-			continue
-		}
-		if best == nil || budgetLess(g, best) {
-			best = g
-		}
-	}
-	if best == nil {
-		return nil
-	}
-	return &litellm.TagBudget{MaxBudget: *best.MaxBudget, BudgetDuration: best.BudgetDuration}
-}
-
-func budgetLess(a, b *db.KeyGrantRow) bool {
-	if *a.MaxBudget != *b.MaxBudget {
-		return *a.MaxBudget < *b.MaxBudget
-	}
-	if a.Namespace != b.Namespace {
-		return a.Namespace < b.Namespace
-	}
-	if a.Name != b.Name {
-		return a.Name < b.Name
-	}
-	return a.BudgetDuration < b.BudgetDuration
-}
-
-// Plan splits non-revoked exchange keys into those no grant allows any more
-// (revoke) and the ceiling each still-covered key carries (budgets, by key id;
-// a key whose covering grants set no budget is absent).
-func Plan(grants []db.KeyGrantRow, keys []db.EkKeyInfo) (revoke []db.EkKeyInfo, budgets map[string]litellm.TagBudget) {
-	budgets = map[string]litellm.TagBudget{}
+// Plan returns the non-revoked exchange keys no grant allows any more.
+func Plan(grants []db.KeyGrantRow, keys []db.EkKeyInfo) (revoke []db.EkKeyInfo) {
 	for _, k := range keys {
-		covering := Covering(grants, k.OwnerEmail, k.Environment, k.Requester)
-		if len(covering) == 0 {
+		if len(Covering(grants, k.OwnerEmail, k.Environment, k.Requester)) == 0 {
 			revoke = append(revoke, k)
-			continue
-		}
-		if b := Budget(covering); b != nil {
-			budgets[k.KeyID] = *b
 		}
 	}
-	return revoke, budgets
+	return revoke
 }

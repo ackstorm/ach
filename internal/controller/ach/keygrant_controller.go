@@ -61,8 +61,8 @@ func (s poolKeyGrantStore) RevokeEnvironmentKey(ctx context.Context, keyID strin
 // KeyGrantReconciler projects KeyGrant CRs into key_grants and owns exchange
 // key cleanup: after every projection change it plans from the KeyGrant CRs
 // themselves (the table fills one CR at a time and may start empty), revokes the exchange keys no
-// grant allows any more (LiteLLM first) and writes the lowest covering
-// spec.budget onto the key:<id> tag of each key the reconciled grant covers.
+// grant allows any more (LiteLLM first) and removes any key:<id> budget from
+// each key the reconciled grant covers: the Environment's budget caps it.
 // The platform API never revokes on grant removal: its resolvers stop
 // accepting the JWT within the cache window, and this sweep — single leader,
 // LiteLLM master key — revokes.
@@ -144,11 +144,6 @@ func keyGrantRow(kg *achv1alpha1.KeyGrant) achdb.KeyGrantRow {
 		Namespace: kg.Namespace, Name: kg.Name, Identity: kg.Spec.Identity,
 		Environments: kg.Spec.Environments, ServiceAccounts: kg.Spec.Requesters.ServiceAccounts,
 	}
-	if b := kg.Spec.Budget; b != nil {
-		maxBudget := b.MaxBudget
-		row.MaxBudget = &maxBudget
-		row.BudgetDuration = b.BudgetDuration
-	}
 	return row
 }
 
@@ -185,10 +180,10 @@ func (r *KeyGrantReconciler) readyCondition(ctx context.Context, kg *achv1alpha1
 }
 
 // sweep revokes every exchange key no grant allows any more, LiteLLM first
-// (a 404 means the key is already gone), and writes the lowest covering
-// spec.budget onto each key that grant covers. Every budgeted key is covered
-// by some grant, so the 5-minute resync of all grants writes each one, at one
-// LiteLLM read per key per covering grant rather than per grant in the
+// (a 404 means the key is already gone), and removes any budget from the
+// key:<id> tag of each key that grant covers, so its Environment's budget is
+// the only ceiling on it. The 5-minute resync of all grants checks each key,
+// at one LiteLLM read per key per covering grant rather than per grant in the
 // namespace. It plans from the KeyGrant CRs, not the key_grants table: the
 // table is filled one CR at a time, so on a cold start it holds only the
 // grants reconciled so far and would revoke keys a not yet projected grant
@@ -239,8 +234,10 @@ func (r *KeyGrantReconciler) sweep(ctx context.Context, grant achdb.KeyGrantRow,
 	if gone {
 		keys = slices.DeleteFunc(keys, func(k achdb.EkKeyInfo) bool { return !covered(k) })
 	}
-	revoke, budgets := keygrant.Plan(grants, keys)
+	revoke := keygrant.Plan(grants, keys)
+	revoked := make(map[string]bool, len(revoke))
 	for _, k := range revoke {
+		revoked[k.KeyID] = true
 		if err := r.revokeKey(ctx, k); err != nil {
 			errs = append(errs, err)
 			continue
@@ -249,13 +246,23 @@ func (r *KeyGrantReconciler) sweep(ctx context.Context, grant achdb.KeyGrantRow,
 			"environment", k.Environment, "requester", k.Requester)
 	}
 	for _, k := range keys {
-		b, ok := budgets[k.KeyID]
-		if !ok || !covered(k) {
+		if revoked[k.KeyID] || !covered(k) {
 			continue
 		}
-		if err := r.LiteLLM.UpsertTagBudget(ctx, litellm.KeyBudgetTag(k.KeyID), b); err != nil {
-			errs = append(errs, fmt.Errorf("budget for exchange key %s: %w", k.KeyID, err))
+		info, err := r.LiteLLM.TagInfo(ctx, litellm.KeyBudgetTag(k.KeyID))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("budget of exchange key %s: %w", k.KeyID, err))
+			continue
 		}
+		if info == nil || info.Budget == nil {
+			continue
+		}
+		if err := litellm.DeleteKeyBudget(ctx, r.LiteLLM, k.KeyID); err != nil {
+			errs = append(errs, fmt.Errorf("remove budget of exchange key %s: %w", k.KeyID, err))
+			continue
+		}
+		r.Log.Info("removed exchange key budget; its Environment's budget caps it",
+			"key_id", k.KeyID, "environment", k.Environment)
 	}
 	return errors.Join(errs...)
 }

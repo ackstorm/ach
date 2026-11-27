@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	authnv1 "k8s.io/api/authentication/v1"
 
-	"github.com/ackstorm/ach/internal/audit"
 	"github.com/ackstorm/ach/internal/db"
 	"github.com/ackstorm/ach/internal/forwarder/jwt"
 	"github.com/ackstorm/ach/internal/keystore"
@@ -77,8 +76,8 @@ func (f *fakeExchangeDB) FindExchangeKey(_ context.Context, owner, _, _ string) 
 	return f.existing, nil
 }
 
-func exGrant(name string, envs, sas []string, budget *float64) db.KeyGrantRow {
-	return db.KeyGrantRow{Namespace: "ach", Name: name, Identity: exIdentity, Environments: envs, ServiceAccounts: sas, MaxBudget: budget}
+func exGrant(name string, envs, sas []string) db.KeyGrantRow {
+	return db.KeyGrantRow{Namespace: "ach", Name: name, Identity: exIdentity, Environments: envs, ServiceAccounts: sas}
 }
 
 func reviewAs(username string, podBound bool) TokenReviewFunc {
@@ -115,7 +114,7 @@ func newExchangeFixture(t *testing.T) *exchangeFixture {
 	// the exchange tests pass only because exchange never consults max_keys.
 	deps.DefaultMaxKeys = 0
 	f := &exchangeFixture{fdb: fdb, llm: llm, audit: &bytes.Buffer{}, review: reviewAs(exUser, true),
-		xdb: &fakeExchangeDB{grants: []db.KeyGrantRow{exGrant("ai-run-doctor", []string{"prod"}, []string{exRequester}, nil)}}}
+		xdb: &fakeExchangeDB{grants: []db.KeyGrantRow{exGrant("ai-run-doctor", []string{"prod"}, []string{exRequester})}}}
 	deps.Audit = slog.New(slog.NewJSONHandler(f.audit, nil))
 	f.signer = jwt.NewEd25519Signer()
 	if err := jwt.LoadSeed(f.signer, "k1", make([]byte, 32)); err != nil {
@@ -239,12 +238,12 @@ func TestExchange_ChecksInOrder(t *testing.T) {
 		{"no grant", func(f *exchangeFixture) { f.xdb.grants = nil },
 			http.StatusForbidden, "not_granted", "no_grant_for_identity"},
 		{"grant names the Environment but not the requester", func(f *exchangeFixture) {
-			f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{"agents/other"}, nil)}
+			f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{"agents/other"})}
 		}, http.StatusForbidden, "not_granted", "requester_not_granted"},
 		{"lists only match when two grants are mixed", func(f *exchangeFixture) {
 			f.xdb.grants = []db.KeyGrantRow{
-				exGrant("a", []string{"prod"}, []string{"agents/other"}, nil),
-				exGrant("b", []string{"dev"}, []string{exRequester}, nil),
+				exGrant("a", []string{"prod"}, []string{"agents/other"}),
+				exGrant("b", []string{"dev"}, []string{exRequester}),
 			}
 		}, http.StatusForbidden, "not_granted", "requester_not_granted"},
 		{"Environment not synced", func(f *exchangeFixture) { f.deps.Store = &unsyncedEnvStore{fakeEnvStore{env: prodEnv()}} },
@@ -307,16 +306,15 @@ func TestExchange_FirstMintsThenReuses(t *testing.T) {
 	}
 }
 
-func TestExchange_BudgetIsLowestCoveringGrant(t *testing.T) {
+// An exchange key has no budget of its own, new or reused: its Environment's
+// spec.budget caps it.
+func TestExchange_WritesNoKeyBudget(t *testing.T) {
 	f := newExchangeFixture(t)
-	fifty, twenty := 50.0, 20.0
-	f.xdb.grants = []db.KeyGrantRow{
-		exGrant("a", []string{"prod"}, []string{exRequester}, &fifty),
-		exGrant("b", []string{"prod"}, []string{exRequester}, &twenty),
-	}
 	resp := decodeExchange(t, f.do(t, saToken(exAudience), okBody, ""))
-	if b, ok := f.llm.upsertedTags["key:"+resp.KeyID]; !ok || b.MaxBudget != 20 {
-		t.Fatalf("key budget = %+v (set=%v), want 20", b, ok)
+	f.xdb.existing = &db.EkKeyInfo{KeyID: resp.KeyID, Status: "active"}
+	decodeExchange(t, f.do(t, saToken(exAudience), okBody, ""))
+	if len(f.llm.upsertedTags) != 0 {
+		t.Fatalf("exchange wrote tag budgets: %+v", f.llm.upsertedTags)
 	}
 }
 
@@ -452,26 +450,6 @@ func TestExchange_AuditOneEventPerRequestWithoutCredentials(t *testing.T) {
 	}
 }
 
-func TestExchange_ExistingKeyReappliesBudget(t *testing.T) {
-	f := newExchangeFixture(t)
-	ten := 10.0
-	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
-	f.xdb.existing = &db.EkKeyInfo{KeyID: "ekid_live", Status: "active"}
-	decodeExchange(t, f.do(t, saToken(exAudience), okBody, ""))
-	if b := f.llm.upsertedTags["key:ekid_live"]; b.MaxBudget != 10 {
-		t.Fatalf("budget not re-applied: %+v", f.llm.upsertedTags)
-	}
-
-	f = newExchangeFixture(t)
-	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
-	f.xdb.existing = &db.EkKeyInfo{KeyID: "ekid_live", Status: "active"}
-	f.llm.upsertTagErr = fmt.Errorf("boom")
-	rec := f.do(t, saToken(exAudience), okBody, "")
-	if rec.Code < 500 || strings.Contains(rec.Body.String(), `"token"`) {
-		t.Fatalf("a refused budget write must not issue a token: %d %s", rec.Code, rec.Body)
-	}
-}
-
 func TestExchange_BodyLimits(t *testing.T) {
 	for name, body := range map[string]string{
 		"oversize":       `{"identity":"` + strings.Repeat("a", 5000) + `","environment":"prod"}`,
@@ -510,20 +488,6 @@ func TestExchange_RaceWinnerSuspendedIsRefused(t *testing.T) {
 	rec := f.do(t, saToken(exAudience), okBody, "")
 	if rec.Code != http.StatusConflict || errorCode(t, rec) != "key_suspended" {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
-	}
-}
-
-func TestExchange_NewKeyBudgetWriteFailureAuditsOnce(t *testing.T) {
-	ten := 10.0
-	f := newExchangeFixture(t)
-	f.xdb.grants = []db.KeyGrantRow{exGrant("g", []string{"prod"}, []string{exRequester}, &ten)}
-	f.llm.upsertTagErr = fmt.Errorf("boom")
-	rec := f.do(t, saToken(exAudience), okBody, "")
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("want 502, got %d %s", rec.Code, rec.Body)
-	}
-	if n := strings.Count(f.audit.String(), `"action":"`+audit.ActionEkExchange+`"`); n != 1 {
-		t.Fatalf("want exactly one exchange audit event, got %d: %s", n, f.audit)
 	}
 }
 

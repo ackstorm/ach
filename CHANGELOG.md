@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Breaking
+
+- `KeyGrant.spec.budget` is removed. A KeyGrant decides who may exchange, not how much: an exchange key has no budget of its own, and its Environment's `spec.budget` caps it, together with the identity's own budget. The KeyGrant budget measured the same spend as the Environment's when one key used the Environment, so raising one of the two changed nothing. Before upgrading, move each grant's ceiling to `spec.budget` on its Environment and remove `spec.budget` from your KeyGrants; after the upgrade, `kubectl apply` refuses a KeyGrant that still sets it. The operator removes the `key:<id>` budget of every exchange key within 5 minutes. To give a workload its own ceiling, give it its own Environment. `PATCH /platform/keys/{id}/budget` on an exchange key still answers 409, now with code `budget_managed_by_environment` instead of `budget_managed_by_grant`.
+
 ### Added
 
 - The operator's `/metrics` exports, for every Environment with `spec.budget`, `ach_environment_budget_spend_usd` (spend in the current budget cycle), `ach_environment_budget_max_usd` and `ach_environment_budget_reset_timestamp_seconds` (next reset; absent for a budget that never resets), labelled `environment`. LiteLLM exports no metric for tag budgets, so these are the series to alert on before calls are refused, for example `spend / (max > 0) >= 0.8`. They are read from LiteLLM every 5 minutes, two calls per budgeted Environment, never at scrape time; a failed read keeps the last value. Spend counts whole UTC days, so it can be up to 12 hours off at the start of a cycle.
