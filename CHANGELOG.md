@@ -4,12 +4,15 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+## [1.3.8] - 2026-11-27
+
 ### Changed
 
 - The console moved to `/console/`, for example `https://ach.example.com/console/`. `/` redirects there (302), so existing bookmarks keep working, including the ones to a page such as `/#/keys`. `/ui` and `/ui/` redirect there too; nothing below `/ui/` does, and LiteLLM's own UI stays on LiteLLM's host. A monitor that expects 200 from `/` now gets the redirect: point it at `/console/`. With the console's pages under `/console/` and its sign-in and API under `/platform/console/`, an Ingress rule can limit the console to a network; see "Restrict the console by source address" in the Choose a topology page.
 
 ### Fixed
 
+- `ach-cli environment hydrate -g` without `--target` detects Antigravity from `~/.gemini/antigravity-cli/`, which a fresh `agy` install creates. It looked only for `~/.gemini/config/mcp_config.json`, which exists once an MCP server is configured, so Antigravity was left out of the detected targets.
 - A path ACH does not serve, such as `https://ach.example.com/no-such-page`, answers 404. It answered 200 with the console, which then sent the browser to the Overview.
 
 ## [1.3.7] - 2026-11-26
@@ -27,10 +30,6 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 ### Changed
 
 - Enterprise console Overview: the prompt cache-read share target is 95% (it was 80%), and Average generation input has a target of 150K tokens, shown red with an `Above target` pill beyond it. The uncached input / output target stays at 10:1. One line under the three figures says the targets are dashboard choices.
-
-### Fixed
-
-- `ach-cli environment hydrate -g` without `--target` detects Antigravity from `~/.gemini/antigravity-cli/`, which a fresh `agy` install creates. It looked only for `~/.gemini/config/mcp_config.json`, which exists once an MCP server is configured, so Antigravity was left out of the detected targets.
 
 ## [1.3.5] - 2026-11-24
 
