@@ -144,7 +144,7 @@ func TestConsoleSession(t *testing.T) {
 	// D-18 / AC-24 through the public origin: nothing of LiteLLM's own
 	// surface is reachable through ACH, and an unknown path is a 404 — the
 	// console is served under "/console/" only (internal/platformapi/console/spa.go).
-	for _, p := range []string{"/ui", "/ui/", "/key/list", "/health", "/model/info", "/v2/anything", "/no-such-page", "/console/no-such-page", "/index.html"} {
+	for _, p := range []string{"/ui/login", "/key/list", "/health", "/model/info", "/v2/anything", "/no-such-page", "/console/no-such-page", "/index.html"} {
 		resp, err := http.Get(base + p)
 		if err != nil {
 			t.Fatal(err)
@@ -158,17 +158,22 @@ func TestConsoleSession(t *testing.T) {
 			t.Fatalf("%s is LiteLLM: %s", p, truncate(b, 200))
 		}
 	}
-	resp, err = http.Get(base + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if bodyMentionsLiteLLM(b) {
-		t.Fatalf("/ is LiteLLM: %s", truncate(b, 200))
-	}
-	if got := resp.Request.URL.Path; got != "/console/" {
-		t.Fatalf("GET / landed on %q, want a redirect to /console/", got)
+	// "/", "/ui" and "/ui/" redirect to the console; "/" goes last so the
+	// checks below read its response.
+	var b []byte
+	for _, p := range []string{"/ui", "/ui/", "/"} {
+		resp, err = http.Get(base + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if bodyMentionsLiteLLM(b) {
+			t.Fatalf("%s is LiteLLM: %s", p, truncate(b, 200))
+		}
+		if got := resp.Request.URL.Path; got != "/console/" {
+			t.Fatalf("GET %s landed on %q, want a redirect to /console/", p, got)
+		}
 	}
 	// Task 5: the imported console SPA is actually served — index.html embedded
 	// via go:embed all:dist (internal/platformapi/console), not just chi's

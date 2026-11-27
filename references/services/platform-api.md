@@ -53,7 +53,7 @@ the **OpenCode install manifest** for that AS (`GET /.well-known/opencode`, anon
 
 ## Console SPA
 
-the console SPA at `/console/` (`internal/platformapi/console`, `go:embed all:dist`, chi `NotFound` handler: `index.html` at exactly `/console/`, the build's files under it as is (`ui/vite.config.ts` `base`), `/` and `/console` a 302 to `/console/`, every other path a JSON 404 `not_found` — the console routes by hash, `/console/#/…`; "console not built" until `make ui-build`). `platformApi.console.theme` -> `ACH_CONSOLE_THEME` (`dark`, `light`, `pastel`, `red`; any other value fails startup) is the default skin: platform-api writes it as `data-default-theme` on the `<html>` of `index.html` and of the OAuth AS pages (`auth/page.html`), whose pre-paint scripts use it when the browser stores no `alitellm-theme`; empty follows the browser's light/dark preference
+the console SPA at `/console/` (`internal/platformapi/console`, `go:embed all:dist`, chi `NotFound` handler: `index.html` at exactly `/console/`, the build's files under it as is (`ui/vite.config.ts` `base`), `/`, `/console`, `/ui` and `/ui/` a 302 to `/console/`, every other path a JSON 404 `not_found` — the console routes by hash, `/console/#/…`; "console not built" until `make ui-build`). `platformApi.console.theme` -> `ACH_CONSOLE_THEME` (`dark`, `light`, `pastel`, `red`; any other value fails startup) is the default skin: platform-api writes it as `data-default-theme` on the `<html>` of `index.html` and of the OAuth AS pages (`auth/page.html`), whose pre-paint scripts use it when the browser stores no `alitellm-theme`; empty follows the browser's light/dark preference
 
 ## BIP-declared consent
 

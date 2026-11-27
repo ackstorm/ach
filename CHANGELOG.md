@@ -6,7 +6,7 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
-- The console moved to `/console/`, for example `https://ach.example.com/console/`. `/` redirects there (302), so existing bookmarks keep working, including the ones to a page such as `/#/keys`. A monitor that expects 200 from `/` now gets the redirect: point it at `/console/`. With the console's pages under `/console/` and its sign-in and API under `/platform/console/`, an Ingress rule can limit the console to a network; see "Restrict the console by source address" in the Choose a topology page.
+- The console moved to `/console/`, for example `https://ach.example.com/console/`. `/` redirects there (302), so existing bookmarks keep working, including the ones to a page such as `/#/keys`. `/ui` and `/ui/` redirect there too; nothing below `/ui/` does, and LiteLLM's own UI stays on LiteLLM's host. A monitor that expects 200 from `/` now gets the redirect: point it at `/console/`. With the console's pages under `/console/` and its sign-in and API under `/platform/console/`, an Ingress rule can limit the console to a network; see "Restrict the console by source address" in the Choose a topology page.
 
 ### Fixed
 

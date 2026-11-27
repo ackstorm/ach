@@ -45,7 +45,7 @@ func TestSPA_ServesIndexAndAssets(t *testing.T) {
 
 func TestSPA_RootRedirectsToConsole(t *testing.T) {
 	h := SPA(testDist(), "")
-	for _, p := range []string{"/", "/console"} {
+	for _, p := range []string{"/", "/console", "/ui", "/ui/"} {
 		if rec := get(h, p); rec.Code != 302 || rec.Header().Get("Location") != "/console/" {
 			t.Fatalf("%s: %d %q, want 302 /console/", p, rec.Code, rec.Header().Get("Location"))
 		}
@@ -57,7 +57,7 @@ func TestSPA_UnknownPathIs404(t *testing.T) {
 	for _, p := range []string{
 		"/pepeluissssd", "/env/demo", "/keys", "/stats?range=7d", "/assets/app.1.js", "/index.html",
 		"/console/nope", "/console/assets/missing.js", "/console/assets/", "/consolex",
-		"/ui", "/key/list", "/platform/nope", "/platform/", "/healthz", "/livez", "/readyz",
+		"/ui/login", "/uix", "/key/list", "/platform/nope", "/platform/", "/healthz", "/livez", "/readyz",
 	} {
 		if rec := get(h, p); rec.Code != 404 || !strings.Contains(rec.Header().Get("Content-Type"), "json") {
 			t.Fatalf("%s: %d %q — must be a JSON 404, not index.html", p, rec.Code, rec.Header().Get("Content-Type"))

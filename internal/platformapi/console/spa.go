@@ -34,15 +34,15 @@ const prefix = "/console"
 
 // SPA returns platform-api's not-found handler: "/console/" gets index.html
 // with no-store, a file of the build under it is served as is (hashed assets
-// immutable), "/" and "/console" redirect there, and every other path is a
-// JSON 404. The console routes by hash (/console/#/…), so no other path is
+// immutable), "/", "/console", "/ui" and "/ui/" redirect there, and every
+// other path is a JSON 404. The console routes by hash (/console/#/…), so no other path is
 // ever a console page. theme, when set, becomes index.html's default skin:
 // the one a browser with no stored choice gets.
 func SPA(fsys fs.FS, theme string) http.Handler {
 	files := http.StripPrefix(prefix, http.FileServer(http.FS(fsys)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		root := p == "/" || p == prefix
+		root := p == "/" || p == prefix || p == "/ui" || p == "/ui/"
 		name, under := strings.CutPrefix(p, prefix+"/")
 		st, err := fs.Stat(fsys, name)
 		isFile := under && err == nil && !st.IsDir()
