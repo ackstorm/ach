@@ -4,6 +4,10 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Fixed
+
+- A path ACH does not serve, such as `https://ach.example.com/no-such-page`, answers 404. It answered 200 with the console, which then sent the browser to the Overview. The console is served at `/` only; its pages are `/#/…` and work as before.
+
 ## [1.3.7] - 2026-11-26
 
 ### Added
