@@ -8,7 +8,8 @@ import path from 'node:path';
 // ACKstorm Enterprise License); make qa-edition enforces it.
 export default defineConfig(() => {
   return {
-    base: '/',
+    // internal/platformapi/console serves the build under this path.
+    base: '/console/',
     plugins: [react(), tailwindcss()],
     resolve: { alias: { '@ee': path.resolve(__dirname, './src/ee'), '@': path.resolve(__dirname, './src') } },
     // Embedded by internal/platformapi/console (go:embed all:dist); keep in

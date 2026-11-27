@@ -41,7 +41,7 @@ var gatewayCmd = &cobra.Command{
 	Use:   "gateway",
 	Short: "Run the ACH edge reverse proxy (single-origin front for all HTTP surfaces)",
 	Long: `Boot the ACH gateway. Reverse-proxies /platform, /content, /v1, /gemini,
-/mcp, /a2a, /v2/model/info, /.well-known and the console at "/" to their
+/mcp, /a2a, /v2/model/info, /.well-known and the console at /console/ to their
 in-cluster Services, and serves a local /healthz. Static routing is
 hardcoded; upstream namespace comes from POD_NAMESPACE (default ach-system).
 Outside a cluster, ACH_GATEWAY_PLATFORM_API_URL, ACH_GATEWAY_FORWARDER_URL and

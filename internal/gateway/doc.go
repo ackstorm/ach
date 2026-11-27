@@ -14,8 +14,8 @@
 // 404 ahead of the "/" route so the prod Ingress cannot leak it), and no
 // /dex (Dex is reached directly via ACH_DEX_ISSUER_URL in prod; proxied by
 // the e2e nginx shim in dev). Only /platform, /content, /v1, /gemini, /mcp,
-// /a2a, /v2/model/info, /.well-known and "/" (the console served by
-// platform-api, D-26) are proxied; /healthz returns 200 locally for probes.
+// /a2a, /v2/model/info, /.well-known and "/" (platform-api, which serves
+// the console at /console/) are proxied; /healthz returns 200 locally for probes.
 // Nothing LiteLLM serves outside those families is reachable through ACH
 // (D-18).
 //

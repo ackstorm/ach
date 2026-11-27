@@ -4,9 +4,13 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
+### Changed
+
+- The console moved to `/console/`, for example `https://ach.example.com/console/`. `/` redirects there (302), so existing bookmarks keep working, including the ones to a page such as `/#/keys`. A monitor that expects 200 from `/` now gets the redirect: point it at `/console/`. With the console's pages under `/console/` and its sign-in and API under `/platform/console/`, an Ingress rule can limit the console to a network; see "Restrict the console by source address" in the Choose a topology page.
+
 ### Fixed
 
-- A path ACH does not serve, such as `https://ach.example.com/no-such-page`, answers 404. It answered 200 with the console, which then sent the browser to the Overview. The console is served at `/` only; its pages are `/#/…` and work as before.
+- A path ACH does not serve, such as `https://ach.example.com/no-such-page`, answers 404. It answered 200 with the console, which then sent the browser to the Overview.
 
 ## [1.3.7] - 2026-11-26
 

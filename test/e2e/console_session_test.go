@@ -16,7 +16,7 @@ import (
 
 // assetScriptRE matches the Vite-built, content-hashed script tag src
 // (ui/vite.config.ts default asset naming: assets/<name>-<hash>.js).
-var assetScriptRE = regexp.MustCompile(`/assets/[^"]+\.js`)
+var assetScriptRE = regexp.MustCompile(`/console/assets/[^"]+\.js`)
 
 // consoleLogin walks /platform/console/session/login → Dex mock →
 // as-callback on the single e2e origin (rewriting every redirect hop to
@@ -143,8 +143,8 @@ func TestConsoleSession(t *testing.T) {
 	}
 	// D-18 / AC-24 through the public origin: nothing of LiteLLM's own
 	// surface is reachable through ACH, and an unknown path is a 404 — the
-	// console is served at "/" only (internal/platformapi/console/spa.go).
-	for _, p := range []string{"/ui", "/ui/", "/key/list", "/health", "/model/info", "/v2/anything", "/no-such-page"} {
+	// console is served under "/console/" only (internal/platformapi/console/spa.go).
+	for _, p := range []string{"/ui", "/ui/", "/key/list", "/health", "/model/info", "/v2/anything", "/no-such-page", "/console/no-such-page", "/index.html"} {
 		resp, err := http.Get(base + p)
 		if err != nil {
 			t.Fatal(err)
@@ -167,6 +167,9 @@ func TestConsoleSession(t *testing.T) {
 	if bodyMentionsLiteLLM(b) {
 		t.Fatalf("/ is LiteLLM: %s", truncate(b, 200))
 	}
+	if got := resp.Request.URL.Path; got != "/console/" {
+		t.Fatalf("GET / landed on %q, want a redirect to /console/", got)
+	}
 	// Task 5: the imported console SPA is actually served — index.html embedded
 	// via go:embed all:dist (internal/platformapi/console), not just chi's
 	// NotFound fallback answering something ACH-shaped.
@@ -180,7 +183,7 @@ func TestConsoleSession(t *testing.T) {
 		t.Fatalf("GET / body missing <div id=\"root\">: %s", truncate(b, 200))
 	}
 	if !assetScriptRE.Match(b) {
-		t.Fatalf("GET / body missing a /assets/*.js reference: %s", truncate(b, 200))
+		t.Fatalf("GET / body missing a /console/assets/*.js reference: %s", truncate(b, 200))
 	}
 }
 

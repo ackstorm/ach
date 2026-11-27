@@ -195,7 +195,7 @@ platformApi:
     default: [default]
     users: {}   # { alice@example.com: [dream, run] }
     sso: {}     # { projects@example.com: [run] }
-  # console: settings for the web console served at /.
+  # console: settings for the web console served at /console/.
   console:
     # chatUrl is the hosted chat UI the console's Chat button (and the How-to
     # chat card) opens, e.g. https://chat.example.com. Empty hides both.

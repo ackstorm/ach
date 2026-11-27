@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package console serves the React console at "/" and the
+// Package console serves the React console at "/console/" and the
 // /platform/console/* contracts the console calls (session bootstrap and
 // capability views). The React build lands in dist/ (make ui-build) and is
 // embedded into the binary — the same shape as opencode's plugin/.
@@ -28,24 +28,34 @@ func Dist() fs.FS {
 // htmlOpen is ui/index.html's opening tag, as the Vite build keeps it.
 const htmlOpen = `<html lang="en" class="dark">`
 
-// SPA returns platform-api's not-found handler: "/" gets index.html with
-// no-store, a file of the build is served as is (hashed assets immutable),
-// and every other path is a JSON 404. The console routes by hash (/#/…), so
-// no other path is ever a console page. theme, when set, becomes
-// index.html's default skin: the one a browser with no stored choice gets.
+// prefix is where the console lives; ui/vite.config.ts `base` is the same
+// path with a trailing slash.
+const prefix = "/console"
+
+// SPA returns platform-api's not-found handler: "/console/" gets index.html
+// with no-store, a file of the build under it is served as is (hashed assets
+// immutable), "/" and "/console" redirect there, and every other path is a
+// JSON 404. The console routes by hash (/console/#/…), so no other path is
+// ever a console page. theme, when set, becomes index.html's default skin:
+// the one a browser with no stored choice gets.
 func SPA(fsys fs.FS, theme string) http.Handler {
-	files := http.FileServer(http.FS(fsys))
+	files := http.StripPrefix(prefix, http.FileServer(http.FS(fsys)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		name := strings.TrimPrefix(p, "/")
+		root := p == "/" || p == prefix
+		name, under := strings.CutPrefix(p, prefix+"/")
 		st, err := fs.Stat(fsys, name)
-		isFile := p != "/" && err == nil && !st.IsDir()
-		if p != "/" && !isFile {
+		isFile := under && err == nil && !st.IsDir()
+		if !root && !isFile && (!under || name != "") {
 			render.Error(w, http.StatusNotFound, "not_found", "no such route", middleware.RequestIDFromCtx(r.Context()))
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if root {
+			http.Redirect(w, r, prefix+"/", http.StatusFound)
 			return
 		}
 		if isFile {

@@ -6,7 +6,7 @@
 // can assert the error-retry calls loadSession. resolveState maps:
 //
 //   status null              -> loading  -> LoadingCard
-//   401 & !hasLoaded         -> signin   -> Login (CTA -> /platform/console/session/login?next=%2F)
+//   401 & !hasLoaded         -> signin   -> Login (CTA -> /platform/console/session/login?next=%2Fconsole%2F)
 //   0 / 5xx                  -> error    -> ErrorCard (retry calls loadSession; disabled when status===null)
 //   200 & me                 -> authed   -> AppShell (brand + email + Log out button -> POST /platform/console/session/logout)
 //   200 & me === null        -> authed   -> ErrorCard (C2 fall-through)
@@ -99,11 +99,11 @@ describe('App driver — loading', () => {
 });
 
 describe('App driver — signin', () => {
-  it('cold-load 401 -> Login with CTA pointing at /platform/console/session/login?next=%2F', () => {
+  it('cold-load 401 -> Login with CTA pointing at /platform/console/session/login?next=%2Fconsole%2F', () => {
     useSessionStore.setState({ status: 401, hasLoaded: false, me: null });
     renderApp();
     const cta = screen.getByRole('link', { name: 'Continue with SSO' });
-    expect(cta).toHaveAttribute('href', '/platform/console/session/login?next=%2F');
+    expect(cta).toHaveAttribute('href', '/platform/console/session/login?next=%2Fconsole%2F');
   });
 });
 
