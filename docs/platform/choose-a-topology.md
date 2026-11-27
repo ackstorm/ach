@@ -83,6 +83,42 @@ host:
 The `/.well-known/opencode` rule must win over `/.well-known/`. Do not route
 `/metrics`.
 
+## Restrict the console by source address
+
+The web console uses two path prefixes: `/console/` for its pages and
+`/platform/console/` for its sign-in and its API. To limit it to a network, add
+a second rule for those two prefixes that carries your controller's address
+filter. With ingress-nginx:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ach-console
+  namespace: ach
+  annotations:
+    nginx.ingress.kubernetes.io/whitelist-source-range: 10.0.0.0/8
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [ach.example.com]
+      secretName: ach-tls
+  rules:
+    - host: ach.example.com
+      http:
+        paths:
+          - path: /console
+            pathType: Prefix
+            backend: {service: {name: ach-gateway, port: {number: 80}}}
+          - path: /platform/console
+            pathType: Prefix
+            backend: {service: {name: ach-gateway, port: {number: 80}}}
+```
+
+The console also calls `/platform/keys` and `/platform/environments`, which it
+shares with `ach-cli`. The filter does not cover them: they stay reachable and
+answer only a signed-in caller.
+
 ## Content-service: sidecar or standalone
 
 Content-service serves the plugin and skill files that the operator fetches

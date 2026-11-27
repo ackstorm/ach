@@ -32,14 +32,14 @@ import { BrandLockup } from '@/components/layout/BrandLockup';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { ProviderChips } from '@/components/auth/ProviderChips';
-import { loginUrl } from '@/lib/urls';
+import { CONSOLE_ROOT, loginUrl } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/stores/theme';
 
 // The SOLE redirect trigger (T-09-17). FIXED value — computed once from the
-// literal '/' (the console root), never from any prop/query/next/hash. Login
-// mints no key (AC-06); the pk_ is provisioned by the session callback.
-const SSO_LOGIN_URL = loginUrl('/');
+// CONSOLE_ROOT literal, never from any prop/query/next/hash.
+// Login mints no key (AC-06); the pk_ is provisioned by the session callback.
+const SSO_LOGIN_URL = loginUrl(CONSOLE_ROOT);
 
 // Theme-aware decorative background: three radial glow blobs reading the per-theme
 // --glow-* vars. Shared shape with the authed shell so login and inner pages match.

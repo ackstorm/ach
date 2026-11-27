@@ -143,7 +143,7 @@ curl -sS https://ach.${GENAI_BASE_DOMAIN}/ | grep -qi 'console not built' \
   && echo 'FAIL: chart built without make ui-build'
 
 # ACH has no catch-all (D-18): 404 at ACH, still live on LiteLLM's own host
-for p in /ui /key/list /health /model/info; do
+for p in /key/list /health /model/info; do
   curl -sS -o /dev/null -w "ach$p %{http_code}\n" https://ach.${GENAI_BASE_DOMAIN}$p
 done
 curl -sS -o /dev/null -w 'api/health %{http_code}\n' https://api.${GENAI_BASE_DOMAIN}/health
@@ -349,7 +349,7 @@ psql "$ACH_DB" -c "select count(*) from environment_keys where status<>'revoked'
 
 ## Post-cutover checklist (all must be true)
 
-- [ ] `https://ach.${GENAI_BASE_DOMAIN}/` = console; `/ui`, `/key/*`, `/health` =
+- [ ] `https://ach.${GENAI_BASE_DOMAIN}/` = console (`/ui` redirects to it); `/key/*`, `/health` =
       404 **at ACH** and still live on `api.` (AC-24)
 - [ ] `ach-cli login`, `environment hydrate`, `ek_` forwarding unchanged (AC-23)
 - [ ] console stats/latency for a real user include `ek_` traffic,

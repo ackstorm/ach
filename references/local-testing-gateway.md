@@ -136,7 +136,7 @@ kubectl -n ach-system port-forward svc/ach-local-gateway 8080:8080   # if not al
 npm --prefix ui run dev
 ```
 
-`npm run dev` serves the SPA on `http://localhost:5173` and proxies
+`npm run dev` serves the SPA on `http://localhost:5173/console/` and proxies
 `/platform` to `http://localhost:8080`
 (`ui/vite.config.ts` `server.proxy`) — everything else (JS/CSS/HMR) is
 served locally by Vite. Log in through the console UI at `:5173` as normal
