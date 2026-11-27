@@ -439,6 +439,15 @@ func runOperator(_ *cobra.Command, _ []string) error {
 	// + ach_operator_external_ref_refresh_total) on controller-runtime's metrics
 	// Registry so the operator /metrics surfaces them.
 	opMetrics := achmetrics.NewOperatorCollectors(crmetrics.Registry)
+	if err := mgr.Add(&achcontroller.EnvironmentBudgetGauges{
+		Client:    mgr.GetClient(),
+		LiteLLM:   realLiteLLM,
+		Namespace: watchNS,
+		Metrics:   opMetrics,
+		Log:       ctrl.Log.WithName("environment-budget-gauges"),
+	}); err != nil {
+		return fmt.Errorf("unable to add Environment budget gauges Runnable: %w", err)
+	}
 
 	if err = (&achcontroller.EnvironmentReconciler{
 		Client:       mgr.GetClient(),

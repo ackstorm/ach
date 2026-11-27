@@ -12,9 +12,15 @@ import "github.com/prometheus/client_golang/prometheus"
 //
 //	ach_environment_available{name}                       1 series per Environment
 //	ach_operator_external_ref_refresh_total{kind,type,result}
+//	ach_environment_budget_spend_usd{environment}          1 series per budgeted Environment
+//	ach_environment_budget_max_usd{environment}
+//	ach_environment_budget_reset_timestamp_seconds{environment}
 type OperatorCollectors struct {
-	EnvironmentAvailable *prometheus.GaugeVec
-	ExternalRefRefresh   *prometheus.CounterVec
+	EnvironmentAvailable       *prometheus.GaugeVec
+	ExternalRefRefresh         *prometheus.CounterVec
+	EnvironmentBudgetSpend     *prometheus.GaugeVec
+	EnvironmentBudgetMax       *prometheus.GaugeVec
+	EnvironmentBudgetResetTime *prometheus.GaugeVec
 }
 
 // NewOperatorCollectors constructs and registers the operator metrics
@@ -37,7 +43,20 @@ func NewOperatorCollectors(reg prometheus.Registerer) *OperatorCollectors {
 			},
 			[]string{"kind", "type", "result"},
 		),
+		EnvironmentBudgetSpend: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ach_environment_budget_spend_usd",
+			Help: "Spend of the Environment's LiteLLM tag budget in its current cycle (USD).",
+		}, []string{"environment"}),
+		EnvironmentBudgetMax: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ach_environment_budget_max_usd",
+			Help: "Ceiling of the Environment's LiteLLM tag budget (USD).",
+		}, []string{"environment"}),
+		EnvironmentBudgetResetTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "ach_environment_budget_reset_timestamp_seconds",
+			Help: "Unix time of the Environment's next LiteLLM tag budget reset.",
+		}, []string{"environment"}),
 	}
-	reg.MustRegister(c.EnvironmentAvailable, c.ExternalRefRefresh)
+	reg.MustRegister(c.EnvironmentAvailable, c.ExternalRefRefresh,
+		c.EnvironmentBudgetSpend, c.EnvironmentBudgetMax, c.EnvironmentBudgetResetTime)
 	return c
 }
