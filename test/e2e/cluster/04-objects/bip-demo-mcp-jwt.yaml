@@ -19,3 +19,4 @@ spec:
     kind: MCPServer
     name: demo-mcp-jwt
   forwardIdentityJWT: true
+  forwardTeams: true

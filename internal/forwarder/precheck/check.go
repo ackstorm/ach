@@ -44,6 +44,15 @@ const (
 	a2aResourceKind
 )
 
+// Teams is what a successful pre-check learned about the caller's teams. An
+// ek_ caller is its owner.
+type Teams struct {
+	// Granted is the caller∩Environment intersection that granted the access.
+	Granted []string
+	// Caller is every LiteLLM team of the caller.
+	Caller []string
+}
+
 // CheckMCP runs the §5.1 step-4 pre-check for /mcp/<name> requests.
 //
 //   - ek_:  name MUST appear in Environment.spec.runtime.mcpServers[].
@@ -51,20 +60,20 @@ const (
 //     Environment.spec.authorizedTeams[] of at least one Environment whose
 //     spec.runtime.mcpServers[] contains <name>.
 //
-// On success the first return is the set of teams that GRANTED the access:
-// the caller∩Environment intersection, where an ek_ caller is its owner. The
-// proxy filters and normalizes it into the JWT "groups" claim.
+// On success the first return holds the teams that GRANTED the access (the
+// proxy mints them into the JWT "groups" claim) and every team of the
+// caller (minted into "teams" when the target's policy asks for it).
 //
 // On failure returns a typed sentinel; the caller (Plan 04-07 handler)
 // translates the sentinel to an HTTP outcome via render.Error.
-func CheckMCP(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) ([]string, error) {
+func CheckMCP(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) (Teams, error) {
 	return check(ctx, kc, name, deps, mcpResourceKind)
 }
 
 // CheckA2A runs the §5.1 step-4 pre-check for /a2a/<name> requests.
 // Mirrors CheckMCP but reads Environment.spec.runtime.a2aAgents[]
 // instead of .mcpServers[].
-func CheckA2A(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) ([]string, error) {
+func CheckA2A(ctx context.Context, kc middleware.KeyContext, name string, deps Deps) (Teams, error) {
 	return check(ctx, kc, name, deps, a2aResourceKind)
 }
 
@@ -111,14 +120,14 @@ func CheckEkOwner(ctx context.Context, kc middleware.KeyContext, deps Deps) erro
 	return nil
 }
 
-func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
+func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) (Teams, error) {
 	switch kc.KeyType {
 	case keys.PrefixEk:
 		return checkEk(ctx, kc, name, deps, kind)
 	case keys.PrefixPk:
 		return checkPk(ctx, kc, name, deps, kind)
 	default:
-		return nil, ErrInvalidKeyType
+		return Teams{}, ErrInvalidKeyType
 	}
 }
 
@@ -126,10 +135,10 @@ func check(ctx context.Context, kc middleware.KeyContext, name string, deps Deps
 // kc.Environment (resolved by Phase 3 keystore.EkResolve). Missing or
 // name-not-in-list both fail closed as ErrUnauthorizedResource per D-15
 // narrow error surface.
-func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
+func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) (Teams, error) {
 	row, ok := deps.EnvProvider.Get(kc.Environment)
 	if !ok {
-		return nil, ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
+		return Teams{}, ErrUnauthorizedResource // D-15 narrow: missing env → 403 not 404
 	}
 	for _, n := range runtimeList(row, kind) {
 		if n == name {
@@ -141,7 +150,7 @@ func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 			return checkPk(ctx, kc, name, deps, kind)
 		}
 	}
-	return nil, ErrUnauthorizedResource
+	return Teams{}, ErrUnauthorizedResource
 }
 
 // checkPk implements the pk_ path. The caller's LiteLLM teams come from
@@ -153,13 +162,13 @@ func checkEk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 // Union semantics: the caller is authorized if AT LEAST ONE active
 // Environment hosts <name> AND has a non-empty intersection of
 // authorizedTeams with the caller's teams. Terminating envs are skipped.
-func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) ([]string, error) {
+func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps Deps, kind resourceKind) (Teams, error) {
 	callerTeams, err := deps.TeamsResolver.Resolve(ctx, kc.OwnerEmail)
 	if err != nil {
-		return nil, ErrLiteLLMUnreachable
+		return Teams{}, ErrLiteLLMUnreachable
 	}
 	if len(callerTeams) == 0 {
-		return nil, ErrUnauthorizedTeam // ∅ ∩ anything = ∅
+		return Teams{}, ErrUnauthorizedTeam // ∅ ∩ anything = ∅
 	}
 	teamSet := make(map[string]struct{}, len(callerTeams))
 	for _, t := range callerTeams {
@@ -191,7 +200,7 @@ func checkPk(ctx context.Context, kc middleware.KeyContext, name string, deps De
 		}
 	}
 	if len(granted) == 0 {
-		return nil, ErrUnauthorizedTeam
+		return Teams{}, ErrUnauthorizedTeam
 	}
-	return granted, nil
+	return Teams{Granted: granted, Caller: callerTeams}, nil
 }

@@ -74,7 +74,7 @@ ach-cli admin list environments
 | `kubectl -n ach get litellmconnection default` is not `True` | The operator cannot reach LiteLLM, or the master key is wrong. Read the operator log |
 | `/.well-known/oauth-authorization-server` or `/.well-known/jwks.json` answers 404 or 5xx | The request does not reach the forwarder: check the Ingress, and that the forwarder is ready |
 | `/.well-known/opencode` answers 404 | Without the gateway, the rule that sends this path to platform-api is missing |
-| `/` answers `console not built` | An image built without the console. Use the released image |
+| `/console/` answers `console not built` | An image built without the console. Use the released image |
 | `ach-cli whoami` works and `ach-cli environment list` is empty | See [Users without access](#users-without-access) |
 
 ## Symptoms after install
@@ -82,7 +82,7 @@ ach-cli admin list environments
 | Symptom | Cause | Do |
 |---|---|---|
 | Model requests answer 401 for every user, and the forwarder logs `key material decrypt failed` | The encryption key changed, or platform-api and the forwarder read different ones | Restore the key. If it is lost, users sign in again and environment keys are created again |
-| `/ui`, `/key/list` or `/health` on the ACH address show the ACH console | ACH does not serve LiteLLM's own pages | Use LiteLLM's own host |
+| `/ui` on the ACH address opens the ACH console; `/key/list` or `/health` answer 404 | ACH does not serve LiteLLM's own pages | Use LiteLLM's own host |
 | Creating an environment key answers 403 `key_limit_reached` | `platformApi.userDefaults.maxKeys` is 0, or the user reached their limit | `ach-cli admin users limits <email> --max-keys N`, or raise the default |
 | Requests answer 422 `Budget has been exceeded! Tag=user:…` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`. The chart default applies to new users only |
 | Requests answer 422 `Budget has been exceeded! Tag=environment:…` | The Environment's budget is spent | Raise the budget of the Environment, or wait for it to reset |

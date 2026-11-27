@@ -20,6 +20,7 @@ Every forwarded request gets a new token; there is no refresh.
 | `sub` | Owner email of the calling key | always |
 | `email` | Same value as `sub` | when the owner email is not empty |
 | `groups` | Array of LiteLLM team aliases; see [The `groups` claim](#the-groups-claim) | when the set is not empty |
+| `teams` | Array of every LiteLLM team alias of the caller; see [The `teams` claim](#the-teams-claim) | when the target's policy sets `forwardTeams` and the set is not empty |
 | `azp` | `ek:<environment>`; for audit, grants nothing | on a token minted for an environment key |
 | `aud` | `mcp:<name>` on `/mcp/<name>`, `a2a:<name>` on `/a2a/<name>` | always |
 | `iat` | Mint time, Unix seconds | always |
@@ -46,6 +47,23 @@ A verifier checks `iss`, `aud` and `exp`. It must not require `nbf` or `jti`.
 | Revocation | None: a backend trusts the claim until `exp` |
 | A user removed from a LiteLLM team keeps the group, on `pk_` and `ek_`, for at most | 180 s (`exp` 120 s + 60 s membership cache) |
 | A team removed from `Environment.spec.authorizedTeams` stays in the claim for at most | about 7 min (`exp` 120 s + 5 min refresh) |
+
+## The `teams` claim
+
+Emitted only for a target whose `BackendIdentityPolicy` sets
+`spec.forwardTeams: true`.
+
+| Calling key | `teams` |
+|---|---|
+| `pk_` | Every LiteLLM team of the caller, whether or not an Environment that grants `<name>` authorizes it |
+| `ek_` | The same set, computed for the key's owner email |
+
+| Property | Value |
+|---|---|
+| Element, order, excluded teams, empty set, revocation | As for `groups` |
+| Relation to `groups` | A superset: every entry of `groups` is in `teams` |
+| A user removed from a LiteLLM team keeps it, on `pk_` and `ek_`, for at most | 180 s (`exp` 120 s + 60 s membership cache) |
+| Removing a team from `Environment.spec.authorizedTeams` | Does not remove it from `teams` |
 
 ## JWKS endpoint
 

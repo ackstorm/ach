@@ -367,9 +367,8 @@ func New(deps Deps) http.Handler {
 		})
 	})
 
-	// The console at "/" (D-26). chi's NotFound is the fallback for every
-	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
-	// 404s so the fallback never shadows the API.
+	// The console at "/console/". chi's NotFound is the fallback for every
+	// unmatched path; SPA answers a JSON 404 for all but the console's own.
 	r.NotFound(console.SPA(console.Dist(), deps.ConsoleTheme).ServeHTTP)
 
 	return r

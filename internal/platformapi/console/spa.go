@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package console serves the React console at "/" and the
+// Package console serves the React console at "/console/" and the
 // /platform/console/* contracts the console calls (session bootstrap and
 // capability views). The React build lands in dist/ (make ui-build) and is
 // embedded into the binary — the same shape as opencode's plugin/.
@@ -28,30 +28,37 @@ func Dist() fs.FS {
 // htmlOpen is ui/index.html's opening tag, as the Vite build keeps it.
 const htmlOpen = `<html lang="en" class="dark">`
 
-// apiPrefixes are never served by the SPA fallback: an unknown API path
-// stays a JSON 404 (API-01's carve-out plus everything under /platform).
-var apiPrefixes = []string{"/platform/", "/healthz", "/livez", "/readyz"}
+// prefix is where the console lives; ui/vite.config.ts `base` is the same
+// path with a trailing slash.
+const prefix = "/console"
 
-// SPA returns the "/" handler: a real file is served as is (hashed assets
-// immutable), anything else gets index.html (client-side routing) with
-// no-store. theme, when set, becomes index.html's default skin: the one a
-// browser with no stored choice gets.
+// SPA returns platform-api's not-found handler: "/console/" gets index.html
+// with no-store, a file of the build under it is served as is (hashed assets
+// immutable), "/", "/console", "/ui" and "/ui/" redirect there, and every
+// other path is a JSON 404. The console routes by hash (/console/#/…), so no other path is
+// ever a console page. theme, when set, becomes index.html's default skin:
+// the one a browser with no stored choice gets.
 func SPA(fsys fs.FS, theme string) http.Handler {
-	files := http.FileServer(http.FS(fsys))
+	files := http.StripPrefix(prefix, http.FileServer(http.FS(fsys)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		for _, pre := range apiPrefixes {
-			if strings.HasPrefix(p, pre) {
-				render.Error(w, http.StatusNotFound, "not_found", "no such route", middleware.RequestIDFromCtx(r.Context()))
-				return
-			}
+		root := p == "/" || p == prefix || p == "/ui" || p == "/ui/"
+		name, under := strings.CutPrefix(p, prefix+"/")
+		st, err := fs.Stat(fsys, name)
+		isFile := under && err == nil && !st.IsDir()
+		if !root && !isFile && (!under || name != "") {
+			render.Error(w, http.StatusNotFound, "not_found", "no such route", middleware.RequestIDFromCtx(r.Context()))
+			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		name := strings.TrimPrefix(p, "/")
-		if st, err := fs.Stat(fsys, name); err == nil && !st.IsDir() {
+		if root {
+			http.Redirect(w, r, prefix+"/", http.StatusFound)
+			return
+		}
+		if isFile {
 			if strings.HasPrefix(name, "assets/") {
 				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			}

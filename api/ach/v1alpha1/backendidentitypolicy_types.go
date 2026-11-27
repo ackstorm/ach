@@ -72,6 +72,14 @@ type BackendIdentityPolicySpec struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	ConsentAudience string `json:"consentAudience,omitempty"`
+
+	// ForwardTeams, when true, adds the "teams" claim to the JWT minted for
+	// this target: every LiteLLM team alias of the caller, where "groups"
+	// holds only the teams that grant the target. It has no effect unless
+	// forwardIdentityJWT is true.
+	//
+	// +optional
+	ForwardTeams bool `json:"forwardTeams,omitempty"`
 }
 
 // BackendIdentityPolicyStatus defines the observed state of

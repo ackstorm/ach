@@ -1276,8 +1276,8 @@ issue: platform-api re-mints the `sk-` whenever `GET /key/list` no longer
 lists it (one check per issue) — have the user re-run `ach-cli login` (or
 let their client's token refresh trigger `/token`), then retry.
 
-### ❌ `/ui`, `/key/list`, `/health`, `/v2/...` are 404 through the ACH host
-✅ By design since D-18: nothing LiteLLM serves outside `/v1`, `/gemini`,
+### ❌ `/key/list`, `/health`, `/v2/...` are 404 through the ACH host, `/ui` opens the ACH console
+✅ By design since D-18 (`/ui` and `/ui/` redirect to `/console/`): nothing LiteLLM serves outside `/v1`, `/gemini`,
 `/mcp/<n>`, `/a2a/<n>` (+ `GET /v2/model/info` for ach-agent pricing) is
 proxied any more. Use LiteLLM's own host / cluster-internal Service for its
 UI and admin surface.

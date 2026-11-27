@@ -14,7 +14,8 @@ EdDSA JWT per request and sends it as `Authorization: Bearer <jwt>`:
 | `iss` | the ACH base URL |
 | `sub`, `email` | the caller's email; for an `ek-` key, its owner's |
 | `aud` | `mcp:<name>` or `a2a:<name>` |
-| `groups` | the caller's LiteLLM team aliases (omitted when empty); for an `ek-` key, its owner's |
+| `groups` | the caller's LiteLLM team aliases that grant this target (omitted when empty); for an `ek-` key, its owner's |
+| `teams` | every LiteLLM team alias of the caller, only with `forwardTeams: true` (omitted when empty); for an `ek-` key, its owner's |
 | `azp` | `ek:<environment>` for an `ek-` key, for audit; absent for a person |
 | `iat`, `exp` | issue time, +120 s |
 
@@ -55,6 +56,7 @@ spec:
 | `spec.target.kind` | `MCPServer` (route `/mcp/<name>`) or `A2AAgent` (route `/a2a/<name>`) |
 | `spec.target.name` | The LiteLLM server or agent name, exactly the route segment. DNS-1123 subdomain: lowercase letters, digits, `-` and `.` |
 | `spec.forwardIdentityJWT` | Required, no default. `false` is an explicit "no JWT" and behaves like no policy |
+| `spec.forwardTeams` | Optional, default `false`. `true` adds the `teams` claim. No effect without `forwardIdentityJWT: true` |
 | `spec.consentBroker` | Optional, `http(s)://` issuer URL of the backend's own OAuth broker. `MCPServer` targets only |
 | `spec.consentAudience` | Audience placed in the signed `login_hint` sent to the broker. Set together with `consentBroker`, or neither. Never `ach`, `ach-ek`, or a value starting with `mcp:` or `a2a:` (ACH accepts those audiences) |
 
@@ -80,6 +82,9 @@ both or neither; `consentAudience` not one of the reserved values above;
   that target, plus `azp`. The JWT adds identity, never permission: the Environment still
   decides what the key reaches, and the backend what that person may do. Without a policy
   it gets no JWT and no `Authorization` header.
+- **`forwardTeams` discloses the caller's whole team list to that backend.** Leave it off
+  unless the backend shares resources by team membership. With it on, removing a team
+  from an Environment no longer hides that team from the backend.
 - **Consent flow.** With `consentBroker`, ACH probes the backend through the forwarder at
   login; only when it answers `auth_required` does it chain the browser through the
   broker, then probes again. Templates such as `${BASE_DOMAIN}` in the URL are fine if

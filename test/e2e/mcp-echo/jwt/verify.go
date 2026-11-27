@@ -29,6 +29,7 @@ type Verified struct {
 	Iat    int64
 	Exp    int64
 	Groups []string
+	Teams  []string
 	Azp    string
 }
 
@@ -104,20 +105,26 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Verified, error) {
 		return Verified{}, fmt.Errorf("%w: missing exp", ErrInvalidToken)
 	}
 
-	// "groups" is optional: an absent claim means the caller belongs to no
-	// group, which is not an error. Non-string entries are skipped rather
-	// than rejected — a malformed claim must not turn into a 401.
-	var groups []string
-	if raw, ok := claims["groups"].([]any); ok {
-		for _, g := range raw {
-			if s, ok := g.(string); ok {
-				groups = append(groups, s)
+	azp, _ := claims["azp"].(string) // optional, "ek:<environment>" on agent-key tokens
+	return Verified{
+		Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp,
+		Groups: claimStrings(claims, "groups"), Teams: claimStrings(claims, "teams"), Azp: azp,
+	}, nil
+}
+
+// claimStrings reads an optional array-of-strings claim. An absent claim is
+// an empty set, and non-string entries are skipped: a malformed claim must
+// not turn into a 401.
+func claimStrings(m jwtv5.MapClaims, k string) []string {
+	var out []string
+	if raw, ok := m[k].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				out = append(out, s)
 			}
 		}
 	}
-
-	azp, _ := claims["azp"].(string) // optional, "ek:<environment>" on agent-key tokens
-	return Verified{Iss: iss, Sub: sub, Aud: aud, Kid: kid, Iat: iat, Exp: exp, Groups: groups, Azp: azp}, nil
+	return out
 }
 
 func claimInt(m jwtv5.MapClaims, k string) int64 {

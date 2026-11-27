@@ -52,12 +52,16 @@ type Claims struct {
 	// Email is the JWT "email" claim: the bare owner email (no namespace
 	// prefix), for consumers that key by email. Optional; omitted when empty.
 	Email string
-	// Groups is the JWT "groups" claim: the caller's LiteLLM team aliases,
-	// for backends that authorize group-owned resources (ach-memory reads
-	// this claim by default). Values are aliases, never team UUIDs, and
-	// ACH's internal shell teams (ach-env-*/ach-user-*) are filtered out
-	// upstream in the proxy. Optional; the claim is omitted when empty.
+	// Groups is the JWT "groups" claim: the caller's LiteLLM team aliases that
+	// grant the target, for backends that authorize group-owned resources.
+	// Values are aliases, never team UUIDs, and ACH's internal shell teams
+	// (ach-env-*/ach-user-*) are filtered out upstream in the proxy.
+	// Optional; the claim is omitted when empty.
 	Groups []string
+	// Teams is the JWT "teams" claim: every LiteLLM team alias of the caller,
+	// set only for a target whose BackendIdentityPolicy has forwardTeams.
+	// Same value rules as Groups. Optional; the claim is omitted when empty.
+	Teams []string
 	// Azp is the JWT "azp" claim: "ek:<environment>" on a token minted for an
 	// agent key, which otherwise carries its owner's identity. For audit, it
 	// grants nothing. Optional; the claim is omitted when empty.
@@ -175,7 +179,7 @@ func (s *Ed25519Signer) Loaded() bool {
 // Sign returns a compact JWS over the supplied claims plus iat/exp
 // synthesized per FWD-07 / Hub §9.1. The header is
 // {"alg":"EdDSA","typ":"JWT","kid":"<current.kid>"}; the payload is
-// {"iss","sub","aud","iat","exp"} plus the optional "email", "groups", "azp" and "jti".
+// {"iss","sub","aud","iat","exp"} plus the optional "email", "groups", "teams", "azp" and "jti".
 //
 // The signing slot is the result of s.current.Load() at Sign-entry; a
 // concurrent loadCurrent racing the in-flight Sign uses whichever slot
@@ -208,6 +212,9 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	// an absent claim as "no groups" rather than parsing an empty array.
 	if len(c.Groups) > 0 {
 		claims["groups"] = c.Groups
+	}
+	if len(c.Teams) > 0 {
+		claims["teams"] = c.Teams
 	}
 	if c.Azp != "" {
 		claims["azp"] = c.Azp

@@ -2,7 +2,7 @@
 # Optional public Ingress. With the ach-gateway edge proxy in front of all
 # HTTP surfaces, this Ingress routes a single backend -> ach-gateway:80.
 # The gateway owns path routing (/platform, /content, /v1, /gemini, /mcp,
-# /a2a, /.well-known, and "/" -> platform-api for the console).
+# /a2a, /.well-known, and "/" -> platform-api, the console at /console/).
 #
 # SECURITY: the gateway pins /metrics and /metrics/ to 404 ahead of its
 # "/" route (platform-api serves its own /metrics on the same port), so

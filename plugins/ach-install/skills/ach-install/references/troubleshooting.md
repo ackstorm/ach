@@ -89,7 +89,7 @@ kubectl -n $NS describe pod <pod>                                     # mount / 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | LiteLLM 401 for every user; forwarder logs `key material decrypt failed` | platform-api and forwarder use different DEKs, or the DEK changed | Same Secret for both; affected users log in again, `ek-` keys are re-created. |
-| `/ui`, `/key/list`, `/health` through ACH show the ACH console (200), never LiteLLM | By design: the gateway sends every unknown path to the console; without the gateway they are 404 | Use LiteLLM's own host. |
+| `/ui` through ACH opens the ACH console and `/key/list`, `/health` answer 404, never LiteLLM | By design: ACH does not serve LiteLLM's own pages; `/ui` redirects to `/console/` | Use LiteLLM's own host. |
 | An `ek-` key cannot be created: 403 `key_limit_reached` | `userDefaults.maxKeys` is 0 or reached | `ach-cli admin users limits <email> --max-keys N` or raise the default. |
 | Requests refused with 422 `Budget has been exceeded! Tag=user:...` | The user's ceiling | `ach-cli admin users budget <email> --max-budget N`; the chart default only seeds new users. |
 | Newly granted access takes minutes to work | LiteLLM caches access-group grants per replica (up to ~10 min) | Wait; nothing to fix in ACH. |

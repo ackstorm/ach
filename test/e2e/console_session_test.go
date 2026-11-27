@@ -16,7 +16,7 @@ import (
 
 // assetScriptRE matches the Vite-built, content-hashed script tag src
 // (ui/vite.config.ts default asset naming: assets/<name>-<hash>.js).
-var assetScriptRE = regexp.MustCompile(`/assets/[^"]+\.js`)
+var assetScriptRE = regexp.MustCompile(`/console/assets/[^"]+\.js`)
 
 // consoleLogin walks /platform/console/session/login → Dex mock →
 // as-callback on the single e2e origin (rewriting every redirect hop to
@@ -142,35 +142,38 @@ func TestConsoleSession(t *testing.T) {
 		t.Fatalf("CLI refresh after console logout: %d", resp.StatusCode)
 	}
 	// D-18 / AC-24 through the public origin: nothing of LiteLLM's own
-	// surface is reachable through ACH. chi's NotFound is the console SPA
-	// fallback (internal/platformapi/console/spa.go), so an unknown
-	// non-API path — like these LiteLLM-shaped ones — now answers 200 with
-	// ACH's own index.html (standard client-side-routing behavior), not a
-	// 404; that's fine, D-18's intent is "never LiteLLM", not "always 404".
-	// Accept either a 404 or a 200 whose body IS the ACH console (ui/index.html:
-	// <title>ACH Console</title>), and fail on any body that mentions LiteLLM.
-	for _, p := range []string{"/ui", "/ui/", "/key/list", "/health", "/model/info", "/v2/anything"} {
+	// surface is reachable through ACH, and an unknown path is a 404 — the
+	// console is served under "/console/" only (internal/platformapi/console/spa.go).
+	for _, p := range []string{"/ui/login", "/key/list", "/health", "/model/info", "/v2/anything", "/no-such-page", "/console/no-such-page", "/index.html"} {
 		resp, err := http.Get(base + p)
 		if err != nil {
 			t.Fatal(err)
 		}
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if resp.StatusCode != 404 && !strings.Contains(string(b), "<title>ACH Console</title>") {
-			t.Fatalf("%s reachable through ACH: %d %s (neither 404 nor the ACH console)", p, resp.StatusCode, truncate(b, 200))
+		if resp.StatusCode != 404 {
+			t.Fatalf("%s through ACH: %d %s, want 404", p, resp.StatusCode, truncate(b, 200))
 		}
 		if bodyMentionsLiteLLM(b) {
 			t.Fatalf("%s is LiteLLM: %s", p, truncate(b, 200))
 		}
 	}
-	resp, err = http.Get(base + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if bodyMentionsLiteLLM(b) {
-		t.Fatalf("/ is LiteLLM: %s", truncate(b, 200))
+	// "/", "/ui" and "/ui/" redirect to the console; "/" goes last so the
+	// checks below read its response.
+	var b []byte
+	for _, p := range []string{"/ui", "/ui/", "/"} {
+		resp, err = http.Get(base + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if bodyMentionsLiteLLM(b) {
+			t.Fatalf("%s is LiteLLM: %s", p, truncate(b, 200))
+		}
+		if got := resp.Request.URL.Path; got != "/console/" {
+			t.Fatalf("GET %s landed on %q, want a redirect to /console/", p, got)
+		}
 	}
 	// Task 5: the imported console SPA is actually served — index.html embedded
 	// via go:embed all:dist (internal/platformapi/console), not just chi's
@@ -185,7 +188,7 @@ func TestConsoleSession(t *testing.T) {
 		t.Fatalf("GET / body missing <div id=\"root\">: %s", truncate(b, 200))
 	}
 	if !assetScriptRE.Match(b) {
-		t.Fatalf("GET / body missing a /assets/*.js reference: %s", truncate(b, 200))
+		t.Fatalf("GET / body missing a /console/assets/*.js reference: %s", truncate(b, 200))
 	}
 }
 

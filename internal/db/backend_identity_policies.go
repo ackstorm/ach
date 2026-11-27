@@ -27,7 +27,7 @@ import (
 )
 
 // BIPRow mirrors the backend_identity_policies row schema after migration
-// 000021. (Namespace, Name) form the PRIMARY KEY; (TargetKind, TargetName)
+// 000033. (Namespace, Name) form the PRIMARY KEY; (TargetKind, TargetName)
 // is the bipcache lookup key.
 type BIPRow struct {
 	Namespace          string
@@ -37,6 +37,7 @@ type BIPRow struct {
 	ForwardIdentityJWT bool
 	ConsentBroker      string
 	ConsentAudience    string
+	ForwardTeams       bool
 	ObservedGeneration int64
 	ResourceVersion    string
 	UpdatedAt          time.Time
@@ -49,8 +50,8 @@ const upsertBIPSQL = `
 	    (namespace, name, target_kind, target_name,
 	     forward_identity_jwt, observed_generation,
 	     resource_version, updated_at, origin, locked,
-	     consent_broker, consent_audience)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE, $8, $9)
+	     consent_broker, consent_audience, forward_teams)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, now(), 'cr', TRUE, $8, $9, $10)
 	ON CONFLICT (namespace, name) DO UPDATE SET
 	    target_kind          = EXCLUDED.target_kind,
 	    target_name          = EXCLUDED.target_name,
@@ -59,6 +60,7 @@ const upsertBIPSQL = `
 	    resource_version     = EXCLUDED.resource_version,
 	    consent_broker       = EXCLUDED.consent_broker,
 	    consent_audience     = EXCLUDED.consent_audience,
+	    forward_teams        = EXCLUDED.forward_teams,
 	    updated_at           = now(),
 	    locked               = TRUE
 	WHERE backend_identity_policies.origin = 'cr'
@@ -71,7 +73,7 @@ func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 	err := tx.QueryRow(ctx, upsertBIPSQL,
 		row.Namespace, row.Name, row.TargetKind, row.TargetName,
 		row.ForwardIdentityJWT, row.ObservedGeneration, row.ResourceVersion,
-		row.ConsentBroker, row.ConsentAudience,
+		row.ConsentBroker, row.ConsentAudience, row.ForwardTeams,
 	).Scan(&ns)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -92,7 +94,7 @@ func UpsertBIPTx(ctx context.Context, tx pgx.Tx, row BIPRow) error {
 func scanBIPRow(row pgx.Row, r *BIPRow) error {
 	return row.Scan(
 		&r.Namespace, &r.Name, &r.TargetKind, &r.TargetName,
-		&r.ForwardIdentityJWT, &r.ConsentBroker, &r.ConsentAudience,
+		&r.ForwardIdentityJWT, &r.ConsentBroker, &r.ConsentAudience, &r.ForwardTeams,
 		&r.ObservedGeneration,
 		&r.ResourceVersion, &r.UpdatedAt, &r.Origin, &r.Locked,
 	)
@@ -125,7 +127,7 @@ func scanBIPRows(rows pgx.Rows) ([]BIPRow, error) {
 func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, error) {
 	const sql = `
 		SELECT namespace, name, target_kind, target_name,
-		       forward_identity_jwt, consent_broker, consent_audience,
+		       forward_identity_jwt, consent_broker, consent_audience, forward_teams,
 		       observed_generation,
 		       resource_version, updated_at, origin, locked
 		  FROM backend_identity_policies
@@ -147,7 +149,7 @@ func ListAllBIPs(ctx context.Context, pool *pgxpool.Pool, ns string) ([]BIPRow, 
 func ConsentBIP(ctx context.Context, pool *pgxpool.Pool, ns, targetName string) (*BIPRow, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT namespace, name, target_kind, target_name,
-		       forward_identity_jwt, consent_broker, consent_audience, observed_generation,
+		       forward_identity_jwt, consent_broker, consent_audience, forward_teams, observed_generation,
 		       resource_version, updated_at, origin, locked
 		  FROM backend_identity_policies
 		 WHERE namespace = $1 AND target_kind = 'MCPServer' AND target_name = $2

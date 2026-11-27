@@ -3,7 +3,7 @@
 [ach-memory](https://github.com/ackstorm/ach-memory) is an MCP backend. This
 example wires it into ACH's `/mcp` JWT trust path
 (`docs/integrate/trust-path.md`) so it receives the caller's identity
-and LiteLLM team aliases (the `groups` claim) on every call, instead of an
+and LiteLLM team aliases (the `groups` and `teams` claims) on every call, instead of an
 unauthenticated request.
 
 ## 1. Register the backend in LiteLLM
@@ -32,9 +32,13 @@ kubectl apply -f examples/ach-memory/backendidentitypolicy.yaml
 
 ## 3. Authorize it on an Environment
 
-Add `ach-memory` to `spec.runtime.mcpServers`. The Environment's
-`authorizedTeams` become the `groups` claim, so those aliases are the group
-ids ach-memory must know.
+Add `ach-memory` to `spec.runtime.mcpServers`. Two claims carry team aliases,
+and those aliases are the group ids ach-memory must know:
+
+- `groups`: the caller's teams that an Environment granting `ach-memory`
+  authorizes.
+- `teams`: every team of the caller. The BIP above turns it on with
+  `forwardTeams: true`.
 
 ## 4. Configure ach-memory
 
@@ -47,7 +51,9 @@ MEMORY_AUTH_JWT_ISSUER=https://ach.example.com
 # URL to save the egress rejects every token.
 MEMORY_AUTH_JWT_JWKS_URI=http://ach-forwarder.ach-system.svc/.well-known/jwks.json
 MEMORY_AUTH_JWT_AUDIENCE=mcp:ach-memory
-MEMORY_AUTH_JWT_GROUPS_CLAIM=groups
+# teams: share by team membership. groups: only teams an Environment that
+# grants ach-memory authorizes.
+MEMORY_AUTH_JWT_GROUPS_CLAIM=teams
 ```
 
 The audience matches because the Forwarder mints `aud = "mcp:" + <route name>`,
@@ -66,6 +72,7 @@ Create the groups in ach-memory with `id` set to the LiteLLM team alias
   team-membership cache ≈ 180s. Dropping a team from the Environment's
   `authorizedTeams` takes effect after at most `exp` (120s) + the forwarder's
   `envstore` 5-minute NOTIFY-loss safety-net refresh ≈ ~7 minutes worst case.
+  That applies to `groups` only: `teams` follows LiteLLM membership.
 - **An `ek_`'s identity is its owner, not the agent.** `sub`, `email` and
   `groups` on an `ek_`-minted token are those of the key row's `owner_email`,
   the human who ran `ach-cli keys create`, never the agent process using the

@@ -9,17 +9,15 @@ import (
 	"github.com/ackstorm/ach/internal/litellm"
 )
 
-// filterShellTeams normalizes a precheck-granted team set into the JWT
-// "groups" claim: ACH's internal shell teams are dropped, the remainder is
+// filterShellTeams normalizes a team set into a JWT claim ("groups" or
+// "teams"): ACH's internal shell teams are dropped, the remainder is
 // deduplicated and sorted.
 //
 // ach-env-<name> and ach-user-<email> are ACH's own permission plumbing
 // (references/litellm-permission-model.md) and carry no meaning to a
-// backend, so they never leave the forwarder. The precheck intersection
-// already excludes them — a human belongs to their
-// own ach-user-* shell but never to an ach-env-* one, and authorizedTeams
-// is spec-authored so it holds neither. The filter is therefore defense in
-// depth, catching only an administrator who writes a shell alias into
+// backend, so they never leave the forwarder. "teams" depends on this
+// filter: a person belongs to their own ach-user-* shell. For "groups" it
+// only catches an administrator who writes a shell alias into
 // Environment.spec.authorizedTeams by hand.
 //
 // Returns nil rather than an empty slice when nothing survives, so the
