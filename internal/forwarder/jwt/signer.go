@@ -5,6 +5,8 @@ package jwt
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"sync/atomic"
@@ -66,6 +68,9 @@ type Claims struct {
 	// agent key, which otherwise carries its owner's identity. For audit, it
 	// grants nothing. Optional; the claim is omitted when empty.
 	Azp string
+	// KeyShare is the JWT "key_share" claim: KeyShare(secret, Aud, Sub). Set
+	// on /mcp backend tokens only. Optional; the claim is omitted when empty.
+	KeyShare string
 	// TTL is the access-token lifetime. Zero keeps the FWD-07 120-second
 	// window used for per-target backend tokens; the OAuth front door sets
 	// ACH_OAUTH_ACCESS_TTL (1h) so a user token outlives one request.
@@ -219,6 +224,9 @@ func (s *Ed25519Signer) Sign(_ context.Context, c Claims) (string, error) {
 	if c.Azp != "" {
 		claims["azp"] = c.Azp
 	}
+	if c.KeyShare != "" {
+		claims["key_share"] = c.KeyShare
+	}
 	if c.JTI != "" {
 		claims["jti"] = c.JTI
 	}
@@ -258,3 +266,12 @@ func slotToJWK(s *signerSlot) JWK {
 // Compile-time canary: *Ed25519Signer MUST satisfy Signer. A drift in
 // the interface signature surfaces at build time, not at runtime.
 var _ Signer = (*Ed25519Signer)(nil)
+
+// KeyShare is base64url without padding of HMAC-SHA256(secret, aud + "\x00" +
+// sub). An MCP backend derives the user's grant encryption key from it, so
+// the value for a given (secret, aud, sub) must never change.
+func KeyShare(secret []byte, aud, sub string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(aud + "\x00" + sub))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}

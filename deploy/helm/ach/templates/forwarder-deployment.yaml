@@ -110,6 +110,15 @@ spec:
             # resolves pk_ via the pepper). Sourced from the security.* Secret
             # refs; do NOT also set them in extraEnv (duplicate env entries).
             {{- include "ach.securityEnv" . | nindent 12 }}
+            {{- with .Values.security.mcpKeyShare.secretRef }}
+            {{- if .name }}
+            - name: ACH_MCP_KEY_SHARE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name | quote }}
+                  key: {{ .key | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.forwarder.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

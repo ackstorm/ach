@@ -121,6 +121,8 @@ replacing the pepper invalidates every issued credential.
 | `security.keyEncryptionKey.secretRef.key` | `dek` | Key inside it; the value is base64 of exactly 32 bytes. |
 | `security.credentialHashPepper.secretRef.name` | `ach-credential-hash-pepper` | Secret with the credential hash pepper. |
 | `security.credentialHashPepper.secretRef.key` | `pepper` | Key inside it. |
+| `security.mcpKeyShare.secretRef.name` | empty | Secret that keys the [`key_share` claim](jwt.md#the-key_share-claim) on `/mcp` tokens; forwarder only. Empty: no claim. |
+| `security.mcpKeyShare.secretRef.key` | `secret` | Key inside it; the value is at least 32 bytes, or the forwarder does not start. Changing it makes every grant stored by every MCP server that uses the claim unreadable. |
 
 ## `genai`
 

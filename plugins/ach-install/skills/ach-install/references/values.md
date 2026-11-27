@@ -189,6 +189,8 @@ security:
     secretRef: {name: ach-key-encryption-key, key: dek}
   credentialHashPepper:      # ACH_CREDENTIAL_HASH_PEPPER
     secretRef: {name: ach-credential-hash-pepper, key: pepper}
+  mcpKeyShare:               # ACH_MCP_KEY_SHARE_SECRET (forwarder): >= 32 bytes; empty name = no key_share claim on /mcp JWTs
+    secretRef: {name: "", key: secret}
 ```
 
 Detail: `references/litellm.md`, `references/prerequisites.md`.

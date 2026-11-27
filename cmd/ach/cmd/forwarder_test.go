@@ -75,3 +75,19 @@ func TestSelfURL(t *testing.T) {
 		}
 	}
 }
+
+func TestForwarderConfig_MCPShareSecret(t *testing.T) {
+	setRequiredForwarderEnv(t)
+	cfg, err := validateForwarderConfig()
+	if err != nil || cfg.MCPShareSecret != nil {
+		t.Fatalf("unset must be off: %+v %v", cfg, err)
+	}
+	t.Setenv("ACH_MCP_KEY_SHARE_SECRET", "too-short")
+	if _, err = validateForwarderConfig(); err == nil || !strings.Contains(err.Error(), "ACH_MCP_KEY_SHARE_SECRET") {
+		t.Fatalf("a short value must refuse to start: %v", err)
+	}
+	t.Setenv("ACH_MCP_KEY_SHARE_SECRET", strings.Repeat("k", 32))
+	if cfg, err = validateForwarderConfig(); err != nil || len(cfg.MCPShareSecret) != 32 {
+		t.Fatalf("set: %+v %v", cfg, err)
+	}
+}

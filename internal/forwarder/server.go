@@ -39,6 +39,7 @@ type Deps struct {
 	// G3); the proxy Director decrypts the sealed LiteLLM key material per
 	// request before forwarding. Required (validated at process start).
 	KeyEncryptionKey []byte
+	MCPShareSecret   []byte // see proxy.HandlerDeps
 	LiteLLMUpstream  *url.URL
 	// AuthnOptions: the RFC 9728 challenge on 401 + the declared credential headers.
 	AuthnOptions pamw.AuthnOptions
@@ -88,7 +89,8 @@ func New(deps Deps) http.Handler {
 			EnvProvider:   deps.EnvProvider,
 			TeamsResolver: deps.TeamsResolver,
 		},
-		BaseURL: deps.BaseURL,
+		BaseURL:        deps.BaseURL,
+		MCPShareSecret: deps.MCPShareSecret,
 	}
 
 	// OAuth discovery, ANONYMOUS by design (a client fetches these precisely

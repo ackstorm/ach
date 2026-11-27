@@ -22,6 +22,7 @@ Every forwarded request gets a new token; there is no refresh.
 | `groups` | Array of LiteLLM team aliases; see [The `groups` claim](#the-groups-claim) | when the set is not empty |
 | `teams` | Array of every LiteLLM team alias of the caller; see [The `teams` claim](#the-teams-claim) | when the target's policy sets `forwardTeams` and the set is not empty |
 | `azp` | `ek:<environment>`; for audit, grants nothing | on a token minted for an environment key |
+| `key_share` | Per-user, per-server key material; see [The `key_share` claim](#the-key_share-claim) | on `/mcp/<name>` when the forwarder has a key share secret |
 | `aud` | `mcp:<name>` on `/mcp/<name>`, `a2a:<name>` on `/a2a/<name>` | always |
 | `iat` | Mint time, Unix seconds | always |
 | `exp` | `iat + 120` | always |
@@ -64,6 +65,31 @@ Emitted only for a target whose `BackendIdentityPolicy` sets
 | Relation to `groups` | A superset: every entry of `groups` is in `teams` |
 | A user removed from a LiteLLM team keeps it, on `pk_` and `ek_`, for at most | 180 s (`exp` 120 s + 60 s membership cache) |
 | Removing a team from `Environment.spec.authorizedTeams` | Does not remove it from `teams` |
+
+## The `key_share` claim
+
+An MCP backend that stores something per user (an OAuth grant for the upstream
+provider) can derive that user's encryption key from its own secret plus
+`key_share`. A copy of its store and its secret then decrypts nothing without a
+request from ACH that carries the user's identity.
+
+| Property | Value |
+|---|---|
+| Present | On `/mcp/<name>` tokens when the forwarder has `ACH_MCP_KEY_SHARE_SECRET` (Helm `security.mcpKeyShare`). Never on `/a2a/<name>` tokens |
+| Value | base64url without padding of HMAC-SHA256(secret, `aud` + one `0x00` byte + `sub`) |
+| Stable | Identical on every request with the same `aud` and `sub` while the secret is unchanged |
+| Changes when | The secret changes (every user on every server), the MCP server is renamed (its `aud` changes) or the user's email changes |
+| A changed value | What the backend stored under the old value is unreadable; the user consents again |
+| In transit | The token passes through LiteLLM to the backend. The token expires after 120 seconds, the share inside it does not: never log the token |
+
+Test vector:
+
+| Input | Value |
+|---|---|
+| Secret (ASCII) | `test-secret-0123456789abcdef0123` |
+| `aud` | `mcp:mcp-gcp-cli-ro` |
+| `sub` | `user@example.com` |
+| `key_share` | `L7cb17nvOPFQFJIyXEF4atVSJTPmoKtjmMtt5cjrNKw` |
 
 ## JWKS endpoint
 
