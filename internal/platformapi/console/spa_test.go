@@ -43,21 +43,20 @@ func TestSPA_ServesIndexAndAssets(t *testing.T) {
 	}
 }
 
-func TestSPA_FallbackForClientRoutes(t *testing.T) {
+func TestSPA_UnknownPathIs404(t *testing.T) {
 	h := SPA(testDist(), "")
-	for _, p := range []string{"/env/demo", "/keys", "/stats?range=7d", "/assets/missing.js"} {
-		if rec := get(h, p); rec.Code != 200 || !strings.Contains(rec.Body.String(), "console") {
-			t.Fatalf("%s: %d — SPA fallback expected", p, rec.Code)
-		}
-	}
-}
-
-func TestSPA_NeverShadowsAPI(t *testing.T) {
-	h := SPA(testDist(), "")
-	for _, p := range []string{"/platform/nope", "/platform/", "/healthz", "/livez", "/readyz"} {
+	for _, p := range []string{
+		"/pepeluissssd", "/env/demo", "/keys", "/stats?range=7d", "/assets/missing.js", "/assets/",
+		"/ui", "/key/list", "/platform/nope", "/platform/", "/healthz", "/livez", "/readyz",
+	} {
 		if rec := get(h, p); rec.Code != 404 || !strings.Contains(rec.Header().Get("Content-Type"), "json") {
 			t.Fatalf("%s: %d %q — must be a JSON 404, not index.html", p, rec.Code, rec.Header().Get("Content-Type"))
 		}
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/nope", nil))
+	if rec.Code != 404 {
+		t.Fatalf("POST /nope: %d, want 404", rec.Code)
 	}
 }
 
