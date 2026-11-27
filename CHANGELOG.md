@@ -4,9 +4,9 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ## [Unreleased]
 
-### Removed
+### Breaking
 
-- **Breaking:** `KeyGrant.spec.budget`. A KeyGrant decides who may exchange, not how much: an exchange key has no budget of its own, and its Environment's `spec.budget` caps it, together with the identity's own budget. The KeyGrant budget measured the same spend as the Environment's when one key used the Environment, so raising one of the two changed nothing. Before upgrading, move each grant's ceiling to `spec.budget` on its Environment and remove `spec.budget` from your KeyGrants; after the upgrade, `kubectl apply` refuses a KeyGrant that still sets it. The operator removes the `key:<id>` budget of every exchange key within 5 minutes. To give a workload its own ceiling, give it its own Environment. `PATCH /platform/keys/{id}/budget` on an exchange key still answers 409, now with code `budget_managed_by_environment` instead of `budget_managed_by_grant`.
+- `KeyGrant.spec.budget` is removed. A KeyGrant decides who may exchange, not how much: an exchange key has no budget of its own, and its Environment's `spec.budget` caps it, together with the identity's own budget. The KeyGrant budget measured the same spend as the Environment's when one key used the Environment, so raising one of the two changed nothing. Before upgrading, move each grant's ceiling to `spec.budget` on its Environment and remove `spec.budget` from your KeyGrants; after the upgrade, `kubectl apply` refuses a KeyGrant that still sets it. The operator removes the `key:<id>` budget of every exchange key within 5 minutes. To give a workload its own ceiling, give it its own Environment. `PATCH /platform/keys/{id}/budget` on an exchange key still answers 409, now with code `budget_managed_by_environment` instead of `budget_managed_by_grant`.
 
 ## [1.3.8] - 2026-11-27
 
