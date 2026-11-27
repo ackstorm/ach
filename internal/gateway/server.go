@@ -15,7 +15,7 @@ import (
 //
 // ServeMux subtree semantics: a pattern ending in "/" matches that prefix
 // and everything under it, longest-match wins. The route table ends in
-// "/" -> platform-api (the console, D-26), and platform-api serves its
+// "/" -> platform-api (the console at /console/), and platform-api serves its
 // own Prometheus handler on that same port, so /metrics and /metrics/
 // are pinned to 404 here — they must never leave the cluster through the
 // public Ingress.

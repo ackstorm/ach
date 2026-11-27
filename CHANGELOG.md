@@ -6,6 +6,26 @@ All notable changes documented per [Keep a Changelog](https://keepachangelog.com
 
 ### Changed
 
+- The console moved to `/console/`, for example `https://ach.example.com/console/`. `/` redirects there (302), so existing bookmarks keep working, including the ones to a page such as `/#/keys`. `/ui` and `/ui/` redirect there too; nothing below `/ui/` does, and LiteLLM's own UI stays on LiteLLM's host. A monitor that expects 200 from `/` now gets the redirect: point it at `/console/`. With the console's pages under `/console/` and its sign-in and API under `/platform/console/`, an Ingress rule can limit the console to a network; see "Restrict the console by source address" in the Choose a topology page.
+
+### Fixed
+
+- A path ACH does not serve, such as `https://ach.example.com/no-such-page`, answers 404. It answered 200 with the console, which then sent the browser to the Overview.
+
+## [1.3.7] - 2026-11-26
+
+### Added
+
+- `BackendIdentityPolicy` has a new optional field, `spec.forwardTeams`. When it is `true`, the identity JWT ACH sends to that MCP server or A2A agent carries a `teams` claim listing every LiteLLM team of the caller. `groups` is unchanged: only the teams an Environment granting the backend authorizes. Off by default; turn it on for a backend that shares resources by team membership.
+
+## [1.3.6] - 2026-11-25
+
+### Added
+
+- OpenCode TUI plugins for every signed-in user: list them in `genai.opencodeTuiPlugins` (Helm), each an npm package at one exact version (`name@1.2.3`). `/clients/opencode/config` serves them as `tuiPlugins`, and opencode-oidc-provider v0.5.0 keeps them in each user's `cli.json`, beside the user's own entries. platform-api refuses to start on a version range, dist-tag or git spec, because every user installs them unreviewed. The chart's default `genai.opencodePluginSpec` is opencode-oidc-provider v0.5.0.
+
+### Changed
+
 - Enterprise console Overview: the prompt cache-read share target is 95% (it was 80%), and Average generation input has a target of 150K tokens, shown red with an `Above target` pill beyond it. The uncached input / output target stays at 10:1. One line under the three figures says the targets are dashboard choices.
 
 ### Fixed

@@ -38,7 +38,7 @@ func ServiceUpstreams(namespace string) Upstreams {
 // (JWKS + the RFC 9728 protected-resource document, both anonymous; except
 // /.well-known/opencode, platform-api's OpenCode install manifest) and
 // the single owned /v2/model/info (ach-agent pricing); platform-api owns
-// /platform and "/" (the console, D-26); content-service owns /content.
+// /platform and "/" (the console at /console/); content-service owns /content.
 //
 // Deliberately absent: /metrics (unauthenticated per service — never
 // front it) and /dex (browser reaches Dex via ACH_DEX_ISSUER_URL in
@@ -60,8 +60,8 @@ func ServiceRoutes(u Upstreams) []Route {
 		// usage at GET /v2/model/info with its ek_ (exact path, no subtree —
 		// a trailing slash or any other /v2 path falls to "/" below).
 		{Prefix: "/v2/model/info", Upstream: forwarder},
-		// The console (D-26): platform-api serves the embedded SPA at "/"
-		// with an SPA fallback.
+		// The console: platform-api serves the embedded SPA under /console/
+		// and redirects "/" there; any other path is platform-api's 404.
 		// Nothing LiteLLM serves is reachable here — /ui, /key/*, /health…
 		// live on LiteLLM's own host (D-18). net/http's mux keeps the longer
 		// prefixes above (and /healthz, /metrics) ahead of it.

@@ -38,7 +38,7 @@ The gateway is a logic-free reverse proxy with a fixed route table:
 | `/.well-known/opencode` | platform-api |
 | `/.well-known/` (everything else) | forwarder |
 | `/v2/model/info` (exact) | forwarder |
-| `/` | platform-api (the console) |
+| `/` | platform-api (the console, at `/console/`) |
 | `/metrics`, `/metrics/` | 404, always |
 
 Point ONE public rule at it. With the chart's Ingress:

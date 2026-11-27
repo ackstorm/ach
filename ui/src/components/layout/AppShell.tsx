@@ -27,6 +27,7 @@ import {
 import { Toaster } from '@/components/ui/toast';
 import { postJson } from '@/lib/api';
 import { formatCurrency } from '@/lib/format';
+import { CONSOLE_ROOT } from '@/lib/urls';
 import { BrandLockup } from './BrandLockup';
 import { ConsoleNavigation } from './ConsoleNavigation';
 import { ThemeToggle } from './ThemeToggle';
@@ -132,7 +133,7 @@ export function AppShell({ me, config }: AppShellProps) {
                 type="button"
                 onClick={async () => {
                   await postJson('/platform/console/session/logout', {});
-                  window.location.href = '/';
+                  window.location.href = CONSOLE_ROOT;
                 }}
               >
                 <LogOut aria-hidden="true" />

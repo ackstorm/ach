@@ -1,7 +1,7 @@
 // Login.test.tsx — the single, centered sign-in landing (Task 2.5).
 //
 // Asserts the load-bearing contract ported from src/ui/login.js:
-//   • the SSO CTA is a real link to the FIXED /platform/console/session/login?next=%2F literal
+//   • the SSO CTA is a real link to the FIXED /platform/console/session/login?next=%2Fconsole%2F literal
 //     (the ONLY redirect trigger, T-09-17) with its locked "Continue with SSO"
 //     label as the accessible name;
 //   • the two-tone brand lockup renders (base + green accent span);
@@ -20,10 +20,10 @@ afterEach(() => cleanup());
 const PROVIDERS = [{ label: 'Google' }, { label: 'Dex' }, { label: 'OIDC' }];
 
 describe('Login', () => {
-  it('CTA links to the FIXED /platform/console/session/login?next=%2F literal', () => {
+  it('CTA links to the FIXED /platform/console/session/login?next=%2Fconsole%2F literal', () => {
     render(<Login config={DEFAULT_CONFIG} />);
     const cta = screen.getByRole('link', { name: 'Continue with SSO' });
-    expect(cta).toHaveAttribute('href', '/platform/console/session/login?next=%2F');
+    expect(cta).toHaveAttribute('href', '/platform/console/session/login?next=%2Fconsole%2F');
   });
 
   it('renders the two-tone brand lockup (base + accent)', () => {

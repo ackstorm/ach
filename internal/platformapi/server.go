@@ -155,6 +155,9 @@ type Deps struct {
 	// OpenCodeExtraProviders (ACH_OPENCODE_EXTRA_PROVIDERS) are provider ids
 	// /.well-known/opencode allows next to GenAIProvider; empty = only it.
 	OpenCodeExtraProviders []string
+	// OpenCodeTUIPlugins (ACH_OPENCODE_TUI_PLUGINS) are the exact npm specs
+	// /clients/opencode/config asks the plugin to keep in cli.json; empty = none.
+	OpenCodeTUIPlugins []string
 	// VerifyAccessToken checks ACH's own OAuth access token locally (no I/O)
 	// and returns its subject email; nil disables /clients/opencode/config.
 	VerifyAccessToken func(token string) (email string, err error)
@@ -227,8 +230,8 @@ func New(deps Deps) http.Handler {
 			r.Get("/clients/opencode/config", opencode.ConfigHandler(opencode.ConfigDeps{
 				BaseURL: deps.BaseURL, Provider: deps.GenAIProvider, Verify: deps.VerifyAccessToken,
 				DefaultModel: deps.GenAIDefaultModel, DefaultSmall: deps.GenAIDefaultSmallModel,
-				DefaultEnv: deps.GenAIDefaultEnvironment,
-				Resolver:   deps.Resolver, KeyEncryptionKey: deps.KeyEncryptionKey,
+				DefaultEnv: deps.GenAIDefaultEnvironment, TUIPlugins: deps.OpenCodeTUIPlugins,
+				Resolver: deps.Resolver, KeyEncryptionKey: deps.KeyEncryptionKey,
 				AsUser: func(k string) opencode.UserCatalog { return deps.LiteLLMREST.AsUser(k) },
 				Caps:   caps, Store: od.Store, Logger: deps.Logger,
 			}))
@@ -364,9 +367,8 @@ func New(deps Deps) http.Handler {
 		})
 	})
 
-	// The console at "/" (D-26). chi's NotFound is the fallback for every
-	// unmatched path; SPA itself keeps /platform/* and the probes as JSON
-	// 404s so the fallback never shadows the API.
+	// The console at "/console/". chi's NotFound is the fallback for every
+	// unmatched path; SPA answers a JSON 404 for all but the console's own.
 	r.NotFound(console.SPA(console.Dist(), deps.ConsoleTheme).ServeHTTP)
 
 	return r

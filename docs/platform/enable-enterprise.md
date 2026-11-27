@@ -183,7 +183,7 @@ kubectl -n ach rollout status deploy/ach-platform-api
 kubectl -n ach logs deploy/ach-classifier --tail=20     # the taxonomy version and the category count
 ```
 
-Open the console at `https://ach.example.com`: Traces lists your own sessions,
+Open the console at `https://ach.example.com/console/`: Traces lists your own sessions,
 and the pages are no longer marked "Enterprise only".
 
 ## Related

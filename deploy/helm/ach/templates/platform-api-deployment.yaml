@@ -202,6 +202,10 @@ spec:
             - name: ACH_OPENCODE_EXTRA_PROVIDERS
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- with .Values.genai.opencodeTuiPlugins }}
+            - name: ACH_OPENCODE_TUI_PLUGINS
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- with .Values.genai.defaultModel }}
             - name: ACH_GENAI_DEFAULT_MODEL
               value: {{ . | quote }}

@@ -34,7 +34,7 @@ enterprise:
 # overlay or `--set image.pullPolicy=Always`.
 image:
   repo: ghcr.io/ackstorm/ach
-  tag: v1.3.5
+  tag: v1.3.7
   pullPolicy: IfNotPresent
   # rebuildId: a unique value per build (e.g. a timestamp) rendered as the
   # `ach.ackstorm.ai/rebuild-id` pod annotation on every ach Deployment.
@@ -195,7 +195,7 @@ platformApi:
     default: [default]
     users: {}   # { alice@example.com: [dream, run] }
     sso: {}     # { projects@example.com: [run] }
-  # console: settings for the web console served at /.
+  # console: settings for the web console served at /console/.
   console:
     # chatUrl is the hosted chat UI the console's Chat button (and the How-to
     # chat card) opens, e.g. https://chat.example.com. Empty hides both.
@@ -375,7 +375,7 @@ genai:
   # The plugin `opencode auth login https://<ach host>` installs (engines v1
   # and v2) via /.well-known/opencode: an npm or git spec. Git at the repo
   # root, pinned to a tag (v1 ignores `::path:` subdirs). Empty disables it.
-  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.4.11"
+  opencodePluginSpec: "git+https://github.com/ackstorm/opencode-oidc-provider.git#v0.5.0"
   # Provider ids /.well-known/opencode allows next to providerName in
   # enabled_providers (e.g. [claude-agent] for OpenCode's built-in Claude Agent
   # provider). On OpenCode v2 a user's own config cannot widen that list, so any
@@ -383,6 +383,10 @@ genai:
   # here. An id nobody has has no effect. Same format as providerName.
   # Empty = providerName only.
   opencodeExtraProviders: []
+  # OpenCode TUI plugins every signed-in user gets: the opencode-oidc-provider
+  # plugin keeps them in cli.json and removes the ones dropped here, never the
+  # user's own. Each is an npm package at one exact version (name@1.2.3).
+  opencodeTuiPlugins: []
   # Optional default models (bare names, no provider prefix) for GenAI clients;
   # /clients/opencode/config uses them today: emitted as config.model /
   # config.small_model only when the user's own model list holds that name.

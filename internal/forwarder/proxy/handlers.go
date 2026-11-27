@@ -211,10 +211,10 @@ func HandlerA2AMCP(deps HandlerDeps, selfURL string) http.HandlerFunc {
 // precheckOrReject runs check for an ACH caller and, on failure, writes the
 // precheck envelope (Hub §15.5) and reports false.
 func precheckOrReject(w http.ResponseWriter, r *http.Request, deps HandlerDeps, check precheckFunc,
-	kc middleware.KeyContext, name, routeLabel string) ([]string, bool) {
-	granted, err := check(r.Context(), kc, name, deps.PrecheckDeps)
+	kc middleware.KeyContext, name, routeLabel string) (precheck.Teams, bool) {
+	teams, err := check(r.Context(), kc, name, deps.PrecheckDeps)
 	if err == nil {
-		return granted, true
+		return teams, true
 	}
 	outcome, status, code := classifyPrecheckErr(err)
 	metrics.IncRequests(routeLabel, keyTypeFor(r.Context()), outcome)
@@ -222,10 +222,10 @@ func precheckOrReject(w http.ResponseWriter, r *http.Request, deps HandlerDeps, 
 		metrics.IncLiteLLMUnreachable()
 	}
 	render.Error(w, status, code, codeMessage(code), middleware.RequestIDFromCtx(r.Context()))
-	return nil, false
+	return precheck.Teams{}, false
 }
 
-type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) ([]string, error)
+type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) (precheck.Teams, error)
 
 func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool) http.HandlerFunc {
 	rp := New(deps.Deps)
@@ -249,9 +249,9 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 			return
 		}
 
-		// 1. Precheck — §5.1 step-4. The granting team set doubles as the
-		//    JWT "groups" claim (filtered at the mint below).
-		granted, ok := precheckOrReject(w, r, deps, check, kc, name, routeLabel)
+		// 1. Precheck — §5.1 step-4. Its team sets become the JWT "groups"
+		//    and, when the policy asks, "teams" claims at the mint below.
+		teams, ok := precheckOrReject(w, r, deps, check, kc, name, routeLabel)
 		if !ok {
 			return
 		}
@@ -287,14 +287,18 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		if kc.KeyType == keys.PrefixEk {
 			azp = "ek:" + kc.Environment
 		}
-		token, err := deps.Signer.Sign(r.Context(), jwt.Claims{
+		claims := jwt.Claims{
 			Iss:    deps.BaseURL,
 			Sub:    kc.OwnerEmail,
 			Aud:    audPrefix + name,
 			Email:  kc.OwnerEmail,
-			Groups: filterShellTeams(granted),
+			Groups: filterShellTeams(teams.Granted),
 			Azp:    azp,
-		})
+		}
+		if winner.ForwardTeams {
+			claims.Teams = filterShellTeams(teams.Caller)
+		}
+		token, err := deps.Signer.Sign(r.Context(), claims)
 		if err != nil {
 			metrics.IncJWTSuppressed(kind, "signing_failure")
 			metrics.IncRequests(routeLabel, keyTypeLabel, "internal_error")

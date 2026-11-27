@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +75,7 @@ type jwtClaimsCapture struct {
 	Iat    int64    `json:"Iat"`
 	Exp    int64    `json:"Exp"`
 	Groups []string `json:"Groups"`
+	Teams  []string `json:"Teams"`
 	Azp    string   `json:"Azp"`
 }
 
@@ -185,6 +187,17 @@ func testJWTValidateViaForwarder(t *testing.T, mcpEchoLocal string) {
 	expectedAud := "mcp:" + mcpEchoBareName
 	snap := readMcpEchoCapture(t, mcpEchoLocal)
 	assertCapturedClaims(t, snap, expectedIss, expectedAud, "" /* any kid */)
+
+	// bip-demo-mcp-jwt sets forwardTeams: the token also lists every team of
+	// the caller, and the caller's own ach-user-* shell is not among them.
+	if !slices.Contains(snap.JWTClaims.Teams, "default") {
+		t.Fatalf("teams = %v; want it to contain default", snap.JWTClaims.Teams)
+	}
+	for _, team := range snap.JWTClaims.Teams {
+		if strings.HasPrefix(team, "ach-env-") || strings.HasPrefix(team, "ach-user-") {
+			t.Fatalf("teams = %v; an ACH shell team leaked", snap.JWTClaims.Teams)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------
