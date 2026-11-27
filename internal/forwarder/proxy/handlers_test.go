@@ -645,6 +645,44 @@ func TestHandlerMCP_PkGroupsClaim(t *testing.T) {
 	}
 }
 
+// key_share is on /mcp tokens when the secret is configured, never on /a2a.
+func TestHandlers_KeyShareClaimOnMCPOnly(t *testing.T) {
+	upstream, _ := upstreamSpy()
+	defer upstream.Close()
+
+	const server, agent, owner = "mcp-gcp-cli-ro", "agent-y", "user@example.com"
+	env := makeEnvRow("demo", []string{server}, []string{agent}, []string{"team"})
+	mint := func(secret []byte, path, name string, h func(HandlerDeps) http.HandlerFunc) string {
+		t.Helper()
+		signer := &mockSigner{}
+		deps := mkDeps(t, upstream, signer, precheck.Deps{
+			EnvProvider:   newEnvProvider(env),
+			TeamsResolver: &mockTeamsResolver{teams: []string{"team"}},
+		}, newBIPResolver(makeBIPRow("pol-m", "MCPServer", server, true), makeBIPRow("pol-a", "A2AAgent", agent, true)))
+		deps.MCPShareSecret = secret
+		r := requestWithKC(t, http.MethodGet, path, middleware.KeyContext{KeyType: keys.PrefixPk, OwnerEmail: owner}, "")
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("name", name)
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		h(deps)(httptest.NewRecorder(), r)
+		if signer.signCalls != 1 {
+			t.Fatalf("%s: sign calls = %d; want 1", path, signer.signCalls)
+		}
+		return signer.lastClaims.KeyShare
+	}
+
+	secret := []byte("test-secret-0123456789abcdef0123")
+	if got, want := mint(secret, "/mcp/"+server, server, HandlerMCP), "L7cb17nvOPFQFJIyXEF4atVSJTPmoKtjmMtt5cjrNKw"; got != want {
+		t.Errorf("/mcp key_share = %q; want %q", got, want)
+	}
+	if got := mint(secret, "/a2a/"+agent, agent, HandlerA2A); got != "" {
+		t.Errorf("/a2a key_share = %q; want none", got)
+	}
+	if got := mint(nil, "/mcp/"+server, server, HandlerMCP); got != "" {
+		t.Errorf("/mcp key_share without a secret = %q; want none", got)
+	}
+}
+
 // A caller with a raw sk- has no KeyContext; the proxy writes the key
 // through and, on /mcp, skips precheck and the per-target JWT mint.
 func TestHandlers_RawLiteLLMKeyIsForwardedWithoutIdentity(t *testing.T) {

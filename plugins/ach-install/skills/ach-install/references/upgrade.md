@@ -119,6 +119,7 @@ the release notes ask for it; migrations are cumulative and run in order.
 |-------|----------------------|
 | `security.keyEncryptionKey` Secret content | Every sealed LiteLLM key becomes unreadable: users and `ek-` keys get 401 until re-minted. |
 | `security.credentialHashPepper` Secret content | Every stored `pk-`/`ek-` credential hash stops matching: all keys invalid. |
+| `security.mcpKeyShare` Secret content | Every grant stored by an MCP server that uses the `key_share` claim becomes unreadable: each user consents again on each server. |
 | `ACH_BASE_URL` | OAuth issuer and every issued token, the Dex redirect URI, hydrated download URLs, MCP entries users' tools saved, and which LiteLLM keys the orphan reaper considers this release's. |
 | `genai.providerName` | Signs every OpenCode user out. |
 | `ach-jwt-signing-keys` | Deleting it invalidates every access token in use (tools renew them; refresh tokens live in Valkey) and a forwarder that restarts refuses to start until the operator re-mints on its next start. Rotate it with the overlap procedure in `references/auth.md`. |

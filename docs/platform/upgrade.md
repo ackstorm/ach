@@ -98,6 +98,7 @@ Environment that lists instructions: run `ach-cli upgrade`.
 |---|---|
 | Content of the Secret behind `security.keyEncryptionKey` | Every stored LiteLLM key becomes unreadable: users and environment keys get 401 until they are created again |
 | Content of the Secret behind `security.credentialHashPepper` | Every ACH key stops being valid |
+| Content of the Secret behind `security.mcpKeyShare` | Every grant stored by an MCP server that uses the `key_share` claim becomes unreadable: each user consents again on each server |
 | `ACH_BASE_URL` | Sign-in for every user, the Dex redirect address, the download links of installed Environments and the MCP entries users' tools saved |
 | `genai.providerName` | Signs every OpenCode user out |
 | The Secret `ach-jwt-signing-keys` | Deleting it invalidates every access token in use, and components do not start until the operator has created a new one. Replace its keys with [Rotate the JWT signing keys](rotate-jwt-signing-keys.md) |

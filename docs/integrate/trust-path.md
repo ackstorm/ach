@@ -147,6 +147,16 @@ The header fields and claims are listed in
 opt-in `teams` claim as [The `teams` claim](../reference/jwt.md#the-teams-claim)
 describes.
 
+On `/mcp/<name>` the token also carries `key_share` when the forwarder has
+`ACH_MCP_KEY_SHARE_SECRET`: key material for that user on that server, which a
+backend mixes with its own secret to encrypt what it stores per user, so that
+its store and its secret alone decrypt nothing. Formula and test vector:
+[The `key_share` claim](../reference/jwt.md#the-key_share-claim). **The secret
+has no rotation**: changing it, or renaming the MCP server, makes every grant
+stored under the old value unreadable and each user consents again. A backend
+treats a token without the claim as an error, not as a reason to ask for
+consent, and never logs the token.
+
 `sub` is the bare `<owner-email>` (no namespace prefix). The additive `email`
 claim mirrors it for backends that key their per-user token storage by email and
 read `email` first, falling back to `sub`. It is omitted entirely when the owner
@@ -156,7 +166,7 @@ email is empty. The legacy `<namespace>/<email>` `sub` form is **gone**
 **`nbf` is intentionally omitted.** With a 120 s `exp` it would add only
 clock-skew risk for no security gain — `exp` is the sole time bound. The minted
 claim set is `iss` / `sub` / `aud` / `iat` / `exp` (plus the additive `email`,
-`groups`, `teams` and `azp`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
+`groups`, `teams`, `azp` and `key_share`): **no `nbf`, no `jti`.** Backends MUST verify `iss` / `aud` /
 `exp` only and MUST NOT require `nbf`.
 
 The 120-second TTL is intentionally tight. There is no refresh mechanism;

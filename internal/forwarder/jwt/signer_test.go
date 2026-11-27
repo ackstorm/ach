@@ -236,6 +236,14 @@ func TestEd25519Signer_Sign_EmailClaim(t *testing.T) {
 	if _, ok := noEmail["email"]; ok {
 		t.Fatalf("email claim must be omitted when empty, got %v", noEmail["email"])
 	}
+
+	withShare := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x", KeyShare: "share"})
+	if withShare["key_share"] != "share" {
+		t.Fatalf("key_share claim = %v; want %q", withShare["key_share"], "share")
+	}
+	if _, ok := noEmail["key_share"]; ok {
+		t.Fatalf("key_share claim must be omitted when empty, got %v", noEmail["key_share"])
+	}
 }
 
 // Test 7 — Sign always uses current; next is published in JWKS only.
@@ -543,5 +551,14 @@ func TestEd25519Signer_Sign_GroupsClaim(t *testing.T) {
 	empty := decode(t, Claims{Iss: "i", Sub: "u@example.com", Aud: "mcp:x", Groups: []string{}})
 	if _, ok := empty["groups"]; ok {
 		t.Fatalf("groups must be omitted when empty, got %v", empty["groups"])
+	}
+}
+
+// The vector mcp-oauth derives grant keys against: a change here makes every
+// stored grant unreadable.
+func TestKeyShare_Vector(t *testing.T) {
+	got := KeyShare([]byte("test-secret-0123456789abcdef0123"), "mcp:mcp-gcp-cli-ro", "user@example.com")
+	if want := "L7cb17nvOPFQFJIyXEF4atVSJTPmoKtjmMtt5cjrNKw"; got != want {
+		t.Fatalf("KeyShare = %q; want %q", got, want)
 	}
 }

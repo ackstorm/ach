@@ -117,6 +117,7 @@ type forwarderConfig struct {
 	DBURL            string
 	Pepper           []byte
 	KeyEncryptionKey []byte
+	MCPShareSecret   []byte // ACH_MCP_KEY_SHARE_SECRET; nil = no key_share claim
 	RedisAddr        string
 	RedisPassword    string
 	RedisTLS         bool
@@ -170,6 +171,14 @@ func validateForwarderConfig() (*forwarderConfig, error) {
 		return nil, err
 	}
 	cfg.KeyEncryptionKey = dek
+	// Raw bytes of the value, like the pepper. Optional; changing it makes
+	// every grant stored by every MCP backend unreadable.
+	if v := os.Getenv("ACH_MCP_KEY_SHARE_SECRET"); v != "" {
+		if len(v) < 32 {
+			return nil, errors.New("ACH_MCP_KEY_SHARE_SECRET must be at least 32 bytes")
+		}
+		cfg.MCPShareSecret = []byte(v)
+	}
 
 	// B2: LiteLLM endpoint + master key now sourced from
 	// LiteLLMConnection/default CR at buildForwarderDeps time.
@@ -429,6 +438,7 @@ func buildForwarderDeps(ctx context.Context, cfg *forwarderConfig, logger *slog.
 		BaseURL:          cfg.BaseURL,
 		SelfURL:          selfURL(cfg.TrafficBindAddr),
 		KeyEncryptionKey: cfg.KeyEncryptionKey,
+		MCPShareSecret:   cfg.MCPShareSecret,
 		LiteLLMUpstream:  llmUpstream, // B2: from LiteLLMConnection CR
 		BIPResolver:      bipCache,    // C1/C4: Postgres-backed BIP cache
 		EnvProvider:      envStore,    // C2/C5: Postgres-backed Env cache
@@ -541,6 +551,7 @@ func runForwarder(_ *cobra.Command, _ []string) error {
 		"baseURL", cfg.BaseURL,
 		"credentialHeaders", cfg.CredentialHeaders,
 		"jwtSecret", cfg.JWTSecretName,
+		"mcpKeyShare", len(cfg.MCPShareSecret) > 0,
 	)
 
 	if err := runForwarderServer(ctx, deps, cfg); err != nil {

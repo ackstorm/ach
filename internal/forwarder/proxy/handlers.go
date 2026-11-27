@@ -46,6 +46,9 @@ type HandlerDeps struct {
 	PrecheckDeps precheck.Deps
 	// BaseURL is the JWT "iss" claim (ACH_BASE_URL).
 	BaseURL string
+	// MCPShareSecret keys the "key_share" claim on /mcp tokens
+	// (ACH_MCP_KEY_SHARE_SECRET). Empty: no claim.
+	MCPShareSecret []byte
 }
 
 // taggedPassthrough builds the no-precheck passthrough handler shared by
@@ -153,14 +156,14 @@ func HandlerGemini(deps HandlerDeps) http.HandlerFunc {
 // optional BIP lookup + JWT attach, then proxies. See FWD-03, FWD-05,
 // FWD-07.
 func HandlerMCP(deps HandlerDeps) http.HandlerFunc {
-	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp", false)
+	return handlerNamed(deps, "MCPServer", precheck.CheckMCP, "mcp:", "/mcp", false, deps.MCPShareSecret)
 }
 
 // HandlerA2A returns the /a2a/{name}/* handler. Same shape as HandlerMCP
 // but consults Environment.spec.runtime.a2aAgents and emits "a2a:<name>"
 // as the JWT audience.
 func HandlerA2A(deps HandlerDeps) http.HandlerFunc {
-	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a", true)
+	return handlerNamed(deps, "A2AAgent", precheck.CheckA2A, "a2a:", "/a2a", true, nil)
 }
 
 type keptCredentialKey struct{}
@@ -227,7 +230,7 @@ func precheckOrReject(w http.ResponseWriter, r *http.Request, deps HandlerDeps, 
 
 type precheckFunc func(ctx context.Context, kc middleware.KeyContext, name string, deps precheck.Deps) (precheck.Teams, error)
 
-func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool) http.HandlerFunc {
+func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, routeLabel string, stripTags bool, keyShareSecret []byte) http.HandlerFunc {
 	rp := New(deps.Deps)
 	inner := func(w http.ResponseWriter, r *http.Request) {
 		// /a2a: LiteLLM merges JSON-RPC body (and params.*) tags like /v1's.
@@ -297,6 +300,9 @@ func handlerNamed(deps HandlerDeps, kind string, check precheckFunc, audPrefix, 
 		}
 		if winner.ForwardTeams {
 			claims.Teams = filterShellTeams(teams.Caller)
+		}
+		if len(keyShareSecret) > 0 {
+			claims.KeyShare = jwt.KeyShare(keyShareSecret, claims.Aud, claims.Sub)
 		}
 		token, err := deps.Signer.Sign(r.Context(), claims)
 		if err != nil {

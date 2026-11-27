@@ -359,6 +359,14 @@ security:
     secretRef:
       name: ach-credential-hash-pepper
       key: pepper
+  # mcpKeyShare → ACH_MCP_KEY_SHARE_SECRET (forwarder only): at least 32
+  # bytes; keys the key_share claim on /mcp identity JWTs. Empty name: no
+  # claim. Changing the value makes every grant stored by every MCP backend
+  # that uses the claim unreadable.
+  mcpKeyShare:
+    secretRef:
+      name: ""
+      key: secret
 
 # genai: client-neutral naming for the GenAI clients ACH configures
 # (OpenCode today). providerName is the provider id users sign in with —
