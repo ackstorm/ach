@@ -191,10 +191,12 @@ func (c *Client) LoginForResource(ctx context.Context, clientID, resource string
 			return
 		}
 		code, err := callbackCode("http://"+r.Host+r.URL.RequestURI(), redirectURI, state)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err != nil {
-			http.Error(w, "Sign-in failed. Return to your terminal.", http.StatusBadRequest)
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, callbackPage, "err", "m9.5 9.5 5 5m0-5-5 5", "Sign-in failed", "Nothing was granted. Return to your terminal for details.")
 		} else {
-			_, _ = fmt.Fprint(w, "<h1>Signed in to ACH</h1><p>You can close this tab.</p>")
+			_, _ = fmt.Fprintf(w, callbackPage, "", "m9 12 2 2 4-4", "Signed in to ACH", "Return to your terminal — you can close this tab.")
 		}
 		select {
 		case done <- result{code: code, err: err}:
@@ -272,6 +274,25 @@ func callbackCode(raw, redirectURI, state string) (string, error) {
 }
 
 // deviceGrantType is the RFC 8628 grant_type on /token.
+// callbackPage is the loopback redirect's browser page; its colours are the
+// device page's (internal/platformapi/auth/page.html). Args: main class
+// ("err" or ""), shield mark path, title, subtitle.
+const callbackPage = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ACH — %[3]s</title>
+<style>
+:root { color-scheme: dark; --bg: oklch(0.14 0.005 260); --card: oklch(0.18 0.008 260); --border: oklch(0.28 0.01 260); --text: oklch(0.93 0.005 260); --muted: oklch(0.65 0.01 260); --accent: oklch(0.72 0.19 150); }
+@media (prefers-color-scheme: light) { :root { color-scheme: light; --bg: oklch(0.985 0.004 260); --card: oklch(1 0 0); --border: oklch(0.9 0.008 260); --text: oklch(0.22 0.015 260); --muted: oklch(0.44 0.012 260); --accent: oklch(0.68 0.19 150); } }
+.err { --accent: oklch(0.6 0.2 25); }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text); font: 14px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+main { width: min(420px, calc(100%% - 48px)); padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 18px; }
+svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+h1 { margin: 20px 0 4px; font-size: 22px; font-weight: 600; }
+p { margin: 0; color: var(--muted); }
+</style></head>
+<body><main class="%[1]s"><div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 4.5 3.4 7.3 8 10 4.6-2.7 8-5.5 8-10V6z"/><path d="%[2]s"/></svg>ACH</div><h1>%[3]s</h1><p>%[4]s</p></main></body></html>
+`
+
 const deviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
 
 // DeviceLogin runs the RFC 8628 device grant for a host with no browser:
