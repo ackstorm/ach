@@ -90,7 +90,7 @@ func TestProbeGrant(t *testing.T) {
 	f403 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) }))
 	defer f403.Close()
 	f.deps.Issuer = f403.URL
-	if got := f.deps.probeGrant(context.Background(), "k@x", "u1", "svc"); got != probeOther {
+	if got := f.deps.probeGrant(context.Background(), "k@x", "u1", "svc"); got != probeNoAccess {
 		t.Fatalf("403: %s", got)
 	}
 }

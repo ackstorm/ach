@@ -1129,3 +1129,52 @@ func TestRenderPage_DefaultTheme(t *testing.T) {
 		t.Fatalf("unthemed page: %.200q", rec.Body.String())
 	}
 }
+
+// TestASCallback_RefusesWithAReason: a login whose Dex account is not the
+// client's login_hint, or whose account has no access to the MCP server,
+// issues no code and tells the client why.
+func TestASCallback_RefusesWithAReason(t *testing.T) {
+	for _, tc := range []struct {
+		name, hint string
+		probe      probeOutcome
+		want       []string // in error_description; nil = a code is issued
+	}{
+		{name: "hint matches", hint: " U@x.COM "},
+		{name: "hint differs", hint: "agent@x.com",
+			want: []string{"signed in as u@x.com", "started for agent@x.com", "private window"}},
+		{name: "no access", probe: probeNoAccess, want: []string{"u@x.com has no access to the MCP server whatever"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := withFakeDex(newAS(t), "u@x.com")
+			if tc.probe != "" {
+				f.deps.ConsentBIP = func(context.Context, string) (*db.BIPRow, error) { return &db.BIPRow{}, nil }
+				f.deps.Probe = func(context.Context, string, string, string) probeOutcome { return tc.probe }
+				f.mount()
+			}
+			cid := registerClient(t, f)
+			w := f.do(t, "GET", authorizeURL(cid, map[string]string{"login_hint": tc.hint}), nil, nil)
+			state := strings.TrimPrefix(w.Header().Get("Location"), "http://dex.test/auth?state=")
+			c := w.Result().Cookies()[0]
+			w = f.do(t, "GET", "/platform/oauth/as-callback?code=dexcode&state="+state, nil, map[string]string{"Cookie": c.Name + "=" + c.Value})
+			loc := w.Header().Get("Location")
+			if w.Code != 302 || !strings.HasPrefix(loc, "http://127.0.0.1:5000/cb?") || mustQuery(t, loc, "state") != "xyz" {
+				t.Fatalf("%d %s", w.Code, loc)
+			}
+			if tc.want == nil {
+				if mustQuery(t, loc, "code") == "" {
+					t.Fatalf("no code: %s", loc)
+				}
+				return
+			}
+			if mustQuery(t, loc, "code") != "" || mustQuery(t, loc, "error") != "access_denied" {
+				t.Fatalf("refusal: %s", loc)
+			}
+			desc := mustQuery(t, loc, "error_description")
+			for _, s := range tc.want {
+				if !strings.Contains(desc, s) {
+					t.Fatalf("error_description %q lacks %q", desc, s)
+				}
+			}
+		})
+	}
+}

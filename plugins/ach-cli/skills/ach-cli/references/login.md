@@ -51,6 +51,10 @@ ach-cli logout                       # end the session; the URL stays
 
 Any command takes `--profile <name>` (or `ACH_PROFILE`) to use another profile once.
 
+Logging in again to a profile keeps its account: ACH refuses a browser signed in as
+anyone else and names both accounts. To sign in as an agent identity, open the link in a
+private window. To switch a profile to another account, `ach-cli logout` first.
+
 ### A machine that cannot open a browser for good (CI, an agent box)
 
 Make an environment key on a signed-in machine (see [keys](keys.md)), then on

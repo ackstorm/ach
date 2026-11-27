@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net"
 	"net/http"
 	"net/url"
@@ -57,6 +58,9 @@ var HTTPClient *http.Client
 type Client struct {
 	BaseURL      string
 	LoginTimeout time.Duration // wait for the browser; zero → 5 min
+	// LoginHint is the account the sign-in is for; ACH refuses a browser
+	// signed in as anyone else. Empty accepts any account.
+	LoginHint string
 }
 
 type metadata struct {
@@ -72,6 +76,8 @@ type tokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
 	Error        string `json:"error"`
+	// ErrorDescription says why, e.g. which account signed in instead.
+	ErrorDescription string `json:"error_description"`
 }
 
 func (c *Client) http() *http.Client {
@@ -178,6 +184,9 @@ func (c *Client) LoginForResource(ctx context.Context, clientID, resource string
 	if resource != "" {
 		q.Set("resource", resource)
 	}
+	if c.LoginHint != "" {
+		q.Set("login_hint", c.LoginHint)
+	}
 	authorizeURL := m.AuthorizationEndpoint + "?" + q.Encode()
 
 	type result struct {
@@ -194,7 +203,7 @@ func (c *Client) LoginForResource(ctx context.Context, clientID, resource string
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = fmt.Fprintf(w, callbackPage, "err", "m9.5 9.5 5 5m0-5-5 5", "Sign-in failed", "Nothing was granted. Return to your terminal for details.")
+			_, _ = fmt.Fprintf(w, callbackPage, "err", "m9.5 9.5 5 5m0-5-5 5", "Sign-in failed", html.EscapeString(err.Error()))
 		} else {
 			_, _ = fmt.Fprintf(w, callbackPage, "", "m9 12 2 2 4-4", "Signed in to ACH", "Return to your terminal — you can close this tab.")
 		}
@@ -265,6 +274,9 @@ func callbackCode(raw, redirectURI, state string) (string, error) {
 		return "", errors.New("state mismatch on the loopback redirect")
 	}
 	if q.Has("error") {
+		if desc := q.Get("error_description"); desc != "" {
+			return "", errors.New(desc)
+		}
 		return "", errors.New("authorization was declined or failed")
 	}
 	if len(q["code"]) != 1 || q.Get("code") == "" {
@@ -316,6 +328,9 @@ func (c *Client) DeviceLogin(ctx context.Context, clientID, resource string, sho
 	form := url.Values{"client_id": {clientID}}
 	if resource != "" {
 		form.Set("resource", resource)
+	}
+	if c.LoginHint != "" {
+		form.Set("login_hint", c.LoginHint)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.DeviceAuthorizationEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -412,6 +427,9 @@ func (c *Client) exchange(ctx context.Context, tokenEndpoint string, form url.Va
 	if resp.StatusCode != http.StatusOK || tr.AccessToken == "" {
 		if tr.Error == "" {
 			tr.Error = fmt.Sprintf("status %d", resp.StatusCode)
+		}
+		if tr.ErrorDescription != "" {
+			return nil, fmt.Errorf("token endpoint: %s: %s", tr.Error, tr.ErrorDescription)
 		}
 		return nil, fmt.Errorf("token endpoint: %s", tr.Error)
 	}

@@ -33,6 +33,13 @@ and confirm the short code shown in the terminal. For callback paste, use
 into the waiting terminal. Keep it out of chat and shell history. Retry discovery
 with the original credential. A grant is required for both discovery and calls.
 
+The browser must be signed in to ACH as the profile's account. Otherwise ACH
+refuses and names both accounts; for an agent identity (a shared account), tell
+the person to open the authorization URL in a private window and sign in there
+as that account. "<account> has no access to the MCP server <name>" means the
+account is not granted that server in any Environment: an administrator has to
+grant it.
+
 For an A2A agent, search by name, description or skill, then send a message:
 
 ```bash

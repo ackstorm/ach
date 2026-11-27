@@ -22,21 +22,30 @@ type probeOutcome string
 const (
 	probeOK           probeOutcome = "ok"
 	probeAuthRequired probeOutcome = "auth_required"
+	probeNoAccess     probeOutcome = "no_access"
 	probeOther        probeOutcome = "other"
 )
 
 const probeTTL = 60 * time.Second
 
 // probeGrant checks the backend through the public Forwarder path as the
-// user. Only LiteLLM's auth_required outcome triggers chained consent.
+// user. Only LiteLLM's auth_required outcome triggers chained consent; the
+// Forwarder's 403 means the user has no access to the server.
 func (d OAuthDeps) probeGrant(ctx context.Context, email, userID, key string) probeOutcome {
+	outcome, status := d.runProbe(ctx, email, userID, key)
+	d.Auth.Logger.Info("oauth: consent probe", "mcp_key", key, "user", email, "outcome", outcome, "status", status)
+	return outcome
+}
+
+// runProbe returns the outcome and the last HTTP status (0 when none came back).
+func (d OAuthDeps) runProbe(ctx context.Context, email, userID, key string) (probeOutcome, int) {
 	if err := d.ensureOAuthPK(ctx, email, userID); err != nil {
 		d.Auth.Logger.Warn("oauth: probe: ensure pk_ failed", "err", err)
-		return probeOther
+		return probeOther, 0
 	}
 	token, err := d.Signer.Sign(ctx, jwt.Claims{Iss: d.Issuer, Sub: email, Aud: d.Audience, Email: email, TTL: probeTTL})
 	if err != nil {
-		return probeOther
+		return probeOther, 0
 	}
 	endpoint := strings.TrimRight(d.Issuer, "/") + "/mcp/" + key
 	post := func(session, body string) (*http.Response, error) {
@@ -55,37 +64,40 @@ func (d OAuthDeps) probeGrant(ctx context.Context, email, userID, key string) pr
 
 	initResp, err := post("", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ach-consent-probe","version":"1"}}}`)
 	if err != nil {
-		return probeOther
+		return probeOther, 0
 	}
 	_, _ = io.Copy(io.Discard, initResp.Body)
 	_ = initResp.Body.Close()
+	if initResp.StatusCode == http.StatusForbidden {
+		return probeNoAccess, initResp.StatusCode
+	}
 	if initResp.StatusCode != http.StatusOK {
-		return probeOther
+		return probeOther, initResp.StatusCode
 	}
 
 	resp, err := post(initResp.Header.Get("Mcp-Session-Id"), `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	if err != nil {
-		return probeOther
+		return probeOther, 0
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return probeOther
+		return probeOther, resp.StatusCode
 	}
 	result, err := mcpResult(resp.Header.Get("Content-Type"), body)
 	if err != nil {
-		return probeOther
+		return probeOther, resp.StatusCode
 	}
 	meta, _ := result["_meta"].(map[string]any)
 	outcomes, _ := meta["litellm.ai/server_outcomes"].(map[string]any)
 	outcome, _ := outcomes[key].(map[string]any)
 	switch status, _ := outcome["status"].(string); status {
 	case "ok":
-		return probeOK
+		return probeOK, resp.StatusCode
 	case "auth_required":
-		return probeAuthRequired
+		return probeAuthRequired, resp.StatusCode
 	default:
-		return probeOther
+		return probeOther, resp.StatusCode
 	}
 }
 

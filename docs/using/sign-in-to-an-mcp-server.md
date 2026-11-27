@@ -15,6 +15,20 @@ If the server asks for provider consent, run `ach-cli mcp login <server>` with y
 
 Over SSH, run `ach-cli mcp auth <server> --device`. Open the verification URL in any browser, confirm the short code, and approve provider access. The terminal waits for approval. To use callback paste, run `ach-cli mcp auth <server> --no-browser` and paste the final loopback URL into the waiting terminal.
 
+The browser must be signed in to ACH with the same account as your ACH
+profile. If it is signed in as someone else, ACH refuses the sign-in and says
+which account you used and which one was expected, both in the browser and in
+the terminal. This happens when you sign in as an agent identity (a shared
+account such as `ai.run@example.com`) on a machine where your browser holds
+your own session: open the authorization URL in a private window and sign in
+there as the agent identity. The same applies to `ach-cli login` on an
+existing profile; to switch a profile to another account, run `ach-cli logout`
+first.
+
+If the account has no access to the server, ACH says so instead of finishing
+the sign-in. Ask an administrator to grant the server in one of your
+Environments.
+
 If you maintain a device-code client, use the `device_authorization_endpoint`
 from ACH's OAuth metadata. Send the MCP server URL (for example,
 `https://ach.example.com/mcp/zoho`) in the `resource` form field alongside

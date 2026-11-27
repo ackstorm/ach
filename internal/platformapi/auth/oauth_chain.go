@@ -164,7 +164,7 @@ func (d OAuthDeps) chainStart(w http.ResponseWriter, r *http.Request, c oauthCha
 	}
 	d.Auth.Logger.Warn("oauth: consent broker unavailable", "broker", c.Broker, "err", err)
 	if c.DeviceCode != "" {
-		d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{})
+		d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{}, "")
 		return
 	}
 	d.finish(w, r, c.oauthPending, c.PendingID, c.oauthUser)
@@ -195,7 +195,7 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if (c.DeviceCode != "" && brokerError != "") || d.probe(r.Context(), c.Sub, c.UserID, c.MCPKey) != probeOK {
 		if c.DeviceCode != "" {
-			d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{})
+			d.deviceFinish(w, r, c.oauthPending, c.PendingID, deviceStatusDenied, oauthUser{}, "")
 			return
 		}
 		http.SetCookie(w, bindingCookie(c.PendingID, "", d.Auth.InsecureCookie, -1))
@@ -207,7 +207,7 @@ func (d OAuthDeps) brokerCallback(w http.ResponseWriter, r *http.Request) {
 
 func (d OAuthDeps) finish(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID string, u oauthUser) {
 	if p.DeviceCode != "" {
-		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u)
+		d.deviceFinish(w, r, p, pendingID, deviceStatusApproved, u, "")
 		return
 	}
 	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))

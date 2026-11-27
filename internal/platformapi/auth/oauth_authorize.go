@@ -9,6 +9,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -42,6 +43,10 @@ type oauthPending struct {
 	DexVerifier   string `json:"dex_verifier"`
 	Binding       string `json:"binding"` // hex(sha256(browser cookie value))
 	MCPKey        string `json:"mcp_key,omitempty"`
+	// LoginHint is the lower-cased account the client expects (OIDC
+	// login_hint). It can only refuse a login whose Dex account differs,
+	// never grant one.
+	LoginHint string `json:"login_hint,omitempty"`
 	// DeviceCode is set on a pending parked by the device verification page
 	// (RFC 8628); it has no RedirectURI and no client PKCE — the outcome is
 	// written to the device record for /token to pick up.
@@ -199,7 +204,8 @@ func (d OAuthDeps) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := oauthPending{ClientID: client.ClientID, RedirectURI: redirectURI, State: state,
-		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding), MCPKey: mcpKey}
+		CodeChallenge: q.Get("code_challenge"), DexVerifier: dexVerifier, Binding: bindingHash(binding), MCPKey: mcpKey,
+		LoginHint: normalizeEmail(q.Get("login_hint"))}
 	if err := d.Store.Put(r.Context(), "pending", pendingID, p, oauthPendingTTL); err != nil {
 		d.htmlError(w, 500, "store unavailable")
 		return
@@ -232,7 +238,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if e := q.Get("error"); e != "" {
 		if p.DeviceCode != "" {
-			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{})
+			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{}, "")
 			return
 		}
 		if p.Console {
@@ -252,7 +258,7 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		d.htmlError(w, 400, "the identity provider did not complete the login")
 		return
 	}
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = normalizeEmail(email)
 	// One Dex refresh token per user, newest login wins — Dex itself keeps
 	// one per (user, client) and replaces it on a new login, so a second
 	// tool signing in must not strand the first tool's session. Stored
@@ -260,6 +266,12 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 	// at Dex, so a LiteLLM failure here must not leave the dead one behind.
 	if err := d.Store.Put(r.Context(), dexRefreshKind, email, dexRefresh, d.RefreshTTL); err != nil {
 		d.htmlError(w, 500, "store unavailable")
+		return
+	}
+	if p.LoginHint != "" && p.LoginHint != email {
+		d.Auth.Logger.Warn("oauth: signed-in account differs from login_hint", "client_id", p.ClientID, "user", email, "login_hint", p.LoginHint)
+		d.refuse(w, r, p, pendingID, fmt.Sprintf("You are signed in as %s, but this sign-in was started for %s. "+
+			"Sign out, or open the link in a private window and sign in as %s.", email, p.LoginHint, p.LoginHint))
 		return
 	}
 	// The IdP accepted this login: lift an earlier refusal so the user's
@@ -299,17 +311,38 @@ func (d OAuthDeps) asCallback(w http.ResponseWriter, r *http.Request) {
 		} else if bip != nil {
 			outcome = d.probe(r.Context(), email, userID, p.MCPKey)
 		}
-		if outcome == probeAuthRequired {
+		switch {
+		case outcome == probeAuthRequired:
 			d.chainStart(w, r, oauthChain{oauthPending: p, PendingID: pendingID, oauthUser: u, Broker: bip.ConsentBroker, Audience: bip.ConsentAudience})
 			return
-		}
-		if p.DeviceCode != "" && outcome != probeOK {
-			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{})
+		case outcome == probeNoAccess:
+			d.refuse(w, r, p, pendingID, fmt.Sprintf("%s has no access to the MCP server %s.", email, p.MCPKey))
+			return
+		case p.DeviceCode != "" && outcome != probeOK:
+			d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{}, "")
 			return
 		}
 	}
 	d.finish(w, r, p, pendingID, u)
 }
+
+// refuse ends an authorization without a code and says why: on the device
+// page, or to the client as access_denied with the reason as
+// error_description.
+func (d OAuthDeps) refuse(w http.ResponseWriter, r *http.Request, p oauthPending, pendingID, reason string) {
+	if p.DeviceCode != "" {
+		d.deviceFinish(w, r, p, pendingID, deviceStatusDenied, oauthUser{}, reason)
+		return
+	}
+	http.SetCookie(w, bindingCookie(pendingID, "", d.Auth.InsecureCookie, -1))
+	pv := url.Values{"error": {"access_denied"}, "error_description": {reason}}
+	if p.State != "" {
+		pv.Set("state", p.State)
+	}
+	clientRedirect(w, r, p.RedirectURI, pv)
+}
+
+func normalizeEmail(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 var mcpKeyRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 

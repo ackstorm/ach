@@ -68,6 +68,15 @@ provider consent if needed. While the browser is at the provider, polling
 check releases the ordinary ACH token. Refused consent yields `access_denied`.
 The gateway enforces the caller's existing grants on every MCP request.
 
+**Refusals with a reason.** `/authorize` and `/device_authorization` accept an
+OIDC `login_hint` (ach-cli sends its profile's account). After Dex, a
+different signed-in account issues no code. A consent probe the forwarder
+answers 403 issues no code either: the user has no access to that server.
+Both reach the client as `access_denied` with an `error_description` naming
+the account (loopback redirect, or `/token` for a device, whose page shows
+the same text). Any other probe failure still issues the code, as before.
+Every probe logs `oauth: consent probe` with its outcome and HTTP status.
+
 ## UI write path
 
 **GitOps-wins UI write path**: the platform-api UI

@@ -108,23 +108,35 @@ func newTokenView(tok string) tokenView {
 	return v
 }
 
-// jwtExp reads a JWT's exp claim without verifying the signature: the token
-// is the caller's own and the value only says when to ask again.
-func jwtExp(tok string) (time.Time, bool) {
+// jwtClaims reads a JWT's exp and sub claims without verifying the
+// signature: the token is the caller's own, exp only says when to ask again
+// and sub only names the account a new sign-in must match.
+func jwtClaims(tok string) (exp int64, sub string) {
 	if !keys.LooksLikeJWS(tok) {
-		return time.Time{}, false
+		return 0, ""
 	}
 	b, err := base64.RawURLEncoding.DecodeString(strings.Split(tok, ".")[1])
 	if err != nil {
-		return time.Time{}, false
+		return 0, ""
 	}
 	var c struct {
-		Exp int64 `json:"exp"`
+		Exp int64  `json:"exp"`
+		Sub string `json:"sub"`
 	}
-	if json.Unmarshal(b, &c) != nil || c.Exp <= 0 {
-		return time.Time{}, false
+	_ = json.Unmarshal(b, &c)
+	return c.Exp, c.Sub
+}
+
+func jwtExp(tok string) (time.Time, bool) {
+	if exp, _ := jwtClaims(tok); exp > 0 {
+		return time.Unix(exp, 0), true
 	}
-	return time.Unix(c.Exp, 0), true
+	return time.Time{}, false
+}
+
+func jwtSub(tok string) string {
+	_, sub := jwtClaims(tok)
+	return sub
 }
 
 // acquireTokenLock takes the lock every token refresh runs under and returns
