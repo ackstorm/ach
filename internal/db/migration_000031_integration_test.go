@@ -41,7 +41,7 @@ func TestMigration000031_AddsInstruction(t *testing.T) {
 		),
 	)
 	if err != nil {
-		t.Skipf("docker required for integration tests: %v", err)
+		t.Fatalf("docker required for integration tests: %v", err)
 	}
 	defer func() { _ = pgC.Terminate(context.Background()) }()
 
